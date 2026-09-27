@@ -7,7 +7,7 @@ import { buildProjectSeedFilesFromItem, defaultAgentFromSeedFiles } from './seed
 // with it — every session then stored the non-binding 'default' sentinel
 // (see sessions.ts createProjectSession), and an agent-scope model pin set on
 // 'kortix' was never looked up. This helper extracts the seeded manifest's
-// declared default agent so r1.ts's provision route can mirror it into
+// declared default agent so projects.ts's provision route can mirror it into
 // project.metadata at creation time, same as PUT /:projectId/default-agent.
 describe('defaultAgentFromSeedFiles', () => {
   test('extracts a declared default_agent from the seeded kortix.yaml', () => {

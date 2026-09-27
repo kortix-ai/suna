@@ -6,7 +6,7 @@
  * API route). No framework: the kit speaks Web `Request`/`Response` only.
  */
 import { test, expect, beforeEach, describe } from 'bun:test';
-import { createKortixAuth, KortixAuthError, type KortixAuth, type KortixFetch } from './auth';
+import { createKortixAuth, KortixAuthError, safeReturnTo, type KortixAuth, type KortixFetch } from './auth';
 
 const BACKEND = 'https://api.kortix.test/v1';
 const CLIENT_ID = '00000000-0000-4000-a000-000000000201';
@@ -320,10 +320,45 @@ describe('createKortixAuth — expiry, refresh, sign-out, abuse', () => {
 
   test('return_to is confined to a same-origin path', async () => {
     const auth = makeAuth();
-    for (const bad of ['https://evil.test/x', '//evil.test/x', 'javascript:alert(1)', '/\\evil.test']) {
+    for (const bad of [
+      'https://evil.test/x',
+      '//evil.test/x',
+      'javascript:alert(1)',
+      '/\\evil.test',
+      // Browsers strip tab/CR/LF from a URL, so these resolve to //evil.test.
+      '/\t/evil.test/x',
+      '/\n/evil.test/x',
+    ]) {
       const { callback } = await signIn(auth, bad);
       expect(callback.headers.get('location')).toBe('/');
     }
+  });
+
+  test('safeReturnTo keeps same-origin paths and rejects anything a browser resolves off-origin', () => {
+    expect(safeReturnTo('/reports?tab=1#top')).toBe('/reports?tab=1#top');
+    expect(safeReturnTo('/a/../b')).toBe('/b');
+    expect(safeReturnTo(null)).toBe('/');
+    for (const bad of [
+      '/\t/evil.test',
+      '/\n/evil.test',
+      '/\r/evil.test',
+      '/\x00/evil.test',
+      '/\\evil.test',
+      '/x\\..\\..\\evil.test',
+      '\t//evil.test',
+      '//evil.test',
+      'https://evil.test',
+    ]) {
+      expect(safeReturnTo(bad)).toBe('/');
+    }
+  });
+
+  test('/signout never redirects off-origin, even with a control character in return_to', async () => {
+    const auth = makeAuth();
+    const res = await auth.handler(
+      new Request(`${APP}/api/kortix/auth/signout?return_to=%2F%09%2Fevil.test%2Fx`),
+    );
+    expect(res.headers.get('location')).toBe('/');
   });
 
   test('a public client sends no client_secret', async () => {

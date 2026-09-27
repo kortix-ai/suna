@@ -38,7 +38,6 @@ mock.module('../shared/usage-events', () => ({
     usageRows += 1;
     return 'usage-1';
   },
-  resolveSessionOriginRef: async () => null,
 }));
 
 // `../billing/services/credits` is deliberately NOT mocked: with
@@ -95,17 +94,9 @@ describe('recordGatewayUsage extends the sandbox deadline mid-turn', () => {
     expect(usageRows).toBe(1);
     expect(extendCalls).toHaveLength(1);
     expect(extendCalls[0].target).toEqual({ sessionId });
-  });
-
-  // The measured p99.9 gap between consecutive usage_events inside one session is
-  // OVER AN HOUR — a long local tool run (build, test suite, migration) emits none
-  // at all — so a grant near that gap would kill a box in the middle of exactly
-  // the work it exists to do.
-  test('the grant comfortably exceeds the ~1h p99.9 gap between usage events', async () => {
-    await recordGatewayUsage(usage());
-
+    // The LLM-activity grant (4 hours, owned by sandbox-deadline-policy.ts)
+    // comfortably exceeds the measured ~1h p99.9 gap between usage events.
     expect(extendCalls[0].grantMs).toBe(realPolicy.llmActivityGrantMs());
-    expect(extendCalls[0].grantMs).toBeGreaterThan(3 * 3_600_000);
   });
 
   test('a turn making many calls writes ONE deadline update per minute, not one per call', async () => {

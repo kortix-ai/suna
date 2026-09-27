@@ -2,7 +2,7 @@
 
 import type { FileContent } from '@/features/file-browser/types';
 import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { fileContentKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFile } from '../api/runtime-files';
@@ -10,11 +10,9 @@ import { sandboxWakingRefetchInterval } from './file-read-retry';
 import { useServerHealth } from './use-server-health';
 import { isSystemDirectoryPath } from './system-dir';
 
-export const fileContentKeys = {
-  all: ['runtime-files', 'content'] as const,
-  file: (serverUrl: string, filePath: string) =>
-    ['runtime-files', 'content', serverUrl, filePath] as const,
-};
+// Keyed by the SDK factory: the live event stream invalidates it on
+// `file.edited` and at turn end, so an open viewer shows the agent's edit.
+export { fileContentKeys };
 
 /**
  * Fetch the content of a single file from the active OpenCode server.

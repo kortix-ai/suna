@@ -12,9 +12,6 @@
  * strategy, what may reach the box. It is deliberately DB-free and I/O-free so
  * the decisions can be tested exhaustively, in the same spirit as
  * `resolveGrantedSecretEnv` and `secret-grant.ts`.
- *
- * See docs/SECRET_DELIVERY_STRATEGY_PLAN.md for the whole design, and
- * docs/ENV_SECRET_EXPOSURE_BASELINE.md for the measured behaviour it changes.
  */
 
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
@@ -218,8 +215,7 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
     });
   }
 
-  // OPTIONAL since the exposure/usage model (docs/specs/
-  // 2026-08-19-secrets-exposure-usage-model.md §6). An egress-enforced secret is
+  // OPTIONAL since the exposure/usage model. An egress-enforced secret is
   // served by HANDLE SUBSTITUTION: the sandbox env holds a handle, the relay
   // swaps it for the real value on an approved host, and the policy is a HOST
   // LIST with no slot to name. A row that supplies `inject` still has to supply

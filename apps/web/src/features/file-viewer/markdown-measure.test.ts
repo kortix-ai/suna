@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { getLanguageFromExt } from './file-content-renderer';
+import { getLanguageFromExt } from './preview-policy';
 
 const src = readFileSync(resolve(import.meta.dir, 'file-content-renderer.tsx'), 'utf8');
 

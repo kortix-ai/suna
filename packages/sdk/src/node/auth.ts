@@ -204,11 +204,26 @@ function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-/** Only a same-origin path may be a post-auth destination. */
+/**
+ * Only a same-origin path may be a post-auth destination.
+ *
+ * Browsers remove tab, CR and LF from a URL and treat `\` as `/`, so
+ * `/\t/evil.example` and `/\evil.example` both navigate to another origin.
+ * Any control character or backslash is refused, and the path is returned in
+ * the canonical form a browser would open.
+ */
 export function safeReturnTo(value: string | null | undefined): string {
   if (!value) return '/';
-  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return '/';
-  return value;
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return '/';
+  try {
+    const base = 'https://return-to.invalid';
+    const resolved = new URL(value, base);
+    if (resolved.origin !== base) return '/';
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return '/';
+  }
 }
 
 // ─── payloads ────────────────────────────────────────────────────────────────

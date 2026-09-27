@@ -1,13 +1,13 @@
 /**
  * DEV PROBE — turn-truth (PR #6657).
  *
- * Proves on the DEPLOYED dev stack the two behaviors the Essentia incident
+ * Proves on the DEPLOYED dev stack the two behaviors the SampleCo incident
  * (session d1b74954, 2026-08-20) disproved:
  *
  *  A. A turn the CONTROL PLANE never delivered still gets turn authority.
  *     Started by POSTing straight at OpenCode through the sandbox proxy —
  *     the same shape as OpenCode's synthetic `<pty_exited>` wake-up, which is
- *     what actually started the invisible turns on Essentia. BEFORE the fix
+ *     what actually started the invisible turns on SampleCo. BEFORE the fix
  *     `GET .../turn` reported NO open turn for the whole run.
  *
  *  B. The turn ends and the authority is released — no phantom `working`.
@@ -201,7 +201,7 @@ async function main() {
   log(`session_id=${sid}   project_id=${project.project_id}`);
   if (!sawOpenTurn && !terminalEvidence) {
     log('❌ FAILED: no turn authority EVER existed for a turn the box started on its own.');
-    log('   (This is exactly the Essentia symptom — composer reads "not running".)');
+    log('   (This is exactly the SampleCo symptom — composer reads "not running".)');
     process.exit(1);
   }
   if (!sawOpenTurn) {

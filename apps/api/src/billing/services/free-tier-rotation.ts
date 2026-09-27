@@ -4,7 +4,7 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
-import { resetExpiringCredits } from './credits';
+import { wallet } from '../wallet';
 
 const FREE_TIER_MONTHLY_CREDITS_USD = 2;
 
@@ -30,12 +30,12 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
 
     try {
       const idempotencyKey = `free_tier_rotation_${account.accountId}_${rotationMonth(now)}`;
-      await resetExpiringCredits(
-        account.accountId,
-        FREE_TIER_MONTHLY_CREDITS_USD,
-        `Free tier monthly credit reset: ${FREE_TIER_MONTHLY_CREDITS_USD} credits`,
-        idempotencyKey,
-      );
+      await wallet.reset({
+        accountId: account.accountId,
+        amount: FREE_TIER_MONTHLY_CREDITS_USD,
+        description: `Free tier monthly credit reset: ${FREE_TIER_MONTHLY_CREDITS_USD} credits`,
+        key: { event: idempotencyKey },
+      });
 
       await updateCreditAccount(account.accountId, {
         nextCreditGrant: calculateNextCreditGrant(now).toISOString(),
@@ -67,7 +67,7 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
  * Resolving the effective plan here would silently stop rotating exactly those
  * accounts and diverge from the query that fetched them.
  */
-export function isFreeTierAccountDueForRotation(
+function isFreeTierAccountDueForRotation(
   account: Pick<CreditAccount, 'tier' | 'nextCreditGrant'>,
   now = new Date(),
 ): boolean {

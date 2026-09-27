@@ -38,6 +38,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
+      sandbox_image: ${{ steps.filter.outputs.sandbox_image }}
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
     steps:
@@ -78,6 +79,10 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+            sandbox_image:
+              - '.github/workflows/ci.yml'
+              - 'apps/sandbox/Dockerfile'
+              - 'scripts/check-sandbox-apt-packages.sh'
             desktop:
               - '.github/workflows/ci.yml'
               - 'apps/desktop-electron/**'
@@ -240,6 +245,23 @@ jobs:
         run: |
           test -x apps/kortix-sandbox-agent-server/dist/kortix-agent
           ls -lh apps/kortix-sandbox-agent-server/dist/kortix-agent
+
+  # The sandbox image builds on the provider after a merge, never here. A
+  # package name apt cannot find (2026-09-23: `build-essential` scrubbed into
+  # `build-samplecol`) failed every default image build for 16 hours. Resolve
+  # the package list against the same base image before it can merge.
+  sandbox-image-packages:
+    name: Sandbox image apt packages
+    needs: changes
+    if: needs.changes.outputs.sandbox_image == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Every apt package the sandbox image installs resolves
+        run: bash scripts/check-sandbox-apt-packages.sh
 
   cli-binary-smoke:
     name: CLI binary smoke

@@ -50,6 +50,7 @@ import {
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
+import { isPlainObject } from '../shared/json';
 import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -80,19 +81,12 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
- * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
- * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
+ * fixed by `extractAgents` in `./agents.ts`, the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and remains refused.
  */
 export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-
-/** Local copy — `lib/serializers` imports from this module, so importing back
- *  would close a cycle for one two-line predicate. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
 
@@ -143,7 +137,7 @@ export interface GitTriggerSpec {
   /**
    * For type=monitor only — the repo-relative command the platform supervises
    * 24/7 in the project's monitor box. Its stdout lines are the events;
-   * nothing else is. See docs/specs/2026-08-12-monitors.md.
+   * nothing else is.
    */
   run: string | null;
   /**
@@ -220,8 +214,7 @@ export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
  *
  * `'reuse'` for a monitor, `'fresh'` for cron/webhook. A monitor fires
  * repeatedly by design — a live log emits all day — so defaulting it to fresh
- * would mint one session per event. Spec: docs/specs/2026-08-12-monitors.md
- * §"Manifest surface".
+ * would mint one session per event.
  */
 export function defaultTriggerSessionMode(type: GitTriggerType): GitTriggerSessionMode {
   return type === 'monitor' ? 'reuse' : 'fresh';
@@ -460,7 +453,7 @@ export function synthesizeBlankManifest(project: {
         [SYNTHESIZED_DEFAULT_AGENT_NAME]: {
           connectors: 'all',
           secrets: 'all',
-          kortix_cli: 'all',
+          kortix_permissions: 'all',
           skills: 'all',
         },
       },

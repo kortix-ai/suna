@@ -49,7 +49,7 @@ import {
   XLogoIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 

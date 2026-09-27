@@ -25,7 +25,7 @@ export function usePrefersReducedMotion(): boolean {
   return prefersReducedMotion;
 }
 
-export interface UseCyclePhaseOptions {
+interface UseCyclePhaseOptions {
   active: boolean;
   cycleMsBase: number;
   speed?: number;

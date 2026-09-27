@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 import * as realAccess from '../projects/lib/access';
 
 let dbResults: unknown[][] = [];
@@ -46,12 +47,15 @@ mock.module('../projects/lib/access', () => ({
   lookupEmailsByUserIds: async (ids: string[]) => new Map(ids.map((id) => [id, `${id}@example.com`])),
 }));
 
-mock.module('../channels/slack/identity', () => ({
-  lookupSlackIdentity: async (_teamId: string, slackUserId: string) =>
-    slackUserId === 'Uowner' ? { userId: 'owner-user' } : { userId: 'requester-user' },
-  lookupSlackUserIdForKortixUser: async (_teamId: string, userId: string) =>
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+  
+  lookupChatIdentity: async (user: { platformUserId: string }) =>
+    user.platformUserId === 'Uowner' ? { userId: 'owner-user' } : { userId: 'requester-user' },
+  lookupChatUserForKortixUser: async (_platform: string, _teamId: string, userId: string) =>
     userId === 'owner-user' ? 'Uowner' : null,
-}));
+}),
+);
 
 const {
   decideSlackThreadJoin,

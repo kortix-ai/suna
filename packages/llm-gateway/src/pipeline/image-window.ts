@@ -2,7 +2,7 @@
  * Image window: bound the number of inline images one request carries.
  *
  * A coding agent that takes a screenshot per step re-sends EVERY screenshot
- * on every turn — the request that OOM-killed the Essentia gateway on
+ * on every turn — the request that OOM-killed the SampleCo gateway on
  * 2026-08-22 carried 40 base64 screenshots (28 MB, 334k tokens) in 224
  * messages. Two facts make an unbounded image history worthless as well as
  * expensive: providers cap it (Bedrock Converse rejects >20 images per

@@ -18,8 +18,8 @@ export const GITHUB_INSTALLATION_UNREACHABLE = 'github_installation_unreachable'
  * `projects/github.ts`, a module a dozen suites replace wholesale with
  * `mock.module` — and `mock.module` deletes every export the factory does not
  * name, so one new edge turns into `SyntaxError: Export named 'X' not found`
- * in files this change never touched (see .claude/skills/learnings/SKILL.md,
- * "A new import edge into a widely-mocked graph…"). Reading the two fields
+ * in files this change never touched (see the learnings entry
+ * `.agents/skills/learnings/entries/2026-08-27T142521Z-a-new-import-edge-into-a-widely-mocked-graph-breaks-hand-wri.md`). Reading the two fields
  * that define the failure also survives two copies of the class, which
  * `instanceof` does not.
  */

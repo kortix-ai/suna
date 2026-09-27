@@ -1,10 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useTranslations } from '@/i18n/use-translations';
 
 export const AppleCursor = ({ className }: { className?: string }) => {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <svg
       version="1.1"
@@ -14,9 +12,7 @@ export const AppleCursor = ({ className }: { className?: string }) => {
       x="0px"
       y="0px"
       viewBox="0 0 32 32"
-      enableBackground={tI18nHardcoded.raw(
-        'autoFeaturesIconIconJsxAttrEnableBackgroundNew00322530287f',
-      )}
+      enableBackground="new 0 0 32 32"
       xmlSpace="preserve"
       className={cn('size-10', className)}
     >

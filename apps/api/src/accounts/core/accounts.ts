@@ -22,10 +22,10 @@ import {
   autoClaimPendingInvites,
   getMembership,
   normalizeString,
-  readBody,
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -152,6 +152,11 @@ export function registerAccountRoutes(): void {
       // invite must not roll back the others, or the account just bootstrapped).
       await autoClaimPendingInvites(userId, userEmail);
 
+      // Re-read unconditionally. Skipping it when this request claimed nothing
+      // races a concurrent list: the first call of a fresh sign-in claims the
+      // invite between this call's first read and its claim, so this call sees
+      // no pending invite, claims 0, and would return the list without the
+      // workspace the user was just added to.
       memberships = await loadMemberships();
       if (memberships.length === 0) {
         console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);
@@ -225,7 +230,7 @@ export function registerAccountRoutes(): void {
         );
       }
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);
       if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
@@ -371,7 +376,7 @@ export function registerAccountRoutes(): void {
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);
       if (name.length > 255) return c.json({ error: 'name is too long' }, 400);

@@ -118,6 +118,21 @@ describe('qk.project', () => {
   // `data.account_id` (the summary shape) breaks the moment a detail reader's
   // fetch wins the race, or vice versa. `summary` and `detail` must never be
   // the same key or a prefix of one another.
+  // The credential modal is mounted once and retargeted per connection. The
+  // discovery result carries the connection id it resolved, and one-click
+  // OAuth starts on that id — so two connections of one connector must never
+  // share a cache entry.
+  test('connectorOAuth2Discovery is keyed per connection, under the per-connector prefix', () => {
+    const a = qk.project.connectorOAuth2Discovery(id, 'mcp', 'conn_a');
+    const b = qk.project.connectorOAuth2Discovery(id, 'mcp', 'conn_b');
+    const perConnector = qk.project.connectorOAuth2Discovery(id, 'mcp');
+
+    expect(a).not.toEqual(b as never);
+    expect(startsWith(a, perConnector)).toBe(true);
+    expect(startsWith(b, perConnector)).toBe(true);
+    expect(startsWith(a, qk.project.connectorConfig(id, 'mcp'))).toBe(true);
+  });
+
   test('summary(id) and detail(id) are different keys, neither a prefix of the other', () => {
     expect(qk.project.summary(id)).not.toEqual(qk.project.detail(id) as never);
     expect(startsWith(qk.project.detail(id), qk.project.summary(id))).toBe(false);

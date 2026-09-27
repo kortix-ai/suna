@@ -5,11 +5,11 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
     <title>Kortix</title>
     <style>
-      :root { color-scheme: dark; }
+      :root { color-scheme: light dark; }
       html, body {
         margin: 0;
         height: 100%;
-        background: #0a0a0a;
+        background: #ffffff;
         overflow: hidden;
         -webkit-user-select: none;
         user-select: none;
@@ -28,8 +28,8 @@
         width: 26px;
         height: 26px;
         border-radius: 50%;
-        border: 2px solid rgba(255, 255, 255, 0.14);
-        border-top-color: rgba(255, 255, 255, 0.85);
+        border: 2px solid rgba(0, 0, 0, 0.14);
+        border-top-color: rgba(0, 0, 0, 0.78);
         animation: spin 0.9s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
@@ -39,8 +39,16 @@
         min-height: 14px;
         font-size: 12px;
         line-height: 14px;
-        color: rgba(255, 255, 255, 0.55);
+        color: rgba(0, 0, 0, 0.55);
         letter-spacing: 0.01em;
+      }
+      @media (prefers-color-scheme: dark) {
+        html, body { background: #0a0a0a; }
+        .ring {
+          border-color: rgba(255, 255, 255, 0.14);
+          border-top-color: rgba(255, 255, 255, 0.85);
+        }
+        #kx-status { color: rgba(255, 255, 255, 0.55); }
       }
     </style>
   </head>

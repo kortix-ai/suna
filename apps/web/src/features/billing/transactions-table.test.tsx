@@ -16,7 +16,7 @@ import {
 
 const dir = import.meta.dir;
 const creditTransactionsSource = readFileSync(join(dir, 'credit-transactions.tsx'), 'utf8');
-const adminPageSource = readFileSync(join(dir, '../../app/admin/accounts/page.tsx'), 'utf8');
+const adminPageSource = readFileSync(join(dir, '../../app/[locale]/admin/accounts/page.tsx'), 'utf8');
 
 describe('creditTransactionBadge', () => {
   test('names the ledger types an operator reads most', () => {

@@ -1,7 +1,7 @@
 'use client';
 
+import { isPostHogLoaded, loadPostHog } from '@/lib/posthog-lazy';
 import { createClient } from '@/lib/supabase/client';
-import posthog from 'posthog-js';
 import { useEffect } from 'react';
 
 export const PostHogIdentify = () => {
@@ -9,9 +9,13 @@ export const PostHogIdentify = () => {
     const supabase = createClient();
     const listener = supabase.auth.onAuthStateChange((_, session) => {
       if (session) {
-        posthog.identify(session.user.id, { email: session.user.email });
-      } else {
-        posthog.reset();
+        void loadPostHog().then((posthog) =>
+          posthog.identify(session.user.id, { email: session.user.email }),
+        );
+      } else if (isPostHogLoaded()) {
+        // A signed-out visitor never loads posthog-js; there is nothing to
+        // reset unless this page identified someone.
+        void loadPostHog().then((posthog) => posthog.reset());
       }
     });
 

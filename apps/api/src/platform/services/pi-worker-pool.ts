@@ -24,6 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { config } from '../../config';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { ensurePiWorkerImage } from '../../snapshots/builder';
 import { getDaytona } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
@@ -67,7 +68,7 @@ async function listParkedBoxes(): Promise<ParkedBox[]> {
   await withTimeout(
     (async () => {
       for await (const box of getDaytona().list({
-        labels: { ...managedSandboxLabels(), [PARK_LABEL]: '1' },
+        labels: { ...await managedSandboxLabels(), [PARK_LABEL]: '1' },
         limit: 100,
       } as never)) {
         const raw = box as unknown as {
@@ -107,7 +108,7 @@ async function createParkedBox(snapshotName: string, contentHash: string): Promi
           KORTIX_SERVICE_PORT: '8000',
         },
         labels: {
-          ...managedSandboxLabels(),
+          ...await managedSandboxLabels(),
           [PARK_LABEL]: '1',
           [HASH_LABEL]: contentHash,
           [TOKEN_LABEL]: parkToken,
@@ -212,7 +213,7 @@ export async function claimParkedPiWorkerBox(
         setAutostopInterval(minutes: number): Promise<void>;
       };
       await mutable
-        .setLabels({ ...managedSandboxLabels(), 'kortix.piworker-claimed': '1' })
+        .setLabels({ ...await managedSandboxLabels(), 'kortix.piworker-claimed': '1' })
         .catch((err: unknown) =>
           console.warn(`[pi-pool] relabel of claimed ${box.externalId} failed:`, err),
         );
@@ -266,7 +267,8 @@ async function verifyStillParked(externalId: string): Promise<boolean> {
 export function maintainPiWorkerPool(): Promise<void> {
   if (!piWorkerPoolEnabled()) return Promise.resolve();
   if (maintainInFlight) return maintainInFlight;
-  maintainInFlight = (async () => {
+  // Also kicked from session creation: pool upkeep never runs as that caller.
+  maintainInFlight = runWorkerTick('pi-worker-pool', async () => {
     const target = config.KORTIX_PI_WORKER_POOL_TARGET;
     const maxAgeMs = config.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES * 60_000;
     const image = await ensurePiWorkerImage({ provider: 'daytona' });
@@ -307,7 +309,7 @@ export function maintainPiWorkerPool(): Promise<void> {
         `[pi-pool] maintained: ${alive.length}/${target} parked, reaped ${reap.length}, created ${missing}`,
       );
     }
-  })()
+  })
     .catch((err) => console.warn('[pi-pool] maintain failed:', err))
     .finally(() => {
       maintainInFlight = null;

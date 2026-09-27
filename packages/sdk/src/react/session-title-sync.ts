@@ -35,7 +35,16 @@ function cachedSessionHasTitle(
   // default and what the sidebar/list surfaces actually read.
   const list = queryClient.getQueryData<unknown>(qk.project.sessions(projectId));
   const detail = queryClient.getQueryData<unknown>(qk.project.session(projectId, sessionId));
-  const candidates = [...(Array.isArray(list) ? list : []), detail];
+  // The sidebar reads the PAGED list, so that is where a title usually lands
+  // first. Reading only the flat key kept a titled session in the ladder.
+  const paged = queryClient.getQueryData<unknown>(qk.project.sessionsPaged(projectId));
+  const pagedRows =
+    paged && typeof paged === 'object' && Array.isArray((paged as { pages?: unknown }).pages)
+      ? (paged as { pages: Array<{ items?: unknown }> }).pages.flatMap((page) =>
+          Array.isArray(page?.items) ? page.items : [],
+        )
+      : [];
+  const candidates = [...(Array.isArray(list) ? list : []), ...pagedRows, detail];
   return candidates.some((candidate) => {
     if (!candidate || typeof candidate !== 'object') return false;
     const session = candidate as Record<string, unknown>;
@@ -80,6 +89,11 @@ function refetchSessionTitleQueries(
       : [
           queryClient.refetchQueries({
             queryKey: [...qk.project.sessionsScope(projectId), 'list'],
+            type: 'active',
+          }),
+          // The paged family: what the sidebar and the Sessions page read.
+          queryClient.refetchQueries({
+            queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'],
             type: 'active',
           }),
         ]),

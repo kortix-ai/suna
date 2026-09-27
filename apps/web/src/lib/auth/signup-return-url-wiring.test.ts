@@ -21,7 +21,7 @@ const SRC = join(import.meta.dir, '..', '..');
 
 const DESTINATION_PATHS = new Map<string, string>([
   [
-    'app/(auth)/auth/actions.ts',
+    'app/[locale]/(auth)/auth/actions.ts',
     'sendEmailCode (before the email link is minted), signUpWithPassword, signInWithPassword and verifyOtp all resolve a post-auth destination.',
   ],
   [
@@ -47,7 +47,7 @@ describe('the signup destination rule is wired into every auth path', () => {
     // the last 60s?" heuristic downstream stops being true. Resolving only on
     // the way out leaves the slow-email path broken — which is the exact shape
     // of the live report.
-    const source = readFileSync(join(SRC, 'app/(auth)/auth/actions.ts'), 'utf8');
+    const source = readFileSync(join(SRC, 'app/[locale]/(auth)/auth/actions.ts'), 'utf8');
     const ruleAt = source.indexOf('resolveNewAccountReturnUrl(requestedReturnUrl)');
     const linkAt = source.indexOf('const emailRedirectTo = emailRedirectUrl(');
 

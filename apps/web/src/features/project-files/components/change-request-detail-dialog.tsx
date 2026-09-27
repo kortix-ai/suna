@@ -325,7 +325,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 changes", a label for the screen the reader was already on. */}
             {cr?.description && (
               <div className="text-foreground/90 text-sm wrap-break-word [&_pre]:overflow-x-auto">
-                <UnifiedMarkdown content={cr.description} />
+                <UnifiedMarkdown content={cr.description} trust="agent" />
               </div>
             )}
 

@@ -9,6 +9,7 @@
  * sanctioned way to move commits onto another branch and the merge writes that
  * branch SERVER-side, never passing through the proxy at all.
  */
+import { parseManifestText, type ManifestFormat } from '@kortix/manifest-schema';
 
 /** Which branch does a change request opened from a session target? */
 export type CrBaseDecision =
@@ -90,4 +91,48 @@ export function resolveChangeRequestOrigin(input: {
     };
   }
   return { ok: true, originSessionId: input.actingSessionId };
+}
+
+/**
+ * The manifest sections that GOVERN agents: who they are, what they may do,
+ * and what runs them unattended. Spec 2026-09-22 §2.4: an agent-session
+ * credential may not merge a change to these; a human with
+ * project.gitops.merge does.
+ */
+const GOVERNANCE_KEYS = ['agents', 'triggers'] as const;
+
+/**
+ * Does moving the manifest from `baseText` to `headText` change `agents` or
+ * `triggers`? Compared on the parsed values, so formatting and key order do
+ * not count. `null` = no manifest on that side. A side that does not parse
+ * counts as a change: the guard fails closed.
+ */
+export function manifestGovernanceChanged(
+  baseText: string | null,
+  headText: string | null,
+  format: ManifestFormat,
+  headFormat: ManifestFormat = format,
+): boolean {
+  const read = (text: string | null, fmt: ManifestFormat): Record<string, unknown> | null => {
+    if (text === null || !text.trim()) return {};
+    try {
+      return parseManifestText(text, fmt);
+    } catch {
+      return null;
+    }
+  };
+  const before = read(baseText, format);
+  const after = read(headText, headFormat);
+  if (before === null || after === null) return true;
+  return GOVERNANCE_KEYS.some((key) => canonicalJson(before[key]) !== canonicalJson(after[key]));
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
 }

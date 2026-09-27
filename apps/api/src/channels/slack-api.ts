@@ -562,6 +562,25 @@ export async function isBotUser(token: string, userId: string): Promise<boolean 
   }
 }
 
+/**
+ * A Slack user's display name (`display_name`, else `real_name`, else the
+ * handle), for showing a person which Slack account they are about to link.
+ * Null on any failure; the caller then shows the id alone.
+ */
+export async function getSlackUserDisplayName(token: string, userId: string): Promise<string | null> {
+  try {
+    const r = await slackApiCall(token, 'users.info', { user: userId }, { form: true });
+    if (!r.ok) return null;
+    const u = r.user as
+      | { name?: string; profile?: { display_name?: string; real_name?: string } }
+      | undefined;
+    const name = u?.profile?.display_name?.trim() || u?.profile?.real_name?.trim() || u?.name?.trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getChannelName(token: string, channel: string): Promise<string | null> {
   try {
     const r = await slackApiCall(token, 'conversations.info', { channel });

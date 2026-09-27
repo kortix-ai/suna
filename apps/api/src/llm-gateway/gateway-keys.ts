@@ -2,6 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { gatewayApiKeys } from '@kortix/db';
 import { db } from '../shared/db';
 import { generateGatewayKeyPair, hashSecretKey } from '../shared/crypto';
+import { hashSecretKeyAsync, markTokenValidated } from '../shared/token-hash';
 
 /**
  * Name of the short-lived key session-title generation mints for each internal
@@ -88,7 +89,7 @@ export async function revokeGatewayKey(projectId: string, keyId: string): Promis
 export async function validateGatewayKey(
   secretKey: string,
 ): Promise<{ accountId: string; projectId: string; userId: string; keyId: string } | null> {
-  const hash = hashSecretKey(secretKey);
+  const hash = await hashSecretKeyAsync(secretKey);
   const [row] = await db
     .select({
       keyId: gatewayApiKeys.keyId,
@@ -104,6 +105,7 @@ export async function validateGatewayKey(
 
   if (!row || row.status !== 'active') return null;
   if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
+  markTokenValidated(secretKey);
 
   void db
     .update(gatewayApiKeys)

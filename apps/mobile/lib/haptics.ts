@@ -48,6 +48,10 @@ export const haptics = {
     if (!isEnabled()) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
   },
+  error: () => {
+    if (!isEnabled()) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+  },
 };
 
 // ---------------------------------------------------------------------------

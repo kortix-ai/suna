@@ -55,6 +55,12 @@ it; later messages continue it, even after the sandbox stops and resumes. A
 tenant connected to more than one project shows a **project picker** on the
 first unrouted message, and remembers the choice.
 
+In a channel, every new post starts its own session. A personal or group chat
+is one conversation for its whole life, so it keeps one session until you send
+`/new`. Put a message after it (`/new summarize today's deploys`) to start the
+new session with that message. The previous session stays in Kortix, with its
+full history, and the confirmation links to it.
+
 ## Who may join a session
 
 Each conversation has a join policy, set with `/policy` in Teams or from the
@@ -81,10 +87,47 @@ Type these in a chat with the bot (in a channel, `@`-mention it first):
 | `/login`, `/logout`, `/whoami` | Link, unlink, or show your Kortix account |
 | `/status` | The effective project, agent and model here, and the run in progress |
 | `/stop` | Stop the run in progress here |
-| `/models`, `/model <ref>` | Pick the model for this conversation |
+| `/new [message]` | Start a new session in this chat (personal and group chats) |
+| `/models`, `/model <ref>` | Pick the model for this conversation — see [Models and keys](#models-and-keys) |
 | `/agents`, `/agent <name>` | Pick the agent for this conversation |
 | `/projects`, `/use <name>` | List connected projects, or point this one at another |
 | `/policy [open\|approval\|owner]` | Who may join sessions started here |
+
+## Models and keys
+
+`/models` lists every model you can run here, as the web picker does: Kortix
+models, and models you reach through a provider API key or a ChatGPT
+subscription. Each one says how it is paid for. A long list is a searchable
+dropdown. Tap a model, or type `/model <id>`; `/model default` goes back to the
+project default.
+
+Which keys count depends on the chat:
+
+- **A personal chat with the bot** — your own keys and ChatGPT subscription,
+  plus keys shared with the project. Its sessions are private to you.
+- **A group chat or channel** — only keys shared with the whole project. The
+  chat is shared, and a personal key there would let everyone in it spend one
+  person's subscription. Pick such a model in a personal chat instead.
+
+A model that runs on keys uses every key you may use for its provider, and
+they rotate on rate limits. The choice applies to the next message; the chat
+keeps its session. Changing the model of a running session needs a linked
+account, and under the `owner` or `approval` policy only the session's owner
+can change it. A personal chat whose session started before sessions there
+became private still shares that session with the project: `/model` says so,
+and `/new` starts a private one. See
+[Provider keys and member access](/docs/project/models#provider-keys-and-member-access).
+
+## While the agent works
+
+The agent answers in one card: its steps while it works, then the reply. A
+long reply that does not fit in one Teams message is cut at a line, marked as
+cut, and links to the full session in Kortix.
+
+Send another message while it works and it waits for the current run, then
+gets its own card. A run can take as long as it needs: a card is closed as
+dead only when the runtime reports that the run has ended, not because a long
+step posted nothing for a while.
 
 ## Stopping a run
 
@@ -99,24 +142,41 @@ already working in that session. A bystander in the channel cannot.
 ## Files
 
 The agent sends files with `teams send --file`, and Kortix picks the delivery
-for the conversation: a **consent card** in a personal chat (the recipient
-accepts, then it lands in their OneDrive), an **inline image** in a channel, or
-a **SharePoint link** for any other file shared to the team. Inbound files and
-pasted images are available to the agent to download and work with.
+for the conversation:
+
+- **An image is shown inline** — in a personal chat, a group chat, or a
+  channel. If it is too large for Teams to carry inline, a personal chat falls
+  back to a consent card (accept, and it lands in your OneDrive) and a channel
+  falls back to the team's files. A group chat cannot receive file transfers,
+  so an oversized image there comes back to the agent as "send a smaller one".
+- **Any other file** arrives as a consent card in a personal chat, or as a
+  SharePoint link when it is shared to a team.
+
+Inbound files and pasted images are available to the agent to download and
+work with — including images pasted into a channel or a group chat, which Teams
+delivers inside the message body rather than as an attachment.
 
 Paste a screenshot and ask about it and the turn runs on a model that can read
 images, even when the conversation's own model is text-only — the session's
-model pick is left alone.
+model pick is left alone. A model the session can no longer run — a key that
+was revoked, a ChatGPT subscription the chat cannot use — is replaced for that
+message the same way, instead of failing it.
 
 ## Questions and forms
 
-The agent asks with controls, not prose. A quick either/or arrives as a card
-with a button per option. Anything that needs typed input or several answers
-arrives as a form: text boxes, dropdowns, toggles and a Submit button, like
-asking in the Kortix app.
+The agent asks with controls, not prose — the same shape as a question in the
+Kortix app:
 
-Either way you answer in place, and your answer reaches the agent as your next
-message in the conversation. You can always ignore the card and just type.
+- **One question, up to six options** — a button per option. One tap answers.
+- **Several questions, a pick-several question, or a longer list** — one form:
+  each question with its options listed, a box for an answer of your own, and a
+  **Send answers** button.
+- **A date, a time, a number, or an on/off choice** — a form with the matching
+  input.
+
+Your answer reaches the agent as your next message, labelled with the question
+it answers, and the session continues from there. You can always ignore the
+card and type your answer instead.
 
 ## Approvals
 
@@ -152,9 +212,18 @@ If the agent set for the conversation has been deleted or renamed, the failure
 arrives as a picker: choose a live agent, then send your message again. The
 list only offers agents you have access to.
 
+## Reading a channel
+
+In a channel the bot only receives messages that mention it, so the discussion
+it was asked about is not in its session. When it needs that context, the agent
+reads the thread it was mentioned in, or the channel's recent posts, through
+the `ChannelMessage.Read.Group` permission the app requests when it is added to
+a team. A team that added the app before that permission was requested must
+remove and re-add it. In a personal chat every message already reaches the
+session, so there is nothing earlier to read.
+
 ## Limits
 
 Teams bots cannot add message reactions, send ephemeral (only-you) messages, or
-search messages — those Slack affordances have no Teams equivalent. Reading a
-channel's message history needs Microsoft's protected `ChannelMessage.Read.All`
-permission, which a tenant admin must approve.
+search messages — those Slack affordances have no Teams equivalent. The agent
+can read a channel only in a team the app was added to.

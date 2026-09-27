@@ -20,6 +20,7 @@ import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { readJsonObject } from '../../shared/http-body';
 
 export const subscriptionsRouter = makeOpenApiApp<AppEnv>();
 
@@ -188,10 +189,11 @@ subscriptionsRouter.openapi(
     const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json();
 
+    // `tier_key` in the body is ignored: the tier comes from the price of the
+    // caller's own subscription (confirmInlineCheckout).
     const result = await confirmInlineCheckout({
       accountId,
       subscriptionId: body.subscription_id,
-      tierKey: body.tier_key,
     });
 
     return c.json(result);
@@ -229,8 +231,11 @@ subscriptionsRouter.openapi(
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json().catch(() => ({}));
-    const result = await cancelSubscription(accountId, body.feedback);
+    const body = await readJsonObject(c);
+    const result = await cancelSubscription(
+      accountId,
+      typeof body.feedback === 'string' ? body.feedback : undefined,
+    );
     return c.json(result);
   },
 );

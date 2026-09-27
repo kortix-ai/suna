@@ -38,6 +38,15 @@ describe('flattenTriggerModelCatalog', () => {
     expect(result).toEqual([{ modelID: 'bare-model-id', modelName: 'bare-model-id' }]);
   });
 
+  test('drops a model the project has switched off; a model with no flag stays', () => {
+    const result = flattenTriggerModelCatalog({
+      'openai/gpt-5': { name: 'GPT-5', enabled: true },
+      'openai/gpt-4o': { name: 'GPT-4o', enabled: false },
+      'anthropic/claude-sonnet-4-6': { name: 'Claude Sonnet 4.6' },
+    });
+    expect(result.map((m) => m.modelID)).toEqual(['anthropic/claude-sonnet-4-6', 'openai/gpt-5']);
+  });
+
   test('returns an empty list when the catalog is undefined', () => {
     expect(flattenTriggerModelCatalog(undefined)).toEqual([]);
   });

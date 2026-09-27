@@ -57,6 +57,7 @@ export {
   createFile,
   deleteFile,
   files,
+  FileExistsError,
   findFiles,
   findText,
   getCurrentProject,
@@ -136,6 +137,34 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
  * `ensureReady()` return type without reaching into an internal module path).
  */
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
+
+/**
+ * The OpenCode wire message-id clock. `mintWireMessageId` mints the `messageId`
+ * for `session.prompts.create()`: the id is the prompt's position in the
+ * transcript, and a hand-rolled encoding sorts wrong. The rest decode, order,
+ * and place ids on the wrapping 48-bit clock. Also at `@kortix/sdk/wire-message-id`,
+ * which loads this one module alone.
+ */
+export {
+  WIRE_ID_BACKDATE_MS,
+  WIRE_ID_CLOCK_TOLERANCE,
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  WIRE_MESSAGE_ID,
+  isWireIdAheadOf,
+  maxWireIdClock,
+  mintWireMessageId,
+  mintWireMessageIdAbove,
+  newestWireIdClock,
+  wireIdClock,
+  wireIdClockAt,
+  wireIdClockDelta,
+} from './core/session/wire-message-id';
+export type {
+  MintWireMessageIdAboveInput,
+  MintWireMessageIdOptions,
+  MintedWireMessageId,
+} from './core/session/wire-message-id';
 
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
@@ -473,6 +502,7 @@ export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
+export * from './core/cache/persisted-query-cache';
 export * from './core/attachments/limits';
 export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
@@ -483,6 +513,7 @@ export {
   loadHttpSessionHistory,
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
+export * from './core/session-sync/saved-copy-store';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';

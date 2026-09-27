@@ -10,7 +10,7 @@ import {
  * The 409 the connection-scoped connect route answers for a connector's
  * EFFECTIVE project default.
  *
- * `apps/api/src/projects/routes/r4.ts` (INVARIANT, 2026-09-16 `account_required`
+ * `apps/api/src/projects/routes/connection-actions.ts` (INVARIANT, 2026-09-16 `account_required`
  * rule) blocks that route for the sole active project-owned row even when
  * nothing is pinned, and names the route the client must use instead. It is the
  * only 409 that handler returns.
@@ -92,7 +92,7 @@ describe('projectConnectSteps — sole shared account (the connector default)', 
   test('finalize polls the SAME route and the SAME owner the link was minted for', async () => {
     // Two distinct hangs are guarded here. Polling the connection-scoped
     // finalize would hit the very same 409 (one handler serves `connect` and
-    // `connect/finalize` — `r4.ts` builds both in one loop). Polling the
+    // `connect/finalize` — `connection-actions.ts` builds both in one loop). Polling the
     // connector-scoped finalize WITHOUT `owner: 'project'` would default to
     // `me` and poll the caller's member account. Either way the account never
     // reports active and the flow burns its full 10-minute timeout.
@@ -165,5 +165,43 @@ describe('projectConnectSteps — errors that are not the default-account 409', 
     const steps = projectConnectSteps('project-1', 'notion-product', 'Support', deps);
 
     expect(() => steps.finalize()).toThrow('The project connection was not created.');
+  });
+});
+
+describe('projectConnectSteps — an account shared with chosen people', () => {
+  test('narrows the new account after it exists and before authorization starts', async () => {
+    // A shared account with no grant is usable by everyone. Writing the grants
+    // before the OAuth link opens means the account never holds a credential
+    // while it is open to the whole project.
+    const { calls, deps } = recordingDeps('ok', 'conn-3');
+    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async (id) => {
+      calls.push(`narrow:${id}`);
+    });
+
+    await steps.start();
+
+    expect(calls).toEqual([
+      'reconcile:project-1:project:Sales',
+      'narrow:conn-3',
+      'connect-connection:project-1:conn-3',
+    ]);
+  });
+
+  test('names the account it created, so a caller can finalize exactly that one', async () => {
+    const { deps } = recordingDeps('ok', 'conn-5');
+    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps);
+    expect(steps.connectionId()).toBeNull();
+    await steps.start();
+    expect(steps.connectionId()).toBe('conn-5');
+  });
+
+  test('a failed narrowing stops the flow before any authorization link', async () => {
+    const { calls, deps } = recordingDeps('ok', 'conn-4');
+    const steps = projectConnectSteps('project-1', 'notion-product', 'Sales', deps, async () => {
+      throw new Error('grant refused');
+    });
+
+    await expect(steps.start()).rejects.toThrow('grant refused');
+    expect(calls).toEqual(['reconcile:project-1:project:Sales']);
   });
 });

@@ -528,6 +528,11 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
     label: 'Project Gmail',
   });
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').connectors.connections.rename('connection-1', 'Support inbox');
+  expect(last().url).toContain('/projects/PID123/connections/connection-1/label');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ label: 'Support inbox' });
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {

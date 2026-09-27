@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { C } from './style.ts';
+import { isSupervised, SUPERVISED_NOTICE } from './supervised.ts';
 
 /**
  * Resolves the `kortix-tui` binary that `kortix tui` hands the terminal to.
@@ -187,6 +188,15 @@ export async function downloadTuiBin(opts: DownloadTuiBinOpts): Promise<string> 
   const { version } = opts;
   if (!isValidTuiVersion(version)) {
     throw new Error(`Refusing malformed kortix-tui version "${version}".`);
+  }
+  // The backstop. `runTui` already refuses before it asks, but this is where
+  // the ~80 MB public release asset is actually fetched, so the last word
+  // belongs here — same rule as `ensureOpencodeBin`.
+  if (isSupervised()) {
+    throw new Error(
+      `${SUPERVISED_NOTICE} It will not download kortix-tui from a public release. ` +
+        'Run `kortix tui` on your own machine instead, or set KORTIX_TUI_BIN.',
+    );
   }
   const asset = tuiPlatformAsset(opts.platform, opts.arch);
   const url = tuiAssetUrl(version, asset, env);

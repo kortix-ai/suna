@@ -26,6 +26,10 @@ export interface LocalSupabaseEnvironment {
   ANON_KEY?: string;
   SERVICE_ROLE_KEY?: string;
   JWT_SECRET?: string;
+  /** Supabase Storage's S3 protocol pair — the API's object store signs config
+   *  archive requests with it (apps/api/src/object-store/s3.ts). */
+  S3_PROTOCOL_ACCESS_KEY_ID?: string;
+  S3_PROTOCOL_ACCESS_KEY_SECRET?: string;
 }
 
 export interface LocalProfileInput {
@@ -62,6 +66,9 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
     KE2E_SUPABASE_ANON_KEY: supabase.ANON_KEY,
     KE2E_SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
     KE2E_INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
+    // The local API verifies Stripe webhooks with this same literal
+    // (local-stack.ts), so a flow can deliver a validly signed event.
+    KE2E_STRIPE_WEBHOOK_SECRET: LOCAL_STRIPE_WEBHOOK_SECRET,
     KE2E_LIVE_CONFIRM: "local",
     KE2E_LOCAL_BILLING_ENABLED: "1",
     KE2E_CAP_DAYTONA: "0",
@@ -119,3 +126,11 @@ export function localWorkerCount(cpuCount = availableParallelism()): number {
  */
 export const LOCAL_AUTH_EMAIL_HOOK_SECRET =
   'v1,whsec_bG9jYWwtZmxvdy1ydW5uZXItYXV0aC1lbWFpbC1ob29rLXNlY3JldA==';
+
+/**
+ * Stripe webhook signing secret for the local profile. Fixed (not random) so a
+ * flow can sign a Stripe event the running local API accepts. The local
+ * profile has no Stripe account, so this secret authorizes nothing outside the
+ * local stack.
+ */
+export const LOCAL_STRIPE_WEBHOOK_SECRET = 'whsec_local_flow_runner_disabled';

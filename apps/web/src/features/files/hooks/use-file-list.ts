@@ -2,16 +2,13 @@
 
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { fileListKeys, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { listFiles } from '../api/runtime-files';
 
-export const fileListKeys = {
-  all: ['runtime-files', 'list'] as const,
-  dir: (serverUrl: string, dirPath: string) =>
-    ['runtime-files', 'list', serverUrl, dirPath] as const,
-};
+// Keyed by the SDK factory, which the live event stream invalidates.
+export { fileListKeys };
 
 /**
  * Fetch the directory listing for a path on the active OpenCode server.

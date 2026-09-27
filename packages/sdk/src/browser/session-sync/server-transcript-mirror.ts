@@ -36,7 +36,12 @@ import {
 	type SessionTranscriptSyncEnvelope,
 	getSessionTranscriptSync,
 } from "../../core/rest/projects-client/sessions";
-import { claimOpenBundle, takeOpenBundleTranscript } from "../../core/session/open-bundle";
+import {
+	claimOpenBundle,
+	takeOpenBundleTranscript,
+	takeOpenBundleTranscriptAbsence,
+} from "../../core/session/open-bundle";
+import type { SavedCopyStore } from "../../core/session-sync/saved-copy-store";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -142,6 +147,10 @@ export async function loadSessionTranscriptMirror(input: {
 	if (claimed) await claimed;
 	const stashed = takeOpenBundleTranscript(scope.projectId, scope.sessionId);
 	if (stashed) return stashed;
+	// The bundle already answered that there is no saved copy. The transcript
+	// route would answer the same, one round trip later — and a host waiting
+	// on this answer shows placeholder rows until it lands.
+	if (takeOpenBundleTranscriptAbsence(scope.projectId, scope.sessionId)) return null;
 	try {
 		return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
@@ -185,5 +194,31 @@ export async function loadOlderSessionTranscriptMirror(input: {
 		});
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * How long after a turn ends the device's copy is re-read. The server writes
+ * its saved copy on the turn-end relay, a moment after the runtime goes idle;
+ * reading at once would return the copy from the turn before.
+ */
+export const SAVED_COPY_REFRESH_DELAY_MS = 3_000;
+
+/**
+ * Replace the device's copy of one session with the server's current one.
+ * Never throws: a failed read leaves the kept copy as it was.
+ */
+export async function refreshSavedCopy(
+	store: SavedCopyStore,
+	projectId: string,
+	sessionId: string,
+): Promise<void> {
+	try {
+		const envelope = await getSessionTranscriptSync(projectId, sessionId, {
+			limit: MIRROR_HYDRATE_LIMIT,
+		});
+		if (envelope) await store.write(projectId, sessionId, envelope);
+	} catch {
+		// The kept copy stays; the next open reconciles anyway.
 	}
 }

@@ -258,9 +258,12 @@ runtimeAssetsApp.openapi(
     summary: 'GET /runtime-assets/entrypoint — the supervising sandbox entrypoint script',
     description:
       'Streams apps/sandbox/entrypoint.sh from the API image. `ETag` is its sha256 (the manifest\'s ' +
-      '`components.entrypoint.sha256`). A converged box never needs this: its image already carries ' +
-      'the supervisor. The control plane installs it on a box whose daemon predates convergence ' +
-      '(no `runtime` block on /kortix/health) so that box can converge like every other one.',
+      '`components.entrypoint.sha256`). OUT-OF-BAND REPAIR ONLY: no box converges this component, ' +
+      'and none ever has. The supervisor IS the entrypoint, so replacing the file under the running ' +
+      'shell corrupts it rather than updating it — doing it safely needs the supervisor to `exec` a ' +
+      'new copy on its next loop iteration, which is a change to the one component nothing else on ' +
+      'the box can roll back. Served so a human or a repair job can fetch the current supervisor for ' +
+      'a box whose copy is broken. See `components.entrypoint` in runtime-assets/manifest.ts.',
     ...auth,
     responses: {
       200: {

@@ -10,6 +10,7 @@
 import type { Context, Next } from 'hono';
 import { validateScimToken } from '../repositories/scim';
 import { accountHasEntitlement } from '../billing/services/entitlements';
+import { bindAuditPrincipal } from '../shared/audit-scope';
 
 const SCIM_ERROR_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:Error';
 
@@ -32,6 +33,15 @@ export async function scimAuth(c: Context, next: Next) {
   if (!result.ok || !result.accountId) {
     return scimError(c, 401, `Invalid SCIM token (${result.reason ?? 'unknown'})`);
   }
+  // The directory token is the actor (an IdP has no Kortix user). Name it
+  // now, before the account and plan checks can refuse it.
+  bindAuditPrincipal({
+    accountId: result.accountId,
+    actorUserId: null,
+    actorType: 'system',
+    authoritativeSource: 'scim',
+    authMethod: { kind: 'scim_token', token_id: result.tokenId },
+  });
 
   // The URL also carries an accountId; refuse if the token is for a
   // different account. Prevents cross-tenant access via a leaked token

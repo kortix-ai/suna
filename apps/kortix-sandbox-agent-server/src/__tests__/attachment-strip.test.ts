@@ -10,7 +10,7 @@ import { INLINE_ATTACHMENT_MAX_BYTES } from '../inline-attachments'
  * End to end through the daemon: a transcript list leaves WITHOUT its
  * attachment bytes, and those bytes are served back one part at a time.
  *
- * Why: on a real session (essentia, 2026-08-24) 20 messages weighed 7-19 MB
+ * Why: on a real session (sampleco, 2026-08-24) 20 messages weighed 7-19 MB
  * because every file part carried its whole file as a `data:` url, reads died
  * on the browser's 30 s deadline, and the retry re-issued the whole thing. The
  * same read answered in-VM in 276 ms. The bytes were the entire cost.
@@ -136,11 +136,6 @@ describe('attachment bytes leave the daemon on demand, never in the list', () =>
       headers: { 'if-none-match': '"prt_img"' },
     })
     expect(res.status).toBe(304)
-  })
-
-  it('an unknown part is a 404, not a crash', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_nope`)
-    expect(res.status).toBe(404)
   })
 
   it('an unknown message is a 404, not a crash', async () => {

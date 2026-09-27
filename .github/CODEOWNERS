@@ -25,4 +25,3 @@
 
 # CI/CD, release, and repo governance
 /.github/                           @markokraemer
-/docs/compliance/                   @markokraemer

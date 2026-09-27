@@ -440,7 +440,7 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
       retries: 20,
       start_period: '10s',
     };
-    // Connection headroom for horizontal scaling (Essentia scale work,
+    // Connection headroom for horizontal scaling (SampleCo scale work,
     // 2026-08-21). Each kortix-api replica opens DB_POOL_MAX (15) main +
     // DB_AUDIT_POOL_MAX (3) audit = 18 DIRECT Postgres backends; the Supabase
     // data plane adds ~30. The image default of 100 caps the stack at ~4 api

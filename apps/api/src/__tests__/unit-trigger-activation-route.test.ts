@@ -14,7 +14,7 @@
 // so these tests lock the invariant from two angles:
 //   1. behavioural — prove the bug exists with `:slug`-first and is fixed with
 //      `activation`-first, using a real OpenAPIHono router;
-//   2. structural — assert the real r4.ts registers `activation` BEFORE `:slug`.
+//   2. structural — assert the real triggers.ts registers `activation` BEFORE `:slug`.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -76,18 +76,18 @@ describe('trigger activation route ordering', () => {
     expect(await patch(app, '/p1/triggers/activation')).toEqual({ handler: 'slug', slug: 'activation' });
   });
 
-  test('r4.ts registers the static activation route BEFORE the :slug routes', () => {
+  test('triggers.ts registers the static activation route BEFORE the :slug routes', () => {
     const source = readFileSync(
-      join(import.meta.dir, '..', 'projects', 'routes', 'r4.ts'),
+      join(import.meta.dir, '..', 'projects', 'routes', 'triggers.ts'),
       'utf8',
     );
-    // Quote-agnostic (r4 may use single or double quotes after formatting).
+    // Quote-agnostic (triggers.ts may use single or double quotes after formatting).
     const activationIdx = source.indexOf('/{projectId}/triggers/activation');
     const slugIdx = source.indexOf('/{projectId}/triggers/{slug}');
     expect(activationIdx).toBeGreaterThan(-1);
     expect(slugIdx).toBeGreaterThan(-1);
     // If this fails, the activation kill-switch is shadowed and unreachable —
-    // move the activation route above the `:slug` routes in r4.ts.
+    // move the activation route above the `:slug` routes in triggers.ts.
     expect(activationIdx).toBeLessThan(slugIdx);
   });
 });

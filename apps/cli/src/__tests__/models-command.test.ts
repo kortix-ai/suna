@@ -59,7 +59,7 @@ function writeConfig(apiBase: string): string {
   return path;
 }
 
-/** Mirrors GET /projects/:id/model-picker (apps/api/src/projects/routes/r4.ts:3046). */
+/** Mirrors GET /projects/:id/model-picker (apps/api/src/projects/routes/models.ts). */
 function picker(overrides: Record<string, boolean>) {
   const models: Record<string, unknown> = {
     'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'zai' },

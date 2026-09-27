@@ -67,7 +67,7 @@ export interface GatewayServer {
 // public gateway host sits behind a proxied Cloudflare hostname, so a JSON
 // `502 upstream_error` reached OpenCode as an HTML page and surfaced as
 // "AI_APICallError: Bad Gateway" with no code, no request id and no
-// suggestion (dev 2026-08-24; Essentia 2026-08-22). 503 passes through
+// suggestion (dev 2026-08-24; SampleCo 2026-08-22). 503 passes through
 // unchanged. The original status is kept on a header and in the body so
 // nothing is lost — only the transport-level rewrite is avoided.
 const CLOUDFLARE_REWRITTEN_STATUSES = new Set([502, 504]);
@@ -90,6 +90,18 @@ export async function cloudflareSafe(res: Response): Promise<Response> {
     }
   }
   return new Response(res.body, { status: 503, headers });
+}
+
+// Anthropic SDKs, and Claude Code with ANTHROPIC_API_KEY, send the key as
+// `x-api-key`. The Anthropic-shaped route accepts it when no Authorization
+// header is present.
+export function messagesAuthorization(
+  authorization: string | undefined,
+  apiKey: string | undefined,
+): string | undefined {
+  if (authorization) return authorization;
+  const key = apiKey?.trim();
+  return key ? `Bearer ${key}` : undefined;
 }
 
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
@@ -115,9 +127,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
-      // Combined gate: one RPC for auth + billing + budget on the chat hot path
-      // (vs three sequential round-trips). authenticate/assertBillingActive/
-      // assertBudget remain for the /models path and the interface contract.
+      // Combined authentication + budget gate. Billing runs after model resolution.
       authorize: api.authorize,
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
@@ -246,12 +256,23 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     const errorSpike =
       traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
 
+    // A sustained streak, not one blip: a single dropped POST during a
+    // Langfuse hiccup is not an incident, and this must never page on it.
+    const TRACE_FAILURE_STREAK_ALERT = 5;
+    const tracesStatus = traces?.status() ?? null;
+    const traceStreakAlert =
+      tracesStatus !== null && tracesStatus.consecutiveFailures >= TRACE_FAILURE_STREAK_ALERT;
+
     const incidents: string[] = [];
     if (!apiCheck.ok)
       incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
     if (errorSpike)
       incidents.push(
         `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
+      );
+    if (traceStreakAlert)
+      incidents.push(
+        `langfuse trace recording failed ${tracesStatus.consecutiveFailures}x in a row (${tracesStatus.lastError ?? 'unknown error'})`,
       );
 
     const status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy';
@@ -272,7 +293,21 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
             ...(apiCheck.status ? { http_status: apiCheck.status } : {}),
             ...(apiCheck.error ? { error: apiCheck.error } : {}),
           },
-          traces: { langfuse: traces ? 'enabled' : 'disabled' },
+          traces: {
+            langfuse: traces ? 'enabled' : 'disabled',
+            ...(tracesStatus
+              ? {
+                  last_queued_at: tracesStatus.lastQueuedAt
+                    ? new Date(tracesStatus.lastQueuedAt).toISOString()
+                    : null,
+                  last_failure_at: tracesStatus.lastFailureAt
+                    ? new Date(tracesStatus.lastFailureAt).toISOString()
+                    : null,
+                  consecutive_failures: tracesStatus.consecutiveFailures,
+                  ...(tracesStatus.lastError ? { last_error: tracesStatus.lastError } : {}),
+                }
+              : {}),
+          },
           admission,
         },
         traffic,
@@ -376,7 +411,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       }
       try {
         const request = {
-          authorization: c.req.header('authorization'),
+          authorization: messagesAuthorization(c.req.header('authorization'), c.req.header('x-api-key')),
           rawBody: body.body,
           // Without this a disconnected /v1/messages client left the provider
           // generating — and billing — to nobody.

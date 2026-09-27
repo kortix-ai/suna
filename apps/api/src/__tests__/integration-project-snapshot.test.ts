@@ -24,10 +24,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
-import { projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
+import { accounts, projectGitConnections, projectSnapshotArchives, projects } from '@kortix/db';
 import { db } from '../shared/db';
+import { seedAccount } from './helpers/integration-fixtures';
 import { config } from '../config';
 import {
   enqueueProjectSnapshot,
@@ -83,9 +84,7 @@ beforeAll(async () => {
   __resetProjectSnapshotS3ClientForTests();
   await projectSnapshotS3Client().send(new HeadBucketCommand({ Bucket: projectSnapshotBucket() }));
 
-  const rows = (await db.execute(sql`select account_id from kortix.accounts limit 1`)) as unknown as Array<{ account_id: string }>;
-  if (!rows[0]) throw new Error('integration-project-snapshot: no account in the local DB — seed one first');
-  accountId = rows[0].account_id;
+  accountId = await seedAccount('project-snapshot-test');
 
   // A real bare upstream on disk; the API's mirror clones it over file://.
   root = mkdtempSync(join(tmpdir(), 'kortix-snapshot-it-'));
@@ -133,6 +132,7 @@ afterAll(async () => {
   for (const id of projectIds) {
     await db.delete(projects).where(eq(projects.projectId, id)).catch(() => {});
   }
+  if (accountId) await db.delete(accounts).where(eq(accounts.accountId, accountId)).catch(() => {});
   if (root) rmSync(root, { recursive: true, force: true });
 });
 

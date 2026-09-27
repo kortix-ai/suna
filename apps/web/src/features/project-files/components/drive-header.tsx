@@ -34,11 +34,12 @@ interface DriveHeaderProps {
  * The desktop shell's title-bar hook — the SAME class the capability tab row
  * wears (`capability-tabs.tsx`). Both rows are the first in-flow child of
  * their layout, so both start at y=0 and share the band with the OS window
- * controls; the rules in globals.css widen the indents so neither renders
- * under the macOS traffic lights or the Win/Linux control cluster.
+ * controls; the rules in globals.css widen the macOS left indent. Win/Linux
+ * retain the native frame, so their controls sit outside the web content.
  *
  * Files used to carry its own near-duplicate (`.kx-files-header`) with its own
- * platform split. One class, one rule, one behaviour.
+ * platform split. The standalone header also takes the shared native band
+ * height, keeping its centre aligned with the macOS traffic lights.
  */
 export const FILES_HEADER_DESKTOP_CLASS = 'kx-titlebar-row';
 
@@ -50,7 +51,7 @@ export const FILES_HEADER_DESKTOP_CLASS = 'kx-titlebar-row';
 export function driveHeaderClass(offsetForSidebarToggle: boolean) {
   return cn(
     'relative flex h-11 shrink-0 items-center gap-1 border-b px-2',
-    offsetForSidebarToggle && FILES_HEADER_DESKTOP_CLASS,
+    offsetForSidebarToggle && `${FILES_HEADER_DESKTOP_CLASS} kx-titlebar-band-height`,
   );
 }
 

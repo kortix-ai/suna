@@ -133,7 +133,9 @@ export function mockIamEngineAllowAll(
     actingTokenId: () => undefined,
     credentialProjectId: () => null,
     credentialAgentGrant: () => null,
-    loadTokenBinding: async () => null,
+    isAgentPrincipalActor: () => false,
+    credentialOnBehalfOf: () => null,
+    loadTokenBinding: Object.assign(async () => null, { invalidate: () => {}, clear: () => {} }),
     loadServiceAccountActivation: async () => false,
     actorOf: jwtActor,
     actorFor: jwtActor,
@@ -184,6 +186,8 @@ export function mockIamEngineAllowAll(
     customRoleAllows: () => false,
     resolvePrincipal: async () => null,
     clearAuthorizeCaches: () => {},
+    agentEffectiveAllows: async () => false,
+    agentEffectiveVerdict: async () => ({ allowed: false, reason: 'agent_scope_insufficient' }),
   }));
 }
 

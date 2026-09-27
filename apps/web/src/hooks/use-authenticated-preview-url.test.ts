@@ -4,8 +4,17 @@ import { buildPreviewAuthEndpoint } from './use-authenticated-preview-url';
 describe('buildPreviewAuthEndpoint', () => {
   test('builds auth URLs from canonical preview paths', () => {
     expect(
-      buildPreviewAuthEndpoint('http://localhost:8008/v1/p/kortix-sandbox/4502/index.html'),
+      buildPreviewAuthEndpoint(
+        'http://localhost:8008/v1/p/kortix-sandbox/4502/index.html',
+        'http://localhost:8008/v1',
+      ),
     ).toBe('http://localhost:8008/v1/p/auth');
+  });
+
+  test('trusts no origin when neither a server nor a page origin is known', () => {
+    expect(
+      buildPreviewAuthEndpoint('http://localhost:8008/v1/p/kortix-sandbox/4502/index.html'),
+    ).toBeNull();
   });
 
   test('derives the auth endpoint from a trusted server origin', () => {
@@ -30,6 +39,7 @@ describe('buildPreviewAuthEndpoint', () => {
     expect(
       buildPreviewAuthEndpoint(
         'http://localhost:8000/proxy/4502/v1/p/kortix-sandbox/4502/index.html',
+        'http://localhost:8000',
       ),
     ).toBe('http://localhost:8000/v1/p/auth');
   });

@@ -26,7 +26,9 @@ import {
 } from '../../repositories/oauth-clients';
 import { OAUTH_SCOPES } from '../../oauth/access-token';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, readBody } from './helpers';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../shared/validate';
 
 export const OAuthClientSchema = z
   .object({
@@ -45,7 +47,6 @@ export const OAuthClientSchema = z
   .openapi('IamOAuthClient');
 
 const ClientParams = z.object({ accountId: z.string(), clientId: z.string() });
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function serialize(client: OAuthClient, clientSecret?: string | null) {
   return {
@@ -124,7 +125,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return c.json({ error: 'name is required' }, 400);
     if (name.length > 255) return c.json({ error: 'name too long (max 255)' }, 400);
@@ -172,7 +173,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const clientId = c.req.param('clientId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
-    const client = UUID.test(clientId) ? await getOAuthClient(accountId, clientId) : null;
+    const client = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;
     if (!client) return c.json({ error: 'OAuth client not found' }, 404);
     return c.json(serialize(client));
   },
@@ -207,10 +208,10 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const clientId = c.req.param('clientId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
-    const before = UUID.test(clientId) ? await getOAuthClient(accountId, clientId) : null;
+    const before = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;
     if (!before) return c.json({ error: 'OAuth client not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const patch: Parameters<typeof updateOAuthClient>[2] = {};
     try {
       if (body.name !== undefined) {
@@ -262,7 +263,7 @@ iamRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
     let rotated;
     try {
-      rotated = UUID.test(clientId) ? await rotateOAuthClientSecret(accountId, clientId) : null;
+      rotated = isUuid(clientId) ? await rotateOAuthClientSecret(accountId, clientId) : null;
     } catch (err) {
       return inputError(c, err);
     }
@@ -291,7 +292,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const clientId = c.req.param('clientId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
-    const before = UUID.test(clientId) ? await getOAuthClient(accountId, clientId) : null;
+    const before = isUuid(clientId) ? await getOAuthClient(accountId, clientId) : null;
     if (!before) return c.json({ error: 'OAuth client not found' }, 404);
     const deleted = await deleteOAuthClient(accountId, clientId);
     if (!deleted) return c.json({ error: 'OAuth client not found' }, 404);

@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 /**
  * The floating card both the `@` and `/` menus render into.
  *
- * Design-system compliance (`.claude/skills/kortix-design-system/SKILL.md`):
+ * Design-system compliance (`.agents/skills/kortix-design-system/SKILL.md`):
  *  - `rounded-md`, not `rounded-xl` — "Never: rounded-xl / rounded-2xl on app
  *    containers". The previous menus used `rounded-xl` with `rounded-lg` rows,
  *    which is also nested rounding, banned by the same rule.

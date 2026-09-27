@@ -1113,7 +1113,12 @@ describe('openEventStream parked state (dead-sandbox give-up)', () => {
 });
 
 describe('openEventStream gap rehydrate', () => {
-  test('calls onGapRehydrate when the reconnect gap exceeds 5s', async () => {
+  // `/global/event` has no replay: a frame emitted while no connection exists
+  // is lost. The rehydrate therefore fires once the NEW connection is up —
+  // a re-list issued earlier could miss frames emitted before it connects —
+  // and the gap it reports runs from the last frame received to that moment.
+
+  test('fires after the reconnect is established, measuring from the last event to the new connection', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
     const gaps: number[] = [];
@@ -1134,12 +1139,19 @@ describe('openEventStream gap rehydrate', () => {
     channels[0].end();
     await tick();
 
-    expect(gaps).toEqual([6000]);
+    // Dropped, not yet reconnected: nothing to re-list against.
+    expect(gaps).toEqual([]);
+
+    // Fast reconnect after an eventful stream.
+    await clock.advance(250);
+    await tick();
+    expect(channels).toHaveLength(2);
+    expect(gaps).toEqual([6250]);
 
     handle.close();
   });
 
-  test('does not call onGapRehydrate when the reconnect gap is under 5s', async () => {
+  test('a short drop of a stream that was delivering events still rehydrates after reconnect', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
     const gaps: number[] = [];
@@ -1159,8 +1171,76 @@ describe('openEventStream gap rehydrate', () => {
     await clock.advance(1000);
     channels[0].end();
     await tick();
+    await clock.advance(250);
+    await tick();
 
+    expect(gaps).toEqual([1250]);
+
+    handle.close();
+  });
+
+  test('an idle connection rotated within 5s does not rehydrate', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const gaps: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gapMs) => gaps.push(gapMs),
+      timers: clock,
+    });
+    await tick();
+
+    // `server.connected` is the connection's own greeting, not missed work.
+    channels[0].push({ type: 'server.connected', properties: {} } as unknown as OpenCodeEvent);
+    await tick();
+    await clock.advance(1000);
+    channels[0].end();
+    await tick();
+    await clock.advance(1000);
+    await tick();
+
+    expect(channels).toHaveLength(2);
     expect(gaps).toEqual([]);
+
+    handle.close();
+  });
+
+  test('a failed reconnect keeps the gap pending until a connection succeeds, then rehydrates once', async () => {
+    const clock = createFakeClock();
+    let connects = 0;
+    const { client, channels } = createConnectableClient(() => {
+      connects += 1;
+      if (connects === 2) throw new Error('GET /global/event → 503');
+    });
+    const gaps: number[] = [];
+
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onGapRehydrate: (gapMs) => gaps.push(gapMs),
+      timers: clock,
+    });
+    await tick();
+
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    await clock.advance(16);
+    channels[0].end();
+    await tick();
+
+    // Attempt 2 fails: no connection, no rehydrate.
+    await clock.advance(250);
+    await tick();
+    expect(connects).toBe(2);
+    expect(gaps).toEqual([]);
+
+    // Attempt 3 connects after the 1s backoff.
+    await clock.advance(1000);
+    await tick();
+    expect(connects).toBe(3);
+    expect(gaps).toEqual([1250]);
 
     handle.close();
   });
@@ -1301,9 +1381,12 @@ describe('openEventStream shared-stream fan-out (F5)', () => {
     await clock.advance(6000);
     channels[0].end();
     await tick();
+    // The rehydrate fires once the shared stream has reconnected.
+    await clock.advance(250);
+    await tick();
 
-    expect(gapsA).toEqual([6000]);
-    expect(gapsB).toEqual([6000]);
+    expect(gapsA).toEqual([6250]);
+    expect(gapsB).toEqual([6250]);
 
     a.close();
     b.close();

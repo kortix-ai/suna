@@ -1,0 +1,57 @@
+name: i18n-catalogs
+
+# Translation catalogs (apps/web/translations/*.json) keep the order their keys
+# were added in. On 2026-09-22 a conflict resolution rebuilt all nine through
+# an unordered key set (merge aba5055432, landed in ea09f2f6a8): 473 of 840
+# objects per catalog changed order and nothing flagged it before main. The
+# only order assertion, src/lib/starter-prompts.test.ts, runs in the packages
+# lane, which a plain pull request into main skips.
+#
+# This job compares the pull request, merged into its base, with the base: every
+# catalog must be canonical and must keep the base's key order. The logic is the
+# script, so the same check runs locally:
+#   node apps/web/scripts/i18n-catalogs.mjs check --base=origin/main
+# An intentional reorder (for example STARTER_PROMPTS changed order) is allowed
+# by the `i18n-reorder` label; the canonical check still runs.
+
+on:
+  pull_request:
+    branches: [main, staging, prod]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'apps/web/translations/**'
+      - 'apps/web/scripts/i18n-catalogs.mjs'
+      - '.github/workflows/i18n-catalogs.yml'
+
+concurrency:
+  group: i18n-catalogs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  key-order:
+    name: translation catalogs keep key order
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 5
+    steps:
+      # The pull_request checkout is GitHub's test merge; with depth 2 its first
+      # parent, HEAD^1, is the base branch tip.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Catalogs are canonical and keep the base branch's key order
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'i18n-reorder') }}
+        run: node apps/web/scripts/i18n-catalogs.mjs check --base=HEAD^1
+
+      - name: Catalogs are canonical (reorder allowed by the i18n-reorder label)
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'i18n-reorder') }}
+        run: node apps/web/scripts/i18n-catalogs.mjs check

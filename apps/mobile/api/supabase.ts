@@ -4,6 +4,7 @@ import { AppState } from 'react-native';
 import 'react-native-url-polyfill/auto';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
+import { createDeadlineFetch } from '@/lib/utils/with-deadline';
 
 /**
  * Supabase Configuration
@@ -28,6 +29,30 @@ if (!supabaseAnonKey || supabaseAnonKey === 'YOUR_SUPABASE_ANON_KEY' || supabase
 }
 
 /**
+ * AsyncStorage key of the persisted auth session. Same value supabase-js
+ * derives by default (`sb-<first host label>-auth-token`); passed explicitly so
+ * useAuth can read the stored session when the restore stalls.
+ */
+export const SUPABASE_AUTH_STORAGE_KEY = (() => {
+  try {
+    return `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
+  } catch {
+    return undefined;
+  }
+})();
+
+/**
+ * Auth calls abort after 15 s. React Native's Android HTTP client has no
+ * timeout, so a stalled token refresh would otherwise hang sign-in and session
+ * restore forever. Storage uploads are not capped: they can run longer.
+ */
+const AUTH_REQUEST_TIMEOUT_MS = 15_000;
+const authDeadlineFetch = createDeadlineFetch((input, init) => fetch(input, init), {
+  timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+  shouldTimeout: (url) => url.includes('/auth/v1/'),
+});
+
+/**
  * Supabase client instance with AsyncStorage for session persistence
  */
 export const supabase = (() => {
@@ -39,9 +64,15 @@ export const supabase = (() => {
     return createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         storage: AsyncStorage,
+        ...(SUPABASE_AUTH_STORAGE_KEY ? { storageKey: SUPABASE_AUTH_STORAGE_KEY } : {}),
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+      },
+      global: {
+        // The wrapper has fetch's call signature; `typeof fetch` also carries
+        // static members no caller uses.
+        fetch: authDeadlineFetch as typeof fetch,
       },
     });
   } catch (error) {

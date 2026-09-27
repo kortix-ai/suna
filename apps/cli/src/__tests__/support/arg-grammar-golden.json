@@ -1,0 +1,94 @@
+[
+  {
+    "args": [
+      "access",
+      "--help"
+    ],
+    "code": 0,
+    "stdout": "\n  Usage: kortix access <subcommand> [options]\n  ────────────────────────────────────────────────────────\n\n  Who can do what. People, groups and service accounts get ROLES — on the\n  account, on one project, or on a single object inside a project. Agents get\n  Kortix permissions in kortix.yaml; a session can only do what both allow.\n\n  Role assignments:\n  assignments [--project <id>|--account|--all]   List role assignments.\n  grant --user <id|email>|--group <id>|--service-account <id> --role <key|id>\n                                    Grant a role. Prints the assignment id.\n  grant --user|--group|--everyone --agent <name>|--connection <id>\n                                    Grant one agent, or the use of one shared\n                                    connector account.\n  revoke <assignment-id>            Revoke one assignment.\n\n  Project members:\n  ls [--json]                       List members + effective project roles.\n  invite <email> --role <r>         Invite someone to the project.\n  grant <user-id> --role <r>        Set a member's project role.\n  revoke <user-id>                  Remove a member's project access.\n  pending [--json]                  List pending project invitations.\n  resend <invite-id>                Re-send an invite email + refresh its\n                                    14-day expiry. Prints the link too.\n  cancel <invite-id>                Cancel a pending invitation.\n\n  Access requests (people asking to join this project):\n  requests ls [--json]              List pending access requests.\n  requests approve <req-id>         Approve one — grants the project role.\n           [--role <r>]             Default: member.\n  requests reject <req-id>          Reject one.\n\n  Every verb in these two blocks needs project.members.manage.\n\n  Project roles: manager, member. Account roles: owner, admin, member.\n  Run kortix roles ls for every role, kortix permissions ls for the catalog.\n\n  Options:\n  --user <id|email>  Grant to a person. An email resolves via the account\n                     member directory.\n  --group <id>       Grant to a group instead of a person.\n  --service-account <id>\n                     Grant to a service account — an agent's identity.\n  --role <key|id>    Role to grant — a system key (owner/admin/member,\n                     manager/member) or a custom role's key or id.\n  --project <id>     Scope to this project (default: the linked project).\n  --account          Scope to the whole account — every project in it.\n  --all              List every assignment in the account, at any scope.\n  --agent <name>     Narrow the grant to ONE agent. Implies --role agent-user.\n  --connection <id>  Narrow the grant to ONE shared connector account. The first\n                     grant limits the account to its grantees; revoking the last\n                     opens it to the whole project again. Implies --role agent-user.\n  --everyone         Grant to everyone with access to the project. Holds an\n                     agent or a connection, never a role.\n  --principal <id>   Filter assignments by principal. Also\n                     user:<id> | group:<id> | service_account:<id> | pending:<email>.\n  --expires <iso>    Auto-revoke timestamp.\n  --account-id <id>  Operate on this account (default: the active account).\n  --host <name>      Operate against a non-default Kortix host.\n  --json             Machine-readable output.\n  -h, --help         Show this help.\n\n  Examples:\n  kortix access assignments\n  kortix access assignments --account\n  kortix access grant --user <email> --role manager\n  kortix access grant --user <email> --role admin --account\n  kortix access grant --group 8f3c… --role member --project 1a2b…\n  kortix access grant --user <email> --agent support-bot\n  kortix access grant --everyone --agent support-bot\n  kortix access grant --group 8f3c… --connection 2b7e…\n  kortix access revoke 4d5e…\n\n",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
+  },
+  {
+    "args": [
+      "access",
+      "assignments",
+      "--project"
+    ],
+    "code": 2,
+    "stdout": "",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n  ✗  --project requires a value\n"
+  },
+  {
+    "args": [
+      "audit",
+      "ls",
+      "--help"
+    ],
+    "code": 0,
+    "stdout": "\n  Usage: kortix audit <subcommand> [options]\n  ────────────────────────────────────────────────────────\n\n  Read the account audit trail — who did what, when, and whether it was allowed.\n  Every authenticated API request is recorded, plus semantic session, connector,\n  and approval events. The account trail requires the Enterprise plan.\n\n  Subcommands:\n  ls [filters] [--json]           List audit events, newest first.\n  export [filters] [--out <f>]    Export matching events as CSV or JSONL.\n  project <project-id> [--json]   One project's canonical audit log.\n  session <session-id> --project <project-id> [--json]\n                                   One session's canonical ordered timeline.\n\n  Stream the trail to a SIEM (needs account.write; create/enable also needs the\n  Enterprise entitlement — disable and delete never do):\n  webhooks ls [--json]            List audit webhooks.\n  webhooks add --name <n> --url <u> [--action-prefix <p>]\n                                  Create one. The signing secret prints ONCE,\n                                  and a test delivery fires immediately.\n  webhooks enable <webhook-id>    Resume delivery.\n  webhooks disable <webhook-id>   Pause delivery, keeping the endpoint.\n  webhooks rm <webhook-id>        Delete permanently.\n\n  Filters (ls, export, project):\n  --since <when>       Only events at or after this point. ISO-8601, or a\n                       relative span like 30m, 24h, 7d, 2w.\n  --until <when>       Only events at or before this point.\n  --action <prefix>    Action prefix, e.g. \"iam.policy.\" or \"session.\".\n  --actor <user-id>    Only this actor.\n  --actor-type <t>     human | agent | service_account | system | anonymous\n  --outcome <o>        success | failure | denied | pending\n  --project <id>       Only this project.\n  --session <id>       Only this session.\n  --source <s>         Trusted execution source or reported client surface,\n                       e.g. \"agent\", \"opencode\", \"cli\", \"web\".\n  --phase <p>          Lifecycle phase, e.g. pending, completed, failed.\n  --resource-type <t>  Only this resource type.\n  --request-id <id>    One request.\n  --correlation-id <id>  One correlated chain of events.\n  -q, --query <text>   Free-text match on action, resource, project, session.\n\n  Options:\n  --limit <n>          Events per page (default 50, server max 200).\n  --cursor <c>         Resume from a previous page's next_cursor.\n  --all                Follow cursors until every matching event is returned.\n  --format <f>         export: csv (default) | jsonl.\n  --out <file>         export: write to a file instead of stdout.\n  --name <n>           webhooks add: a label for this endpoint.\n  --url <u>            webhooks add: the http(s) endpoint to POST events to.\n  --action-prefix <p>  webhooks add: only deliver actions with this prefix.\n  --account <id>       Operate on this account (default: active account).\n  --host <name>        Operate against a non-default Kortix host.\n  --json               Machine-readable output.\n  -h, --help           Show this help.\n\n  Examples:\n  kortix audit ls --since 24h\n  kortix audit ls --outcome denied --since 7d\n  kortix audit ls --action iam. --json\n  kortix audit ls --project <project-id> --all\n  kortix audit session <session-id> --project <project-id>\n  kortix audit export --since 30d --format jsonl --out audit.jsonl\n  kortix audit webhooks add --name splunk --url https://siem.corp.com/kortix\n\n",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
+  },
+  {
+    "args": [
+      "audit",
+      "session",
+      "x"
+    ],
+    "code": 2,
+    "stdout": "",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n  ✗  Pass --project <id> — the session audit route is project-scoped.\n"
+  },
+  {
+    "args": [
+      "hosts"
+    ],
+    "code": 0,
+    "stdout": "\n  Usage: kortix hosts <subcommand> [options]\n  ────────────────────────────────────────────────────────\n\n  Authentication is per host — one set of stored credentials per Kortix\n  instance. The \"active\" host is what every other command operates on\n  unless you pass --host <name> per invocation. Sign in with\n  kortix hosts login; switch instance with kortix hosts use.\n\n  Built-in hosts (always exist):\n  cloud                Kortix Cloud (https://api.kortix.com)\n  selfhost             Your self-hosted stack (kortix self-host)\n  local-dev            Local dev server (http://localhost:8008)\n  kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)\n\n  Authentication:\n  login [<name>]                      Sign in to a host (browser flow or\n    [--token <pat>] [--api <url>]      --token PAT). Defaults to the active\n    [--no-project]                     host; an unknown <name> is registered\n                                      and signed in (like add + login).\n  logout [<name>]                     Clear a host's stored token (default:\n                                      active).\n  whoami [<name>]                     Show the signed-in user for a host\n    [--json] [--token-only]            (default: active).\n\n  Subcommands:\n  ls                                  List hosts + auth status (--json)\n  use <name>                          Switch the active host\n  add <name> --url <url>              Register a new host; with --login\n    [--dashboard-url <url>] [--login]  run the browser flow immediately.\n                                      Pass --dashboard-url for a self-host\n                                      instance if kortix login opens the\n                                      wrong origin (it otherwise guesses the\n                                      frontend URL from the API URL's shape).\n  rm <name>                           Remove a custom host; built-ins\n                                      are reset instead\n  info [<name>]                       Show one host (or the active) (--json)\n  current                             Print the active host name (--json)\n\n  Global options:\n  --json         Machine-readable JSON output (read subcommands).\n  --force        Skip removal confirmation.\n  -h, --help     Show this help.\n\n  Examples:\n  kortix hosts login                  # sign in to the active host\n  kortix hosts login selfhost         # sign in to a specific instance\n  kortix hosts use selfhost\n  kortix hosts use cloud\n  kortix hosts whoami\n  kortix projects ls --host selfhost\n  kortix hosts ls\n\n",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
+  },
+  {
+    "args": [
+      "hosts",
+      "add"
+    ],
+    "code": 2,
+    "stdout": "",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n  ✗  Pass a host name.\n"
+  },
+  {
+    "args": [
+      "providers",
+      "oauth",
+      "--help"
+    ],
+    "code": 0,
+    "stdout": "\n  Usage: kortix providers login <provider> [options]\n  ────────────────────────────────────────────────────────\n\n  Start the OAuth device-code flow for openai or github-copilot.\n\n  Options:\n  --enterprise <url>  GitHub Enterprise URL for github-copilot.\n  --project <id>      Operate on this project id (default: linked).\n  --host <name>       Operate against a non-default Kortix host.\n  -h, --help          Show this help without starting OAuth.\n\n",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
+  },
+  {
+    "args": [
+      "providers",
+      "set"
+    ],
+    "code": 2,
+    "stdout": "",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n  ✗  Pass a provider: kortix providers set <provider> [<key>]\n"
+  },
+  {
+    "args": [
+      "cr"
+    ],
+    "code": 2,
+    "stdout": "\n  Usage: kortix cr <subcommand> [options]\n  ────────────────────────────────────────────────────────\n\n  Open, review, and merge Kortix change requests. A CR proposes merging one\n  version (branch) into another inside a project. The CR layer is Kortix-\n  native — it works on top of any git host (GitHub, GitLab, plain\n  git) without a per-host adapter.\n\n  Subcommands:\n  ls [--status open|merged|closed|all]   List CRs. Default: open.\n     [--json]                            Print the raw CR list as JSON.\n  show <cr> [--json]                     Show one CR's metadata.\n  diff <cr> [--no-color] [--json]        Show the CR's unified diff.\n  open --head <ver> [--base <ver>]       Open a new CR.\n       --title \"<text>\" [--description \"<text>\"]\n  merge <cr> [--message \"<text>\"]        Merge an open CR into its base.\n  merge-preview <cr> [--json]            Can it merge? Lists any conflicts.\n  request-changes <cr> --message \"<t>\"   Ask the agent that opened it to revise.\n  close <cr>                             Close an open CR without merging.\n  reopen <cr>                            Reopen a closed CR.\n  version-diff --from <head> --into <base> Summarize what merging <head> into <base>\n                [--json]                 before opening a CR.\n\n  <cr> can be a CR number (e.g. 3) or a CR uuid.\n\n  request-changes records the note on the CR and delivers it to the originating\n  session, booting its sandbox if it is asleep. It needs project.review.act —\n  the same leaf the Review Center uses, not gitops.push.\n\n  Global options:\n  --project <id>     Operate on this project id (default: linked).\n  --host <name>      Operate against a non-default Kortix host.\n  -h, --help         Show this help.\n\n  Inside an agent sandbox the CLI reads KORTIX_TOKEN and KORTIX_PROJECT_ID\n  from the environment automatically — you don't need to log in or link.\n  (KORTIX_TOKEN is the sandbox service key, not a CLI token.)\n\n",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
+  },
+  {
+    "args": [
+      "cr",
+      "version-diff"
+    ],
+    "code": 2,
+    "stdout": "",
+    "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n  ✗  Pass --from <version> and --into <version>.\n"
+  }
+]

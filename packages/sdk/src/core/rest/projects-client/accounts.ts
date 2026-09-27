@@ -379,6 +379,11 @@ export interface AccountIdentity {
     session_id: string | null;
     agent: string | null;
     connectors: 'all' | string[] | null;
+    /** The agent's Kortix permissions (`project.*` actions): `'all'`, a list,
+     *  or null (not an agent token). Absent on servers released before
+     *  2026-09-22 — fall back to `kortix_cli`. */
+    kortix_permissions?: 'all' | string[] | null;
+    /** @deprecated Renamed to `kortix_permissions` (same value). Removed in the next major. */
     kortix_cli: 'all' | string[] | null;
   };
   accounts: Array<{ account_id: string; slug: string; name: string; role: string }>;

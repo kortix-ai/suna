@@ -111,11 +111,14 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
         },
       },
     });
-    // Expose the instance so auth-driven resets (logout, cross-account
-    // sign-in) can clear the cache from outside the React Query context.
-    registerQueryClient(client);
     return client;
   });
+  // Expose the instance so auth-driven resets (logout, cross-account sign-in)
+  // and the device caches can reach it from outside the React Query context.
+  // Registered here, not inside the initializer: Strict Mode calls an
+  // initializer twice and keeps the FIRST result, so registering inside it
+  // published the discarded client in development.
+  registerQueryClient(queryClient);
 
   return (
     <QueryClientProvider client={queryClient}>

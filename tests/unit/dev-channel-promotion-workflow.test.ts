@@ -16,8 +16,8 @@ function jobBody(name: string): string {
 
 describe('Deploy Dev self-host channel promotions', () => {
   for (const [job, prerequisites] of [
-    ['promote-dev-channel-api', ['tag-api', 'deploy-api-ecs']],
-    ['promote-dev-channel-gateway', ['tag-gateway', 'verify-gateway-dev-parity']],
+    ['promote-dev-channel-api', ['build-api', 'deploy-api-ecs']],
+    ['promote-dev-channel-gateway', ['build-gateway', 'verify-gateway-dev-parity']],
     ['promote-dev-channel-frontend', ['build-frontend', 'verify-web-dev']],
   ] as const) {
     test(`${job} runs after unrelated surface jobs skip`, () => {

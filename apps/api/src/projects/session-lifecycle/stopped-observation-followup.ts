@@ -10,7 +10,7 @@
  * That design assumes SOMEBODY reads again. Two observers do — the reaper's
  * status poll and `/start` — and neither is guaranteed: `/start` stops being
  * polled the moment the client gives up, and the reaper visits on its own
- * schedule. Essentia 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
+ * schedule. SampleCo 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
  * `/start` answered 202, the E2B resume silently failed, and the rows read
  * `running` for 5+ minutes while the provider said
  * `sandbox … is not running (status: stopped)`. Delivery believed the row and
@@ -35,10 +35,7 @@ export interface StoppedObservationFollowUp {
   getStatus: () => Promise<string>;
   /** `reconcileSandboxStoppedByExternalId(externalId, now, {confirmMidTurnStop:true})` */
   reconcile: (now: Date) => Promise<boolean>;
-  /** Delay before the re-read. Defaults to one confirmation window + 1s. */
-  delayMs?: number;
   sleep?: (ms: number) => Promise<void>;
-  now?: () => Date;
 }
 
 export type StoppedObservationFollowUpResult =
@@ -63,19 +60,14 @@ export async function runStoppedObservationFollowUp(
   inFlight.add(input.sandboxId);
   try {
     const sleep = input.sleep ?? Bun.sleep;
-    const now = input.now ?? (() => new Date());
-    await sleep(input.delayMs ?? STOPPED_OBSERVATION_FOLLOW_UP_MS);
+    await sleep(STOPPED_OBSERVATION_FOLLOW_UP_MS);
     // A throwing round trip degrades to `unknown`, which is NOT `stopped`: a
     // network blip must never become the confirmation that parks a live box.
     const status = await input.getStatus().catch(() => 'unknown');
     if (status !== 'stopped') return 'provider-running';
-    return (await input.reconcile(now())) ? 'reconciled' : 'still-open';
+    return (await input.reconcile(new Date())) ? 'reconciled' : 'still-open';
   } finally {
     inFlight.delete(input.sandboxId);
   }
 }
 
-/** Test seam: forget every in-flight follow-up. */
-export function resetStoppedObservationFollowUps(): void {
-  inFlight.clear();
-}

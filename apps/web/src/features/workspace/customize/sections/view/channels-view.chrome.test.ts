@@ -123,6 +123,7 @@ describe('ChannelsSection chrome', () => {
           '..',
           '..',
           'app',
+          '[locale]',
           '(app)',
           'projects',
           '[id]',

@@ -4,9 +4,19 @@ import {
   useTranslations as useNextTranslations,
 } from 'next-intl';
 
-import messages from '../../translations/en.json';
-
 export * from 'next-intl';
+
+/**
+ * English catalog for isolated component tests. `test-setup.ts` (the bun
+ * preload) defines this lazily. Production bundles never reference the JSON
+ * from here: the catalog reaches the browser only through `I18nProvider`.
+ */
+function testMessages(): Record<string, unknown> {
+  return (
+    (globalThis as { __KORTIX_TEST_EN_MESSAGES__?: Record<string, unknown> })
+      .__KORTIX_TEST_EN_MESSAGES__ ?? {}
+  );
+}
 
 const callNextLocale = useNextLocale;
 
@@ -29,7 +39,7 @@ function fallbackTranslator(namespace?: string) {
   if (!translator) {
     translator = createTranslator({
       locale: 'en',
-      messages,
+      messages: testMessages(),
       namespace: namespace as never,
     });
     fallbackTranslators.set(key, translator);

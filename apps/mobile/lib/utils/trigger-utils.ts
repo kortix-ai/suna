@@ -6,17 +6,17 @@
  */
 
 import {
-  MessageSquare,
-  Github,
-  Slack,
-  Clock,
-  Zap,
-  Hash,
-  Globe,
-  Sparkles,
-  Repeat,
-  Webhook,
-} from 'lucide-react-native';
+  ChatIcon as MessageSquare,
+  GithubLogoIcon as Github,
+  SlackLogoIcon as Slack,
+  ClockIcon as Clock,
+  LightningIcon as Zap,
+  HashIcon as Hash,
+  GlobeIcon as Globe,
+  SparkleIcon as Sparkles,
+  RepeatIcon as Repeat,
+  WebhooksLogoIcon as Webhook,
+} from '@/lib/icons';
 
 /**
  * Get icon component for trigger type

@@ -29,9 +29,22 @@ const CONTAINER = 'kortix-wt-migrate-test';
 const PORT = Number(process.env.WT_MIGRATE_TEST_PORT || 5440);
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
+const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
 
+/**
+ * Ready means: the HOST endpoint `runMigrate` uses answers a query.
+ *
+ * It used to mean `pg_isready` INSIDE the container, which answers over the
+ * unix socket. The postgres entrypoint runs initdb against a temporary
+ * socket-only server (`listen_addresses=''`), so that probe passes while
+ * nothing serves TCP yet — and `docker run -p` has already published the port,
+ * so the proxy accepts the connection and closes it at once. The suite then
+ * read `psql: server closed the connection unexpectedly` and `runMigrate` exit
+ * 2, 55 ms into a container it had been told was ready (CI run 36153691220,
+ * core lane, db-suites).
+ */
 function pgReady(): boolean {
-  return sh(['docker', 'exec', CONTAINER, 'pg_isready', '-U', 'postgres', '-d', 'postgres']).ok;
+  return sh(['psql', URL, '-tAc', 'select 1']).ok;
 }
 
 const suite = dockerOk ? describe : describe.skip;
@@ -81,11 +94,10 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
 
     expect(hasKortixSchema(ports)).toBe(true);
 
-    const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
     const count = Number(
       sh([
         'psql',
-        url,
+        URL,
         '-tAc',
         "select count(*) from information_schema.tables where table_schema='kortix' and table_type='BASE TABLE'",
       ]).stdout.trim(),

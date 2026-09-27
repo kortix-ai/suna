@@ -25,6 +25,7 @@ import { db } from './db';
 import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
+  rowKortixBilledSpendSql,
   rowTotalSpendSql,
   totalSpendSql,
 } from './llm-spend';
@@ -52,10 +53,11 @@ export interface SessionCostSummary {
   created_at: string;
   updated_at: string;
   last_activity_at: string | null;
+  /** LLM charges debited from the Kortix wallet. Excludes provider-side BYOK spend. */
   llm_cost: number;
-  /** The `llm_cost` slice debited from the Kortix wallet. */
+  /** Alias of `llm_cost`, retained for the additive payee breakdown. */
   llm_kortix_cost: number;
-  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
@@ -264,7 +266,7 @@ export function assembleSessionCostSummary(input: {
   llm?: LlmAggregateRow;
   compute?: ComputeAggregateRow;
 }): SessionCostSummary {
-  const llmCost = numberValue(input.llm?.llmCost);
+  const llmCost = numberValue(input.llm?.llmKortixCost);
   const computeCost = numberValue(input.compute?.computeCost);
   const ownerType = input.session.ownerId ? (input.owner?.type ?? 'unknown') : null;
 
@@ -361,7 +363,7 @@ export function mergeLegacyGatewaySessionRows(
 // The LLM aggregate columns, shared by the windowed subquery that feeds the
 // session list and the all-time scalar query that feeds the session detail.
 const llmAggregateFields = {
-  llmCost: totalSpendSql,
+  llmCost: kortixBilledSpendSql,
   llmKortixCost: kortixBilledSpendSql,
   llmProviderCost: providerBilledSpendSql,
   requestCount: sql<number>`count(*)::int`,
@@ -502,7 +504,7 @@ async function loadReconciliation(
   const [llmResult, computeResult] = await Promise.all([
     db
       .select({
-        cost: totalSpendSql,
+        cost: kortixBilledSpendSql,
         requests: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -734,7 +736,7 @@ async function loadModelUsage(
       outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
       cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
       cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-      cost: totalSpendSql,
+      cost: kortixBilledSpendSql,
       lastAt: sql<Date>`max(${gatewayRequestLogs.createdAt})`,
     })
     .from(gatewayRequestLogs)
@@ -742,7 +744,7 @@ async function loadModelUsage(
       and(eq(gatewayRequestLogs.accountId, accountId), eq(gatewayRequestLogs.sessionId, sessionId)),
     )
     .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
-    .orderBy(desc(totalSpendSql));
+    .orderBy(desc(kortixBilledSpendSql));
 
   return rows.map((row) => ({
     provider: row.provider,
@@ -767,7 +769,7 @@ async function loadLedgerEntries(
       .select({
         id: gatewayRequestLogs.logId,
         occurredAt: gatewayRequestLogs.createdAt,
-        cost: rowTotalSpendSql,
+        cost: rowKortixBilledSpendSql,
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
         requestId: gatewayRequestLogs.requestId,

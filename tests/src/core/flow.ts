@@ -122,6 +122,45 @@ export function resolveFlowTimeoutMs(
 }
 
 /**
+ * Race a flow attempt against its wall-clock budget.
+ *
+ * On timeout the attempt's `controller` is aborted with the timeout error, so
+ * fixtures the attempt started stop instead of running on in the background.
+ * Before this, a flow that timed out while its project provision was queued
+ * or sleeping out a GitHub rate limit kept that provision alive for up to its
+ * full 15-minute budget, holding a semaphore slot the next flows needed.
+ */
+export function withFlowDeadline<T>(
+  p: Promise<T>,
+  ms: number,
+  id: string,
+  controller?: AbortController,
+): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const t = setTimeout(() => {
+      // NOT ke2eRetryable. A flow that burned its whole declared timeout is
+      // hung, not blipping; retrying it spends the same timeout again on the
+      // most expensive flows in the suite. Tagged as its own class so
+      // KE2E_TIMEOUT_ATTEMPTS can re-enable retries deliberately.
+      const e = new Error(`flow ${id} exceeded ${ms}ms`);
+      (e as any)[KE2E_FLOW_TIMEOUT] = true;
+      controller?.abort(e);
+      rej(e);
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        res(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        rej(e);
+      },
+    );
+  });
+}
+
+/**
  * Classify a flow error into its retry class.
  *
  * `isAssertion` is passed in so this module stays free of the assertion layer.

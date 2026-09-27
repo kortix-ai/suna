@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { getRetryInfo, getRetryMessage } from './state';
-import type { SessionStatusLike } from './types';
+import { getRetryInfo, getRetryMessage, getTurnError, getTurnErrorRawText } from './state';
+import type { SessionStatusLike, TurnLike } from './types';
 
 const failureBody = {
   message: 'openai-codex failed; openrouter failed',
@@ -87,5 +87,47 @@ describe('retry state gateway details', () => {
         message,
       } as SessionStatusLike),
     ).toBe(message);
+  });
+});
+
+describe('turn error sentence and raw text', () => {
+  const streamText =
+    'JSON parsing failed: Text: {"object":"chat.completion.chunk","model":"glm-5.3-flash"} ' +
+    '{"object":"chat.completion.chunk","model":"glm-5.3-flash"}. Error message: JSON Parse error';
+  function turnWithError(error: unknown) {
+    return {
+      userMessage: { info: { id: 'msg_user' }, parts: [] },
+      assistantMessages: [
+        { info: { id: 'msg_ok' }, parts: [] },
+        { info: { id: 'msg_failed', error }, parts: [] },
+      ],
+    } as unknown as TurnLike;
+  }
+
+  test('getTurnErrorRawText keeps the text getTurnError summarized', () => {
+    const turn = turnWithError({ name: 'UnknownError', data: { message: streamText } });
+    expect(getTurnError(turn)).toBe('The response from glm-5.3-flash could not be read.');
+    expect(getTurnErrorRawText(turn)).toBe(streamText);
+  });
+
+  test('getTurnError prefers the gateway sentence over the HTTP status text', () => {
+    const turn = turnWithError({
+      name: 'APIError',
+      data: {
+        message: 'Bad Request',
+        statusCode: 400,
+        responseBody: JSON.stringify({
+          message: 'No upstream configured for model "openai/gpt-4.1"',
+          code: 'provider_not_connected',
+          provider: 'openai',
+        }),
+      },
+    });
+    expect(getTurnError(turn)).toBe('No upstream configured for model "openai/gpt-4.1"');
+  });
+
+  test('getTurnErrorRawText is undefined when the text repeats the sentence', () => {
+    expect(getTurnErrorRawText(turnWithError({ message: 'boom' }))).toBeUndefined();
+    expect(getTurnErrorRawText(turnWithError(undefined))).toBeUndefined();
   });
 });

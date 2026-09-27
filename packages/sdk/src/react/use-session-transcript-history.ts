@@ -28,5 +28,11 @@ export function useSessionTranscriptHistory(
     data?.available && data.source === 'mirror' && data.opencode_session_id && data.messages.length
       ? data
       : null;
-  return { envelope, rootSessionId: envelope?.opencode_session_id ?? null };
+  return {
+    envelope,
+    rootSessionId: envelope?.opencode_session_id ?? null,
+    /** The read has not answered yet, so `envelope: null` is not a "no". A
+     *  failed read is an answer: there is no saved copy to show. */
+    isLoading: enabled && query.isPending,
+  };
 }

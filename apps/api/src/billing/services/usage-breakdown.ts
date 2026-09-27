@@ -6,8 +6,8 @@
 // wallet itself.
 //
 // WHERE THE KIND ACTUALLY LIVES: every debit is written by the atomic_use_credits
-// RPC (credits.ts -> deductCredits), which stores a flat `type` of 'usage' and
-// puts the granular kind in metadata->>'ledger_type'. That has been true since
+// or atomic_settle_credits function (billing/wallet), which stores a flat `type`
+// of 'usage' and puts the granular kind in metadata->>'ledger_type'. That has been true since
 // the baseline migration, so credit_ledger.type has NEVER held 'compute_debit'
 // or 'llm_debit' for an RPC-written row — filtering on `type` alone matched
 // nothing and reported $0 compute / $0 LLM for every account. Same family of bug

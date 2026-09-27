@@ -4,12 +4,11 @@ import { useTranslations } from '@/i18n/use-translations';
 /**
  * OAuth apps: the account's "Sign in with Kortix" client registry.
  *
- * A row here is a third-party app (Essentia's dashboards, a partner portal,
+ * A row here is a third-party app (SampleCo's dashboards, a partner portal,
  * an internal tool on its own origin) that sends people to `/v1/oauth/authorize`
  * and gets back a `kortix_oat_` token for them. The app pairs the client id and
  * secret with `createKortixAuth` from `@kortix/sdk/server`; everything else —
  * PKCE, consent, refresh, revoke — the SDK and `/v1/oauth` do between them.
- * Spec: `docs/specs/2026-08-26-sign-in-with-kortix.md`.
  *
  * **Why it sits in Tokens.** A client secret is a credential the account
  * issues to a machine, exactly like a service account token, and it answers to
@@ -89,7 +88,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 
 const OAUTH_CLIENTS_KEY = (accountId: string) => ['oauth-clients', accountId];
 

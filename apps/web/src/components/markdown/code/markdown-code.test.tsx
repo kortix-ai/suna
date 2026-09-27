@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { isHexColor } from './inline-chip';
 import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
+import { highlightAsync, SHIKI_THEME_LIGHT } from './shiki-highlighter';
 
 const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode {...props} />);
 
@@ -153,7 +154,7 @@ describe('MarkdownCode — inline code', () => {
   test('the chip sits ON the line — no vertical-align, no flex box', () => {
     // Both knocked it out of the sentence. `align-middle` centres the box on
     // the parent's baseline plus half its x-height, and the chip is
-    // `text-[0.8rem]` inside `text-base` prose — so the chip's own baseline
+    // `text-[0.8rem]` inside `text-sm` prose — so the chip's own baseline
     // landed below the surrounding text and it read as sagging. `inline-flex`
     // makes the chip atomic: it takes its height from the flex line box
     // (`code { line-height: 1.2 }`) instead of the glyphs, and a long URL can
@@ -162,6 +163,28 @@ describe('MarkdownCode — inline code', () => {
       expect(chipClass(markup)).not.toContain('align-');
       expect(chipClass(markup)).not.toContain('inline-flex');
       expect(chipClass(markup)).not.toContain('text-center');
+    }
+  });
+
+  test('every chip keeps 0.8rem in body text and scales with a heading', () => {
+    // Plain, hex, URL, and file-path chips share one size rule. In body text
+    // the chip stays `0.8rem`. Inside `h1`–`h6` it is `0.9em` of the heading,
+    // so a code span in a title is not body-sized text in a large line.
+    const markups = [
+      render({ children: 'npm run dev' }),
+      render({ children: '#0ea5e9' }),
+      render({ children: 'https://example.com/docs' }),
+      render({ children: '/workspace/src/index.ts' }),
+    ];
+
+    for (const markup of markups) {
+      // The static renderer escapes `&` in the heading variant as `&amp;`.
+      const chip = markup.match(/<(?:code|a)\b[^>]*\bclass="([^"]*)"/)?.[1] ?? '';
+      const classes = chip.replaceAll('&amp;', '&').split(/\s+/);
+
+      expect(classes).toContain('text-[0.8rem]');
+      expect(classes).toContain('[:is(h1,h2,h3,h4,h5,h6)_&]:text-[0.9em]');
+      expect(classes.filter((c) => c.startsWith('text-[0.8rem]'))).toHaveLength(1);
     }
   });
 
@@ -193,7 +216,7 @@ describe('MarkdownCode — inline code', () => {
   });
 
   test('inline code holding a setup-link path renders the setup card', () => {
-    const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4' });
+    const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4', setupLinks: true });
 
     // `SetupLinkButton` renders the transcript's own `OutcomeCard` — the same
     // row a change request gets — so the assertion is the card's testid, not
@@ -217,13 +240,24 @@ describe('MarkdownCode — inline code', () => {
   test('a connector setup link gets the connector card', () => {
     // Agents mint these against FRONTEND_URL, so the absolute form is the one
     // that actually arrives; server-side there is no window to compare origins.
-    const markup = render({ children: 'http://localhost:3000/connect/ksl_7f3a91c2b4' });
+    const markup = render({
+      children: 'http://localhost:3000/connect/ksl_7f3a91c2b4',
+      setupLinks: true,
+    });
 
     expect(markup).toContain('data-testid="outcome-card-external"');
     expect(markup).toContain('Connect app');
     // Unsettled, so the action is the filled CTA rather than the outline
     // `View` a settled card shows.
     expect(markup).toContain('Connect');
+  });
+
+  test('without setupLinks, a setup-link path stays inline code', () => {
+    // Only agent content may raise the in-app card; see `MarkdownPolicy`.
+    const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4' });
+
+    expect(markup).not.toContain('outcome-card-external');
+    expect(markup).toContain('ksl_7f3a91c2b4');
   });
 
   test('an absolute file path becomes a preview target', () => {
@@ -333,5 +367,32 @@ describe('MarkdownCode with wrapped children', () => {
     const markup = render({ children: <span>docs/readme.md</span> });
 
     expect(markup).toContain('Click to preview docs/readme.md');
+  });
+});
+
+describe('MarkdownCode — highlighting while a message streams', () => {
+  const CODE = 'const answer: number = 42;\nexport default answer;';
+
+  test('a settled block renders Shiki HTML on its first render once the grammar is loaded', async () => {
+    // Warm the lazy highlighter and the grammar, as the first block on a page does.
+    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain(
+      '<pre',
+    );
+
+    const markup = render({ className: 'language-typescript', children: CODE });
+
+    expect(markup).toContain('class="shiki');
+  });
+
+  test('a streaming block renders plain text, never a tokenizer pass per delta', async () => {
+    expect(await highlightAsync('const warm = 1;', 'typescript', SHIKI_THEME_LIGHT)).toContain(
+      '<pre',
+    );
+
+    const markup = render({ className: 'language-typescript', children: CODE, isStreaming: true });
+
+    expect(markup).not.toContain('class="shiki');
+    expect(markup).toContain('const answer: number = 42;');
+    expect(markup).toContain(CARD);
   });
 });

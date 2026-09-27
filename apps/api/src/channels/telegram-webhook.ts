@@ -9,6 +9,7 @@ import {
 } from '../projects/session-lifecycle';
 import { loadTelegramWebhookSecretForProject } from './install-store';
 import { makeOpenApiApp, json, errors } from '../openapi';
+import { bindIntegrationPrincipal } from '../shared/audit-scope';
 
 export const telegramWebhookApp = makeOpenApiApp();
 
@@ -40,6 +41,7 @@ telegramWebhookApp.openapi(
   if (presentedBuf.length !== expectedBuf.length || !timingSafeEqual(presentedBuf, expectedBuf)) {
     return c.json({ error: 'Invalid secret' }, 401);
   }
+  bindIntegrationPrincipal('telegram', { projectId });
 
   let update: TelegramUpdate;
   try {

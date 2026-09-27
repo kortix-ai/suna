@@ -21,19 +21,11 @@ import {
   CaretRightIcon as ChevronRight,
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
-  DownloadIcon as Download,
-  DotsThreeIcon as Ellipsis,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import Papa from 'papaparse';
 
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -46,6 +38,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
 
@@ -60,9 +53,12 @@ type CsvViewerProps = {
   fileName?: string;
   search?: boolean;
   showToolbar?: boolean;
+  /** False when the host's own toolbar already has the Download button, so this
+   *  viewer does not show a second one. */
+  showDownload?: boolean;
   /** Extra controls rendered in this toolbar, after zoom/search and before the
-   *  file menu — the same slot pdf/docx/xlsx expose, so a caller adds actions
-   *  to the ONE header this viewer already draws. */
+   *  Download button — the same slot pdf/docx/xlsx expose, so a caller adds
+   *  actions to the ONE header this viewer already draws. */
   toolbarActions?: React.ReactNode;
 };
 
@@ -236,37 +232,6 @@ function downloadTextFile(text: string, fileName: string, type: string) {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function CsvFileActionsMenu({
-  downloadDisabled,
-  onDownload,
-}: {
-  downloadDisabled: boolean;
-  onDownload: () => void;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="transition-transform active:scale-[0.96]"
-          aria-label={tI18nComplete.raw('text55412336c1c2')}
-        >
-          <Ellipsis className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-          <Download className="size-4" />
-          {tI18nComplete.raw('textd6eafe823591')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 function ToolbarTooltip({ label, children }: { label: string; children: React.ReactNode }) {
@@ -538,6 +503,7 @@ export function CsvViewer({
   fileName,
   search = false,
   showToolbar = true,
+  showDownload = true,
   toolbarActions,
 }: CsvViewerProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -738,13 +704,18 @@ export function CsvViewer({
                   />
                 </>
               ) : null}
-              <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-              <CsvFileActionsMenu
-                downloadDisabled={
-                  Boolean(parsed.error) || (parsed.headers.length === 0 && parsed.rows.length === 0)
-                }
-                onDownload={handleDownload}
-              />
+              {showDownload ? (
+                <>
+                  <Separator orientation="vertical" className="mx-1 h-4 self-center" />
+                  <ViewerDownloadButton
+                    disabled={
+                      Boolean(parsed.error) ||
+                      (parsed.headers.length === 0 && parsed.rows.length === 0)
+                    }
+                    onDownload={handleDownload}
+                  />
+                </>
+              ) : null}
             </div>
           </TooltipProvider>
         </div>

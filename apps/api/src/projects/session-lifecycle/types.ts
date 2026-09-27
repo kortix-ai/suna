@@ -19,6 +19,11 @@ export type SessionInvocationSource =
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  /** Unattended-session recovery after a provider-originated `runtime_gone`
+   *  (see `unattended-runtime-recovery.ts`), when the turn that died was the
+   *  session's own initial prompt — there is no `continue_session` inbox row
+   *  to release, so a synthetic continue prompt is enqueued instead. */
+  | 'system:auto-recovery'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
@@ -55,6 +60,12 @@ export type SessionLifecycleStatus =
 export interface CreateSessionCommand {
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
+  /**
+   * The durable `create_session` command this create executes. The new
+   * session id is written onto it in the session insert transaction, so a
+   * reclaimed command finds the session instead of creating a second one.
+   */
+  createCommandId?: string;
   source: SessionInvocationSource;
   project: ProjectRow;
   userId: string;
@@ -102,6 +113,12 @@ export interface QueuedCreateSessionPayload {
 export interface ContinueSessionCommand {
   source: SessionInvocationSource;
   sessionId: string;
+  /**
+   * The project the producer addressed. When present, delivery refuses a
+   * session of any other project (`no-session`): a queued command names its
+   * project and session in separate columns, and nothing else ties the two.
+   */
+  projectId?: string | null;
   /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;
@@ -180,7 +197,7 @@ export interface StartSessionCommand {
  * was in fact a down runtime, and the drain treated it as terminal: a queued
  * prompt delivered while the box was unreachable went `dead_lettered` on its
  * FIRST attempt and was never re-tried when the box came back minutes later
- * (Essentia, 2026-08-26: `state:failed, attempts:1,
+ * (SampleCo, 2026-08-26: `state:failed, attempts:1,
  * last_error:"delivery outcome: failed"`).
  */
 /**

@@ -35,6 +35,9 @@ interface XlsxRendererProps {
   };
   onDownload?: () => void;
   isDownloading?: boolean;
+  /** False when the host's own toolbar already has the Download button, so the
+   *  viewer does not show a second one. */
+  showDownload?: boolean;
 }
 
 export function XlsxRenderer({
@@ -43,6 +46,7 @@ export function XlsxRenderer({
   className,
   compact = false,
   toolbarActions,
+  showDownload = true,
 }: XlsxRendererProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { resolvedTheme } = useTheme();
@@ -134,6 +138,7 @@ export function XlsxRenderer({
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
       showToolbar={!compact}
+      showDownload={showDownload}
       showUpload={false}
       className={cn('h-full w-full', className)}
       toolbarActions={toolbarActions}

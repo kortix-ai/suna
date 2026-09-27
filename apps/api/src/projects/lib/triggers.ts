@@ -11,6 +11,7 @@ import type { Context } from 'hono';
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
@@ -62,14 +63,14 @@ import {
   type ProjectRow,
   type RequestAuditContext,
   deriveKortixApiRoot,
-  isPlainObject,
   normalizeBoolean,
   normalizeString,
 } from './serializers';
+import { isPlainObject } from '../../shared/json';
 
 /**
- * Who asked for this fire. `monitor` is the third trigger type's source
- * (docs/specs/2026-08-12-monitors.md): the observer draining a monitor event
+ * Who asked for this fire. `monitor` is the third trigger type's source:
+ * the observer draining a monitor event
  * off `project_monitor_events`. It rides the identical downstream path as
  * `cron` — the session it mints is stamped `trigger:monitor`.
  */
@@ -694,8 +695,7 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
  * run's recorded identity. The create-session action applies the trigger's
  * access policy and records the agent's service account after the row exists.
- * This keeps attribution and authorization on separate fields
- * (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
+ * This keeps attribution and authorization on separate fields.
  * What a run can actually ACCESS is governed by the AGENT's declared scope in
  * kortix.yaml's `agents:` map (secrets + connectors), applied when the session
  * env is built — not by this stand-in.
@@ -911,10 +911,19 @@ async function enqueueTriggerPrompt(input: {
   /** The trigger's configured model; carried on the prompt for a re-prompted session. */
   model?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
+  // Scoped to the trigger's own project and account. A pinned `session_id` is
+  // manifest text, so a session of any other project is "no session" here and
+  // the fire falls through to the trigger's own reuse/create path.
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        eq(projectSessions.projectId, input.project.projectId),
+        eq(projectSessions.accountId, input.project.accountId),
+      ),
+    )
     .limit(1);
   if (!session) return 'no-session';
   if (session.status === 'failed') return 'failed';
@@ -1308,7 +1317,7 @@ export function startProjectTriggerScheduler(): void {
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
-  const tick = () => {
+  const tickBody = () => {
     // Watchdog: if we're the leader but the sweep has stalled (started and never
     // completed within the stale window), make it LOUD. A silent dead scheduler
     // is what turned a single hung fire into an ~18h fleet-wide outage.
@@ -1369,6 +1378,9 @@ export function startProjectTriggerScheduler(): void {
         });
     }
   };
+  // Everything the tick starts (sweep, drains, connector reconcile) inherits
+  // the worker context through AsyncLocalStorage.
+  const tick = () => void runWorkerTick('trigger-scheduler', tickBody);
   tick();
   triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
@@ -1928,6 +1940,11 @@ export async function commitRepoFile(
       };
     }
     invalidateProjectMirror(project.projectId);
+    // The base branch moved through the Contents API. The git-CLI path below
+    // notifies from `commitMultipleFilesToBranch`.
+    void import('./config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(project.projectId, branch, 'manifest-write'))
+      .catch(() => {});
     return { ok: true };
   }
 

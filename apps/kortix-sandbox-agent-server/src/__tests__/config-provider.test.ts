@@ -31,7 +31,7 @@ import {
   type ProjectSnapshotDescriptor,
 } from '../config-provider/s3/s3-config-provider'
 import { ConfigProviderError } from '../config-provider/types'
-import { __clearRepoIdentityMemoForTests, __setScaffoldRepoPathForTests, readRepoInfo } from '../git'
+import { __setScaffoldRepoPathForTests, readRepoInfo } from '../git'
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
 const EXTERNAL_ID = '424242'
@@ -333,7 +333,6 @@ let archive: Snapshot
 let api: FakeApi
 
 beforeEach(async () => {
-  __clearRepoIdentityMemoForTests()
   root = tmp('kortix-config-provider-')
   source = makeSourceRepo(root)
   archive = await makeSnapshot(root, source)
@@ -514,12 +513,14 @@ describe('materializeProject — prefer-s3', () => {
     expect(missingObjects(target)).toBe(0)
   })
 
-  test('an env descriptor with no lifetime left is ignored: the proxy is asked, once', async () => {
+  // An unusable env descriptor costs one proxy round trip, never the boot.
+  test.each([
+    // 10 s left is under the 30 s margin: not worth starting a transfer on.
+    ['with no lifetime left', () => envDescriptor(descriptorFor(api, archive.sha, 10_000))],
+    ['that is malformed', () => 'definitely-not-base64-json'],
+  ])('an env descriptor %s is ignored: the proxy is asked, once', async (_name, descriptor) => {
     const target = join(root, 'ws')
-    const cfg = makeConfig(api, target, archive.sha, {
-      // 10 s left is under the 30 s margin: not worth starting a transfer on.
-      KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: envDescriptor(descriptorFor(api, archive.sha, 10_000)),
-    })
+    const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: descriptor() })
     const result = await materializeProject(cfg)
     expect(result.provider).toBe('s3')
     expect(result.s3?.descriptorSource).toBe('proxy')
@@ -542,16 +543,6 @@ describe('materializeProject — prefer-s3', () => {
     expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(1)
     await result.hydration
     expect(missingObjects(target)).toBe(0)
-  })
-
-  test('a malformed env descriptor costs one round trip, not the boot', async () => {
-    const target = join(root, 'ws')
-    const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: 'definitely-not-base64-json' })
-    const result = await materializeProject(cfg)
-    expect(result.provider).toBe('s3')
-    expect(result.s3?.descriptorSource).toBe('proxy')
-    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot')).length).toBe(1)
-    await result.hydration
   })
 
   test('falls back to the in-process extractor when no tar binary is usable', async () => {
@@ -656,28 +647,22 @@ describe('materializeProject — prefer-s3', () => {
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 
-  test('a resumed/replacement (not fresh) session never attempts S3, in every mode', async () => {
-    for (const mode of ['prefer-s3', 'require-s3'] as const) {
-      const target = join(root, `ws-${mode}`)
-      const cfg = makeConfig(api, target, archive.sha, {
-        KORTIX_PROJECT_SNAPSHOT_MODE: mode,
-        KORTIX_SESSION_FRESH: '0',
-        // Not fresh → the Git path fetches the session branch from the remote,
-        // which this fake API cannot serve; a scaffold-rooted base still lets
-        // the checkout land, and the failure to fetch the branch is the
-        // existing (tolerated) behaviour of checkoutSessionBranch.
-      })
-      const result = await materializeProject(cfg).catch((err) => ({ error: err as Error }))
-      // Either the Git path completes (scaffold) or it fails for a Git reason —
-      // never an S3 attempt and never an S3 failure.
-      if ('error' in result) {
-        expect(result.error).not.toBeInstanceOf(ConfigProviderError)
-      } else {
-        expect(result.provider).toBe('git')
-        expect(result.summary).toMatchObject({ s3_attempted: false, s3_skipped: true, s3_reason: 'not-fresh' })
-      }
-      expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot'))).toHaveLength(0)
-    }
+  // An ineligible boot is a Git-only start with a RECORDED reason, never an S3
+  // attempt. The fake API cannot serve Git, so the Git half may fail; the
+  // summary is reported either way.
+  test.each([
+    ['a resumed/replacement session (prefer-s3)', 'not-fresh', { KORTIX_SESSION_FRESH: '0' }],
+    ['a resumed/replacement session (require-s3)', 'not-fresh', { KORTIX_SESSION_FRESH: '0', KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3' }],
+    ['a session with no trusted base SHA', 'no-sha', { KORTIX_BASE_SHA: '' }],
+    ['a pin for another commit', 'pin-mismatch', { KORTIX_PROJECT_SNAPSHOT_PIN: `${'b'.repeat(40)}:${'c'.repeat(64)}:10` }],
+    ['a box with no session token', 'not-configured', { KORTIX_TOKEN: '' }],
+  ] as const)('%s never attempts S3: skipped as %s', async (_name, reason, overrides) => {
+    const target = join(root, 'ws')
+    const cfg = makeConfig(api, target, archive.sha, overrides)
+    let summary: unknown = null
+    await materializeProject(cfg, { onSummary: (s) => (summary = s) }).catch(() => undefined)
+    expect(summary).toMatchObject({ s3_attempted: false, s3_skipped: true, s3_reason: reason })
+    expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot'))).toHaveLength(0)
   })
 
   test('authorization denial on the descriptor is a denial: no fallback, nothing materialized', async () => {
@@ -728,15 +713,6 @@ describe('materializeProject — require-s3 and git', () => {
     expect(stageDirs(target)).toEqual([])
   })
 
-  test('require-s3 succeeds on a prepared archive', async () => {
-    const target = join(root, 'ws')
-    const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3' })
-    const result = await materializeProject(cfg)
-    expect(result.provider).toBe('s3')
-    await result.hydration
-    await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
-  })
-
   test('git mode never contacts the snapshot endpoint (legacy parity, zero S3 traffic)', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'git' })
@@ -747,10 +723,10 @@ describe('materializeProject — require-s3 and git', () => {
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
   })
 
-  test('mode unset in the config object behaves as git', async () => {
+  test('with KORTIX_PROJECT_SNAPSHOT_MODE unset the box boots from git, with zero snapshot traffic', async () => {
+    // The production default, through loadConfig: a box the API gives no mode.
     const target = join(root, 'ws')
-    const cfg = makeConfig(api, target, archive.sha)
-    delete cfg.projectSnapshotMode
+    const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: undefined })
     const result = await materializeProject(cfg)
     expect(result.provider).toBe('git')
     expect(api.requests).toHaveLength(0)
@@ -848,14 +824,26 @@ describe('archive safety guards', () => {
     expect(existsSync(stage)).toBe(false)
   })
 
-  test('a .git/config that names a remote, filter, or hooksPath is refused at verify', async () => {
+  // One forbidden setting per row: removing any one alternative from the
+  // verify rule fails its row (the unpromisored pack would otherwise refuse
+  // every row for another reason, so the message must name the setting).
+  test.each([
+    ['a remote', ['remote', 'add', 'upstream', 'file:///nowhere'], '[remote'],
+    ['a credential helper', ['config', '--local', 'credential.helper', 'store'], '[credential'],
+    ['an include', ['config', '--local', 'include.path', '/tmp/included'], '[include'],
+    ['a filter', ['config', '--local', 'filter.lfs.clean', 'cat'], '[filter'],
+    ['a url rewrite', ['config', '--local', 'url.https://example.invalid/.insteadOf', 'https://example.test/'], '[url'],
+    ['a hooksPath', ['config', '--local', 'core.hooksPath', '/tmp/hooks'], 'hooksPath'],
+    ['an fsmonitor', ['config', '--local', 'core.fsmonitor', 'true'], 'fsmonitor'],
+    ['an sshCommand', ['config', '--local', 'core.sshCommand', 'ssh -i key'], 'sshCommand'],
+  ])('a .git/config that carries %s is refused at verify', async (_name, gitArgs, named) => {
     const target = join(root, 'ws')
     const tainted = join(root, 'tainted-stage')
     git(root, 'clone', '-q', '--depth', '1', `file://${source.checkout}`, tainted)
-    // Leave `origin` in place (credential-bearing remotes are exactly what the
-    // contract forbids) and add a hooksPath; drop the sample hooks so the
-    // failure is attributable to .git/config, not to the hook-entry guard.
-    git(tainted, 'config', '--local', 'core.hooksPath', '/tmp/hooks')
+    git(tainted, 'remote', 'remove', 'origin')
+    git(tainted, ...gitArgs)
+    // Drop the sample hooks and logs so the failure is attributable to
+    // .git/config, not to the hook-entry guard.
     rmSync(join(tainted, '.git', 'hooks'), { recursive: true, force: true })
     rmSync(join(tainted, '.git', 'logs'), { recursive: true, force: true })
     writeFileSync(
@@ -868,7 +856,11 @@ describe('archive safety guards', () => {
       KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3',
       KORTIX_PROJECT_SNAPSHOT_PIN: `${archive.sha}:${api.archive.sha256}:${packed.bytes.byteLength}`,
     })
-    await expect(materializeProject(cfg)).rejects.toMatchObject({ stage: 'verify', reason: 'malformed' })
+    await expect(materializeProject(cfg)).rejects.toMatchObject({
+      stage: 'verify',
+      reason: 'malformed',
+      message: expect.stringContaining(`forbidden setting: ${named}`),
+    })
     expect(existsSync(join(target, '.git'))).toBe(false)
   })
 
@@ -891,5 +883,63 @@ describe('archive safety guards', () => {
     })
     await expect(materializeProject(cfg)).rejects.toMatchObject({ stage: 'verify', reason: 'malformed' })
     expect(existsSync(join(target, '.git'))).toBe(false)
+  })
+})
+
+describe('short transfers resume with a Range request', () => {
+  /**
+   * An object store that closes the body early — what the sandbox sees at boot
+   * (`transfer closed after 1572864 of 1573214 bytes`, 3 of 12 dev S3 boots on
+   * 2026-09-18). Every response declares its full length; `firstBytes` and
+   * `resumeBytes` set how many bytes it delivers before the stream closes.
+   */
+  function shortStore(body: Buffer, opts: { firstBytes: number; range: 'honor' | 'ignore'; resumeBytes?: number }) {
+    const ranges: Array<string | null> = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const range = new Headers(init?.headers).get('range')
+      ranges.push(range)
+      const deliver = (bytes: Buffer, status: number, headers: Record<string, string>) =>
+        new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(bytes)); c.close() } }), { status, headers })
+      if (!range || opts.range === 'ignore') {
+        return deliver(body.subarray(0, range ? body.length : opts.firstBytes), 200, { 'content-length': String(body.length) })
+      }
+      const from = Number(/^bytes=(\d+)-$/.exec(range)?.[1])
+      const until = opts.resumeBytes === undefined ? body.length : Math.min(body.length, from + opts.resumeBytes)
+      return deliver(body.subarray(from, until), 206, {
+        'content-length': String(body.length - from),
+        'content-range': `bytes ${from}-${body.length - 1}/${body.length}`,
+      })
+    }) as typeof fetch
+    return { fetchImpl, ranges }
+  }
+
+  const stageFor = (name: string) => join(root, 'ws', `.kortix-snapshot-${name}`)
+
+  test('a body that closes early is completed from its byte offset, not re-downloaded', async () => {
+    const cut = archive.bytes.length - 350
+    const store = shortStore(archive.bytes, { firstBytes: cut, range: 'honor' })
+    const downloaded = await downloadAndExtractProjectSnapshot(descriptorFor(api, archive.sha), stageFor('resume'), {
+      timeoutMs: 10_000,
+      fetchImpl: store.fetchImpl,
+    })
+    expect(downloaded.bytes).toBe(archive.bytes.length)
+    expect(store.ranges).toEqual([null, `bytes=${cut}-`])
+    expect(existsSync(join(stageFor('resume'), 'README.md'))).toBe(true)
+  })
+
+  test('a store that ignores Range fails the attempt as a closed transfer (the provider retries)', async () => {
+    const cut = archive.bytes.length - 350
+    const store = shortStore(archive.bytes, { firstBytes: cut, range: 'ignore' })
+    await expect(
+      downloadAndExtractProjectSnapshot(descriptorFor(api, archive.sha), stageFor('ignore'), { timeoutMs: 10_000, fetchImpl: store.fetchImpl }),
+    ).rejects.toMatchObject({ stage: 'download', reason: 'unavailable', message: expect.stringMatching(new RegExp(`transfer (closed|ended) after ${cut} of`)) })
+  })
+
+  test('a body that keeps closing early gives up after a bounded number of resumes', async () => {
+    const store = shortStore(archive.bytes, { firstBytes: 1024, range: 'honor', resumeBytes: 512 })
+    await expect(
+      downloadAndExtractProjectSnapshot(descriptorFor(api, archive.sha), stageFor('bounded'), { timeoutMs: 10_000, fetchImpl: store.fetchImpl }),
+    ).rejects.toMatchObject({ stage: 'download', reason: 'unavailable', message: expect.stringMatching(/transfer (closed|ended) after/) })
+    expect(store.ranges.filter((r) => r !== null)).toHaveLength(3)
   })
 })

@@ -4,8 +4,6 @@ A working Kortix **worker**: the agent harness, running in a 138 MB Alpine
 image, with every file and shell operation routed over RPC into a separate
 environment. Its own disk is never touched by any built-in tool.
 
-Reference: `docs/specs/2026-08-26-harness-worker-split.md`.
-
 > This is a spike. It is here to answer questions and produce numbers, not to
 > ship. Nothing in `apps/` was changed.
 

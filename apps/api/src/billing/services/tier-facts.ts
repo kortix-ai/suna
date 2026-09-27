@@ -26,12 +26,6 @@ export function isPerSeatAccount(billingModel: string | null | undefined): boole
   return billingModel === 'per_seat';
 }
 
-export function isLegacyAccount(billingModel: string | null | undefined): boolean {
-  // Default for null/undefined is legacy — safer to skip new behaviour than to
-  // accidentally bill a legacy customer twice.
-  return billingModel !== 'per_seat' && billingModel !== 'credit';
-}
-
 /**
  * Billing v3 — flat credit plans (Starter / Team / Scale).
  *

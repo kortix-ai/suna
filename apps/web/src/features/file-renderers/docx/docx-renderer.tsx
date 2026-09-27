@@ -51,6 +51,9 @@ interface DocxRendererProps {
   fileName?: string;
   className?: string;
   compact?: boolean;
+  /** False when the host's own toolbar already has the Download button, so the
+   *  viewer does not show a second one. */
+  showDownload?: boolean;
 }
 
 export function DocxRenderer({
@@ -60,6 +63,7 @@ export function DocxRenderer({
   className,
   compact = false,
   toolbarActions,
+  showDownload = true,
 }: DocxRendererProps) {
   const { resolvedTheme } = useTheme();
   const [src, setSrc] = useState<string | null>(null);
@@ -91,6 +95,7 @@ export function DocxRenderer({
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
       showToolbar={!compact}
+      showDownload={showDownload}
       showUpload={false}
       className={cn('h-full w-full', className)}
       toolbarActions={toolbarActions}

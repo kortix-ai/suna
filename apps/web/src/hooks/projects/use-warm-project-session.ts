@@ -83,7 +83,7 @@ export interface WarmSession {
    * session.ts`) can seed the sessions-list cache with it at adoption time,
    * without a second fetch — see `warm-session-seed.ts`. Still shows
    * `metadata.warm: true` at this point; the server only drops that once
-   * THIS take's own `/start` call lands (`apps/api/.../routes/r8.ts`).
+   * THIS take's own `/start` call lands (`apps/api/.../routes/session-runtime.ts`).
    */
   session: ProjectSession;
 }

@@ -17,6 +17,9 @@ export interface MeResponse {
     session_id: string | null;
     agent: string | null;
     connectors: string[] | 'all' | null;
+    /** The agent's Kortix permissions. Absent on APIs released before 2026-09-22. */
+    kortix_permissions?: string[] | 'all' | null;
+    /** @deprecated Same value as `kortix_permissions`. */
     kortix_cli: string[] | 'all' | null;
     env?: string[] | 'all' | null;
   };
@@ -83,6 +86,9 @@ export interface ProjectSecretsResponse {
   manifest_status: 'loaded' | 'missing' | 'error';
   manifest_path: string | null;
   manifest_error?: string;
+  /** The calling agent's own secrets grant; null for a non-agent caller,
+   *  absent on older servers. `items` is filtered by it. */
+  agent_scope?: { agent: string; secrets: 'all' | string[] } | null;
 }
 
 // ── Provider OAuth ───────────────────────────────────────────────────────
@@ -148,7 +154,7 @@ export interface ProjectSession {
 
 // ── Triggers ──────────────────────────────────────────────────────────────
 
-/** A `type: monitor` trigger's shape — see docs/specs/2026-08-12-monitors.md. */
+/** A `type: monitor` trigger's shape. */
 export type MonitorMode = 'poll' | 'stream';
 
 export interface ProjectTrigger {

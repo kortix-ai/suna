@@ -308,8 +308,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       size="sm"
       title={tI18nComplete.raw('text3d2301d732a7')}
       description={
-        (detailQuery.error as Error)?.message ??
-        tI18nComplete('text18658a31c8cc', { value0: noun })
+        (detailQuery.error as Error)?.message ?? tI18nComplete('text18658a31c8cc', { value0: noun })
       }
       action={
         <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
@@ -807,7 +806,7 @@ function EntityDetail<T extends ConfigEntity>({
       {(fileQuery.error as Error)?.message ?? tI18nComplete.raw('text2a9d55fd8c0f')}
     </InfoBanner>
   ) : body.trim() ? (
-    <UnifiedMarkdown content={body} />
+    <UnifiedMarkdown content={body} trust="agent" />
   ) : (
     <p className="text-muted-foreground/60 text-sm italic">{emptyBodyLabel}</p>
   );

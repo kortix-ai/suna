@@ -13,7 +13,7 @@ import type { ChangeRequest, ProjectSession, ProjectSessionStatus } from '@korti
  * - what a row is titled, and how its timestamp is abbreviated
  *   (`getSessionDisplayTitle`, `shortRelative`);
  * - which of loading/error/empty/no-matches/content renders
- *   (`resolveSessionListViewState`).
+ *   (`resolveSessionListViewState`, also read by the Sessions page).
  *
  * Display status itself is NOT decided here — `sessionDisplayStatus` in
  * `components/projects/session-label` owns that mapping, and this file reads it.
@@ -328,20 +328,24 @@ export function shortRelative(input: string): string {
   return `${n}${suffix}`;
 }
 
-/** Which of the sidebar's mutually-exclusive render states applies. Mirrors
- *  the early-return ladder in `ProjectSessionList`: loading and error both
- *  win outright (independent of data), then "no sessions at all" wins over
+/** Which of a session list's mutually-exclusive render states applies (the
+ *  sidebar and the Sessions page).
+ *
+ *  Data wins. A failed refetch or "Load more" keeps the rows it had (TanStack
+ *  v5 keeps `data` and sets `status: 'error'`), so an error decides the view
+ *  only while there is nothing to show. Without data and without an error the
+ *  list is still loading: a first load that is paused offline, or not enabled
+ *  yet, is not "no sessions". With data, "no sessions at all" wins over
  *  "sessions exist but none match the active filter". */
 export type SessionListViewState = 'loading' | 'error' | 'empty' | 'no-matches' | 'content';
 
 export function resolveSessionListViewState(params: {
-  isLoading: boolean;
+  hasData: boolean;
   isError: boolean;
   totalCount: number;
   visibleCount: number;
 }): SessionListViewState {
-  if (params.isLoading) return 'loading';
-  if (params.isError) return 'error';
+  if (!params.hasData) return params.isError ? 'error' : 'loading';
   if (params.totalCount === 0) return 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';

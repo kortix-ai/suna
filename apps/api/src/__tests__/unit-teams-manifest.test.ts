@@ -31,6 +31,15 @@ describe('buildTeamsManifest', () => {
     // Teams' own command menu is where a user looks for the lever that ends a
     // run; the live card's Stop button is gone as soon as the card scrolls.
     expect(titles).toContain('/stop');
+    // A chat is one conversation for life; the menu is where a user looks for
+    // a clean slate.
+    expect(titles).toContain('/new');
+  });
+
+  test('a new command in the menu ships under a new version, so the catalog takes it', () => {
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    // 1.3.0 is the manifest without /new.
+    expect(m.version).not.toBe('1.3.0');
   });
 });
 

@@ -16,8 +16,6 @@
  * is always project-wide visible; the only access gate is the agent-side
  * `[[agents]].connectors` grant (iam/agent-scope.ts). This file keeps the
  * generic pure helpers + session DB helpers only.
- *
- * See docs/specs/connector.md §6.
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
@@ -127,7 +125,6 @@ export async function resolveShareSubject(userId: string): Promise<ShareSubject>
  * `private` visibility (owner only) instead of modelling it as restricted+owner.
  * The dashboard's SharingIntent maps: project→project, private→private,
  * members→restricted+grants (empty members collapses back to private).
- * See docs/specs/iam.md.
  */
 
 export type SessionVisibility = 'private' | 'project' | 'restricted';
@@ -204,7 +201,7 @@ export function isSessionTargetVisibleToCaller(
   // equal a Kortix session id. Reading it here made all three conditions below
   // true for ANY human opening ANY backend-origin session, so the narrowing
   // returned false and `/start` answered 404 — a session listed in the sidebar
-  // that could never be opened. Measured on a live self-host (essentia,
+  // that could never be opened. Measured on a live self-host (sampleco,
   // 2026-08-24): 43 backend-origin sessions in one project, all unopenable,
   // while `user`- and `schedule`-origin sessions in the same project opened
   // fine.

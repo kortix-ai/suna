@@ -1,32 +1,38 @@
 /**
- * QuestionPrompt — compact mobile-native question UI for OpenCode sessions.
+ * QuestionPrompt — the agent's question, shown in place of the chat input.
  *
- * Renders inside the chat input card area, replacing the text input.
- * Compact sizing to match the frontend's inline chip style.
+ * The card is the `Composer` card (`rounded-3xl border border-border
+ * bg-background p-2`, same `px-4 pb-3 pt-1` inset), so answering reads as
+ * typing a reply. One question at a time: the question, its options as plain
+ * rows, a text field for your own answer, then the composer's control row
+ * (Skip · Back · step · send).
+ *
+ * A single-choice option answers on tap and moves on. Multi-choice options
+ * toggle; send moves on. The last step sends every answer. Rules live in
+ * `lib/session/question-prompt.ts`.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  View,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  Keyboard,
-  Text as RNText,
-} from 'react-native';
-import { Text } from '@/components/ui/text';
+import React, { useCallback, useState } from 'react';
+import { Keyboard, ScrollView, TextInput, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { Ionicons } from '@expo/vector-icons';
-import { useThemeColors } from '@/lib/theme-colors';
-import type {
-  QuestionRequest,
-  QuestionInfo,
-  QuestionAnswer,
-} from '@/lib/opencode/types';
+import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { COMPOSER_CONTROL_HIT_SLOP } from '@/components/kortix/composer';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
+import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
+import { ArrowUpIcon, CheckIcon } from '@/lib/icons';
+import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
+import { THEME } from '@/lib/utils/theme';
+import {
+  pickQuestionOption,
+  questionStepAnswer,
+  questionStepLabel,
+} from '@/lib/session/question-prompt';
+import type { QuestionAnswer, QuestionRequest } from '@/lib/opencode/types';
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
+/** About five option rows, then the list scrolls. */
+const MAX_OPTIONS_HEIGHT = 260;
 
 interface QuestionPromptProps {
   request: QuestionRequest;
@@ -34,624 +40,177 @@ interface QuestionPromptProps {
   onReject: (requestId: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export function QuestionPrompt({
-  request,
-  onReply,
-  onReject,
-}: QuestionPromptProps) {
+export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptProps) {
   const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
 
   const questions = request.questions;
-  const isSingle = questions.length === 1 && !questions[0].multiple;
-
-  const [tab, setTab] = useState(0);
-  const [answers, setAnswers] = useState<QuestionAnswer[]>(() =>
-    questions.map(() => []),
-  );
-  const [customInputs, setCustomInputs] = useState<string[]>(() =>
-    questions.map(() => ''),
-  );
-  const [editing, setEditing] = useState(false);
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<QuestionAnswer[]>(() => questions.map(() => []));
+  const [drafts, setDrafts] = useState<string[]>(() => questions.map(() => ''));
   const [replying, setReplying] = useState(false);
-  const inputRef = useRef<TextInput>(null);
-  const tabScrollRef = useRef<ScrollView>(null);
-  const tabLayouts = useRef<Record<number, { x: number; width: number }>>({});
 
-  const isConfirm = tab === questions.length;
-  const currentQuestion = questions[tab] as QuestionInfo | undefined;
-  const isMulti = currentQuestion?.multiple ?? false;
-  const options = currentQuestion?.options ?? [];
-  const currentAnswers = answers[tab] ?? [];
-  const showCustom = currentQuestion?.custom !== false;
+  const question = questions[step];
+  const options = question?.options ?? [];
+  const isMulti = question?.multiple ?? false;
+  const showCustom = question?.custom !== false;
+  const picked = answers[step] ?? [];
+  const draft = drafts[step] ?? '';
+  const isLast = step === questions.length - 1;
+  const stepAnswer = question ? questionStepAnswer(question, picked, draft) : [];
+  const canSend = stepAnswer.length > 0;
+  const stepLabel = questionStepLabel(step, questions.length);
 
-  // Reset state when request changes (new question arrives)
-  const prevRequestIdRef = useRef(request.id);
-  useEffect(() => {
-    if (prevRequestIdRef.current !== request.id) {
-      prevRequestIdRef.current = request.id;
-      setTab(0);
-      setAnswers(questions.map(() => []));
-      setCustomInputs(questions.map(() => ''));
-      setEditing(false);
-      setReplying(false);
-    }
-  }, [request.id, questions]);
-
-  // Auto-scroll tab pills to keep active tab visible
-  useEffect(() => {
-    const layout = tabLayouts.current[tab];
-    if (layout && tabScrollRef.current) {
-      // Scroll so the active pill is roughly centered
-      const scrollTo = Math.max(0, layout.x - 60);
-      tabScrollRef.current.scrollTo({ x: scrollTo, animated: true });
-    }
-  }, [tab]);
-
-  // Auto-focus input when editing
-  useEffect(() => {
-    if (editing) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [editing]);
-
-  // Auto-activate custom input for single questions with no options
-  useEffect(() => {
-    if (isSingle && options.length === 0 && showCustom) {
-      setEditing(true);
-    }
-  }, [request.id, isSingle, options.length, showCustom]);
-
-  // -----------------------------------------------------------------------
-  // Handlers
-  // -----------------------------------------------------------------------
+  const advance = useCallback(
+    (answer: QuestionAnswer) => {
+      const next = answers.map((a, i) => (i === step ? answer : a));
+      setAnswers(next);
+      if (isLast) {
+        Keyboard.dismiss();
+        setReplying(true);
+        onReply(request.id, next);
+        return;
+      }
+      setStep(step + 1);
+    },
+    [answers, step, isLast, onReply, request.id],
+  );
 
   const pick = useCallback(
-    (answer: string, isCustom = false) => {
-      const next = [...answers];
-      next[tab] = [answer];
-      setAnswers(next);
-
-      if (isCustom) {
-        const nextCustom = [...customInputs];
-        nextCustom[tab] = answer;
-        setCustomInputs(nextCustom);
-      }
-
-      if (isSingle) {
-        setReplying(true);
-        onReply(request.id, [[answer]]);
-        return;
-      }
-
-      setTab(tab + 1);
-      setEditing(false);
-    },
-    [answers, customInputs, tab, isSingle, request.id, onReply],
-  );
-
-  const toggle = useCallback(
-    (answer: string) => {
-      const existing = answers[tab] ?? [];
-      const next = [...existing];
-      const idx = next.indexOf(answer);
-      if (idx === -1) next.push(answer);
-      else next.splice(idx, 1);
-
-      const updated = [...answers];
-      updated[tab] = next;
-      setAnswers(updated);
-    },
-    [answers, tab],
-  );
-
-  const selectOption = useCallback(
-    (optIndex: number) => {
-      const opts = currentQuestion?.options ?? [];
-      if (showCustom && optIndex === opts.length) {
-        setEditing(true);
-        return;
-      }
-      const opt = opts[optIndex];
-      if (!opt) return;
-
+    (label: string) => {
+      if (!question) return;
+      const next = pickQuestionOption(question, picked, label);
       if (isMulti) {
-        toggle(opt.label);
-      } else {
-        pick(opt.label);
-      }
-    },
-    [currentQuestion?.options, isMulti, showCustom, toggle, pick],
-  );
-
-  const handleCustomSubmit = useCallback(
-    (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        setEditing(false);
+        setAnswers(answers.map((a, i) => (i === step ? next : a)));
         return;
       }
-
-      if (isMulti) {
-        const existing = answers[tab] ?? [];
-        if (!existing.includes(trimmed)) {
-          const next = [...existing, trimmed];
-          const updated = [...answers];
-          updated[tab] = next;
-          setAnswers(updated);
-        }
-        setEditing(false);
-        const nextCustom = [...customInputs];
-        nextCustom[tab] = '';
-        setCustomInputs(nextCustom);
-        return;
-      }
-
-      pick(trimmed, true);
-      setEditing(false);
-      Keyboard.dismiss();
+      setDrafts(drafts.map((d, i) => (i === step ? '' : d)));
+      advance(next);
     },
-    [isMulti, answers, customInputs, tab, pick],
+    [question, picked, isMulti, answers, drafts, step, advance],
   );
 
-  const submit = useCallback(() => {
-    setReplying(true);
-    const finalAnswers = questions.map((_, i) => answers[i] ?? []);
-    onReply(request.id, finalAnswers);
-  }, [answers, questions, request.id, onReply]);
+  const send = useCallback(() => {
+    if (canSend) advance(stepAnswer);
+  }, [canSend, advance, stepAnswer]);
 
-  const reject = useCallback(() => {
+  const skip = useCallback(() => {
+    Keyboard.dismiss();
     setReplying(true);
     onReject(request.id);
-  }, [request.id, onReject]);
+  }, [onReject, request.id]);
 
-  if (replying) return null;
-
-  // -----------------------------------------------------------------------
-  // Header summary
-  // -----------------------------------------------------------------------
-
-  const headerSummary = (() => {
-    if (isSingle) {
-      const q = questions[0];
-      const trimmedHeader = q.header?.trim();
-      if (trimmedHeader && trimmedHeader !== q.question.trim()) {
-        return trimmedHeader;
-      }
-      return 'Question';
-    }
-    const answered = answers.filter((a) => a.length > 0).length;
-    return `${answered} of ${questions.length} answered`;
-  })();
-
-  // -----------------------------------------------------------------------
-  // Colors
-  // -----------------------------------------------------------------------
-
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const mutedColor = isDark ? '#888' : '#777';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const themeColors = useThemeColors();
-  const pillActiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const pillActiveBorder = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
-  const selectedBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const selectedBorder = isDark ? 'rgba(248,248,248,0.15)' : 'rgba(18,18,21,0.12)';
-
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
+  if (replying || !question) return null;
 
   return (
-    <View
-      style={{
-        borderWidth: 1,
-        borderColor,
-        borderRadius: 14,
-        overflow: 'hidden',
-        marginHorizontal: 16,
-        marginBottom: 6,
-        backgroundColor: isDark ? '#1a1a1d' : '#ffffff',
-      }}
-    >
-      {/* ── Header ── */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 10,
-          paddingVertical: 6,
-        }}
-      >
-        <Ionicons
-          name="chatbubble-ellipses-outline"
-          size={12}
-          color={mutedColor}
-        />
-        <RNText
-          style={{ flex: 1, fontSize: 11, marginLeft: 6, color: mutedColor, fontFamily: 'Roobert' }}
-          numberOfLines={1}
-        >
-          {!isSingle && `${questions.length} questions \u00B7 `}
-          <RNText style={{ color: isDark ? '#ccc' : '#444', fontFamily: 'Roobert-Medium', fontSize: 11 }}>
-            {headerSummary}
-          </RNText>
-        </RNText>
-        <TouchableOpacity
-          onPress={reject}
-          hitSlop={10}
-          style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="close" size={13} color={mutedColor} />
-        </TouchableOpacity>
-      </View>
+    <View className="px-4 pb-3 pt-1">
+      <View className="rounded-3xl border border-border bg-background p-2">
+        <View className="gap-0.5 px-2 pb-2 pt-1">
+          <Text className="font-roobert-medium text-base leading-6">{question.question}</Text>
+          {isMulti ? (
+            <Text className="font-roobert text-sm text-muted-foreground">Select all that apply</Text>
+          ) : null}
+        </View>
 
-      {/* ── Body ── */}
-      <View style={{ borderTopWidth: 1, borderTopColor: borderColor }}>
-        {/* Tab pills (multi-question only) */}
-        {!isSingle && (
-          <View style={{ borderBottomWidth: 1, borderBottomColor: borderColor }}>
-            <ScrollView
-              ref={tabScrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                paddingHorizontal: 6,
-                paddingVertical: 4,
-                gap: 3,
-              }}
-            >
-              {questions.map((q, i) => {
-                const isAnswered = (answers[i]?.length ?? 0) > 0;
-                const isActive = tab === i;
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => { setTab(i); setEditing(false); }}
-                    onLayout={(e) => {
-                      tabLayouts.current[i] = {
-                        x: e.nativeEvent.layout.x,
-                        width: e.nativeEvent.layout.width,
-                      };
-                    }}
-                    activeOpacity={0.7}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                      borderRadius: 6,
-                      borderWidth: 1,
-                      borderColor: isActive ? pillActiveBorder : 'transparent',
-                      backgroundColor: isActive ? pillActiveBg : 'transparent',
-                      gap: 4,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 2.5,
-                        borderWidth: 1.5,
-                        borderColor: isAnswered ? fgColor : (isActive ? mutedColor : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')),
-                        backgroundColor: isAnswered ? (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.06)') : 'transparent',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {isAnswered && <Ionicons name="checkmark" size={8} color={fgColor} />}
-                      {!isAnswered && isActive && (
-                        <View style={{ width: 2.5, height: 2.5, borderRadius: 1.25, backgroundColor: fgColor }} />
-                      )}
-                    </View>
-                    <RNText
-                      style={{
-                        fontSize: 12,
-                        fontFamily: isActive ? 'Roobert-Medium' : 'Roobert',
-                        color: isActive ? fgColor : mutedColor,
-                      }}
-                    >
-                      {q.header || `Q${i + 1}`}
-                    </RNText>
-                  </TouchableOpacity>
-                );
-              })}
-
-              <TouchableOpacity
-                onPress={() => { setTab(questions.length); setEditing(false); }}
-                onLayout={(e) => {
-                  tabLayouts.current[questions.length] = {
-                    x: e.nativeEvent.layout.x,
-                    width: e.nativeEvent.layout.width,
-                  };
-                }}
-                activeOpacity={0.7}
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  borderRadius: 6,
-                  borderWidth: 1,
-                  borderColor: isConfirm ? pillActiveBorder : 'transparent',
-                  backgroundColor: isConfirm ? pillActiveBg : 'transparent',
-                }}
-              >
-                <RNText
-                  style={{
-                    fontSize: 12,
-                    fontFamily: isConfirm ? 'Roobert-Medium' : 'Roobert',
-                    color: isConfirm ? fgColor : mutedColor,
-                  }}
-                >
-                  Confirm
-                </RNText>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Content area */}
-        <View style={{ paddingHorizontal: 8, paddingVertical: 6 }}>
-          {isConfirm ? (
-            /* ── Confirm / review tab ── */
-            <View>
-              {questions.map((q, i) => {
-                const ans = answers[i] ?? [];
-                const done = ans.length > 0;
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => setTab(i)}
-                    activeOpacity={0.6}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: 4,
-                      opacity: done ? 1 : 0.4,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 2.5,
-                        borderWidth: 1.5,
-                        borderColor: done ? fgColor : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'),
-                        backgroundColor: done ? (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.06)') : 'transparent',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginRight: 7,
-                      }}
-                    >
-                      {done && <Ionicons name="checkmark" size={8} color={fgColor} />}
-                    </View>
-                    <RNText
-                      style={{ flex: 1, fontSize: 12, color: fgColor, fontFamily: 'Roobert' }}
-                      numberOfLines={1}
-                    >
-                      {q.header || q.question}
-                    </RNText>
-                    <RNText
-                      style={{ fontSize: 12, color: mutedColor, maxWidth: '40%', marginLeft: 6, fontFamily: 'Roobert' }}
-                      numberOfLines={1}
-                    >
-                      {ans.length > 0 ? ans.join(', ') : '\u2014'}
-                    </RNText>
-                  </TouchableOpacity>
-                );
-              })}
-
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
-                <TouchableOpacity
-                  onPress={submit}
-                  activeOpacity={0.8}
-                  style={{
-                    backgroundColor: themeColors.primary,
-                    paddingHorizontal: 16,
-                    paddingVertical: 7,
-                    borderRadius: 8,
-                  }}
-                >
-                  <RNText
-                    style={{
-                      color: themeColors.primaryForeground,
-                      fontSize: 13,
-                      fontFamily: 'Roobert-Medium',
-                    }}
-                  >
-                    Submit
-                  </RNText>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : currentQuestion ? (
-            /* ── Question content ── */
-            <View>
-              {/* Question text */}
-              <RNText
-                style={{
-                  fontSize: 12,
-                  fontFamily: 'Roobert-Medium',
-                  color: fgColor,
-                  lineHeight: 16,
-                  marginBottom: 2,
-                }}
-              >
-                {currentQuestion.question}
-                {isMulti && (
-                  <RNText style={{ fontFamily: 'Roobert', fontStyle: 'italic', color: mutedColor }}>
-                    {' '}(select multiple)
-                  </RNText>
-                )}
-              </RNText>
-
-              {/* Options — compact rows */}
-              {options.map((opt, i) => {
-                const isPicked = currentAnswers.includes(opt.label);
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => selectOption(i)}
-                    activeOpacity={0.7}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingHorizontal: 4,
-                      paddingVertical: 3,
-                      borderRadius: 6,
-                      borderWidth: 1,
-                      borderColor: isPicked ? selectedBorder : 'transparent',
-                      backgroundColor: isPicked ? selectedBg : 'transparent',
-                      gap: 6,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: isMulti ? 2.5 : 6,
-                        borderWidth: 1,
-                        borderColor: isPicked ? fgColor : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'),
-                        backgroundColor: isPicked ? (isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.06)') : 'transparent',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {isPicked && <Ionicons name="checkmark" size={8} color={fgColor} />}
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <RNText style={{ fontSize: 14, lineHeight: 18, fontFamily: 'Roobert' }}>
-                        <RNText
-                          style={{
-                            fontFamily: 'Roobert-Medium',
-                            color: isPicked ? fgColor : (isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)'),
-                          }}
-                        >
-                          {opt.label}
-                        </RNText>
-                        {opt.description && (
-                          <RNText style={{ color: mutedColor }}>
-                            {' '}{opt.description}
-                          </RNText>
-                        )}
-                      </RNText>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-
-              {/* Type your own answer */}
-              {showCustom && !editing && (
-                <TouchableOpacity
-                  onPress={() => selectOption(options.length)}
-                  activeOpacity={0.7}
-                  style={{
+        {options.length > 0 ? (
+          <ScrollView
+            style={{ maxHeight: MAX_OPTIONS_HEIGHT }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {options.map((opt) => {
+              const isPicked = picked.includes(opt.label);
+              return (
+                <PressableSurface
+                  key={opt.label}
+                  onPress={() => pick(opt.label)}
+                  accessibilityRole={isMulti ? 'checkbox' : 'button'}
+                  accessibilityState={isMulti ? { checked: isPicked } : undefined}
+                  style={({ pressed }) => ({
                     flexDirection: 'row',
                     alignItems: 'center',
-                    paddingHorizontal: 4,
-                    paddingVertical: 3,
-                    gap: 6,
-                  }}
+                    gap: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    borderRadius: 16,
+                    backgroundColor: isPicked || pressed ? colors.secondary : 'transparent',
+                  })}
                 >
-                  <Ionicons
-                    name="pencil-outline"
-                    size={10}
-                    color={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'}
-                  />
-                  <RNText style={{ fontSize: 14, color: mutedColor, fontFamily: 'Roobert' }}>
-                    Type your own answer
-                  </RNText>
-                </TouchableOpacity>
-              )}
+                  <View className="flex-1 gap-0.5">
+                    <Text className="font-roobert text-base leading-6">{opt.label}</Text>
+                    {opt.description ? (
+                      <Text className="font-roobert text-sm text-muted-foreground" numberOfLines={2}>
+                        {opt.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {isMulti && isPicked ? <Icon as={CheckIcon} size={16} /> : null}
+                </PressableSurface>
+              );
+            })}
+          </ScrollView>
+        ) : null}
 
-              {/* Custom input */}
-              {editing && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
-                  <TextInput
-                    ref={inputRef}
-                    placeholder="Type your answer..."
-                    placeholderTextColor={mutedColor}
-                    value={customInputs[tab]}
-                    onChangeText={(t) => {
-                      const next = [...customInputs];
-                      next[tab] = t;
-                      setCustomInputs(next);
-                    }}
-                    onSubmitEditing={() => handleCustomSubmit(customInputs[tab])}
-                    returnKeyType={isMulti ? 'done' : 'go'}
-                    style={{
-                      flex: 1,
-                      height: 32,
-                      paddingHorizontal: 10,
-                      fontSize: 13,
-                      color: fgColor,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                      borderWidth: 1,
-                      borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                      borderRadius: 7,
-                    }}
-                  />
-                  <TouchableOpacity
-                    onPress={() => handleCustomSubmit(customInputs[tab])}
-                    activeOpacity={0.8}
-                    style={{
-                      height: 32,
-                      paddingHorizontal: 10,
-                      backgroundColor: themeColors.primary,
-                      borderRadius: 7,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <RNText style={{ color: themeColors.primaryForeground, fontSize: 12, fontFamily: 'Roobert-Medium' }}>
-                      {isMulti ? 'Add' : 'Go'}
-                    </RNText>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => { setEditing(false); Keyboard.dismiss(); }}
-                    hitSlop={8}
-                    style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
-                    activeOpacity={0.6}
-                  >
-                    <Ionicons name="close" size={14} color={mutedColor} />
-                  </TouchableOpacity>
-                </View>
-              )}
+        {showCustom ? (
+          <TextInput
+            value={draft}
+            onChangeText={(t) => setDrafts(drafts.map((d, i) => (i === step ? t : d)))}
+            onSubmitEditing={send}
+            placeholder={options.length > 0 ? 'Or type your own answer' : 'Type your answer'}
+            placeholderTextColor={colors.mutedForeground}
+            autoFocus={options.length === 0}
+            returnKeyType="send"
+            submitBehavior="blurAndSubmit"
+            accessibilityLabel="Your answer"
+            className="text-foreground"
+            style={{
+              fontFamily: INPUT_FONT_FAMILY,
+              fontSize: INPUT_FONT_SIZE,
+              minHeight: 40,
+              paddingHorizontal: 12,
+              paddingTop: 10,
+              paddingBottom: 12,
+            }}
+          />
+        ) : null}
 
-              {/* Next button for multi-select */}
-              {!isSingle && isMulti && !editing && (
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 }}>
-                  <TouchableOpacity
-                    onPress={() => { setTab(tab + 1); setEditing(false); }}
-                    disabled={currentAnswers.length === 0}
-                    activeOpacity={0.8}
-                    style={{
-                      paddingHorizontal: 14,
-                      paddingVertical: 6,
-                      borderRadius: 7,
-                      backgroundColor: currentAnswers.length > 0
-                        ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)')
-                        : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                      opacity: currentAnswers.length > 0 ? 1 : 0.4,
-                    }}
-                  >
-                    <RNText
-                      style={{
-                        fontSize: 12,
-                        fontFamily: 'Roobert-Medium',
-                        color: currentAnswers.length > 0 ? fgColor : mutedColor,
-                      }}
-                    >
-                      Next
-                    </RNText>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+        <View className="flex-row items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="rounded-full"
+            hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+            onPress={skip}
+          >
+            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Skip</Text>
+          </Button>
+          {step > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full"
+              hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+              onPress={() => setStep(step - 1)}
+            >
+              <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Back</Text>
+            </Button>
+          ) : null}
+          <View className="flex-1" />
+          {stepLabel ? (
+            <Text className="font-roobert text-sm text-muted-foreground">{stepLabel}</Text>
+          ) : null}
+          {showCustom || isMulti ? (
+            <Button
+              variant={canSend ? 'default' : 'secondary'}
+              size="icon-md"
+              className="rounded-full"
+              hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+              onPress={send}
+              disabled={!canSend}
+              accessibilityLabel={isLast ? 'Send answer' : 'Next question'}
+            >
+              <Icon as={ArrowUpIcon} size={18} />
+            </Button>
           ) : null}
         </View>
       </View>

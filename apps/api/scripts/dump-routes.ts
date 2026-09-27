@@ -23,7 +23,13 @@
  *
  *   cd apps/api && SUPABASE_URL=https://placeholder.supabase.co \
  *     INTERNAL_KORTIX_ENV=dev KORTIX_BILLING_INTERNAL_ENABLED=true \
- *     LLM_GATEWAY_ENABLED=true bun scripts/dump-routes.ts
+ *     LLM_GATEWAY_ENABLED=true FRONTEND_URL=https://placeholder.kortix.com \
+ *     KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT=https://placeholder.storage.example \
+ *     bun scripts/dump-routes.ts
+ *
+ * The last two placeholders exist because bun auto-loads the dotenvx-encrypted
+ * `.env`, so those two URL vars arrive as `encrypted:…` ciphertext and fail
+ * config validation before the app imports. They do not change the route table.
  */
 import { resolve } from "node:path";
 import { app } from "../src/index";

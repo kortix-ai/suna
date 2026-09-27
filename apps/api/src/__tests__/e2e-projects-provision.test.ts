@@ -358,7 +358,7 @@ mock.module('../shared/db', () => ({
           if (table === projects) updatedProjectSets.push(values);
           // Real drizzle's UPDATE builder is thenable at every chain step
           // (a caller may `.catch()` it directly without `.returning()` —
-          // see r1.ts's best-effort default_agent metadata mirror write, and
+          // see projects.ts's best-effort default_agent metadata mirror write, and
           // the several other `.where(...).catch(() => {})` call sites this
           // mirrors), so this stub must be too: a real Promise (which
           // supplies `.then`/`.catch`) that ALSO exposes `.returning()` for
@@ -591,8 +591,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
   });
 
   test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
-    // The deterministic install/lock engine is gone (see
-    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
+    // The deterministic install/lock engine is gone — provision seeds only
     // the plain starter scaffold. `marketplace_items` is accepted for API
     // back-compat but no longer installs anything at provision time; adding a
     // marketplace item to a project is now an agent import

@@ -78,6 +78,13 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
  * acceleration belongs up front where the eye already is. 200ms in, 160ms out:
  * exits run ~80% of the entrance, since leaving is a decision already made.
  */
+/** Collapsed, the column is only the chevron: `size-7` + `mr-1` + the `gap-2`
+ *  before the zero-width panel = 10 spacing tokens (`--spacing: 0.23rem`). A
+ *  negative margin of the same size cancels it, so the chat centers on the
+ *  full row width and the chevron sits over its right edge. Kept in rem so
+ *  motion can interpolate it against `0rem`. */
+const COLLAPSED_RAIL_OFFSET = '-2.3rem';
+
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 const ENTER = { duration: 0.2, ease: EASE_OUT } as const;
 const EXIT = { duration: 0.16, ease: EASE_OUT } as const;
@@ -143,9 +150,19 @@ export function SessionActionPanelColumn({
   const label = isOpen ? 'Collapse pane' : 'Expand pane';
 
   return (
-    <div
+    // The margin animates with the panel width and uses the same transition,
+    // so the column's net width changes smoothly in both directions and the
+    // chat never jumps.
+    <m.div
+      initial={false}
+      animate={{ marginLeft: isOpen ? '0rem' : COLLAPSED_RAIL_OFFSET }}
+      transition={reduce ? { duration: 0 } : isOpen ? ENTER : EXIT}
       className={cn(
-        'group/panel flex min-h-0 shrink-0 items-start gap-2 py-3',
+        'group/panel relative z-10 flex min-h-0 shrink-0 items-start gap-2 py-3',
+        // Collapsed, the column overlaps the chat's right edge. Only the
+        // chevron takes pointer input, so the chat's scrollbar and wheel
+        // scrolling under the rest of the strip still work.
+        !isOpen && 'pointer-events-none',
         // A detail panel is showing on the right. The action panel steps aside
         // ENTIRELY — the control and the cards — so the session is the chat
         // plus the one thing being looked at, not a transcript squeezed
@@ -201,7 +218,7 @@ export function SessionActionPanelColumn({
             // `pointer-events`, so the keyboard path still reaches it.
             isOpen
               ? 'pointer-events-none opacity-0 group-hover/panel:pointer-events-auto group-hover/panel:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100'
-              : 'mr-1',
+              : 'pointer-events-auto mr-1',
           )}
         >
           <span className="relative inline-flex">
@@ -249,6 +266,6 @@ export function SessionActionPanelColumn({
           <ActionPanel />
         </div>
       </m.div>
-    </div>
+    </m.div>
   );
 }

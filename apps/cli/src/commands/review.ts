@@ -1,5 +1,8 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -114,21 +117,11 @@ Examples:
 `;
 
 export async function runReview(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
@@ -145,8 +138,7 @@ export async function runReview(argv: string[]): Promise<number> {
     f.agent = takeFlagValue(rest, ['--agent']);
     f.session = takeFlagValue(rest, ['--session']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -177,10 +169,10 @@ async function reviewLs(
   json: boolean,
 ): Promise<number> {
   if (f.segment && !(SEGMENTS as readonly string[]).includes(f.segment)) {
-    return invalid(`--segment must be one of ${SEGMENTS.join(', ')}`);
+    return fail(`--segment must be one of ${SEGMENTS.join(', ')}`);
   }
   if (f.kind && !(KINDS as readonly string[]).includes(f.kind)) {
-    return invalid(`--kind must be one of ${KINDS.join(', ')}`);
+    return fail(`--kind must be one of ${KINDS.join(', ')}`);
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -308,7 +300,7 @@ async function reviewAct(
   if (!verdictArg) return missing(`a verdict: ${VERDICTS.join(' | ')}`);
   const verdict = verdictArg as Verdict;
   if (!(VERDICTS as readonly string[]).includes(verdict)) {
-    return invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
+    return fail(`verdict must be one of ${VERDICTS.join(', ')}`);
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
@@ -390,10 +382,7 @@ async function reviewAct(
         );
         return 0;
       }
-      process.stderr.write(
-        `${status.err(`A change request takes approve, reject, or changes — not "${verdict}".`)}\n`,
-      );
-      return 2;
+      return fail(`A change request takes approve, reject, or changes — not "${verdict}".`);
     }
 
     // ── A native row.
@@ -423,7 +412,7 @@ async function reviewBulk(
   if (!verdictArg) return missing(`a verdict: ${VERDICTS.join(' | ')}`);
   const verdict = verdictArg as Verdict;
   if (!(VERDICTS as readonly string[]).includes(verdict)) {
-    return invalid(`verdict must be one of ${VERDICTS.join(', ')}`);
+    return fail(`verdict must be one of ${VERDICTS.join(', ')}`);
   }
   if (ids.length === 0) return missing('at least one review item id');
 
@@ -481,22 +470,22 @@ async function reviewSubmit(
 ): Promise<number> {
   if (!f.kind) return missing(`--kind ${SUBMIT_KINDS.join('|')}`);
   if (!(SUBMIT_KINDS as readonly string[]).includes(f.kind)) {
-    return invalid(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
+    return fail(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
   }
   if (!f.title) return missing('--title "<text>"');
   if (f.risk && !(RISKS as readonly string[]).includes(f.risk)) {
-    return invalid(`--risk must be one of ${RISKS.join(', ')}`);
+    return fail(`--risk must be one of ${RISKS.join(', ')}`);
   }
   let detail: Record<string, unknown> | undefined;
   if (f.detail !== undefined) {
     try {
       const parsed: unknown = JSON.parse(f.detail);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return invalid('--detail must be a JSON object');
+        return fail('--detail must be a JSON object');
       }
       detail = parsed as Record<string, unknown>;
     } catch {
-      return invalid('--detail must be valid JSON');
+      return fail('--detail must be valid JSON');
     }
   }
 
@@ -574,14 +563,4 @@ function riskCell(risk: string): string {
   if (risk === 'medium') return `${C.yellow}medium${C.reset}`;
   if (risk === 'low') return `${C.faded}low${C.reset}`;
   return `${C.faded}none${C.reset}`;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}
-
-function invalid(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
 }

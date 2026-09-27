@@ -11,6 +11,7 @@ import { makeOpenApiApp, json, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 
 import { actorOf } from '../../iam/actor';
+import { readJsonObject } from '../../shared/http-body';
 export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
 
 async function resolveDeletionContext(c: any) {
@@ -63,8 +64,12 @@ accountDeletionRouter.openapi(
     // Manual parse: the body is optional and tolerant of missing/invalid JSON
     // (defaults to {}); only `reason` is read. valid('json') would reject a
     // bodyless request, changing the contract.
-    const body = await c.req.json().catch(() => ({}));
-    const result = await requestAccountDeletion(accountId, userId, body.reason);
+    const body = await readJsonObject(c);
+    const result = await requestAccountDeletion(
+      accountId,
+      userId,
+      typeof body.reason === 'string' ? body.reason : undefined,
+    );
     return c.json(result);
   },
 );

@@ -76,7 +76,7 @@ export async function syncLegacyStripeSubscription(
     const stripe = getStripe();
     const { getBillingPeriodByPriceId, getTier, getTierByPriceId } = await import('./tiers');
     const { applyStripeSync } = await import('./account-write-owner');
-    const { resetExpiringCredits } = await import('./credits');
+    const { wallet } = await import('../wallet');
 
     const candidateCustomerIds = new Set<string>();
     if (customerId) candidateCustomerIds.add(customerId);
@@ -190,12 +190,12 @@ export async function syncLegacyStripeSubscription(
           );
 
           if (tier.monthlyCredits > 0) {
-            await resetExpiringCredits(
+            await wallet.reset({
               accountId,
-              tier.monthlyCredits,
-              `Recovered legacy Stripe subscription: ${tier.monthlyCredits} credits`,
-              `legacy_sync:${subscription.id}`,
-            );
+              amount: tier.monthlyCredits,
+              description: `Recovered legacy Stripe subscription: ${tier.monthlyCredits} credits`,
+              key: { event: `legacy_sync:${subscription.id}` },
+            });
           }
 
           await upsertCustomer({

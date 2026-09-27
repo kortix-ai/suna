@@ -8,7 +8,11 @@ import type { OutcomeTone } from '@/features/session/outcomes/outcome-types';
 import { outcomeTint } from '@/features/session/outcomes/outcome-vocabulary';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { getSecretSetupLink, submitSecretSetupLink, type SecretSetupLinkInfo } from '@kortix/sdk';
+import {
+  getSecretSetupLink,
+  submitSecretSetupLink,
+  type SecretSetupLinkInfo,
+} from '@kortix/sdk';
 import {
   ArrowUpRightIcon,
   CheckIcon,
@@ -21,6 +25,7 @@ import { Fragment, useEffect, useState, type ReactElement } from 'react';
 import {
   classifySetupLinkError,
   describeLinkExpiry,
+  describeWithheldSecrets,
   setupLinkApiBase,
   splitTextLinks,
 } from './util';
@@ -117,6 +122,9 @@ export function SecretIntakeForm({
   const [expiresIn, setExpiresIn] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [withheldNotice, setWithheldNotice] = useState<ReturnType<
+    typeof describeWithheldSecrets
+  > | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,7 +171,8 @@ export function SecretIntakeForm({
     setPhase('submitting');
     setError(null);
     try {
-      await submitSecretSetupLink(token, filled, { backendUrl: base });
+      const result = await submitSecretSetupLink(token, filled, { backendUrl: base });
+      setWithheldNotice(describeWithheldSecrets(result));
       setPhase('done');
       onDone?.();
     } catch (cause) {
@@ -218,6 +227,34 @@ export function SecretIntakeForm({
         />
       );
     case 'done':
+      if (withheldNotice) {
+        const { agent, byGrant, byAllowlist } = withheldNotice;
+        const description = [
+          byGrant.length > 0
+            ? tI18nHardcoded('secretIntakeWithheld.grant', {
+                names: byGrant.join(', '),
+                count: byGrant.length,
+                agent,
+              })
+            : null,
+          byAllowlist.length > 0
+            ? tI18nHardcoded('secretIntakeWithheld.allowlist', {
+                names: byAllowlist.join(', '),
+                count: byAllowlist.length,
+              })
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        return (
+          <StatusNotice
+            icon={WarningCircleIcon}
+            tone="warning"
+            title={tI18nHardcoded('secretIntakeWithheld.title', { agent })}
+            description={description}
+          />
+        );
+      }
       return (
         <StatusNotice
           icon={CheckIcon}

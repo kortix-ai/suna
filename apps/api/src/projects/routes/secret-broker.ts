@@ -21,7 +21,7 @@ import {
   verifySandboxEgressIp,
 } from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 projectsApp.openapi(
   createRoute({
@@ -42,7 +42,7 @@ projectsApp.openapi(
   async (c) => {
     const projectId = c.req.param('projectId');
     const identifier = c.req.param('identifier')?.trim();
-    const parsed = SecretBrokerRequestSchema.safeParse(await readBody(c));
+    const parsed = SecretBrokerRequestSchema.safeParse(await readJsonObject(c));
     if (!identifier || !parsed.success) {
       return c.json({ error: 'Invalid broker request', code: 'invalid_request' }, 400);
     }

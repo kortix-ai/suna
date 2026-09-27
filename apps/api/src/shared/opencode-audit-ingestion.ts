@@ -85,8 +85,10 @@ export interface OpenCodeAuditScope {
     opencodeSessionId: string | null;
     agentId: string | null;
     agentName: string | null;
-    initiatorActorType: 'human' | 'agent' | 'service_account' | 'system' | null;
+    initiatorActorType: 'human' | 'agent' | 'service_account' | 'trigger' | 'channel' | 'system' | null;
     initiatorActorId: string | null;
+    /** The human the session acts on behalf of (spec 2026-09-22 §2). */
+    onBehalfOfUserId?: string | null;
     correlationId: string | null;
     causationId: string | null;
     delegationDepth: number;
@@ -321,6 +323,7 @@ export function parseOpenCodeAuditBatch(
       agentName: trusted?.agentName ?? null,
       initiatorActorType: trusted?.initiatorActorType ?? null,
       initiatorActorId: trusted?.initiatorActorId ?? null,
+      onBehalfOfUserId: trusted?.onBehalfOfUserId ?? null,
       delegationDepth: trusted?.delegationDepth ?? 0,
       source: 'opencode',
       authoritativeSource: 'opencode',

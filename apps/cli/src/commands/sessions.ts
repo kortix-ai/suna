@@ -1,3 +1,9 @@
+import {
+  describeConfigStatus,
+  describeReloadOutcome,
+  type SessionConfigStatusInput,
+  type SessionReloadOutcomeInput,
+} from './session-config-format';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -44,6 +50,7 @@ import {
   runSessionsWarm,
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
+import { runSessionsAttachments } from './sessions-attachments.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
@@ -64,7 +71,11 @@ Subcommands:
                                     initial prompt. --agent <name> pins the
                                     session to that agent (default: the
                                     project's declared default agent).
-                                    --model <id> overrides the model.
+                                    --model <id> overrides the model. A
+                                    model on an API key or a ChatGPT
+                                    subscription runs on every key you may
+                                    use for it, and they rotate (see
+                                    \`kortix models ls\`).
                                     --wait blocks until it's running; --json
                                     prints the session object (capture
                                     session_id to orchestrate).
@@ -108,8 +119,15 @@ Subcommands:
                                     to end one.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
-                                    doing without sending it anything.
-                                    --limit <N>, --json. Aliases: messages.
+                                    doing without sending it anything. A
+                                    stopped session is read from its saved
+                                    transcript. --limit <N>, --json.
+                                    Aliases: messages.
+  attachments <session-id>          List a session's stored files — uploads
+                                    and copies of what the agent showed —
+                                    and download them (--download <id>,
+                                    --all, --out <dir>). Works while the
+                                    session is stopped. --json.
   pending <session-id>              List open interactive prompts the agent
                                     is blocked on: tool-permission asks +
                                     questions. --json. Aliases: prompts.
@@ -177,6 +195,9 @@ Subcommands:
                                     --exclude <session-id>, --json.
   model <session-id> <model-id>     Change the model a session runs. A live
                                     box restarts, ending the turn in flight.
+                                    A session with no keys for the new
+                                    model's provider gets every key you may
+                                    use there.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
@@ -261,6 +282,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'files') {
     return runSessionsFiles(argv.slice(1));
+  }
+  // `attachments` reads the platform's private store, never the sandbox.
+  if (sub === 'attachments') {
+    return runSessionsAttachments(argv.slice(1));
   }
   if (sub === 'stop' || sub === 'pause') {
     return runSessionsStop(argv.slice(1));
@@ -670,6 +695,8 @@ async function sendPromptToSession(
   await handle.prompts.create({
     clientMessageId: randomUUID(),
     messageId: wireMessageId(),
+    // The CLI cannot read the transcript; the server places the id.
+    remintOnDelivery: true,
     parts: [{ type: 'text', text }],
     ...(defaults.agent || defaults.model
       ? {
@@ -965,32 +992,15 @@ async function sessionsReload(
 
   if (statusOnly) {
     try {
-      const state = await client.get<{
-        running_etag: string | null;
-        latest_etag: string | null;
-        stale: boolean | null;
-        sandbox_reachable: boolean;
-      }>(`/projects/${projectId}/sessions/${canonicalSessionId}/config`);
+      const state = await client.get<SessionConfigStatusInput>(
+        `/projects/${projectId}/sessions/${canonicalSessionId}/config`,
+      );
       if (json) {
         process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
         return 0;
       }
-      if (state.stale === null) {
-        // Never claim "up to date" when the answer is "could not ask".
-        process.stdout.write(
-          `${status.warn(
-            state.sandbox_reachable
-              ? 'This project has no compiled agent config to compare.'
-              : 'Sandbox unreachable — cannot tell whether this session is current.',
-          )}\n`,
-        );
-        return 0;
-      }
-      process.stdout.write(
-        state.stale
-          ? `${status.warn(`Behind — running ${C.bold}${state.running_etag}${C.reset}, latest is ${C.bold}${state.latest_etag}${C.reset}. Run \`kortix sessions reload ${shortId(sessionId)}\`.`)}\n`
-          : `${status.ok(`Up to date (${state.running_etag}).`)}\n`,
-      );
+      const line = describeConfigStatus(state, shortId(sessionId), (text) => `${C.bold}${text}${C.reset}`);
+      process.stdout.write(`${line.tone === 'warn' ? status.warn(line.text) : status.ok(line.text)}\n`);
       return 0;
     } catch (err) {
       return surfaceApiError(err);
@@ -998,14 +1008,7 @@ async function sessionsReload(
   }
 
   try {
-    const result = await client.post<{
-      applied: boolean;
-      previous_etag: string | null;
-      etag: string | null;
-      repo_refreshed: boolean;
-      agent_files?: string;
-      detail: string;
-    }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
+    const result = await client.post<SessionReloadOutcomeInput & { repo_refreshed: boolean }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
       force,
     });
@@ -1013,24 +1016,16 @@ async function sessionsReload(
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return 0;
     }
-    if (!result.applied) {
-      process.stdout.write(`${status.warn(result.detail)}\n`);
-      return 0;
-    }
-    // `detail` is the server's sentence and it is the only thing entitled to say
-    // whether the AGENT changed. This line used to hardcode "The next prompt
-    // runs the new config" for every applied reload, which was false whenever
-    // the session's agent files were left alone — the etag moved and the agent
-    // did not. The etag transition is still worth printing; the claim is not
-    // ours to make.
-    //
-    // Only two outcomes deserve a warning. An earlier version keyed off a
-    // boolean and warned on `already-current` and `not-applicable`, which are
-    // plain successes.
-    const needsAttention = result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
-    const etags = `${C.dim} — ${result.previous_etag ?? 'unknown'} → ${result.etag}${C.reset}`;
-    const line = `Reloaded ${C.bold}${shortId(canonicalSessionId)}${C.reset}${etags}\n  ${result.detail}`;
-    process.stdout.write(`${needsAttention ? status.warn(line) : status.ok(line)}\n`);
+    // Wording and tone live in session-config-format.ts: `detail` is the
+    // server's sentence and the only thing entitled to say whether the AGENT
+    // changed; the tone warns whenever it may not have.
+    const line = describeReloadOutcome(
+      result,
+      shortId(canonicalSessionId),
+      (text) => `${C.bold}${text}${C.reset}`,
+      (text) => `${C.dim}${text}${C.reset}`,
+    );
+    process.stdout.write(`${line.tone === 'warn' ? status.warn(line.text) : status.ok(line.text)}\n`);
     return 0;
   } catch (err) {
     return surfaceApiError(err);

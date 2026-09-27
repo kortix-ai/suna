@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
@@ -8,6 +8,12 @@ import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
 let appRuntimeKeepRows: any[] = [];
+let environmentKeepRows: any[] = [];
+let monitorKeepRows: any[] = [];
+let freshReference = async (_provider: string, _externalId: string): Promise<boolean> => false;
+mock.module('./reaping/orphan-box-references', () => ({
+  hasProviderBoxReference: (provider: string, externalId: string) => freshReference(provider, externalId),
+}));
 // `terminal` is a real provider answer (Daytona `error`, Platinum `failed`), so
 // the fixture has to be able to express it — see decideReconcile.
 let statusByExternal: Record<
@@ -69,6 +75,7 @@ let unconfirmedTurnDrips: string[] = [];
 // on its own, without every existing exact-equality assertion having to carry
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
+let clearedTurnCauses: Array<string | null> = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
@@ -261,6 +268,10 @@ mock.module('../shared/db', () => ({
                 ? selectedSandboxRows
                 : table === appRuntimes
                   ? appRuntimeKeepRows
+                  : table === sessionEnvironments
+                    ? environmentKeepRows
+                    : table === projectMonitorBoxes
+                      ? monitorKeepRows
                   : table === sandboxComputeSessions
                     ? computeRows
                     : table === projectSessions
@@ -427,12 +438,14 @@ const reapAndReconcileSandboxes = (
       token: string,
       _graceMs?: number,
       reason?: string,
+      cause?: { name: string | null } | null,
     ) => {
       clearedTurnCalls.push({
         sandboxId,
         token,
       });
       clearedTurnReasons.push(reason);
+      clearedTurnCauses.push(cause?.name ?? null);
       lifecycleCallOrder.push(`clear:${token}`);
       return true;
     },
@@ -474,6 +487,9 @@ const HOUR = 3_600_000;
 beforeEach(() => {
   candidates = [];
   appRuntimeKeepRows = [];
+  environmentKeepRows = [];
+  monitorKeepRows = [];
+  freshReference = async () => false;
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
@@ -504,6 +520,7 @@ beforeEach(() => {
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
+  clearedTurnCauses = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
@@ -1351,7 +1368,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, Essentia session
+    // EXPECTATION CHANGED 2026-08-20 (live incident, SampleCo session
     // d1b74954): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
@@ -1747,6 +1764,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
     expect(clearedTurnReasons).toEqual(['completed']);
+    expect(clearedTurnCauses).toEqual([null]);
   });
 
   test('a turn the model killed is recorded failed, exactly as the session.error relay records it', async () => {
@@ -1761,6 +1779,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnReasons).toEqual(['failed']);
+    // Its own end frame never arrived, so the reaper says what it saw.
+    expect(clearedTurnCauses).toEqual(['RuntimeTurnFailed']);
   });
 
   test('a husk the reaper had to force-close is failed, never completed', async () => {
@@ -1775,6 +1795,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     expect(r.husksFinalized).toBe(1);
     expect(clearedTurnReasons).toEqual(['failed']);
+    expect(clearedTurnCauses).toEqual(['TurnHuskFinalized']);
   });
 
   test('a terminal answer no observer can explain is recorded unknown', async () => {
@@ -1891,7 +1912,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // Essentia 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (session 9df2a873): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
@@ -2709,10 +2730,10 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(endedCompute).toEqual(['sb-1']);
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sbUpdate?.updates.status).toBe('stopped');
-    expect(sbUpdate?.updates.metadata).toMatchObject({
-      runtimeIdentityState: 'unavailable',
-      preservedExternalId: 'ext-1',
-    });
+    // Merged into the row's current metadata in SQL, never assigned.
+    const metadata = describeSql(sbUpdate?.updates.metadata);
+    expect(metadata).toContain('"runtimeIdentityState":"unavailable"');
+    expect(metadata).toContain('"preservedExternalId":"ext-1"');
     expect(stops).toEqual([]);
   });
 
@@ -2761,6 +2782,34 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 describe('reapOrphanProviderBoxes', () => {
   const NOW2 = new Date('2026-06-21T12:00:00Z');
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
+
+  test('keeps worker environments and monitor boxes', async () => {
+    environmentKeepRows = [{ provider: 'daytona', externalId: 'worker-env' }];
+    monitorKeepRows = [{ provider: 'daytona', externalId: 'monitor' }];
+    managedBoxes = ['worker-env', 'monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
+    expect(stops).toEqual([]);
+  });
+
+  test('a reference that appears after listing vetoes the stop', async () => {
+    managedBoxes = [{ externalId: 'adopted', createdAt: hoursAgo(48) }];
+    freshReference = async () => true;
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
+    expect(stops).toEqual([]);
+  });
+
+  test('an unreadable database never authorizes a stop', async () => {
+    managedBoxes = [{ externalId: 'unknown', createdAt: hoursAgo(48) }];
+    freshReference = async () => { throw new Error('database unavailable'); };
+    expect((await reapOrphanProviderBoxes(NOW2)).errors).toBe(1);
+    expect(stops).toEqual([]);
+  });
+
+  test('the concurrent workers never exceed 50 provider stops', async () => {
+    managedBoxes = Array.from({ length: 70 }, (_, i) => ({ externalId: `orphan-${i}`, createdAt: hoursAgo(48) }));
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(50);
+    expect(stops).toHaveLength(50);
+  });
 
   test('stops boxes with no live DB row; keeps live, too-young, and unknown-age boxes', async () => {
     // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.

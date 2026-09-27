@@ -14,24 +14,19 @@ describe('providerKindForNpm — default-to-openai-compat dispatch', () => {
     expect(providerKindForNpm('@ai-sdk/google-vertex/anthropic')).toBeNull();
   });
 
-  test('the confirmed-common openai-compatible packages resolve to openai-compat', () => {
-    for (const npm of [
-      '@ai-sdk/openai-compatible',
-      '@ai-sdk/openai',
-      '@ai-sdk/groq',
-      '@ai-sdk/mistral',
-      '@ai-sdk/xai',
-      '@openrouter/ai-sdk-provider',
-    ]) {
-      expect(providerKindForNpm(npm), npm).toBe('openai-compat');
-    }
-  });
-
-  test('a brand-new, never-seen npm package defaults to openai-compat (zero-code-change robustness)', () => {
-    expect(providerKindForNpm('@ai-sdk/some-provider-models-dev-adds-tomorrow')).toBe(
-      'openai-compat',
-    );
-    expect(providerKindForNpm('totally-custom-ai-sdk-provider')).toBe('openai-compat');
+  // Unknown packages default to openai-compat so a provider models.dev adds
+  // tomorrow is routable with zero code changes; the common ones are rows.
+  test.each([
+    '@ai-sdk/openai-compatible',
+    '@ai-sdk/openai',
+    '@ai-sdk/groq',
+    '@ai-sdk/mistral',
+    '@ai-sdk/xai',
+    '@openrouter/ai-sdk-provider',
+    '@ai-sdk/some-provider-models-dev-adds-tomorrow',
+    'totally-custom-ai-sdk-provider',
+  ])('%s resolves to openai-compat', (npm) => {
+    expect(providerKindForNpm(npm)).toBe('openai-compat');
   });
 
   test('no npm at all is unroutable', () => {

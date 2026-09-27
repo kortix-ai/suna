@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 const boundarySource = readFileSync(join(import.meta.dir, 'sandbox-loading-boundary.tsx'), 'utf8');
 const projectLayoutSource = readFileSync(
-  join(import.meta.dir, '../../app/(app)/projects/[id]/layout.tsx'),
+  join(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/layout.tsx'),
   'utf8',
 );
 const projectAccessSource = readFileSync(
@@ -42,9 +42,13 @@ describe('session navigation loading boundaries', () => {
     // The mirror of the `return null` rule above: a runtime-not-ready RETRY
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
-    expect(projectAccessSource).toContain('if (!authReady || query.isPending)');
-    expect(projectAccessSource).toContain('<ProjectPendingScreen />');
-    expect(projectAccessSource).not.toMatch(/query\.isPending\)\s*return null/);
+    expect(projectAccessSource).toContain(
+      "if (!input.authReady || input.isPending) return 'pending';",
+    );
+    expect(projectAccessSource).toContain(
+      "if (view === 'pending') return <ProjectPendingScreen />;",
+    );
+    expect(projectAccessSource).not.toMatch(/view === 'pending'\)\s*return null/);
   });
 
   test('the first-fetch loader is the brand mark, not the auth spinner', () => {

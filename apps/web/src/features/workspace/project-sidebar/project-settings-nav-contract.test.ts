@@ -89,7 +89,7 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // The probes used to be written out one `useProjectCan` per tab — seven
     // hooks, and on the wire seven `GET …/effective?action=…` plus seven CORS
     // preflights on every project page open, for one sidebar row (measured,
-    // essentia 2026-08-24). They now go through `useCans`, which sends the
+    // sampleco 2026-08-24). They now go through `useCans`, which sends the
     // list to `effective:batch` and answers all of them from one response.
     // The list is derived from TAB_PREFERENCE itself, so a tab added there is
     // probed by construction — the old "forgot the probe line" failure mode

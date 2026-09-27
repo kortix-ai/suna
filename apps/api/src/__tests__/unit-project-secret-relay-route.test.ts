@@ -53,7 +53,7 @@ let tokenProjectId: string | undefined = PROJECT_ID;
 let sessionId: string | undefined = SESSION_ID;
 let agentGrant: Record<string, unknown> | null = {
   agent: 'default',
-  kortixCli: 'all',
+  permissions: 'all',
   connectors: 'all',
   env: ['PRIMARY'],
 };
@@ -265,7 +265,7 @@ beforeEach(() => {
   authType = 'pat';
   tokenProjectId = PROJECT_ID;
   sessionId = SESSION_ID;
-  agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: ['PRIMARY'] };
+  agentGrant = { agent: 'default', permissions: 'all', connectors: 'all', env: ['PRIMARY'] };
   sessionRow = { sessionId: SESSION_ID, secretsAllowlist: ['PRIMARY'] };
   secretRows = [sharedSecret()];
   handleRows = [handleFor()];
@@ -405,7 +405,7 @@ describe('substitution covers every carrier the guest can use', () => {
   });
 
   test('a handle this session may NOT spend is left alone, not substituted', async () => {
-    agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: [] };
+    agentGrant = { agent: 'default', permissions: 'all', connectors: 'all', env: [] };
     const response = await relay({ meta: meta({ headers: [['authorization', `Bearer ${HANDLE}`]] }) });
     // The route's own secret is no longer deliverable, so the relay refuses
     // outright rather than sending a request with a worthless string in it.

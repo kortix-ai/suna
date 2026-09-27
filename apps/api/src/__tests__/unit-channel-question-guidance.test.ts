@@ -28,18 +28,20 @@ const instructionsOf = (source: string) => {
   return source.slice(start, source.indexOf('].join(', start));
 };
 
-// SLACK points at the tool. TEAMS must not, and the difference is not
-// cosmetic: releasing opencode's blocking `question` call is gated on a
-// channel context that, until the daemon fix in this change, read
-// SLACK_THREAD_TS / SLACK_CHANNEL_ID only. A Teams session fell through to
-// "left open for the UI" and the agent hung — after the card had been posted,
-// because the relay is ungated. Flip Teams over only once sandboxes carry the
-// fixed daemon; the agent server is image-baked.
-describe('slack turn instructions', () => {
-  const block = instructionsOf(slack);
+// Both channels point at the tool. Teams was held back while the release that
+// ends a question turn existed only in the image-baked daemons, gated on
+// SLACK_* env — a Teams agent that asked hung after its card was posted.
+// `POST /turn-question` now releases channel questions from the server, in the
+// same deploy as this prompt, so the two cannot drift apart again.
+describe.each([
+  ['teams', teams],
+  ['slack', slack],
+])('%s turn instructions', (_name, source) => {
+  const block = instructionsOf(source);
 
-  test('never calls the question tool disabled or broken', () => {
+  test('never calls the question tool disabled, broken, or forbidden', () => {
     expect(block).not.toMatch(/`question` tool is DISABLED/);
+    expect(block).not.toMatch(/Do NOT use the built-in `question` tool/);
   });
 
   test('points the agent at the question tool for discrete choices', () => {
@@ -53,20 +55,6 @@ describe('slack turn instructions', () => {
 
   test('keeps `send` for genuinely open-ended questions only', () => {
     expect(block).toMatch(/open-ended/);
-  });
-});
-
-describe('teams turn instructions', () => {
-  const block = instructionsOf(teams);
-
-  test('tells the agent NOT to use the question tool, and why', () => {
-    expect(block).toMatch(/Do NOT use the built-in `question` tool in Teams/);
-    expect(block).toMatch(/hangs/);
-  });
-
-  test('points at `teams send` instead, and still ends the turn', () => {
-    expect(block).toMatch(/Use `teams send`/);
-    expect(block).toMatch(/END your turn/);
   });
 });
 

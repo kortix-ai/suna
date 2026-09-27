@@ -1,9 +1,8 @@
-// Full v2 agent-config CRUD — the dashboard "agent builder" surface (spec
-// docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
+// Full v2 agent-config CRUD — the dashboard "agent builder" surface (redirected
 // 2026-07-05: "one home per concern").
 //
 // TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
-// (connectors/secrets/skills/kortix_cli/repository_access/enabled); the agent's own
+// (connectors/secrets/skills/kortix_permissions/repository_access/enabled); the agent's own
 // native `.kortix/opencode/agents/<name>.md` frontmatter + body carries every
 // OpenCode-behavioral field (mode/model/temperature/top_p/steps/variant/
 // color/hidden/permission) plus the prompt itself. This route is the ONE
@@ -43,6 +42,7 @@ import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents } from '../agents';
 import { readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
+import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -64,10 +64,11 @@ import {
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
 import { loadManifestForEdit } from '../lib/triggers';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { MANIFEST_FILENAME, manifestWrites } from '../triggers';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
-// deep per-entry validation (grantable kortix_cli actions, etc.) happens in
+// deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
 // validateManifest via applyAgentBlockV2 — this schema only guards the shape.
 const GrantSetSchema = z.union([
   z.literal('all'),
@@ -90,6 +91,11 @@ const AgentBlockSchema = z
     connectors_personal: z.array(z.string().min(1).max(200)).max(500).optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
+    // Kortix Apps (by slug) this agent may open when restricted/private (§2.5).
+    apps: GrantSetSchema.optional(),
+    kortix_permissions: GrantSetSchema.optional(),
+    // Deprecated request alias of kortix_permissions. The handler normalizes it
+    // (normalizeKortixPermissionAliases) before serialization.
     kortix_cli: GrantSetSchema.optional(),
     repository_access: z.boolean().optional(),
     // Deprecated input alias for older clients.
@@ -104,16 +110,36 @@ const DefaultAgentResponseSchema = z.object({
   default_agent: z.string(),
 });
 
+/**
+ * A commit the remote rejected by repository policy — branch protection,
+ * repository rules, or a server-side hook — is a PERMANENT, user-actionable
+ * outcome. The same commit is rejected on every retry, so it must be a typed
+ * 409 the dashboard renders as a message, never a 5xx that pages Better Stack
+ * (prod pattern `5e505349…`:
+ * `Failed to commit agent config: … push declined due to repository rule violations`).
+ *
+ * The branch name is not customer data; the raw git stderr is omitted because
+ * it carries the customer's repository URL.
+ */
+function pushPolicyRejectedBody(branch: string) {
+  return {
+    error:
+      `The repository rejected the push to "${branch}" because of its branch protection or repository rules. ` +
+      `Allow the Kortix GitHub App to push to "${branch}", or connect a repository where it can, then try again.`,
+    code: 'repository_push_rejected',
+  };
+}
+
 /** Read + parse an agent's `.md` (governance-declared or not — behavior and
  *  governance are independently addressable). Never throws: a missing file
  *  (brand-new agent) reads as body-only/empty, same as a fresh start. */
 async function readAgentMarkdown(
-  loadedRow: Parameters<typeof withProjectGitAuth>[0],
+  project: Parameters<typeof withProjectGitAuth>[0] | Awaited<ReturnType<typeof withProjectGitAuth>>,
   branch: string,
   mdPath: string,
 ): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
   try {
-    const gitProject = await withProjectGitAuth(loadedRow);
+    const gitProject = 'gitAuthToken' in project ? project : await withProjectGitAuth(project);
     const content = await readRepoFile(gitProject, mdPath, branch);
     return parseAgentMarkdown(content);
   } catch {
@@ -171,9 +197,18 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
+    // The manifest read stays forced: a GET right after a PUT may land on
+    // another replica, and the editor must read back what was saved (see
+    // `manifest-for-edit-freshness.test.ts`). It proves the default branch
+    // with one `ls-remote` and fetches only when it moved. The `.md` read
+    // below then uses that just-proven mirror instead of starting a second
+    // fetch, and one git-auth resolve serves both reads.
+    allowStaleMirrorReads();
+    let gitProject;
     let manifest;
     try {
-      manifest = await loadManifestForEdit(loaded.row);
+      gitProject = await withProjectGitAuth(loaded.row);
+      manifest = await loadManifestForEdit(gitProject);
     } catch (e) {
       return c.json(
         { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
@@ -188,7 +223,7 @@ projectsApp.openapi(
     if (read.schemaVersion === 2) {
       const mdPath = agentMarkdownPath(manifest.raw, agentName);
       const { frontmatter, body } = await readAgentMarkdown(
-        loaded.row,
+        gitProject,
         loaded.row.defaultBranch,
         mdPath,
       );
@@ -289,6 +324,9 @@ projectsApp.openapi(
     } catch (error) {
       if (error instanceof GitFileRevisionConflictError) {
         return c.json({ error: error.message }, 409);
+      }
+      if (isRemotePushPolicyRejection(error)) {
+        return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
       }
       return c.json(
         { error: `Failed to commit default agent: ${(error as Error).message || String(error)}` },
@@ -449,7 +487,7 @@ projectsApp.openapi(
     // governance write already landed, stranding kortix.yaml and the agent's
     // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
     // every file in one tree/commit, same helper the marketplace install/
-    // uninstall paths use for their own atomic multi-file writes (r10.ts).
+    // uninstall paths use for their own atomic multi-file writes (marketplace-install-session.ts).
     const writes = manifestWrites(manifest, manifestPath);
     const files = [...writes.files, ...(behaviorWrite ? [behaviorWrite] : [])];
     const message = behaviorWrite
@@ -475,6 +513,9 @@ projectsApp.openapi(
     } catch (err) {
       if (err instanceof GitFileRevisionConflictError) {
         return c.json({ error: err.message }, 409);
+      }
+      if (isRemotePushPolicyRejection(err)) {
+        return c.json(pushPolicyRejectedBody(loaded.row.defaultBranch), 409);
       }
       return c.json(
         { error: `Failed to commit agent config: ${(err as Error).message || String(err)}` },

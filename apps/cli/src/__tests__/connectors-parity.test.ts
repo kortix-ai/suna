@@ -230,6 +230,7 @@ describe('kortix connectors — capability-page parity', () => {
         label: 'Sales inbox',
         owner_type: 'project',
         is_default: true,
+        connected_as: 'sales@example.test',
       },
       {
         connection_id: '22222222-2222-4222-8222-222222222222',
@@ -345,6 +346,22 @@ describe('kortix connectors — capability-page parity', () => {
     expect(calls).toEqual([]);
   });
 
+  test.each([
+    [['--mine', '--owner', 'project'], '--mine cannot be combined with --owner or --owner-id'],
+    [['--owner', 'everyone'], '--owner must be project, agent, member, subject, or external'],
+    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a project connection'],
+    [['--metadata', 'not-json'], '--metadata must be valid JSON'],
+  ])('connections add %p exits 2 before any request', async (flags, message) => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'connections', 'add', 'gmail', 'Inbox', ...flags, '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain(message);
+    expect(calls).toEqual([]);
+  });
+
   test('accounts tables what --account accepts, shared/private, default first', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT], config);
@@ -355,14 +372,17 @@ describe('kortix connectors — capability-page parity', () => {
       body: null,
     });
     const lines = r.stdout.split('\n').map((line) => line.trim());
-    expect(lines.some((line) => /^LABEL\s+OWNER\s+DEFAULT\s+CONNECTION ID$/.test(line))).toBe(true);
-    // Order is the API's: the default account first.
+    expect(
+      lines.some((line) => /^LABEL\s+CONNECTED AS\s+OWNER\s+DEFAULT\s+CONNECTION ID$/.test(line)),
+    ).toBe(true);
+    // Order is the API's: the default account first. CONNECTED AS names the
+    // authorized identity, or `—` when the server does not know it.
     const rows = lines.filter((line) => /^(Sales inbox|user@example\.test)\s/.test(line));
     expect(rows[0]).toMatch(
-      /^Sales inbox\s+shared\s+yes\s+11111111-1111-4111-8111-111111111111\s+\(pinned default\)$/,
+      /^Sales inbox\s+sales@example\.test\s+shared\s+yes\s+11111111-1111-4111-8111-111111111111\s+\(pinned default\)$/,
     );
     expect(rows[1]).toMatch(
-      /^user@example\.test\s+private\s+no\s+22222222-2222-4222-8222-222222222222$/,
+      /^user@example\.test\s+—\s+private\s+no\s+22222222-2222-4222-8222-222222222222$/,
     );
     expect(r.stdout).toContain('2 accounts');
     // A ready-to-copy example per account, plus the two selector words.
@@ -440,6 +460,7 @@ describe('kortix connectors — capability-page parity', () => {
           label: 'Sales inbox',
           owner_type: 'project',
           is_default: true,
+          connected_as: 'sales@example.test',
         },
         {
           connection_id: '22222222-2222-4222-8222-222222222222',

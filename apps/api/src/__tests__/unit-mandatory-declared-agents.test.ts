@@ -1,6 +1,5 @@
 /**
- * MANDATORY DECLARED AGENTS (flagged) — docs/specs/2026-07-05-agent-first-
- * config-unification.md §2.1/§3 Phase 2.
+ * MANDATORY DECLARED AGENTS (flagged).
  *
  * `projectRequiresDeclaredAgents` decides whether a project is "subject" to
  * enforcement (platform-wide flag OR the project's own metadata stamp).
@@ -66,7 +65,7 @@ describe('resolveGovernedAgentGrant — non-subject preserves today\'s exact beh
     const loaded = loadAgents(`
 [[agents]]
 name = "release-bot"
-kortix_cli = ["project.trigger.create"]
+kortix_permissions = ["project.trigger.create"]
 `);
     const result = resolveGovernedAgentGrant('rogue-agent', loaded, {
       subject: false,
@@ -74,7 +73,7 @@ kortix_cli = ["project.trigger.create"]
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'rogue-agent', connectors: [], kortixCli: [], env: [] },
+      grant: { agent: 'rogue-agent', connectors: [], permissions: [], env: [] },
     });
   });
 
@@ -83,7 +82,7 @@ kortix_cli = ["project.trigger.create"]
 [[agents]]
 name = "veyris"
 connectors = "all"
-kortix_cli = "all"
+kortix_permissions = "all"
 `);
     const result = resolveGovernedAgentGrant('default', loaded, {
       subject: false,
@@ -98,7 +97,7 @@ describe('resolveGovernedAgentGrant — subject project rejects undeclared agent
 [[agents]]
 name = "support"
 connectors = ["github"]
-kortix_cli = ["project.cr.open"]
+kortix_permissions = ["project.cr.open"]
 
 [[agents]]
 name = "disabled-one"
@@ -112,7 +111,7 @@ enabled = false
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: ['project.cr.open'], env: 'all' },
+      grant: { agent: 'support', connectors: ['github'], permissions: ['project.cr.open'], env: 'all' },
     });
   });
 
@@ -159,7 +158,7 @@ connectors = ["github"]
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: 'all' },
+      grant: { agent: 'support', connectors: ['github'], permissions: [], env: 'all' },
     });
   });
 
@@ -204,7 +203,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     const loaded = loadV2(`
   support:
     connectors: [github]
-    kortix_cli: [project.cr.open]
+    kortix_permissions: [project.cr.open]
 `);
     const result = resolveGovernedAgentGrant('support', loaded, {
       subject: true,
@@ -212,7 +211,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: ['project.cr.open'], env: [] },
+      grant: { agent: 'support', connectors: ['github'], permissions: ['project.cr.open'], env: [] },
     });
   });
 
@@ -227,7 +226,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: [] },
+      grant: { agent: 'support', connectors: ['github'], permissions: [], env: [] },
     });
   });
 
@@ -244,7 +243,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'billing', connectors: [], kortixCli: [], env: ['STRIPE_KEY'] },
+      grant: { agent: 'billing', connectors: [], permissions: [], env: ['STRIPE_KEY'] },
     });
   });
 
@@ -262,7 +261,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
   });
 });
 
-// P0 REGRESSION GUARD: POST /projects/provision (r1.ts) stamps
+// P0 REGRESSION GUARD: POST /projects/provision (projects.ts) stamps
 // `metadata.require_declared_agents = true` on every new project — so a fresh
 // project is ALWAYS subject to this gate from birth, with no DB-side
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
@@ -294,7 +293,7 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     const declaredDefault = declaredDefaultAgent(loaded);
     expect(loaded.specs.map((spec) => spec.name)).toContain(declaredDefault);
 
-    // Mirrors r1.ts /projects/provision exactly: subject=true (the metadata
+    // Mirrors projects.ts /projects/provision exactly: subject=true (the metadata
     // stamp), and no project.metadata.default_agent mirror set yet.
     const governed = resolveGovernedAgentGrant('default', loaded, {
       subject: true,
@@ -309,7 +308,7 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });

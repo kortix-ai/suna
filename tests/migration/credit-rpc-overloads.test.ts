@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { createDb } from '../../packages/db/src/client';
 import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../scripts/worktree/lib';
 
 const dockerOk = sh(['docker', 'info']).ok;
@@ -45,14 +46,15 @@ interface OverloadRow {
   maxArity: number;
 }
 
+/** Every public.atomic_* compatibility wrapper and every kortix_wallet function. */
 function atomicOverloads(): OverloadRow[] {
   const raw = psql(
-    `select p.proname || '|' || pg_get_function_identity_arguments(p.oid) || '|' ||
+    `select n.nspname || '.' || p.proname || '|' || pg_get_function_identity_arguments(p.oid) || '|' ||
             (p.pronargs - p.pronargdefaults) || '|' || p.pronargs
      from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public' and p.proname like 'atomic\\_%'
-     order by p.proname, p.pronargs`,
+     where (n.nspname = 'public' and p.proname like 'atomic\\_%') or n.nspname = 'kortix_wallet'
+     order by 1`,
   );
   if (!raw) return [];
   return raw.split('\n').map((line) => {
@@ -132,13 +134,13 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
   });
 
-  test('no public.atomic_* function has two overloads with overlapping callable arity', () => {
+  test('no wallet function has two overloads with overlapping callable arity', () => {
     const collisions = collidingPairs(atomicOverloads());
     expect(collisions).toEqual([]);
   });
 
   test('atomic_use_credits has exactly one definition', () => {
-    const overloads = atomicOverloads().filter((row) => row.name === 'atomic_use_credits');
+    const overloads = atomicOverloads().filter((row) => row.name === 'public.atomic_use_credits');
     expect(overloads).toHaveLength(1);
     expect(overloads[0].args).toBe(
       'p_account_id uuid, p_amount numeric, p_description text, p_ledger_type text, p_idempotency_key text',
@@ -203,5 +205,190 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
          where account_id = '${account}' and type = 'usage'`,
       ),
     ).toBe('llm_debit');
+  });
+  // ─── kortix_wallet storage (20260925013304428) ──────────────────────────────
+
+  test('the wallet schema holds exactly the three wallet functions, one signature each', () => {
+    expect(
+      atomicOverloads()
+        .filter((row) => row.name.startsWith('kortix_wallet.'))
+        .map((row) => `${row.name}(${row.args})`),
+    ).toEqual([
+      'kortix_wallet.debit_credits(p_account_id uuid, p_amount numeric, p_enforce_floor boolean, p_description text, p_ledger_type text, p_idempotency_key text)',
+      'kortix_wallet.grant_credits(p_account_id uuid, p_amount numeric, p_is_expiring boolean, p_description text, p_expires_at timestamp with time zone, p_type text, p_stripe_event_id text, p_idempotency_key text)',
+      'kortix_wallet.reset_expiring_credits(p_account_id uuid, p_new_credits numeric, p_description text, p_stripe_event_id text)',
+    ]);
+    // Only the four compatibility wrappers remain in public; the two dead ones are gone.
+    expect(atomicOverloads().filter((row) => row.name.startsWith('public.')).map((row) => row.name)).toEqual([
+      'public.atomic_add_credits',
+      'public.atomic_reset_expiring_credits',
+      'public.atomic_settle_credits',
+      'public.atomic_use_credits',
+    ]);
+  });
+
+  test('every wallet function and wrapper pins an empty search_path', () => {
+    // A function without a pinned search_path resolves unqualified names through
+    // the caller's path, so a caller-owned object could shadow a wallet table.
+    const unpinned = psql(
+      `select n.nspname || '.' || p.proname || ' ' || coalesce(array_to_string(p.proconfig, ','), '<none>')
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where ((n.nspname = 'public' and p.proname like 'atomic\\_%') or n.nspname = 'kortix_wallet')
+         and coalesce(p.proconfig, '{}') <> '{"search_path=\\"\\""}'::text[]
+       order by 1`,
+    );
+    expect(unpinned).toBe('');
+    expect(atomicOverloads().length).toBeGreaterThanOrEqual(7);
+  });
+
+  test('a NULL floor argument enforces the floor and writes nothing', () => {
+    const account = fundedAccount('1');
+    const result = psql(
+      `select kortix_wallet.debit_credits(p_account_id => '${account}'::uuid, p_amount => 5, p_enforce_floor => null,
+              p_description => 'too much', p_ledger_type => 'llm_debit', p_idempotency_key => null) ->> 'error'`,
+    );
+    expect(result).toBe('Insufficient credits');
+    expect(psql(`select balance_precise from kortix.credit_accounts where account_id = '${account}'`)).toBe(
+      '1.0000000000',
+    );
+    expect(psql(`select count(*) from kortix.credit_ledger where account_id = '${account}'`)).toBe('0');
+  });
+
+  test('two concurrent admissions cannot both spend the same balance', async () => {
+    const account = fundedAccount('10');
+    const debit = `select kortix_wallet.debit_credits(p_account_id => '${account}'::uuid, p_amount => 6,
+      p_enforce_floor => true, p_description => 'LLM', p_ledger_type => 'llm_debit', p_idempotency_key => null) as r`;
+    const first = createDb(url, { max: 1 });
+    const second = createDb(url, { max: 1 });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let debited!: () => void;
+      const firstDebited = new Promise<void>((resolve) => {
+        debited = resolve;
+      });
+      // The first admission debits and holds its transaction open.
+      const firstTx = first.$client.begin(async (tx) => {
+        const [row] = await tx.unsafe(debit);
+        debited();
+        await held;
+        return row.r as { success: boolean };
+      });
+      await firstDebited;
+      // The second admission must wait on the account row lock, then see the
+      // drained balance. A guard that reads before the lock sees 10 and overdraws.
+      const secondTx = second.$client.begin(async (tx) => {
+        const [row] = await tx.unsafe(debit);
+        return row.r as { success: boolean; error?: string };
+      });
+      await Bun.sleep(300);
+      release();
+      const [a, b] = await Promise.all([firstTx, secondTx]);
+      expect(a.success).toBe(true);
+      expect(b).toMatchObject({ success: false, error: 'Insufficient credits' });
+    } finally {
+      await first.$client.end({ timeout: 5 });
+      await second.$client.end({ timeout: 5 });
+    }
+    expect(psql(`select balance_precise from kortix.credit_accounts where account_id = '${account}'`)).toBe(
+      '4.0000000000',
+    );
+    expect(psql(`select count(*) from kortix.credit_ledger where account_id = '${account}'`)).toBe('1');
+  });
+
+  test('client roles can neither use the wallet schema nor execute any wallet function', () => {
+    expect(
+      psql(
+        `select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         cross join (values ('anon'), ('authenticated')) r(role)
+         where (n.nspname = 'kortix_wallet' or (n.nspname = 'public' and p.proname like 'atomic\\_%'))
+           and has_function_privilege(r.role, p.oid, 'EXECUTE')`,
+      ),
+    ).toBe('0');
+    expect(psql(`select has_schema_privilege('anon', 'kortix_wallet', 'USAGE')`)).toBe('f');
+    expect(psql(`select has_schema_privilege('authenticated', 'kortix_wallet', 'USAGE')`)).toBe('f');
+    expect(psql(`select has_schema_privilege('service_role', 'kortix_wallet', 'USAGE')`)).toBe('t');
+  });
+
+  test('a wrapper writes the same row the wallet function writes', () => {
+    const viaWrapper = fundedAccount('10');
+    const direct = fundedAccount('10');
+    psql(`select public.atomic_settle_credits('${viaWrapper}'::uuid, 12::numeric, 'Compute', 'compute_debit', 'wrap:${viaWrapper}')`);
+    psql(
+      `select kortix_wallet.debit_credits(p_account_id => '${direct}'::uuid, p_amount => 12, p_enforce_floor => false,
+              p_description => 'Compute', p_ledger_type => 'compute_debit', p_idempotency_key => 'wrap:${direct}')`,
+    );
+    const row = (id: string) =>
+      psql(
+        `select row_to_json(r) from (select type, amount_precise, balance_after_precise, description, metadata
+         from kortix.credit_ledger where account_id = '${id}') r`,
+      );
+    expect(row(viaWrapper)).toBe(row(direct));
+    expect(JSON.parse(row(direct)).metadata).toEqual({
+      from_daily: 0,
+      from_monthly: 0,
+      from_extra: 12,
+      ledger_type: 'compute_debit',
+      overdraft: true,
+    });
+  });
+
+  test('the ledger refuses a second row with an idempotency key it already holds', () => {
+    const account = fundedAccount('10');
+    psql(`insert into kortix.credit_ledger (account_id, type, idempotency_key) values ('${account}', 'purchase', 'dup:${account}')`);
+    const second = psqlAllowError(
+      `insert into kortix.credit_ledger (account_id, type, idempotency_key) values ('${account}', 'purchase', 'dup:${account}')`,
+    );
+    expect(second.ok).toBe(false);
+    expect(second.stderr).toContain('uniq_credit_ledger_idempotency_key');
+    // Rows without a key are outside the index.
+    psql(`insert into kortix.credit_ledger (account_id, type) values ('${account}', 'purchase'), ('${account}', 'purchase')`);
+  });
+
+  test('two concurrent grants under one request key write one row', async () => {
+    const account = fundedAccount('0');
+    const grant = `select kortix_wallet.grant_credits(p_account_id => '${account}'::uuid, p_amount => 5,
+      p_is_expiring => false, p_description => 'Refund', p_expires_at => null, p_type => 'purchase',
+      p_stripe_event_id => null, p_idempotency_key => 'race:${account}')`;
+    const first = createDb(url, { max: 1 });
+    const second = createDb(url, { max: 1 });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let inserted!: () => void;
+      const firstInserted = new Promise<void>((resolve) => {
+        inserted = resolve;
+      });
+      // The first grant inserts its row and holds its transaction open.
+      const firstTx = first.$client.begin(async (tx) => {
+        await tx.unsafe(grant);
+        inserted();
+        await held;
+      });
+      await firstInserted;
+      // The second grant's key check cannot see the uncommitted row, so it
+      // passes and then waits on the account row lock.
+      const secondTx = second.$client.begin((tx) => tx.unsafe(grant)).then(
+        () => null,
+        (error: { code?: string; constraint_name?: string }) => error,
+      );
+      await Bun.sleep(300);
+      release();
+      await firstTx;
+      const error = await secondTx;
+      expect(error?.code).toBe('23505');
+      expect(error?.constraint_name).toBe('uniq_credit_ledger_idempotency_key');
+    } finally {
+      await first.$client.end({ timeout: 5 });
+      await second.$client.end({ timeout: 5 });
+    }
+    expect(psql(`select count(*) from kortix.credit_ledger where account_id = '${account}'`)).toBe('1');
+    expect(psql(`select balance_precise from kortix.credit_accounts where account_id = '${account}'`)).toBe(
+      '5.0000000000',
+    );
   });
 });

@@ -204,7 +204,7 @@
               "skills": [
                 "dependency-upgrade"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -327,7 +327,7 @@
                 "weekly-leaderboard",
                 "kortix-slack"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -623,7 +623,7 @@
               "skills": [
                 "compliance-sweep"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -877,7 +877,7 @@
               "skills": [
                 "docs-sync"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -1145,7 +1145,7 @@
               "skills": [
                 "postmortem-draft"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -1656,7 +1656,7 @@
               "skills": [
                 "changelog-sync"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -3497,7 +3497,7 @@
               "skills": [
                 "pr-qa"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -4670,7 +4670,7 @@
               "skills": [
                 "subscription-audit"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -5070,7 +5070,7 @@
               "skills": [
                 "content-decay-refresh"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -5586,7 +5586,7 @@
               "skills": [
                 "cost-anomaly-detection"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -6002,7 +6002,7 @@
               "skills": [
                 "flag-cleanup"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -6131,7 +6131,7 @@
               "skills": [
                 "flaky-test-quarantine"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }
@@ -7648,7 +7648,7 @@
               "skills": [
                 "kb-gap-mining"
               ],
-              "kortix_cli": [
+              "kortix_permissions": [
                 "project.cr.open"
               ]
             }

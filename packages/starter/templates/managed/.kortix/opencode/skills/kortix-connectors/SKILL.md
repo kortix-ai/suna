@@ -23,6 +23,8 @@ Use the **`kortix connectors` CLI** for normal agent work:
 - `kortix connectors call <connector> <action> '<json>' [--account <label>]`
   invokes one action. Every successful result echoes `account`: say which one
   ran when it matters.
+- `kortix connectors call … --attach <file>` attaches a file (see **Attach
+  files** below). Never put base64 in args.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
 - `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
@@ -77,12 +79,12 @@ two accounts:
 ```sh
 $ kortix connectors accounts gmail-ffiod0
 
-  LABEL                        OWNER    DEFAULT  CONNECTION ID
-  markokraemer.mail@gmail.com  private  no       11111111-…
-  marko@kortix.ai              private  no       22222222-…
+  LABEL                 OWNER    DEFAULT  CONNECTION ID
+  personal@example.com  private  no       11111111-…
+  work@example.com      private  no       22222222-…
 
-  kortix connectors call gmail-ffiod0 <action> --account "markokraemer.mail@gmail.com"
-  kortix connectors call gmail-ffiod0 <action> --account "marko@kortix.ai"
+  kortix connectors call gmail-ffiod0 <action> --account "personal@example.com"
+  kortix connectors call gmail-ffiod0 <action> --account "work@example.com"
   kortix connectors call gmail-ffiod0 <action> --account me
   kortix connectors call gmail-ffiod0 <action> --account project
 
@@ -94,8 +96,15 @@ $ kortix connectors accounts gmail-ffiod0
 Neither account is pinned, so — asked "check my gmail" with no account named —
 the right move is to ASK which mailbox, not to call `get_profile` on whichever
 account resolves first and report "one account connected". If the human says
-"the kortix one", call with `--account "marko@kortix.ai"` and report: "Checked
-marko@kortix.ai — …".
+"the work one", call with `--account "work@example.com"` and report: "Checked
+work@example.com — …".
+
+**Adding another account.** When the human wants a new one ("connect my other
+Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
+apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
+where the human names the account and chooses who can use it; you are then told
+its name. Call it with `--account "<name>"` from then on. `kortix connectors
+connect` from a shell cannot name a new account.
 </choosing-the-account>
 
 <cli-first-loop>
@@ -125,6 +134,29 @@ kortix connectors show email_email_inbox_bjgk.reply_message
 kortix connectors call email_email_inbox_bjgk reply_message \
   '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
 ```
+
+**Attach files.** Write the file under `/workspace/artifacts` (or
+`output`, `reports`, `deliverables`), put the JSON args in a file, and pass
+`--attach`. The CLI stages the raw bytes and the gateway builds the
+provider's attachment item (Microsoft Graph, SendGrid, Postmark, Mailjet,
+Resend, Brevo, and the Email channel):
+
+```sh
+cat > /tmp/mail.json <<'JSON'
+{"user":"sender@example.com","body":{"message":{"subject":"Report",
+ "body":{"contentType":"Text","content":"Attached."},
+ "toRecipients":[{"emailAddress":{"address":"to@example.com"}}]},
+ "saveToSentItems":true}}
+JSON
+kortix connectors call microsoft-graph sendmail @/tmp/mail.json \
+  --attach /workspace/artifacts/report.pdf
+```
+
+Leave the attachments array out of the JSON; `--attach` appends to it. For a
+field the CLI cannot find, run `kortix connectors upload <file> --connector
+<slug>` and put the printed `ref` (`{"$kortix_attachment":"<id>"}`) where the
+file belongs: in an `attachments` array, or as the value of a base64 field
+such as `contentBytes`. Pass the body as a JSON object, never as a string.
 
 For GraphQL actions, put selected fields in `args.__select`:
 

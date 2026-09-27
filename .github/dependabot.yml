@@ -12,7 +12,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 20
-    labels: ["dependencies"]
+    # `test` runs the six Tests lanes on the PR. A plain PR into main skips
+    # them, and #7518 merged a package.json bump whose root pnpm-lock.yaml was
+    # stale: every lane on main then failed at `pnpm install --frozen-lockfile`.
+    labels: ["dependencies", "test"]
     groups:
       # Batch low-risk minor/patch bumps into one PR to cut review noise.
       minor-and-patch:

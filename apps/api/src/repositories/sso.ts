@@ -2,7 +2,8 @@
 // SAML handshake itself; this module manages the kortix-side mapping —
 // which account owns which provider, plus claim-value → IAM group rules.
 
-import { and, asc, eq } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
+import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import {
   accountSsoGroupMappings,
   accountSsoProviders,
@@ -20,6 +21,8 @@ export type SsoProvider = {
   autoCreateMembers: boolean;
   autoProvisionGroups: boolean;
   enforceSso: boolean;
+  domainVerificationToken: string | null;
+  domainVerifiedAt: Date | null;
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -66,13 +69,89 @@ export async function getSsoProviderBySupabaseId(
  * Domain lookup for the unified auth flow's `/access/check-email`: is this
  * email domain bound to a SAML provider, and does that org enforce SSO-only
  * sign-in? Domains are stored lowercase (see upsert below).
+ *
+ * `primary_domain` is not unique: any entitled admin can type any domain. A
+ * provider whose account proved control of the domain wins over one that did
+ * not, so an unverified claim can never shadow the real owner.
  */
 export async function getSsoProviderByDomain(domain: string): Promise<SsoProvider | null> {
   const [row] = await db
     .select()
     .from(accountSsoProviders)
     .where(eq(accountSsoProviders.primaryDomain, domain.toLowerCase()))
+    .orderBy(sql`${accountSsoProviders.domainVerifiedAt} asc nulls last`, asc(accountSsoProviders.createdAt))
     .limit(1);
+  return row ?? null;
+}
+
+/** The lowercase domain part of an email address, or '' when there is none. */
+export function emailDomain(email: string | null | undefined): string {
+  const normalized = (email ?? '').trim().toLowerCase();
+  const at = normalized.lastIndexOf('@');
+  return at > 0 ? normalized.slice(at + 1) : '';
+}
+
+/** True when the account proved control of the provider's primary domain. */
+export function isSsoDomainVerified(provider: Pick<SsoProvider, 'domainVerifiedAt'> | null | undefined): boolean {
+  return !!provider?.domainVerifiedAt;
+}
+
+/**
+ * The SSO provider that enforces SSO-only sign-in for this email, or null.
+ * `enforce_sso` applies only to a verified domain: an admin cannot lock other
+ * people out of password sign-in by claiming a domain they do not control.
+ */
+export async function ssoEnforcedForEmail(email: string): Promise<SsoProvider | null> {
+  const domain = emailDomain(email);
+  if (!domain) return null;
+  const provider = await getSsoProviderByDomain(domain);
+  return provider?.enforceSso && isSsoDomainVerified(provider) ? provider : null;
+}
+
+/** DNS name that carries the domain-verification TXT record. */
+export function ssoDomainVerificationRecordName(domain: string): string {
+  return `_kortix-verification.${domain.toLowerCase()}`;
+}
+
+/** TXT record value that proves control of the domain for this provider. */
+export function ssoDomainVerificationRecordValue(token: string): string {
+  return `kortix-verification=${token}`;
+}
+
+function newDomainVerificationToken(): string {
+  return randomBytes(24).toString('hex');
+}
+
+/**
+ * Another account already proved control of this domain. Verification is
+ * refused then: one domain has one authoritative IdP.
+ */
+export async function domainVerifiedByOtherAccount(accountId: string, domain: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: accountSsoProviders.ssoProviderId })
+    .from(accountSsoProviders)
+    .where(
+      and(
+        eq(accountSsoProviders.primaryDomain, domain.toLowerCase()),
+        isNotNull(accountSsoProviders.domainVerifiedAt),
+        ne(accountSsoProviders.accountId, accountId),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Record that the account controls its provider's primary domain (`verified`)
+ * or withdraw that (`!verified`). Returns the updated provider, or null when
+ * the account has none.
+ */
+export async function setSsoDomainVerified(accountId: string, verified: boolean): Promise<SsoProvider | null> {
+  const [row] = await db
+    .update(accountSsoProviders)
+    .set({ domainVerifiedAt: verified ? new Date() : null, updatedAt: new Date() })
+    .where(eq(accountSsoProviders.accountId, accountId))
+    .returning();
   return row ?? null;
 }
 
@@ -88,13 +167,21 @@ export async function upsertSsoProvider(args: {
   createdBy: string;
 }): Promise<SsoProvider> {
   const existing = await getSsoProvider(args.accountId);
+  const primaryDomain = args.primaryDomain.toLowerCase();
   if (existing) {
+    // A new domain is a new claim: it starts unverified, with a new challenge.
+    const domainChanged = existing.primaryDomain !== primaryDomain;
     const [row] = await db
       .update(accountSsoProviders)
       .set({
         supabaseSsoProviderId: args.supabaseSsoProviderId,
         name: args.name,
-        primaryDomain: args.primaryDomain.toLowerCase(),
+        primaryDomain,
+        ...(domainChanged
+          ? { domainVerifiedAt: null, domainVerificationToken: newDomainVerificationToken() }
+          : existing.domainVerificationToken
+            ? {}
+            : { domainVerificationToken: newDomainVerificationToken() }),
         groupClaimName: args.groupClaimName ?? existing.groupClaimName,
         autoCreateMembers: args.autoCreateMembers ?? existing.autoCreateMembers,
         autoProvisionGroups: args.autoProvisionGroups ?? existing.autoProvisionGroups,
@@ -111,7 +198,8 @@ export async function upsertSsoProvider(args: {
       accountId: args.accountId,
       supabaseSsoProviderId: args.supabaseSsoProviderId,
       name: args.name,
-      primaryDomain: args.primaryDomain.toLowerCase(),
+      primaryDomain,
+      domainVerificationToken: newDomainVerificationToken(),
       groupClaimName: args.groupClaimName ?? 'groups',
       autoCreateMembers: args.autoCreateMembers ?? true,
       autoProvisionGroups: args.autoProvisionGroups ?? false,

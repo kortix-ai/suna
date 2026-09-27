@@ -1,6 +1,8 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/ui/kortix-logo';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
@@ -52,6 +54,25 @@ interface ProjectPendingScreenProps {
 
 export function ProjectPendingScreen({ fill = 'viewport' }: ProjectPendingScreenProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { bootstrapError, retryAuth, signOut } = useAuth();
+  if (bootstrapError) {
+    return (
+      <div className="bg-background flex min-h-svh items-center justify-center p-6" role="alert">
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <KortixLogo size={28} variant="icon" className="text-foreground" aria-hidden="true" />
+          <p className="text-sm">{bootstrapError.message}</p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" onClick={retryAuth}>
+              {tI18nComplete.raw('text942087cc2d41')}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => void signOut()}>
+              {tI18nComplete.raw('text48f0d3d397d4')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className={cn(

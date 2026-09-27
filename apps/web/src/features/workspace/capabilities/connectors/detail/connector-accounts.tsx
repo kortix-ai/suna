@@ -22,6 +22,8 @@ export interface ConnectorAccountsProps {
   onRemoved: () => void;
   /** Start a session bound to this exact account. */
   onStartSession: (connection: Connection) => void;
+  /** Bumped to open the Add account dialog from outside the tab. */
+  addRequest?: number;
 }
 
 /**
@@ -33,7 +35,7 @@ export interface ConnectorAccountsProps {
  * connector, direct or managed alike. So every provider except Computer
  * Tunnel (`ComputerConnectorAccount`, its own machine-assignment UI) and
  * Channel (`ChannelConnectionSection`, its own per-platform connect flow)
- * gets the same two-group `ConnectionsList`:
+ * gets the same one-list `ConnectionsList`:
  *
  * - Managed (Composio/Pipedream) — "Add" runs the hosted Connect Link OAuth
  *   flow (`usePipedreamConnectProject` / `usePipedreamConnectMember`).
@@ -55,6 +57,7 @@ export function ConnectorAccounts({
   onChanged,
   onRemoved,
   onStartSession,
+  addRequest,
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
@@ -95,6 +98,7 @@ export function ConnectorAccounts({
         canManageConnections={canManageConnections}
         onChanged={onChanged}
         onStartSession={onStartSession}
+        addRequest={addRequest}
       />
       {showRoster ? (
         <section className="space-y-2">

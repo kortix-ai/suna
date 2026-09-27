@@ -5,7 +5,7 @@ let concurrent = 0;
 let maxConcurrent = 0;
 const config = { KORTIX_TRIGGER_SCHEDULER_ENABLED: true };
 mock.module('../../config', () => ({ config }));
-mock.module('./engine', () => ({
+mock.module('./drain', () => ({
   drainSessionLifecycleQueue: async () => {
     drains++;
     concurrent++;

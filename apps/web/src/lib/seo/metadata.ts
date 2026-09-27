@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { getTranslations } from '@/i18n/get-translations';
-import { headers } from 'next/headers';
+import { getLocale, getTranslations } from '@/i18n/get-translations';
 
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -70,12 +69,12 @@ export function languageAlternates(pathname: string): Record<string, string> {
   return languages;
 }
 
-// The middleware rewrites /de, /fr, … onto the unprefixed route and records the
-// requested locale in the `x-locale` header. Reading it here lets each locale
-// variant self-canonicalize to its own URL instead of the English one.
+// Every page renders under app/[locale]. The locale comes from that segment
+// (next/root-params via i18n/request.ts), not from a request header, so each
+// locale variant stays static and self-canonicalizes to its own URL.
 export async function requestLocale(): Promise<Locale> {
-  const locale = (await headers()).get('x-locale');
-  return locale && locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
+  const locale = await getLocale();
+  return locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
 }
 
 // Metadata for the locale-routed marketing pages (/, /legal, /support and the

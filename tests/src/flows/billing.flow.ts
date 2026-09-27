@@ -2,6 +2,7 @@
  * Billing — account state + the REAL subscribe flow (inline checkout confirmed
  * with a Stripe test card). Maps to spec §20 (BILL-1, BILL-3). Gated on `stripe`.
  */
+import { createHmac, randomUUID } from 'node:crypto';
 import { flow } from '../core/flow';
 import { subscribe } from '../fixtures/billing';
 
@@ -506,6 +507,163 @@ flow(
 );
 
 /**
+ * BILL-18 — a one-off credit purchase grants credit only for SETTLED money.
+ *
+ * A delayed payment method (ACH debit) completes Stripe Checkout before the
+ * funds arrive: `checkout.session.completed` carries `payment_status='unpaid'`.
+ * That event must grant nothing. `checkout.session.async_payment_succeeded`
+ * reports the settled payment and grants the purchase exactly once, however
+ * often Stripe redelivers it. `async_payment_failed` grants nothing.
+ *
+ * The flow signs each event with the target's webhook secret, exactly as Stripe
+ * does. The local profile starts the API with a fixed local secret; a deployed
+ * target supplies its own through KE2E_STRIPE_WEBHOOK_SECRET. Without a secret
+ * the signed steps skip themselves.
+ */
+flow(
+  'BILL-18',
+  {
+    domain: 'billing',
+    routes: [
+      'POST /v1/billing/webhooks/stripe',
+      'GET /v1/billing/account-state',
+      'GET /v1/billing/transactions',
+    ],
+  },
+  async (ctx) => {
+    const secret = ctx.env.stripeWebhookSecret;
+    const anon = ctx.client.as(ctx.P.ANON);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const team = await ctx.fixtures.team();
+    const amountCents = 713;
+    const description = `Credit purchase: $${(amountCents / 100).toFixed(2)}`;
+    const sessionId = `cs_ke2e_${randomUUID().replaceAll('-', '')}`;
+
+    const deliver = async (type: string, paymentStatus: 'paid' | 'unpaid', eventId = `evt_ke2e_${randomUUID().replaceAll('-', '')}`, session = sessionId) => {
+      const payload = JSON.stringify({
+        id: eventId,
+        object: 'event',
+        api_version: '2023-10-16',
+        created: Math.floor(Date.now() / 1000),
+        type,
+        livemode: false,
+        data: {
+          object: {
+            id: session,
+            object: 'checkout.session',
+            mode: 'payment',
+            status: 'complete',
+            payment_status: paymentStatus,
+            amount_total: amountCents,
+            currency: 'usd',
+            payment_intent: null,
+            metadata: { account_id: team.id, type: 'credit_purchase' },
+          },
+        },
+      });
+      const ts = Math.floor(Date.now() / 1000);
+      const sig = createHmac('sha256', secret as string).update(`${ts}.${payload}`).digest('hex');
+      return anon.post('/v1/billing/webhooks/stripe', payload, {
+        headers: { 'content-type': 'application/json', 'stripe-signature': `t=${ts},v1=${sig}` },
+      });
+    };
+    const purchaseRows = async () => {
+      const r = await owner.get('/v1/billing/transactions', {
+        query: { account_id: team.id, limit: 100, type_filter: 'purchase' },
+      });
+      const body = r.status(200).json<{ transactions: Array<{ amount: number; description: string | null }> }>();
+      return body.transactions.filter((row) => row.description === description);
+    };
+    const balance = async () => {
+      const r = await owner.get('/v1/billing/account-state', { query: { account_id: team.id } });
+      return Number(r.status(200).json<{ credits: { total: number } }>().credits.total);
+    };
+
+    let before = 0;
+    await ctx.step('OWNER reads the team wallet before the purchase', async () => {
+      before = await balance();
+    });
+
+    await ctx.step('a signed checkout.session.completed with payment_status=unpaid → 200 and no credit', async () => {
+      if (!secret) return;
+      (await deliver('checkout.session.completed', 'unpaid')).status(200);
+      if ((await purchaseRows()).length !== 0) throw new Error('an unpaid checkout granted credit');
+      const after = await balance();
+      if (after !== before) throw new Error(`wallet moved on an unpaid checkout: ${before} → ${after}`);
+    });
+
+    const succeededEventId = `evt_ke2e_${randomUUID().replaceAll('-', '')}`;
+    await ctx.step('async_payment_succeeded for the same session → 200 and exactly one purchase row', async () => {
+      if (!secret) return;
+      (await deliver('checkout.session.async_payment_succeeded', 'paid', succeededEventId)).status(200);
+      const rows = await purchaseRows();
+      if (rows.length !== 1) throw new Error(`expected 1 purchase row, found ${rows.length}`);
+      if (Math.abs(Number(rows[0].amount) - amountCents / 100) > 0.001) {
+        throw new Error(`purchase row amount ${rows[0].amount} != ${amountCents / 100}`);
+      }
+      const after = await balance();
+      if (Math.abs(after - before - amountCents / 100) > 0.001) {
+        throw new Error(`wallet should grow by ${amountCents / 100}: ${before} → ${after}`);
+      }
+    });
+
+    await ctx.step('the same event redelivered → 200 deduped, still one purchase row', async () => {
+      if (!secret) return;
+      const r = await deliver('checkout.session.async_payment_succeeded', 'paid', succeededEventId);
+      r.status(200).body().has('$.deduped', true);
+      if ((await purchaseRows()).length !== 1) throw new Error('a redelivered event granted twice');
+    });
+
+    await ctx.step('a paid event for the same session under a new event id → 200, still one purchase row', async () => {
+      if (!secret) return;
+      (await deliver('checkout.session.completed', 'paid')).status(200);
+      if ((await purchaseRows()).length !== 1) throw new Error('one session granted twice');
+    });
+
+    await ctx.step('async_payment_failed for another session → 200 and no credit', async () => {
+      if (!secret) return;
+      const failedSession = `cs_ke2e_${randomUUID().replaceAll('-', '')}`;
+      (await deliver('checkout.session.async_payment_failed', 'unpaid', undefined, failedSession)).status(200);
+      if ((await purchaseRows()).length !== 1) throw new Error('a failed payment granted credit');
+    });
+  },
+);
+
+/**
+ * BILL-19 — `confirm-inline-checkout` decides nothing from the request body.
+ * The subscription must exist and be billed to the caller's own Stripe
+ * customer; the tier comes from the subscription's price. A body without a
+ * subscription id is a 400; an id that is not the caller's is a 404 on any
+ * target that talks to Stripe.
+ */
+flow(
+  'BILL-19',
+  {
+    domain: 'billing',
+    routes: ['POST /v1/billing/confirm-inline-checkout'],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const team = await ctx.fixtures.team();
+
+    await ctx.step('OWNER confirms with no subscription_id → 400', async () => {
+      const r = await owner.post('/v1/billing/confirm-inline-checkout', { account_id: team.id, tier_key: 'pro' });
+      r.status(400);
+    });
+
+    await ctx.step('OWNER confirms a subscription id that is not billed to the team → 404', async () => {
+      if (!ctx.env.capabilities.stripe) return;
+      const r = await owner.post('/v1/billing/confirm-inline-checkout', {
+        account_id: team.id,
+        subscription_id: `sub_ke2e${randomUUID().replaceAll('-', '').slice(0, 14)}`,
+        tier_key: 'pro',
+      });
+      r.status(404);
+    });
+  },
+);
+
+/**
  * DEL-2 — account deletion lifecycle: schedule a deletion then cancel it. These
  * routes resolve the account from the CALLER's identity (resolveAccountId(userId)),
  * NOT a body account_id — so we drive them with a THROWAWAY user (a fresh team
@@ -556,6 +714,38 @@ flow(
     await ctx.step('cancel again with nothing pending → 400 (no active request)', async () => {
       const r = await asVictim.post('/v1/account/cancel-deletion', {});
       r.status([400, 404]);
+    });
+    await ctx.step('scheduling again after a cancel → 200, and the status reads pending', async () => {
+      const r = await asVictim.post('/v1/account/request-deletion', { reason: 'after-cancel' });
+      r.status(200);
+      const status = await asVictim.get('/v1/billing/account/deletion-status');
+      status.status(200);
+      const body = status.json<{ has_pending_deletion: boolean }>();
+      if (body.has_pending_deletion !== true) {
+        throw new Error(`expected has_pending_deletion=true after re-request, got ${JSON.stringify(body)}`);
+      }
+    });
+    await ctx.step('cancel the second request → 200; status reads not pending', async () => {
+      const r = await asVictim.post('/v1/account/cancel-deletion', {});
+      r.status(200);
+      const status = await asVictim.get('/v1/billing/account/deletion-status');
+      status.status(200);
+      const body = status.json<{ has_pending_deletion: boolean }>();
+      if (body.has_pending_deletion !== false) {
+        throw new Error(`expected has_pending_deletion=false after cancel, got ${JSON.stringify(body)}`);
+      }
+    });
+    await ctx.step('two concurrent requests → exactly one 200, the other 400', async () => {
+      const [a, b] = await Promise.all([
+        asVictim.post('/v1/account/request-deletion', { reason: 'race-a' }),
+        asVictim.post('/v1/account/request-deletion', { reason: 'race-b' }),
+      ]);
+      const statuses = [a.statusCode, b.statusCode].sort();
+      if (statuses[0] !== 200 || statuses[1] !== 400) {
+        throw new Error(`expected [200, 400], got ${JSON.stringify(statuses)}`);
+      }
+      const cleanup = await asVictim.post('/v1/account/cancel-deletion', {});
+      cleanup.status(200);
     });
   },
 );

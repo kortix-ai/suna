@@ -122,7 +122,7 @@ export const PROJECT_ACTIONS = {
   // scopes a SESSION credential to its own branch structurally — that binding
   // is the credential's identity, not a permission, and is never grantable.
   // These two leaves are what a principal needs to act OUTSIDE that lane, and
-  // they are what a role or a `kortix_cli` grant can hand to an agent
+  // they are what a role or a `kortix_permissions` grant can hand to an agent
   // deliberately. Absent = denied: unlike the rest of the agent-grant fold, the
   // git path treats a null grant as "principal defaults", never "unrestricted".
   // See git-proxy/ref-policy.ts.
@@ -177,7 +177,7 @@ const TRIGGER_ACTIONS = {
 // only ever asserts project-scoped actions), so granting or omitting them in
 // a custom role was a silent no-op. The two routes that needed a real
 // send-primitive gate (Slack file upload, meet/speak) were moved onto
-// project.connector.write instead — see r4.ts.
+// project.connector.write instead — see routes/channel-slack.ts.
 
 // ─── Aggregate type for all valid action strings ───────────────────────────
 

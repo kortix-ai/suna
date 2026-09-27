@@ -47,8 +47,8 @@ export interface ProxyServiceConfig {
   /** Default tool name for billing attribution (can be overridden per-route) */
   billingToolName: string;
   /**
-   * Whether this is an LLM provider (affects passthrough billing).
-   * LLM passthrough extracts token usage and bills per-token at platform fee.
+   * Whether this is an LLM provider (affects passthrough handling).
+   * LLM passthrough uses the customer's provider key with no Kortix charge.
    * Tool passthrough uses fixed per-call billing.
    */
   isLlm?: boolean;
@@ -124,7 +124,7 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
     //   Anthropic/OpenAI go direct to native providers.
     //   xAI/Gemini/Groq route through OpenRouter.
     // - Passthrough (Mode 2): forwards the user's own API key to the real
-    //   upstream provider for platform-fee billing.
+    //   upstream provider with no Kortix LLM charge.
     //
     // Mode 1 (Kortix token in auth): inject provider key configured in service
     // Mode 2 (user key + X-Kortix-Token): passthrough to real provider

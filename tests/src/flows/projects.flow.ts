@@ -194,14 +194,16 @@ flow(
 flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
   // Local uses a database fixture so deletion remains hermetic. Remote targets
   // provision a managed repository and then archive it through the same route.
-  const id =
-    ctx.env.target === "local"
-      ? (await ctx.fixtures.project({ name: ctx.fixtures.name("del") })).id
-      : (
-          await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", {
-            name: ctx.fixtures.name("del"),
-          })
-        ).json<any>().project_id;
+  let id = "";
+  if (ctx.env.target === "local") {
+    id = (await ctx.fixtures.project({ name: ctx.fixtures.name("del") })).id;
+  } else {
+    await ctx.step("OWNER provisions a project to archive", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
+      r.status([200, 201]).body().exists("$.project_id");
+      id = r.json<any>().project_id;
+    });
+  }
   await ctx.step("OWNER archives project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true);

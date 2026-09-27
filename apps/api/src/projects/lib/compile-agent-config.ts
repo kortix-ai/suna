@@ -1,6 +1,5 @@
 /**
- * The runtime compiler (spec docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.3, redirected 2026-07-05 — "one home per concern"): turns a
+ * The runtime compiler (redirected 2026-07-05 — "one home per concern"): turns a
  * `kortix_version: 2` manifest's `agents:` map (pure governance) plus each
  * agent's own native `.kortix/opencode/agents/<name>.md` (frontmatter +
  * body — the OpenCode behavior source of truth) into OpenCode-native config.
@@ -11,7 +10,7 @@
  * now lives ENTIRELY in the agent's own `.md` frontmatter + body — a stock
  * OpenCode agent `.md` is valid input as-is, frontmatter included. The
  * manifest's `agents.<name>` block carries governance ONLY (connectors/
- * secrets/skills/kortix_cli/repository_access/enabled); the agent's NAME is the join
+ * secrets/skills/kortix_permissions/repository_access/enabled); the agent's NAME is the join
  * between the two (map key ↔ `.md` filename).
  *
  * `compileAgentConfig` is pure — no I/O, no DB. For each declared agent it
@@ -20,7 +19,7 @@
  * OpenCode behavioral field straight through, and overlays governance on top:
  * `enabled: false` forces the runtime's `disable` on (governance always wins
  * on that one field); `skills` folds onto `permission.skill`. Every other
- * governance field (connectors/secrets/kortix_cli/repository_access) has no runtime
+ * governance field (connectors/secrets/kortix_permissions/repository_access) has no runtime
  * representation and is never copied.
  *
  * `resolveCompiledAgentConfigForSession` is the I/O half: reads the project's
@@ -295,7 +294,7 @@ export function compileSelectedAgentConfig(
  * governance always wins over whatever the `.md` itself says; there is no
  * other precedence to document since behavior lives ONLY in the `.md`), and
  * `skills` folds onto `permission.skill`. Pure governance fields (connectors/
- * secrets/kortix_cli/repository_access) are never copied: no runtime representation.
+ * secrets/kortix_permissions/repository_access) are never copied: no runtime representation.
  */
 function compileAgentBlock(
   name: string,
@@ -473,21 +472,85 @@ export function manifestRuntime(raw: unknown): RuntimeV2 {
   return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
 }
 
-export async function resolveManifestRuntime(
-  project: GitBackedProject,
-  baseRef?: string | null,
-): Promise<RuntimeV2 | null> {
+type PiHarness = { pi?: { packages?: unknown; exclude?: unknown } } | undefined;
+
+function piList(harnesses: PiHarness, key: 'packages' | 'exclude'): unknown[] {
+  const value = harnesses?.pi?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
+/** A package's identity across the two levels: its npm name, or its `./` path as written. */
+function piPackageKey(entry: unknown): string | null {
+  const source = typeof entry === 'string' ? entry : (entry as { source?: unknown } | null)?.source;
+  if (typeof source !== 'string') return null;
+  const npm = /^npm:((?:@[^/@]+\/)?[^/@]+)(?:@.*)?$/.exec(source);
+  return npm ? npm[1]! : source;
+}
+
+/**
+ * An agent's pi packages, entries as written (pi's own settings shape): the
+ * top-level `harnesses.pi.packages` minus the agent's `exclude`, then the
+ * agent's own `harnesses.pi.packages`; an agent entry for a package the top
+ * level also lists replaces it in place. No agent name (or `default`) means `default_agent`.
+ * The manifest validator gated every entry at merge; anything else reads as none.
+ */
+export function manifestPiPackages(raw: unknown, agentName?: string | null): unknown[] {
+  if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return [];
+  const manifest = raw as Record<string, unknown>;
+  const requested = agentName?.trim();
+  // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
+  const name = requested && requested !== 'default' ? requested : typeof manifest.default_agent === 'string' ? manifest.default_agent : '';
+  const agent = (manifest.agents as Record<string, { harnesses?: PiHarness } | undefined> | undefined)?.[name];
+  const excluded = new Set(piList(agent?.harnesses, 'exclude'));
+  const own = new Map(piList(agent?.harnesses, 'packages').map((entry) => [piPackageKey(entry), entry]));
+  const merged = piList(manifest.harnesses as PiHarness, 'packages')
+    .filter((entry) => !excluded.has(piPackageKey(entry)))
+    .map((entry) => {
+      const key = piPackageKey(entry);
+      if (!own.has(key)) return entry;
+      const replacement = own.get(key);
+      own.delete(key);
+      return replacement;
+    });
+  return [...merged, ...own.values()];
+}
+
+/** Every distinct non-empty package list the manifest's agents resolve to: what a merge builds. */
+export function manifestPiPackageLists(raw: unknown): unknown[][] {
+  if (!raw || typeof raw !== 'object') return [];
+  const agents = Object.keys(((raw as Record<string, unknown>).agents as Record<string, unknown> | undefined) ?? {});
+  const lists = new Map<string, unknown[]>();
+  for (const name of agents.length ? agents : [null]) {
+    const list = manifestPiPackages(raw, name);
+    if (list.length) lists.set(JSON.stringify(list), list);
+  }
+  return [...lists.values()];
+}
+
+/** The parsed v2 manifest at `baseRef` (default branch when absent); null for v1, none, or a read failure. */
+async function readManifestV2(project: GitBackedProject, baseRef?: string | null): Promise<Record<string, unknown> | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (manifestSchemaVersion(raw) !== 2) return null;
-    return manifestRuntime(raw);
+    return manifestSchemaVersion(raw) === 2 ? raw : null;
   } catch {
     return null;
   }
+}
+
+export async function resolveManifestRuntime(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const raw = await readManifestV2(project, baseRef);
+  return raw ? manifestRuntime(raw) : null;
+}
+
+export async function resolveManifestPiPackageLists(project: GitBackedProject, baseRef?: string | null): Promise<unknown[][]> {
+  return manifestPiPackageLists(await readManifestV2(project, baseRef));
 }
 
 /**

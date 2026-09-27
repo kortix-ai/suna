@@ -44,7 +44,7 @@ const LINK_SITES: LinkSite[] = [
     expectAbsent: [`href="/legal?tab=terms"`],
   },
   {
-    file: 'app/(public)/(marketing)/support/page.tsx',
+    file: 'app/[locale]/(public)/(marketing)/support/page.tsx',
     expectPresent: [
       `href="/legal/terms"`,
       `href="/legal?tab=privacy"`,
@@ -77,7 +77,7 @@ for (const site of LINK_SITES) {
 }
 
 test('the legal page no longer renders a terms tab', () => {
-  const src = readFileSync(join(WEB_ROOT, 'app/(public)/(seo)/legal/page.tsx'), 'utf8');
+  const src = readFileSync(join(WEB_ROOT, 'app/[locale]/(public)/(seo)/legal/page.tsx'), 'utf8');
 
   // The tab union is the contract: it names every tab the page can render, so
   // it fails whether a terms tab comes back as a branch, a button, or a rail

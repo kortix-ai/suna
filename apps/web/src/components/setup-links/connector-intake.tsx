@@ -5,7 +5,6 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
   finalizeConnectorSetupLink,
-  getConnectorSetupLink,
   startConnectorSetupLink,
   type ConnectorSetupLinkInfo,
 } from '@kortix/sdk';
@@ -16,7 +15,9 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
+import { loadConnectorLinkInfo, peekConnectorLinkInfo } from './connector-link-info';
 import { nextConnectorPollDelay } from './connector-poll';
+import { resolveConnectorStart } from './connector-start';
 import { setupLinkApiBase } from './util';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
@@ -39,44 +40,46 @@ type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected'
  * what tells THIS window it worked. Shared by the public /connect/[token] page
  * and the in-chat modal.
  */
-export function ConnectorIntake({
-  token,
-  onOpened,
-  onConnected,
-  compact,
-}: {
-  token: string;
-  onOpened?: () => void;
-  /**
-   * Fired once the poll confirms the connection landed.
-   *
-   * The parent cannot observe this on its own: the connect happens in
-   * Pipedream's hosted popup, and the only proof is the finalize poll below.
-   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
-   * "Connected" without reopening the modal.
-   */
-  onConnected?: () => void;
-  compact?: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+/**
+ * The connect flow for one link: load what it names, open the provider's
+ * hosted page, poll until the connection lands. Shared by the public
+ * `/connect/[token]` page (`ConnectorIntake`) and the in-chat modal
+ * (`ConnectorConnectModal`), so both run the same start/poll/finalize rules.
+ */
+export function useConnectorIntake(
+  token: string,
+  { onOpened }: { onOpened?: () => void } = {},
+) {
   const base = setupLinkApiBase();
-  const [phase, setPhase] = useState<Phase>('loading');
-  const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(null);
+  // Seeded from the link-info cache the chat card already filled (or storage,
+  // after a hard refresh), so the dialog opens `ready` with the app's logo on
+  // its first frame instead of a loading state.
+  const [seed] = useState(() => peekConnectorLinkInfo(token));
+  const [phase, setPhase] = useState<Phase>(seed ? 'ready' : 'loading');
+  const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(seed ?? null);
   const [error, setError] = useState<string | null>(null);
   // Bumped every time the popup is opened, so reopening restarts the poll
   // window instead of inheriting an already-expired one.
   const [openedAt, setOpenedAt] = useState(0);
+  // Who the account was authorized as, from finalize. Shown on success so a
+  // login used by mistake (a personal account on a shared slot) is visible
+  // the moment it lands, not months later.
+  const [connectedAs, setConnectedAs] = useState<string | null>(null);
+  // True when /start found the slot already holding an active account. The
+  // provider reuses it instead of re-authorizing, so there was no popup.
+  const [alreadyConnected, setAlreadyConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const body = await getConnectorSetupLink(token, { backendUrl: base });
+        const body = await loadConnectorLinkInfo(token);
         if (cancelled) return;
         setInfo(body);
-        setPhase('ready');
+        setPhase((current) => (current === 'loading' ? 'ready' : current));
       } catch (cause) {
-        if (!cancelled) {
+        // A seeded dialog already shows the link; a failed refresh is not an error.
+        if (!cancelled && !seed) {
           setError(
             cause instanceof Error
               ? cause.message
@@ -89,7 +92,7 @@ export function ConnectorIntake({
     return () => {
       cancelled = true;
     };
-  }, [base, token]);
+  }, [base, token, seed]);
 
   // Ask the API whether the connection landed, until it says yes or the poll
   // window closes. One request is in flight at a time by construction: the next
@@ -114,6 +117,7 @@ export function ConnectorIntake({
         const body = await finalizeConnectorSetupLink(token, { backendUrl: base });
         if (cancelled) return;
         if (body.connected) {
+          setConnectedAs(body.connected_as ?? null);
           setPhase('connected');
           return;
         }
@@ -134,24 +138,54 @@ export function ConnectorIntake({
   async function connect() {
     setPhase('starting');
     setError(null);
-    try {
-      const body = await startConnectorSetupLink(token, { backendUrl: base });
-      if (!body.connect_url) {
-        setError('Could not start the connect flow.');
-        setPhase('ready');
-        return;
-      }
-      window.open(body.connect_url, '_blank', 'noopener,noreferrer,width=520,height=720');
-      setOpenedAt(Date.now());
-      setPhase('opened');
-      onOpened?.();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.',
-      );
+    const outcome = await resolveConnectorStart({
+      start: () => startConnectorSetupLink(token, { backendUrl: base }),
+      finalize: () => finalizeConnectorSetupLink(token, { backendUrl: base }),
+    });
+    if (outcome.kind === 'error') {
+      setError(outcome.message);
       setPhase('ready');
+      return;
     }
+    if (outcome.kind === 'connected') {
+      setAlreadyConnected(outcome.alreadyConnected);
+      setConnectedAs(outcome.connectedAs);
+      setPhase('connected');
+      return;
+    }
+    window.open(outcome.url, '_blank', 'noopener,noreferrer,width=520,height=720');
+    setOpenedAt(Date.now());
+    setPhase('opened');
+    onOpened?.();
   }
+
+  return { phase, info, error, connectedAs, alreadyConnected, connect };
+}
+
+export function ConnectorIntake({
+  token,
+  onOpened,
+  onConnected,
+  compact,
+}: {
+  token: string;
+  onOpened?: () => void;
+  /**
+   * Fired once the poll confirms the connection landed.
+   *
+   * The parent cannot observe this on its own: the connect happens in
+   * Pipedream's hosted popup, and the only proof is the finalize poll below.
+   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
+   * "Connected" without reopening the modal.
+   */
+  onConnected?: () => void;
+  compact?: boolean;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { phase, info, error, connectedAs, alreadyConnected, connect } = useConnectorIntake(
+    token,
+    { onOpened },
+  );
 
   const appLabel = info?.app || info?.slug || 'the app';
 
@@ -183,11 +217,23 @@ export function ConnectorIntake({
           <Check weight="fill" className="text-kortix-green size-5" />
         </span>
         <p className="text-foreground text-sm font-medium">
-          {tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
+          {alreadyConnected
+            ? tI18nHardcoded.raw('i18nComplete.textbe03b81f11cb')
+            : tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
         </p>
+        {connectedAs ? (
+          <p className="text-foreground text-sm" data-testid="connector-intake-connected-as">
+            {tI18nHardcoded('i18nComplete.texte9e0b20cf289', { value0: connectedAs })}
+          </p>
+        ) : null}
         <p className="text-muted-foreground max-w-xs text-xs">
           {appLabel} {tI18nHardcoded.raw('i18nComplete.text27fd394a8fbd')}
         </p>
+        {alreadyConnected ? (
+          <p className="text-muted-foreground max-w-xs text-xs">
+            {tI18nHardcoded.raw('i18nComplete.text0223e507afd3')}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -221,7 +267,7 @@ export function ConnectorIntake({
   return (
     <div className={cn('space-y-4 text-center', compact ? '' : 'mt-2')}>
       <p className="text-muted-foreground text-sm">
-        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325')}
+        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325')}{' '}
         <span className="text-foreground font-medium">{appLabel}</span>{' '}
         {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477')}
       </p>

@@ -1,5 +1,8 @@
 import { flow } from '../core/flow';
 import { Client } from '../core/client';
+import { log } from '../core/log';
+import { sleep } from '../core/poll';
+import { subscribe } from '../fixtures/billing';
 
 flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }, async (ctx) => {
   const gw = new Client(ctx.env.gatewayUrl);
@@ -556,3 +559,106 @@ flow('GW-ACCESS-1', {
       .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
   });
 });
+
+// A 64 × 64 red PNG. Every managed model reads it as "red" (verified
+// 2026-09-23 on each pinned endpoint).
+const RED_SQUARE_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PQQkAAAgAsetfWiP4FgYrsKZeS0BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDgsqnc8OJg6Ln3AAAAAElFTkSuQmCC';
+
+// A picker that offers a managed model its endpoint refuses is a silent
+// outage: the member picks it and every turn fails. This flow sends each
+// managed model the deployment serves one text-and-image request through the
+// gateway, with a subscribed account and the deployment's provider key. It
+// makes real model calls, so it runs on previews and the staging gate; the
+// local profile has no provider key and excludes it through `stripe`.
+flow('GW-MANAGED-1', {
+  domain: 'llm-gateway',
+  requires: ['stripe'],
+  timeoutMs: 300_000,
+  routes: [
+    'PATCH /v1/projects/:projectId/experimental',
+    'POST /v1/projects/:projectId/gateway/keys',
+    'GET /v1/projects/:projectId/model-picker',
+    'POST /v1/llm/chat/completions',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const owner = ctx.client.as(ctx.P.OWNER);
+  await ctx.step('a subscribed account is entitled to the managed lineup', async () => {
+    await subscribe(ctx.env, owner, team.id);
+  });
+  const project = await team.project();
+  const params = { projectId: project.id };
+  let key = '';
+  await ctx.step('the project turns on the gateway and mints a gateway key', async () => {
+    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params }))
+      .status(200);
+    const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'managed lineup' }, { params });
+    minted.status(200).body().exists('$.secret_key');
+    key = minted.json<{ secret_key: string }>().secret_key;
+  });
+
+  let managed: string[] = [];
+  await ctx.step('the picker offers Kimi K3, DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, and no OpenAI or Anthropic model', async () => {
+    const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+    picker.status(200);
+    const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
+      .models;
+    managed = Object.keys(models).filter((id) => !id.includes('/'));
+    for (const [id, name] of [
+      ['kimi-k3', 'Kimi K3 2.8T'],
+      ['deepseek-v4.1-flash', 'DeepSeek V4.1 Flash'],
+      ['glm-5.3-flash', 'GLM 5.3 Flash'],
+    ] as const) {
+      const model = models[id];
+      if (!model || model.name !== name || model.attachment !== true || model.enabled === false) {
+        throw new Error(`picker does not offer ${id} as an enabled image-capable managed model: ${JSON.stringify(model)}`);
+      }
+    }
+    const vendor = managed.filter((id) => /^(gpt|claude|o\d)/.test(id));
+    if (vendor.length > 0) throw new Error(`picker offers OpenAI or Anthropic models as managed: ${vendor.join(', ')}`);
+  });
+
+  // An upstream 429 is capacity, not configuration: the route exists and the
+  // key is accepted. On the first preview run of this flow (2026-09-23),
+  // glm-5.3-flash answered 429 "temporarily rate-limited upstream" from its
+  // shared pool while the other managed models answered. A throttled
+  // model is retried, then logged; every other outcome fails.
+  await ctx.step('every managed model the picker offers answers a text-and-image request, or is throttled upstream', async () => {
+    const gateway = new Client(ctx.env.gatewayUrl).withBearer(key, 'PROJECT_GATEWAY_KEY');
+    const ask = async (model: string) => {
+      let status = 0;
+      let detail = '';
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const res = await gateway.post('/v1/llm/chat/completions', {
+          model,
+          max_tokens: 400,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What color is this square? Reply with one lowercase word.' },
+              { type: 'image_url', image_url: { url: RED_SQUARE_PNG } },
+            ],
+          }],
+        });
+        status = res.statusCode;
+        detail = status === 200
+          ? String(res.json<{ choices?: Array<{ message?: { content?: unknown } }> }>().choices?.[0]?.message?.content ?? '')
+          : res.text().slice(0, 200);
+        if (![429, 502, 503, 504].includes(status)) break;
+        if (attempt < 3) await sleep(3_000 * attempt);
+      }
+      return { model, status, detail };
+    };
+    const results = await Promise.all(managed.map(ask));
+    const answered = results.filter((r) => r.status === 200 && /\bred\b/i.test(r.detail));
+    const throttled = results.filter((r) => r.status === 429);
+    for (const r of throttled) log.warn(`GW-MANAGED-1: ${r.model} throttled upstream after 3 attempts: ${r.detail}`);
+    const failed = results.filter((r) => !answered.includes(r) && !throttled.includes(r));
+    if (failed.length > 0) {
+      throw new Error(`managed models that did not answer:\n${failed.map((r) => `${r.model}: HTTP ${r.status} ${r.detail}`).join('\n')}`);
+    }
+    if (answered.length === 0) throw new Error('no managed model answered; every model was throttled');
+  });
+});
+

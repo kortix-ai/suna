@@ -9,7 +9,7 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
-import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { extractGatewayErrorDetails, rawErrorText, unwrapError } from './errors';
 import { isReasoningPart, isTextPart, isToolPart } from './parts';
 import type {
   MessageInfoLike,
@@ -101,13 +101,26 @@ export function shouldHideResponsePart(
 // Error extraction — with deep JSON unwrapping
 // ============================================================================
 
-/** Extract error message from assistant messages in a turn. */
+/** Extract error message from assistant messages in a turn. The gateway's own
+ *  sentence wins over the HTTP status text an `APIError` carries as its
+ *  message ("Bad Request"), as in `classifyTurn`. */
 export function getTurnError(turn: TurnLike): string | undefined {
   for (const msg of turn.assistantMessages) {
     const info = msg.info;
     if (info.error) {
-      return unwrapError(info.error);
+      return extractGatewayErrorDetails(info.error)?.message || unwrapError(info.error);
     }
+  }
+  return undefined;
+}
+
+/** The technical text behind `getTurnError`'s sentence, for a collapsed
+ *  details disclosure — see `rawErrorText`. `undefined` when the turn has no
+ *  error or the raw text only repeats the sentence. */
+export function getTurnErrorRawText(turn: TurnLike): string | undefined {
+  for (const msg of turn.assistantMessages) {
+    const info = msg.info;
+    if (info.error) return rawErrorText(info.error);
   }
   return undefined;
 }

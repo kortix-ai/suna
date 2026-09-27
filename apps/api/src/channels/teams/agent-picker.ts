@@ -1,7 +1,7 @@
 import { currentChannelSelection } from '../slack/selection';
 import { scopedProjectAgents } from '../scoped-agents';
 import { teamsChannelCtx } from './binding';
-import { lookupTeamsIdentity } from './identity';
+import { chatUser, lookupChatIdentity } from '../core/identity';
 import { buildAgentPickerCard, buildNoticeCard } from './cards';
 
 /**
@@ -23,7 +23,7 @@ export async function buildAgentsPicker(
   teamsUserId?: string | null,
 ): Promise<Record<string, unknown>> {
   const identity =
-    teamsUserId && ctx.teamId ? await lookupTeamsIdentity(ctx.teamId, teamsUserId) : null;
+    teamsUserId && ctx.teamId ? await lookupChatIdentity(chatUser('teams', ctx.teamId, teamsUserId)) : null;
   const [agents, selection] = await Promise.all([
     scopedProjectAgents(projectId, identity?.userId ?? null),
     currentChannelSelection(ctx),

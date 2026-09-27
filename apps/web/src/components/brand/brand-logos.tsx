@@ -8,11 +8,7 @@
  * NOTHING in this module may be a client component, and that is the whole
  * reason it exists — /download is server-rendered, so its marks must come
  * from a plain server-safe module, not a `'use client'` one. This is the only
- * copy of these four glyphs: `features/icon/icons/apple.tsx`,
- * `google-play-store.tsx`, `windows.tsx`, and `linux.tsx` are each a `'use
- * client'` re-export of the mark below (e.g. `export { AppleMark as Apple }
- * from '@/components/brand/brand-logos'`), so client call sites reading
- * `Icon.Apple` and this server module both resolve to the same source.
+ * copy of these four glyphs.
  *
  * Same reason the Phosphor marks come from `@/lib/icons/ssr` and not
  * `@phosphor-icons/react`: the main entry calls createContext at module scope

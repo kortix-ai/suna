@@ -1,5 +1,4 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { PUBLIC_SHARE_OWNER_ONLY_ERROR } from '../../connectors/share';
 import { auth, errors, json } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
@@ -7,11 +6,12 @@ import {
   listPublicSharesForSession,
   revokePublicShare,
 } from '../../shared/session-public-shares';
-import { loadProjectForUser, loadSessionForSharing, loadVisibleSession } from '../lib/access';
+import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
-import { UUID_V4_REGEX, readBody } from '../lib/serializers';
-import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
+import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
+import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -35,17 +35,12 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(
-      loaded,
-      sessionId,
-      c.get('sessionId') ?? null,
-      callerKortixSessionId(c),
-    );
-    if (!visible) return c.json({ error: 'Not found' }, 404);
+    const guard = await guardSession(c, loaded, sessionId, 'read');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
 
     return c.json({
       candidates: DEFAULT_PREVIEW_CANDIDATES.map((candidate) => ({
@@ -76,15 +71,12 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageLifecycle) {
-      return c.json({ error: 'Only the session owner or a project manager can view public shares' }, 403);
-    }
+    const guard = await guardSessionSharing(c, loaded, sessionId, 'list');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
 
     return c.json({ shares: await listPublicSharesForSession(sessionId) });
   },
@@ -104,6 +96,7 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
+      200: json(z.any(), 'The live transcript share this session already has'),
       201: json(z.any(), 'Public share'),
       ...errors(400, 403, 404, 409),
     },
@@ -111,21 +104,19 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
     // Minting, not revoking: a public share link is unauthenticated, so this is
     // the owner's call. A manager who cannot read the session cannot mint one
     // and read it through the link instead.
-    if (!visible.canManageSharing) {
-      return c.json({ error: PUBLIC_SHARE_OWNER_ONLY_ERROR }, 403);
-    }
+    const guard = await guardSessionSharing(c, loaded, sessionId, 'mint');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
+    const visible = guard.session;
     if (
-      await sessionHasMemberConnectorBinding({
+      await sessionHasPersonalConnectorBinding({
         accountId: visible.row.accountId,
         projectId,
         sessionId,
@@ -147,7 +138,9 @@ projectsApp.openapi(
       userId: loaded.userId,
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as any);
-    return c.json({ share: result.share }, 201);
+    // A transcript share is one live link per session: minting again returns
+    // the live link with 200 instead of a second one.
+    return c.json({ share: result.share }, result.created ? 201 : 200);
   },
 );
 
@@ -172,19 +165,16 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const shareId = c.req.param('shareId');
-    if (!UUID_V4_REGEX.test(sessionId) || !UUID_V4_REGEX.test(shareId)) {
+    if (!isUuid(sessionId) || !isUuid(shareId)) {
       return c.json({ error: 'Invalid id' }, 400);
     }
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
-    if (!visible) return c.json({ error: 'Not found' }, 404);
     // Revoking only ever REMOVES access, so it stays manager-tier: a project
     // manager must be able to kill a leaking link without owning the session.
-    if (!visible.canManageLifecycle) {
-      return c.json({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
-    }
+    const guard = await guardSessionSharing(c, loaded, sessionId, 'revoke');
+    if (!guard.ok) return sessionAccessDenied(c, guard);
 
     const share = await revokePublicShare(sessionId, shareId);
     if (!share) return c.json({ error: 'Not found' }, 404);

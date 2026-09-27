@@ -130,8 +130,7 @@ that changes is `import { … } from '@kortix/sdk'`.
 | `09-kaab-backend-wrapper.ts` | **Kortix as a Backend, end-to-end** — mint a connector → per-user connection → backend-origin session (`secrets` + `connector_bindings`) → stream; one-shot CLI **and** an SSE service | PAT + project |
 
 See [`examples/README.md`](./examples/README.md) for the full index and per-example
-env vars, and [`docs/KORTIX_AS_A_BACKEND_GUIDE.md`](../../docs/KORTIX_AS_A_BACKEND_GUIDE.md)
-for the backend concepts (`origin`, overrides, connectors, security model).
+env vars.
 
 Start with:
 
@@ -197,7 +196,7 @@ pnpm --filter @kortix/sdk run smoke:install  # pack → install → import, herm
 
 `test` without built bundles skips the 2 bundle-content tests; run it after
 `build:bundles` for the full count. If you change anything here, read
-[AGENTS.md](./AGENTS.md) first — this package is live on npm, and the rules
+[AGENTS.md](../../AGENTS.md) first — this package is live on npm, and the rules
 (TDD, never weaken a test, exported names are forever) are enforced by the
 tripwires you just ran.
 

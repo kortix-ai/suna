@@ -2,7 +2,7 @@
  * The audit pool's timeout budget and the contention classifier that decides
  * whether a failed audit write is backpressure or a defect.
  *
- * Essentia 2026-08-26: POST /v1/projects/:p/sessions/:s/audit/events returned
+ * SampleCo 2026-08-26: POST /v1/projects/:p/sessions/:s/audit/events returned
  * 500 [57014] 445 times in 3 hours, each after ~10s, while pg_stat_activity
  * showed `insert into "kortix"."audit_events"` blocking other
  * `insert into "kortix"."audit_events"` in chained pids.

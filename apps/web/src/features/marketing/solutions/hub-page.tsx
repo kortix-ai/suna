@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/marketing/button';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { SolutionsHeroVisual } from './hero-visual';
 import { ROLES } from './registry';

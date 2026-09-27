@@ -103,9 +103,8 @@ export interface ClaimComputeWindowInput {
   terminalState?: 'stopped' | 'finalized';
 }
 
-/** Exported query builder so the terminal CAS predicate is tested as rendered SQL. */
-export function buildClaimComputeWindowQuery(input: ClaimComputeWindowInput) {
-  return db
+export async function claimComputeWindow(input: ClaimComputeWindowInput): Promise<boolean> {
+  const rows = await db
     .update(sandboxComputeSessions)
     .set({
       lastBilledAt: input.nextLastBilledAt,
@@ -123,10 +122,6 @@ export function buildClaimComputeWindowQuery(input: ClaimComputeWindowInput) {
       ),
     )
     .returning({ id: sandboxComputeSessions.id });
-}
-
-export async function claimComputeWindow(input: ClaimComputeWindowInput): Promise<boolean> {
-  const rows = await buildClaimComputeWindowQuery(input);
   return rows.length > 0;
 }
 
@@ -153,9 +148,8 @@ export interface ReleaseComputeWindowInput {
   terminalState?: 'stopped' | 'finalized';
 }
 
-/** Exported query builder so release cannot silently reopen a closed unrelated row. */
-export function buildReleaseComputeWindowQuery(input: ReleaseComputeWindowInput) {
-  return db
+export async function releaseComputeWindow(input: ReleaseComputeWindowInput): Promise<boolean> {
+  const rows = await db
     .update(sandboxComputeSessions)
     .set({
       lastBilledAt: input.revertToLastBilledAt,
@@ -176,9 +170,5 @@ export function buildReleaseComputeWindowQuery(input: ReleaseComputeWindowInput)
       ),
     )
     .returning({ id: sandboxComputeSessions.id });
-}
-
-export async function releaseComputeWindow(input: ReleaseComputeWindowInput): Promise<boolean> {
-  const rows = await buildReleaseComputeWindowQuery(input);
   return rows.length > 0;
 }

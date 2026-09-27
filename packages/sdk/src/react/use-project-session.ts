@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { getProjectSession, type ProjectSession } from '../core/rest/projects-client';
+import { readProjectSessionRow } from '../core/session/project-session-read';
 
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -47,10 +48,17 @@ export function useProjectSession(
   sessionId: string | undefined,
   options?: { enabled?: boolean },
 ) {
+  const queryKey = qk.project.session(projectId ?? '', sessionId ?? '');
   return useQuery<ProjectSession>({
-    queryKey: qk.project.session(projectId ?? '', sessionId ?? ''),
-    queryFn: () =>
-      getProjectSession(projectId as string, sessionId as string, { showErrors: false }),
+    queryKey,
+    // The FIRST read rides the session-open bundle when one is in flight (the
+    // bundle carries this row); every later read asks the endpoint. See
+    // `core/session/project-session-read.ts`.
+    queryFn: (context) =>
+      readProjectSessionRow(projectId as string, sessionId as string, {
+        bundle: context?.client?.getQueryData(queryKey) === undefined,
+        fetchRow: getProjectSession,
+      }),
     enabled: Boolean(projectId) && Boolean(sessionId) && (options?.enabled ?? true),
     ...contract('inventory'),
   });

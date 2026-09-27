@@ -61,8 +61,14 @@ async function spendForPeriod(
 // request's real eventual cost), but a real, honest improvement over "no
 // bound at all". Resets on process restart; in a multi-pod deployment the
 // bound is per-pod, not global — documented here rather than hidden.
+//
+// A settled request releases its reservation (`releaseBudgetReservation`,
+// called from the usage settlement): its cost is now in the logged spend, so
+// keeping the $0.50 as well counted it twice and denied a budget far below its
+// limit. The TTL remains the backstop for a request that never settles on this
+// process (crash, or a settlement handled by another replica).
 const RESERVATION_USD = 0.5;
-const RESERVATION_TTL_MS = 5 * 60_000; // covers retry.ts's 240s max request lifetime with margin
+const RESERVATION_TTL_MS = 5 * 60_000;
 
 interface Reservation {
   expiresAt: number;
@@ -88,6 +94,27 @@ function addReservation(key: string): void {
   const list = reservationsByKey.get(key) ?? [];
   list.push({ expiresAt: Date.now() + RESERVATION_TTL_MS });
   reservationsByKey.set(key, list);
+}
+
+/**
+ * Release the oldest active reservation on each block-budget key this request
+ * could have reserved: the project key and the member key. Called once per
+ * settled request. A key with no reservation on this process is left alone.
+ */
+export function releaseBudgetReservation(projectId: string | null | undefined, userId: string | null | undefined): void {
+  if (!projectId) return;
+  const keys = [reservationKey(projectId, null)];
+  if (userId) keys.push(reservationKey(projectId, userId));
+  const now = Date.now();
+  for (const key of keys) {
+    const list = reservationsByKey.get(key);
+    if (!list) continue;
+    const index = list.findIndex((r) => r.expiresAt > now);
+    if (index >= 0) list.splice(index, 1);
+    const active = list.filter((r) => r.expiresAt > now);
+    if (active.length === 0) reservationsByKey.delete(key);
+    else reservationsByKey.set(key, active);
+  }
 }
 
 /** Test-only seam: clears every in-flight reservation. */
