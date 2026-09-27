@@ -19,8 +19,13 @@ import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,
+  classifyDaemonHealth,
+  describeLegacyBootstrapRetry,
+  opencodeIdle,
   type LegacyBootstrapDeps,
   type LegacyBootstrapResult,
+  type LegacyBootstrapRetrySummary,
+  type RuntimeClassification,
 } from './legacy-runtime-bootstrap';
 
 const SANDBOX_SERVICE_PORT = 8000;
@@ -195,6 +200,20 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
+    // The `running_assets_stale` sha-to-sha compare (classifyDaemonHealth):
+    // this deploy's own manifest, never the box's opinion of itself.
+    expectedRunningAssets: async () => {
+      try {
+        const manifest = await runtimeAssetsManifest();
+        return {
+          cli_sha256: manifest.cli_sha256,
+          managed_skills_hash: manifest.managed_skills_hash,
+          agent_sha256: manifest.components.agent?.sha256 ?? null,
+        };
+      } catch {
+        return null;
+      }
+    },
     fetchHealth: async () => {
       try {
         const { url, headers } = await resolveSandboxIngress(row.externalId, {
@@ -288,17 +307,34 @@ export async function runLegacyRuntimeBootstrap(
   );
 }
 
+/** Per-replica concurrency cap, for tests that need to see it (production reads it off `inFlight.size` internally). */
+export { MAX_IN_FLIGHT };
+
+/** Tests only: forget every in-flight sandbox between runs. Production never calls this. */
+export function __resetLegacyBootstrapInFlightForTests(): void {
+  inFlight.clear();
+}
+
 /**
  * Reaper entry point: fire-and-forget with a per-replica concurrency cap. The
  * policy's own gates (recent-check TTL, cooldown, budget, busy) make this
  * cheap on a converged fleet — one health probe per box per 6 h.
+ *
+ * `runner` is overridable ONLY for tests (the repair-storm guard on
+ * `MAX_IN_FLIGHT`) — production always uses the real
+ * `runLegacyRuntimeBootstrap`, which is why it is the default rather than a
+ * required argument.
  */
-export function scheduleLegacyRuntimeBootstrap(row: LegacyBootstrapRow, reason = 'reaper'): boolean {
+export function scheduleLegacyRuntimeBootstrap(
+  row: LegacyBootstrapRow,
+  reason = 'reaper',
+  runner: (row: LegacyBootstrapRow, reason: string) => Promise<LegacyBootstrapResult> = runLegacyRuntimeBootstrap,
+): boolean {
   if (!legacyRuntimeBootstrapEnabled()) return false;
   if (!row.externalId) return false;
   if (inFlight.has(row.sandboxId) || inFlight.size >= MAX_IN_FLIGHT) return false;
   inFlight.add(row.sandboxId);
-  void runLegacyRuntimeBootstrap(row, reason)
+  void runner(row, reason)
     .catch((err) =>
       console.warn(
         `[legacy-bootstrap] ${row.sandboxId} failed:`,
@@ -307,4 +343,78 @@ export function scheduleLegacyRuntimeBootstrap(row: LegacyBootstrapRow, reason =
     )
     .finally(() => inFlight.delete(row.sandboxId));
   return true;
+}
+
+export type OpenRuntimeGuaranteeAction = 'proceed' | 'defer_turn_running' | 'repairing' | 'exhausted' | 'blocked';
+
+export interface OpenRuntimeGuaranteeOutcome {
+  action: OpenRuntimeGuaranteeAction;
+  /** Null only when the guarantee is disabled or the health probe itself failed (fail-open — see `guaranteeCurrentRuntimeOnOpen`). */
+  classification: RuntimeClassification | null;
+  retry?: LegacyBootstrapRetrySummary;
+}
+
+/**
+ * THE session-open guarantee: "open any session and it works, or it says
+ * plainly why not" (the owner's acceptance bar). Shares the exact
+ * classification and the exact repair the reaper schedules in the
+ * background — this is the synchronous half of the same mechanism, not a
+ * second implementation.
+ *
+ * Bounded on purpose: at most a health probe and (only for a stale/legacy
+ * box) one OpenCode status probe — a few seconds, matching
+ * `HEALTH_TIMEOUT_MS`. The actual repair (provider exec + relaunch, up to
+ * `LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS` = 8 min to converge) is FIRED via
+ * `scheduleRepair` and never awaited here — the caller reports `repairing`
+ * and the client's own poll loop observes convergence on a later call,
+ * exactly like `runtime_waking`/`cooling_down` already work in
+ * `runOpenSession`. Never fires under a live turn (`opencodeIdle` gate,
+ * shared with `bootstrapLegacyRuntime`) — a relaunch kills PTYs and ends
+ * in-flight work.
+ */
+export async function guaranteeCurrentRuntimeOnOpen(
+  row: LegacyBootstrapRow,
+  deps: LegacyBootstrapDeps = buildLegacyBootstrapDeps(row),
+  scheduleRepair: (row: LegacyBootstrapRow, reason?: string) => boolean = scheduleLegacyRuntimeBootstrap,
+): Promise<OpenRuntimeGuaranteeOutcome> {
+  if (!legacyRuntimeBootstrapEnabled()) return { action: 'proceed', classification: null };
+
+  const health = await deps.fetchHealth();
+  const expectedRunningAssets = await deps.expectedRunningAssets?.();
+  const classification = classifyDaemonHealth(health, expectedRunningAssets ?? undefined);
+  if (classification.klass === 'blocked') {
+    // The daemon's own supervisor already tried and rolled back. Surfacing
+    // this, never looping a repair on it, is the whole point of `blocked`
+    // existing as its own klass — see classifyDaemonHealth's module doc.
+    return { action: 'blocked', classification };
+  }
+  if (classification.klass !== 'legacy' && classification.klass !== 'stale') {
+    // 'current' → nothing to do. 'unreachable'/'not-ok' here means the health
+    // probe itself failed even though the caller already confirmed the
+    // provider is running and OpenCode answered moments earlier — fail open
+    // rather than block a session open on a second, redundant probe flaking.
+    return { action: 'proceed', classification };
+  }
+
+  const status = await deps.fetchOpencodeStatus();
+  if (!opencodeIdle(status)) {
+    // A live turn owns this box. Relaunching would kill it. The reaper's own
+    // background pass applies the identical gate and will repair it once the
+    // turn ends.
+    return { action: 'defer_turn_running', classification };
+  }
+
+  const manifestBuild = await deps.manifestBuild();
+  const retry = describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now());
+  if (retry.status === 'exhausted') {
+    return { action: 'exhausted', classification, retry };
+  }
+  if (retry.status !== 'cooldown') {
+    // Idle, not already cooling down: fire the SAME bootstrap the reaper
+    // schedules. Fire-and-forget — bounded by MAX_IN_FLIGHT per replica and
+    // by the metadata record's own in-flight guard cross-replica
+    // (`LEGACY_BOOTSTRAP_STALE_RUNNING_MS`) — this call never waits for it.
+    scheduleRepair(row, 'session-open');
+  }
+  return { action: 'repairing', classification, retry };
 }

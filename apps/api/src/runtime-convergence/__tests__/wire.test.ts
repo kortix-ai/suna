@@ -23,10 +23,11 @@ describe('toRuntimeBlockWire', () => {
     const diff = diffRuntime(DESIRED, {
       ...UNREPORTED_ACTUAL_RUNTIME,
       ...DESIRED,
-      components: { release_id: { state: 'current', attempted_at: 't', attempts: 1, cause: null } },
+      components: { config_release: { state: 'current', attempted_at: 't', attempts: 1, cause: null } },
     });
     const wire = toRuntimeBlockWire(diff);
     expect(wire.overall).toBe('current');
+    expect(wire.overall_reason).toBeNull();
     expect(wire.desired).toEqual(DESIRED);
     expect(wire.actual).toEqual(DESIRED);
     expect((wire.actual as unknown as Record<string, unknown>).components).toBeUndefined();
