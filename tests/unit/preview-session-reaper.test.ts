@@ -50,6 +50,15 @@ function host(name: string, owner: 'kortix-preview' | 'kortix-branch-env', state
 }
 
 describe('preview session selection', () => {
+  it('database-owned boxes survive org-wide idle cleanup but retain exact-owner teardown', () => {
+    const box = session('owned', { owner: 'kortix-preview-pr-7', idleHours: 24 });
+    box.metadata!['kortix.managed'] = `v2-${'a'.repeat(64)}`;
+    expect(selectStalePreviewSessions([box], {
+      liveHostNames: new Set(['kortix-preview-pr-7']), nowMs: NOW,
+    })).toEqual([]);
+    expect(selectPreviewSessionsForTeardown([box], ['kortix-preview-pr-7'])).toEqual(['owned']);
+    expect(selectPreviewSessionsForTeardown([box], ['kortix-preview-pr-8'])).toEqual([]);
+  });
   it('only ever selects preview session boxes, never hosts or other environments', () => {
     expect(isPreviewSessionSandbox(session('a'))).toBe(true);
     expect(isPreviewSessionSandbox(session('dev', { env: 'dev' }))).toBe(false);
