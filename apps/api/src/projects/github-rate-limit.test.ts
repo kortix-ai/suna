@@ -5,7 +5,7 @@
 // cannot back off correctly without it.
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { GitHubApiError, createRepo, githubRetryAfterSeconds } from './github';
+import { GitHubApiError, GitHubPersonalInstallationCreateError, createRepo, githubRetryAfterSeconds } from './github';
 import { createRepoFailureResult } from './provision-core';
 
 const originalFetch = globalThis.fetch;
@@ -81,4 +81,17 @@ describe('createRepoFailureResult', () => {
     expect(result.status).toBe(502);
     expect(result.headers).toBeUndefined();
   });
+});
+
+test('an installation token cannot create a personal repository via /user/repos', async () => {
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    return Response.json({ message: 'Resource not accessible by integration' }, { status: 403 });
+  }) as unknown as typeof fetch;
+  await expect(createRepo({
+    name: 'demo',
+    auth: { token: 'installation-token', source: 'app_installation', owner: 'personal-owner', ownerType: 'User' },
+  })).rejects.toBeInstanceOf(GitHubPersonalInstallationCreateError);
+  expect(called).toBe(false);
 });

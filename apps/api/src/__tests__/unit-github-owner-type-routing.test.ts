@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
 import { __setStoredAppIdentityForTests } from '../platform/services/github-app-identity';
 import { __setStoredGitBackendForTests } from '../platform/services/managed-git-backend';
+import { GitHubPersonalInstallationCreateError } from '../projects/github';
 
 // A throwaway RSA key — only used to produce a JWT `createInstallationToken`
 // can sign; the fetch mock below never verifies the signature.
@@ -139,7 +140,7 @@ function findRequest(pathSuffix: string) {
 }
 
 describe('managed GitHub App createRepo — owner-type routing', () => {
-  test('stored ownerType "User" (install-callback resolved a personal account) -> POST /user/repos', async () => {
+  test('stored personal App installation refuses repository creation before GitHub', async () => {
     setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
@@ -148,20 +149,10 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
       installationId: '501',
     });
 
-    const repo = await githubBackend.createRepo({
-      accountId: 'acct-1',
-      projectId: 'proj-1',
-      slug: 'demo',
-      defaultBranch: 'main',
-      isPrivate: true,
-    });
-
-    // /user/repos ignores the owner param (it's always "the authenticated
-    // account's repos" on GitHub's side) — the mock reflects that by always
-    // returning a fixed clone_url, independent of the configured owner.
-    expect(repo.upstreamUrl).toBe('https://github.com/whoever/demo.git');
-    expect(findRequest('/user/repos')).toBeTruthy();
-    expect(findRequest('/orgs/agent-kortix/repos')).toBeUndefined();
+    await expect(githubBackend.createRepo({
+      accountId: 'acct-1', projectId: 'proj-1', slug: 'demo', defaultBranch: 'main', isPrivate: true,
+    })).rejects.toBeInstanceOf(GitHubPersonalInstallationCreateError);
+    expect(findRequest('/user/repos')).toBeUndefined();
   });
 
   test('stored ownerType "Organization" -> POST /orgs/{owner}/repos (regression guard)', async () => {
@@ -186,7 +177,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
     expect(findRequest('/user/repos')).toBeUndefined();
   });
 
-  test('no stored ownerType (older config) falls back to a live account-type lookup — User', async () => {
+  test('no stored ownerType, live User lookup refuses repository creation', async () => {
     setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
@@ -194,16 +185,10 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
       installationId: '501',
     });
 
-    const repo = await githubBackend.createRepo({
-      accountId: 'acct-1',
-      projectId: 'proj-1',
-      slug: 'demo',
-      defaultBranch: 'main',
-      isPrivate: true,
-    });
-
-    expect(repo.upstreamUrl).toBe('https://github.com/whoever/demo.git');
-    expect(findRequest('/user/repos')).toBeTruthy();
+    await expect(githubBackend.createRepo({
+      accountId: 'acct-1', projectId: 'proj-1', slug: 'demo', defaultBranch: 'main', isPrivate: true,
+    })).rejects.toBeInstanceOf(GitHubPersonalInstallationCreateError);
+    expect(findRequest('/user/repos')).toBeUndefined();
   });
 
   test('no stored ownerType, live lookup says Organization -> org path (regression guard)', async () => {
@@ -226,21 +211,15 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
     expect(findRequest('/orgs/org-owner-live/repos')).toBeTruthy();
   });
 
-  test('token backend also routes off a live account-type lookup, not a hardcoded assumption', async () => {
+  test('token backend still creates personal repos via /user/repos', async () => {
     __setStoredAppIdentityForTests({});
     __setStoredGitBackendForTests({ kind: 'pat', token: 'ghp_dummy', owner: 'user-owner-live' });
 
     const repo = await githubBackend.createRepo({
-      accountId: 'acct-1',
-      projectId: 'proj-1',
-      slug: 'demo',
-      defaultBranch: 'main',
-      isPrivate: true,
+      accountId: 'acct-1', projectId: 'proj-1', slug: 'demo', defaultBranch: 'main', isPrivate: true,
     });
-
     expect(repo.upstreamUrl).toBe('https://github.com/whoever/demo.git');
     expect(findRequest('/user/repos')).toBeTruthy();
-    // Never minted an installation token — the PAT is used directly.
     expect(findRequest('/access_tokens')).toBeUndefined();
   });
 });

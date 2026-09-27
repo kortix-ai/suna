@@ -112,6 +112,13 @@ export function isGitHubIpAllowListRefusal(error: unknown): boolean {
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
 type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
 
+export class GitHubPersonalInstallationCreateError extends Error {
+  constructor() {
+    super('GitHub Apps cannot create repositories under personal accounts. Install the App on an organization to create a repository.');
+    this.name = 'GitHubPersonalInstallationCreateError';
+  }
+}
+
 export interface GitHubAuthContext {
   token: string;
   source: GitHubAuthSource;
@@ -1050,6 +1057,9 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
   }
 
   const target = await resolveDefaultOwner(input.auth);
+  if (!target.isOrg && input.auth?.source === 'app_installation') {
+    throw new GitHubPersonalInstallationCreateError();
+  }
 
   const body = {
     name: input.name,
