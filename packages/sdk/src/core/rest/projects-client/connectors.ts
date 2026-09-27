@@ -373,8 +373,7 @@ export interface AdminConnector {
   iconUrl?: string | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model. Always `shared` — `per_user` (each member's
-   *  own) was removed 2026-07-05 (docs/specs/2026-07-05-agent-first-config-
-   *  unification.md §2.5). A `shared` connector with no credential set
+   *  own) was removed 2026-07-05. A `shared` connector with no credential set
    *  (`secretSet: false`) needs reconnecting. */
   credentialMode: 'shared';
   /**

@@ -1,6 +1,5 @@
 /**
- * Personal provider keys under the agent-principal model (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.3).
+ * Personal provider keys under the agent-principal model.
  */
 import { describe, expect, test } from 'bun:test';
 import { personalKeyGranted, secretUsableInProject } from './account-resource';

@@ -474,8 +474,7 @@ flow(
   },
 );
 
-// PROJ-19 — Full v2 agent-config editor (the "agent builder" surface, spec
-// docs/specs/2026-07-05-agent-first-config-unification.md §2.2). GET reports the
+// PROJ-19 — Full v2 agent-config editor (the "agent builder" surface). GET reports the
 // agent's full block + the manifest schema version (the UI's v1-vs-v2 branch);
 // PUT replaces the whole block, validating it through the manifest-schema
 // validator before the kortix.yaml commit. A bare provisioned project now

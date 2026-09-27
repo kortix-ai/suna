@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { Config } from './config'
 import { resolveHarness, type HarnessAssetsCompatibilityResult } from './harness/harness'
+import { noteControlPlaneResponse } from './session-token-health'
 import type {
   HarnessAssetOutcome,
   HarnessAssetsService,
@@ -797,6 +798,8 @@ async function fetchJson<T>(
     signal: AbortSignal.timeout(timeoutMs),
   })
   if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    noteControlPlaneResponse(res.status, body)
     logger.warn('[runtime-assets] non-ok response', { url, status: res.status })
     return null
   }

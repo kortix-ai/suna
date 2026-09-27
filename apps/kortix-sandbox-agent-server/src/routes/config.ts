@@ -5,8 +5,7 @@ import { logger } from '../logger'
 import { authorizeControl } from './control-auth'
 
 /**
- * `/kortix/config` — config releases. Spec: docs/specs/config-releases.md,
- * "Daemon" → "Routes".
+ * `/kortix/config` — config releases.
  *
  * `POST /converge` only TRIGGERS a convergence. The request body is never
  * read: the daemon fetches the descriptor from the API itself, so a caller

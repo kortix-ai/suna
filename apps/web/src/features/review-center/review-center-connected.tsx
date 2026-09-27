@@ -11,7 +11,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * design). Connector approvals (`call:`) open the shared full-parameter review
  * component. That component resolves one exact call through `resolveApproval`.
  * The presentational inbox (review-center.tsx) is shared with the mock
- * prototype. See docs/REVIEW_CENTER_DESIGN.md.
+ * prototype.
  */
 
 import { Button } from '@/components/ui/button';

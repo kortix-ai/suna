@@ -1,5 +1,5 @@
 /**
- * The capability gate (docs/specs/config-releases.md, "Capability gate").
+ * The capability gate.
  *
  * A fake daemon records every request. A daemon that lists
  * `config.release.v1` receives `POST /kortix/config/converge` and no

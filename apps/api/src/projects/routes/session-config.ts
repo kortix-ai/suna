@@ -70,8 +70,7 @@ projectsApp.openapi(
       manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
-    // CHOKEPOINT — the `config_releases` flag for this read
-    // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ no `release`
+    // CHOKEPOINT — the `config_releases` flag for this read. Off ⇒ no `release`
     // block, no desired release is built (so no archive is stored and no
     // ledger row is written), and `stale` is the pre-release etag compare
     // alone. The CLI formatter and the web header both render their

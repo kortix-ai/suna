@@ -54,7 +54,6 @@ const MANIFEST_FILENAME = 'kortix.toml';
  * literal and NO agent is ever named `default` — the runtime resolves it to
  * OpenCode's configured `default_agent` (a general-purpose agent). Kept in sync
  * with the proxy's copy (sandbox-proxy/routes/preview.ts).
- * See docs/specs/2026-06-28-token-session-agent-identity.md.
  */
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
@@ -543,7 +542,6 @@ export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgen
 
 /**
  * Is this project subject to MANDATORY DECLARED AGENTS enforcement?
- * (docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§3 Phase 2)
  *
  * There is no per-project flag store yet, so subjectness is:
  *   the platform-wide flag OR `project.metadata.require_declared_agents === true`.

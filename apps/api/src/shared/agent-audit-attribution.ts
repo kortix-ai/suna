@@ -1,6 +1,5 @@
 /**
- * Audit attribution for an agent-session credential — spec
- * docs/specs/2026-09-22-agents-as-principals.md §2:
+ * Audit attribution for an agent-session credential:
  *
  *   actor = agent (agent_name, agent_id = its service account)
  *   on_behalf_of = the human | null
