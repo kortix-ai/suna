@@ -5,7 +5,7 @@
  * a plain-language envelope and a polymorphic `kind`. In production these come
  * from a read model that unions the canonical `review_items` table with adapters
  * over change requests, connector approvals and tunnel permission requests; in the
- * prototype they come from mock-data.ts. See docs/REVIEW_CENTER_DESIGN.md.
+ * prototype they come from mock-data.ts.
  */
 
 import {

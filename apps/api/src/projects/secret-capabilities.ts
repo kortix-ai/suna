@@ -52,8 +52,7 @@ export type SecretCapability =
 /**
  * What an agent must know to USE an egress-enforced secret.
  *
- * ONE list, because there is now ONE mechanism on every provider (docs/specs/
- * 2026-08-19-secrets-exposure-usage-model.md §4). The env var holds a handle,
+ * ONE list, because there is now ONE mechanism on every provider. The env var holds a handle,
  * Kortix substitutes the real value outside the sandbox on an approved host,
  * and an echoed credential comes back as `[REDACTED]`.
  *

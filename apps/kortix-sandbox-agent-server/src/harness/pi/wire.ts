@@ -31,6 +31,12 @@ export interface WireAdapterOptions {
   now?: () => number
   /** Out-of-band frame sink for parts reserved outside `translate` (see `toolRef`). */
   publish?: (frame: WireEmission) => void
+  /**
+   * The retry a failed assistant message gets (transient-retry.ts), or null.
+   * A message that will be retried ends without its error, and its run ends in
+   * OpenCode's `retry` status instead of idle: the turn is not over.
+   */
+  retryPlan?: (message: AgentMessage) => { attempt: number; message: string; next: number } | null
 }
 
 /** OpenCode part ids are stable per (messageId, index). */
@@ -97,6 +103,9 @@ export class PiWireAdapter {
   private accum = new Map<string, string>()
   private partStartedAt = new Map<string, number>()
   private toolIndex = new Map<string, { partId: string; name: string; input: unknown; startedAt: number; endedAt?: number }>()
+  /** The last assistant message of this run failed and will be retried. */
+  private retrying: { attempt: number; message: string; next: number } | null = null
+  private announced = false
 
   constructor(private readonly opts: WireAdapterOptions) {
     this.now = opts.now ?? (() => Date.now())
@@ -128,6 +137,8 @@ export class PiWireAdapter {
     const sessionID = this.opts.sessionID
     switch (event.type) {
       case 'agent_start':
+        this.retrying = null
+        this.announced = false
         return [{ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }]
 
       case 'message_start': {
@@ -222,7 +233,8 @@ export class PiWireAdapter {
 
       case 'message_end': {
         if (event.message.role !== 'assistant') return []
-        const error = assistantMessageError(event.message)
+        this.retrying = (event.message as PiAssistantMessage).stopReason === 'error' ? (this.opts.retryPlan?.(event.message) ?? null) : null
+        const error = this.retrying ? undefined : assistantMessageError(event.message)
         const out: WireEmission[] = [
           {
             type: 'message.updated',
@@ -236,15 +248,37 @@ export class PiWireAdapter {
         return out
       }
 
-      case 'agent_end':
-        return [
-          { type: 'session.status', properties: { sessionID, status: { type: 'idle' } } },
-          { type: 'session.idle', properties: { sessionID } },
-        ]
+      case 'agent_end': {
+        const retrying = this.retrying
+        this.retrying = null
+        if (retrying) {
+          this.announced = true
+          return [{ type: 'session.status', properties: { sessionID, status: { type: 'retry', ...retrying } } }]
+        }
+        return this.idleFrames()
+      }
 
       default:
         return []
     }
+  }
+
+  /**
+   * A run announced a retry that never started (aborted in the backoff): the
+   * frames that end the run for good. Empty when no retry is pending.
+   */
+  settleRetry(): WireEmission[] {
+    if (!this.announced) return []
+    this.announced = false
+    return this.idleFrames()
+  }
+
+  private idleFrames(): WireEmission[] {
+    const sessionID = this.opts.sessionID
+    return [
+      { type: 'session.status', properties: { sessionID, status: { type: 'idle' } } },
+      { type: 'session.idle', properties: { sessionID } },
+    ]
   }
 
   private assistantInfo(message: AgentMessage): Record<string, unknown> {

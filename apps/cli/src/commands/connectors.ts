@@ -575,9 +575,14 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'show': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
+        // The server omits each action's `inputSchema` by default (it is the
+        // dominant contributor to this route's payload — see
+        // apps/api/src/connectors/db-deps.ts `listConnectors`). `--json` is a
+        // scripting contract that historically included it, so ask for it
+        // explicitly; the human-readable view below never renders it.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors`);
+        }>(`${ex}/connectors${json ? '?include_schemas=true' : ''}`);
         const c = connectors.find((x) => x.slug === slug);
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);
@@ -977,8 +982,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
       case 'mode': {
-        // `per_user` (each member brings their own) was removed 2026-07-05
-        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) —
+        // `per_user` (each member brings their own) was removed 2026-07-05 —
         // `shared` is the only mode; the route stays as a restricted no-op.
         const slug = positional[0];
         if (!slug) return missing('a connector slug');

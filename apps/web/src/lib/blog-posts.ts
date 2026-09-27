@@ -1740,7 +1740,7 @@ for (const dispute of open.data?.disputes ?? []) {
  * ==========================================================================
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value readable by any command the
- *    agent runs (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). Only CONNECTOR
+ *    agent runs. Only CONNECTOR
  *    credentials never enter the machine.
  *  - EGRESS is not controlled at the network. Nothing implements it.
  *  - microVM is the Platinum provider only; containers are the default. Write

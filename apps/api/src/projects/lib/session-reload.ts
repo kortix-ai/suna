@@ -711,8 +711,7 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  // CHOKEPOINT — the `config_releases` flag for the reload path
-  // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ the daemon's own
+  // CHOKEPOINT — the `config_releases` flag for the reload path. Off ⇒ the daemon's own
   // capability is ignored and this reload takes the pre-release path: the
   // plain refresh plus the compiled-governance push, an etag-based result,
   // and no `release` block for the CLI or the web to render. Nothing is

@@ -2,7 +2,7 @@
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -20,13 +20,17 @@ import {
   loadOlderSessionTranscriptMirror,
   loadSessionTranscriptMirror,
   mirrorMessagesForHydrate,
+  parseKortixSessionScope,
+  refreshSavedCopy,
+  SAVED_COPY_REFRESH_DELAY_MS,
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
+import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { chooseOlderSource, mirrorCursorAfter } from '../browser/session-sync/mirror-paging';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
-import { useSyncStore } from '../browser/stores/sync-store';
+import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
@@ -150,6 +154,9 @@ export function livenessBusy(input: {
   return sessionSyncBusy(input) || input.serverHoldsTurn === true;
 }
 
+// `useLayoutEffect` warns during a server render, where it cannot run anyway.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
   const {
     kortixSessionScope,
@@ -230,40 +237,96 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirror === undefined ? 'read' : mirror === null ? 'null' : 'envelope'
   }`;
   const [mirrorAbsentFor, setMirrorAbsentFor] = useState<string | null>(null);
-  useEffect(() => {
+  // A LAYOUT effect, so the copy kept on this device paints before the browser
+  // does: the first frame of an open shows the transcript, not placeholder rows.
+  useIsomorphicLayoutEffect(() => {
     if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
     if (sessionId in useSyncStore.getState().messages) return;
     const abort = new AbortController();
-    const read = mirror !== undefined
-      ? Promise.resolve(mirror)
-      : loadSessionTranscriptMirror({ kortixSessionScope, signal: abort.signal });
-    void read.then((envelope) => {
-      if (abort.signal.aborted) return;
-      if (!envelope) {
-        setMirrorAbsentFor(mirrorKey);
-        return;
-      }
+    const scope = parseKortixSessionScope(kortixSessionScope);
+    const saved = scope ? currentSavedCopyStore() : null;
+
+    /** Paint `envelope` when the guards allow it. `overCopy`: the store holds
+     *  only an earlier saved copy, which a newer one may reconcile into. */
+    const paint = (envelope: SessionTranscriptSyncEnvelope, overCopy: boolean): boolean => {
       const state = useSyncStore.getState();
+      const replaceable = overCopy && hasOnlyCacheSourcedMessages(sessionId);
       if (
         !shouldHydrateFromMirror({
           envelope,
           runtimeSessionId: sessionId,
-          hasMessages: (state.messages[sessionId]?.length ?? 0) > 0,
-          hasLoadedTranscript: sessionId in state.messages,
+          hasMessages: replaceable ? false : (state.messages[sessionId]?.length ?? 0) > 0,
+          hasLoadedTranscript: replaceable ? false : sessionId in state.messages,
         })
       ) {
-        setMirrorAbsentFor(mirrorKey);
-        return;
+        return false;
       }
       state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), { source: 'cache' });
       // ONLY on a hydrate that actually painted. Offering to page back through
       // a thread this tab refused to show would load rows nothing renders.
       setMirrorCursor(mirrorCursorAfter(envelope));
+      return true;
+    };
+
+    // 1. The saved copy this device kept from the last open. Synchronous on
+    //    web, so it paints in this very commit.
+    let local: SessionTranscriptSyncEnvelope | null = null;
+    const applyLocal = (envelope: SessionTranscriptSyncEnvelope | null) => {
+      if (abort.signal.aborted || !envelope) return;
+      if (paint(envelope, false)) local = envelope;
+    };
+    const kept = saved && scope ? saved.read(scope.projectId, scope.sessionId) : null;
+    const localRead: Promise<void> =
+      kept && typeof (kept as Promise<unknown>).then === 'function'
+        ? (kept as Promise<SessionTranscriptSyncEnvelope | null>).then(applyLocal, () => undefined)
+        : (applyLocal(kept as SessionTranscriptSyncEnvelope | null), Promise.resolve());
+
+    // 2. The server's copy, which is at least as new. It reconciles into the
+    //    local paint by message id while no runtime read has landed, and it
+    //    replaces the kept copy for the next open.
+    const read = mirror !== undefined
+      ? Promise.resolve(mirror)
+      : loadSessionTranscriptMirror({ kortixSessionScope, signal: abort.signal });
+    void Promise.all([read, localRead]).then(([envelope]) => {
+      if (abort.signal.aborted) return;
+      if (!envelope) {
+        // No answer (a failed read, or no copy yet): whatever the device kept
+        // stays painted and stays kept.
+        if (!local) setMirrorAbsentFor(mirrorKey);
+        return;
+      }
+      if (saved && scope) void saved.write(scope.projectId, scope.sessionId, envelope);
+      const olderThanLocal =
+        local !== null &&
+        !!envelope.captured_at &&
+        !!(local as SessionTranscriptSyncEnvelope).captured_at &&
+        Date.parse(envelope.captured_at) < Date.parse((local as SessionTranscriptSyncEnvelope).captured_at as string);
+      if (olderThanLocal || !paint(envelope, local !== null)) {
+        if (!local) setMirrorAbsentFor(mirrorKey);
+      }
     });
     return () => abort.abort();
   }, [kortixSessionScope, sessionId, mirror, mirrorKey]);
+
+  // Keep the device's copy current: the server writes a new saved copy when a
+  // turn ends, so re-read it shortly after this session goes idle. Without
+  // this the kept copy is as old as the last open, and the next open paints
+  // an older thread before the fresh one reconciles into it.
+  const wasWorking = useRef(false);
+  useEffect(() => {
+    const endedTurn = wasWorking.current && !working;
+    wasWorking.current = working === true;
+    if (!endedTurn) return;
+    const scope = parseKortixSessionScope(kortixSessionScope);
+    const saved = currentSavedCopyStore();
+    if (!scope || !saved) return;
+    const timer = setTimeout(() => {
+      void refreshSavedCopy(saved, scope.projectId, scope.sessionId);
+    }, SAVED_COPY_REFRESH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [working, kortixSessionScope]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.

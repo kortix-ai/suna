@@ -72,8 +72,8 @@ export type Credential =
       agentGrant: AgentGrant | null;
       serviceAccountId: string;
       activated: boolean;
-      /** The project flag `agent_principal` is on and the grant is governed
-       *  (spec docs/specs/2026-09-22-agents-as-principals.md): the session
+      /** The project flag `agent_principal` is on and the grant is governed:
+       *  the session
        *  authorizes AS the agent, capped by its ceiling, never as the
        *  launcher. Optional so a literal built by an older caller reads as
        *  the legacy model. */

@@ -5,8 +5,7 @@
  * Times session boot (create → runtime-ready) N times against a live Kortix
  * deployment, aggregates P50/P95/P99, and prints a numbers table. This is
  * MEASUREMENT ONLY — no optimization, no behavior change. The numbers this
- * produces unblock the entire session-boot-1s workstream (see
- * docs/specs/2026-07-19-session-boot-1s-threshold.md).
+ * produces unblock the entire session-boot-1s workstream.
  *
  * Usage:
  *   cd apps/api && bun run scripts/bench-session-boot.ts

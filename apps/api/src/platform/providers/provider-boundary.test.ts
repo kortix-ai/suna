@@ -12,7 +12,7 @@ const GENERIC_DATA_PATHS = [
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
   // Egress-enforced delivery. There is ONE mechanism for every provider
-  // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4) and no verdict to
+  // and no verdict to
   // read: the guest holds a handle and the broker route substitutes the value.
   // A name comparison anywhere in here reintroduces the split that used to make
   // a provider silently lose a feature it already had for free.

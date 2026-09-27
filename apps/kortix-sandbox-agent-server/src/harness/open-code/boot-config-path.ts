@@ -42,8 +42,7 @@ import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
 
 /**
- * THE boot path. One function decides what OpenCode runs, and nothing else does
- * (docs/specs/config-releases.md; PLAN-one-boot-path C1–C8).
+ * THE boot path. One function decides what OpenCode runs, and nothing else does.
  *
  * The straight line, in order, with no timer anywhere on it:
  *

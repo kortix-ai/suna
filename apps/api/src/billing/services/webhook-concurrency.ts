@@ -137,7 +137,7 @@ export function createAccountLock(options: AccountLockOptions) {
 }
 
 /**
- * Two holders out of the default six-connection pool (`DEFAULT_DB_POOL_MAX`).
+ * Two holders out of the default main pool (`DEFAULT_DB_POOL_MAX`).
  * Webhook bodies make Stripe calls and hold the lock for about one second, so
  * two concurrent holders per process is enough throughput; a request that
  * cannot get a slot in 20 s fails with 500 and Stripe redelivers it.

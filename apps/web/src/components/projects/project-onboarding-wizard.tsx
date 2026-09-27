@@ -181,7 +181,7 @@ export function ProjectOnboardingWizard({
   const isPending = onboarding.hydrated && onboarding.status === 'pending' && !cannotSetUpProject;
   const connectors = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     // `GET /connectors/projects/:id/connectors` asserts project.connector.read
     // — do not fire it for a caller the probe already said no to.
     enabled: isPending && canReadConnectors,

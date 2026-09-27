@@ -76,8 +76,7 @@ data "aws_secretsmanager_secret" "env" {
 # to, and sandboxes read through short-lived presigned GETs. The name is
 # deterministic on purpose: the task names it through the non-secret
 # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET / _S3_REGION overrides in the deploy
-# workflow (see .github/workflows/deploy-<env>.yml and
-# docs/runbooks/project-snapshot-s3.md#aws). Applying this creates the bucket
+# workflow (see .github/workflows/deploy-<env>.yml). Applying this creates the bucket
 # and the task-role grant only; naming it in the task env starts the producer;
 # KORTIX_PROJECT_SNAPSHOT_MODE / a project's metadata turns consumption on.
 module "project_snapshots" {
@@ -113,7 +112,7 @@ module "api" {
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # staging sizing — see docs/runbooks/staging-sizing.md.
+  # staging sizing.
   #
   # Staging must absorb the release gate's FULL concurrent load: `pnpm test --
   # --target-full` drives 441 REST flows plus 21 Playwright journeys against

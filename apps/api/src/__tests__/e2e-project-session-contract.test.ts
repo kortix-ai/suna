@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { authUsersRows } from './helpers/auth-users-execute';
 import {
   accountMembers,
   projectGitConnections,
@@ -675,7 +676,10 @@ mock.module('../shared/db', () => ({
     transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
       return fn(this);
     },
-    execute: async () => [],
+    // Owner identities come from auth.users; every id is the contract user,
+    // matching the auth admin mock above.
+    execute: async (query: unknown) =>
+      authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (predicate?: unknown) => ({
@@ -2774,7 +2778,7 @@ describe('project session API contract', () => {
   // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
   // provider lost the box — the provider just answered `stopped`, which proves
   // the box exists. The row parks retriable instead of being preserved as
-  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  // "computer was lost".
   test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {

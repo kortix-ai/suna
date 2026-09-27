@@ -15,7 +15,11 @@
     "selectInstallation": "Sélectionner une installation",
     "manifestRequirement": "Le nouveau dépôt doit contenir {manifest} sur sa branche par défaut. Arrêtez d’abord les sessions actives et fermez les demandes de modification ouvertes.",
     "cancel": "Annuler",
-    "changing": "Modification en cours…"
+    "changing": "Modification en cours…",
+    "searchBranches": "Rechercher des branches…",
+    "loadingBranches": "Chargement des branches…",
+    "noBranches": "Aucune branche correspondante.",
+    "moreBranches": "{count} de plus. Tapez pour filtrer."
   },
   "pooledSecrets": {
     "saveChanges": "Enregistrer les modifications",

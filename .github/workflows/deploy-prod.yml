@@ -19,8 +19,7 @@ name: Deploy Prod
 #        gateway. It does not change production routing or enable writers.
 #        OFF by default — it runs only when the repository variable
 #        ENABLE_US_SHADOW_DEPLOY is `true`. Its data plane has been broken
-#        since 2026-08-07; see the job comment and
-#        docs/runbooks/prod-us-east-2-supabase-migration.md.
+#        since 2026-08-07; see the job comment.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
@@ -1076,7 +1075,6 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      # docs/specs/config-releases.md#store
       KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
@@ -1120,8 +1118,7 @@ jobs:
   #
   # Set the repository variable ENABLE_US_SHADOW_DEPLOY=true to turn the lane
   # back on. Do that only after the revival checklist in
-  # docs/runbooks/prod-us-east-2-supabase-migration.md ("Reviving the shadow
-  # deploy lane") passes end to end. The reusable workflow keeps its
+  # deploy-prod-us-east-2-shadow.yml passes end to end. The reusable workflow keeps its
   # `workflow_dispatch` trigger, so an operator can always drive the shadow by
   # hand while the lane is off.
   #

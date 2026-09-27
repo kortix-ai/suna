@@ -15,7 +15,11 @@
     "selectInstallation": "Selecionar instalação",
     "manifestRequirement": "O novo repositório precisa de {manifest} na branch padrão. Primeiro, pare as sessões ativas e feche as solicitações de alteração abertas.",
     "cancel": "Cancelar",
-    "changing": "Alterando…"
+    "changing": "Alterando…",
+    "searchBranches": "Pesquisar branches…",
+    "loadingBranches": "Carregando branches…",
+    "noBranches": "Nenhum branch correspondente.",
+    "moreBranches": "Mais {count}. Digite para filtrar."
   },
   "pooledSecrets": {
     "saveChanges": "Salvar alterações",

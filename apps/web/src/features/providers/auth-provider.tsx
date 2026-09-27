@@ -4,6 +4,7 @@ import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
 import { IDENTITY_MARKER_KEY, shouldResetClientState } from '@/lib/auth/identity-marker';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isDefinitiveSessionRejection } from '@/lib/auth/session-rejection';
+import { adoptDeviceCaches } from '@/lib/device-caches';
 import { safeGetItem, safeSetItem } from '@/lib/storage/managed-storage';
 import { createClient } from '@/lib/supabase/client';
 import { resetClientState } from '@/lib/utils/reset-client-state';
@@ -86,6 +87,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       lastUserIdRef.current = nextUserId;
       safeSetItem(IDENTITY_MARKER_KEY, nextUserId);
+      // Before the publish, like the reset above: the first frame that knows
+      // this user already has their cached projects and sessions to render.
+      adoptDeviceCaches(nextUserId);
     };
 
     const getInitialSession = async () => {

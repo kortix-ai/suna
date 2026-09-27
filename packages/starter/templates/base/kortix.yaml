@@ -9,9 +9,7 @@
 # entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
 # frontmatter + body — a stock OpenCode agent file, no Kortix-specific
 # split. The agent's NAME is the join between this map's keys and that
-# `.md`'s filename. See
-# docs/specs/2026-07-05-agent-first-config-unification.md (decision
-# 2026-07-05: "one home per concern").
+# `.md`'s filename (decision 2026-07-05: "one home per concern").
 kortix_version: 2
 
 # The agent a session/trigger boots when it names no concrete agent (the
