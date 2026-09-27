@@ -1537,12 +1537,6 @@ importers:
 
   packages/db:
     dependencies:
-      dotenv:
-        specifier: ^16
-        version: 16.6.1
-      dotenv-expand:
-        specifier: ^12
-        version: 12.0.3
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
@@ -1608,9 +1602,6 @@ importers:
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
-      '@kortix/shared':
-        specifier: workspace:*
-        version: link:../shared
       ai:
         specifier: 7.0.31
         version: 7.0.31(zod@3.25.76)
@@ -18901,6 +18892,7 @@ packages:
     engines: {node: '>=12'}
     dependencies:
       dotenv: 16.6.1
+    dev: true
 
   /dotenv@16.4.7:
     resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
