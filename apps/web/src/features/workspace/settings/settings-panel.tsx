@@ -17,7 +17,7 @@
  */
 
 import dynamic from 'next/dynamic';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
@@ -32,11 +32,27 @@ export function preloadSettingsPanel(): void {
   void import('./settings-panel-body');
 }
 
+/** After the page settles, not during hydration — the first open should still
+ *  find the body in memory. A 5 s ceiling, later than the Customize data
+ *  prefetch's 1 s (use-customize-prefetch.ts), so the two do not compete. */
+const IDLE_PRELOAD_TIMEOUT_MS = 5_000;
+
+function preloadWhenIdle(): () => void {
+  if (typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(preloadSettingsPanel, { timeout: IDLE_PRELOAD_TIMEOUT_MS });
+    return () => window.cancelIdleCallback(handle);
+  }
+  const handle = window.setTimeout(preloadSettingsPanel, IDLE_PRELOAD_TIMEOUT_MS);
+  return () => window.clearTimeout(handle);
+}
+
 export function SettingsPanel({ projectId }: { projectId?: string }) {
   // Mod+, lives with the panel, not with whatever row happens to link to it —
   // binding it here is what makes the keystroke work on every surface that
   // mounts this component, and impossible to advertise on one that doesn't.
   useSettingsKeyboardShortcut();
+
+  useEffect(preloadWhenIdle, []);
 
   const open = useSettingsPanelStore((s) => s.open);
   const [opened, setOpened] = useState(open);
