@@ -873,8 +873,7 @@ describe("[[triggers]] — spec/error `path` derives from the manifest's own fil
 });
 
 /**
- * `type: monitor` — the third trigger type
- * (docs/specs/2026-08-12-monitors.md). A monitor names a repo command the
+ * `type: monitor` — the third trigger type. A monitor names a repo command the
  * platform supervises 24/7; its stdout lines are the events. It carries none
  * of the cron/webhook wiring, and it defaults to `session_mode: reuse`
  * because it fires repeatedly by design.

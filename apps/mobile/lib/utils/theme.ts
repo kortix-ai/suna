@@ -79,8 +79,7 @@ export function toHexColor(hslColor: string, alpha?: number): string {
 
 /**
  * Every value here is a transcription of the matching token in global.css.
- * global.css is the single source of color — see
- * docs/superpowers/plans/2026-09-05-mobile-rnr-migration.md.
+ * global.css is the single source of color.
  * Do not introduce a value that has no token. Do not write a hex literal.
  * Verified against global.css by lib/utils/theme.test.ts, which reads
  * global.css at runtime and fails if either side drifts.

@@ -100,8 +100,7 @@ data "aws_secretsmanager_secret" "env" {
 # to, and sandboxes read through short-lived presigned GETs. The name is
 # deterministic on purpose: the task names it through the non-secret
 # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET / _S3_REGION overrides in the deploy
-# workflow (see .github/workflows/deploy-<env>.yml and
-# docs/runbooks/project-snapshot-s3.md#aws). Applying this creates the bucket
+# workflow (see .github/workflows/deploy-<env>.yml). Applying this creates the bucket
 # and the task-role grant only; naming it in the task env starts the producer;
 # KORTIX_PROJECT_SNAPSHOT_MODE / a project's metadata turns consumption on.
 module "project_snapshots" {
@@ -113,8 +112,7 @@ module "project_snapshots" {
   # coast, Platinum boxes in Amsterdam), and a 1.6 MB boot object over a
   # 150-190 ms round trip is bound by TLS setup + TCP slow start. Pairs with
   # KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE=true in deploy-dev.yml's task env
-  # overrides. Read docs/runbooks/project-snapshot-s3-benchmark.md ("Dev after
-  # PR #7242 merged") before flipping this back; about USD 0.04/GB extra.
+  # overrides. Flipping this back costs about USD 0.04/GB extra.
   transfer_acceleration = true
 }
 

@@ -2,7 +2,7 @@
 // Per-project human-in-the-loop inbox. Agents submit outputs / decisions /
 // batches for review; humans approve, reject, request changes, or answer. Native
 // items only this pass — change requests and connector/tunnel approvals are folded
-// in by adapters later. See docs/REVIEW_CENTER_DESIGN.md.
+// in by adapters later.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions } from '@kortix/db';

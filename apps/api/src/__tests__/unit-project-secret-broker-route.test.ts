@@ -437,8 +437,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
 
   describe('server-side substitution', () => {
     // The egress-enforced path: the guest holds handles, the relay swaps them
-    // for the real values. See
-    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §5.
+    // for the real values.
     beforeEach(() => {
       agentGrant = {
         agent: 'default',

@@ -15,7 +15,7 @@ import { loadProjectForUser, loadVisibleSession, assertProjectCapability, projec
 import { projectsApp } from '../lib/app';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
-import { resolveEffectiveSessionConnectorBindings, sessionConnectorBindingsRequirePrivateVisibility, validateSessionConnectorBindings } from '../lib/session-connector-bindings';
+import { invalidateSessionConnectorLookup, resolveEffectiveSessionConnectorBindings, sessionConnectorBindingsRequirePrivateVisibility, validateSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
@@ -447,6 +447,15 @@ projectsApp.openapi(
         }
       }
     });
+    if (wantsBindings) {
+      // The transaction above may have just changed
+      // `connectorBindingsConfigured` / the session's binding rows. Drop the
+      // request-scoped session-lookup memo (session-connector-bindings.ts) so
+      // the re-resolution below reads the row THIS transaction wrote, not the
+      // pre-write one cached by `currentEffectiveBindings` earlier in this
+      // handler.
+      invalidateSessionConnectorLookup(sessionId, loaded.row.accountId, projectId);
+    }
 
     const effectiveBindings = await resolveEffectiveSessionConnectorBindings({
       accountId: loaded.row.accountId,

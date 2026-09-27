@@ -19,8 +19,7 @@
  *     verifies → smoke-tests → STAGES `<state-dir>/agent.next` (+ `.sha256`) and
  *     exits 75. The supervisor (apps/sandbox/entrypoint.sh) re-verifies the
  *     digest, renames it into `agent.current`, keeps `agent.prev`, and rolls back
- *     a crash-looper against the immutable baked floor. See the convergent-runtime
- *     spec docs/specs/2026-08-20-convergent-runtime.md.
+ *     a crash-looper against the immutable baked floor.
  *
  * THE RELIABILITY PROPERTY. An update never bricks the app in either context. A
  * half-written binary is never left on disk: bytes are written to a temp file on

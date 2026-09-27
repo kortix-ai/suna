@@ -28,7 +28,7 @@ import {
  * access gate is the agent-side `[[agents]].connectors` grant, enforced at the
  * router before this is ever reached.
  *
- * Policy enforcement is layered (docs/specs/connector.md §8):
+ * Policy enforcement is layered:
  *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
  *   2. connector-level [[connectors.policies]] (relative patterns) — connector-author rules
  *   3. risk-derived default (when `default_mode = risk`) or always_run (`allow_all`)

@@ -19,6 +19,7 @@ import {
   runWithContext,
   setContextField,
 } from './lib/request-context';
+import { apiRegion, databaseRegion } from './lib/deployment-region';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -505,8 +506,21 @@ const HealthSchema = z
     instance: z.string(),
     scheduler_leader: z.boolean(),
     trigger_scheduler: z.record(z.string(), z.unknown()),
+    // Best-effort deployment topology, resolved once at import time (see
+    // lib/deployment-region.ts). the turn-latency spec (PR #7840)'s own baseline
+    // turned out to be dominated by a us-west-2 API against a us-east-2
+    // database, not by the code path — this lets `pnpm test -- --latency`
+    // report WHERE the two halves live instead of just a duration. Neither
+    // field is sensitive: an AWS region name, never a host, user, or secret.
+    region: z.string().nullable(),
+    database_region: z.string().nullable(),
   })
   .openapi('Health');
+
+// Resolved once: neither AWS_REGION nor DATABASE_URL changes for the life of
+// the process, so there is no reason to re-parse it on every /health poll.
+const API_REGION = apiRegion();
+const DATABASE_REGION = databaseRegion(config.DATABASE_URL);
 
 const healthHandler = (c: any) =>
   c.json({
@@ -520,6 +534,8 @@ const healthHandler = (c: any) =>
     instance: API_INSTANCE,
     scheduler_leader: isLeader(),
     trigger_scheduler: getTriggerSchedulerHealth(),
+    region: API_REGION,
+    database_region: DATABASE_REGION,
   });
 
 app.openapi(
@@ -1569,6 +1585,14 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
+  // metadata and the first discovery page in the background, so the first
+  // Customize → Connectors view on a fresh replica reads memory instead of
+  // waiting ~2 s on Composio round trips. Not awaited: boot never waits on a
+  // third party.
+  void import('./connectors/composio')
+    .then((composio) => composio.warmComposioDiscovery())
+    .catch(() => {});
   // Every api process must learn that a base branch moved, not just the one
   // that handled the push — otherwise the turn-start gate answers `current`
   // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
@@ -1579,6 +1603,10 @@ async function startReplicaServices() {
     if (!listening) return;
     const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
     useDesiredInvalidationTransport(m.configBaseMoveTransport());
+    // A base move announced by another process also ends this process's
+    // stale-while-revalidate window for page views (projects/git/mirror.ts).
+    const { invalidateProjectMirror } = await import('./projects/git/mirror');
+    m.configBaseMoveTransport().subscribe(invalidateProjectMirror);
   });
 }
 

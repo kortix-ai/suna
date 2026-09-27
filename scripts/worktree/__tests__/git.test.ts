@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { branchExists, remoteBranchExists, removeWorktree, worktreeAddArgs } from '../lib';
+import { branchExists, freshBase, remoteBranchExists, removeWorktree, worktreeAddArgs } from '../lib';
 
 const git = (cwd: string, ...args: string[]) => {
   const r = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
@@ -42,11 +42,11 @@ describe('worktreeAddArgs', () => {
     expect(mode).toBe('local');
     expect(args.slice(3)).toEqual(['worktree', 'add', '/tmp/wt', 'main']);
   });
-  test('an unknown branch is created from --from', () => {
+  test('an unknown branch is created from --from, with no upstream', () => {
     const root = fixture();
     const { args, mode } = worktreeAddArgs(root, '/tmp/wt', 'brand-new', 'main');
     expect(mode).toBe('new');
-    expect(args.slice(3)).toEqual(['worktree', 'add', '-b', 'brand-new', '/tmp/wt', 'main']);
+    expect(args.slice(3)).toEqual(['worktree', 'add', '--no-track', '-b', 'brand-new', '/tmp/wt', 'main']);
   });
   test('the remote argv really checks out the remote tip', () => {
     const root = fixture();
@@ -105,3 +105,40 @@ describe('removeWorktree', () => {
     expect(git(root, 'worktree', 'list')).not.toContain(path);
   });
 })
+
+/** The fixture, after someone else pushed a commit to origin/main. Local `main` is now stale. */
+function staleMainFixture() {
+  const clone = fixture();
+  const other = join(clone, '..', 'other');
+  git(join(clone, '..'), 'clone', '-q', join(clone, '..', 'origin.git'), other);
+  git(other, 'checkout', '-q', 'main');
+  git(other, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'newer');
+  git(other, 'push', '-q', 'origin', 'main');
+  return { clone, other };
+}
+
+describe('freshBase', () => {
+  test('main resolves to the fetched origin/main, never the stale local main', () => {
+    // A worktree cut from a primary checkout 455 commits behind carried a
+    // tree #7843 had deleted. The new branch must start at origin's tip.
+    const { clone, other } = staleMainFixture();
+    expect(freshBase(clone, 'main')).toBe('origin/main');
+    expect(git(clone, 'rev-parse', 'origin/main')).toBe(git(other, 'rev-parse', 'HEAD'));
+    expect(git(clone, 'rev-parse', 'main')).not.toBe(git(other, 'rev-parse', 'HEAD'));
+  });
+  test('an explicit base is kept as given', () => {
+    const { clone } = staleMainFixture();
+    expect(freshBase(clone, 'feature-x')).toBe('feature-x');
+    expect(freshBase(clone, 'HEAD')).toBe('HEAD');
+  });
+  test('a new worktree from main starts at origin/main and pushes to its own name', () => {
+    const { clone, other } = staleMainFixture();
+    const wt = join(clone, '..', 'wt-new');
+    const { args } = worktreeAddArgs(clone, wt, 'brand-new', freshBase(clone, 'main'));
+    expect(Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' }).exitCode).toBe(0);
+    expect(git(wt, 'rev-parse', 'HEAD')).toBe(git(other, 'rev-parse', 'HEAD'));
+    // No upstream: a bare `git push` must never target main.
+    const upstream = Bun.spawnSync(['git', '-C', wt, 'rev-parse', '--abbrev-ref', '@{upstream}'], { stdout: 'pipe', stderr: 'pipe' });
+    expect(upstream.exitCode).not.toBe(0);
+  });
+});

@@ -65,7 +65,7 @@
  *    write "only a human can merge".
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value in the session, readable by any
- *    command the agent runs (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). Only
+ *    command the agent runs. Only
  *    CONNECTOR credentials never enter the machine (`apps/api/src/projects/
  *    secrets.ts:173,226`).
  *  - AUDIT. Recording is NEVER gated — every tier's actions are always captured.

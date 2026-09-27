@@ -93,7 +93,7 @@ const Schema = z.object({
   // slower than a full one and defers cost into unpredictable mid-session
   // stalls. Kept for remotes where shallow is unavailable.
   KORTIX_CLONE_FILTER: z.string().default(''),
-  // ── Monitor box (docs/specs/2026-08-12-monitors.md) ──────────────────────
+  // ── Monitor box ────────────────────────────────────────────────────────
   // `monitor` selects the daemon's monitor mode: it clones the repo, skips
   // opencode entirely, and supervises the project's monitor processes instead.
   // Anything else (including unset) is the normal session daemon.

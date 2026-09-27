@@ -23,7 +23,6 @@
  *    the daemon leaves the checkout on default-branch HEAD. A monitor watches
  *    what is shipped, not what some session is working on.
  *
- * Spec: docs/specs/2026-08-12-monitors.md.
  */
 
 import {

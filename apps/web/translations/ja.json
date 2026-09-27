@@ -15,7 +15,11 @@
     "selectInstallation": "インストールを選択",
     "manifestRequirement": "新しいリポジトリのデフォルトブランチには {manifest} が必要です。先に実行中のセッションを停止し、開いている変更リクエストを閉じてください。",
     "cancel": "キャンセル",
-    "changing": "変更中…"
+    "changing": "変更中…",
+    "searchBranches": "ブランチを検索…",
+    "loadingBranches": "ブランチを読み込み中…",
+    "noBranches": "一致するブランチはありません。",
+    "moreBranches": "ほか {count} 件。入力して絞り込みます。"
   },
   "pooledSecrets": {
     "saveChanges": "変更を保存",

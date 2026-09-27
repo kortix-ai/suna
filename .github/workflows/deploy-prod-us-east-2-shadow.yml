@@ -32,10 +32,8 @@ name: Deploy Prod US East 2 Shadow
 # REVIVAL CHECKLIST — turning the lane back on
 #
 # Every step needs an AWS session with MFA for `kortix-gha-prod-use2-terraform`
-# (or the equivalent break-glass role) plus psql against both databases. Full
-# detail, including the exact SQL and the verification queries, lives in
-# docs/runbooks/prod-us-east-2-supabase-migration.md, section "Reviving the
-# shadow deploy lane". Short form, in order:
+# (or the equivalent break-glass role) plus psql against both databases.
+# In order:
 #
 #   1. Clear the source drift. Drop the leftover
 #      `kortix.project_session_connector_bindings.profile_id` column on prod so

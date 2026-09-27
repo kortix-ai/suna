@@ -23,6 +23,8 @@ import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { prefetchSessionOpen } from '@kortix/sdk/react';
+import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
+import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
 
 const QUERY_KEY = 'project-access-boundary';
 
@@ -176,6 +178,32 @@ export function resolveGateState(
   return waiting ?? errorState ?? 'unavailable';
 }
 
+/** What the boundary renders: the pending frame, the project, or a gate screen. */
+export type BoundaryView = 'pending' | 'project' | 'gate';
+
+/**
+ * Unresolved auth outranks everything, a cached project included: no result
+ * is an access decision until identity cleanup and token publication finish.
+ *
+ * After that the project stays up for as long as the query holds its data. A
+ * failed REFETCH keeps that data (TanStack v5 sets `status: 'error'` and leaves
+ * `data`), so a transient 500, timeout or tunnel drop used to replace a working
+ * shell with the error screen. Only a terminal verdict takes it away: 403 (the
+ * request-access form) or 404 (not found).
+ */
+export function resolveBoundaryView(input: {
+  authReady: boolean;
+  isPending: boolean;
+  hasData: boolean;
+  errorState: AccessGateState | null;
+}): BoundaryView {
+  if (!input.authReady || input.isPending) return 'pending';
+  if (input.hasData && input.errorState !== 'request' && input.errorState !== 'notFound') {
+    return 'project';
+  }
+  return 'gate';
+}
+
 /** The `[sessionId]` route segment, when the current route has one. */
 export function routeSessionIdFromParams(params: Record<string, unknown> | null | undefined): string | null {
   const value = params?.sessionId;
@@ -215,12 +243,28 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
   // `GET /projects/<id>` before it could start. Read-only — it never wakes a
   // sandbox — and a project this user cannot read answers 403 to it as well.
+  //
+  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
+  // reads also only need the route ids, and were waiting on
+  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
+  // see `session-route-prefetch.ts`.
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {
     if (!authReady || !routeSessionId) return;
     void prefetchSessionOpen(queryClient, projectId, routeSessionId);
+    prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
   }, [authReady, projectId, routeSessionId, queryClient]);
+
+  // The project SHELL's own reads (detail, sessions list, sandbox health, and
+  // — once detail says the gateway is on — the model picker) need only
+  // `projectId`, exactly like `getProject` above, so they start here too
+  // instead of waiting for `getProject` to resolve AND `ProjectShell`'s own
+  // chunk to mount. See `project-shell-prefetch.ts`.
+  useEffect(() => {
+    if (!authReady || !projectId) return;
+    prefetchProjectShellReads(queryClient, projectId);
+  }, [authReady, projectId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.
@@ -285,9 +329,15 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   //
   // A disabled query is pending, not loading. Wait for identity cleanup and
   // token publication before interpreting any result as an access decision.
-  if (!authReady || query.isPending) return <ProjectPendingScreen />;
+  const view = resolveBoundaryView({
+    authReady,
+    isPending: query.isPending,
+    hasData: query.data !== undefined,
+    errorState,
+  });
+  if (view === 'pending') return <ProjectPendingScreen />;
 
-  if (query.isSuccess) return <>{children}</>;
+  if (view === 'project') return <>{children}</>;
 
   return (
     <AccessGateScreen

@@ -41,6 +41,7 @@
  */
 
 import {
+  type SessionAudit,
   type SessionOpenBundle,
   type SessionPrompt,
   type SessionTranscriptSyncEnvelope,
@@ -211,6 +212,23 @@ export function openBundleQueue(bundle: SessionOpenBundle): SessionPrompt[] | nu
   const queue = bundle.queue;
   if (!queue || queue.known !== true) return null;
   return queue.prompts ?? [];
+}
+
+/** Project the audit leg onto the exact shape `getSessionAudit(...,
+ *  { includeEvents: false })` returns — `events`/`next_cursor` simply absent,
+ *  which `SessionAudit` already declares optional. `null` for an unknown leg
+ *  — never `{ actions: [] }`, which would read as "nothing pending" for a
+ *  leg that could not answer. */
+export function openBundleAudit(bundle: SessionOpenBundle): SessionAudit | null {
+  const audit = bundle.audit;
+  if (!audit || audit.known !== true) return null;
+  return {
+    session_id: audit.session_id,
+    agent: audit.agent,
+    audit_access: audit.audit_access,
+    count: audit.count,
+    actions: audit.actions,
+  };
 }
 
 function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number): void {

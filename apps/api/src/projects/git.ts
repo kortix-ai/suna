@@ -73,7 +73,12 @@ export {
   createRemoteSessionBranch,
   deleteRemoteSessionBranch,
   commitFileToBranch,
+  isSessionBranchName,
+  filterBranchesForResponse,
+  BRANCH_LIST_DEFAULT_LIMIT,
+  BRANCH_LIST_MAX_LIMIT,
 } from './git/branches';
+export type { BranchListFilter } from './git/branches';
 
 export {
   getMergeBase,

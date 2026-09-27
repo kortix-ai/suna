@@ -232,7 +232,7 @@ export async function preserveEstablishedRuntime(
  * that a later `/start` can wake. Incident 2026-08-14: a dead local tunnel kept
  * two healthy sandboxes from booting, the on-open path preserved both as lost
  * without asking the provider, and both control planes showed the boxes running
- * the whole time (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+ * the whole time.
  */
 export type RuntimeLossVerdict = 'preserve' | 'park';
 

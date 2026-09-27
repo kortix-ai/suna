@@ -271,7 +271,7 @@ test('pinned transport connects to the verified IP without a runtime DNS lookup'
 //
 // The egress-enforced path: the sandbox holds a HANDLE, sends it with an
 // ordinary HTTP client, and the relay swaps it for the real value on the way
-// out. See docs/specs/2026-08-19-secrets-exposure-usage-model.md §5.
+// out.
 
 const HANDLE = 'kortix_brokered__use_kortix_fetch__KXS1abcdefghijklmnopqrstuvwxyz234567ab';
 const OTHER_HANDLE = 'kortix_brokered__use_kortix_fetch__KXS1zyxwvutsrqponmlkjihg765432abcdef';
