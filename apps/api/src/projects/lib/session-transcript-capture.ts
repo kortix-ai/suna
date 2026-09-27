@@ -23,7 +23,11 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { readTranscriptPages, retryTranscriptCapture } from './session-transcript-pages';
+import {
+  readTranscriptPages,
+  retryTranscriptCapture,
+  transcriptPageUrl,
+} from './session-transcript-pages';
 import {
   readTranscriptAttachmentBytes,
   recoverTranscriptAttachments,
@@ -44,7 +48,6 @@ import {
   mirrorRowsFromOpencodePayload,
 } from './session-transcript-mirror';
 
-const WORKSPACE_DIRECTORY = '/workspace';
 const CAPTURE_TIMEOUT_MS = 8_000;
 
 export interface CaptureResult {
@@ -118,12 +121,12 @@ const liveCaptureDeps: CaptureDeps = {
 
     /** One page of an OpenCode session's messages, newest first. */
     const pageOf = (opencodeSessionId: string) => async (cursor?: string) => {
-      const url = new URL(
-        `${resolved.endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}/message`,
+      const url = transcriptPageUrl(
+        resolved.endpoint.url,
+        opencodeSessionId,
+        cursor,
+        MIRROR_CAPTURE_LIMIT,
       );
-      url.searchParams.set('directory', WORKSPACE_DIRECTORY);
-      url.searchParams.set('limit', String(MIRROR_CAPTURE_LIMIT));
-      if (cursor) url.searchParams.set('cursor', cursor);
       return fetch(url, {
         headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
         signal: AbortSignal.any([deadline, AbortSignal.timeout(CAPTURE_TIMEOUT_MS)]),
