@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Focus } from './app-keys.ts';
-import { focusOrder, nextFocus } from './app.tsx';
+import { focusOrder, nextFocus, terminalToggle } from './app.tsx';
 
 describe('focusOrder', () => {
   test('the session route is sidebar → transcript → composer', () => {
@@ -55,5 +55,19 @@ describe('nextFocus', () => {
     // Closing the terminal while it had focus is exactly this case.
     expect(nextFocus('terminal', closed, 1)).toBe('sidebar');
     expect(nextFocus('screen', closed, 1)).toBe('sidebar');
+  });
+});
+
+describe('terminalToggle', () => {
+  test('with no session the panel stays closed, focus does not move, and it says why', () => {
+    expect(terminalToggle(false, null)).toEqual({
+      open: false,
+      focus: null,
+      toast: 'Open a session first — the terminal runs inside its sandbox (Ctrl+N creates one).',
+    });
+  });
+  test('with a session it opens and takes focus; a second press closes it back to the composer', () => {
+    expect(terminalToggle(false, 'ses_1')).toEqual({ open: true, focus: 'terminal', toast: null });
+    expect(terminalToggle(true, 'ses_1')).toEqual({ open: false, focus: 'composer', toast: null });
   });
 });

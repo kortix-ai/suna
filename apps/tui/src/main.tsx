@@ -53,16 +53,49 @@ export interface RunTuiOptions {
   sessionId?: string | null;
 }
 
-/** The project whose sessions the sidebar lists. */
+export interface ResolveProjectDeps {
+  /** Resolves when the project exists and this host may read it; rejects otherwise. */
+  getProject: (projectId: string) => Promise<unknown>;
+  listProjects: () => Promise<Array<{ project_id: string }> | null | undefined>;
+  /** Where a skipped candidate is reported. */
+  note: (text: string) => void;
+}
+
+const DEFAULT_RESOLVE_PROJECT_DEPS: ResolveProjectDeps = {
+  getProject: (projectId) => kortix().projects.get(projectId),
+  listProjects: () => kortix().projects.list(),
+  note: (text) => process.stderr.write(`${text}\n`),
+};
+
+/**
+ * The project whose sessions the sidebar lists.
+ *
+ * Every candidate is PROVED before it is used. The CLI config's
+ * `default_project` is written at login and never revalidated, so a project
+ * that was deleted or moved since then boots the TUI onto a dead id: a raw
+ * id where the name should be, an empty session list, and Files saying "Open
+ * a session" with nothing to open. A candidate that does not answer is
+ * skipped with one stderr line, and the first project the host can see wins.
+ */
 export async function resolveProjectId(
-  ...candidates: (string | null | undefined)[]
+  candidates: (string | null | undefined)[],
+  deps: ResolveProjectDeps = DEFAULT_RESOLVE_PROJECT_DEPS,
 ): Promise<string | null> {
   for (const candidate of candidates) {
     const trimmed = candidate?.trim();
-    if (trimmed) return trimmed;
+    if (!trimmed) continue;
+    try {
+      await deps.getProject(trimmed);
+      return trimmed;
+    } catch (error) {
+      const reason = error instanceof Error && error.message ? error.message : String(error);
+      deps.note(
+        `Project ${trimmed.slice(0, 8)} is not available on this host (${reason}); using the first project you can see.`,
+      );
+    }
   }
   try {
-    const projects = await kortix().projects.list();
+    const projects = await deps.listProjects();
     return projects?.[0]?.project_id ?? null;
   } catch {
     return null;
@@ -185,7 +218,9 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
     notice = await preflight(host);
     if (notice) host = null;
   }
-  const projectId = host ? await resolveProjectId(options.projectId, host.defaultProjectId) : null;
+  const projectId = host
+    ? await resolveProjectId([options.projectId, host.defaultProjectId])
+    : null;
 
   const queryClient = new QueryClient({
     defaultOptions: {

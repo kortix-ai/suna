@@ -80,6 +80,28 @@ export function focusOrder(route: Route, showSidebar: boolean, terminalOpen: boo
   return order;
 }
 
+/**
+ * What `Alt+T` does. The panel is a shell INSIDE the open session's sandbox,
+ * so with no session there is nothing to open: focus must not move to a
+ * region that does not render, or every later key goes to a panel that is
+ * not there — `Alt+X` cannot close it and `Ctrl+C` never quits, which reads
+ * as a hung app. Pure so the rule is testable without a renderer.
+ */
+export function terminalToggle(
+  open: boolean,
+  sessionId: string | null,
+): { open: boolean; focus: Focus | null; toast: string | null } {
+  if (open) return { open: false, focus: 'composer', toast: null };
+  if (!sessionId) {
+    return {
+      open: false,
+      focus: null,
+      toast: 'Open a session first — the terminal runs inside its sandbox (Ctrl+N creates one).',
+    };
+  }
+  return { open: true, focus: 'terminal', toast: null };
+}
+
 export function nextFocus(current: Focus, order: Focus[], step: 1 | -1): Focus {
   const index = order.indexOf(current);
   if (index < 0) return order[0] as Focus;
@@ -183,16 +205,13 @@ export function App({
   }, []);
 
   const toggleTerminal = useCallback(() => {
-    setTerminalOpen((open) => {
-      if (open) {
-        setFocus((current) => (current === 'terminal' ? 'composer' : current));
-        return false;
-      }
-      setRoute('session');
-      setFocus('terminal');
-      return true;
-    });
-  }, []);
+    const decision = terminalToggle(terminalOpen, sessionId);
+    if (decision.toast) pushToast(decision.toast, 'error');
+    if (decision.open === terminalOpen) return;
+    if (decision.open) setRoute('session');
+    setTerminalOpen(decision.open);
+    setFocus((current) => decision.focus ?? current);
+  }, [terminalOpen, sessionId, pushToast]);
 
   const createSession = useCallback(async () => {
     if (!projectId) {
