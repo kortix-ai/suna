@@ -92,8 +92,14 @@ const PERMANENT_ERROR_NAMES = new Set(['MessageAbortedError', 'ProviderAuthError
 // data event"; "The model stream ended without a finish chunk" (ai 7.x
 // NoOutputGeneratedError). `other side closed` is undici's SocketError text
 // for a peer that closed the socket mid-response.
+//
+// A stream cut mid data-line surfaces as a JSON parse error of the partial
+// chunk ("JSON parsing failed: Text: {\"id\":\"chatcmpl…", "JSON Parse error:
+// Unable to parse JSON string"). A gateway availability error reads "<model>
+// is temporarily unavailable"; Bun's fetch timeout reads "The operation timed
+// out". All four were prod turn-enders with no resume.
 const TRANSIENT_MESSAGE =
-  /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|gateway.?time.?out|stream (closed|error|disconnected)|stream ended (without|before)|other side closed|terminated/i;
+  /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|temporarily unavailable|gateway.?time.?out|timed out|stream (closed|error|disconnected)|stream ended (without|before)|other side closed|terminated|json pars(e|ing)|unable to parse json/i;
 
 /** Is this turn failure a transient provider/stream error worth one more try? */
 export function isTransientTurnError(error?: OpencodeTurnError): boolean {

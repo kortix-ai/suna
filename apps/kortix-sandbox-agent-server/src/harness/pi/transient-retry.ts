@@ -7,20 +7,51 @@
  * a 5xx, a rate limit) ended the whole turn, and a trigger or factory loop
  * stopped on it.
  *
- * The classifier is pi-ai's own (`isRetryableAssistantError`): network and
- * stream cuts, 408/429/5xx, overload and timeouts retry; quota, billing and
- * other 4xx do not. A context overflow never retries.
+ * Classifier: pi-ai's own `isRetryableAssistantError` (network and stream
+ * cuts, 408/429/5xx, overload, timeouts), plus the upstream shapes it misses
+ * (`TRANSIENT_EXTRA`). Quota, billing and other 4xx never retry; a context
+ * overflow never retries.
  *
  * A retry drops the failed assistant message from the agent's context (it is
  * never sent to the model again) and continues from the last user or tool
- * result, the same as pi's own `_prepareRetry`. Bounded: 5 retries on an
- * exponential backoff capped at 30 s (2, 4, 8, 16, 30 s by default).
+ * result, the same as pi's own `_prepareRetry`. Two bounded phases, one
+ * schedule (default base 2 s):
+ *   - in-turn retries: 5 attempts at 2, 4, 8, 16, 30 s (~60 s) for a blip;
+ *   - resumes: 3 more at 60, 120, 240 s (~7 min) for an outage.
+ * Only an error that outlasts both ends the turn.
  */
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { type AssistantMessage, isContextOverflow, isRetryableAssistantError } from '@earendil-works/pi-ai'
 
-export const TURN_RETRY_MAX_ATTEMPTS = 5
-export const TURN_RETRY_MAX_DELAY_MS = 30_000
+/** In-turn retries: base * 2^(n-1), capped at 15 * base (2, 4, 8, 16, 30 s). */
+export const TURN_RETRY_ATTEMPTS = 5
+/** Resumes after the retries: 30, 60, 120 * base (60, 120, 240 s). */
+export const TURN_RESUME_FACTORS = [30, 60, 120] as const
+export const TURN_RETRY_MAX_ATTEMPTS = TURN_RETRY_ATTEMPTS + TURN_RESUME_FACTORS.length
+
+/** The backoff before attempt `attempt` (1-based) for a base delay. */
+export function retryDelayMs(attempt: number, baseDelayMs: number): number {
+  if (attempt <= TURN_RETRY_ATTEMPTS) return Math.min(baseDelayMs * 2 ** (attempt - 1), baseDelayMs * 15)
+  return baseDelayMs * TURN_RESUME_FACTORS[attempt - TURN_RETRY_ATTEMPTS - 1]!
+}
+
+/**
+ * Transient shapes pi-ai's classifier misses: a stream cut mid data-line
+ * surfaces as a JSON parse error ("JSON Parse error: Unable to parse JSON
+ * string", "JSON parsing failed: Text: {...", "Could not parse message into
+ * JSON"); a gateway availability error reads "<model> is temporarily
+ * unavailable"; Bun's fetch timeout reads "The operation timed out".
+ */
+const TRANSIENT_EXTRA = /json pars(e|ing)|unable to parse json|parse message into json|temporarily unavailable|timed? ?out/i
+/** Account limits are never transient, whatever else the text says. */
+const PERMANENT = /insufficient_quota|quota exceeded|out of budget|billing|usage limit|available balance/i
+
+export function isTransientModelError(message: AssistantMessage): boolean {
+  if (message.stopReason !== 'error') return false
+  const text = message.errorMessage ?? ''
+  if (PERMANENT.test(text)) return false
+  return isRetryableAssistantError(message) || TRANSIENT_EXTRA.test(text)
+}
 
 /** OpenCode's `SessionStatus` for a step that waits to retry. The SDK counts it as busy. */
 export interface RetryPlan {
@@ -59,9 +90,9 @@ export class TransientRetry {
     if (this.aborted || this.attempts >= TURN_RETRY_MAX_ATTEMPTS) return null
     if (!message || message.role !== 'assistant') return null
     const assistant = message as AssistantMessage
-    if (!isRetryableAssistantError(assistant) || isContextOverflow(assistant, this.opts.contextWindow())) return null
+    if (!isTransientModelError(assistant) || isContextOverflow(assistant, this.opts.contextWindow())) return null
     const attempt = this.attempts + 1
-    const delayMs = Math.min(this.opts.baseDelayMs * 2 ** (attempt - 1), TURN_RETRY_MAX_DELAY_MS)
+    const delayMs = retryDelayMs(attempt, this.opts.baseDelayMs)
     return { attempt, delayMs, next: this.opts.now() + delayMs, message: assistant.errorMessage || 'The model request failed' }
   }
 

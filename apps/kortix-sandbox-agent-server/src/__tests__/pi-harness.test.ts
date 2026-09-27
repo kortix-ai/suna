@@ -31,9 +31,16 @@ type ToolCall = { tool: string; args: Record<string, unknown> }
 /**
  * One scripted model reply: text, a tool call, several tool calls, or text ending on `finish`.
  * `cut` streams its text, then closes the stream with no `finish_reason` (an upstream
- * cut; pi-ai throws "Stream ended without finish_reason"). `status` answers with that HTTP error.
+ * cut; pi-ai throws "Stream ended without finish_reason"). `cutMidLine` streams its text, then
+ * half of the next data line, and closes (a cut inside a JSON chunk). `status` answers with that HTTP error.
  */
-type Step = { text: string; finish?: 'stop' | 'length' } | ToolCall | { tools: ToolCall[] } | { cut: string } | { status: number }
+type Step =
+  | { text: string; finish?: 'stop' | 'length' }
+  | ToolCall
+  | { tools: ToolCall[] }
+  | { cut: string }
+  | { cutMidLine: string }
+  | { status: number }
 
 /**
  * An OpenAI-compatible `/chat/completions` that answers each request with the
@@ -60,6 +67,12 @@ function startFakeGateway() {
       let body = chunk({ role: 'assistant', content: '' })
       if ('cut' in step) {
         if (step.cut) body += chunk({ content: step.cut })
+        return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      }
+      if ('cutMidLine' in step) {
+        body += chunk({ content: step.cutMidLine })
+        const next = chunk({ content: ' and the rest of it' })
+        body += next.slice(0, Math.floor(next.length / 2))
         return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
       }
       if ('tool' in step || 'tools' in step) {
@@ -678,15 +691,54 @@ describe('pi harness', () => {
     expect(statuses.at(-1)).toEqual({ type: 'idle' })
   })
 
+  test('a stream cut in the middle of a JSON data line is retried and the turn completes', async () => {
+    const r = await boot({ script: [{ cutMidLine: 'half' }, { text: 'Whole answer.' }] })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d5ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(gateway.requests.length - calls).toBe(2)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Whole answer.' })
+  })
+
+  test('an outage longer than the in-turn retries is resumed and the turn completes', async () => {
+    // Seven failures: the first attempt, all five in-turn retries (~60 s at the
+    // default base) and the first resume. The second resume answers.
+    const r = await boot({ script: [...Array.from({ length: 7 }, () => ({ status: 503 })), { text: 'Back online.' }] })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d6ABCDEFGHIJKLMN'
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 10_000)
+    expect(gateway.requests.length - calls).toBe(8)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const text = await readSse(events, (t) => t.includes('Back online.') && t.includes('event: session.idle'))
+    expect(text).not.toContain('event: session.error')
+    const attempts = text
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+      .filter((e) => e.type === 'session.status' && e.payload.sessionID === root && e.payload.status.type === 'retry')
+      .map((e) => e.payload.status.attempt)
+    expect(attempts).toEqual([1, 2, 3, 4, 5, 6, 7])
+  }, 20_000)
+
   test('a transient error that outlasts the retry budget ends the turn as failed with its reason', async () => {
-    const r = await boot({ script: Array.from({ length: 8 }, () => ({ cut: '' })) })
+    const r = await boot({ script: Array.from({ length: 12 }, () => ({ cut: '' })) })
     const root = r.service.runtime()!.rootId
     const calls = gateway.requests.length
     const messageID = 'msg_0198e2a4b0d2ABCDEFGHIJKLMN'
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
-    // One attempt plus five retries, then the reason reaches the product.
-    expect(gateway.requests.length - calls).toBe(6)
+    // One attempt, five in-turn retries and three resumes, then the reason reaches the product.
+    expect(gateway.requests.length - calls).toBe(9)
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('failed')
     const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage

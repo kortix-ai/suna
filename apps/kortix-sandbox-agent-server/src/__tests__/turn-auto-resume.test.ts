@@ -58,6 +58,17 @@ describe('isTransientTurnError', () => {
     expect(isTransientTurnError({ name: 'UnknownError', message })).toBe(true);
   });
 
+  // Prod turn-enders the regex missed: a stream cut mid data-line (the partial
+  // chunk fails JSON parsing), a gateway availability error, a fetch timeout.
+  test.each([
+    'JSON parsing failed: Text: {"id":"chatcmpl-x","choices":[{"delta":{"reasoning_content":"th',
+    'JSON Parse error: Unable to parse JSON string',
+    'deepseek-v4.1-flash is temporarily unavailable.',
+    'The operation timed out.',
+  ])('a truncated or unavailable upstream is transient: %s', (message) => {
+    expect(isTransientTurnError({ name: 'UnknownError', message })).toBe(true);
+  });
+
   test('a stream-cut message never overrides a human Stop or an auth failure', () => {
     const message = 'Stream ended without finish_reason';
     expect(isTransientTurnError({ name: 'MessageAbortedError', message })).toBe(false);
