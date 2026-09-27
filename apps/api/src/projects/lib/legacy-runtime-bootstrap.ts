@@ -299,6 +299,9 @@ export function classifyDaemonHealth(
   };
 }
 
+/** Gap between the two health reads that must BOTH be silent before a relaunch. */
+export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
 /**
@@ -665,7 +668,7 @@ export async function bootstrapLegacyRuntime(
   // #7859 owns the classification (sha-to-sha against this deploy's manifest);
   // this module owns what to DO with each class.
   const expectedRunningAssets = await deps.expectedRunningAssets?.();
-  const classification = classifyDaemonHealth(health, expectedRunningAssets ?? undefined);
+  let classification = classifyDaemonHealth(health, expectedRunningAssets ?? undefined);
   if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
   // A DEAD DAEMON ON A RUNNING BOX. Silence alone means nothing — a stopped box
   // answers exactly the same way, and there is nothing there to repair. The
@@ -691,12 +694,26 @@ export async function bootstrapLegacyRuntime(
       ? await deps.providerRunning().catch(() => false)
       : false;
     if (!running) return { outcome: 'unreachable', classification };
-    deadDaemonOnRunningBox = true;
-    deps.log('daemon gone on a running box; relaunching the runtime chain', {
-      sandboxId: input.sandboxId,
-      externalId: input.externalId,
-      provider: input.provider,
-    });
+    // TWO SILENT READS, never one. An 8 s ingress timeout, a restarting proxy
+    // or a GC pause reads exactly like a corpse, and a relaunch kills PTYs and
+    // restages assets under whoever is using the box. This is
+    // `decideStoppedObservation`'s asymmetry applied to the probe instead of
+    // the provider's state field: uncertainty fails toward the LIVE box, so the
+    // daemon gets a second chance to speak. If it takes it, this pass simply
+    // continues with what it said.
+    await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
+    const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
+    if (second.klass === 'unreachable') {
+      deadDaemonOnRunningBox = true;
+      deps.log('daemon gone on a running box; relaunching the runtime chain', {
+        sandboxId: input.sandboxId,
+        externalId: input.externalId,
+        provider: input.provider,
+      });
+    } else {
+      classification = second;
+      if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
+    }
   }
   if (classification.klass === 'blocked') {
     // The daemon's own supervisor already tried, rolled back, and latched

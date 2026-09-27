@@ -61,8 +61,9 @@ function deadDaemonDeps(
   over: Partial<LegacyBootstrapDeps> & { health?: unknown[] },
   calls: Calls,
 ): LegacyBootstrapDeps {
-  // Unreachable first (no daemon), then healthy once the relaunch lands.
-  const healths = over.health ?? [null, CURRENT_HEALTH];
+  // Silent twice — the confirmation the relaunch requires — then healthy once
+  // the relaunch lands.
+  const healths = over.health ?? [null, null, CURRENT_HEALTH];
   let i = 0;
   // The converge wait is a real clock loop: `sleep` must MOVE `now`, or the
   // budget never expires and the test hangs instead of failing.
@@ -110,6 +111,22 @@ describe('a running box whose daemon is gone', () => {
     expect(result.outcome).toBe('converged');
     expect(calls.execs).toHaveLength(1);
     expect(calls.execs[0][0]).toBe('bash');
+  });
+
+  test('a daemon that answers the SECOND probe is never relaunched', async () => {
+    // ONE silent probe is not a dead daemon. An 8 s ingress timeout, a
+    // restarting proxy or a GC pause all read identically to a corpse, and a
+    // relaunch kills PTYs and restages assets under whoever is using the box.
+    // The same asymmetry `decideStoppedObservation` applies to a provider
+    // `stopped` read: uncertainty fails toward the LIVE box, so the daemon gets
+    // a second chance to speak before anything is done to it.
+    const calls: Calls = { execs: [], patches: [] };
+    const result = await bootstrapLegacyRuntime(
+      input(),
+      deadDaemonDeps({ health: [null, CURRENT_HEALTH] }, calls),
+    );
+    expect(result.outcome).toBe('not-legacy');
+    expect(calls.execs).toHaveLength(0);
   });
 
   test('a box the provider does NOT report running is left alone', async () => {
