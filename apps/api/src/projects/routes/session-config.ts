@@ -86,6 +86,18 @@ projectsApp.openapi(
         baseRef,
       }),
     ]);
+    // The managed-model catalog's freshness, in the SAME place a config
+    // fallback is already visible — not gated on `releasesEnabled`, for the
+    // identical reason `runtime.pinned` is not: a box that could not confirm
+    // its managed lineup needs this fact regardless of which config path the
+    // project is on. `ids: null` means UNCONFIRMED (no live fetch has ever
+    // succeeded on this box — it is running the baked/bundled managed set),
+    // never "no managed models exist". See `managed-assets/manifest.ts`'s
+    // `runningAssetsVerdict` doc for why that box reads `behind`, not `current`.
+    const managedCatalog = {
+      ids: running.runtime?.running?.managed_model_ids ?? null,
+      fallback_reason: running.runtime?.running?.managed_catalog_fallback_reason ?? null,
+    };
 
     // ── A daemon with config releases (spec, "`GET /config`, extended") ──
     if (releasesEnabled && running.configReleases && running.release) {
@@ -121,6 +133,7 @@ projectsApp.openapi(
         stale: isReleaseStale(release, desired !== null),
         sandbox_reachable: running.reachable,
         release,
+        managed_catalog: managedCatalog,
         // Surfaced so the web header and `kortix sessions reload --status` can
         // say why a session lost its agent, instead of showing a healthy box
         // that answers nothing.
@@ -154,6 +167,7 @@ projectsApp.openapi(
       // the truth is "did not ask".
       stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
+      managed_catalog: managedCatalog,
     });
   },
 );

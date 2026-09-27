@@ -1267,6 +1267,16 @@ export async function resolveProjectDefaultConnectorConnection(
  * without durable binding rows. Read-back must materialize those defaults.
  * Explicit-only sessions remain explicit-only because
  * `resolveSessionConnectorConnection` enforces the persisted inheritance state.
+ *
+ * Batched (2026-09-27). This answers, for every alias, exactly what
+ * `resolveSessionConnectorConnection` answers for that alias alone, but reads
+ * the session, the connector rows, the session's bindings and the candidate
+ * connections once for all aliases. Resolving alias by alias cost 4-5 queries
+ * per connector: `GET /sessions/:id/scope` measured `db n=55-64` and up to
+ * 5 s on prod, on every session open. The per-alias resolver stays the
+ * definition; `integration-session-scope-query-count.test.ts` asserts the two
+ * agree across bound, revoked, inherited, fail-closed, ambiguous, pinned,
+ * foreign-member and disabled connectors.
  */
 export async function resolveEffectiveSessionConnectorBindings(input: {
   accountId: string;
@@ -1290,31 +1300,147 @@ export async function resolveEffectiveSessionConnectorBindings(input: {
           )
           .orderBy(connectors.slug)
       ).map((row) => row.alias);
-
-  // One alias's resolution is independent of every other's — each is its own
-  // connection lookup with no shared mutable state — so resolve them
-  // concurrently instead of one DB round trip at a time. Bounded (not a bare
-  // `Promise.all`) because `grantedConnectors: 'all'` fans this out to every
-  // enabled connector on the project. The shared session-lookup memo above
-  // means the concurrent resolutions collapse to ONE session query between
-  // them regardless of how many aliases run at once.
-  const RESOLVE_CONCURRENCY = 8;
   const uniqueAliases = [...new Set(requestedAliases.map((a) => canonicalConnectorAlias(a)))];
-  const resolved = await mapLimit(uniqueAliases, RESOLVE_CONCURRENCY, (alias) =>
-    resolveSessionConnectorConnection({
+  if (uniqueAliases.length === 0) return {};
+
+  const session = await loadSessionConnectorLookup(input.sessionId, input.accountId, input.projectId);
+  if (!session) return {};
+  const actingUserId = session.createdBy ?? '';
+  const actingPrincipalIsServiceAccount = session.createdByServiceAccountId !== null;
+  const visibility = session.visibility;
+  const fallbackAllowed = !session.bindingsConfigured || session.inheritUnbound;
+
+  const boundRows = await db
+    .select({
+      alias: projectSessionConnectorBindings.connectorAlias,
+      connectionId: connectorConnections.connectionId,
+      connectorId: connectorConnections.connectorId,
+      connectionStatus: connectorConnections.status,
+      isDefault: connectorConnections.isDefault,
+      metadata: connectorConnections.metadata,
+      ownerType: connectorConnections.ownerType,
+      ownerId: connectorConnections.ownerId,
+      connectorName: connectors.name,
+      providerType: connectors.providerType,
+      connectorConfig: connectors.config,
+      connectorEnabled: connectors.enabled,
+      connectorStatus: connectors.status,
+    })
+    .from(projectSessionConnectorBindings)
+    .innerJoin(
+      connectorConnections,
+      eq(connectorConnections.connectionId, projectSessionConnectorBindings.connectionId),
+    )
+    .innerJoin(
+      connectors,
+      and(
+        eq(connectors.connectorId, projectSessionConnectorBindings.connectorId),
+        eq(connectors.accountId, projectSessionConnectorBindings.accountId),
+        eq(connectors.projectId, projectSessionConnectorBindings.projectId),
+      ),
+    )
+    .where(
+      and(
+        eq(projectSessionConnectorBindings.sessionId, input.sessionId),
+        eq(projectSessionConnectorBindings.accountId, input.accountId),
+        eq(projectSessionConnectorBindings.projectId, input.projectId),
+        inArray(projectSessionConnectorBindings.connectorAlias, uniqueAliases),
+      ),
+    );
+  // The primary key is (session_id, connector_alias): at most one row per alias.
+  const boundByAlias = new Map(boundRows.map((row) => [row.alias, row]));
+
+  const resolved = new Map<string, string>();
+
+  // A bound alias resolves to its pin or to nothing — never to a default.
+  if (boundRows.length > 0) {
+    const audienceOf = await loadConnectionAudience({
+      projectId: input.projectId,
+      accountId: input.accountId,
+      userId: audiencePersonId({ actingUserId, actingPrincipalIsServiceAccount }),
+    });
+    const RESOLVE_CONCURRENCY = 8;
+    await mapLimit(boundRows, RESOLVE_CONCURRENCY, async (bound) => {
+      const connector: ConnectorRequirementRow = {
+        connectorId: bound.connectorId,
+        projectId: input.projectId,
+        slug: bound.alias,
+        name: bound.connectorName,
+        providerType: bound.providerType,
+        config: bound.connectorConfig,
+        enabled: bound.connectorEnabled,
+        status: bound.connectorStatus,
+      };
+      const connection: ConnectorConnectionRow = {
+        connectionId: bound.connectionId,
+        isDefault: bound.isDefault,
+        ownerType: bound.ownerType,
+        ownerId: bound.ownerId,
+        status: bound.connectionStatus,
+        metadata: bound.metadata,
+      };
+      const audience = audienceOf(connection.connectionId);
+      if (
+        !connector.enabled ||
+        connector.status !== 'active' ||
+        connection.status !== 'active' ||
+        (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') ||
+        !sessionConnectionIsReachable(
+          connector,
+          connection,
+          { userId: actingUserId, isServiceAccount: actingPrincipalIsServiceAccount, agentPrincipal: null },
+          audience,
+        ) ||
+        !(await connectorConnectionIsConnected({ connector, connection }))
+      ) {
+        return;
+      }
+      resolved.set(bound.alias, bound.connectionId);
+    });
+  }
+
+  // An unbound alias falls back to the project default unless the session
+  // configured its bindings without inheriting.
+  const unbound = uniqueAliases.filter((alias) => !boundByAlias.has(alias));
+  if (fallbackAllowed && unbound.length > 0) {
+    const connectorRows = await db
+      .select({
+        connectorId: connectors.connectorId,
+        projectId: connectors.projectId,
+        slug: connectors.slug,
+        name: connectors.name,
+        providerType: connectors.providerType,
+        config: connectors.config,
+        enabled: connectors.enabled,
+        status: connectors.status,
+      })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.accountId, input.accountId),
+          eq(connectors.projectId, input.projectId),
+          inArray(connectors.slug, unbound),
+        ),
+      );
+    const entitledByConnector = await listEntitledConnectorConnectionsBatch({
       accountId: input.accountId,
       projectId: input.projectId,
-      sessionId: input.sessionId,
-      alias,
-    }),
-  );
+      connectors: connectorRows,
+      actingUserId,
+      actingPrincipalIsServiceAccount,
+      visibility,
+      agentPrincipal: null,
+    });
+    for (const connector of connectorRows) {
+      const selection = resolveEntitledTier(entitledByConnector.get(connector.connectorId) ?? []);
+      if (selection.kind === 'one') resolved.set(connector.slug, selection.connection.connectionId);
+    }
+  }
 
   const bindings: SessionConnectorBindings = {};
-  for (const connection of resolved) {
-    if (!connection) continue;
-    bindings[publicConnectorAlias(connection.alias)] = {
-      connection_id: connection.connectionId,
-    };
+  for (const alias of uniqueAliases) {
+    const connectionId = resolved.get(alias);
+    if (connectionId) bindings[publicConnectorAlias(alias)] = { connection_id: connectionId };
   }
   return bindings;
 }
