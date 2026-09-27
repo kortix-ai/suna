@@ -115,6 +115,24 @@ mock.module('../runtime-identity', () => ({
   },
 }));
 
+/** Controlled by each unattended-recovery test; defaults to the safe no-op. */
+let unattendedOutcome: 'claimed' | 'skipped_attended' | 'skipped_bounded' | 'error' = 'skipped_attended';
+let unattendedCalls: unknown[] = [];
+let drainCalls = 0;
+
+mock.module('../session-lifecycle/unattended-runtime-recovery', () => ({
+  evaluateUnattendedRecovery: async (input: unknown) => {
+    unattendedCalls.push(input);
+    return unattendedOutcome;
+  },
+}));
+
+mock.module('../session-lifecycle/drain', () => ({
+  drainSessionLifecycleQueue: async () => {
+    drainCalls += 1;
+  },
+}));
+
 const {
   MIDTURN_STOP_CONFIRMATION_MS,
   applyStoppedState,
@@ -165,6 +183,9 @@ beforeEach(() => {
   preserveCalls = [];
   inTransaction = false;
   updateThrows = null;
+  unattendedOutcome = 'skipped_attended';
+  unattendedCalls = [];
+  drainCalls = 0;
 });
 
 describe('applyStoppedState', () => {
@@ -265,6 +286,87 @@ describe('applyStoppedState', () => {
     cacheInvalidations = [];
     await applyStoppedState({ ...write, externalId: null });
     expect(cacheInvalidations).toEqual([]);
+  });
+});
+
+// Nobody-is-watching recovery: a provider-originated `runtime_gone` stop with
+// an abandoned turn asks `evaluateUnattendedRecovery` whether THIS sandbox may
+// resume unattended. The policy itself (who qualifies, the rolling-window
+// bound) is unit-tested in isolation in unattended-runtime-recovery.test.ts —
+// this only proves `applyStoppedState` asks at the right time, reacts to the
+// answer (the `end_error` cause, the redelivery `hold` flag, the drain kick),
+// and NEVER asks for a stop reason that is not `provider_reconcile`.
+describe('applyStoppedState — unattended recovery after runtime_gone', () => {
+  const providerWrite = {
+    sandboxId: 'sb-2',
+    sessionId: 'sess-2',
+    externalId: 'ext-2',
+    stopReason: 'provider_reconcile' as const,
+    now: NOW,
+  };
+
+  const withAbandonedTurn = () => {
+    selectedRows = [
+      {
+        metadata: {
+          activeTurn: {
+            token: 'tok-1',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_1',
+            startedAtMs: NOW.getTime() - 5_000,
+          },
+        },
+      },
+    ];
+  };
+
+  test('asks the policy only for provider_reconcile with an open turn — never for a user/idle stop', async () => {
+    withAbandonedTurn();
+    await applyStoppedState(write); // stopReason: 'deadline_expired'
+    expect(unattendedCalls).toHaveLength(0);
+
+    await applyStoppedState({ ...write, stopReason: 'manual' });
+    expect(unattendedCalls).toHaveLength(0);
+
+    selectedRows = [{ metadata: {} }]; // provider_reconcile, but nothing was open
+    await applyStoppedState(providerWrite);
+    expect(unattendedCalls).toHaveLength(0);
+
+    withAbandonedTurn();
+    await applyStoppedState(providerWrite);
+    expect(unattendedCalls).toHaveLength(1);
+    expect(unattendedCalls[0]).toMatchObject({ sandboxId: 'sb-2' });
+  });
+
+  test('policy says no (attended, or bounded): the generic cause, HELD, no drain kick', async () => {
+    withAbandonedTurn();
+    unattendedOutcome = 'skipped_bounded';
+    await applyStoppedState(providerWrite);
+
+    const rendered = describeSql(executedStatements[0]?.sql);
+    expect(rendered).toContain('SandboxStoppedMidTurn');
+    expect(rendered).not.toContain('SandboxStoppedMidTurnRecovering');
+    expect(drainCalls).toBe(0);
+  });
+
+  test('policy says claimed: the recovering cause, and the drain is kicked', async () => {
+    withAbandonedTurn();
+    unattendedOutcome = 'claimed';
+    await applyStoppedState(providerWrite);
+
+    const rendered = describeSql(executedStatements[0]?.sql);
+    expect(rendered).toContain('SandboxStoppedMidTurnRecovering');
+    // Fire-and-forget dynamic import; give its microtask a turn to run.
+    await Bun.sleep(0);
+    expect(drainCalls).toBe(1);
+  });
+
+  test('a stop with no reason attached (idle/manual) never names a cause', async () => {
+    withAbandonedTurn();
+    await applyStoppedState(write); // deadline_expired
+    const rendered = describeSql(executedStatements[0]?.sql);
+    expect(rendered).not.toContain('SandboxStoppedMidTurn');
   });
 });
 

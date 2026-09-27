@@ -8,14 +8,14 @@
  * no-op, so the two paths can race freely.
  */
 
-import { sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { db } from '../../shared/db';
 import { preserveEstablishedRuntime } from '../runtime-identity';
-import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { REAPER_TURN_CAUSES, settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import {
@@ -23,6 +23,7 @@ import {
   transitionSandbox,
   transitionSession,
 } from '../session-lifecycle/status-transitions';
+import { evaluateUnattendedRecovery } from '../session-lifecycle/unattended-runtime-recovery';
 import type { StopReason } from '../stop-reason';
 
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
@@ -247,6 +248,28 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   const abandonedDeliveries = storedSandboxTurns(before?.metadata).filter(
     (turn) => !!turn.messageId && (turn.state === 'delivering' || providerOriginated),
   );
+  // Nobody-is-watching recovery (2026-09-27 census, class B: `runtime_gone`
+  // trigger/worker sessions dying silently for up to `INBOX_HOLD_MS` = 24h).
+  // Scoped to `providerOriginated` ONLY — a user Stop (`manual`) or an idle
+  // timeout (`deadline_expired`) never sets that reason, so this can never
+  // resume a turn a human or the idle policy chose to end. Bounded and
+  // idempotent claim: see `unattended-runtime-recovery.ts`.
+  let unattendedRecoveryClaimed = false;
+  if (providerOriginated && abandonedDeliveries.length > 0) {
+    const [sessionRow] = await db
+      .select({ origin: projectSessions.origin, metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, write.sessionId))
+      .limit(1);
+    const outcome = await evaluateUnattendedRecovery({
+      sandboxId: write.sandboxId,
+      session: {
+        origin: sessionRow?.origin ?? null,
+        metadata: (sessionRow?.metadata as Record<string, unknown> | null) ?? null,
+      },
+    });
+    unattendedRecoveryClaimed = outcome === 'claimed';
+  }
   await pauseComputeSession(write.sandboxId).catch((err) =>
     console.warn(
       `[reaper] pauseComputeSession failed for ${write.sandboxId}:`,
@@ -291,31 +314,63 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
     // that is not durable together with its ledger settle recreates the bug —
     // and inside a SAVEPOINT, so this observation table can never abort a stop
     // whose provider box is already off (see settleOpenSandboxTurns).
-    await settleOpenSandboxTurns(tx, write.sandboxId, 'runtime_gone');
+    //
+    // A named cause only for a provider-originated stop: `manual` and
+    // `deadline_expired` are Kortix's own choice and already read clearly from
+    // `end_reason` alone. `settleOpenSandboxTurnsQuery`'s CASE only ever fills
+    // an EMPTY `end_error` — a real one (a memory-guard cause, a sandbox error
+    // frame that raced this settle) is never replaced.
+    await settleOpenSandboxTurns(
+      tx,
+      write.sandboxId,
+      'runtime_gone',
+      providerOriginated
+        ? unattendedRecoveryClaimed
+          ? REAPER_TURN_CAUSES.boxStoppedMidTurnRecovering
+          : REAPER_TURN_CAUSES.boxStoppedMidTurn
+        : null,
+    );
   });
   // AFTER the commit: the requeued prompt must not race the authority it is
   // replacing. Best-effort — a stop that is already durable must never be
   // failed by a repair, and the reaper's own pass reaches the same rows.
   //
-  // HELD, not due. This box was just parked — by the idle reaper, by a
-  // provider-confirmed stop, or by the user pressing stop. A due-now row would
-  // be claimed by the very next scheduler tick, and `continueSession` would
-  // wake the runtime the stop just shut down and bill the account for it, up to
-  // three times. The prompt is durable and visible in the composer's queue; the
-  // user's next send, or "send now" on the row, releases it.
+  // HELD, not due — UNLESS `unattendedRecoveryClaimed`. This box was just
+  // parked — by the idle reaper, by a provider-confirmed stop, or by the user
+  // pressing stop. A due-now row would normally be claimed by the very next
+  // scheduler tick, and `continueSession` would wake the runtime the stop just
+  // shut down and bill the account for it, up to three times — so by default
+  // the prompt is durable and visible in the composer's queue, and the user's
+  // next send, or "send now" on the row, releases it. `unattendedRecoveryClaimed`
+  // is exactly the case where that default is wrong: nobody is watching the
+  // composer, so nothing would ever release it. `requeueAbandonedPrompt` still
+  // forces `held: true` when the row is stop-paused regardless of what this
+  // passes — a genuine user Stop always wins.
   for (const turn of abandonedDeliveries) {
     await requeueAbandonedPrompt({
       sessionId: write.sessionId,
       wireMessageId: turn.messageId,
       turnToken: turn.token,
       endReason: 'runtime_gone',
-      hold: true,
+      hold: !unattendedRecoveryClaimed,
     }).catch((err) =>
       console.warn(
         `[reaper] prompt redelivery failed after stopping ${write.sandboxId}:`,
         err instanceof Error ? err.message : err,
       ),
     );
+  }
+  if (unattendedRecoveryClaimed) {
+    console.log('[reaper] unattended session recovering after runtime_gone; released the prompt', {
+      sandboxId: write.sandboxId,
+      sessionId: write.sessionId,
+    });
+    // Fire-and-forget, same posture as `runtime-restart-recovery.ts`'s
+    // `kickDrain`: the drain re-checks every claim itself, so a lost race or a
+    // lost kick just falls back to the scheduler's own ~1s tick.
+    void import('../session-lifecycle/drain')
+      .then((m) => m.drainSessionLifecycleQueue({ limit: 5 }))
+      .catch(() => undefined);
   }
   if (write.externalId) invalidateProviderCache(write.externalId);
 }
