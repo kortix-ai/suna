@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import { loadAuthForHost } from '../api/auth.ts';
-import { takeFlagValue } from '../command-helpers.ts';
+import { locateSessionAnywhere, takeFlagValue } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 import { SUPERVISED_NOTICE, isSupervised } from '../supervised.ts';
@@ -196,6 +196,15 @@ export interface TuiDeps {
   uninstall: () => string;
   /** This CLI's version — the TUI is matched to it exactly. */
   version: () => string;
+  /**
+   * `--session` without `--project`: which project (and host) holds it. The
+   * TUI pairs a session with a project id; a wrong pair is a dead session
+   * view, so the CLI's cross-account locator answers first.
+   */
+  locateSession: (
+    sessionId: string,
+    hostArg: string | undefined,
+  ) => Promise<{ projectId: string; hostName?: string } | null>;
   /** Managed versions already on disk. Non-empty means an upgrade, not a first install. */
   installedVersions: () => string[];
   /** True only on a real terminal, where a question can be answered. */
@@ -213,6 +222,14 @@ const DEFAULT_DEPS: TuiDeps = {
   download: (version) => downloadTuiBin({ version }),
   uninstall: () => removeTuiCache(),
   version: () => cliVersion(),
+  locateSession: async (sessionId, hostArg) => {
+    const found = await locateSessionAnywhere(
+      sessionId,
+      { hostArg },
+      (host) => `kortix tui --session ${sessionId} --host ${host}`,
+    );
+    return found ? { projectId: found.located.projectId, hostName: found.located.hostName } : null;
+  },
   installedVersions: () => installedTuiBins().map((installed) => installed.version),
   isInteractive: () => process.stdin.isTTY === true && process.stdout.isTTY === true,
   ask: (question, defaultValue) => confirm(question, defaultValue, { onEndOfInput: false }),
@@ -288,6 +305,18 @@ export async function runTui(argv: string[], overrides: Partial<TuiDeps> = {}): 
       );
       return 1;
     }
+  }
+
+  if (flags.session && !flags.project) {
+    const located = await deps.locateSession(flags.session, flags.host);
+    if (!located) {
+      deps.stderr(
+        `${status.err(`Session ${flags.session} was not found on any host you are logged into.`)}\n`,
+      );
+      return 1;
+    }
+    flags.project = located.projectId;
+    if (!flags.host && located.hostName) flags.host = located.hostName;
   }
 
   const version = deps.version();

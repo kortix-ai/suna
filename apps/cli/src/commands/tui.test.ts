@@ -41,6 +41,7 @@ function harness(
       return '/home/ada/.kortix/tui';
     },
     version: () => '1.2.3',
+    locateSession: overrides.locateSession ?? (async () => null),
     installedVersions: overrides.installedVersions ?? (() => []),
     isInteractive: () => true,
     ask: async (question) => {
@@ -185,6 +186,36 @@ describe('kortix tui — help and argument errors', () => {
     expect(stripAnsi(h.err.join(''))).toContain('unknown option "--wat"');
     expect(stripAnsi(h.err.join(''))).toContain('Usage: kortix tui');
     expect(h.ran).toEqual([]);
+  });
+});
+
+describe('kortix tui — --session without --project', () => {
+  test('locates the project (and host) that holds the session and passes both on', async () => {
+    const h = harness({
+      locateSession: async (id, hostArg) =>
+        id === 's9' && hostArg === undefined ? { projectId: 'p9', hostName: 'other' } : null,
+    });
+    expect(await runTui(['--session', 's9'], h.deps)).toBe(0);
+    expect(h.ran[0]?.env.KORTIX_PROJECT_ID).toBe('p9');
+    expect(h.ran[0]?.env.KORTIX_SESSION_ID).toBe('s9');
+    expect(h.ran[0]?.env.KORTIX_TUI_HOST).toBe('other');
+  });
+  test('a session nobody can find exits 1 with the CLI message and runs nothing', async () => {
+    const h = harness({ locateSession: async () => null });
+    expect(await runTui(['--session', 'ghost'], h.deps)).toBe(1);
+    expect(h.ran).toEqual([]);
+    expect(stripAnsi(h.err.join(''))).toContain('was not found on any host');
+  });
+  test('an explicit --project skips the locator', async () => {
+    let asked = 0;
+    const h = harness({
+      locateSession: async () => {
+        asked += 1;
+        return null;
+      },
+    });
+    expect(await runTui(['--session', 's1', '--project', 'p1'], h.deps)).toBe(0);
+    expect(asked).toBe(0);
   });
 });
 
