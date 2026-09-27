@@ -9,7 +9,7 @@ import {
   projectSessions,
   serviceAccounts,
 } from '@kortix/db';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { mapLimit } from '@kortix/registry';
 import {
   canonicalConnectorAlias,
@@ -65,7 +65,7 @@ export interface ResolvedSessionConnectorConnection {
   ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
 }
 
-interface ConnectorRequirementRow {
+export interface ConnectorRequirementRow {
   connectorId: string;
   projectId: string;
   slug: string;
@@ -970,6 +970,163 @@ export async function listEntitledConnectorConnections(input: {
 function entitledConnectionRank(connection: EntitledConnectorConnection): number {
   if (connection.ownerType === 'member') return connection.isDefault ? 0 : 1;
   return connection.isDefault ? 2 : 3;
+}
+
+/**
+ * `listEntitledConnectorConnections`, batched across MANY connectors in one
+ * request instead of called once per connector.
+ *
+ * `GET /connectors/projects/:id/connectors` (db-deps.ts `listConnectors`) and
+ * `GET /connectors/projects/:id/catalog` (`listCatalog`) each called
+ * `listEntitledConnectorConnections` once PER connector — every invocation
+ * re-ran its own service-account check, re-selected the `connectors` row by
+ * alias (the caller already held that exact row), and re-selected
+ * `connectorConnections` scoped to just that one connector. On a project with
+ * ~20 connectors that is ~60 avoidable round trips (measured: n=64 on
+ * `/connectors`, n=97 on `/catalog`).
+ *
+ * This is the SAME per-connection filter logic as `listEntitledConnectorConnections`
+ * (`sessionConnectionIsReachable` → `connectionNeedsPrivateSession` →
+ * `connectorConnectionIsConnected` → rank + sort) — only the three per-connector
+ * lookups above are hoisted out of the loop and issued once for the whole
+ * batch: the service-account check depends only on (accountId, actingUserId),
+ * not on which connector is asked; the connector rows are supplied by the
+ * caller instead of re-selected; and `connectorConnections` is fetched with
+ * one `inArray` over every connector id instead of one `eq` per connector.
+ */
+export async function listEntitledConnectorConnectionsBatch(input: {
+  accountId: string;
+  projectId: string;
+  /** Already-fetched, already-verified-enabled/active connector rows. */
+  connectors: readonly ConnectorRequirementRow[];
+  actingUserId?: string;
+  actingPrincipalIsServiceAccount?: boolean;
+  visibility?: 'private' | 'project' | 'restricted';
+  agentPrincipal?: AgentPrincipalPersonalScope | null;
+}): Promise<Map<string, EntitledConnectorConnection[]>> {
+  const result = new Map<string, EntitledConnectorConnection[]>();
+  const eligible = input.connectors.filter((c) => c.enabled && c.status === 'active');
+  if (eligible.length === 0) return result;
+
+  const actingUserId = input.actingUserId ?? '';
+  let actingPrincipalIsServiceAccount = input.actingPrincipalIsServiceAccount ?? false;
+  const visibility: 'private' | 'project' | 'restricted' = input.visibility ?? 'private';
+
+  if (
+    !input.agentPrincipal &&
+    input.actingPrincipalIsServiceAccount === undefined &&
+    actingUserId.length > 0
+  ) {
+    const [serviceAccount] = await db
+      .select({ id: serviceAccounts.serviceAccountId })
+      .from(serviceAccounts)
+      .where(
+        and(
+          eq(serviceAccounts.serviceAccountId, actingUserId),
+          eq(serviceAccounts.accountId, input.accountId),
+        ),
+      )
+      .limit(1);
+    actingPrincipalIsServiceAccount = serviceAccount !== undefined;
+  }
+
+  const connectorIds = eligible.map((c) => c.connectorId);
+  const rows = await db
+    .select({
+      connectorId: connectorConnections.connectorId,
+      connectionId: connectorConnections.connectionId,
+      label: connectorConnections.label,
+      isDefault: connectorConnections.isDefault,
+      ownerType: connectorConnections.ownerType,
+      ownerId: connectorConnections.ownerId,
+      status: connectorConnections.status,
+      metadata: connectorConnections.metadata,
+    })
+    .from(connectorConnections)
+    .where(
+      and(
+        eq(connectorConnections.accountId, input.accountId),
+        eq(connectorConnections.projectId, input.projectId),
+        inArray(connectorConnections.connectorId, connectorIds),
+        eq(connectorConnections.status, 'active'),
+      ),
+    )
+    .orderBy(desc(connectorConnections.isDefault), connectorConnections.connectionId);
+
+  const rowsByConnector = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const list = rowsByConnector.get(row.connectorId);
+    if (list) list.push(row);
+    else rowsByConnector.set(row.connectorId, [row]);
+  }
+
+  const audienceOf = await loadConnectionAudience({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    userId: audiencePersonId({
+      actingUserId,
+      actingPrincipalIsServiceAccount,
+      agentPrincipal: input.agentPrincipal,
+    }),
+  });
+
+  for (const connector of eligible) {
+    const alias = canonicalConnectorAlias(connector.slug);
+    const connectorRows = rowsByConnector.get(connector.connectorId) ?? [];
+    // One connector's row throwing (e.g. a malformed config) must not blank
+    // out every other connector in the batch — the original per-connector
+    // call site wrapped each invocation in `.catch(() => [])`; matched here
+    // per-connector so the fault stays isolated.
+    let entitled: EntitledConnectorConnection[] = [];
+    try {
+      for (const row of connectorRows) {
+        const connection: ConnectorConnectionRow = {
+          connectionId: row.connectionId,
+          isDefault: row.isDefault,
+          ownerType: row.ownerType,
+          ownerId: row.ownerId,
+          status: row.status,
+          metadata: row.metadata,
+        };
+        const audience = audienceOf(row.connectionId);
+        if (
+          !sessionConnectionIsReachable(
+            connector,
+            connection,
+            {
+              userId: actingUserId,
+              isServiceAccount: actingPrincipalIsServiceAccount,
+              agentPrincipal: input.agentPrincipal
+                ? { onBehalfOfUserId: input.agentPrincipal.onBehalfOfUserId, visibility }
+                : null,
+            },
+            audience,
+          )
+        ) {
+          continue;
+        }
+        if (connectionNeedsPrivateSession(connection.ownerType, audience) && visibility !== 'private') {
+          continue;
+        }
+        if (!(await connectorConnectionIsConnected({ connector, connection }))) continue;
+        entitled.push({
+          connectionId: row.connectionId,
+          connectorId: connector.connectorId,
+          alias,
+          label: row.label,
+          ownerType: row.ownerType,
+          isDefault: row.isDefault,
+          status: row.status,
+          metadata: row.metadata ?? {},
+        });
+      }
+    } catch {
+      entitled = [];
+    }
+    entitled.sort((a, b) => entitledConnectionRank(a) - entitledConnectionRank(b));
+    result.set(connector.connectorId, entitled);
+  }
+  return result;
 }
 
 /**
