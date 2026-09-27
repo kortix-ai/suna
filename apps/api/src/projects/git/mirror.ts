@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
+import { invalidateBranchList } from './branch-list-cache';
 import type { GitBackedProject } from './types';
 import { getRequestContext } from '../../lib/request-context';
 import { timeStage } from '../../lib/server-timing';
@@ -863,6 +864,7 @@ export async function reapGitCacheOverBudget(
  */
 export function invalidateProjectMirror(projectId: string): void {
   lastRefreshAt.delete(projectId);
+  invalidateBranchList(projectId);
 }
 
 export function normalizeTreePath(input?: string | null) {

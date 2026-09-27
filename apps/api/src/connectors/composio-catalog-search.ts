@@ -156,19 +156,50 @@ export async function customAuthConfigIds(input: {
 
 // Short, so an auth config an operator just created shows its toolkit within a
 // minute. The connect path never reads this cache.
+//
+// Stale-while-revalidate (2026-09-27): past the minute an answered list is
+// served at once and refreshed once in the background, so the refresh starts
+// on the first read after the minute and the next read shows the new config.
+// Measured on dev-api, the blocking refresh made every Discover view after a
+// minute of idle wait 450-600 ms. A failed refresh keeps the last list; past
+// ten minutes the read waits, as on a cold process.
 const AUTH_CONFIG_TTL_MS = 60_000;
+const AUTH_CONFIG_MAX_STALE_MS = 10 * 60_000;
 const authConfigCache = new WeakMap<
   ComposioCatalogClient,
-  { at: number; ids: Promise<Map<string, string>> }
+  { at: number; ids: Promise<Map<string, string>>; answered: boolean; refreshing: boolean }
 >();
 
 async function cachedCustomAuthConfigIds(catalogClient: ComposioCatalogClient) {
   const cached = authConfigCache.get(catalogClient);
-  if (cached && Date.now() - cached.at < AUTH_CONFIG_TTL_MS) return cached.ids;
-  const entry = { at: Date.now(), ids: customAuthConfigIds({ catalogClient }) };
+  const now = Date.now();
+  if (cached && now - cached.at < AUTH_CONFIG_TTL_MS) return cached.ids;
+  if (cached?.answered && now - cached.at < AUTH_CONFIG_MAX_STALE_MS) {
+    if (!cached.refreshing) {
+      cached.refreshing = true;
+      customAuthConfigIds({ catalogClient }).then(
+        (ids) => {
+          if (authConfigCache.get(catalogClient) !== cached) return;
+          authConfigCache.set(catalogClient, {
+            at: Date.now(),
+            ids: Promise.resolve(ids),
+            answered: true,
+            refreshing: false,
+          });
+        },
+        () => {
+          cached.refreshing = false;
+        },
+      );
+    }
+    return cached.ids;
+  }
+  const entry = { at: now, ids: customAuthConfigIds({ catalogClient }), answered: false, refreshing: false };
   authConfigCache.set(catalogClient, entry);
   try {
-    return await entry.ids;
+    const ids = await entry.ids;
+    entry.answered = true;
+    return ids;
   } catch (error) {
     if (authConfigCache.get(catalogClient) === entry) authConfigCache.delete(catalogClient);
     throw error;
