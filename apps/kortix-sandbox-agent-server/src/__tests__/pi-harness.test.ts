@@ -183,12 +183,31 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
   }
 }
 
-beforeEach(() => resetKortixEventBusForTests())
+/**
+ * pi discovers user-level skills under the home it is handed
+ * (`harness/pi/service.ts` → `environment: { home: homedir() }`), and
+ * `homedir()` is `$HOME`. In a sandbox that is the agent's own empty home; on a
+ * developer machine it is the person's, so `GET /skill` returned their personal
+ * skills alongside the two this file writes and the name-clash assertion failed
+ * locally while passing in CI. A test that reads the machine it runs on is not
+ * a test, so give every rig an empty home of its own.
+ */
+let homeDir: string
+const realHome = process.env.HOME
+beforeEach(() => {
+  resetKortixEventBusForTests()
+  homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
+  process.env.HOME = homeDir
+})
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
     await rig.service.lifecycle.stop().catch(() => {})
     rmSync(rig.workspace, { recursive: true, force: true })
   }
+  resetKortixEventBusForTests()
+  if (realHome === undefined) delete process.env.HOME
+  else process.env.HOME = realHome
+  rmSync(homeDir, { recursive: true, force: true })
 })
 
 /** Wait until the root's transcript shows a tool part in the running state. */
