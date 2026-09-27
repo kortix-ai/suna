@@ -142,7 +142,9 @@ host clears both on sign-out.
   sent. Register it with `setSavedCopyStore`, and `useSession` paints the kept copy
   before the first frame. The server's copy then reconciles into it by message ID, and
   the SDK re-reads it 3 seconds after each turn ends. The default bounds are 12
-  sessions, 1,500,000 characters, and 14 days.
+  sessions, 1,500,000 characters, and 14 days. A copy over 300,000 characters keeps
+  its newest messages that fit; older messages load from the server when the user
+  scrolls up.
 
 ```tsx
 import {
@@ -209,8 +211,11 @@ The SDK reads the database independently of runtime readiness. Live messages the
 by their original IDs. Hosts do not need a separate history request or message store.
 
 This flag is off by default. Sessions without saved history use the existing runtime read.
-The initial history window contains the last 40 messages. Older-message loading and attachments
-that require the computer become available when the runtime is ready.
+Saved history renders exactly like the live transcript: text, reasoning, and every tool call
+with its input, output and error. The initial window contains the newest 40 messages, at
+most 1,000,000 characters. Scrolling up loads older windows from saved history, also while
+the computer is off. Attachments that require the computer become available when the
+runtime is ready.
 
 `savedTranscript` tells a host what to render while the computer starts. It is `loading` while
 a saved copy may still arrive, `shown` once messages are in `messages`, and `none` when nothing
