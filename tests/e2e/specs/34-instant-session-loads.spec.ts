@@ -18,6 +18,12 @@
  * full-screen "This session is stopped" card over a conversation the user
  * could read; now the conversation shows, under a banner that says the same
  * thing and offers the same Restart.
+ *
+ * The third arm saves a turn with a tool call and opens it while the computer
+ * never answers, then reloads with every read held. Saved history used to drop
+ * each tool call's input and output, so the card was a bare icon until the
+ * computer woke; now the saved copy and the copy this device kept both draw
+ * the command and its output exactly as the live transcript does.
  */
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
@@ -122,7 +128,9 @@ async function firstShown(page: Page): Promise<Record<string, number>> {
   );
 }
 
-async function setup(page: Page, label: string) {
+type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
+
+async function setup(page: Page, label: string, messages?: SavedMessages) {
   const env = loadEnv();
   const email = `instant-${label}-${Date.now()}@example.test`;
   const user = await createAuthUser(email, authOptions);
@@ -147,7 +155,7 @@ async function setup(page: Page, label: string) {
     accountId,
     userId: user.id,
   });
-  await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId });
+  await seedSessionTranscript(env, { projectId: project.id, accountId, sessionId, messages });
   await runDatabaseSql(
     "UPDATE kortix.project_sessions SET agent_name='kortix' WHERE session_id=$1",
     [sessionId],
@@ -275,6 +283,124 @@ test('34 — a stopped session with no computer shows its conversation under a b
     await expect(page.getByRole('textbox', { name: 'Message input' })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('stopped-banner.png') });
   } finally {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+const TOOL_COMMAND = 'ls -la dist';
+// Only in the tool's output: the reply never names the file, so seeing it
+// proves the output itself was drawn.
+const TOOL_OUTPUT = 'bundle.min.js';
+const TOOL_REPLY = 'The build produced one file.';
+
+/** One saved turn with a finished bash call, exactly as OpenCode stores it. */
+const savedToolTurn: SavedMessages = (root) => {
+  const created = Date.now() - 60_000;
+  const user = 'msg_000000000000000000000001';
+  const call = 'msg_000000000000000000000002';
+  const reply = 'msg_000000000000000000000003';
+  const assistant = (id: string, at: number) => ({
+    id,
+    sessionID: root,
+    parentID: user,
+    role: 'assistant',
+    time: { created: at, completed: at + 1 },
+    agent: 'kortix',
+    mode: 'build',
+    providerID: 'kortix',
+    modelID: 'openai/gpt-5.6-sol',
+    path: { cwd: '/workspace', root: '/workspace' },
+    cost: 0,
+    tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    finish: 'stop',
+  });
+  return [
+    {
+      info: { id: user, sessionID: root, role: 'user', time: { created }, agent: 'kortix' },
+      parts: [
+        { id: 'prt_tool_prompt', sessionID: root, messageID: user, type: 'text', text: 'Build the app and list the output.' },
+      ],
+    },
+    {
+      info: assistant(call, created + 1),
+      parts: [
+        {
+          id: 'prt_tool_call',
+          sessionID: root,
+          messageID: call,
+          type: 'tool',
+          tool: 'bash',
+          callID: 'call_list_output',
+          state: {
+            status: 'completed',
+            input: { command: TOOL_COMMAND, description: 'List the build output' },
+            output: `total 8\n-rw-r--r--  1 kortix  staff  42 ${TOOL_OUTPUT}\n`,
+            title: 'List the build output',
+            metadata: { exit: 0, description: 'List the build output' },
+            time: { start: created + 1, end: created + 2 },
+          },
+        },
+      ],
+    },
+    {
+      info: assistant(reply, created + 3),
+      parts: [{ id: 'prt_tool_reply', sessionID: root, messageID: reply, type: 'text', text: TOOL_REPLY }],
+    },
+  ];
+};
+
+test('34 — a saved tool call shows its command and output, from the server and from this device', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'tools', savedToolTurn);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = false;
+  const hold = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+    if (holding) await held;
+    await route.continue().catch(() => {});
+  };
+  const commandRow = () => page.getByText(TOOL_COMMAND, { exact: true }).first();
+  try {
+    // The computer never comes up: every tool detail can only come from a saved copy.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    for (const path of ['snapshot', 'transcript']) {
+      await page.route(`**/sessions/${sessionId}/${path}*`, hold);
+    }
+    await page.route(
+      (url) =>
+        url.pathname === `${API_PATH}/projects/${project.id}` ||
+        url.pathname === `${API_PATH}/projects/${project.id}/sessions`,
+      hold,
+    );
+
+    // From the server's saved copy.
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(commandRow()).toBeVisible();
+    await commandRow().click();
+    await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
+    await page.waitForTimeout(500); // the card's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('saved-tool-call.png') });
+
+    // From the copy this device kept, with every read held.
+    holding = true;
+    await page.reload({ waitUntil: 'commit' });
+    await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(commandRow()).toBeVisible();
+    await commandRow().click();
+    await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
+    await page.waitForTimeout(500); // the card's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('kept-tool-call.png') });
+  } finally {
+    release();
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await project?.dispose?.();
   }
