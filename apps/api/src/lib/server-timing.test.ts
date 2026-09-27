@@ -7,7 +7,9 @@ import {
   beginStage,
   classifyOutbound,
   formatStageEntries,
+  formatTurnStageEntries,
   installFetchTiming,
+  recordTurnStageMarks,
   stageSnapshot,
   timeStage,
 } from './server-timing';
@@ -185,5 +187,65 @@ describe('Server-Timing header', () => {
     expect(entries.db!.dur).toBeLessThanOrEqual(entries.total!.dur);
     expect(entries.api).toBeDefined();
     expect(entries.git).toBeUndefined();
+  });
+});
+
+/**
+ * `docs/specs/turn-latency.md` §5: the turn-path's own stage breakdown
+ * (`ProvisionTimeline` — `apps/api/src/platform/services/provision-timeline.ts`)
+ * rides the SAME `Server-Timing` header as `auth`/`db`/`git`/`http`, not a
+ * second header. Each mark is namespaced `turnstage-<label>` so the benchmark
+ * can recognize every entry belonging to the turn breakdown WITHOUT hardcoding
+ * the current stage names — three concurrent branches are actively adding and
+ * renaming `ptl.mark(...)` calls in `sandbox-proxy/routes/preview.ts`, and a
+ * namespace prefix is what lets a new stage show up automatically instead of
+ * silently being dropped by an allowlist.
+ */
+describe('turn stage marks (ProvisionTimeline on Server-Timing)', () => {
+  test('recorded marks render namespaced, in order', async () => {
+    const entries = await runWithContext('POST', '/v1/p/sb-1/8000/session/x/prompt_async', async () => {
+      recordTurnStageMarks([
+        { label: 'load-sandbox', deltaMs: 4.2 },
+        { label: 'ingress', deltaMs: 18 },
+      ]);
+      return formatTurnStageEntries();
+    });
+    expect(entries).toEqual(['turnstage-load-sandbox;dur=4', 'turnstage-ingress;dur=18']);
+  });
+
+  test('is a no-op outside a request scope, like the other stage recorders', () => {
+    expect(() => recordTurnStageMarks([{ label: 'load-sandbox', deltaMs: 1 }])).not.toThrow();
+    expect(formatTurnStageEntries()).toEqual([]);
+  });
+
+  test('two requests never share turn stage marks', async () => {
+    await runWithContext('POST', '/a', async () => {
+      recordTurnStageMarks([{ label: 'load-sandbox', deltaMs: 1 }]);
+    });
+    const entriesB = await runWithContext('POST', '/b', async () => formatTurnStageEntries());
+    expect(entriesB).toEqual([]);
+  });
+
+  test('appears on the Server-Timing header only for a request that recorded marks', async () => {
+    const app = new Hono();
+    app.use('*', (c, next) => runWithContext('GET', c.req.path, () => next()));
+    app.use('*', upstreamTiming);
+    app.get('/turn', (c) => {
+      recordTurnStageMarks([
+        { label: 'load-sandbox', deltaMs: 4 },
+        { label: 'turn-accept', deltaMs: 1 },
+      ]);
+      return c.json({ ok: true });
+    });
+    app.get('/plain', (c) => c.json({ ok: true }));
+
+    const turnRes = await app.request('/turn');
+    const turnEntries = parseEntries(turnRes.headers.get('server-timing'));
+    expect(turnEntries['turnstage-load-sandbox']).toEqual({ dur: 4, desc: undefined });
+    expect(turnEntries['turnstage-turn-accept']).toEqual({ dur: 1, desc: undefined });
+
+    const plainRes = await app.request('/plain');
+    const plainHeader = plainRes.headers.get('server-timing') ?? '';
+    expect(plainHeader).not.toContain('turnstage-');
   });
 });

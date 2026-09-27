@@ -118,6 +118,56 @@ export function formatStageEntries(stages: Partial<Record<TimingStage, StageSnap
   return entries;
 }
 
+// ─── Turn-path stage marks (ProvisionTimeline) ─────────────────────────────
+//
+// docs/specs/turn-latency.md §5: `apps/api/src/platform/services/
+// provision-timeline.ts` records one mark per stage of the send path
+// (`load-sandbox`, `agent-switch`, `config-converge`, `model-catalog-converge`,
+// `ingress`, `env-sync`, `wire-id-read`, `turn-begin`, `upstream`,
+// `turn-accept` — see `sandbox-proxy/routes/preview.ts`). Unlike the stages
+// above, these are a finished, ORDERED SEQUENCE of milestones from one call,
+// not an accumulating count of same-shaped operations — there is nothing to
+// "begin" and "end", so `recordTurnStageMarks` takes the whole list at once.
+//
+// Namespaced `turnstage-<label>` (not a bare label) so a benchmark reading
+// this header can recognize every mark that belongs to the turn breakdown by
+// PREFIX alone, without hardcoding today's stage names — three concurrent
+// branches are actively adding and renaming `ptl.mark(...)` calls, and a new
+// one must show up on the header automatically, not require an allowlist edit
+// here to stop being silently dropped.
+
+const TURN_MARKS_KEY = Symbol.for('kortix.server-timing-turn-marks');
+export const TURN_STAGE_PREFIX = 'turnstage-';
+
+export interface TurnStageMark {
+  label: string;
+  deltaMs: number;
+}
+
+interface TurnMarksStore {
+  [TURN_MARKS_KEY]?: TurnStageMark[];
+}
+
+/**
+ * Record this request's turn-path stage marks, in order. No-op outside a
+ * request scope (mirrors `beginStage` above), so a caller never has to guard.
+ * Replaces any marks recorded earlier in the same request — a retried proxy
+ * attempt calls this again with the latest ProvisionTimeline summary, and the
+ * header should reflect the attempt that actually returned, not the sum.
+ */
+export function recordTurnStageMarks(marks: TurnStageMark[]): void {
+  const ctx = getRequestContext() as TurnMarksStore | undefined;
+  if (!ctx || !marks) return;
+  ctx[TURN_MARKS_KEY] = marks;
+}
+
+/** Render this request's turn stage marks as `Server-Timing` entries, in order. */
+export function formatTurnStageEntries(): string[] {
+  const ctx = getRequestContext() as TurnMarksStore | undefined;
+  const marks = ctx?.[TURN_MARKS_KEY] ?? [];
+  return marks.map((m) => `${TURN_STAGE_PREFIX}${m.label};dur=${Math.round(m.deltaMs)}`);
+}
+
 // ─── Outbound HTTP ──────────────────────────────────────────────────────────
 
 const FETCH_WRAPPED = Symbol.for('kortix.server-timing-fetch');

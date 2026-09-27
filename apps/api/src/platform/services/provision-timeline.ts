@@ -70,3 +70,9 @@ export class ProvisionTimeline {
     return summary;
   }
 }
+
+// Surfacing a timeline on the wire (docs/specs/turn-latency.md §5) is done via
+// `lib/server-timing.ts`'s `recordTurnStageMarks` — the SAME always-on
+// `Server-Timing` mechanism `total`/`auth`/`db`/`git`/`http`/`up`/`api` already
+// use, not a second header. See `sandbox-proxy/routes/preview.ts`'s call to
+// `recordTurnStageMarks(provisionTimelineSummary.marks)`.

@@ -4,6 +4,7 @@ import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { recordTurnStageMarks } from '../../lib/server-timing';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
@@ -1692,7 +1693,11 @@ export async function forwardToSandbox(
       }
       if (promptDelivery) {
         ptl.mark('turn-accept');
-        ptl.log({ path: remainingPath, status: upstream.status });
+        const summary = ptl.log({ path: remainingPath, status: upstream.status });
+        // docs/specs/turn-latency.md §5: put the same breakdown on the wire via
+        // the existing Server-Timing mechanism (lib/server-timing.ts), not a
+        // second header — see that module's doc for why.
+        recordTurnStageMarks(summary.marks);
       }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
