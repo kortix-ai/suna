@@ -4,6 +4,7 @@ import {
   OPEN_BUNDLE_SHARE_MS,
   OPEN_BUNDLE_TRANSCRIPT_TTL_MS,
   claimOpenBundle,
+  openBundleAudit,
   openBundleQueue,
   openBundleTurn,
   openSessionBundle,
@@ -41,6 +42,14 @@ function bundleBody(overrides: Record<string, unknown> = {}) {
     },
     config: { known: true, base_ref: 'main', agent_name: 'kortix', llm_gateway_enabled: true },
     models: { known: true, resolvedForCaller: 'anthropic/claude-sonnet-4-6' },
+    audit: {
+      known: true,
+      session_id: SID,
+      agent: 'kortix',
+      audit_access: false,
+      count: 0,
+      actions: [{ execution_id: 'exec-1', status: 'pending_approval' }],
+    },
     ...overrides,
   };
 }
@@ -179,6 +188,32 @@ describe('the bundle legs — every one is tri-state', () => {
     openSessionBundle(PID, SID);
     const degraded = await claimOpenBundle(PID, SID);
     expect(openBundleQueue(degraded!)).toBeNull();
+  });
+
+  test('audit projects onto the pending-approvals shape GET .../audit answers, and an unknown leg is null', async () => {
+    openSessionBundle(PID, SID);
+    const bundle = await claimOpenBundle(PID, SID);
+    // Byte-identical to what `getSessionAudit(..., { includeEvents: false })`
+    // returns, minus `known` — a consumer can hand this straight to code that
+    // reads `SessionAudit.actions`.
+    expect(openBundleAudit(bundle!)).toEqual({
+      session_id: SID,
+      agent: 'kortix',
+      audit_access: false,
+      count: 0,
+      actions: [{ execution_id: 'exec-1', status: 'pending_approval' }],
+    } as never);
+
+    resetSessionOpenBundles();
+    respond = () => ({
+      status: 200,
+      body: bundleBody({ audit: { known: false, reason: 'leg_failed' } }),
+    });
+    openSessionBundle(PID, SID);
+    const degraded = await claimOpenBundle(PID, SID);
+    // null means "ask the endpoint" — never a fabricated empty actions list,
+    // which would read as "nothing pending" for a leg that could not answer.
+    expect(openBundleAudit(degraded!)).toBeNull();
   });
 });
 

@@ -302,6 +302,28 @@ describe('local test runner', () => {
     );
   });
 
+  it('runs the turn-latency benchmark alone and forwards --target through untouched', () => {
+    const plan = buildLocalTestPlan(['--latency', '--target', 'https://dev-api.kortix.com']);
+
+    expect(plan.mode).toBe('latency');
+    expect(plan.lanes).toEqual([
+      {
+        name: 'latency',
+        command: [
+          'bun',
+          'tests/bin/latency-bench.ts',
+          '--target',
+          'https://dev-api.kortix.com',
+        ],
+      },
+    ]);
+    expect(plan.stages).toEqual([[plan.lanes[0]]]);
+  });
+
+  it('rejects --latency combined with another mode', () => {
+    expect(() => buildLocalTestPlan(['--latency', '--sdk-only'])).toThrow('choose only one');
+  });
+
   it('retries a cold local web route until it is ready', async () => {
     let attempts = 0;
     const sleeps: number[] = [];

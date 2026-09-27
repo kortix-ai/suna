@@ -65,6 +65,8 @@ new entry here, decided deliberately:
 | `src/web-url.ts` | `webDashboardUrl` — the billing/settings link the TUI prints instead of running checkout | `features/account/account-screen.tsx` |
 | `src/attach-opencode.ts` | `attachOpenCodeSession`, `AttachOpenCodeError` — SPEC §5.11's seam | `features/attach` |
 | `src/api/auth.ts` | `Auth`, the type that seam takes | `features/attach` |
+| `src/port-forward.ts` | `startPortForward`, `PortForwardError`, `PortForwardDeps` — the same engine `kortix sessions forward` runs | `features/ports` |
+| `src/session-runtime.ts` | `SessionRuntimeError` — to detect a stopped session and print the `sessions restart` remedy | `features/ports` |
 
 pnpm note: `minimumReleaseAge` is 72 h; `@opentui/*` 0.5.11 was published
 2026-09-07 and resolves. Add nothing to `onlyBuiltDependencies` unless install

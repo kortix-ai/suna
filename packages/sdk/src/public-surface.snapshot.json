@@ -1204,6 +1204,7 @@
     "qk",
     "readLastSeen",
     "readRuntimeTextFile",
+    "readSessionAudit",
     "readStartStash",
     "reconcileOptimisticPrompts",
     "recoverFromSendFailure",

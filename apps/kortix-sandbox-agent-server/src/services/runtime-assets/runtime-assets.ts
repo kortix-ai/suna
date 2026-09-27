@@ -1280,7 +1280,12 @@ export function resetHarnessAssetsForTests(): void {
 }
 
 function harnessAssets(cfg?: Config): HarnessAssetsService {
-  if (!harnessAssetsLookup) throw new Error('runtime-assets: registerHarnessAssets() was not called')
+  if (!harnessAssetsLookup) {
+    throw new Error(
+      'runtime-assets: registerHarnessAssets() was not called. main.ts registers it at boot; a test registers ' +
+        '`(cfg) => resolveHarness(cfg).assets` in beforeAll and calls resetHarnessAssetsForTests() in afterAll.',
+    )
+  }
   return harnessAssetsLookup(cfg)
 }
 
@@ -1440,6 +1445,45 @@ export async function applyStagedAssetsIfIdle(
 let inFlight: Promise<RuntimeAssetsResult> | null = null
 
 /**
+ * How long a fully-converged pass is trusted before the NEXT call-site trigger
+ * (boot, `/kortix/refresh`, idle) is allowed to run another one.
+ *
+ * 2026-09-27: a respawn-heavy box (see `env-sync-skip-decision.ts` for why
+ * respawns were happening far more than once per session) fired this reconcile
+ * on every single respawn — every one of them re-fetching the manifest and
+ * re-hashing the local CLI/skills, competing for the box's network and CPU
+ * during the exact window a live turn was also trying to start. Manifest
+ * digests are memoized for the life of THIS process and cannot change without
+ * a new deploy (`manifest.ts`'s header), so re-checking within seconds of a
+ * pass that already fully converged can never find anything new — it is pure
+ * cost. This does not weaken the self-heal: a pass that left any component
+ * `'failed'` is NOT "fully converged" and is retried on the very next trigger.
+ */
+const RECONCILE_COOLDOWN_MS = 60_000
+
+/** True when the last completed pass converged every component (nothing
+ *  `'failed'`) within `RECONCILE_COOLDOWN_MS`. Exported for the cooldown's own
+ *  unit test — see `runtime-assets-reconcile-cooldown.test.ts`. */
+export function recentlyFullyConverged(): boolean {
+  if (!lastConvergence.at) return false
+  const ageMs = Date.now() - Date.parse(lastConvergence.at)
+  if (!(ageMs >= 0 && ageMs < RECONCILE_COOLDOWN_MS)) return false
+  return !Object.values(lastConvergence.components).some((outcome) => outcome === 'failed')
+}
+
+/** Test seam: let a suite pretend the cooldown has elapsed without a real
+ *  clock wait, and start each case from a clean slate. */
+export function __resetReconcileCooldownForTests(): void {
+  lastConvergence = { build: null, at: null, components: {}, agentSwapPending: false, pinned: false, running: NO_RUNNING_ASSETS }
+}
+
+/** Test seam: backdate the last-convergence timestamp without a real clock
+ *  wait, so the cooldown's expiry can be exercised deterministically. */
+export function __setConvergenceTimestampForTests(iso: string): void {
+  lastConvergence = { ...lastConvergence, at: iso }
+}
+
+/**
  * Fire-and-forget entry point for the boot/refresh/adopt call sites. Returns
  * immediately; the pass runs detached and swallows everything.
  */
@@ -1448,6 +1492,7 @@ export function ensureLatestKortixAssets(
   opts: { atIdleBoundary?: boolean } = {},
 ): void {
   if (inFlight) return
+  if (recentlyFullyConverged()) return
   inFlight = reconcileRuntimeAssets({ configDir, assets: swapConfig?.assets })
   void inFlight
     .finally(() => {

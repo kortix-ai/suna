@@ -551,9 +551,9 @@ beforeEach(() => {
   mockOnResolveIngress = null;
   mockSnapshotSyncCalls = [];
   mockTitleCalls = [];
-  // The per-sandbox env-push memo (`PROMPT_ENV_PUSH_TTL_MS`) would otherwise
-  // carry over from the previous test on the same TEST_SANDBOX_ID and skip the
-  // env-sync fetch each case queues first.
+  // The per-sandbox env-push memo (`env-sync-skip-decision.ts`) would
+  // otherwise carry over from the previous test on the same TEST_SANDBOX_ID
+  // and skip the env-sync fetch each case queues first.
   __resetPromptModelSignatureCacheForTests();
 
   // Install mock fetch

@@ -17,6 +17,7 @@ import { configReleaseReport, runningSourceCommit } from './config-release'
 import type { Config } from '../../../lib/config/config'
 import { readRepoInfo } from '../../../lib/git/git'
 import { runtimeConvergenceReport } from '../../runtime-assets/runtime-assets'
+import { runtimeTruthReport, tickIntervalMs as runtimeTruthTickIntervalMs } from '../../runtime-assets/runtime-truth'
 import { managedCatalogFallbackReason, managedModelIdsSnapshot, type Opencode } from './lifecycle'
 import {
   type OpencodeDeliveryObservation,
@@ -265,7 +266,18 @@ async function readOpenCodeHealth(
     // a fleet-drain gate has actually cleared. `pinned: true` means an update
     // crash-looped and the supervisor latched it off: that box will not
     // self-heal and needs a human.
+    // main's #7786 catalog snapshot AND this branch's runtime_truth document:
+    // both halves of the same question, kept together on purpose.
     runtime: await runtimeConvergenceReport(undefined, undefined, catalogSnapshotForHealth),
+    // The runtime-convergence contract (PR #7785), Rule 1: the ONE actual-runtime
+    // document (release, catalog, daemon, cli, managed skills), each with its
+    // own convergence state. The API computes the desired document and diffs
+    // the two; this is only the box's own answer. A pure read — never
+    // triggers a reconcile attempt, so polling health cannot itself cause work.
+    runtime_truth: await runtimeTruthReport(),
+    // How often the periodic reconcile floor runs — visible so "why hasn't
+    // this healed yet" has an answer bound to a number, not a guess.
+    runtime_truth_tick_interval_ms: runtimeTruthTickIntervalMs(),
     // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
     // polled as a liveness check every few seconds on every idle box. Two
     // callers ask: the reload gate, which must not restart the runtime out
