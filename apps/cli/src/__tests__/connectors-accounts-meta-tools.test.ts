@@ -30,7 +30,7 @@ const GMAIL_ACCOUNTS = [
   },
   {
     connection_id: '11111111-1111-4111-8111-111111111111',
-    label: 'markokraemer.mail@gmail.com',
+    label: 'user@example.com',
     owner_type: 'member',
     is_default: false,
   },
@@ -157,7 +157,7 @@ describe('MCP meta-tools surface that a connector can hold several accounts', ()
         connection_id: '22222222-2222-4222-8222-222222222222',
       },
       {
-        label: 'markokraemer.mail@gmail.com',
+        label: 'user@example.com',
         owner: 'private',
         default: false,
         connection_id: '11111111-1111-4111-8111-111111111111',
