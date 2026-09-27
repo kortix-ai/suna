@@ -121,6 +121,8 @@ export interface AppProps {
   onQuit: () => void;
   /** `Ctrl+H`. `src/main.tsx` remounts the app on the new host. */
   onSwitchHost?: () => void;
+  /** A boot-time workaround (a dead default project) to show once. */
+  bootNotice?: string | null;
   /** Test seam for attach mode. Production uses the real `runAttach`. */
   attachImpl?: typeof runAttach;
 }
@@ -132,6 +134,7 @@ export function App({
   initialSessionId = null,
   onQuit,
   onSwitchHost,
+  bootNotice = null,
   attachImpl = runAttach,
 }: AppProps) {
   // A SIGWINCH re-renders through this hook, and the re-render is what
@@ -188,6 +191,12 @@ export function App({
   const pushToast = useCallback((message: string, kind: ToastKind = 'info') => {
     setToast((current) => ({ message, kind, seq: (current?.seq ?? 0) + 1 }));
   }, []);
+
+  // Once, at boot: the note also went to stderr, but the alternate screen hides
+  // that until the app exits.
+  useEffect(() => {
+    if (bootNotice) pushToast(bootNotice, 'error');
+  }, [bootNotice, pushToast]);
 
   // The session list is already in the query cache for the sidebar; reading it
   // here for the header title and the switcher costs no extra request.

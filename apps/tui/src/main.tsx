@@ -56,14 +56,23 @@ export interface RunTuiOptions {
 export interface ResolveProjectDeps {
   /** Resolves when the project exists and this host may read it; rejects otherwise. */
   getProject: (projectId: string) => Promise<unknown>;
-  listProjects: () => Promise<Array<{ project_id: string }> | null | undefined>;
+  /**
+   * The host ACCOUNT's projects. A PAT can see every account its user belongs
+   * to, and the unscoped list answers across all of them — on the first
+   * machine this was measured the first row was a project in another account,
+   * so the sidebar showed a raw id and the wrong sessions.
+   */
+  listProjects: (
+    accountId: string | null,
+  ) => Promise<Array<{ project_id: string }> | null | undefined>;
   /** Where a skipped candidate is reported. */
   note: (text: string) => void;
 }
 
 const DEFAULT_RESOLVE_PROJECT_DEPS: ResolveProjectDeps = {
   getProject: (projectId) => kortix().projects.get(projectId),
-  listProjects: () => kortix().projects.list(),
+  listProjects: (accountId) =>
+    accountId ? kortix().projects.listForAccount(accountId) : kortix().projects.list(),
   note: (text) => process.stderr.write(`${text}\n`),
 };
 
@@ -79,6 +88,7 @@ const DEFAULT_RESOLVE_PROJECT_DEPS: ResolveProjectDeps = {
  */
 export async function resolveProjectId(
   candidates: (string | null | undefined)[],
+  accountId: string | null = null,
   deps: ResolveProjectDeps = DEFAULT_RESOLVE_PROJECT_DEPS,
 ): Promise<string | null> {
   for (const candidate of candidates) {
@@ -90,12 +100,12 @@ export async function resolveProjectId(
     } catch (error) {
       const reason = error instanceof Error && error.message ? error.message : String(error);
       deps.note(
-        `Project ${trimmed.slice(0, 8)} is not available on this host (${reason}); using the first project you can see.`,
+        `Project ${trimmed.slice(0, 8)} is not available on this host (${reason}); using the first project in your account.`,
       );
     }
   }
   try {
-    const projects = await deps.listProjects();
+    const projects = await deps.listProjects(accountId);
     return projects?.[0]?.project_id ?? null;
   } catch {
     return null;
@@ -103,6 +113,8 @@ export async function resolveProjectId(
 }
 
 interface RootProps {
+  /** What boot had to work around (a dead default project), shown once as a toast. */
+  bootNotice: string | null;
   initialHost: ResolvedHost | null;
   /** Why boot fell through to the login screen, when it did. */
   initialNotice: string | null;
@@ -122,6 +134,7 @@ interface RootProps {
 function Root({
   initialHost,
   initialNotice,
+  bootNotice,
   initialProjectId,
   initialSessionId,
   onQuit,
@@ -169,6 +182,7 @@ function Root({
 
   return (
     <App
+      bootNotice={bootNotice}
       key={`${host.name}:${host.backendUrl}:${generation}`}
       host={host}
       projectId={projectId}
@@ -218,8 +232,15 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
     notice = await preflight(host);
     if (notice) host = null;
   }
+  const bootNotes: string[] = [];
   const projectId = host
-    ? await resolveProjectId([options.projectId, host.defaultProjectId])
+    ? await resolveProjectId([options.projectId, host.defaultProjectId], host.accountId || null, {
+        ...DEFAULT_RESOLVE_PROJECT_DEPS,
+        note: (text) => {
+          bootNotes.push(text);
+          process.stderr.write(`${text}\n`);
+        },
+      })
     : null;
 
   const queryClient = new QueryClient({
@@ -275,6 +296,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         <Root
           initialHost={host}
           initialNotice={notice}
+          bootNotice={bootNotes.length ? bootNotes.join(' ') : null}
           initialProjectId={projectId}
           initialSessionId={options.sessionId?.trim() || null}
           onQuit={() => shutdown(0)}

@@ -41,25 +41,35 @@ describe('resolveProjectId', () => {
       if (!alive.has(id)) throw new Error('Not found');
       return { project_id: id };
     },
-    listProjects: async () => [{ project_id: 'proj_first' }, { project_id: 'proj_second' }],
+    listProjects: async (accountId: string | null) =>
+      accountId === 'acct_host'
+        ? [{ project_id: 'proj_first' }, { project_id: 'proj_second' }]
+        : [{ project_id: 'proj_other_account' }],
     note: (text: string) => notes.push(text),
   };
 
   test('a default project that no longer exists is skipped, said so, and the first visible project wins', async () => {
     notes.length = 0;
-    expect(await resolveProjectId(['proj_gone'], deps)).toBe('proj_first');
+    expect(await resolveProjectId(['proj_gone'], 'acct_host', deps)).toBe('proj_first');
     expect(notes).toEqual([
-      'Project proj_gon is not available on this host (Not found); using the first project you can see.',
+      'Project proj_gon is not available on this host (Not found); using the first project in your account.',
     ]);
   });
 
+  test('the fallback stays inside the host account — never the first project of any account', async () => {
+    expect(await resolveProjectId(['proj_gone'], 'acct_host', deps)).toBe('proj_first');
+    expect(await resolveProjectId([], null, deps)).toBe('proj_other_account');
+  });
+
   test('a dead flag value falls through to a live default before the list', async () => {
-    expect(await resolveProjectId(['proj_gone', 'proj_default'], deps)).toBe('proj_default');
+    expect(await resolveProjectId(['proj_gone', 'proj_default'], 'acct_host', deps)).toBe(
+      'proj_default',
+    );
   });
 
   test('nothing alive and no list → null, never a dead id', async () => {
     expect(
-      await resolveProjectId(['proj_gone'], {
+      await resolveProjectId(['proj_gone'], 'acct_host', {
         ...deps,
         listProjects: async () => {
           throw new Error('offline');
@@ -69,14 +79,18 @@ describe('resolveProjectId', () => {
   });
 
   test('takes the first candidate that has a value, in order', async () => {
-    expect(await resolveProjectId(['proj_flag', 'proj_default'], deps)).toBe('proj_flag');
-    expect(await resolveProjectId([null, 'proj_default'], deps)).toBe('proj_default');
-    expect(await resolveProjectId([undefined, 'proj_default'], deps)).toBe('proj_default');
+    expect(await resolveProjectId(['proj_flag', 'proj_default'], 'acct_host', deps)).toBe(
+      'proj_flag',
+    );
+    expect(await resolveProjectId([null, 'proj_default'], 'acct_host', deps)).toBe('proj_default');
+    expect(await resolveProjectId([undefined, 'proj_default'], 'acct_host', deps)).toBe(
+      'proj_default',
+    );
   });
 
   test('a blank candidate is not a candidate', async () => {
-    expect(await resolveProjectId(['   ', 'proj_default'], deps)).toBe('proj_default');
-    expect(await resolveProjectId(['  proj_padded  '], deps)).toBe('proj_padded');
+    expect(await resolveProjectId(['   ', 'proj_default'], 'acct_host', deps)).toBe('proj_default');
+    expect(await resolveProjectId(['  proj_padded  '], 'acct_host', deps)).toBe('proj_padded');
   });
 
   test('with no candidate it asks the host and takes its first project', async () => {
