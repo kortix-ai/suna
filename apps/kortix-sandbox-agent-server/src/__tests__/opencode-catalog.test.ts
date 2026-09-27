@@ -8,7 +8,10 @@ import {
   MINIMAL_FALLBACK_MODELS,
   buildOpencodeConfigContent,
   catalogIsDegraded,
+  convergeManagedModelCatalog,
   fetchManagedModels,
+  managedCatalogFallbackReason,
+  managedModelIdsSnapshot,
   missingManagedModelIds,
   refreshGatewayCatalogFile,
   resetManagedModelsStateForTests,
@@ -537,4 +540,235 @@ describe('post-spawn managed reconcile', () => {
 
     expect(restarts.n).toBe(0)
   }, 15_000)
+})
+
+// The health-report freshness signal a wake/turn-start on a real dev box
+// exposed as broken 2026-09-26: a box woken today still served the
+// 2026-08-10 managed lineup (deepseek-v4-flash, glm-5.2, grok-4.6, …) instead
+// of the current one (deepseek-v4.1-flash, glm-5.3-flash, kimi-k3) because
+// nothing on ANY post-boot path re-fetched and re-applied the overlay.
+describe('managed catalog health snapshot', () => {
+  test('reports unconfirmed (null) before any live fetch ever succeeds', () => {
+    expect(managedModelIdsSnapshot()).toBeNull()
+    expect(managedCatalogFallbackReason()).toBeNull()
+  })
+
+  test('reports the live ids once a fetch succeeds, and clears any earlier failure', async () => {
+    globalThis.fetch = (async () => new Response('down', { status: 500 })) as unknown as typeof fetch
+    await fetchManagedModels(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    expect(managedCatalogFallbackReason()).not.toBeNull()
+
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+    const live = await fetchManagedModels(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    expect(live).not.toBeNull()
+    // `fetchManagedModels` alone does not publish to the cache — only the
+    // prefetch/convergence callers that choose to remember it do.
+    expect(managedModelIdsSnapshot()).toBeNull()
+
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    await settleManagedModelsPrefetch()
+    expect(managedModelIdsSnapshot()?.sort()).toEqual(
+      Object.keys(LIVE_MANAGED.models).sort(),
+    )
+    expect(managedCatalogFallbackReason()).toBeNull()
+  })
+
+  test('a failed boot fetch is visible on the health snapshot, not just a log line', async () => {
+    globalThis.fetch = (async () => new Response('down', { status: 500 })) as unknown as typeof fetch
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    await settleManagedModelsPrefetch()
+
+    expect(managedModelIdsSnapshot()).toBeNull()
+    expect(managedCatalogFallbackReason()).toContain('servable models unavailable')
+  })
+})
+
+describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh)', () => {
+  const cfg = loadConfig({ KORTIX_WORKSPACE: '/workspace' } as NodeJS.ProcessEnv)
+  const REAL_CATALOG_ENV = process.env.KORTIX_LLM_CATALOG_FILE
+  const REAL_BASE_URL = process.env.KORTIX_LLM_BASE_URL
+  const REAL_TOKEN = process.env.KORTIX_TOKEN
+
+  // `convergeManagedModelCatalog` reads gateway credentials off `process.env`
+  // directly (it runs at arbitrary points in a session's life, not only at
+  // the config build these fixtures otherwise pass an explicit env object
+  // to) — so these tests need them SET on the real process env, not merely
+  // passed as a parameter.
+  beforeEach(() => {
+    process.env.KORTIX_LLM_BASE_URL = GATEWAY.KORTIX_LLM_BASE_URL
+    process.env.KORTIX_TOKEN = GATEWAY.KORTIX_TOKEN
+  })
+
+  afterEach(() => {
+    if (REAL_CATALOG_ENV === undefined) delete process.env.KORTIX_LLM_CATALOG_FILE
+    else process.env.KORTIX_LLM_CATALOG_FILE = REAL_CATALOG_ENV
+    if (REAL_BASE_URL === undefined) delete process.env.KORTIX_LLM_BASE_URL
+    else process.env.KORTIX_LLM_BASE_URL = REAL_BASE_URL
+    if (REAL_TOKEN === undefined) delete process.env.KORTIX_TOKEN
+    else process.env.KORTIX_TOKEN = REAL_TOKEN
+  })
+
+  async function targetPath(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'kortix-ondemand-'))
+    tempDirs.push(dir)
+    return join(dir, 'kortix-llm-catalog.session.json')
+  }
+
+  function fakeOpencode(swaps: { n: number }, opts: { swapOutcome?: 'swapped' | 'kept-old' } = {}): Opencode {
+    return {
+      getInternalUrl: () => 'http://127.0.0.1:65535',
+      reloadVerified: async () => {
+        if (opts.swapOutcome === 'kept-old') {
+          return { outcome: 'kept-old', reason: 'the verified opencode exited before promotion' }
+        }
+        swaps.n++
+        return { outcome: 'swapped', port: 4096, pid: 4242, turnEnded: false, orphanedMessageId: null }
+      },
+    } as unknown as Opencode
+  }
+
+  /** Boot on the STALE baked catalog (matches `lastConfiguredProviderModelIds`
+   *  to what a real box's running OpenCode has), WITHOUT settling any
+   *  prefetch — so the on-demand converge is the first thing to ever see the
+   *  live lineup. This is the real dev-box shape: boot happened hours ago, the
+   *  prefetch/cache is long cold, and only a fresh fetch can tell the truth. */
+  async function bootOnStaleCatalogOnly(): Promise<void> {
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    } as NodeJS.ProcessEnv)
+  }
+
+  test('fetches fresh (never the stale boot prefetch) and restarts when a managed id is missing', async () => {
+    await bootOnStaleCatalogOnly()
+    // Confirms the fixture: the config just booted with does NOT have these.
+    expect(missingManagedModelIds(LIVE_MANAGED.models).sort()).toEqual(['grok-4.6', 'new-managed-9.9'])
+
+    globalThis.fetch = (async (input: string) => {
+      expect(String(input)).toContain('scope=picker')
+      return new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
+    }) as unknown as typeof fetch
+
+    const swaps = { n: 0 }
+    const target = await targetPath()
+    const result = await convergeManagedModelCatalog(fakeOpencode(swaps), cfg, {
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+
+    expect(result.outcome).toBe('restarted')
+    expect(result.missing.sort()).toEqual(['grok-4.6', 'new-managed-9.9'])
+    expect(swaps.n).toBe(1)
+    const written = JSON.parse(await readFile(target, 'utf8')) as { models: Record<string, unknown> }
+    expect(written.models['grok-4.6']).toBeDefined()
+    expect(written.models['new-managed-9.9']).toBeDefined()
+    // The health snapshot is now confirmed against the live lineup too.
+    expect(managedModelIdsSnapshot()?.sort()).toEqual(Object.keys(LIVE_MANAGED.models).sort())
+  })
+
+  test('allowRestart:false updates the file but never touches the running OpenCode', async () => {
+    await bootOnStaleCatalogOnly()
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+
+    const swaps = { n: 0 }
+    const target = await targetPath()
+    const result = await convergeManagedModelCatalog(fakeOpencode(swaps), cfg, {
+      allowRestart: false,
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+
+    expect(result.outcome).toBe('file-updated')
+    expect(swaps.n).toBe(0)
+    const written = JSON.parse(await readFile(target, 'utf8')) as { models: Record<string, unknown> }
+    expect(written.models['new-managed-9.9']).toBeDefined()
+  })
+
+  test('reports unchanged and touches nothing when every managed id is already registered', async () => {
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+    // The config was built AFTER the live set was already known, so it has
+    // every managed id — the state a fully-current box is in.
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    await settleManagedModelsPrefetch()
+    await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    } as NodeJS.ProcessEnv)
+    expect(missingManagedModelIds(LIVE_MANAGED.models)).toEqual([])
+
+    const swaps = { n: 0 }
+    const target = await targetPath()
+    const result = await convergeManagedModelCatalog(fakeOpencode(swaps), cfg, {
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+
+    expect(result.outcome).toBe('unchanged')
+    expect(result.missing).toEqual([])
+    expect(swaps.n).toBe(0)
+    expect(await readFile(target, 'utf8').catch(() => null)).toBeNull()
+  })
+
+  test('never restarts across a live turn — or one it cannot read', async () => {
+    for (const turnInFlight of [true, null] as const) {
+      resetManagedModelsStateForTests()
+      await bootOnStaleCatalogOnly()
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+
+      const swaps = { n: 0 }
+      const target = await targetPath()
+      const result = await convergeManagedModelCatalog(fakeOpencode(swaps), cfg, {
+        catalogTargetFile: target,
+        turnProbe: async () => turnInFlight,
+      })
+
+      expect(result.outcome).toBe('declined')
+      expect(swaps.n).toBe(0)
+      // The overlay is still written — the file update never waits on the
+      // idle check, only the restart does.
+      const written = JSON.parse(await readFile(target, 'utf8')) as { models: Record<string, unknown> }
+      expect(written.models['new-managed-9.9']).toBeDefined()
+    }
+  })
+
+  test('a verified swap that declines to boot is reported, not swallowed', async () => {
+    await bootOnStaleCatalogOnly()
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
+
+    const swaps = { n: 0 }
+    const target = await targetPath()
+    const result = await convergeManagedModelCatalog(
+      fakeOpencode(swaps, { swapOutcome: 'kept-old' }),
+      cfg,
+      { catalogTargetFile: target, turnProbe: async () => false },
+    )
+
+    expect(result.outcome).toBe('declined')
+    expect(result.reason).toContain('exited before promotion')
+  })
+
+  test('reports no-gateway when this box has no gateway credentials, without throwing', async () => {
+    const realBaseUrl = process.env.KORTIX_LLM_BASE_URL
+    const realToken = process.env.KORTIX_TOKEN
+    delete process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_TOKEN
+    try {
+      const swaps = { n: 0 }
+      const result = await convergeManagedModelCatalog(fakeOpencode(swaps), cfg, {
+        turnProbe: async () => false,
+      })
+      expect(result.outcome).toBe('no-gateway')
+      expect(swaps.n).toBe(0)
+    } finally {
+      if (realBaseUrl !== undefined) process.env.KORTIX_LLM_BASE_URL = realBaseUrl
+      if (realToken !== undefined) process.env.KORTIX_TOKEN = realToken
+    }
+  })
 })
