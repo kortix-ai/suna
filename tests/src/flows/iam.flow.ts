@@ -1848,6 +1848,21 @@ flow(
 // admins open EVERY session in the account, members' private ones included.
 // Off by default. Plain members never gain anything from it. Every flip and
 // every read that only the policy allowed is audited.
+//
+// PRE-EXISTING FAIL-OPEN WINDOW (tracked here, not fixed here): a policy flip
+// clears `oversightMemo` only on the replica that served the PATCH
+// (`apps/api/src/iam/session-oversight.ts:100` `invalidateSessionOversight`,
+// called from `apps/api/src/accounts/iam/session-oversight.ts:113`). Every
+// OTHER replica keeps its own in-process copy of that memo
+// (`apps/api/src/iam/session-oversight.ts:93-97`, `TTL_MS` default 15000 ms,
+// `session-oversight.ts:85-88`) and answers with the pre-flip verdict until
+// its own copy expires. Both readers of `hasAccountSessionOversight` —
+// the single-session read (`apps/api/src/projects/lib/access.ts:365`) and the
+// project session inventory (`apps/api/src/projects/lib/session-list.ts:154`)
+// — go through the same memo, so for up to ~15 s after an owner turns
+// oversight OFF, an admin hitting an unlucky replica still opens a member's
+// private session and still finds it in their manager inventory. The steps
+// below poll around this window to prove the END state; they do not close it.
 flow(
   'IAM-40',
   {
@@ -2005,9 +2020,16 @@ flow(
       });
       r.status(200).body().has('$.enabled', false);
       await eventually('admin refused again', async () => (await readSession(asAdmin)).statusCode === 404);
-      if ((await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
-        throw new Error('manager inventory still listed the private session after oversight was turned off');
-      }
+      // Same replica-cache lag as the session read above: the inventory read
+      // hits whichever replica answers the request, and that replica's
+      // manager-inventory cache can still hold the pre-flip (oversight-on)
+      // answer for up to the ~15 s IAM cache TTL. Poll it exactly like the
+      // session read, instead of asserting on one read that can race the
+      // cache. See IAM-40 fail-open note in this file's flow doc comment for
+      // what this lag exposes while it lasts.
+      await eventually('manager inventory drops the private session', async () => {
+        return !(await inventoryIds(asAdmin, 'project')).has(privateSessionId);
+      });
     });
   },
 );

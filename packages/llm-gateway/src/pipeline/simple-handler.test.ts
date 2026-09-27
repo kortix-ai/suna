@@ -1101,3 +1101,55 @@ describe('streaming AI SDK transports retry failures raised before the first out
     expect(response.headers.get('retry-after')).toBe('4');
   });
 });
+
+describe('trace timing', () => {
+  // Measured on dev-api 2026-09-27: a managed call's gateway latency_ms was
+  // 7.2-8.4 s while the same model direct took 2-3 s to first token, and the
+  // trace could not say whether admission or the upstream spent the gap.
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function run(stream: boolean) {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          authorize: async () => {
+            await sleep(60);
+            return { ok: true, principal };
+          },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => {
+          await sleep(120);
+          return stream
+            ? new Response('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n', {
+                status: 200,
+                headers: { 'content-type': 'text/event-stream' },
+              })
+            : new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              });
+        },
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [], stream }),
+      },
+    );
+    await response.text();
+    for (let i = 0; i < 50 && traces.length === 0; i++) await sleep(10);
+    return traces[0]!;
+  }
+
+  for (const stream of [false, true]) {
+    test(`splits admission from the upstream wait (${stream ? 'stream' : 'json'})`, async () => {
+      const trace = await run(stream);
+      const timing = trace.metadata.timing as { prep_ms: number; upstream_response_ms: number };
+      expect(timing.prep_ms).toBeGreaterThanOrEqual(55);
+      expect(timing.upstream_response_ms).toBeGreaterThanOrEqual(115);
+      expect(timing.prep_ms + timing.upstream_response_ms).toBeLessThanOrEqual(trace.latencyMs);
+    });
+  }
+});

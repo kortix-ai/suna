@@ -392,6 +392,7 @@ export async function handleChatCompletions(
   const promptTokenEstimate =
     streaming && descriptor.billingMode !== 'none' ? estimatePromptTokens(body) : 0;
   const primaryModel = routedModel;
+  emit.mark('dispatch');
   const pending = dispatch(
     body,
     {
@@ -422,6 +423,7 @@ export async function handleChatCompletions(
   // provider wait.
   body = null;
   const outcome = await pending;
+  emit.mark('upstream_response');
   const served = outcome.descriptor;
   // The model that served, or failed last: a fallback model when the chain moved.
   routedModel = outcome.model;

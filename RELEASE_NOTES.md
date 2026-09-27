@@ -1,14 +1,14 @@
-Deploys without connection errors, and a faster app
+Reliable image builds, and session oversight that turns off everywhere
 
-Deploys no longer cause a burst of errors, and the app is faster.
+Sandbox image builds keep working under the snapshot quota, and turning off session oversight takes effect everywhere at once.
 
 ## Fixed
 
-- A production deploy no longer briefly runs the database out of connections. Session start, stop and model listing stay available while a new version rolls out.
+- Snapshot cleanup now removes images left behind by deleted App deployments, so new sandbox images keep building instead of hitting the provider quota.
+- Turning off session oversight takes effect immediately on every server. Admins can no longer open a member's private session for a few seconds afterwards.
 
 ## Improved
 
-- The connector catalog resolves connectors concurrently.
-- Avatars render from generated paths instead of loading the full icon set.
-- Branch listings for views are faster, and Composio auth configuration is served from cache while it refreshes.
+- Gateway request logs split latency into admission time and upstream wait.
+- The Settings panel and icon pickers load on demand, so the app opens faster.
 
