@@ -21,6 +21,79 @@ linked, not inlined.
 
 ## Register
 
+### A provider `stop()` must confirm power-off before the caller kills the token (2026-09-27)
+
+**Rule:** any `stop()`/`archive()` adapter that returns as soon as the
+provider ACKs the request, before the resource is actually gone, lets the
+control plane mark the DB row stopped (killing its token/lease) while the
+resource is still alive and still calling home with a now-dead credential.
+Poll for the terminal state (bounded, e.g. 10s) and throw on timeout so the
+caller's existing retry/claim-release path runs again — never return
+silently on an ACK alone.
+
+**Incident:** `PlatinumProvider.stop()` (`apps/api/src/platform/providers/platinum.ts`)
+returned right after the stop-request ACK; `start()` already polled-to-confirm
+for the symmetric reopen race but `stop()` never did. 76h prod window:
+404,982 `401 Session token is not active` rejections across 95 projects, one
+VM posting for its full 12h idle timeout after its lease closed. **Enforcer:**
+`platinum-stop-confirm.test.ts`.
+
+### An HTTP 401 the API can never take back needs its own circuit breaker, separate from retry/backoff (2026-09-27)
+
+**Rule:** a daemon/agent process that calls a control-plane API on a loop must
+distinguish "this failure might be transient, retry it" from "this failure
+can never resolve itself" (e.g. `401 Session token is not active` once a
+session is closed) and trip a SEPARATE counter that stops the process — a
+patient exponential backoff on the wrong error just hammers politely forever.
+
+**Incident:** same 76h window as above — three call sites
+(`turn-stream` begin/end, `audit/events`, `runtime-assets/manifest` in
+`apps/kortix-sandbox-agent-server`) each had their own transient-failure
+backoff and NONE of them ever gave up permanently. **Fix:**
+`session-token-health.ts`'s shared dead-token streak, wired to the daemon's
+own graceful `shutdown()`. **Enforcer:** `session-token-health.test.ts`.
+
+### A daemon's own self-reported "delivery failed" needs the same false-negative guard as a control-plane probe (2026-09-27)
+
+**Rule:** when a daemon checks "did my own recent write land yet?" against
+the SAME system it just wrote to (list it, read it by id), a momentary miss
+right after the write is a propagation race, not proof of absence — retry the
+SAME evidence a bounded few times before reporting a terminal verdict
+upstream, especially when that verdict is used to DELETE the only record of
+the attempt (so nothing can ever correct it later).
+
+**Incident:** the daemon's boot-time `reconcileInitialTurnAcceptanceToApi`
+(`apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts`) called
+opencode's message-exists check the instant `prompt_async` resolved, trusted
+a single 404, and reported `turn_abandoned` — which `abandonSandboxTurn`
+deletes outright. Most of those turns went on to complete. 73 sessions/72h,
+15 of 19 transcript-checked had actually completed. **Fix:** bounded retry on
+the SAME evidence before reporting; API-side `completeSandboxTurn` also now
+overwrites a stale `abandoned` verdict when a genuine completion follows
+(`reviveAbandonedTurnOnCompletion`, `apps/api/src/projects/sandbox-turn-lifecycle.ts`)
+as defense in depth. **Enforcer:** `initial-turn-lifecycle.test.ts`,
+`sandbox-turn-lifecycle.test.ts`.
+
+### A membership check written for humans silently fails every non-human principal (2026-09-27)
+
+**Rule:** when a system gains a new class of principal (service accounts /
+agents), audit every existing "is this caller allowed on this account?" check
+that queries ONE membership table — it will deny the new principal type
+forever, not error loudly, because "not found" and "not allowed" look
+identical from inside that query.
+
+**Incident:** `isAccountMember` (`apps/api/src/shared/preview-ownership.ts`)
+only checked `account_members`. A trigger/automation session is attributed to
+the agent's `service_accounts` row, never an `account_members` row, so
+`resolvePreviewUserContext` returned null for every one of those sessions and
+the signed proxy header was never attached — a permanent 401 on the daemon's
+transcript-save call. 76h window: 23,380 capture failures, 72% of sessions
+with no saved transcript. **Fix:** `isAccountServiceAccount` added as a
+second, equally-authoritative check. **Enforcer:** `preview-ownership.test.ts`.
+**Found, not fixed (separate, pre-existing):** `resolveAccountId` bootstraps a
+phantom personal account for any unrecognized `userId`, including a
+service-account id — runs on this same path today, unrelated to this fix.
+
 ### Never write back a JSONB column you read earlier: merge in SQL (2026-09-22)
 
 **Rule:** A writer of shared JSONB state (`session_sandboxes.metadata`) never

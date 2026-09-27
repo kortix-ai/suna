@@ -246,12 +246,23 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     const errorSpike =
       traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
 
+    // A sustained streak, not one blip: a single dropped POST during a
+    // Langfuse hiccup is not an incident, and this must never page on it.
+    const TRACE_FAILURE_STREAK_ALERT = 5;
+    const tracesStatus = traces?.status() ?? null;
+    const traceStreakAlert =
+      tracesStatus !== null && tracesStatus.consecutiveFailures >= TRACE_FAILURE_STREAK_ALERT;
+
     const incidents: string[] = [];
     if (!apiCheck.ok)
       incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
     if (errorSpike)
       incidents.push(
         `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
+      );
+    if (traceStreakAlert)
+      incidents.push(
+        `langfuse trace recording failed ${tracesStatus.consecutiveFailures}x in a row (${tracesStatus.lastError ?? 'unknown error'})`,
       );
 
     const status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy';
@@ -272,7 +283,21 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
             ...(apiCheck.status ? { http_status: apiCheck.status } : {}),
             ...(apiCheck.error ? { error: apiCheck.error } : {}),
           },
-          traces: { langfuse: traces ? 'enabled' : 'disabled' },
+          traces: {
+            langfuse: traces ? 'enabled' : 'disabled',
+            ...(tracesStatus
+              ? {
+                  last_queued_at: tracesStatus.lastQueuedAt
+                    ? new Date(tracesStatus.lastQueuedAt).toISOString()
+                    : null,
+                  last_failure_at: tracesStatus.lastFailureAt
+                    ? new Date(tracesStatus.lastFailureAt).toISOString()
+                    : null,
+                  consecutive_failures: tracesStatus.consecutiveFailures,
+                  ...(tracesStatus.lastError ? { last_error: tracesStatus.lastError } : {}),
+                }
+              : {}),
+          },
           admission,
         },
         traffic,

@@ -238,6 +238,93 @@ describe('daemon-delivered initial turn lifecycle', () => {
     }
   });
 
+  // PROD 2026-09-26: `completeInitialSessionBoot` calls this the instant
+  // `prompt_async` resolves, before opencode's message store is guaranteed to
+  // have the row queryable. A momentary 404 on the by-id read used to be
+  // trusted immediately and reported `turn_abandoned` — even though the
+  // message showed up moments later and the turn went on to complete. This is
+  // the regression guard: the SAME evidence, re-read, must win over an early
+  // false negative before anything is reported to the API.
+  test('does not abandon a message that appears on a later read of the same evidence', async () => {
+    let byIdAttempts = 0;
+    const lifecycleRelays: Array<Record<string, unknown>> = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const path = new URL(request.url).pathname;
+        if (request.method === 'GET' && /\/message\/[^/]+$/.test(path)) {
+          byIdAttempts += 1;
+          // First read: opencode has not indexed the message yet. Second read
+          // onward: it has — the exact race this fix closes.
+          if (byIdAttempts === 1) {
+            return Response.json(
+              { name: 'NotFoundError', data: { message: 'Message not found: msg_new' } },
+              { status: 404 },
+            );
+          }
+          return Response.json({ info: { id: 'msg_new' } });
+        }
+        if (request.method === 'GET' && path.endsWith('/session/status')) {
+          // The turn is genuinely running by the time of the retry — the
+          // daemon's own "is opencode busy" oracle, independent of the by-id
+          // read, agrees the message is live.
+          return Response.json({ ses_reused: { type: 'busy' } });
+        }
+        if (request.method === 'GET') {
+          // The message is still outside the probe window on every read —
+          // only the by-id read (above) and the busy oracle above ever learn
+          // about it. Realistic: a fresh root's newest-messages window can
+          // lag a beat behind a single by-id read.
+          return Response.json([
+            { info: { id: 'msg_older', role: 'user' } },
+            {
+              info: {
+                id: 'msg_assistant',
+                role: 'assistant',
+                parentID: 'msg_older',
+                time: { completed: 1234 },
+              },
+            },
+          ]);
+        }
+        lifecycleRelays.push((await request.json()) as Record<string, unknown>);
+        return Response.json({ ok: true });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'sandbox-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      const outcome = await reconcileInitialTurnAcceptanceToApi(
+        `http://127.0.0.1:${server.port}`,
+        '/workspace',
+        'ses_reused',
+        'msg_new',
+        'turn-token',
+      );
+
+      // The first by-id read (404) used to be trusted immediately and would
+      // have reported `turn_abandoned` right here. The retry sees the message
+      // exists and opencode busy, and the turn is correctly promoted instead.
+      expect(outcome).toBe('accepted');
+      expect(byIdAttempts).toBeGreaterThan(1);
+      expect(lifecycleRelays).toEqual([
+        {
+          session_id: 'session-1',
+          kind: 'turn_accepted',
+          opencode_session_id: 'ses_reused',
+          turn_message_id: 'msg_new',
+          turn_token: 'turn-token',
+        },
+      ]);
+      expect(lifecycleRelays.some((relay) => relay.kind === 'turn_abandoned')).toBe(false);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test('promotes only when the exact initial message is still in flight', async () => {
     let acceptanceRelays = 0;
     const server = Bun.serve({

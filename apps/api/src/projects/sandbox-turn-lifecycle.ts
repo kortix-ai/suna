@@ -1054,6 +1054,47 @@ function refineEndedTurnError(
        AND (t.end_error IS NULL OR t.end_error->>'name' IN (${abortNames}))`;
 }
 
+/**
+ * A later genuine completion for a message the ledger already closed as
+ * `abandoned` proves the abandon was premature: delivery DID reach OpenCode
+ * and the turn ran, but whatever declared it abandoned (the daemon's own
+ * boot-time delivery check, or a reaper reconciliation) observed that too
+ * early and reported a false negative. `abandonSandboxTurn` DELETES the
+ * `activeTurns` record it closes, so nothing short of this rewrite can ever
+ * correct the row once that happens — the real completion arrives with
+ * `turns.length === 0` (no metadata entry left to close) and, without this,
+ * `already_closed` returns silently and the ledger keeps the wrong verdict
+ * forever (PROD 2026-09-26: 73 sessions, 15/19 checked had actually
+ * completed).
+ *
+ * Exact identity match only, like `refineEndedTurnError` — never a fallback
+ * — so unrelated evidence can never repaint a genuinely abandoned turn (one
+ * that really never reached OpenCode) as completed. Scoped to
+ * `end_reason = 'abandoned'` rows only: a `failed`/`completed`/`runtime_gone`
+ * row already carries a real verdict from evidence that observed the turn in
+ * progress, which this must never overwrite.
+ */
+function reviveAbandonedTurnOnCompletion(
+  sessionId: string,
+  identity: Partial<SandboxTurnIdentity>,
+  endReason: 'completed' | 'failed',
+  endError: SessionTurnEndErrorRecord | null,
+): SQL {
+  const endErrorJson = endError ? JSON.stringify(endError) : null;
+  return sql`
+    UPDATE kortix.session_turns t
+       SET end_reason = ${endReason},
+           end_error = ${endErrorJson}::jsonb,
+           updated_at = now()
+     WHERE t.session_id = ${sessionId}
+       AND t.message_id = ${identity.messageId ?? null}
+       AND t.state = 'ended'
+       AND t.end_reason = 'abandoned'
+       AND (${identity.opencodeSessionId ?? null}::text IS NULL
+         OR t.opencode_session_id IS NULL
+         OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})`;
+}
+
 async function wasSandboxTurnAlreadyClosed(
   sessionId: string,
   identity?: Partial<SandboxTurnIdentity> | null,
@@ -1240,6 +1281,19 @@ export async function completeSandboxTurn(
         await recordTurnLedger(
           refineEndedTurnError(sessionId, identity, endError),
           `refine end error ${identity.messageId} (${endError.name})`,
+        );
+      }
+      // Same abort guard as the refine above: an abort names the EFFECT
+      // (something asked this turn to stop), never the cause, so it must not
+      // overwrite a reason the ledger already recorded — including a false
+      // `abandoned` one. Only a genuine idle/error verdict revives the row.
+      if (identity && (!endError?.name || !ABORT_END_ERROR_NAMES.includes(endError.name))) {
+        // `wasSandboxTurnAlreadyClosed` only returns true with a messageId, so
+        // `identity.messageId` is guaranteed here.
+        const revivedReason: 'completed' | 'failed' = status === 'error' ? 'failed' : 'completed';
+        await recordTurnLedger(
+          reviveAbandonedTurnOnCompletion(sessionId, identity, revivedReason, endError),
+          `revive abandoned ${identity.messageId} (${revivedReason})`,
         );
       }
       return {

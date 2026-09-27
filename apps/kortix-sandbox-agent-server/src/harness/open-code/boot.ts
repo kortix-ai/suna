@@ -71,7 +71,8 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
-import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
+import { observeOpencodeDelivery, opencodeTurnInFlight } from './opencode-turn-state'
+import { configureSessionTokenHealth, noteControlPlaneResponse } from '../../session-token-health'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -190,6 +191,11 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   const opencode = harness.native
   const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
   const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  // The 401-streak circuit breaker (session-token-health.ts): once the API has
+  // told this box, repeatedly, that its session token is dead, stop calling
+  // home and exit — exitCode 0 so the entrypoint supervisor treats it as a
+  // clean stop, never a crash to relaunch or count against a rollback budget.
+  configureSessionTokenHealth(() => shutdown({ reason: 'session-token-dead', exitCode: 0 }))
   // Hand the convergence machinery this session's live runtime, once.
   //
   // Two things need it. opencode convergence restarts opencode, so it goes
@@ -715,6 +721,7 @@ async function startSessionRuntime(
       )
       if (!response.ok) {
         const body = await response.text().catch(() => '')
+        noteControlPlaneResponse(response.status, body)
         const error = new Error(
           `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
         ) as Error & { retryAfterMs?: number }
@@ -2373,6 +2380,32 @@ export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
 
 /**
+ * How many times a claimed-absent initial message is re-checked before this
+ * boot trusts the absence and reports `turn_abandoned`.
+ *
+ * `completeInitialSessionBoot` calls this the instant `deliverInitialOpenCodePrompt`
+ * (`POST /session/:id/prompt_async`) resolves — by design, so a trivial fast
+ * turn still finalizes without waiting on the next SSE reconnect. But
+ * `prompt_async` acknowledges the request before opencode's own message store
+ * is guaranteed to have the row queryable by `GET .../message` /
+ * `GET .../message/:id`. A momentary miss on that read is indistinguishable
+ * from a genuinely never-delivered prompt (`observeOpencodeDelivery`'s
+ * `end: 'abandoned'`) — both come back as one 404. PROD 2026-09-26: the API
+ * marked most first-prompt turns of a session `abandoned` 9-30s after
+ * creation even though the model went on to answer; this raced exactly here.
+ *
+ * `abandonSandboxTurn` on the API side DELETES the delivery record, so the
+ * real completion that follows has nothing left to renew — this is the one
+ * chance to get the verdict right. Re-reading the SAME evidence a bounded
+ * number of times gives the write a chance to land — bounded by observed
+ * state, not a fixed sleep — and stops the moment any read finds the
+ * message. A fast-finished turn (`end: 'completed'`/`'failed'`, message
+ * found) never enters this loop, so it is not delayed by it.
+ */
+const INITIAL_TURN_ABSENCE_CONFIRMATIONS = 3
+const INITIAL_TURN_ABSENCE_RETRY_DELAY_MS = 350
+
+/**
  * Promote daemon-delivered authority only after OpenCode exposes the exact
  * client-minted user message as queued or running.
  *
@@ -2387,14 +2420,19 @@ export async function reconcileInitialTurnAcceptanceToApi(
   messageId: string,
   turnToken: string,
 ): Promise<InitialTurnAcceptanceReconciliation> {
-  const inFlight = await opencodeDeliveryInFlight(
-    opencodeBaseUrl,
-    workspace,
-    opencodeSessionId,
-    messageId,
-  )
-  if (inFlight === null) return 'unknown'
-  if (!inFlight) {
+  let observation = await observeOpencodeDelivery(opencodeBaseUrl, workspace, opencodeSessionId, messageId)
+  for (
+    let attempt = 1;
+    observation.inFlight === false &&
+    observation.end === 'abandoned' &&
+    attempt < INITIAL_TURN_ABSENCE_CONFIRMATIONS;
+    attempt += 1
+  ) {
+    await Bun.sleep(INITIAL_TURN_ABSENCE_RETRY_DELAY_MS)
+    observation = await observeOpencodeDelivery(opencodeBaseUrl, workspace, opencodeSessionId, messageId)
+  }
+  if (observation.inFlight === null) return 'unknown'
+  if (!observation.inFlight) {
     await relayInitialTurnAbandonedToApi(turnToken)
     return 'inactive'
   }
@@ -2754,7 +2792,13 @@ export async function relayTurnBeginToApi(
           }
           return
         }
-        logger.warn('[opencode-events] turn-begin relay non-ok', { status: res.status, attempt })
+        const bodyText = await res.text().catch(() => '')
+        noteControlPlaneResponse(res.status, bodyText)
+        logger.warn('[opencode-events] turn-begin relay non-ok', {
+          status: res.status,
+          attempt,
+          body: bodyText.slice(0, 200),
+        })
       } catch (err) {
         logger.warn('[opencode-events] turn-begin relay fetch failed', {
           err: (err as Error).message,
@@ -2921,7 +2965,13 @@ export async function relayTurnEndToApi(
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
       }
-      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
+      const bodyText = await res.text().catch(() => '')
+      noteControlPlaneResponse(res.status, bodyText)
+      logger.warn('[opencode-events] turn-end relay non-ok', {
+        status: res.status,
+        attempt,
+        body: bodyText.slice(0, 200),
+      })
     } catch (err) {
       logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }
