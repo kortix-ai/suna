@@ -1,7 +1,7 @@
 /**
  * Correlating a `prompt_async` call to the assistant reply it produced.
  *
- * `docs/specs/turn-latency.md` §5's own methodology sends the SAME trivial
+ * The turn-latency spec (PR #7840) §5's own methodology sends the SAME trivial
  * prompt ("Reply with exactly: OK") on every iteration, on purpose — so the
  * generated text can never be used to tell turns apart. The harness instead
  * diffs the OpenCode message-id set before/after sending: any assistant
@@ -42,7 +42,7 @@ export function findNewAssistantMessage(
 }
 
 /**
- * `docs/specs/turn-latency.md` §5's "model generation": assistant created ->
+ * The turn-latency spec (PR #7840) §5's "model generation": assistant created ->
  * completed. Both timestamps come from the SAME clock (the box's OpenCode
  * process), so this delta is immune to client/box clock skew — unlike any
  * comparison against a client-observed wall-clock time. Null while still

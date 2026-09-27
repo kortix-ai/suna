@@ -1,7 +1,7 @@
 /**
  * Statistics for the latency benchmark's repeated-run report.
  *
- * `docs/specs/turn-latency.md`'s own §1 measurement found a 2.7x spread
+ * The turn-latency spec (PR #7840)'s own §1 measurement found a 2.7x spread
  * across three identical prompts on one warm box — a single run proves
  * nothing. `pnpm test -- --latency` runs >=5 iterations and reports median
  * and spread here, never one number. Pure and clock-free, so it is unit

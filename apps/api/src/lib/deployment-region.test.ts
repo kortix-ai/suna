@@ -1,6 +1,6 @@
 // Unit tests for best-effort deployment-region detection.
 //
-// docs/specs/turn-latency.md §1's own baseline turned out to be dominated by
+// The turn-latency spec (PR #7840) §1's own baseline turned out to be dominated by
 // geography, not code: dev runs the API in us-west-2 against a database in
 // us-east-2 (~45-85x prod's colocated latency on the SAME query). A benchmark
 // that does not say where the two halves live is unreadable — this is what

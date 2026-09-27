@@ -1,5 +1,5 @@
 // Unit tests for ProvisionTimeline itself. Surfacing a timeline on the wire
-// (docs/specs/turn-latency.md §5) is covered separately by
+// (the turn-latency spec (PR #7840) §5) is covered separately by
 // `lib/server-timing.test.ts` (`recordTurnStageMarks`/`formatTurnStageEntries`)
 // — see the module doc at the bottom of provision-timeline.ts for why that
 // lives there instead of a second header mechanism here.

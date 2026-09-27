@@ -1,7 +1,7 @@
 /**
  * Best-effort AWS region for THIS API process and for its database.
  *
- * ─── Why (docs/specs/turn-latency.md, 2026-09-27) ───────────────────────────
+ * ─── Why (the turn-latency spec (PR #7840), 2026-09-27) ───────────────────────────
  * The spec's own §1 baseline turned out to be dominated by geography: dev
  * runs the API in us-west-2 against a database in us-east-2 — every
  * authenticated read crosses a continent and costs 45-85x the SAME query

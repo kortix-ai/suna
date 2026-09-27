@@ -191,7 +191,7 @@ describe('Server-Timing header', () => {
 });
 
 /**
- * `docs/specs/turn-latency.md` §5: the turn-path's own stage breakdown
+ * The turn-latency spec (PR #7840) §5: the turn-path's own stage breakdown
  * (`ProvisionTimeline` — `apps/api/src/platform/services/provision-timeline.ts`)
  * rides the SAME `Server-Timing` header as `auth`/`db`/`git`/`http`, not a
  * second header. Each mark is namespaced `turnstage-<label>` so the benchmark

@@ -1693,7 +1693,7 @@ export async function forwardToSandbox(
       if (promptDelivery) {
         ptl.mark('turn-accept');
         const summary = ptl.log({ path: remainingPath, status: upstream.status });
-        // docs/specs/turn-latency.md §5: put the same breakdown on the wire via
+        // The turn-latency spec (PR #7840) §5: put the same breakdown on the wire via
         // the existing Server-Timing mechanism (lib/server-timing.ts), not a
         // second header — see that module's doc for why.
         recordTurnStageMarks(summary.marks);

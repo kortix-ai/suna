@@ -1,5 +1,5 @@
 /**
- * Judgment logic for `docs/specs/turn-latency.md` §2's warm-turn budget.
+ * Judgment logic for the turn-latency spec (PR #7840) §2's warm-turn budget.
  *
  * The API records one `TimelineMark` per stage of the send path
  * (`apps/api/src/platform/services/provision-timeline.ts`,
@@ -66,7 +66,7 @@ export interface StageBudget {
   totalMs: number;
 }
 
-/** `docs/specs/turn-latency.md` §2, the warm-session-unchanged-state row. This
+/** The turn-latency spec (PR #7840) §2, the warm-session-unchanged-state row. This
  * is a COLOCATED bar: it assumes the API and its database share a region. */
 export const WARM_TURN_BUDGET: StageBudget = {
   preflightMs: 60,

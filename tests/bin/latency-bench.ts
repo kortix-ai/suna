@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Turn-latency benchmark — docs/specs/turn-latency.md §5 acceptance:
+ * Turn-latency benchmark — the turn-latency spec (PR #7840) §5 acceptance:
  *
  *   pnpm test -- --latency --target <origin>
  *

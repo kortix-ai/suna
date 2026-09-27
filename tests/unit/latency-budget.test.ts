@@ -12,7 +12,7 @@ import {
 } from '../src/core/latency-budget';
 
 /**
- * `docs/specs/turn-latency.md` §2's budget for a warm session whose state has
+ * The turn-latency spec (PR #7840) §2's budget for a warm session whose state has
  * not changed: pre-flight (auth, load, authorize, fingerprint compare) ≤60ms,
  * the API→box delivery hop ≤60ms, ≤150ms total. The API emits its own stage
  * breakdown as `ProvisionTimeline.summary()` — one mark per
@@ -223,7 +223,7 @@ describe('parseServerTimingTurnMarks', () => {
 });
 
 /**
- * `docs/specs/turn-latency.md` §2's 150ms budget is a colocated bar (prod:
+ * The turn-latency spec (PR #7840) §2's 150ms budget is a colocated bar (prod:
  * API and database in the same AWS region). Measured server-side via
  * `Server-Timing` on dev (API us-west-2, database us-east-2): the SAME
  * `/accounts/me` query costs 24ms colocated in prod vs 2084ms split in dev —

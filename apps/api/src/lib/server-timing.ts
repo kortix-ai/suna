@@ -120,7 +120,7 @@ export function formatStageEntries(stages: Partial<Record<TimingStage, StageSnap
 
 // ─── Turn-path stage marks (ProvisionTimeline) ─────────────────────────────
 //
-// docs/specs/turn-latency.md §5: `apps/api/src/platform/services/
+// The turn-latency spec (PR #7840) §5: `apps/api/src/platform/services/
 // provision-timeline.ts` records one mark per stage of the send path
 // (`load-sandbox`, `agent-switch`, `config-converge`, `model-catalog-converge`,
 // `ingress`, `env-sync`, `wire-id-read`, `turn-begin`, `upstream`,

@@ -507,7 +507,7 @@ const HealthSchema = z
     scheduler_leader: z.boolean(),
     trigger_scheduler: z.record(z.string(), z.unknown()),
     // Best-effort deployment topology, resolved once at import time (see
-    // lib/deployment-region.ts). docs/specs/turn-latency.md's own baseline
+    // lib/deployment-region.ts). the turn-latency spec (PR #7840)'s own baseline
     // turned out to be dominated by a us-west-2 API against a us-east-2
     // database, not by the code path — this lets `pnpm test -- --latency`
     // report WHERE the two halves live instead of just a duration. Neither

@@ -8,7 +8,7 @@ import {
 
 /**
  * Correlating a `prompt_async` call to the assistant reply it produced.
- * `docs/specs/turn-latency.md`'s own prompt ("Reply with exactly: OK") is
+ * The turn-latency spec (PR #7840)'s own prompt ("Reply with exactly: OK") is
  * identical on every iteration, so the harness cannot tell turns apart by
  * text — it diffs the known message-id set instead, matching the convention
  * `tests/src/flows/session-thread-reliability.flow.ts` already uses for

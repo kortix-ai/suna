@@ -102,7 +102,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApiFullOnly = args.includes('--target-api-full');
   const targetBrowserFullOnly = args.includes('--target-browser-full');
-  // §5 of docs/specs/turn-latency.md: `pnpm test -- --latency --target <origin>`.
+  // §5 of the turn-latency spec (PR #7840): `pnpm test -- --latency --target <origin>`.
   // Deliberately NOT one of DEPLOYED_TARGET_MODES below — that preflight pins
   // staging.kortix.com by hostname (resolveTargetSmokeConfig), but this lane's
   // whole point is to run against an arbitrary deployed origin (dev today,

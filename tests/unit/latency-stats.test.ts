@@ -25,7 +25,7 @@ describe('computeStats', () => {
   });
 
   it('reproduces the spec’s own three-run baseline spread', () => {
-    // send -> model starts: 4.90s, 2.54s, 7.03s (docs/specs/turn-latency.md §1)
+    // send -> model starts: 4.90s, 2.54s, 7.03s (the turn-latency spec (PR #7840) §1)
     const stats = computeStats([4900, 2540, 7030]);
     expect(stats.min).toBe(2540);
     expect(stats.max).toBe(7030);
