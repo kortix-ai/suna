@@ -5,7 +5,8 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { ManagedProviderBox, SandboxExecOptions, SandboxExecResult } from './index';
+import { currentInstanceId } from '../../projects/instance-scope';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
@@ -92,6 +93,19 @@ export function managedSandboxLabels(workloadType?: SandboxWorkloadType): Record
     'kortix.managed': 'true',
     'kortix.env': config.INTERNAL_KORTIX_ENV,
     ...(workloadType === 'app' ? { 'kortix.workload': workloadType } : {}),
+  };
+}
+
+/**
+ * Labels for a box `create()` provisions: the managed labels plus the owner
+ * stamp the orphan reaper reads (`providerBoxOwnedByThisInstance`). Kept out of
+ * `managedSandboxLabels`, which is also a list filter.
+ */
+export function sessionSandboxLabels(workloadType?: SandboxWorkloadType): Record<string, string> {
+  const instance = currentInstanceId();
+  return {
+    ...managedSandboxLabels(workloadType),
+    ...(instance ? { 'kortix.instance': instance } : {}),
   };
 }
 import type {
@@ -245,7 +259,7 @@ export class DaytonaProvider implements SandboxProvider {
           // API/tunnel that created it dies. Intervals are env-tunable
           // (KORTIX_SANDBOX_AUTO*).
           ...daytonaLifecycle(opts.autoStopInterval),
-          labels: managedSandboxLabels(workloadType),
+          labels: sessionSandboxLabels(workloadType),
           public: false,
         },
         { timeout: createTimeoutSeconds },
@@ -417,14 +431,12 @@ export class DaytonaProvider implements SandboxProvider {
    * createdAt so the reaper can age-gate (never stop a box inside its grace
    * window, which would race a box mid-provision before its DB row lands).
    */
-  async listManagedRunningSandboxes(): Promise<
-    Array<{ externalId: string; createdAt: Date | null }>
-  > {
+  async listManagedRunningSandboxes(): Promise<ManagedProviderBox[]> {
     // Bounds the WHOLE paginated iteration, not just one page — the async
     // generator can page indefinitely if a later page's request hangs.
     return withTimeout(
       (async () => {
-        const out: Array<{ externalId: string; createdAt: Date | null }> = [];
+        const out: ManagedProviderBox[] = [];
         for await (const box of getDaytona().list({
           states: [SandboxState.STARTED],
           labels: managedSandboxLabels(),
@@ -436,7 +448,12 @@ export class DaytonaProvider implements SandboxProvider {
             (box as { createdAt?: string | Date }).createdAt ??
             (box as { info?: { createdAt?: string | Date } }).info?.createdAt ??
             null;
-          out.push({ externalId, createdAt: raw ? new Date(raw) : null });
+          const stamp = (box as { labels?: Record<string, string> }).labels?.['kortix.instance'];
+          out.push({
+            externalId,
+            createdAt: raw ? new Date(raw) : null,
+            instance: typeof stamp === 'string' && stamp !== '' ? stamp : null,
+          });
         }
         return out;
       })(),

@@ -351,14 +351,24 @@ export interface SandboxProvider {
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
   /**
-   * List the running boxes this deployment owns, for the orphan-box reaper
+   * List the running boxes of this environment, for the orphan-box reaper
    * (boxes still running on the provider with no live DB row). OPTIONAL: a
    * provider that can't enumerate simply omits it and the reaper skips that
    * provider. Implementations MUST scope the result to THIS environment
-   * (the provider org may be shared across prod/dev/local) and return
-   * `createdAt` so the reaper can age-gate.
+   * (the provider org may be shared across prod/dev/local), return
+   * `createdAt` so the reaper can age-gate, and return the box's `instance`
+   * stamp so the reaper can apply `providerBoxOwnedByThisInstance`.
    */
-  listManagedRunningSandboxes?(): Promise<Array<{ externalId: string; createdAt: Date | null }>>;
+  listManagedRunningSandboxes?(): Promise<ManagedProviderBox[]>;
+}
+
+/** One running box from `listManagedRunningSandboxes`. */
+export interface ManagedProviderBox {
+  externalId: string;
+  /** Null when unreadable: the reaper never stops a box whose age it cannot establish. */
+  createdAt: Date | null;
+  /** The `KORTIX_INSTANCE_ID` stamped at create, or null for an unstamped box. */
+  instance: string | null;
 }
 
 /**

@@ -42,7 +42,7 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { ManagedProviderBox, SandboxExecOptions, SandboxExecResult } from './index';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
@@ -224,23 +224,6 @@ function isMissingSandboxError(error: unknown): boolean {
     message.includes('no such sandbox') ||
     message.includes('sandbox does not exist')
   );
-}
-
-/**
- * Whether the orphan-box reaper may treat a listed provider box as this
- * instance's. Stricter than `sandboxBelongsToThisInstance`, which keeps an
- * UNSTAMPED database row everyone's: that rule is safe for a row, because the
- * row is in this instance's own database. A provider box is not. Every PR
- * preview shares one Platinum org and one `kortix.env=preview` tag, each with
- * its own database, and a box a preview created before the stamp existed has
- * no row here. Counting it as ours would let one preview's orphan reaper stop
- * another preview's live sessions. So, when this instance has an id, only a box
- * that carries exactly that id is ours.
- */
-export function providerBoxBelongsToThisInstance(stamped: unknown): boolean {
-  const mine = currentInstanceId();
-  if (!mine) return true;
-  return typeof stamped === 'string' && stamped === mine;
 }
 
 /**
@@ -782,10 +765,8 @@ export class PlatinumProvider implements SandboxProvider {
    * is shared across prod/dev/local, and an unscoped sweep would stop other
    * environments' boxes. A row without the marker is skipped, never reaped.
    */
-  async listManagedRunningSandboxes(): Promise<
-    Array<{ externalId: string; createdAt: Date | null }>
-  > {
-    const out: Array<{ externalId: string; createdAt: Date | null }> = [];
+  async listManagedRunningSandboxes(): Promise<ManagedProviderBox[]> {
+    const out: ManagedProviderBox[] = [];
     const limit = 100;
     // Bounded page count as well as page size: a paginator that never reports
     // `has_more: false` must not spin this sweep forever.
@@ -799,9 +780,6 @@ export class PlatinumProvider implements SandboxProvider {
         const metadata = sandbox.metadata ?? {};
         if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
-        // Instance scope beside the env scope: another instance's box is not
-        // ours to stop. No-op when KORTIX_INSTANCE_ID is unset.
-        if (!providerBoxBelongsToThisInstance(metadata['kortix.instance'])) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
         const createdAt = rawCreatedAt ? new Date(rawCreatedAt) : null;
@@ -810,6 +788,8 @@ export class PlatinumProvider implements SandboxProvider {
           // An unparseable timestamp reads as unknown, and the reaper skips a
           // box whose age it cannot establish.
           createdAt: createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null,
+          // Ownership is the reaper's rule (`providerBoxOwnedByThisInstance`).
+          instance: typeof metadata['kortix.instance'] === 'string' ? metadata['kortix.instance'] : null,
         });
       }
       if (!body.has_more || rows.length === 0) break;

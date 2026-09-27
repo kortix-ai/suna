@@ -28,7 +28,11 @@ let infoState: 'running' | 'paused' | 'missing' = 'running';
 let infoEndAt: Date | null = null;
 let infoReads = 0;
 let infoFactory: () => void | Promise<void> = () => {};
-let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
+let listed: Array<{
+  sandboxId: string;
+  startedAt: Date | null;
+  metadata?: Record<string, string>;
+}> = [];
 let listOpts: Record<string, unknown> | undefined;
 let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) =>
   fakeSandbox(sandboxId);
@@ -984,8 +988,8 @@ describe('E2B provider lifecycle', () => {
     const provider = new E2BProvider();
 
     expect(await provider.listManagedRunningSandboxes()).toEqual([
-      { externalId: 'sb-1', createdAt: new Date('2026-07-13T12:00:00Z') },
-      { externalId: 'sb-2', createdAt: null },
+      { externalId: 'sb-1', createdAt: new Date('2026-07-13T12:00:00Z'), instance: null },
+      { externalId: 'sb-2', createdAt: null, instance: null },
     ]);
     expect(listOpts).toMatchObject({
       query: {
@@ -993,5 +997,38 @@ describe('E2B provider lifecycle', () => {
         state: ['running'],
       },
     });
+  });
+
+  test('the orphan reaper list reports each box\'s instance stamp', async () => {
+    listed = [
+      { sandboxId: 'sb-local', startedAt: null, metadata: { kortix_instance: 'primary' } },
+      { sandboxId: 'sb-deployed', startedAt: null, metadata: {} },
+    ];
+
+    expect(await new E2BProvider().listManagedRunningSandboxes()).toEqual([
+      { externalId: 'sb-local', createdAt: null, instance: 'primary' },
+      { externalId: 'sb-deployed', createdAt: null, instance: null },
+    ]);
+  });
+
+  test('create stamps the box with KORTIX_INSTANCE_ID, and a deployed create stamps nothing', async () => {
+    const mutable = config as { KORTIX_INSTANCE_ID?: string };
+    const original = mutable.KORTIX_INSTANCE_ID;
+    const provider = new E2BProvider();
+    const create = () =>
+      provider.create({ accountId: 'acc-1', userId: 'usr-1', name: 's', envVars: { KORTIX_TOKEN: 't' } });
+    try {
+      mutable.KORTIX_INSTANCE_ID = 'primary';
+      createFactory = () => fakeSandbox('sb-local');
+      await create();
+      expect((createdOpts?.metadata as Record<string, string>).kortix_instance).toBe('primary');
+
+      mutable.KORTIX_INSTANCE_ID = undefined;
+      createFactory = () => fakeSandbox('sb-deployed');
+      await create();
+      expect(createdOpts?.metadata).not.toHaveProperty('kortix_instance');
+    } finally {
+      mutable.KORTIX_INSTANCE_ID = original;
+    }
   });
 });

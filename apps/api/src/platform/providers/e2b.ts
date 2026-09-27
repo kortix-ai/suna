@@ -1,6 +1,7 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { ManagedProviderBox, SandboxExecOptions, SandboxExecResult } from './index';
+import { currentInstanceId } from '../../projects/instance-scope';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
@@ -61,6 +62,7 @@ const KORTIX_APPD_HEALTH_WAIT =
   'sleep 1; done; exit 1';
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';
+const INSTANCE_METADATA = 'kortix_instance';
 // The E2B SDK accepts requestTimeoutMs, but a live kill call remained pending
 // after that budget. This outer timer bounds all permanent-removal call sites.
 const E2B_REMOVE_TIMEOUT_MS = configuredTimeoutMs('KORTIX_E2B_REMOVE_TIMEOUT_MS', 25_000, 1_000);
@@ -459,6 +461,8 @@ export class E2BProvider implements SandboxProvider {
       ...opts.envVars,
     };
     assertWorkloadCredential(this.name, opts, envVars);
+    // Owner stamp the orphan reaper reads (`providerBoxOwnedByThisInstance`).
+    const instance = currentInstanceId();
 
     const sandbox = await Sandbox.create(template, {
       ...apiOpts(),
@@ -466,6 +470,7 @@ export class E2BProvider implements SandboxProvider {
       metadata: {
         [MANAGED_METADATA]: 'true',
         [ENV_METADATA]: config.INTERNAL_KORTIX_ENV,
+        ...(instance ? { [INSTANCE_METADATA]: instance } : {}),
         kortix_account_id: opts.accountId,
         kortix_created_by: opts.userId,
         ...(workloadType === 'app' ? { kortix_workload: workloadType } : {}),
@@ -781,9 +786,7 @@ export class E2BProvider implements SandboxProvider {
     if (status === 'stopped') await this.start(externalId);
   }
 
-  async listManagedRunningSandboxes(): Promise<
-    Array<{ externalId: string; createdAt: Date | null }>
-  > {
+  async listManagedRunningSandboxes(): Promise<ManagedProviderBox[]> {
     const paginator = Sandbox.list({
       ...apiOpts(),
       limit: 100,
@@ -792,10 +795,15 @@ export class E2BProvider implements SandboxProvider {
         state: ['running'],
       },
     });
-    const result: Array<{ externalId: string; createdAt: Date | null }> = [];
+    const result: ManagedProviderBox[] = [];
     while (paginator.hasNext) {
       for (const sandbox of await paginator.nextItems(apiOpts())) {
-        result.push({ externalId: sandbox.sandboxId, createdAt: sandbox.startedAt ?? null });
+        const stamp = sandbox.metadata?.[INSTANCE_METADATA];
+        result.push({
+          externalId: sandbox.sandboxId,
+          createdAt: sandbox.startedAt ?? null,
+          instance: typeof stamp === 'string' && stamp !== '' ? stamp : null,
+        });
       }
     }
     return result;

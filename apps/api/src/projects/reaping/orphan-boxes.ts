@@ -12,6 +12,12 @@
  * Safety:
  *  - Scoped to this env via provider labels (the org is shared across
  *    prod/dev/local) — each provider adapter owns that filter.
+ *  - Scoped to this INSTANCE by the box's stamp: a box is stopped only by the
+ *    instance that stamped it, and a deployed control plane owns only
+ *    unstamped boxes (`providerBoxOwnedByThisInstance`). A local stack with no
+ *    instance id on a loopback database reaps nothing (`orphanReapRefusal`).
+ *    Env scoping alone is not ownership: 2026-09-27 a local stack on the dev
+ *    tag stopped deployed-dev boxes every 5 minutes for at least two days.
  *  - keepSet = every box the DB considers live (active/provisioning) OR touched
  *    within ORPHAN_KEEP_RECENT_MS, so an in-flight session is never stopped.
  *  - Age grace: a box younger than ORPHAN_BOX_GRACE_MS (or whose createdAt we
@@ -26,6 +32,7 @@ import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
+import { orphanReapRefusal, providerBoxOwnedByThisInstance } from '../instance-scope';
 import { REAP_CONCURRENCY } from '../reaper-constants';
 import { reconcileSandboxStoppedByExternalId } from './sandbox-state-sync';
 
@@ -40,20 +47,31 @@ export interface OrphanReapResult {
   errors: number;
 }
 
+let refusalLogged = false;
+
 export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanReapResult> {
   const zero: OrphanReapResult = { listed: 0, orphans: 0, stopped: 0, errors: 0 };
   if (process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED === 'false') return zero;
+  const refusal = orphanReapRefusal();
+  if (refusal) {
+    if (!refusalLogged) console.warn(`[reaper] orphan-box sweep disabled: ${refusal}`);
+    refusalLogged = true;
+    return zero;
+  }
   const boxes: Array<{
     provider: ProviderName;
     externalId: string;
     createdAt: Date | null;
+    instance: string | null;
   }> = [];
   for (const providerName of config.ALLOWED_SANDBOX_PROVIDERS) {
     try {
       const provider = getProvider(providerName);
       if (!provider.listManagedRunningSandboxes) continue;
       const listed = await provider.listManagedRunningSandboxes();
-      boxes.push(...listed.map((box) => ({ provider: providerName, ...box })));
+      boxes.push(
+        ...listed.map((box) => ({ ...box, provider: providerName, instance: box.instance ?? null })),
+      );
     } catch (err) {
       // One provider control-plane outage must not suppress orphan cleanup on
       // the other configured providers.
@@ -118,6 +136,7 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   const cutoff = now.getTime() - ORPHAN_BOX_GRACE_MS;
   const orphans = boxes.filter(
     (box) =>
+      providerBoxOwnedByThisInstance(box.instance) &&
       !keep.has(`${box.provider}:${box.externalId}`) &&
       box.createdAt != null &&
       box.createdAt.getTime() <= cutoff,
