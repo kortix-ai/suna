@@ -93,7 +93,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // disagreed with the server about what the account could do. `plan` and
   // `tier` below now report the resolved view; `subscription` keeps the stored
   // one for wire compatibility.
-  const resolved = await resolveAccountBilling(accountId, { row: sub });
+  // Started here, awaited with the reads below: none of them needs it.
+  const resolvedPending = resolveAccountBilling(accountId, { row: sub });
 
   const fetchInstances = async (): Promise<InstanceSummary[]> => {
     try {
@@ -141,8 +142,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // All of these are independent of one another (each keyed only on accountId
   // and/or the `account` row already fetched above) — run them concurrently
   // instead of ~8 sequential round-trips.
-  const [credits, isAdmin, entitlements, autoTopup, instances, memberCount, usageThisPeriod, activeSessions] =
-    await Promise.all([
+  const [resolved, [credits, isAdmin, entitlements, autoTopup, instances, memberCount, usageThisPeriod, activeSessions]] =
+    await Promise.all([resolvedPending, Promise.all([
       getCreditSummary(account),
       isPlatformAdmin(accountId),
       // Entitlements must honor the self-serve enterprise DEMO flag, not just the
@@ -157,7 +158,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
         ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub?.billingCycleAnchor ?? null)).catch(() => null)
         : Promise.resolve(null),
       countActiveSessions(accountId).catch(() => 0),
-    ]);
+    ])]);
 
   let dailyRefresh = null;
   if (dailyConfig) {
