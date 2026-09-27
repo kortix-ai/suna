@@ -20,12 +20,25 @@ describe('mintWireMessageId', () => {
     });
   }
 
-  test('ignores ids that are not in the wire format', () => {
+  test('ignores ids whose prefix is not a 12-char lowercase-hex clock', () => {
+    // Each of these would lift the mint if it were read as a clock: the
+    // uppercase one decodes to 8bbf43300000, inside the 1 h lift window.
     const id = mintWireMessageId({
       nowMs: 1755500000000,
-      knownMessageIds: ['msg_1789569036829_abc123', 'optimistic-1', 'prt_x'],
+      knownMessageIds: ['msg_8BBF43300000ABCDEFGHIJKLMN', 'msg_zzzzzzzzzzzz_abc123', 'optimistic-1', 'prt_x'],
     });
     expect(WIRE_ID.exec(id)?.[1]).toBe('8bbf25e40000');
+  });
+
+  test('prefix rule: an id with a lowercase-hex clock prefix lifts the mint, whatever its tail', () => {
+    // Pinned on purpose. The thread orders ids by their prefix, so the mint
+    // must clear every id that sorts by that prefix, wire-shaped or not.
+    // (Before the SDK owned this rule, mobile read only full wire ids.)
+    const id = mintWireMessageId({
+      nowMs: 1755500000000,
+      knownMessageIds: ['msg_8bbf43300000_legacy'],
+    });
+    expect(WIRE_ID.exec(id)?.[1]).toBe('8bbf43300001');
   });
 
   test('sorts after the newest real message it lifts above', () => {

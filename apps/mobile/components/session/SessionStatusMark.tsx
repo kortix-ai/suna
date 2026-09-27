@@ -4,10 +4,16 @@
  * in shape as well as colour, so colour is never the only cue:
  *
  *   running   filled green dot
- *   stopped   hollow muted ring (also completed sessions)
+ *   done      muted check (a completed session)
+ *   stopped   hollow muted ring
  *   starting  pulsing yellow ring with a centre dot (static under reduced motion)
  *   failed    red diamond
- *   needs-you blue dot inside a soft blue halo
+ *   needs-you green dot inside a soft green halo
+ *   legacy    muted clock (a migrated session that has not run)
+ *
+ * Colours follow the status tone (`SESSION_LIST_STATUS`), as on web: green is
+ * for live or actionable only, so a finished session is muted and a session
+ * that needs you is green, never blue.
  *
  * A session is `needs-you` while the review inbox holds a pending item from
  * it (`lib/session/needs-you`): the drawer's Needs you group and the Sessions
@@ -29,6 +35,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Icon } from '@/components/ui/icon';
+import { CheckIcon, ClockIcon } from '@/lib/icons';
 import type { SessionDisplayStatus } from '@/lib/session/session-list';
 
 /** Yellow ring with a centre dot, pulsing. Static under reduced motion. */
@@ -75,10 +83,16 @@ export function SessionStatusMark({ status }: { status: SessionDisplayStatus }) 
       break;
     case 'needs-you':
       mark = (
-        <View className="size-4 items-center justify-center rounded-full bg-kortix-blue/20">
-          <View className="size-2 rounded-full bg-kortix-blue" />
+        <View className="size-4 items-center justify-center rounded-full bg-kortix-green/20">
+          <View className="size-2 rounded-full bg-kortix-green" />
         </View>
       );
+      break;
+    case 'done':
+      mark = <Icon as={CheckIcon} size={12} className="text-muted-foreground" />;
+      break;
+    case 'legacy':
+      mark = <Icon as={ClockIcon} size={12} className="text-muted-foreground" />;
       break;
     case 'stopped':
     default:

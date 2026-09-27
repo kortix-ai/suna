@@ -284,7 +284,7 @@ Every non-React subpath is classified in `SUBPATH_TIERS`
 |---|---|---|
 | `isomorphic-core` | root `.`, `./message-queue`, and the `src/deprecated/` shims (`./session`, `./turns`, `./files`, `./event-stream`, `./projects-client`, …) | `react`, `react-dom`, `next`, `zustand`, `@tanstack/react-query`, `'use client'`, **any `node:` import** |
 | `node-allowed` | `./server` only | same, except `node:async_hooks` is permitted (per-request config isolation) |
-| `browser-only` | `./internal/sync-store`, `./internal/server-store`, `./internal/sandbox-connection-store`, `./internal/opencode-pending-store`, `./internal/idb-sync-cache` — plus their un-prefixed `@deprecated` aliases | only `react` / `react-dom` / `next`. zustand and `window`/`localStorage`/`indexedDB` are expected here |
+| `browser-only` | `./internal/sync-store`, `./internal/server-store`, `./internal/sandbox-connection-store`, `./internal/opencode-pending-store`, `./internal/idb-sync-cache`, `./internal/diagnostics-store`, `./internal/managed-storage` — plus their un-prefixed `@deprecated` aliases | only `react` / `react-dom` / `next`. zustand and `window`/`localStorage`/`indexedDB` are expected here |
 
 If a test named `<subpath> (<tier>): no forbidden framework imports` fails, you
 did not "break a lint rule" — you broke the package for a host that has no
@@ -312,7 +312,7 @@ const url = process.env.BACKEND_URL || …                             // ❌ th
 
 ### The `browser-only` tier is internal machinery
 
-Those five zustand stores are `apps/web` machinery, imported directly at their
+Those `./internal/*` modules are `apps/web` machinery, imported directly at their
 use sites from `@kortix/sdk/internal/*`. They are outside semver. Nothing
 third-party should build on them, and they are **not** exposed on the
 `window.Kortix` global. Treat them as implementation detail that is
@@ -333,6 +333,10 @@ export map, so the tripwire manufactures one.
    plus its `.d.ts`. Workspace consumers resolve `src/`; npm consumers resolve
    `dist/`. Both must exist.
 3. **`SUBPATH_TIERS`** in `src/index.isomorphic.test.ts` — name, entry file, tier.
+
+A `browser-only` subpath also goes into `NOT_ROOT_REACHABLE` in
+`src/root-canonical.test.ts`, because the isomorphic root barrel cannot
+re-export it.
 
 The test `SUBPATH_TIERS matches package.json exports (minus "." and "./react")`
 asserts (1) and (3) are set-equal *and* that each `exports` value literally

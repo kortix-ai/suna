@@ -4,8 +4,19 @@
  */
 
 import { useMemo, useRef } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
+import {
+  createdSessionListRow,
+  upsertIntoSessionCache,
+  writeSessionLists,
+} from '@/lib/session/session-cache-write';
 import {
   nextProjectSessionsPollWindow,
   projectSessionsPollInterval,
@@ -159,6 +170,31 @@ export const projectKeys = {
   pipedreamAppMeta: (projectId: string | null | undefined, slug: string | null | undefined) =>
     ['pipedream-app-meta', projectId, slug] as const,
 };
+
+/**
+ * Both cached shapes of a project's session list, for a write that must reach
+ * every reader (lib/session/session-cache-write): the flat first page (the
+ * thread's lookups) and the paged list (the drawer, the Sessions page).
+ */
+export function sessionListKeys(projectId: string) {
+  return [
+    projectKeys.projectSessions(projectId),
+    projectKeys.projectSessionsPaged(projectId),
+  ] as const;
+}
+
+/**
+ * A created session, in the cached lists now: the top of page one, or in
+ * place where a refetch already brought it. A 202 (create only queued) is not
+ * a row and waits for the refetch.
+ */
+export function listCreatedSession(queryClient: QueryClient, projectId: string, created: unknown) {
+  const row = createdSessionListRow(created, projectId);
+  if (!row) return;
+  writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+    upsertIntoSessionCache(cached, row)
+  );
+}
 
 export function useAccounts(enabled = true) {
   return useQuery({
@@ -471,7 +507,10 @@ export function useCreateProjectSession(projectId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateProjectSessionInput) => createProjectSession(projectId!, input),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // The drawer and the Sessions page list it the moment the POST answers;
+      // the refetch below then replaces it with the list's own row.
+      if (projectId) listCreatedSession(queryClient, projectId, created);
       queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
     },
   });

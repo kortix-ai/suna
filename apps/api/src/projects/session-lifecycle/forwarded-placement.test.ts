@@ -8,9 +8,10 @@ import {
   mintLivePlacement,
   noteBoxClockSample,
   parsePlacementTip,
+  remintFloorTime,
   strandedPlacement,
 } from './forwarded-placement';
-import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
+import { WIRE_ID_TIME_SCALE, wireIdClockAt, wireIdTime } from '../wire-message-id';
 
 /** An id whose clock is `ms` (box clock) and counter `n`. */
 const id = (ms: number, n = 1, tail = 'AAAAAAAAAAAAAA') =>
@@ -274,5 +275,88 @@ describe('box clock + live placement', () => {
     const newest = wireIdTime(id(T + 500));
     const m = mintLivePlacement({ nowMs: T + 2_000, newestKnownTime: newest, boxSkewMs: 5 * 60 * 60_000, random: () => 0 });
     expect(m.lifted).toBe(false);
+  });
+});
+
+/** The instant the 48-bit id clock last wrapped to zero: 2026-08-14T11:19:55.136Z. */
+const WRAP_MS = 1_786_706_395_136;
+
+describe('across the 48-bit wrap', () => {
+  test('mintLivePlacement lifts to a post-wrap box clock above a pre-wrap floor', () => {
+    const newest = wireIdTime(id(WRAP_MS - 500));
+    const m = mintLivePlacement({ nowMs: WRAP_MS + 1_000, newestKnownTime: newest, boxSkewMs: 0, random: () => 0 });
+    expect(m.lifted).toBe(true);
+    expect(m.time).toBe(wireIdClockAt(WRAP_MS + 1_000));
+  });
+
+  test('strandedPlacement: a post-wrap assistant parented on a pre-wrap user strands a post-wrap prompt', () => {
+    const user1 = id(WRAP_MS - 15, 1, 'USER1USER1USER');
+    const asst1 = id(WRAP_MS - 5, 1, 'ASST1ASST1ASST');
+    const late = id(WRAP_MS + 2, 1, 'LATEUSERLATEUS');
+    const asst2 = id(WRAP_MS + 5, 1, 'ASST2ASST2ASST');
+    const v = strandedPlacement(
+      tipOf([
+        { id: user1, role: 'user' },
+        { id: asst1, role: 'assistant', parentID: user1 },
+        { id: late, role: 'user' },
+        { id: asst2, role: 'assistant', parentID: user1 },
+      ]),
+      late,
+    );
+    expect(v.stranded).toBe(true);
+    expect(v.strandedBy).toBe(asst2);
+    expect(v.newest).toBe(wireIdTime(asst2));
+  });
+
+  test('isLaterTipMessage: without stamps, the post-wrap id is later', () => {
+    const pre = { id: id(WRAP_MS - 5, 1, 'PREPREPREPREPR'), role: 'assistant' };
+    const post = { id: id(WRAP_MS + 5, 1, 'POSTPOSTPOSTPO'), role: 'assistant' };
+    expect(isLaterTipMessage(post, pre)).toBe(true);
+    expect(isLaterTipMessage(pre, post)).toBe(false);
+  });
+
+  test('remintFloorTime: a post-wrap transcript beats pre-wrap delivered and submitted floors', () => {
+    const nowMs = WRAP_MS + 120_000;
+    const floor = remintFloorTime({
+      transcript: { read: true, newest: BigInt('0x000007530000') },
+      deliveredNewest: BigInt('0xfffff8ad0000'),
+      submittedMessageId: 'msg_fffff15a0000AAAAAAAAAAAAAA',
+      nowMs,
+    });
+    expect(floor).toBe(BigInt('0x000007530000'));
+  });
+});
+
+describe('remintFloorTime', () => {
+  const nowMs = T;
+
+  test('an unread transcript floors at the un-backdated clock now', () => {
+    expect(remintFloorTime({ transcript: { read: false, newest: null }, deliveredNewest: null, submittedMessageId: null, nowMs })).toBe(
+      wireIdClockAt(nowMs),
+    );
+  });
+
+  test('the delivered floor wins when the transcript lags behind it', () => {
+    const transcriptNewest = wireIdTime(id(T - 5_000))!;
+    const delivered = wireIdTime(id(T - 1_000))!;
+    expect(
+      remintFloorTime({ transcript: { read: true, newest: transcriptNewest }, deliveredNewest: delivered, submittedMessageId: null, nowMs }),
+    ).toBe(delivered);
+  });
+
+  test('a submitted id far ahead of the clock is no floor', () => {
+    const transcriptNewest = wireIdTime(id(T - 5_000))!;
+    expect(
+      remintFloorTime({
+        transcript: { read: true, newest: transcriptNewest },
+        deliveredNewest: null,
+        submittedMessageId: 'msg_1a0d42f86f80SyntheticCli03',
+        nowMs,
+      }),
+    ).toBe(transcriptNewest);
+  });
+
+  test('nothing known: null', () => {
+    expect(remintFloorTime({ transcript: { read: true, newest: null }, deliveredNewest: null, submittedMessageId: null, nowMs })).toBeNull();
   });
 });

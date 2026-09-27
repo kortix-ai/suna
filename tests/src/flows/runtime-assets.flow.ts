@@ -13,7 +13,9 @@
  * Read-only, no fixtures, no sandboxes.
  */
 import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
+import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
 import type { CreatedProject, FlowContext } from '../core/types';
 
 async function createProjectPat(ctx: FlowContext, label: string) {
@@ -400,6 +402,18 @@ flow(
 // are proved in apps/kortix-sandbox-agent-server/src/__tests__/runtime-convergence.test.ts,
 // and the comparison and the memo in
 // apps/api/src/runtime-assets/__tests__/running-assets.test.ts.
+//
+// TEST DEFECT, fixed here: on a deployed target, `env.target !== 'local'` takes
+// `ctx.fixtures.project()` with no `seed`/`managedGit` down the SAME
+// database-only branch (`tests/src/fixtures/world.ts` `createProject`,
+// `canCreateDatabaseProject && (... || (!opts?.seed && !opts?.managedGit))`),
+// so its `repo_url` was unreachable from the real box exactly like the local
+// case above — every gate run hit `repo_materialization_failed` and burned the
+// full 600s wait. `bootBox` now takes a `{ seed: true }` project (real managed
+// Git repo, starter seeded), the same fixture `SESS-30` uses for the same
+// reason. The start-wait is also wrapped with
+// `markSessionReadinessTimeoutRetryable`, so a genuine transient boot timeout
+// gets the session-runtime retry class instead of failing the gate outright.
 
 /** What a box says it is RUNNING — the health `runtime.running` block. */
 interface RunningAssets {
@@ -423,26 +437,32 @@ interface BootedBox {
 /** Boot a session to `ready` and return its box's addresses. */
 async function bootBox(ctx: FlowContext, project: CreatedProject): Promise<BootedBox> {
   const session = await ctx.fixtures.session(project);
-  const started = await waitFor(
-    async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
-          params: { projectId: project.id, sessionId: session.id },
-          query: { wait_ms: '8000' },
-          timeoutMs: 25_000,
-        });
-      if (r.statusCode >= 500) return null;
-      r.status(200);
-      return r.json<any>();
-    },
-    {
-      until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-      timeoutMs: 600_000,
-      intervalMs: 3_000,
-      description: `session runtime ready for ${session.id}`,
-    },
-  );
+  let started: any;
+  try {
+    started = await waitFor(
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
+            params: { projectId: project.id, sessionId: session.id },
+            query: { wait_ms: '8000' },
+            timeoutMs: 25_000,
+          });
+        if (r.statusCode >= 500) return null;
+        r.status(200);
+        return r.json<any>();
+      },
+      {
+        until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+        timeoutMs: 600_000,
+        intervalMs: 3_000,
+        description: `session runtime ready for ${session.id}`,
+        retryOnError: isKe2eRetryableError,
+      },
+    );
+  } catch (error) {
+    throw markSessionReadinessTimeoutRetryable(error, session.id);
+  }
   const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
   const box = (suffix: string) => `/v1/p/${sandboxId}/8000${suffix}`;
   return {
@@ -500,7 +520,10 @@ flow(
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    // `seed: true`: a database-only project's `repo_url` cannot be cloned by a
+    // real box (it boots to `repo_materialization_failed` and never reaches
+    // `ready` — see the note above), so `bootBox` needs a real, clonable repo.
+    const project = await ctx.fixtures.project({ seed: true });
     let booted: BootedBox;
     let running: RunningAssets;
 
@@ -553,7 +576,8 @@ flow(
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    // `seed: true`: same reason as RTA-5 — `bootBox` needs a real, clonable repo.
+    const project = await ctx.fixtures.project({ seed: true });
     let booted: BootedBox;
     let conversationId = '';
     let before: RunningAssets;

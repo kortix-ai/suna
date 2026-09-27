@@ -40,6 +40,10 @@ export const changeRequestKeys = {
     ['project-files', 'change-requests', projectId, 'list'] as const,
   list: (projectId: string, status: ChangeRequestStatus | 'all') =>
     ['project-files', 'change-requests', projectId, 'list', status] as const,
+  /** One session's change requests, every status. Nested under `listScope`,
+   *  so each project and list invalidation reaches it as well. */
+  sessionList: (projectId: string, sessionId: string) =>
+    ['project-files', 'change-requests', projectId, 'list', 'session', sessionId] as const,
   detail: (projectId: string, crId: string) =>
     ['project-files', 'change-requests', projectId, crId] as const,
   diff: (projectId: string, crId: string) =>
@@ -156,6 +160,26 @@ export function useChangeRequests(
     queryKey: changeRequestKeys.list(projectId, status),
     queryFn: () => fetchChangeRequests(projectId, status),
     enabled: Boolean(projectId) && options?.enabled !== false,
+    staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+  });
+}
+
+/**
+ * The change requests ONE session opened, filtered by the server. A session's
+ * outcome cards poll this every 60 s per open thread; the unfiltered project
+ * list they used to poll measured 565 KB on prod.
+ */
+export function useSessionChangeRequests(
+  sessionId: string | undefined,
+  options?: { refetchInterval?: number },
+) {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  return useQuery<{ change_requests: ChangeRequest[] }>({
+    queryKey: changeRequestKeys.sessionList(projectId, sessionId ?? ''),
+    queryFn: () => fetchChangeRequests(projectId, 'all', { originSessionId: sessionId }),
+    enabled: Boolean(projectId) && Boolean(sessionId),
     staleTime: 5_000,
     refetchInterval: options?.refetchInterval,
   });

@@ -47,6 +47,36 @@ export const analyticsApp = makeOpenApiApp<AppEnv>();
 
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Stable code the API returns (HTTP 503) when the platform-wide credit-ledger
+ * aggregate behind GET /usage cannot complete inside the database statement
+ * budget — in practice a `statement_timeout` (SQLSTATE 57014) on the
+ * `kortix.credit_ledger` scan. This is an EXPECTED state for a large ledger,
+ * not a defect, so the response carries a typed code and a plain sentence
+ * instead of the raw Postgres `Failed query: select …` text. The SDK classifies
+ * this code as SILENT to `onError` (Sentry); see `ANALYTICS_UNAVAILABLE_CODE`
+ * in packages/sdk/src/core/http/api-client.ts. A genuine 503 with no such code
+ * still reports. Must stay in sync with the SDK constant.
+ */
+export const ANALYTICS_UNAVAILABLE_CODE = 'analytics_unavailable';
+
+/**
+ * User-facing sentence for the typed 503 above. Never contains SQL, a table
+ * name, or a parameter — the raw error is logged server-side only.
+ */
+const ANALYTICS_UNAVAILABLE_MESSAGE =
+  'Credit usage analytics is temporarily unavailable. Try again in a moment.';
+
+/** Typed 503 body. Shared by the two analytics routes' failure paths. */
+function analyticsUnavailableBody() {
+  return {
+    error: true,
+    code: ANALYTICS_UNAVAILABLE_CODE,
+    message: ANALYTICS_UNAVAILABLE_MESSAGE,
+    status: 503,
+  } as Record<string, unknown>;
+}
+
 /** Shared `?days=` query schema — documents the contract in the OpenAPI spec. */
 const daysQuery = z.object({
   days: z
@@ -149,7 +179,7 @@ analyticsApp.openapi(
     request: { query: daysQuery },
     responses: {
       200: json(ActivityResponseSchema, 'Daily activity series + summary'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      503: json(z.record(z.string(), z.any()), 'Analytics temporarily unavailable'),
       ...errors(401, 403),
     },
   }),
@@ -243,11 +273,12 @@ analyticsApp.openapi(
         200,
       );
     } catch (error) {
-      console.error('[admin/analytics/activity] failed', error);
-      return c.json(
-        { error: true, message: (error as Error).message, status: 500 } as Record<string, unknown>,
-        500,
-      );
+      // Log the real error (with its SQL) server-side; never put it in the
+      // response body. A raw `Failed query: select …` message reached the admin
+      // browser as an `ApiError` and paged Sentry — the failure mode this typed
+      // body exists to stop.
+      console.error('[admin/analytics/activity] failed — returning typed unavailability:', error);
+      return c.json(analyticsUnavailableBody(), 503);
     }
   },
 );
@@ -266,25 +297,28 @@ analyticsApp.openapi(
     request: { query: daysQuery },
     responses: {
       200: json(UsageResponseSchema, 'Daily credit-burn series + summary'),
-      500: json(z.record(z.string(), z.any()), 'Server error'),
+      503: json(z.record(z.string(), z.any()), 'Ledger aggregate temporarily unavailable'),
       ...errors(401, 403),
     },
   }),
   async (c) => {
+    const days = parseDays(c.req.query('days'));
+    const now = new Date();
+    const keys = dayKeys(days, now);
+    // creditLedger.createdAt is a `mode: 'string'` column — compare with ISO
+    // text, not a Date, or drizzle emits a parameter Postgres cannot coerce.
+    const sinceIso = windowStart(days, now).toISOString();
+    const ledgerDayBucket = utcDayBucket(creditLedger.createdAt);
+
+    // Debits only. Grants, refunds and purchases are positive and would
+    // cancel out real burn if summed together.
+    const debitWindow = and(gte(creditLedger.createdAt, sinceIso), lt(creditLedger.amount, '0'));
+
+    let kindRows: { date: string; kind: string | null; usd: number }[];
+    let payingRows: { date: string; payingAccounts: number }[];
+    let payingAccountsLast7d: number;
     try {
-      const days = parseDays(c.req.query('days'));
-      const now = new Date();
-      const keys = dayKeys(days, now);
-      // creditLedger.createdAt is a `mode: 'string'` column — compare with ISO
-      // text, not a Date, or drizzle emits a parameter Postgres cannot coerce.
-      const sinceIso = windowStart(days, now).toISOString();
-      const ledgerDayBucket = utcDayBucket(creditLedger.createdAt);
-
-      // Debits only. Grants, refunds and purchases are positive and would
-      // cancel out real burn if summed together.
-      const debitWindow = and(gte(creditLedger.createdAt, sinceIso), lt(creditLedger.amount, '0'));
-
-      const [kindRows, payingRows] = await Promise.all([
+      const [kinds, paying, last7d] = await Promise.all([
         db
           .select({
             date: ledgerDayBucket,
@@ -303,48 +337,56 @@ analyticsApp.openapi(
           .from(creditLedger)
           .where(debitWindow)
           .groupBy(ledgerDayBucket),
+
+        countPayingAccounts(now, 7),
       ]);
-
-      // Map each raw ledger kind onto compute / llm / other with the SAME
-      // classifier billing uses. An unrecognised kind classifies as null and is
-      // dropped rather than silently folded into "other" — see
-      // classifyLedgerKind for the kinds that count.
-      const ledgerRows: LedgerDayRow[] = [];
-      for (const row of kindRows) {
-        const category = classifyLedgerKind(row.kind);
-        if (!category) continue;
-        ledgerRows.push({
-          date: row.date,
-          category: category as SpendCategory,
-          usd: Number(row.usd) || 0,
-        });
-      }
-
-      const series = buildUsageDays(keys, ledgerRows, payingRows);
-      const payingAccountsLast7d = await countPayingAccounts(now, 7);
-
-      return c.json(
-        {
-          days: series,
-          summary: {
-            totalUsd: series.reduce((sum, d) => sum + d.totalUsd, 0),
-            computeUsd: series.reduce((sum, d) => sum + d.computeUsd, 0),
-            llmUsd: series.reduce((sum, d) => sum + d.llmUsd, 0),
-            otherUsd: series.reduce((sum, d) => sum + d.otherUsd, 0),
-            spendLast7d: trailingSum(series, (d) => d.totalUsd, 7),
-            spendPrev7d: trailingSum(series, (d) => d.totalUsd, 7, 7),
-            payingAccountsLast7d,
-          },
-        },
-        200,
-      );
+      kindRows = kinds;
+      payingRows = paying;
+      payingAccountsLast7d = last7d;
     } catch (error) {
-      console.error('[admin/analytics/usage] failed', error);
-      return c.json(
-        { error: true, message: (error as Error).message, status: 500 } as Record<string, unknown>,
-        500,
-      );
+      // The ledger is the largest table this dashboard touches and its
+      // platform-wide, time-windowed aggregate can exceed the 25s
+      // `statement_timeout` (measured: GET /usage 500 after 25022ms, SQLSTATE
+      // 57014). That is an expected capacity state for a large ledger, so
+      // return a typed 503 with a plain sentence — never the raw
+      // `Failed query: select …` text, which reached the browser as an
+      // `ApiError` and paged Sentry. Log the real error here for operators.
+      console.error('[admin/analytics/usage] ledger aggregate failed — typed 503:', error);
+      return c.json(analyticsUnavailableBody(), 503);
     }
+
+    // Map each raw ledger kind onto compute / llm / other with the SAME
+    // classifier billing uses. An unrecognised kind classifies as null and is
+    // dropped rather than silently folded into "other" — see
+    // classifyLedgerKind for the kinds that count.
+    const ledgerRows: LedgerDayRow[] = [];
+    for (const row of kindRows) {
+      const category = classifyLedgerKind(row.kind);
+      if (!category) continue;
+      ledgerRows.push({
+        date: row.date,
+        category: category as SpendCategory,
+        usd: Number(row.usd) || 0,
+      });
+    }
+
+    const series = buildUsageDays(keys, ledgerRows, payingRows);
+
+    return c.json(
+      {
+        days: series,
+        summary: {
+          totalUsd: series.reduce((sum, d) => sum + d.totalUsd, 0),
+          computeUsd: series.reduce((sum, d) => sum + d.computeUsd, 0),
+          llmUsd: series.reduce((sum, d) => sum + d.llmUsd, 0),
+          otherUsd: series.reduce((sum, d) => sum + d.otherUsd, 0),
+          spendLast7d: trailingSum(series, (d) => d.totalUsd, 7),
+          spendPrev7d: trailingSum(series, (d) => d.totalUsd, 7, 7),
+          payingAccountsLast7d,
+        },
+      },
+      200,
+    );
   },
 );
 

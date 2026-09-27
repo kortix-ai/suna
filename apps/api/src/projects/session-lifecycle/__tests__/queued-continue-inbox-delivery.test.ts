@@ -138,13 +138,22 @@ mock.module('../../../shared/db', () => ({
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
-            // The aggregate `readDeliveredWireIdFloor` runs: always one row,
-            // with a null when the session has never delivered anything.
-            // Keyed on the PROJECTION, not the table: the admission gate reads
-            // the same table for a different question, and answering it with a
-            // floor row would make every send look like it lost the order race.
-            if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
-              return [{ newest: deliveredFloor === null ? null : deliveredFloor.toString() }];
+            // The id read `readDeliveredWireIdFloor` runs: one row per earlier
+            // prompt, none when the session has never delivered anything; the
+            // SDK picks the newest on the ring. Keyed on the PROJECTION, not
+            // the table: the admission gate reads the same table for a
+            // different question, and answering it with a floor row would make
+            // every send look like it lost the order race.
+            if (table === sessionLifecycleCommands && projection && 'redelivered' in projection) {
+              return deliveredFloor === null
+                ? []
+                : [
+                    {
+                      submitted: null,
+                      redelivered: `msg_${deliveredFloor.toString(16).padStart(12, '0')}AAAAAAAAAAAAAA`,
+                      forwarded: null,
+                    },
+                  ];
             }
             if (
               table === sessionLifecycleCommands &&

@@ -309,33 +309,62 @@ const TOOLKIT_META_TTL_MS = 6 * 60 * 60_000;
 
 const toolkitMetaCache = new WeakMap<
   ComposioRuntime,
-  { at: number; bySlug: Promise<Map<string, CachedToolkit>> }
+  { at: number; bySlug: Promise<Map<string, CachedToolkit>>; answered: boolean; refreshing: boolean }
 >();
 
+async function loadToolkitMeta(
+  toolkits: NonNullable<ComposioRuntime['toolkits']>,
+): Promise<Map<string, CachedToolkit>> {
+  const page = await toolkits.get({ limit: 1000 });
+  const map = new Map<string, CachedToolkit>();
+  for (const toolkit of page) {
+    map.set(toolkit.slug.toLowerCase(), {
+      logo: toolkit.meta?.logo ?? null,
+      description: toolkit.meta?.description ?? null,
+      categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
+    });
+  }
+  return map;
+}
+
+/** Same stale-while-revalidate rule as `cachedCatalogCall`: past the TTL an
+ *  answered map is served at once and refreshed once in the background. */
 async function toolkitMetaBySlug(runtime: ComposioRuntime): Promise<Map<string, CachedToolkit>> {
   const cached = toolkitMetaCache.get(runtime);
   if (cached && Date.now() - cached.at < TOOLKIT_META_TTL_MS) return cached.bySlug;
   if (!runtime.toolkits) return new Map();
-
-  const bySlug = (async () => {
-    const page = await runtime.toolkits!.get({ limit: 1000 });
-    const map = new Map<string, CachedToolkit>();
-    for (const toolkit of page) {
-      map.set(toolkit.slug.toLowerCase(), {
-        logo: toolkit.meta?.logo ?? null,
-        description: toolkit.meta?.description ?? null,
-        categories: (toolkit.meta?.categories ?? []).map((category) => category.slug),
-      });
+  const toolkits = runtime.toolkits;
+  if (cached?.answered) {
+    if (!cached.refreshing) {
+      cached.refreshing = true;
+      loadToolkitMeta(toolkits).then(
+        (map) => {
+          if (toolkitMetaCache.get(runtime) !== cached) return;
+          toolkitMetaCache.set(runtime, {
+            at: Date.now(),
+            bySlug: Promise.resolve(map),
+            answered: true,
+            refreshing: false,
+          });
+        },
+        () => {
+          cached.refreshing = false;
+        },
+      );
     }
-    return map;
-  })();
-  toolkitMetaCache.set(runtime, { at: Date.now(), bySlug });
+    return cached.bySlug;
+  }
+
+  const entry = { at: Date.now(), bySlug: loadToolkitMeta(toolkits), answered: false, refreshing: false };
+  toolkitMetaCache.set(runtime, entry);
   try {
-    return await bySlug;
+    const map = await entry.bySlug;
+    entry.answered = true;
+    return map;
   } catch (err) {
     // Drop the poisoned entry so the next request retries instead of serving the
     // rejection for the whole TTL.
-    toolkitMetaCache.delete(runtime);
+    if (toolkitMetaCache.get(runtime) === entry) toolkitMetaCache.delete(runtime);
     console.warn('[composio] toolkit metadata unavailable, serving catalogue unenriched:', err);
     return new Map();
   }
@@ -361,6 +390,82 @@ export async function composioToolkitLogo(toolkit: string): Promise<string | nul
   } catch {
     return null;
   }
+}
+
+/**
+ * Deployment-wide cache of the two live Composio catalogue reads: a search of
+ * three or more characters (`sessions.create` + `session.toolkits`) and a
+ * category page (`toolkits.get`). Measured on dev-api 2026-09-26, each Discover
+ * keystroke or category click cost 300–920 ms of Composio round trips, on
+ * every request, for data that is identical for every project.
+ *
+ * Ten minutes, the same order as the 6 h snapshot's freshness needs; a
+ * toolkit Composio adds appears within that window. Single-flight per key, and
+ * a failed call is dropped so the next request retries. Keyed per runtime so
+ * an injected test runtime never shares entries.
+ *
+ * Stale-while-revalidate (2026-09-27): past the ten minutes, an answered entry
+ * is served at once and refreshed once in the background. Measured on dev-api,
+ * the first Customize → Connectors open after expiry waited 450-870 ms on
+ * Composio for a page the process already held. A failed refresh keeps the
+ * last answer and is retried by the next read. Past a day the entry is not
+ * served; the read waits for Composio as on a cold process.
+ */
+const CATALOG_PAGE_TTL_MS = 10 * 60_000;
+const CATALOG_PAGE_MAX_STALE_MS = 24 * 60 * 60_000;
+const CATALOG_PAGE_CACHE_MAX = 500;
+interface CatalogPageEntry {
+  at: number;
+  value: Promise<unknown>;
+  answered: boolean;
+  refreshing: boolean;
+}
+const catalogPageCache = new WeakMap<ComposioRuntime, Map<string, CatalogPageEntry>>();
+
+function cachedCatalogCall<T>(runtime: ComposioRuntime, key: string, load: () => Promise<T>): Promise<T> {
+  let entries = catalogPageCache.get(runtime);
+  if (!entries) {
+    entries = new Map();
+    catalogPageCache.set(runtime, entries);
+  }
+  const cache = entries;
+  const now = Date.now();
+  const hit = cache.get(key);
+  if (hit && now - hit.at < CATALOG_PAGE_TTL_MS) return hit.value as Promise<T>;
+  if (hit?.answered && now - hit.at < CATALOG_PAGE_MAX_STALE_MS) {
+    if (!hit.refreshing) {
+      hit.refreshing = true;
+      load().then(
+        (answer) => {
+          if (cache.get(key) !== hit) return;
+          cache.delete(key);
+          cache.set(key, { at: Date.now(), value: Promise.resolve(answer), answered: true, refreshing: false });
+        },
+        () => {
+          hit.refreshing = false;
+        },
+      );
+    }
+    return hit.value as Promise<T>;
+  }
+  if (cache.size >= CATALOG_PAGE_CACHE_MAX) {
+    // Map iteration is insertion order: drop the oldest entry.
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  const value = load();
+  const entry: CatalogPageEntry = { at: now, value, answered: false, refreshing: false };
+  cache.delete(key);
+  cache.set(key, entry);
+  value.then(
+    () => {
+      entry.answered = true;
+    },
+    () => {
+      if (cache.get(key) === entry) cache.delete(key);
+    },
+  );
+  return value;
 }
 
 export async function composioCatalogPage(input: {
@@ -399,13 +504,16 @@ export async function composioCatalogPage(input: {
   const category = input.category?.trim();
   if (category) {
     if (!runtime.toolkits) throw new Error('Composio toolkit catalogue is unavailable');
+    const toolkitsApi = runtime.toolkits;
     const [page, hidden] = await Promise.all([
-      runtime.toolkits.get({
-        category,
-        // The core SDK intentionally drops the provider cursor from this endpoint.
-        // Fetch the complete category so "View all" never becomes a first-page slice.
-        limit: 1000,
-      }),
+      cachedCatalogCall(runtime, `category\u0000${category}`, () =>
+        toolkitsApi.get({
+          category,
+          // The core SDK intentionally drops the provider cursor from this endpoint.
+          // Fetch the complete category so "View all" never becomes a first-page slice.
+          limit: 1000,
+        }),
+      ),
       hiddenToolkits,
     ]);
     const search = input.q?.trim().toLowerCase();
@@ -436,15 +544,20 @@ export async function composioCatalogPage(input: {
   if (query && query.length < 3) {
     return searchComposioCatalog({ ...input, q: query });
   }
-  const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
-    manageConnections: false,
-    sandbox: { enable: false },
-  });
+  // The discovery identity never connects anything, so a page is the same for
+  // every project and is cached deployment-wide (see `cachedCatalogCall`).
+  const pageKey = `search\u0000${query?.toLowerCase() ?? ''}\u0000${input.cursor ?? ''}\u0000${input.limit ?? ''}`;
   const [page, meta, hidden] = await Promise.all([
-    session.toolkits({
-      ...(input.q?.trim() ? { search: input.q.trim() } : {}),
-      ...(input.cursor ? { cursor: input.cursor } : {}),
-      ...(input.limit != null ? { limit: input.limit } : {}),
+    cachedCatalogCall(runtime, pageKey, async () => {
+      const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
+        manageConnections: false,
+        sandbox: { enable: false },
+      });
+      return session.toolkits({
+        ...(query ? { search: query } : {}),
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+        ...(input.limit != null ? { limit: input.limit } : {}),
+      });
     }),
     toolkitMetaBySlug(runtime),
     hiddenToolkits,
@@ -463,6 +576,21 @@ export async function composioCatalogPage(input: {
       };
     }),
   };
+}
+
+/** The page size of the web's Customize → Connectors discovery grid
+ *  (`CATALOG_PAGE_SIZE` in `apps/web/.../catalog/use-catalog.ts`). */
+const DISCOVERY_DEFAULT_PAGE_LIMIT = 48;
+
+/**
+ * Fill the first discovery page and the toolkit metadata before any user asks,
+ * so the first Customize → Connectors open on a fresh replica reads memory.
+ * Called once at boot, never awaited; a failure leaves the caches empty and the
+ * first request fills them as before.
+ */
+export async function warmComposioDiscovery(): Promise<void> {
+  if (!composioConfigured()) return;
+  await composioCatalogPage({ projectId: 'boot-warmup', limit: DISCOVERY_DEFAULT_PAGE_LIMIT });
 }
 
 /** Fetch public tool schemas without creating a connection-scoped auth identity. */

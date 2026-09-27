@@ -821,12 +821,24 @@ export function customRoleAllows(
 // ─── Object grants ──────────────────────────────────────────────────────────
 
 /**
- * Object types whose unscoped default is CLOSED for member-tier (mirrors the
- * `object_policies` seed: agent closed; skill/secret/app/trigger open). Kept as
- * a constant here because the memo's caching rule must not itself depend on a
- * DB read; `unscopedDefaultFor` stays the source of truth for the VERDICT.
+ * Object types where an EMPTY grant map must never be cached, because a first
+ * grant can still be written later and must take effect on every replica at
+ * once. `agent` is CLOSED by unscoped default (mirrors the `object_policies`
+ * seed): a stale empty map there reads as "still closed" and denies a member
+ * who was just granted an agent for one TTL (measured on dev 2026-08-19:
+ * create 403, then 201 ×3 after the TTL). `connection` is OPEN by unscoped
+ * default but narrowable (`20260926172248000_share_access_project_principal.sql`):
+ * before its first grant, "open" and "empty map" mean the same thing, but the
+ * FIRST grant flips that — an empty map read afterwards on a replica that has
+ * not seen the write means "still open to everyone", which is a stale
+ * over-grant for anyone the new grant was meant to exclude, not a harmless
+ * stale negative. `skill`/`secret`/`app`/`trigger` are OPEN by unscoped
+ * default and have no per-object grant writer today, so their empty map can
+ * never go stale and stays cache-eligible. Kept as a constant here because the
+ * memo's caching rule must not itself depend on a DB read;
+ * `unscopedDefaultFor` stays the source of truth for the VERDICT.
  */
-const CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent']);
+const NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection']);
 
 interface ObjectGrantPrincipal {
   principalType: string;
@@ -836,15 +848,14 @@ interface ObjectGrantPrincipal {
 /**
  * (project, objectType) -> objectId -> the principals granted it.
  *
- * The EMPTY map is cached only for object types whose unscoped default is OPEN
- * (skill, secret, app, trigger): there a stale empty map means "still open",
- * which is the state the caller already had. For CLOSED-by-default types (agent)
- * a stale empty map would mean "still closed" — invalidation is per-process, so
- * a member granted an agent kept getting 403 for one TTL on every replica that
- * had not seen the write (measured on dev 2026-08-19: create 403, then 201 ×3
- * after the TTL). One extra indexed query per uncached check is the price of a
- * grant taking effect on every replica at once — the same rule the legacy
- * `loadProjectResourceGrants` memo already applies (#6535).
+ * The EMPTY map is cached only for object types outside
+ * `NEVER_CACHE_EMPTY_OBJECT_TYPES` — invalidation is per-process (each replica
+ * busts its own cache on write), so caching an empty map for a type whose
+ * first grant can still narrow it leaves every OTHER replica serving the
+ * pre-grant state for up to one TTL. One extra indexed query per uncached
+ * check is the price of a grant taking effect on every replica at once — the
+ * same rule the legacy `loadProjectResourceGrants` memo already applies
+ * (#6535).
  */
 /**
  * `role_assignments.account_id` equals the account that owns `projectId`. A
@@ -888,7 +899,7 @@ const loadObjectGrants = ttlMemo({
     return map;
   },
   shouldCache: (map, _projectId, objectType) =>
-    map.size > 0 || !CLOSED_BY_DEFAULT_OBJECT_TYPES.has(objectType),
+    map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType),
 });
 registerProjectScopedMemo(loadObjectGrants);
 

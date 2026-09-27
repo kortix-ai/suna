@@ -62,10 +62,16 @@ export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry:
 // Returns the resolved (already-stored or freshly-fetched) name, or null, so
 // a caller that needs it for immediate display (the settings-page GET) doesn't
 // have to re-query after this writes it.
+//
+// `preloadedToken`: a caller iterating MANY bindings for the same project
+// (the channels/bindings list GET) resolves the bot token once and passes it
+// here, instead of every binding re-decrypting the same project secret. Absent
+// (the single-event dispatch/interactivity callers), the token loads as before.
 export async function backfillChannelName(
   teamId: string,
   channelId: string,
   projectId: string,
+  preloadedToken?: string | null,
 ): Promise<string | null> {
   if (!teamId || !channelId || !projectId) return null;
   try {
@@ -82,7 +88,7 @@ export async function backfillChannelName(
       .limit(1);
     if (!row) return null;
     if (row.channelName) return row.channelName;
-    const token = await loadSlackTokenForProject(projectId);
+    const token = preloadedToken !== undefined ? preloadedToken : await loadSlackTokenForProject(projectId);
     if (!token) return null;
     // Returns null for DMs (no `name` field on the conversation) — fine, the
     // UI's `channelName ?? channelId` fallback already handles that case.
