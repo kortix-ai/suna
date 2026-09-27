@@ -24,6 +24,11 @@
  * each tool call's input and output, so the card was a bare icon until the
  * computer woke; now the saved copy and the copy this device kept both draw
  * the command and its output exactly as the live transcript does.
+ *
+ * The fourth arm saves a turn that dispatched a sub-agent. A sub-agent runs in
+ * its own OpenCode session, and its row opens that transcript, which only the
+ * running computer could answer: while it was off, the view waited. Now saved
+ * history holds the sub-agent's transcript too, and the view draws its steps.
  */
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
@@ -399,6 +404,136 @@ test('34 — a saved tool call shows its command and output, from the server and
     await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
     await page.waitForTimeout(500); // the card's open animation, for the screenshot only
     await page.screenshot({ path: testInfo.outputPath('kept-tool-call.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+const SUBAGENT_TASK = 'Explore the source tree';
+const SUBAGENT_COMMAND = 'ls src';
+const SUBAGENT_REPLY = 'The sub-agent found two files.';
+
+/** One saved turn that dispatched a sub-agent, and the sub-agent's own transcript. */
+const savedSubagentTurn: SavedMessages = (root) => {
+  const created = Date.now() - 60_000;
+  const child = `ses_sub${root.slice(4, 20)}`;
+  const assistant = (session: string, id: string, parent: string, at: number) => ({
+    id,
+    sessionID: session,
+    parentID: parent,
+    role: 'assistant',
+    time: { created: at, completed: at + 1 },
+    agent: 'kortix',
+    mode: 'build',
+    providerID: 'kortix',
+    modelID: 'openai/gpt-5.6-sol',
+    path: { cwd: '/workspace', root: '/workspace' },
+    cost: 0,
+    tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+    finish: 'stop',
+  });
+  const text = (session: string, message: string, id: string, value: string) => ({
+    id,
+    sessionID: session,
+    messageID: message,
+    type: 'text',
+    text: value,
+  });
+  return [
+    {
+      info: { id: 'msg_000000000000000000000001', sessionID: root, role: 'user', time: { created }, agent: 'kortix' },
+      parts: [text(root, 'msg_000000000000000000000001', 'prt_sub_prompt', 'Delegate the exploration.')],
+    },
+    {
+      info: assistant(root, 'msg_000000000000000000000002', 'msg_000000000000000000000001', created + 1),
+      parts: [
+        {
+          id: 'prt_sub_reasoning',
+          sessionID: root,
+          messageID: 'msg_000000000000000000000002',
+          type: 'reasoning',
+          text: 'The tree is large, so a helper lists it.',
+          time: { start: created + 1, end: created + 1 },
+        },
+        {
+          id: 'prt_sub_task',
+          sessionID: root,
+          messageID: 'msg_000000000000000000000002',
+          type: 'tool',
+          tool: 'task',
+          callID: 'call_explore',
+          state: {
+            status: 'completed',
+            input: { description: SUBAGENT_TASK, prompt: 'List the source files.', subagent_type: 'general' },
+            output: 'Found two files.',
+            title: SUBAGENT_TASK,
+            metadata: { sessionId: child },
+            time: { start: created + 1, end: created + 5 },
+          },
+        },
+      ],
+    },
+    {
+      info: assistant(root, 'msg_000000000000000000000003', 'msg_000000000000000000000001', created + 6),
+      parts: [text(root, 'msg_000000000000000000000003', 'prt_sub_reply', SUBAGENT_REPLY)],
+    },
+    // The sub-agent's own session.
+    {
+      info: { id: 'msg_000000000000000000000101', sessionID: child, role: 'user', time: { created: created + 2 }, agent: 'general' },
+      parts: [text(child, 'msg_000000000000000000000101', 'prt_child_prompt', 'List the source files.')],
+    },
+    {
+      info: assistant(child, 'msg_000000000000000000000102', 'msg_000000000000000000000101', created + 3),
+      parts: [
+        {
+          id: 'prt_child_call',
+          sessionID: child,
+          messageID: 'msg_000000000000000000000102',
+          type: 'tool',
+          tool: 'bash',
+          callID: 'call_list_src',
+          state: {
+            status: 'completed',
+            input: { command: SUBAGENT_COMMAND, description: 'List the source files' },
+            output: 'main.ts\nutil.ts\n',
+            title: 'List the source files',
+            metadata: { exit: 0, description: 'List the source files' },
+            time: { start: created + 3, end: created + 4 },
+          },
+        },
+      ],
+    },
+  ];
+};
+
+test("34 — a saved sub-agent's steps open while the computer is off", async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'subagent', savedSubagentTurn);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    // The computer never comes up: the sub-agent's steps can only come from saved history.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(SUBAGENT_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+
+    // A finished turn folds its steps; the sub-agent row is one of them.
+    await page.getByText(/^Completed \d+ steps?$/).first().click();
+    await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
+    const view = page.getByRole('dialog');
+    await expect(view).toBeVisible();
+    await expect(view.getByText(SUBAGENT_COMMAND, { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(view.getByText('List the source files.', { exact: true })).toBeVisible();
+    await page.waitForTimeout(400); // the view's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('saved-subagent.png') });
   } finally {
     release();
     await page.unrouteAll({ behavior: 'ignoreErrors' });
