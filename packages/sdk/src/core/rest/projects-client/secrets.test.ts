@@ -355,7 +355,7 @@ test('an older server that omits both fields still parses', async () => {
 // carries a handle, the relay swaps it for the real value on an approved host,
 // and the policy is nothing but a host list. `inject` names a slot only for
 // legacy rows, so a host-list-only policy has to typecheck and has to reach the
-// wire unchanged — see docs/specs/2026-08-19-secrets-exposure-usage-model.md §6.
+// wire unchanged.
 test('setProjectSecretStrategy sends a host-list-only egress policy (no inject slot)', async () => {
   const egress_policy: SecretEgressPolicy = {
     rules: [{ host: 'api.stripe.com' }],

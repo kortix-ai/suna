@@ -81,8 +81,7 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
- * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
- * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
+ * fixed by `extractAgents` in `./agents.ts`, the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and remains refused.
  */
 export const MAX_SCHEMA_VERSION = 2;
@@ -138,7 +137,7 @@ export interface GitTriggerSpec {
   /**
    * For type=monitor only — the repo-relative command the platform supervises
    * 24/7 in the project's monitor box. Its stdout lines are the events;
-   * nothing else is. See docs/specs/2026-08-12-monitors.md.
+   * nothing else is.
    */
   run: string | null;
   /**
@@ -215,8 +214,7 @@ export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = [
  *
  * `'reuse'` for a monitor, `'fresh'` for cron/webhook. A monitor fires
  * repeatedly by design — a live log emits all day — so defaulting it to fresh
- * would mint one session per event. Spec: docs/specs/2026-08-12-monitors.md
- * §"Manifest surface".
+ * would mint one session per event.
  */
 export function defaultTriggerSessionMode(type: GitTriggerType): GitTriggerSessionMode {
   return type === 'monitor' ? 'reuse' : 'fresh';

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 /**
- * `kortix triggers` as a real process, for the third trigger type
- * (docs/specs/2026-08-12-monitors.md). `add` edits the LOCAL kortix.yaml, so
+ * `kortix triggers` as a real process, for the third trigger type.
+ * `add` edits the LOCAL kortix.yaml, so
  * those cases assert the file on disk; `ls`/`info` read the cloud, so those
  * cases assert the rendering of a served listing.
  */

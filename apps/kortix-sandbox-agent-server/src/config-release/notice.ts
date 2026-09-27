@@ -2,8 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname } from 'node:path'
 
 /**
- * Telling the SESSION, in words, which config it runs
- * (docs/specs/config-releases.md, "Telling the session").
+ * Telling the SESSION, in words, which config it runs.
  *
  * A config release is served from a read-only directory under
  * `/opt/kortix/config`. `/workspace` is a separate, editable checkout that may

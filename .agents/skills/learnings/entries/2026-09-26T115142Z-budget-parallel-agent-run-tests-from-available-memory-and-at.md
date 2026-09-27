@@ -16,8 +16,7 @@ guard reasons, and the stopped-turn UI.
 **Incident:** On 2026-09-25, a four-worker API suite exhausted a 12 GiB prod
 session box. OpenCode held 674 MB while the box reached 96% used. The guard
 stopped the turn; the detached suite continued and exited with test failures.
-A one-worker replay then retained 8.9 GiB before the last files.
-See `docs/incidents/2026-09-26-sandbox-api-test-memory.md`.
+A one-worker replay then retained 8.9 GiB before the last files. Fixed in PR #7731.
 
 **Enforcement:** `test-runner-contract.test.ts` executes worker selection and
 all file batches, including a failing middle batch;

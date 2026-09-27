@@ -23,7 +23,7 @@ const DOCKERFILE: Record<(typeof IMAGES)[number], string> = {
 // `${{ vars.CI_RUNNER_<tier> || '<blacksmith label>' }}`. Setting the variable
 // (e.g. to `ubuntu-latest`) moves that tier back to GitHub-hosted runners with
 // no code change — the only rollback that still works when Blacksmith itself
-// is what is broken, since a PR needs runners to merge. docs/runbooks/ci-runners.md
+// is what is broken, since a PR needs runners to merge.
 const RUNNER_L = "${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}";
 const RUNNER_L_ARM = "${{ vars.CI_RUNNER_L_ARM || 'blacksmith-8vcpu-ubuntu-2404-arm' }}";
 

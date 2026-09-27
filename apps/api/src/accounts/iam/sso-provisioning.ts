@@ -2,7 +2,7 @@
 // flow: instead of a Kortix operator running `supabase sso add` out of band, we
 // call Supabase's GoTrue admin SSO API server-side with the service-role key,
 // register the customer's IdP, and hand back the provider UUID the rest of the
-// SSO config keys off. See docs/ENTRA_SSO_SCIM_SETUP.md Part A.
+// SSO config keys off.
 
 import { config } from '../../config';
 

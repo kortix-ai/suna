@@ -68,7 +68,7 @@ export interface HarnessAbortAfterToolInput {
   messageId: string
 }
 
-/** The health `config` block. Spec: docs/specs/config-releases.md, "Health". */
+/** The health `config` block. */
 export interface HarnessConfigReleaseReport {
   release_id: string | null
   desired_release_id: string | null

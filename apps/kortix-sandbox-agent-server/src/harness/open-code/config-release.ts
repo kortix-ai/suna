@@ -38,8 +38,6 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check
 
 /**
  * Convergence: the daemon applies the release the API assigns.
- * Spec: docs/specs/config-releases.md, "Apply sequence", "Fallback chain",
- * "Health".
  *
  * The API decides. The daemon fetches the descriptor itself (a request body
  * never supplies it), verifies the archive against the descriptor's blob IDs,
@@ -55,9 +53,9 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check
  * NOT a step in it — OpenCode never boots from the session's checkout while
  * the feature is on.
  *
- * `workspace` is reachable only when config releases are OFF for the project
- * (docs/specs/config-releases.md, "Feature flag"), which is the pre-release
- * behaviour: OpenCode reads `<workspace>/<config dir>`. The API emits no
+ * `workspace` is reachable only when config releases are OFF for the project,
+ * which is the pre-release behaviour: OpenCode reads `<workspace>/<config dir>`.
+ * The API emits no
  * release block for such a session, so `workspace` never reaches a client.
  */
 export type ConfigSource = 'release' | 'workspace' | 'image-default'
@@ -440,8 +438,7 @@ export function noteRunningConfig(
 
 /**
  * `config_releases` is OFF for this project — per project, or platform-wide
- * through the operator kill switch (docs/specs/config-releases.md, "Feature
- * flag"). The API answered `403 feature_disabled`.
+ * through the operator kill switch. The API answered `403 feature_disabled`.
  *
  * This is the transition, and it must not strand a box that already runs a
  * release:

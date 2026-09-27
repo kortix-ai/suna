@@ -4,8 +4,8 @@
  * The ONLY caller is the monitor runner inside the project's own monitor box,
  * authenticating with that box's sandbox token. A monitor box has no
  * `session_sandboxes` row, so the token is scoped against
- * `project_monitor_boxes` (sandbox id ∧ project ∧ account ∧ live status) —
- * see docs/specs/2026-08-12-monitors.md §"Security model". No new authority is
+ * `project_monitor_boxes` (sandbox id ∧ project ∧ account ∧ live status).
+ * No new authority is
  * granted: the box can only append events to its own project's log.
  *
  * Accepted events are appended to `project_monitor_events`, which doubles as

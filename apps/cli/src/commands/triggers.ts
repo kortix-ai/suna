@@ -835,7 +835,7 @@ interface MonitorFields {
  * `parseMonitorFields` and `@kortix/manifest-schema`'s `validateMonitorTrigger`.
  * The CLI writes the manifest, so it must reject exactly what `kortix ship`
  * would reject — a manifest that only fails server-side is a worse error than
- * no manifest at all. Spec: docs/specs/2026-08-12-monitors.md.
+ * no manifest at all.
  */
 function parseMonitorFlags(
   tf: Record<string, string | undefined>,

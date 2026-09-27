@@ -75,7 +75,7 @@ export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STR
  * Additional Computers profile slugs are created through the connector API.
  * They never pass through manifest parsing because machine ids are account
  * control-plane identities, not repository configuration.
- * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
+ * See KORTIX-206. The pairs themselves are
  * canonically defined in `@kortix/manifest-schema` (imported above) — this
  * `export` just preserves this module's existing public surface, since
  * connector/manifest-crud.ts imports `RESERVED_SLUG_PROVIDERS` from here.
@@ -157,8 +157,7 @@ export interface ConnectorSpec {
   enabled: boolean;
   provider: ConnectorProvider;
   /** Credential storage mode. `shared` is the only mode — `per_user` (each
-   *  member brings their own) was removed 2026-07-05 (docs/specs/2026-07-05-
-   *  agent-first-config-unification.md §2.5). A manifest that still says
+   *  member brings their own) was removed 2026-07-05. A manifest that still says
    *  `credential = "per_user"` is tolerated (legacy, warning-only) but always
    *  resolves to `shared` here — it can never round-trip back into git. */
   credentialMode: 'shared';

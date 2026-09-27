@@ -14,7 +14,7 @@ import {
 import { dismissOnboarding, dismissWelcomeCard, selectAccountForUi } from '../helpers/ui';
 
 /**
- * docs/specs/config-releases.md, section "Web": the session header shows one
+ * The session header shows one
  * config state, derived from `GET /sessions/{id}/config`.
  *
  * The journey route-mocks that response, because a real fallback needs a live

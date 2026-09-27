@@ -9,7 +9,6 @@ import { useTranslations } from '@/i18n/use-translations';
  * and gets back a `kortix_oat_` token for them. The app pairs the client id and
  * secret with `createKortixAuth` from `@kortix/sdk/server`; everything else —
  * PKCE, consent, refresh, revoke — the SDK and `/v1/oauth` do between them.
- * Spec: `docs/specs/2026-08-26-sign-in-with-kortix.md`.
  *
  * **Why it sits in Tokens.** A client secret is a credential the account
  * issues to a machine, exactly like a service account token, and it answers to

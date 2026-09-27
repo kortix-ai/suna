@@ -3,7 +3,7 @@
  * catalog.ts), mounted at /v1/marketplace — a READ-ONLY browse of the
  * installable-item catalog (skills/agents/projects/templates), distinct from
  * the per-project install engine deleted by the marketplace-as-projects
- * rewrite (docs/specs/2026-07-13-marketplace-as-projects.md). `/items*` and
+ * rewrite. `/items*` and
  * `/marketplaces*` are fully public; `/sources` (the "Add a marketplace"
  * config) requires auth to read and admin to mutate — except a curated
  * FEATURED address, which any signed-in user may add (see the route's own

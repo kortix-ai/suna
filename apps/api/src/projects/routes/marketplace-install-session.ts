@@ -6,8 +6,8 @@
  *     project (skills/agents/tools/kortix.yaml), then opens a CR.
  *
  * The deterministic install/lock/update/remove engine (registry-lock.json,
- * dependency resolution, hash-based update detection) has been removed — see
- * docs/specs/2026-07-13-marketplace-as-projects.md. Adding a marketplace item
+ * dependency resolution, hash-based update detection) has been removed.
+ * Adding a marketplace item
  * to an existing project is now always an agent import; no file is ever
  * committed without the agent reading + wiring it in first.
  */

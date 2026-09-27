@@ -339,8 +339,7 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
-  // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
+  // Mandatory declared agents. GATED OFF platform-wide by default — flipping it on would
   // immediately reject every session/trigger on a pre-existing, agent-less project.
   // The intent is ON for NEW projects: since there's no per-project flag store yet,
   // a project is "subject" to enforcement when EITHER this is true OR its own
@@ -602,8 +601,7 @@ const envSchema = z.object({
 
   // ── Config releases (optional) ──────────────────────────────────────────
   // Operator kill switch for the whole config-release feature (the
-  // `config_releases` per-project flag, docs/specs/config-releases.md →
-  // "Feature flag"). Default ON: a session runs the base branch's current
+  // `config_releases` per-project flag). Default ON: a session runs the base branch's current
   // config. Set to false and the flag is unavailable platform-wide — the
   // Settings row disappears, both routes answer 403 `feature_disabled` for
   // every project, no convergence is scheduled, and every session falls back
