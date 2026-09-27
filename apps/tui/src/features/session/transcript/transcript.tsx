@@ -224,7 +224,14 @@ export function Transcript({
         />
       ) : null}
 
-      <WorkingLine working={session.working} isBusy={session.isBusy} />
+      <WorkingLine
+        working={session.working}
+        isBusy={session.isBusy}
+        phase={session.phase}
+        stage={session.stage}
+        reason={session.reason}
+        failure={session.failure}
+      />
 
       {renderPrompts ? (
         <SessionPrompts session={session} focused={focused} width={width} onToast={onToast} />

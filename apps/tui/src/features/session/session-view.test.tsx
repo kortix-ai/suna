@@ -13,6 +13,7 @@ import { testRender } from '@opentui/react/test-utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 
+import type { ResolvedHost } from '../../auth/hosts.ts';
 import {
   COMPOSER_CHROME_ROWS,
   OVERLAY_RESERVE_ROWS,
@@ -27,6 +28,15 @@ import {
   transcriptRows,
 } from './session-view.tsx';
 import { fakeSession, message, textPart } from './transcript/test-session.ts';
+
+const HOST: ResolvedHost = {
+  name: 'local',
+  backendUrl: 'http://localhost:17408/v1',
+  token: 'test-token',
+  accountId: 'acc-1',
+  userEmail: 'dev@kortix.test',
+  source: 'config',
+};
 
 describe('row budget', () => {
   test('a one-line composer reserves its chrome plus one row', () => {
@@ -102,6 +112,7 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
   const setup = await testRender(
     <QueryClientProvider client={queryClient}>
       <SessionView
+        host={HOST}
         projectId="p1"
         sessionId="s1"
         title="Casual greeting"

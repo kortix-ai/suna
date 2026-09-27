@@ -7,6 +7,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +18,8 @@ import {
   cliVersion,
   downloadTuiBin,
   findTuiBin,
+  installedTuiBins,
+  installedTuiSha,
   isValidTuiVersion,
   managedTuiPath,
   parseSha256,
@@ -200,7 +203,69 @@ describe('tui-bin — download + checksum', () => {
     expect(dest).toBe(join(dir, '1.2.3', 'kortix-tui'));
     expect(readFileSync(dest)).toEqual(Buffer.from(BODY));
     expect(statSync(dest).mode & 0o777).toBe(0o755);
-    expect(seen).toEqual([url, `${url}.sha256`]);
+    // The checksum travels first: it is what decides whether the binary must.
+    expect(seen).toEqual([`${url}.sha256`, url]);
+    expect(readFileSync(join(dir, '1.2.3', 'kortix-tui.sha256'), 'utf8')).toContain(DIGEST);
+  });
+
+  test('an upgrade whose release did not change the binary reuses it — the 80 MB never travels', async () => {
+    mkdirSync(join(dir, '1.2.2'), { recursive: true });
+    writeFileSync(join(dir, '1.2.2', 'kortix-tui'), BODY, { mode: 0o755 });
+    const seen: string[] = [];
+    const logged: string[] = [];
+    const dest = await downloadTuiBin({
+      version: '1.2.3',
+      env,
+      platform: 'linux',
+      arch: 'x64',
+      log: (text) => logged.push(text),
+      fetchImpl: releaseFetch(
+        {
+          [url]: () => {
+            throw new Error('the binary must not be fetched');
+          },
+          [`${url}.sha256`]: () => ok(`${DIGEST}  kortix-tui-linux-x64\n`),
+        },
+        seen,
+      ),
+    });
+    expect(seen).toEqual([`${url}.sha256`]);
+    expect(readFileSync(dest)).toEqual(Buffer.from(BODY));
+    expect(statSync(dest).mode & 0o777).toBe(0o755);
+    expect(logged.join('')).toContain('byte-identical to the installed v1.2.2');
+    // The superseded copy is gone; the new one has its digest recorded.
+    expect(existsSync(join(dir, '1.2.2'))).toBe(false);
+    expect(installedTuiBins(env).map((b) => b.version)).toEqual(['1.2.3']);
+  });
+
+  test('a changed release downloads, then prunes every older version but keeps a local dev build', async () => {
+    for (const v of ['1.2.1', '1.2.2', 'dev']) {
+      mkdirSync(join(dir, v), { recursive: true });
+      writeFileSync(join(dir, v, 'kortix-tui'), `old ${v}`, { mode: 0o755 });
+    }
+    await downloadTuiBin({
+      version: '1.2.3',
+      env,
+      platform: 'linux',
+      arch: 'x64',
+      log: () => {},
+      fetchImpl: releaseFetch({
+        [url]: () => ok(BODY),
+        [`${url}.sha256`]: () => ok(`${DIGEST}  kortix-tui-linux-x64\n`),
+      }),
+    });
+    expect(installedTuiBins(env).map((b) => b.version)).toEqual(['1.2.3', 'dev']);
+  });
+
+  test('a binary that predates the sidecar is hashed once and the sidecar written', () => {
+    mkdirSync(join(dir, '1.2.2'), { recursive: true });
+    const bin = join(dir, '1.2.2', 'kortix-tui');
+    writeFileSync(bin, BODY);
+    expect(installedTuiSha(bin)).toBe(DIGEST);
+    expect(readFileSync(`${bin}.sha256`, 'utf8')).toContain(DIGEST);
+    // A recorded digest wins over re-hashing.
+    writeFileSync(`${bin}.sha256`, `${'a'.repeat(64)}  kortix-tui\n`);
+    expect(installedTuiSha(bin)).toBe('a'.repeat(64));
   });
 
   test('a corrupted download is refused and leaves NOTHING behind', async () => {
@@ -240,7 +305,7 @@ describe('tui-bin — download + checksum', () => {
     expect(existsSync(join(dir, '1.2.3', 'kortix-tui'))).toBe(false);
   });
 
-  test('a missing binary asset names the URL it asked for', async () => {
+  test('a missing release (no checksum either) names the checksum URL it asked for', async () => {
     await expect(
       downloadTuiBin({
         version: '1.2.3',
@@ -249,6 +314,21 @@ describe('tui-bin — download + checksum', () => {
         arch: 'x64',
         log: () => {},
         fetchImpl: releaseFetch({}),
+      }),
+    ).rejects.toThrow(`${url}.sha256 → HTTP 404 (checksum is required)`);
+  });
+
+  test('a missing binary asset (checksum present) names the URL it asked for', async () => {
+    await expect(
+      downloadTuiBin({
+        version: '1.2.3',
+        env,
+        platform: 'linux',
+        arch: 'x64',
+        log: () => {},
+        fetchImpl: releaseFetch({
+          [`${url}.sha256`]: () => ok(`${DIGEST}  kortix-tui-linux-x64\n`),
+        }),
       }),
     ).rejects.toThrow(`${url} → HTTP 404`);
   });

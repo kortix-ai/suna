@@ -1,10 +1,20 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { C } from './style.ts';
-import { isSupervised, SUPERVISED_NOTICE } from './supervised.ts';
+import { SUPERVISED_NOTICE, isSupervised } from './supervised.ts';
 
 /**
  * Resolves the `kortix-tui` binary that `kortix tui` hands the terminal to.
@@ -163,6 +173,75 @@ export function findTuiBin(opts: FindTuiBinOpts = {}): TuiBinResolution | null {
   return exists(managed) ? { bin: managed, source: 'cache' } : null;
 }
 
+/** Sidecar beside a managed binary: the sha256 the release published for it. */
+export function managedTuiShaPath(bin: string): string {
+  return `${bin}.sha256`;
+}
+
+export interface InstalledTuiBin {
+  version: string;
+  bin: string;
+}
+
+/**
+ * Every managed binary on disk, any version, without touching the network.
+ * `dev` is a local build the user placed there; it is listed like the rest so
+ * an identical release binary can be reused from it, and `pruneTuiCache` is
+ * what keeps it.
+ */
+export function installedTuiBins(env: NodeJS.ProcessEnv = process.env): InstalledTuiBin[] {
+  const root = tuiCacheRoot(env);
+  if (!existsSync(root)) return [];
+  const out: InstalledTuiBin[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const bin = join(root, entry.name, 'kortix-tui');
+    if (existsSync(bin)) out.push({ version: entry.name, bin });
+  }
+  return out.sort((a, b) => a.version.localeCompare(b.version));
+}
+
+/**
+ * The sha256 of an installed binary. Reads the sidecar the installer wrote;
+ * hashes the file once and writes the sidecar when a binary predates it.
+ */
+export function installedTuiSha(bin: string): string {
+  const sidecar = managedTuiShaPath(bin);
+  // Read, do not probe-then-read: a sidecar can vanish between the two calls
+  // (another `kortix tui` pruning), and a missing one just means "hash it".
+  let recordedText: string | null = null;
+  try {
+    recordedText = readFileSync(sidecar, 'utf8');
+  } catch {
+    recordedText = null;
+  }
+  const recorded = recordedText ? parseSha256(recordedText) : null;
+  if (recorded) return recorded;
+  const digest = createHash('sha256').update(readFileSync(bin)).digest('hex');
+  try {
+    writeFileSync(sidecar, `${digest}  kortix-tui\n`);
+  } catch {
+    // A read-only cache still answers; it only re-hashes next time.
+  }
+  return digest;
+}
+
+/**
+ * Remove every managed version except `keep` and a local `dev` build. A
+ * release binary is ~80 MB, and a user who updates the CLI weekly otherwise
+ * collects one copy per release forever (four in a fortnight on the first
+ * machine this was measured on). Returns the versions removed.
+ */
+export function pruneTuiCache(keep: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const removed: string[] = [];
+  for (const installed of installedTuiBins(env)) {
+    if (installed.version === keep || installed.version === 'dev') continue;
+    rmSync(dirname(installed.bin), { recursive: true, force: true });
+    removed.push(installed.version);
+  }
+  return removed;
+}
+
 export interface DownloadTuiBinOpts {
   version: string;
   env?: NodeJS.ProcessEnv;
@@ -172,6 +251,10 @@ export interface DownloadTuiBinOpts {
   fetchImpl?: typeof fetch;
   /** Progress/notice sink. Defaults to stderr. */
   log?: (text: string) => void;
+  /** Reuse an installed binary with the published digest instead of downloading. Default true. */
+  reuse?: boolean;
+  /** Remove the other managed versions after a successful install. Default true. */
+  prune?: boolean;
 }
 
 /**
@@ -203,47 +286,72 @@ export async function downloadTuiBin(opts: DownloadTuiBinOpts): Promise<string> 
   const checksumUrl = `${url}.sha256`;
   const log = opts.log ?? ((text: string) => process.stderr.write(text));
 
-  log(`${C.dim}Downloading kortix-tui v${version} (~80 MB, one-time per version)…${C.reset}\n`);
-
   // Indirect through `doFetch`, exactly as `downloadOpencode` does: the target
   // is an interpolated release URL, so scripts/sdk-boundary.mjs cannot read its
   // static prefix. The default base is github.com — an allowed origin — and the
   // indirection is also the test seam.
   const doFetch = opts.fetchImpl ?? fetch;
 
-  const binaryResponse = await doFetch(url);
-  if (!binaryResponse.ok) throw new Error(`${url} → HTTP ${binaryResponse.status}`);
-  // Buffer before writing: `Bun.write(path, response)` can hang forever on a
-  // streamed 80 MB body, while arrayBuffer() drains it in seconds (the same
-  // trap opencode-bin.ts hit).
-  const bytes = new Uint8Array(await binaryResponse.arrayBuffer());
-
+  // The 90-byte checksum comes FIRST. It decides whether the 80 MB binary has
+  // to travel at all: a CLI release whose TUI did not change publishes the
+  // same digest, and a copy under another version is then reused in place.
   const checksumResponse = await doFetch(checksumUrl);
   if (!checksumResponse.ok) {
     throw new Error(`${checksumUrl} → HTTP ${checksumResponse.status} (checksum is required)`);
   }
   const expected = parseSha256(await checksumResponse.text());
   if (!expected) throw new Error(`${checksumUrl} did not contain a sha256 digest`);
-  const actual = createHash('sha256').update(bytes).digest('hex');
-  if (actual !== expected) {
-    throw new Error(`checksum mismatch for ${asset} — expected ${expected}, got ${actual}`);
-  }
 
   const dest = managedTuiPath(version, env);
+  const reusable =
+    opts.reuse === false
+      ? undefined
+      : installedTuiBins(env).find(
+          (installed) => installed.bin !== dest && installedTuiSha(installed.bin) === expected,
+        );
+
+  let bytes: Uint8Array | null = null;
+  // The digest recorded beside the install is always one this process
+  // computed from bytes on disk, never the text the release served.
+  let verifiedDigest: string;
+  if (reusable) {
+    verifiedDigest = installedTuiSha(reusable.bin);
+    log(
+      `${C.dim}kortix-tui v${version} is byte-identical to the installed v${reusable.version} — reusing it, no download.${C.reset}\n`,
+    );
+  } else {
+    log(`${C.dim}Downloading kortix-tui v${version} (~80 MB, one-time per version)…${C.reset}\n`);
+    const binaryResponse = await doFetch(url);
+    if (!binaryResponse.ok) throw new Error(`${url} → HTTP ${binaryResponse.status}`);
+    // Buffer before writing: `Bun.write(path, response)` can hang forever on a
+    // streamed 80 MB body, while arrayBuffer() drains it in seconds (the same
+    // trap opencode-bin.ts hit).
+    bytes = new Uint8Array(await binaryResponse.arrayBuffer());
+    const actual = createHash('sha256').update(bytes).digest('hex');
+    if (actual !== expected) {
+      throw new Error(`checksum mismatch for ${asset} — expected ${expected}, got ${actual}`);
+    }
+    verifiedDigest = actual;
+  }
+
   mkdirSync(dirname(dest), { recursive: true });
   // Stage beside the destination, then rename: a second `kortix tui`
   // downloading the same version must never see a half-written executable.
   const staging = `${dest}.${process.pid}.staging`;
   try {
-    writeFileSync(staging, bytes);
+    if (bytes) writeFileSync(staging, bytes);
+    else if (reusable) copyFileSync(reusable.bin, staging);
+    else throw new Error('kortix-tui: nothing to install (no download and no reusable copy)');
     chmodSync(staging, 0o755);
     // `renameSync` is atomic within the directory, so the file only ever
     // appears at `dest` complete and verified.
     renameSync(staging, dest);
+    writeFileSync(managedTuiShaPath(dest), `${verifiedDigest}  ${asset}\n`);
   } catch (err) {
     rmSync(staging, { force: true });
     throw err;
   }
+  if (opts.prune !== false) pruneTuiCache(version, env);
   return dest;
 }
 
