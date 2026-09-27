@@ -3,8 +3,7 @@ import { z } from 'zod'
 /**
  * The config release contract between the API and this daemon.
  *
- * Spec: docs/specs/config-releases.md, "Release descriptor" and "Workspace
- * report". The API decides which release a session runs. The daemon only
+ * The API decides which release a session runs. The daemon only
  * fetches, verifies, applies and reports.
  */
 

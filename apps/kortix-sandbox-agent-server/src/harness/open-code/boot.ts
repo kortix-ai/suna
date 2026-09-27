@@ -45,6 +45,7 @@ import {
   convergeRuntimeAssetsAtTurnEnd,
   scheduleRuntimeAssetsReconcile,
 } from '../../runtime-assets'
+import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import {
   flattenOpencodeError,
@@ -86,6 +87,7 @@ import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
+import { configureSessionTokenHealth, noteControlPlaneResponse } from '../../session-token-health'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -219,6 +221,11 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   const opencode = harness.native
   const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
   const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  // The 401-streak circuit breaker (session-token-health.ts): once the API has
+  // told this box, repeatedly, that its session token is dead, stop calling
+  // home and exit — exitCode 0 so the entrypoint supervisor treats it as a
+  // clean stop, never a crash to relaunch or count against a rollback budget.
+  configureSessionTokenHealth(() => shutdown({ reason: 'session-token-dead', exitCode: 0 }))
   // Hand the convergence machinery this session's live runtime, once.
   //
   // Two things need it. opencode convergence restarts opencode, so it goes
@@ -626,9 +633,8 @@ export async function reconcileManagedModels(
 }
 
 /**
- * One convergence once OpenCode is ready (docs/specs/config-releases.md,
- * "Boot" step 3). It proves a release spawned at boot and moves the box onto
- * the desired release. Detached: it never delays readiness. A swap waits while
+ * One convergence once OpenCode is ready. It proves a release spawned at
+ * boot and moves the box onto the desired release. Detached: it never delays readiness. A swap waits while
  * a turn runs; the API converges again at turn end. The seed-adoption path
  * reaches this through `startSessionRuntime`, so it converges once after
  * adoption.
@@ -674,6 +680,13 @@ function runtimeReadyTail(
   scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
   scheduleConvergenceAfterReady(opencode, cfg, bootMark)
+  // the runtime-convergence contract (PR #7785), Rule 3: convergence must keep running
+  // for as long as this box is alive, not only once at boot. Both readiness
+  // exits call `runtimeReadyTail` (this function's own doc, above), including
+  // warm-fork adoption, so this always wires the CURRENT opencode/cfg;
+  // `wireRuntimeTruth`'s ticker is idempotent (a second call here — a second
+  // adoption on the same process — does not stack a second interval).
+  wireRuntimeTruth(cfg, opencode)
 }
 
 async function startSessionRuntime(
@@ -710,6 +723,7 @@ async function startSessionRuntime(
       )
       if (!response.ok) {
         const body = await response.text().catch(() => '')
+        noteControlPlaneResponse(response.status, body)
         const error = new Error(
           `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
         ) as Error & { retryAfterMs?: number }
@@ -2674,7 +2688,13 @@ export async function relayTurnBeginToApi(
           }
           return
         }
-        logger.warn('[opencode-events] turn-begin relay non-ok', { status: res.status, attempt })
+        const bodyText = await res.text().catch(() => '')
+        noteControlPlaneResponse(res.status, bodyText)
+        logger.warn('[opencode-events] turn-begin relay non-ok', {
+          status: res.status,
+          attempt,
+          body: bodyText.slice(0, 200),
+        })
       } catch (err) {
         logger.warn('[opencode-events] turn-begin relay fetch failed', {
           err: (err as Error).message,
@@ -2842,7 +2862,13 @@ export async function relayTurnEndToApi(
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
       }
-      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
+      const bodyText = await res.text().catch(() => '')
+      noteControlPlaneResponse(res.status, bodyText)
+      logger.warn('[opencode-events] turn-end relay non-ok', {
+        status: res.status,
+        attempt,
+        body: bodyText.slice(0, 200),
+      })
     } catch (err) {
       logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }

@@ -296,7 +296,7 @@ function httpPatterns(tI18nComplete: UiTranslator): HttpPatternHandler[] {
           return { title: tI18nComplete.raw('text183bd99db5b3'), kind: 'create' };
       }
       // Monitor event intake — the project monitor box appending to its event
-      // log (sandbox-token-only; see docs/specs/2026-08-12-monitors.md).
+      // log (sandbox-token-only).
       if (s[0] === 'projects' && s[2] === 'monitors' && s[3] === 'ingest' && m === 'POST') {
         return { title: tI18nComplete.raw('text6201f8d3134e'), kind: 'create' };
       }

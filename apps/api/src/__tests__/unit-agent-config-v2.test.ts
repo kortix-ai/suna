@@ -1,7 +1,6 @@
 /**
  * Unit tests for the v2 agent-block GOVERNANCE read/write lib (the "agent
- * builder" backend's kortix.yaml half — spec docs/specs/2026-07-05-agent-
- * first-config-unification.md §2.2, redirected 2026-07-05: "one home per
+ * builder" backend's kortix.yaml half — redirected 2026-07-05: "one home per
  * concern"). Pure functions — no DB, no git — so they exercise the exact
  * read/mutate/validate contract the GET/PUT routes depend on:
  *   - readAgentBlockV2: v2 block round-trips verbatim; v1 → null block +

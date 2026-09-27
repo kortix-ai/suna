@@ -568,6 +568,20 @@ const cancelledMessageIds = new Map<string, Set<string>>();
 // and must not outlive the first authoritative read.
 const cacheSourcedIds = new Map<string, Set<string>>();
 
+/**
+ * Does this session hold messages, every one of them painted from a saved copy
+ * and none yet confirmed by a runtime read or a live event? Only then may a
+ * newer saved copy paint over it: once the runtime or the stream has spoken,
+ * a snapshot is older than what the store holds.
+ */
+export function hasOnlyCacheSourcedMessages(sessionID: string): boolean {
+	const messages = useSyncStore.getState().messages[sessionID];
+	if (!messages || messages.length === 0) return false;
+	const cached = cacheSourcedIds.get(sessionID);
+	if (!cached) return false;
+	return messages.every((message) => cached.has(message.id));
+}
+
 function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
 	if (optimisticID === echoID) return;
 	// Chain through an earlier swap: a message that itself superseded an

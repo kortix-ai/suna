@@ -5,7 +5,7 @@
  *
  * Project policies span EVERY connector in the project — patterns are
  * fully-qualified (`<connector-slug>.<path>` or globs over that), and they're
- * evaluated before any connector-scoped rule (docs/specs/connector.md §8).
+ * evaluated before any connector-scoped rule.
  * `policy.default_mode` controls the fallback when no rule matches:
  *   • `risk` — read = always_run, write/destructive = require_approval
  *   • `allow_all` — every tool runs (legacy default for back-compat)

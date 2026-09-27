@@ -297,8 +297,7 @@ describe('secretDeliveryBlockedReason', () => {
  *
  * They used to be computed from a per-project in-guest-shim opt-in flag and
  * `config.isPlatinumEnabled()`. Both are gone: one mechanism serves every
- * provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so the
- * answer is unconditional — no project, no deployment and no operator env can
+ * provider, so the answer is unconditional — no project, no deployment and no operator env can
  * make an egress-enforced secret undeliverable.
  */
 describe('buildSecretView — egress-enforced delivery is unconditionally available', () => {

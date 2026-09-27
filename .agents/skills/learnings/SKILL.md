@@ -62,7 +62,10 @@ Done when `scripts/index.sh --check` exits 0 and the entry is committed.
   with git's `union` driver, so two branches that each add an entry do not conflict. After
   a merge, run `index.sh` to restore the order. `tests/unit/learnings-ledger.test.ts` fails
   on a stale index or a malformed entry.
-- **Keep an entry short: about 8 to 20 lines.** Deep detail belongs in the PR or the RCA.
-  Link to it.
+- **Keep an entry short: about 8 to 20 lines.** Deep detail belongs in the PR body.
+  Cite the PR number (`PR #1234`).
+- **An entry is self-contained.** The ledger in `entries/` is the only incident record.
+  Do not write a separate incident, RCA, spec, or runbook file, and do not link one.
+  The repository has no `docs/` tree, and the pre-commit hook rejects new files under it.
 - **Synthetic identifiers only.** An entry is committed text, so the AGENTS.md customer-data
   rule applies. Write "a customer", "an enterprise workspace", `<session_id>`.

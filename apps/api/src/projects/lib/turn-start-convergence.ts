@@ -74,6 +74,11 @@ import {
   noteRunningAssets,
   shouldReportPinned,
 } from '../../runtime-assets/running-assets';
+import {
+  __clearRunningCatalogForTests,
+  lastKnownManagedCatalog,
+  noteRunningCatalog,
+} from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -113,8 +118,10 @@ export function invalidateDesiredRelease(projectId: string): void {
 export function __resetTurnStartConvergenceForTests(): void {
   __clearRunningReleasesForTests();
   __clearRunningAssetsForTests();
+  __clearRunningCatalogForTests();
   desiredReleases.clear();
   sessionMemo.clear();
+  inFlightRunningReleaseProbes.clear();
 }
 
 interface SessionTarget {
@@ -293,22 +300,52 @@ export interface TurnStartConvergenceDeps {
 }
 
 /**
+ * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
+ * config gate then again by the catalog gate" is the shape this forbids.
+ * `convergeBeforeTurnStart` and `convergeModelCatalogForTurnStart` now run
+ * CONCURRENTLY (R2, `forwardToSandbox`), and both call `probeRunningRelease`
+ * when their own memo is cold — which, run at the same instant, is exactly
+ * the race that would otherwise dial the box twice for one turn.
+ *
+ * Single-flight per session: a second call for a session already being
+ * probed joins the SAME promise instead of starting its own
+ * `GET /kortix/health`. A sequential second call (the probe already finished)
+ * pays its own read as before — this is concurrency dedupe, not a cache.
+ */
+const inFlightRunningReleaseProbes = new Map<string, Promise<string | null | undefined>>();
+
+/**
  * Ask the box what it runs, and remember the answer.
  *
  * `undefined` means "could not tell" — an unreachable box, or a daemon that
  * predates config releases. Neither is evidence of being current, so neither is
  * remembered.
  */
-async function probeRunningRelease(sessionId: string): Promise<string | null | undefined> {
-  const { readSandboxConfigState } = await import('./session-reload');
-  const state = await readSandboxConfigState({ sessionId }).catch(() => null);
-  // The SAME health read answers both questions. Learning the runtime-asset
-  // verdict here is what makes the asset lane cost the turn path ZERO network
-  // calls: it never asks a box anything the config gate was not already asking.
-  if (state?.reachable) await noteAssetsFromHealth(sessionId, state.runtime);
-  if (!state?.reachable || !state.configReleases || !state.release) return undefined;
-  noteRunningRelease(sessionId, state.release.release_id);
-  return state.release.release_id;
+export async function probeRunningRelease(sessionId: string): Promise<string | null | undefined> {
+  const existing = inFlightRunningReleaseProbes.get(sessionId);
+  if (existing) return existing;
+  const probe = (async () => {
+    const { readSandboxConfigState } = await import('./session-reload');
+    const state = await readSandboxConfigState({ sessionId }).catch(() => null);
+    // The SAME health read answers both questions. Learning the runtime-asset
+    // verdict here is what makes the asset lane cost the turn path ZERO network
+    // calls: it never asks a box anything the config gate was not already asking.
+    if (state?.reachable) await noteAssetsFromHealth(sessionId, state.runtime);
+    if (!state?.reachable || !state.configReleases || !state.release) return undefined;
+    noteRunningRelease(sessionId, state.release.release_id);
+    return state.release.release_id;
+  })();
+  inFlightRunningReleaseProbes.set(sessionId, probe);
+  try {
+    return await probe;
+  } finally {
+    // Only this call's own entry — a newer probe for the same session that
+    // started after this one resolved must not have its (different) promise
+    // deleted out from under it.
+    if (inFlightRunningReleaseProbes.get(sessionId) === probe) {
+      inFlightRunningReleaseProbes.delete(sessionId);
+    }
+  }
 }
 
 /**
@@ -340,8 +377,22 @@ async function noteAssetsFromHealth(
     const verdict = await runningAssetsVerdict(runtime.running);
     // 'unknown' is never remembered: an older daemon with no `running` block
     // must not make every turn schedule a pass for ever.
-    if (verdict === 'unknown') return;
-    noteRunningAssets(sessionId, await manifestFingerprint(), verdict);
+    if (verdict !== 'unknown') noteRunningAssets(sessionId, await manifestFingerprint(), verdict);
+    // The managed-catalog memo is recorded UNCONDITIONALLY on the verdict
+    // above — it feeds `convergeModelCatalogForTurnStart`, which needs the
+    // raw id list (to test membership of ONE requested model), not a
+    // current/behind/unknown summary. `runtime.running` being present is the
+    // only gate: a daemon that predates this field reports no `running`
+    // block at all, and `ids: null` here means UNCONFIRMED, which is exactly
+    // what a daemon that HAS the field but never fetched reports too — both
+    // read the same (correct) way downstream.
+    if (runtime.running) {
+      noteRunningCatalog(
+        sessionId,
+        runtime.running.managed_model_ids,
+        runtime.running.managed_catalog_fallback_reason,
+      );
+    }
   } catch (error) {
     logger.warn('[runtime-assets] could not record a box\'s asset verdict', {
       session_id: sessionId,
@@ -544,4 +595,59 @@ export function scheduleAssetConvergence(
   deps: AssetConvergenceDeps = defaultAssetDeps(),
 ): void {
   void convergeAssetsInBackground(sessionId, deps).catch(() => 'skipped');
+}
+
+// ── The managed-model-catalog lane — self-heal on an UNKNOWN MODEL ─────────
+//
+// The third case, and neither of the other two shapes: unlike CONFIG, it does
+// not block every turn — only one whose REQUESTED model is the one missing.
+// Unlike BINARIES (and the catalog's own "merely changed" case, which rides
+// the asset lane above via `manifest.ts`'s `managed-catalog` component), when
+// it DOES act it is AWAITED — the alternative is `Model not found:
+// kortix/<id>` while the control plane serves that model, which is the exact
+// failure this closes. See `model-catalog-turn-start.ts` for the full design.
+//
+// DYNAMIC imports, same reasoning as `converge` and `defaultAssetDeps` above:
+// `model-catalog-turn-start.ts` imports `sandbox-proxy/backend` and
+// `sandbox-runtime-refresh.ts`, and a static edge would pull that graph into
+// every proxy unit test's module load. A request that carries no model, or
+// one for a non-managed provider, never reaches either import.
+
+/**
+ * Bring a box's `kortix` provider map onto the current managed lineup when —
+ * and only when — the model THIS turn's body names is the one at risk.
+ * NEVER throws: a turn is never refused because this could not run.
+ */
+export async function convergeModelCatalogForTurnStart(
+  sessionId: string,
+  requestedManagedModelId: string | null,
+): Promise<import('./model-catalog-turn-start').ModelCatalogTurnStartResult> {
+  if (!requestedManagedModelId) return { decision: 'skipped' };
+  try {
+    const [{ convergeModelCatalogBeforeTurnStart, convergeSandboxModelCatalog }, { isRuntimeManagedModelId }] =
+      await Promise.all([
+        import('./model-catalog-turn-start'),
+        import('../../llm-gateway/models/managed-models'),
+      ]);
+    return await convergeModelCatalogBeforeTurnStart(sessionId, requestedManagedModelId, {
+      isManagedModelId: isRuntimeManagedModelId,
+      lastKnown: lastKnownManagedCatalog,
+      // The SAME health GET the config gate already makes when its own memo
+      // is cold — `probeRunningRelease` records the catalog too (see
+      // `noteAssetsFromHealth`). Calling it again here is a genuine second
+      // network call ONLY when the two memos' TTLs have drifted apart; the
+      // common case reads the memo `probeRunningRelease` already just wrote.
+      probe: async (sid) => {
+        await probeRunningRelease(sid);
+        return lastKnownManagedCatalog(sid);
+      },
+      convergeCatalog: (sid) => convergeSandboxModelCatalog(sid),
+    });
+  } catch (error) {
+    logger.warn('[projects] turn-start model-catalog convergence threw', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { decision: 'unknown' };
+  }
 }

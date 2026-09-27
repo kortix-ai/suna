@@ -23,6 +23,7 @@ import {
   listSessionsNeedingInput,
   resolveApproval,
 } from '@kortix/sdk';
+import { readSessionAudit } from '@kortix/sdk/react';
 import {
   type QueryClient,
   useInfiniteQuery,
@@ -119,14 +120,24 @@ export function useSessionAudit(
   options?: UseSessionAuditOptions,
 ) {
   const enabled = !!projectId && !!sessionId && (options?.enabled ?? true);
+  const queryClient = useQueryClient();
+  const key = sessionAuditKey(projectId, sessionId);
   return useQuery<SessionAudit>({
-    queryKey: sessionAuditKey(projectId, sessionId),
-    // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
+    queryKey: key,
+    // The session-open bundle (the turn-latency spec (PR #7840) R4) answers this
+    // session's FIRST audit read — the same "one round trip to paint" the
+    // turn and prompts legs already ride. `readSessionAudit` claims it only
+    // when this tab holds no cached rows yet; every read after that (a poll)
+    // asks the endpoint directly, for the same staleness reason
+    // `readSessionPromptsInbox` documents.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 100, {
-        showErrors: !options?.silent,
-        includeEvents: false,
-      }),
+      readSessionAudit(
+        projectId,
+        sessionId,
+        queryClient.getQueryData<SessionAudit>(key),
+        options?.limit ?? 100,
+        { showErrors: !options?.silent },
+      ),
     enabled,
     staleTime: 10_000,
     refetchOnMount: options?.poll ? true : false,

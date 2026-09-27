@@ -32,6 +32,7 @@ import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
   requestedPromptAgent,
+  requestedPromptManagedModelId,
   isTurnStartEnvSync,
   runPrePromptEnvSync,
 } from './pre-prompt-env-sync';
@@ -284,3 +285,71 @@ describe('runPrePromptEnvSync — refusals and retries', () => {
 
 // The 502 for a non-retryable env-sync failure and the retry of a transient
 // one are proven at the HTTP route in __tests__/e2e-preview-proxy.test.ts.
+
+describe('requestedPromptManagedModelId', () => {
+  // /session/:id/message + /prompt_async — verified against @opencode-ai/sdk's
+  // generated `SessionPromptData`: a NESTED `model: {providerID, modelID}`.
+  // This is the shape the server-side prompt queue relay
+  // (`session-lifecycle/runtime-client.ts`) sends, and what the overwhelming
+  // majority of real turn-start bodies use.
+  test('reads the bare managed id off a /message-shaped body (nested model object)', () => {
+    const body = encode({
+      parts: [{ type: 'text', text: 'hi' }],
+      model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+    });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('deepseek-v4.1-flash');
+  });
+
+  test('strips a kortix/ prefix if the nested modelID already carries one', () => {
+    const body = encode({ model: { providerID: 'kortix', modelID: 'kortix/kimi-k3' } });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');
+  });
+
+  test('a BYOK / non-kortix nested provider is out of scope for this lane', () => {
+    const body = encode({ model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' } });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBeNull();
+  });
+
+  test('a /message body with no model at all (runtime default) is null, not a throw', () => {
+    // `kortix sessions chat` sends exactly this: no `model`, no key.
+    expect(requestedPromptManagedModelId(encode({ parts: [{ type: 'text', text: 'hi' }] }), jsonHeaders())).toBeNull();
+  });
+
+  // /session/:id/summarize — verified against `SessionSummarizeData`: FLAT
+  // top-level {providerID, modelID}, no `model` wrapper. Same shape
+  // `prompt-dedupe.ts` documents for its own dedupe-key reasons.
+  test('reads a /summarize-shaped body (flat top-level providerID/modelID)', () => {
+    const body = encode({ providerID: 'kortix', modelID: 'glm-5.3-flash', auto: true });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('glm-5.3-flash');
+  });
+
+  test('a flat BYOK providerID is out of scope for this lane', () => {
+    const body = encode({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBeNull();
+  });
+
+  // /session/:id/command — verified against `SessionCommandData`: `model` is
+  // a flat STRING ref ("kortix/<id>" or a native "provider/model"), not an
+  // object. `COMMAND_BODY` above carries a native anthropic ref.
+  test("reads a /command body's flat kortix/<id> model string", () => {
+    const body = encode({ command: 'webapp', arguments: 'x', model: 'kortix/kimi-k3' });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');
+  });
+
+  test('a /command body naming a native (non-kortix) provider/model ref is out of scope', () => {
+    expect(requestedPromptManagedModelId(COMMAND_BODY, jsonHeaders())).toBeNull();
+  });
+
+  test('no body, no JSON content-type, or malformed JSON all answer null', () => {
+    expect(requestedPromptManagedModelId(undefined, jsonHeaders())).toBeNull();
+    expect(
+      requestedPromptManagedModelId(
+        encode({ providerID: 'kortix', modelID: 'kimi-k3' }),
+        new Headers({ 'content-type': 'text/plain' }),
+      ),
+    ).toBeNull();
+    expect(
+      requestedPromptManagedModelId(new TextEncoder().encode('{not json').buffer, jsonHeaders()),
+    ).toBeNull();
+  });
+});

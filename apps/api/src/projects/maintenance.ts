@@ -422,7 +422,7 @@ export async function runProjectMaintenance(): Promise<void> {
         );
         return { examined: 0, lost: 0, healed: 0, errors: 1 };
       }),
-      // Monitors (docs/specs/2026-08-12-monitors.md D5). Converges the
+      // Monitors. Converges the
       // per-project monitor box: flag on + >=1 enabled monitor => a box exists
       // running the current manifest revision; flag off, zero monitors, or an
       // exceeded budget => no box. Also the ONLY place a persistent monitor box

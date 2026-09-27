@@ -1,6 +1,5 @@
 /**
- * Incident 2026-08-14
- * (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+ * Incident 2026-08-14.
  *
  * Corrective action 1: "Show the 'computer was lost' copy only when a fresh
  * `provider.getStatus()` returns `removed` at preserve time."

@@ -657,6 +657,117 @@ describe('simple gateway pipeline', () => {
     expect(sse.headers.get('content-type')).toBe('text/event-stream');
     expect(await sse.text()).toContain('[DONE]');
   });
+
+  test('a stream cut before any bytes reach the client is retried transparently against the next pooled key', async () => {
+    const warns: unknown[][] = [];
+    const cooldowns: Array<{ secretId: string; seconds: number }> = [];
+    let call = 0;
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], []),
+          resolveUpstream: async () => [
+            { ...primary, poolSecretId: 'key-a', apiKey: 'first' },
+            { ...primary, poolSecretId: 'key-b', apiKey: 'second' },
+          ],
+          notePoolRateLimit: async (_principal, secretId, seconds) => {
+            cooldowns.push({ secretId, seconds });
+          },
+        },
+        logger: { info() {}, warn: (...a) => warns.push(a), error() {} },
+        fetchImpl: async () => {
+          call += 1;
+          if (call === 1) {
+            // First key: accepts the request, then closes with ZERO bytes —
+            // the exact "cut before the first byte" shape.
+            return new Response(new ReadableStream({ start(c) { c.close(); } }), {
+              headers: { 'content-type': 'text/event-stream' },
+            });
+          }
+          // Second (pooled) key answers cleanly.
+          return new Response(
+            'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +
+              'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n' +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        },
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }) },
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toContain('"content":"hi"');
+    expect(text).not.toContain('upstream_incomplete_stream');
+    expect(call).toBe(2);
+    // The cut itself is not a rate limit — no cooldown from the retry path.
+    expect(cooldowns).toEqual([]);
+  });
+
+  test('a stream cut after bytes are already flowing gets an explicit terminal error and a pool cooldown, never a replay', async () => {
+    const cooldowns: Array<{ secretId: string; seconds: number }> = [];
+    let call = 0;
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], []),
+          resolveUpstream: async () => [{ ...primary, poolSecretId: 'key-a', apiKey: 'first' }],
+          notePoolRateLimit: async (_principal, secretId, seconds) => {
+            cooldowns.push({ secretId, seconds });
+          },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => {
+          call += 1;
+          return new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', {
+            headers: { 'content-type': 'text/event-stream' },
+          });
+        },
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [], stream: true }) },
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text.startsWith('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n')).toBe(true);
+    expect(text).toContain('upstream_incomplete_stream');
+    expect(text.trim().endsWith('data: [DONE]')).toBe(true);
+    // No replay: the upstream was only ever called once.
+    expect(call).toBe(1);
+    expect(cooldowns).toEqual([{ secretId: 'key-a', seconds: 10 }]);
+  });
+
+  test('an image-bearing streaming body gets no transparent retry, but still never forwards a partial line', async () => {
+    let call = 0;
+    const imageBody = JSON.stringify({
+      model: 'm',
+      stream: true,
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }],
+        },
+      ],
+    });
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks([], []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => {
+          call += 1;
+          // Closes mid-line — no bytes ever complete.
+          return new Response('data: {"choices":[{"delta":{"content":"cut', {
+            headers: { 'content-type': 'text/event-stream' },
+          });
+        },
+      },
+      { authorization: 'Bearer token', rawBody: imageBody },
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain('"content":"cut');
+    expect(text).toContain('upstream_incomplete_stream');
+    expect(call).toBe(1);
+  });
 });
 
 const isMorph = (url: string): boolean => new URL(url).host === 'morph.example';
@@ -1152,4 +1263,50 @@ describe('trace timing', () => {
       expect(timing.prep_ms + timing.upstream_response_ms).toBeLessThanOrEqual(trace.latencyMs);
     });
   }
+});
+
+describe('trace timing segments', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test('names which admission step spent the time before dispatch', async () => {
+    const traces: GatewayTrace[] = [];
+    const base = hooks([], traces);
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...base,
+          authorize: async () => {
+            await sleep(40);
+            return { ok: true, principal };
+          },
+          resolveRoute: async (p, input) => {
+            await sleep(60);
+            return base.resolveRoute!(p, input);
+          },
+          resolveUpstream: async () => {
+            await sleep(80);
+            return [primary];
+          },
+          assertBillingActive: async () => {
+            await sleep(100);
+          },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    await response.text();
+    for (let i = 0; i < 50 && traces.length === 0; i++) await sleep(10);
+    const timing = traces[0]!.metadata.timing as Record<string, number>;
+    expect(timing.admit_ms).toBeGreaterThanOrEqual(35);
+    expect(timing.route_ms).toBeGreaterThanOrEqual(55);
+    expect(timing.resolve_ms).toBeGreaterThanOrEqual(75);
+    expect(timing.billing_ms).toBeGreaterThanOrEqual(95);
+    expect(timing.admit_ms + timing.route_ms + timing.resolve_ms + timing.billing_ms).toBeLessThanOrEqual(timing.prep_ms);
+  });
 });

@@ -376,13 +376,18 @@ Projects can opt into `session_transcript_history` in Settings → Feature flags
 then reads saved messages from the platform database while `/start` continues. It uses the
 server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
 The flag is off by default. Missing or rejected history falls back to the existing runtime path.
-See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
-and local verification.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
 `messages`, and `none` when nothing can show until the runtime answers. A host renders
 placeholder rows on `loading` and its boot screen only on `none`.
+
+A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
+userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
+into it by message ID. `createPersistedQueryCache` does the same for accounts, projects and
+the paged session list. Both are per user and bounded; clear both on sign-out. Session
+states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
+`sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 

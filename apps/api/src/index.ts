@@ -19,6 +19,7 @@ import {
   runWithContext,
   setContextField,
 } from './lib/request-context';
+import { apiRegion, databaseRegion } from './lib/deployment-region';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -505,8 +506,21 @@ const HealthSchema = z
     instance: z.string(),
     scheduler_leader: z.boolean(),
     trigger_scheduler: z.record(z.string(), z.unknown()),
+    // Best-effort deployment topology, resolved once at import time (see
+    // lib/deployment-region.ts). the turn-latency spec (PR #7840)'s own baseline
+    // turned out to be dominated by a us-west-2 API against a us-east-2
+    // database, not by the code path — this lets `pnpm test -- --latency`
+    // report WHERE the two halves live instead of just a duration. Neither
+    // field is sensitive: an AWS region name, never a host, user, or secret.
+    region: z.string().nullable(),
+    database_region: z.string().nullable(),
   })
   .openapi('Health');
+
+// Resolved once: neither AWS_REGION nor DATABASE_URL changes for the life of
+// the process, so there is no reason to re-parse it on every /health poll.
+const API_REGION = apiRegion();
+const DATABASE_REGION = databaseRegion(config.DATABASE_URL);
 
 const healthHandler = (c: any) =>
   c.json({
@@ -520,6 +534,8 @@ const healthHandler = (c: any) =>
     instance: API_INSTANCE,
     scheduler_leader: isLeader(),
     trigger_scheduler: getTriggerSchedulerHealth(),
+    region: API_REGION,
+    database_region: DATABASE_REGION,
   });
 
 app.openapi(

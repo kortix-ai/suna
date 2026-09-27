@@ -121,7 +121,7 @@ export interface FeatureFlagDef {
  * Pairing does not auto-create project access. This flag gates the dedicated
  * fleet surface (Customize → Computers, device auth, and tunnel permissions).
  * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration. See docs/specs/computer-connector.md.
+ * repository configuration.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
@@ -251,7 +251,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'monitors',
     name: 'Monitors',
     description:
-      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental; see docs/specs/2026-08-12-monitors.md.',
+      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental.',
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
@@ -365,7 +365,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
       'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
       'no release is built, no archive is stored, and no kortix.config_releases ' +
-      'row is written. See docs/specs/config-releases.md → "Feature flag".',
+      'row is written.',
   },
   {
     key: 'agent_principal',
@@ -379,8 +379,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // different power per person, let an owner-launched agent ignore its own
     // grant entirely (super-admin short-circuit), and ran every unattended
     // trigger as the account owner. Switching a project OFF restores that old
-    // model as an escape hatch for one release; the switch is then deleted
-    // (spec docs/specs/2026-09-22-agents-as-principals.md §5).
+    // model as an escape hatch for one release; the switch is then deleted.
     platformDefault: () => true,
     // Not listed in Settings → Feature flags. An agent acting as itself is how
     // Kortix works, not a choice we offer, so presenting a switch would invite

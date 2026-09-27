@@ -1,5 +1,4 @@
-// Full v2 agent-config CRUD — the dashboard "agent builder" surface (spec
-// docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
+// Full v2 agent-config CRUD — the dashboard "agent builder" surface (redirected
 // 2026-07-05: "one home per concern").
 //
 // TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
