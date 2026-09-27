@@ -1615,6 +1615,36 @@ const MARKER_PROMPT =
   'Answer with the RELOAD_VERIFY_MARKER value from your instructions and nothing else.';
 
 /**
+ * A directive NAME per round, not just a value — the same technique as
+ * `MARKER2_AGENT` below, generalized to every round instead of only the final
+ * check.
+ *
+ * WHY. `MARKER_PROMPT` is fixed text. Asking it more than once in the SAME
+ * OpenCode conversation is confounded: proven on a real box 2026-09-27, a
+ * model answering a LITERALLY REPEATED question sometimes echoes its own
+ * PRIOR turn's answer instead of re-reading the current system prompt — the
+ * exact wrong-marker signature this flow throws on — even though the daemon's
+ * own logs show the release fully applied, and the new process fully
+ * promoted, tens of seconds before the model's response. A follow-up probe in
+ * the SAME poisoned conversation, asking about a directive name never seen
+ * before, answered correctly every time. That is a model self-consistency
+ * habit, not a stale config: see `MARKER2_AGENT`'s comment for the full
+ * argument, and DEF-DEV-2, which this flow already settled the same way.
+ * `RACE_ROUNDS` repeats `MARKER_PROMPT` verbatim once per round, so it hits
+ * this exact confound — measured 4/5 real rounds correct, one answering the
+ * PREVIOUS round's marker on a box whose release had already converged. Five
+ * rounds of a per-round-unique directive name, same box, same 200 ms race,
+ * same everything else: 5/5. A prompt whose NAME cannot have been asked
+ * before removes the confound instead of adding a delay or a retry that would
+ * only mask it.
+ */
+const RACE_MARKER_KEY = (round: number): string => `RELOAD_VERIFY_MARKER_R${round}`;
+const RACE_MARKER_AGENT = (round: number, marker: string): string =>
+  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${RACE_MARKER_KEY(round)}: ${marker}\n`;
+const RACE_MARKER_PROMPT = (round: number): string =>
+  `Answer with the ${RACE_MARKER_KEY(round)} value from your instructions and nothing else.`;
+
+/**
  * DEF-DEV-2's decider — a key the conversation CANNOT supply.
  *
  * On dev on 2026-09-25 a converged session kept answering an OLD marker. Two
@@ -1865,11 +1895,17 @@ flow(
 
       for (let round = 1; round <= RACE_ROUNDS; round += 1) {
         const marker = `marker-race-${round}`;
+        // A round-unique directive NAME, not `MARKER_PROMPT` verbatim — see
+        // `RACE_MARKER_KEY`'s comment. Sending the identical sentence every
+        // round lets a model answer from its own PRIOR turn in this same
+        // conversation instead of the current system prompt, which is a
+        // confound this flow does not exist to measure.
+        const prompt = RACE_MARKER_PROMPT(round);
         await ctx.step(`round ${round}/${RACE_ROUNDS}: a base move and a prompt 200 ms apart`, async () => {
-          await fixture.commit({ '.kortix/opencode/agents/kortix.md': MARKER_AGENT(marker) }, marker);
+          await fixture.commit({ '.kortix/opencode/agents/kortix.md': RACE_MARKER_AGENT(round, marker) }, marker);
           await new Promise((resolve) => setTimeout(resolve, 200));
 
-          const r = await box.send(MARKER_PROMPT);
+          const r = await box.send(prompt);
           // THE DEFECT: `503` here, because the swap killed the process that
           // had already accepted this prompt.
           if (r.statusCode === 503) throw new Error(`round ${round}: the send answered 503`);
@@ -1880,7 +1916,7 @@ flow(
             throw new Error(`round ${round}: the send did not answer with a message: ${JSON.stringify(body).slice(0, 200)}`);
           }
 
-          const answer = await answerTo(MARKER_PROMPT);
+          const answer = await answerTo(prompt);
           if (!answer.includes(marker)) {
             throw new Error(`round ${round}: the answer does not carry this round's marker: ${answer.slice(0, 200)}`);
           }
