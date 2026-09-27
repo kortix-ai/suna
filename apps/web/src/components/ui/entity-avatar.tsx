@@ -1,7 +1,7 @@
 'use client';
 
 import { emojiTint } from '@/components/ui/emoji-tint';
-import { glyphComponent } from '@/components/ui/glyph-registry';
+import { glyphFace } from '@/components/ui/glyph-face';
 import { glyphForeground, glyphTint } from '@/components/ui/glyph-tint';
 import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
@@ -41,16 +41,16 @@ export type EntityAvatarSize = keyof typeof SIZE_MAP;
  * Resolves a `glyph` prop to the component that actually draws it, or `null`
  * if the name isn't in the registry.
  *
- * Its own function rather than an inline `glyph ? glyphComponent(…) : null`
+ * Its own function rather than an inline `glyph ? glyphFace(…) : null`
  * at each use site, because EVERY use site (the inline style, the tile's
  * class list, the rendered face) has to agree on whether there IS a
  * renderable glyph, and a name that fails to resolve has to fall through to
  * the rest of the precedence chain identically everywhere. Two independent
- * `glyphComponent()` calls computing the same answer is how they drift.
+ * `glyphFace()` calls computing the same answer is how they drift.
  */
 function resolveGlyph(glyph?: { name: string; color: string } | null) {
   if (!glyph) return null;
-  const GlyphComponent = glyphComponent(glyph.name);
+  const GlyphComponent = glyphFace(glyph.name);
   return GlyphComponent ? { GlyphComponent, color: glyph.color } : null;
 }
 
@@ -62,7 +62,7 @@ export interface EntityAvatarProps {
    * produces this value is a union (a project has an emoji XOR a glyph,
    * never both), so whichever was chosen last is what should paint.
    *
-   * An unknown `name` resolves through `glyphComponent()` to `null` and
+   * An unknown `name` resolves through `glyphFace()` to `null` and
    * falls through to the rest of the precedence chain rather than painting
    * an empty tile — the server rejects unknown names, but a client
    * rendering STALE cached data (an old snapshot in the query cache, a
