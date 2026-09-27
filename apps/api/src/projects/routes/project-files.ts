@@ -367,11 +367,18 @@ projectsApp.openapi(
 
   const query = c.req.valid('query');
   try {
-    const allBranches = await listBranches(await withProjectGitAuth(loaded.row));
+    const includeSessionBranches = query.include_session_branches !== 'false';
+    // Only the web's Files and Git views send `include_session_branches=false`;
+    // they may show a listing up to 5 min old (`branch-list-cache.ts`). Every
+    // caller that omits it (CLIs, sandboxes, the change-request picker) keeps
+    // reading the upstream live.
+    const allBranches = await listBranches(await withProjectGitAuth(loaded.row), {
+      allowRecent: !includeSessionBranches,
+    });
     const branches = filterBranchesForResponse(allBranches, {
       q: query.q,
       limit: query.limit,
-      includeSessionBranches: query.include_session_branches !== 'false',
+      includeSessionBranches,
     });
     return c.json({
       default_branch: loaded.row.defaultBranch,
