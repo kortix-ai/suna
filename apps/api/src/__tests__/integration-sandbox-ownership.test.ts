@@ -126,6 +126,7 @@ test('stale stopped status and live turns remain referenced; worker environments
 });
 
 test('corrupt ownership fails closed before provider listing', async () => {
+  stops.length = 0;
   await db.update(platformSettings).set({ value: '' }).where(eq(platformSettings.key, 'sandbox_owner_id'));
   await expect(new PlatinumProvider().listManagedRunningSandboxes()).rejects.toThrow('Invalid sandbox_owner_id');
   expect(stops).toEqual([]);
