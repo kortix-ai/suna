@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  type ExpectedRunningAssets,
+  type LegacyBootstrapDeps,
   REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapLegacyRuntime,
   renderLegacyBootstrapScript,
-  type ExpectedRunningAssets,
-  type LegacyBootstrapDeps,
 } from './legacy-runtime-bootstrap';
 
 /**

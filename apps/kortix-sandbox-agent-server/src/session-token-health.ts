@@ -57,7 +57,7 @@ import { logger } from './logger'
  */
 const SESSION_TOKEN_DEAD_PATTERN = /session token is not active/i
 
-/** Consecutive dead-token signals required before the daemon shuts itself down. */
+/** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5
 
 let consecutiveDeadTokenSignals = 0

@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  type ExpectedRunningAssets,
   LEGACY_CHECK_METADATA_KEY,
+  type LegacyBootstrapDeps,
   REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapLegacyRuntime,
-  type ExpectedRunningAssets,
-  type LegacyBootstrapDeps,
 } from './legacy-runtime-bootstrap';
 
 /**
@@ -128,11 +128,14 @@ describe('a running box whose daemon is gone', () => {
     const calls: Calls = { execs: [], patches: [] };
     const result = await bootstrapLegacyRuntime(
       input(),
-      deadDaemonDeps({
-        providerRunning: async () => {
-          throw new Error('provider 503');
+      deadDaemonDeps(
+        {
+          providerRunning: async () => {
+            throw new Error('provider 503');
+          },
         },
-      }, calls),
+        calls,
+      ),
     );
     expect(result.outcome).toBe('unreachable');
     expect(calls.execs).toHaveLength(0);

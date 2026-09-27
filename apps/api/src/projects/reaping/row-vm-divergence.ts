@@ -47,7 +47,7 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
-import { getProvider, type ProviderName } from '../../platform/providers';
+import { type ProviderName, getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { REAP_CONCURRENCY } from '../reaper-constants';
@@ -201,10 +201,7 @@ const defaultDeps: RowVmDivergenceDeps = {
       .set({ metadata: mergeMetadata({ rowVmDivergenceClosedAt: at.toISOString() }) })
       .where(eq(sessionSandboxes.sandboxId, sandboxId))
       .catch((err) =>
-        console.warn(
-          '[row-vm] divergence stamp failed:',
-          err instanceof Error ? err.message : err,
-        ),
+        console.warn('[row-vm] divergence stamp failed:', err instanceof Error ? err.message : err),
       );
   },
 };
@@ -269,8 +266,6 @@ export async function closeRowVmDivergence(
       }
     }
   };
-  await Promise.all(
-    Array.from({ length: Math.min(REAP_CONCURRENCY, candidates.length) }, worker),
-  );
+  await Promise.all(Array.from({ length: Math.min(REAP_CONCURRENCY, candidates.length) }, worker));
   return result;
 }

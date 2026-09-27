@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  closeRowVmDivergence,
-  type DivergenceRow,
   DIVERGENCE_SETTLE_GRACE_MS,
+  type DivergenceRow,
+  closeRowVmDivergence,
   decideRowVmDivergence,
   selectDivergedBoxes,
 } from './row-vm-divergence';
@@ -160,9 +160,11 @@ describe('closeRowVmDivergence', () => {
     // The bulk scan and the provider listing are not one transaction. A
     // `/start` between them is exactly the case that must never be stopped.
     const { deps, stopped } = spyDeps(row({ status: 'active' }));
-    expect(await closeRowVmDivergence({ boxes: listing, rows: scan }, deps)).toEqual(
-      { diverged: 0, closed: 0, errors: 0 },
-    );
+    expect(await closeRowVmDivergence({ boxes: listing, rows: scan }, deps)).toEqual({
+      diverged: 0,
+      closed: 0,
+      errors: 0,
+    });
     expect(stopped).toEqual([]);
   });
 
