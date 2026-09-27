@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, setSystemTime, test } from 'bun:test';
 import type { HTTPException } from 'hono/http-exception';
 import type { ComposioCatalogClient } from './composio-catalog-search';
 import {
@@ -1318,4 +1318,123 @@ test('composioCatalogPage answers a repeated category from the cache and never c
   expect(calls).toHaveLength(2);
   expect(slugs(first)).toEqual(['gmail']);
   expect(slugs(second)).toEqual(['gmail']);
+});
+
+test('composioCatalogPage serves an expired page at once and refreshes it once in the background', async () => {
+  // Measured on dev-api 2026-09-27: after the 10 min TTL the next Customize →
+  // Connectors open waited 450-870 ms on Composio for a page it already held.
+  let version = 1;
+  let refreshes = 0;
+  let release: () => void = () => {};
+  let gate: Promise<void> = Promise.resolve();
+  const created = session();
+  created.toolkits = async () => {
+    refreshes += 1;
+    const answer = `v${version}`;
+    await gate;
+    return { items: [{ slug: answer, name: answer, isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created });
+  const slugs = (page: Awaited<ReturnType<typeof composioCatalogPage>>) =>
+    'items' in page ? page.items.map((item) => item.slug) : [];
+  const read = () => composioCatalogPage({ projectId: 'project-1', limit: 48, runtime });
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    expect(slugs(await read())).toEqual(['v1']);
+
+    version = 2;
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    setSystemTime(new Date(start + 11 * 60_000));
+    // The refresh is held open: a read that waited for it would never return.
+    expect(slugs(await read())).toEqual(['v1']);
+    expect(slugs(await read())).toEqual(['v1']);
+    expect(refreshes).toBe(2);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(slugs(await read())).toEqual(['v2']);
+    expect(refreshes).toBe(2);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test('composioCatalogPage keeps serving the last page when a background refresh fails', async () => {
+  let fail = false;
+  let refreshes = 0;
+  const created = session();
+  created.toolkits = async () => {
+    refreshes += 1;
+    if (fail) throw new Error('Composio 503');
+    return { items: [{ slug: 'gmail', name: 'Gmail', isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created });
+  const read = () => composioCatalogPage({ projectId: 'project-1', q: 'gmail', runtime });
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    await read();
+    fail = true;
+    setSystemTime(new Date(start + 11 * 60_000));
+    const stale = await read();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const afterFailure = await read();
+    expect('items' in stale && stale.items.map((item) => item.slug)).toEqual(['gmail']);
+    expect('items' in afterFailure && afterFailure.items.map((item) => item.slug)).toEqual(['gmail']);
+    // The failed refresh is retried by the next read, not remembered.
+    expect(refreshes).toBe(3);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test('composioCatalogPage serves expired toolkit metadata at once and refreshes it in the background', async () => {
+  let metaReads = 0;
+  let description = 'first';
+  let gate: Promise<void> = Promise.resolve();
+  let release: () => void = () => {};
+  const created = session();
+  created.toolkits = async () => ({
+    items: [{ slug: 'gmail', name: 'Gmail', isNoAuth: false }],
+    cursor: undefined,
+    totalPages: 1,
+  });
+  const runtime: ComposioRuntime = {
+    ...fakeRuntime({ created }),
+    toolkits: {
+      async get() {
+        metaReads += 1;
+        const answer = description;
+        await gate;
+        return [{ slug: 'gmail', name: 'Gmail', meta: { description: answer, categories: [] } }];
+      },
+    },
+  };
+  const describe = (page: Awaited<ReturnType<typeof composioCatalogPage>>) =>
+    'items' in page ? page.items.map((item) => item.description) : [];
+  const read = () => composioCatalogPage({ projectId: 'project-1', q: 'gmail', runtime });
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    expect(describe(await read())).toEqual(['first']);
+
+    description = 'second';
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    setSystemTime(new Date(start + 7 * 60 * 60_000));
+    expect(describe(await read())).toEqual(['first']);
+    expect(metaReads).toBe(2);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    setSystemTime(new Date(start + 7 * 60 * 60_000 + 1));
+    expect(describe(await read())).toEqual(['second']);
+    expect(metaReads).toBe(2);
+  } finally {
+    setSystemTime();
+  }
 });
