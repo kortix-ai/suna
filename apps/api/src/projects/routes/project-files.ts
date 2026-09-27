@@ -15,6 +15,9 @@ import {
   readRepoFile,
   searchRepoFileNames,
 } from '../git';
+// From the leaf, not the barrel: suites that stub '../git' by listing its
+// exports would otherwise lose these names and fail at import.
+import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
@@ -326,7 +329,14 @@ projectsApp.openapi(
 },
 );
 
-// GET /v1/projects/:projectId/branches
+// GET /v1/projects/:projectId/branches?q=...&limit=...&include_session_branches=...
+//
+// A project's remote can carry thousands of auto-created session branches —
+// createRemoteSessionBranch names each one after the session's own UUID (see
+// ../git/branches.ts). The response is capped (default 500, the default
+// branch always kept). Session branches stay in by default — the Files
+// version selector and the change-request head picker list them on purpose —
+// and `include_session_branches=false` drops them for a default-branch picker.
 
 projectsApp.openapi(
   createRoute({
@@ -337,6 +347,12 @@ projectsApp.openapi(
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
+        query: z.object({
+          q: z.string().optional(),
+          limit: z.coerce.number().int().min(1).max(BRANCH_LIST_MAX_LIMIT).optional(),
+          // Not z.coerce.boolean(): Boolean('false') is true.
+          include_session_branches: z.enum(['true', 'false']).optional(),
+        }),
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -349,8 +365,14 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
+  const query = c.req.valid('query');
   try {
-    const branches = await listBranches(await withProjectGitAuth(loaded.row));
+    const allBranches = await listBranches(await withProjectGitAuth(loaded.row));
+    const branches = filterBranchesForResponse(allBranches, {
+      q: query.q,
+      limit: query.limit,
+      includeSessionBranches: query.include_session_branches !== 'false',
+    });
     return c.json({
       default_branch: loaded.row.defaultBranch,
       branches,

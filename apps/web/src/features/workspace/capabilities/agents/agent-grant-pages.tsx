@@ -263,7 +263,7 @@ export function ConnectorsGrantPage({
     true;
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
   });
   const connectors = connectorsQuery.data?.connectors ?? [];

@@ -104,10 +104,33 @@ function connectorGatewayPath(projectId: string | undefined, suffix: string): st
     : `/connectors/${suffix}`;
 }
 
-export async function getConnectorCatalog(projectId?: string): Promise<ConnectorCatalogEntry[]> {
+export interface GetConnectorCatalogOptions {
+  /** Restrict the catalog to one connector by slug. */
+  slug?: string;
+  /**
+   * The full per-action JSON Schema. Omitted from the request by default, and
+   * the API then INCLUDES it: sandboxes run a baked CLI whose connector
+   * gateway reads schemas from this route, so the server default can never
+   * flip. Pass `false` from a surface that renders no schema (it is the bulk
+   * of the payload: 439 KB on prod); `describeConnectorTool` narrows with
+   * `slug` instead.
+   */
+  includeSchemas?: boolean;
+}
+
+export async function getConnectorCatalog(
+  projectId?: string,
+  options?: GetConnectorCatalogOptions,
+): Promise<ConnectorCatalogEntry[]> {
+  const params = new URLSearchParams();
+  if (options?.slug) params.set('slug', options.slug);
+  if (options?.includeSchemas !== undefined) {
+    params.set('include_schemas', String(options.includeSchemas));
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
-      connectorGatewayPath(projectId, 'catalog'),
+      `${connectorGatewayPath(projectId, 'catalog')}${query}`,
     ),
   );
   return result.connectors ?? [];
@@ -115,6 +138,9 @@ export async function getConnectorCatalog(projectId?: string): Promise<Connector
 
 export async function listConnectorTools(projectId?: string): Promise<ConnectorTool[]> {
   const tools: ConnectorTool[] = [];
+  // Neither this nor any caller of it (search, discover) reads `inputSchema` —
+  // only `describeConnectorTool` below does, and it fetches its own schema
+  // directly instead of going through this bulk listing.
   for (const connector of await getConnectorCatalog(projectId)) {
     for (const action of connector.actions) {
       tools.push({
@@ -151,7 +177,33 @@ export async function describeConnectorTool(
   projectId: string | undefined,
   tool: string,
 ): Promise<ConnectorTool | null> {
-  return (await listConnectorTools(projectId)).find((candidate) => candidate.tool === tool) ?? null;
+  const separator = tool.indexOf('.');
+  if (separator < 0) return null;
+  const connectorSlug = tool.slice(0, separator).trim();
+  if (!connectorSlug) return null;
+  // Fetch ONE connector, with its schema, instead of the whole catalog —
+  // this used to call listConnectorTools (the full, unfiltered, schema-less
+  // catalog) just to pick out a single action.
+  // Match by slug, never take the first entry: an API that predates the
+  // `slug` filter answers the whole catalog, and the CLI ships separately.
+  const connector = (
+    await getConnectorCatalog(projectId, { slug: connectorSlug, includeSchemas: true })
+  ).find((entry) => entry.slug === connectorSlug);
+  if (!connector) return null;
+  for (const action of connector.actions) {
+    const candidateTool = `${connector.slug}.${action.path}`;
+    if (candidateTool === tool) {
+      return {
+        tool: candidateTool,
+        connector: connector.slug,
+        action: action.path,
+        risk: action.risk,
+        description: action.description || action.name,
+        inputSchema: action.inputSchema,
+      };
+    }
+  }
+  return null;
 }
 
 function parseConnectorTool(tool: string): { connector: string; action: string } {
@@ -996,13 +1048,26 @@ export async function pipedreamFinalizeConnection(
   );
 }
 
-export async function listConnectors(projectId: string) {
+export interface ListConnectorsOptions {
+  /**
+   * The full per-action JSON Schema on every connector's actions. The API
+   * includes it unless this is `false` (older CLIs read it and cannot be
+   * updated in place). The dashboard passes `false`: the schemas were 1.6 MB
+   * of the prod response and no list renders them.
+   */
+  includeSchemas?: boolean;
+}
+
+export async function listConnectors(projectId: string, options?: ListConnectorsOptions) {
+  const query =
+    options?.includeSchemas === undefined ? '' : `?include_schemas=${options.includeSchemas}`;
   return unwrap(
     // Background read fired at workspace mount (project-home tiles, sidebar
     // setup checklist) — never global-toast; callers render their own state.
-    await backendApi.get<ConnectorsResponse>(`/connectors/projects/${projectId}/connectors`, {
-      showErrors: false,
-    }),
+    await backendApi.get<ConnectorsResponse>(
+      `/connectors/projects/${projectId}/connectors${query}`,
+      { showErrors: false },
+    ),
   );
 }
 

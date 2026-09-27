@@ -23,6 +23,8 @@ import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
 import { prefetchSessionOpen } from '@kortix/sdk/react';
+import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
+import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
 
 const QUERY_KEY = 'project-access-boundary';
 
@@ -215,12 +217,28 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
   // `GET /projects/<id>` before it could start. Read-only — it never wakes a
   // sandbox — and a project this user cannot read answers 403 to it as well.
+  //
+  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
+  // reads also only need the route ids, and were waiting on
+  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
+  // see `session-route-prefetch.ts`.
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {
     if (!authReady || !routeSessionId) return;
     void prefetchSessionOpen(queryClient, projectId, routeSessionId);
+    prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
   }, [authReady, projectId, routeSessionId, queryClient]);
+
+  // The project SHELL's own reads (detail, sessions list, sandbox health, and
+  // — once detail says the gateway is on — the model picker) need only
+  // `projectId`, exactly like `getProject` above, so they start here too
+  // instead of waiting for `getProject` to resolve AND `ProjectShell`'s own
+  // chunk to mount. See `project-shell-prefetch.ts`.
+  useEffect(() => {
+    if (!authReady || !projectId) return;
+    prefetchProjectShellReads(queryClient, projectId);
+  }, [authReady, projectId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.
