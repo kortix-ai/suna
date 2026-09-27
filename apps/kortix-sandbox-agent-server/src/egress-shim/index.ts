@@ -109,10 +109,9 @@ function installSystemTrust(certPem: string): boolean {
 }
 
 /**
- * The env an agent's clients need. Measured per runtime — see
- * docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7.6, which found the earlier assumption
- * (that this needed an LD_PRELOAD shim) was wrong and a handful of variables is
- * enough.
+ * The env an agent's clients need. Measured per runtime, which found the
+ * earlier assumption (that this needed an LD_PRELOAD shim) was wrong and a
+ * handful of variables is enough.
  *
  *   curl / bun fetch / git   honour `https_proxy` unaided
  *   node fetch (undici)      ignores it WITHOUT `NODE_USE_ENV_PROXY=1`

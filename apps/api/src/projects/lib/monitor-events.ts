@@ -7,8 +7,6 @@
  * (same rule as ./trigger-payload.ts) so the bounds are unit-testable without
  * booting the server environment. The DB halves live in ./monitor-ingest.ts
  * (write path) and ./monitor-observer.ts (drain path).
- *
- * Spec: docs/specs/2026-08-12-monitors.md §"Bounds (platform-enforced)".
  */
 import type { GitTriggerSpec } from '../triggers';
 import { isPlainPayloadObject, templateValue } from './trigger-payload';
@@ -222,7 +220,6 @@ export function nextMonitorSuppression(input: {
 /**
  * The delivery payload a monitor fire renders against — the same shape the
  * `filter` and the prompt template both read.
- * Spec: docs/specs/2026-08-12-monitors.md §"Event payload".
  */
 export function buildMonitorPayload(event: {
   slug: string;

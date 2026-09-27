@@ -95,7 +95,8 @@ export function createSessionScopeCatalogSources(
           ...contract('config'),
         })
       ).items,
-    listConnectors: async (projectId) => (await listConnectors(projectId)).connectors,
+    listConnectors: async (projectId) =>
+      (await listConnectors(projectId, { includeSchemas: false })).connectors,
     // A session binds only accounts its creator may USE. A shared account a
     // connections manager sees just to manage it (`usable: false`) is not one.
     listConnections: async (projectId) =>

@@ -6,7 +6,7 @@
  *
  * Covers openapi / http / mcp execution. (GraphQL execution — building a query
  * string from the field + selection — is a follow-up; normalization already
- * works.) See docs/specs/connector.md §7.
+ * works.)
  */
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';

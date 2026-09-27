@@ -10,8 +10,7 @@
  * include a machine selector, and the gateway restricts it to the profile's
  * server-side allowlist. The gateway routes `tunnel` bindings
  * through the shared tunnel RPC core
- * (`tunnel/core/rpc-core.ts`), NOT executeCall. See
- * docs/specs/computer-connector.md.
+ * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 

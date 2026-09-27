@@ -1,7 +1,6 @@
 /**
  * Apps as an agent resource — the pure half of the App gate for an
- * agent-session credential (spec docs/specs/2026-09-22-agents-as-principals.md
- * §2.5): the decision table, the connector → App assertion, and header carriage.
+ * agent-session credential: the decision table, the connector → App assertion, and header carriage.
  *
  * No module mocks: everything here is pure or HMAC.
  */

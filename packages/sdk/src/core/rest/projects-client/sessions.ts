@@ -1324,6 +1324,26 @@ export interface SessionConfigRelease {
 }
 
 /**
+ * The managed-model catalog's freshness for one session's box — the third
+ * convergeable asset alongside binaries and the skill overlay. Reported in the
+ * SAME place a config fallback is (`SessionConfigState`), not a log line: a
+ * box can look perfectly healthy (current binaries, a proven config release)
+ * and still be serving a managed lineup the control plane retired weeks ago,
+ * because OpenCode learns its provider map once, at process start.
+ */
+export interface SessionManagedCatalogState {
+  /**
+   * Managed model ids this box currently believes are servable, or `null` when
+   * UNCONFIRMED — no live fetch has ever succeeded on this box, so it is
+   * running the baked/bundled managed set with no proof it matches the
+   * platform's current lineup. Never read `null` as "no managed models exist".
+   */
+  ids: string[] | null;
+  /** Why the last live fetch did not confirm this box, or `null` when it did. */
+  fallback_reason: string | null;
+}
+
+/**
  * Whether a session is running the agent config the manifest compiles to now.
  *
  * A session's agent behaviour is compiled from git ONCE, at provision, and
@@ -1355,6 +1375,12 @@ export interface SessionConfigState {
    * config releases; a host then renders from `stale` alone.
    */
   release?: SessionConfigRelease;
+  /**
+   * Absent on a response from an API that predates it. Present regardless of
+   * whether config releases are enabled for this project — see the field's
+   * own doc for why.
+   */
+  managed_catalog?: SessionManagedCatalogState;
 }
 
 /**

@@ -119,6 +119,12 @@ projectsApp.openapi(
   // egress/broker secret). Threading the config costs no extra I/O; leaving it
   // null on a failed load is what keeps the warning from firing on a guess.
   let agentGrants: SecretAgentGrantConfig | null = null;
+  // Independent of the manifest load below (an IAM/agent-principal reach
+  // check, no git or manifest dependency) — start it now instead of after the
+  // manifest read finishes, so its latency overlaps the git-auth resolve +
+  // manifest read instead of adding to it (measured prod: git 383ms/14 ops
+  // dominates this route's server time).
+  const personalOwnerPromise = requestPersonalOwner(c, loaded);
   try {
     const projectConfig = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
     required = projectConfig?.env?.required ?? [];
@@ -150,7 +156,7 @@ projectsApp.openapi(
     projectId,
     // Spec 2026-09-22 §2.3: an agent-principal session sees personal
     // overrides of its on-behalf-of human in a private session only.
-    userId: await requestPersonalOwner(c, loaded),
+    userId: await personalOwnerPromise,
     canManageShared,
     agentGrants,
   }))

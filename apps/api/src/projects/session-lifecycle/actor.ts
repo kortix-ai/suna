@@ -13,13 +13,12 @@ export async function resolveProjectAutomationActor(accountId: string): Promise<
 
 /**
  * Resolve the agent's standing-identity service account to ATTRIBUTE an
- * unattended automation run to (docs/specs/2026-07-05-agent-first-config-
- * unification.md §2.2 "runtime attribution", closing the `triggers.ts`
+ * unattended automation run (closing the `triggers.ts`
  * TODO). Deliberately narrow: this is for RUN ATTRIBUTION (`project_sessions
  * .created_by` — audit/identity, "who owns this run") only, resolved
  * AFTER the session already exists so it never touches the session's
- * provisioning/authorization actor — "attribution and authorization stop
- * sharing one field" (spec §2.2). The session's own connector token already
+ * provisioning/authorization actor — attribution and authorization stop
+ * sharing one field. The session's own connector token already
  * carries this SAME service account independently (`mintConnectorToken` in
  * platform/services/session-sandbox.ts calls `ensureAgentServiceAccount`
  * itself) and the standing-role fallback that keeps an unactivated agent's

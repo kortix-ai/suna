@@ -117,8 +117,7 @@ cd /
 #
 # A process cannot safely overwrite its own running binary, so the daemon never
 # replaces itself. It STAGES ${AGENT_NEXT} (+ .sha256) and exits ${SWAP_CODE}
-# to ask for the swap. This loop performs it. See
-# docs/specs/2026-08-20-convergent-runtime.md.
+# to ask for the swap. This loop performs it.
 #
 # Everything here is failure-biased toward "keep running the binary that
 # worked": a bad artifact, a bad digest, or a new binary that will not stay up

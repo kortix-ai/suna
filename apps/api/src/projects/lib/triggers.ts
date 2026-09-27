@@ -69,8 +69,8 @@ import {
 import { isPlainObject } from '../../shared/json';
 
 /**
- * Who asked for this fire. `monitor` is the third trigger type's source
- * (docs/specs/2026-08-12-monitors.md): the observer draining a monitor event
+ * Who asked for this fire. `monitor` is the third trigger type's source:
+ * the observer draining a monitor event
  * off `project_monitor_events`. It rides the identical downstream path as
  * `cron` — the session it mints is stamped `trigger:monitor`.
  */
@@ -695,8 +695,7 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
  * `resolveActingActor` in iam/engine-v2.ts). This is intentionally NOT the
  * run's recorded identity. The create-session action applies the trigger's
  * access policy and records the agent's service account after the row exists.
- * This keeps attribution and authorization on separate fields
- * (docs/specs/2026-07-05-agent-first-config-unification.md §2.2).
+ * This keeps attribution and authorization on separate fields.
  * What a run can actually ACCESS is governed by the AGENT's declared scope in
  * kortix.yaml's `agents:` map (secrets + connectors), applied when the session
  * env is built — not by this stand-in.

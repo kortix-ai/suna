@@ -16,7 +16,7 @@ import {
  * (manifest = source of truth, like triggers); this populates the runtime view
  * the gateway + dashboard read. Catalog fetch is best-effort per connector:
  * a connector that can't be reached is stored with status='error' + 0 actions,
- * never failing the whole sweep. See docs/specs/connector.md §3, §7.
+ * never failing the whole sweep.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';

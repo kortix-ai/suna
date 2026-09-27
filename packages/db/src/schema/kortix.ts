@@ -153,7 +153,9 @@ export const apiKeyTypeEnum = kortixSchema.enum('api_key_type', ['user', 'sandbo
 
 export const accountRoleEnum = kortixSchema.enum('account_role', ['owner', 'admin', 'member']);
 
-export const accounts = kortixSchema.table('accounts', {
+export const accounts = kortixSchema.table(
+  'accounts',
+  {
   accountId: uuid('account_id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
@@ -196,7 +198,31 @@ export const accounts = kortixSchema.table('accounts', {
   branding: jsonb('branding').default({}).notNull().$type<AccountBrandingRecord>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (table) => [
+    // Serves GET /v1/admin/api/accounts (the admin console's default,
+    // unfiltered accounts list): `ORDER BY created_at DESC LIMIT $page_size`.
+    // Without this index `accounts` had only its primary key, so Postgres
+    // could not drive the sort from an index — it Hash-Joined a full
+    // Seq Scan of `accounts` (45.5k rows) against a full Seq Scan of
+    // `credit_accounts` (234.5k rows, most of them orphaned — no FK ties
+    // `credit_accounts.account_id` back to `accounts`) and sorted the whole
+    // ~44k-row result BEFORE applying LIMIT. On prod that query hit the 25s
+    // request-path statement_timeout (57014): API logs show
+    // `GET /v1/admin/api/accounts` at 25013/25019/25056 ms
+    // (2026-09-27T01:21-01:22Z), and the unguarded catch echoed the raw
+    // `Failed query: select … "kortix"."credit_accounts"."balance_precise" …`
+    // text to the browser. This index lets the planner drive the sort with
+    // an Index Scan Backward + LIMIT, then do one Nested Loop lookup per row
+    // into `credit_accounts` via its existing primary key — verified by
+    // `EXPLAIN` against prod (read-only): the Hash Right Join + top-level
+    // Sort disappear once this index exists in a same-shape local
+    // reproduction. See the accompanying `.concurrent.ts` migration for the
+    // CONCURRENTLY build; the release pre-builds this index out of band on
+    // the ~45.5k-row prod table before the migration runs.
+    index('idx_accounts_created_at').on(table.createdAt),
+  ],
+);
 
 /** Shape of `accounts.branding`. Every key optional; absent == default Kortix. */
 export interface AccountBrandingRecord {
@@ -565,8 +591,7 @@ export const projectSnapshotArchives = kortixSchema.table(
 
 /**
  * Config releases the API assigned to a session, and whether any session
- * proved one (docs/specs/config-releases.md, "Quarantine across the
- * project"). One row per `(project, release, variant)`. Written when the
+ * proved one. One row per `(project, release, variant)`. Written when the
  * descriptor route assigns a release; `proven_at` is set once, when a daemon
  * first reports that release as proven. The project fallback for a
  * quarantined release is the newest proven row of the same variant.
@@ -751,8 +776,7 @@ export interface SecretEgressPolicy {
   /**
    * LEGACY. Where the credential is attached when a rule does not override it.
    *
-   * Optional since the exposure/usage model (docs/specs/
-   * 2026-08-19-secrets-exposure-usage-model.md §6). An egress-enforced secret
+   * Optional since the exposure/usage model. An egress-enforced secret
    * is delivered as a HANDLE in the sandbox env and the relay substitutes the
    * real value for that handle, so the policy is a HOST LIST and there is no
    * slot to name. "First match wins, no match denies" still decides WHETHER the
@@ -823,7 +847,7 @@ export const projectSecrets = kortixSchema.table(
     // per-identifier override (used ONLY by the CODEX_AUTH_JSON per-user
     // provider login today — the general "only me" override was retired, see
     // migration 20260702120000000_unify_secret_access_share_model.sql). Mirrors
-    // connection_credentials.userId. See docs/specs/connector.md / iam.md.
+    // connection_credentials.userId.
     ownerUserId: uuid('owner_user_id'),
     // On a personal override row: whether the member currently uses their own
     // value (true) or has flipped back to the shared one while keeping theirs
@@ -910,7 +934,7 @@ export const sessionProviderSecretPools = kortixSchema.table('session_provider_s
  * Who can see/open a session within the org. `private` (default) = only the
  * creator; `project` = every project member (team-wide); `restricted` = the
  * creator + the members/groups in `project_session_grants`. Mirrors the secret
- * sharing model but defaults to private. See docs/specs/iam.md.
+ * sharing model but defaults to private.
  */
 export const projectSessionVisibilityEnum = kortixSchema.enum('project_session_visibility', [
   'private',
@@ -1449,8 +1473,7 @@ export const projectTriggerSessionAccessGrants = kortixSchema.table(
 );
 
 /**
- * Append-only monitor event log — the contract AND the fire queue
- * (docs/specs/2026-08-12-monitors.md D2).
+ * Append-only monitor event log — the contract AND the fire queue.
  *
  * The monitor runner in the project's monitor box POSTs stdout lines here
  * through the sandbox-token-only ingest route; the leader-elected observer
@@ -2854,8 +2877,7 @@ export const accountTokens = kortixSchema.table(
         onDelete: 'cascade',
       },
     ),
-    /** The human this agent-session token acts ON BEHALF OF (spec
-     *  docs/specs/2026-09-22-agents-as-principals.md §2.3). Set at mint to the
+    /** The human this agent-session token acts ON BEHALF OF. Set at mint to the
      *  launching human for a human-initiated session; NULL for an unattended
      *  run (trigger, cron, webhook, channel without a linked user, owner
      *  fallback). It decides ONLY that human's personal resources, never the
@@ -3165,8 +3187,7 @@ export const auditEvents = kortixSchema.table(
     agentName: text('agent_name'),
     initiatorActorType: text('initiator_actor_type'),
     initiatorActorId: text('initiator_actor_id'),
-    /** The human an agent session acted on behalf of (spec
-     *  docs/specs/2026-09-22-agents-as-principals.md §2). NULL for a human
+    /** The human an agent session acted on behalf of. NULL for a human
      *  actor, an unattended run (trigger, channel, system), or a session whose
      *  on_behalf_of another human's prompt cleared. No FK: forensic history. */
     onBehalfOfUserId: uuid('on_behalf_of_user_id'),
@@ -3391,6 +3412,16 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
     index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
     index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
+    // Partial index for GET /:projectId/gateway/errors (only-failed-rows
+    // lookup by project+time window). Built CONCURRENTLY in
+    // 20260926234956893_gateway_logs_project_ok_time.concurrent.ts, which also
+    // adds `INCLUDE (error_code)` — drizzle-orm 0.45's index builder cannot
+    // express INCLUDE, and the schema contract only checks relation +
+    // uniqueness, so the declaration here (without INCLUDE) is enough to keep
+    // it in sync; see that migration for the real built definition.
+    index('idx_gateway_logs_project_failed_time')
+      .on(table.projectId, table.createdAt)
+      .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
   ],
 );
@@ -4645,7 +4676,7 @@ export const changeRequestsRelations = relations(changeRequests, ({ one }) => ({
 // output/decision/batch submitted for review, presented in a friendly inbox.
 // The polymorphic `detail` jsonb carries the kind-specific payload. (Change
 // requests and connector/tunnel approvals are folded in by adapters in a later
-// pass — they keep their own source-of-truth tables.) See docs/REVIEW_CENTER_DESIGN.md.
+// pass — they keep their own source-of-truth tables.)
 
 export const reviewItemKindEnum = kortixSchema.enum('review_item_kind', [
   'change',
@@ -5425,7 +5456,7 @@ export const accountSsoGroupMappings = kortixSchema.table(
  * Connectors are DEFINED in kortix.yaml (`connectors`) and materialized here
  * on push (manifest = config source of truth, like triggers). Credentials are
  * project_secrets (scope handled by sharing above); the Pipedream connection
- * binding is also a project secret. See docs/specs/connector.md.
+ * binding is also a project secret.
  */
 export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   'pipedream',
@@ -5443,7 +5474,7 @@ export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   // one auto-materialized connector bound to its tunnel id. Its catalog is the
   // tunnel RPC method set, and it has no credential — the live WS relay IS the
   // credential, with per-machine auth/scope enforced by the tunnel permission
-  // layer. See docs/specs/computer-connector.md.
+  // layer.
   'computer',
 ]);
 
@@ -5477,8 +5508,7 @@ export const connectorCallStatusEnum = kortixSchema.enum('connector_call_status'
  * How a connector's credential is stored/used. `shared` (one project-level
  * credential everyone with access uses) is the ONLY writable value.
  *
- * `per_user` (each member connects their own) was REMOVED 2026-07-05
- * (docs/specs/2026-07-05-agent-first-config-unification.md §2.5): it conflated
+ * `per_user` (each member connects their own) was REMOVED 2026-07-05: it conflated
  * delegated-identity ("act as whichever human launched this session") with
  * connector credential storage, and had no coherent answer for triggers/
  * channels (no launching human). Migration
@@ -5522,13 +5552,13 @@ export const connectors = kortixSchema.table(
     config: jsonb('config').default({}).$type<Record<string, unknown>>().notNull(),
     /** Legacy reference to a project_secrets row (kept; credentials now in connection_credentials). */
     authSecret: varchar('auth_secret', { length: 64 }),
-    /** ORPHANED 2026-07-06 (docs/specs/2026-07-05-agent-first-config-unification.md):
+    /** ORPHANED 2026-07-06:
      *  connectors are unconditionally project-wide now — authorization lives
      *  solely on the agent's `connectors` grant. `project` is the only value a
      *  DB CHECK constraint (added by the retirement migration) still accepts;
      *  nothing in the app reads or writes this column anymore. */
     shareScope: secretShareScopeEnum('share_scope').default('project').notNull(),
-    /** ORPHANED 2026-07-06 (docs/specs/2026-07-05-agent-first-config-unification.md):
+    /** ORPHANED 2026-07-06:
      *  the connector-side agent gate was retired — the agent-side `connectors`
      *  grant (`[[agents]].connectors`, iam/agent-scope.ts) is now the ONLY gate
      *  on which agents may call a connector. Values were nulled by the
@@ -5941,7 +5971,7 @@ export const connectionPolicies = kortixSchema.table(
  * Project-scoped tool-call policies — materialized from top-level [[policies]]
  * in kortix.yaml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
  * across ALL connectors in the project; evaluated BEFORE any connector-scoped
- * rule. See docs/specs/connector.md §8.
+ * rule.
  */
 export const connectorProjectPolicies = kortixSchema.table(
   'connector_project_policies',

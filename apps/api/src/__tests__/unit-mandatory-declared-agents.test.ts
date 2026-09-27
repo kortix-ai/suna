@@ -1,6 +1,5 @@
 /**
- * MANDATORY DECLARED AGENTS (flagged) — docs/specs/2026-07-05-agent-first-
- * config-unification.md §2.1/§3 Phase 2.
+ * MANDATORY DECLARED AGENTS (flagged).
  *
  * `projectRequiresDeclaredAgents` decides whether a project is "subject" to
  * enforcement (platform-wide flag OR the project's own metadata stamp).

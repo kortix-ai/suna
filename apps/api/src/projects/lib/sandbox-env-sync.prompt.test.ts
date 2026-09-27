@@ -8,8 +8,7 @@
 // 5.2s with the secret active and 200 in 1.2s with it disabled. A project with
 // one boundary secret could not run a single agent turn.
 //
-// The edge is gone (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4),
-// which removes the cost at the root. What still has to hold on this path, and
+// The edge is gone, which removes the cost at the root. What still has to hold on this path, and
 // is asserted here: the prompt reaches the daemon, an unchanged env is not
 // re-pushed, and resolving the binding set stays FAIL-CLOSED — it re-reads the
 // agent's grant, and a grant we cannot prove must refuse the turn.

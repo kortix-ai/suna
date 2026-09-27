@@ -1,7 +1,7 @@
 /**
  * Connector → Kortix App: which connector calls carry an App assertion.
  *
- * Spec docs/specs/2026-09-22-agents-as-principals.md §2.5. The connector
+ * The connector
  * gateway asks this module for the `X-Kortix-App-Authorization` value of an
  * agent-session call. It answers only for a base URL that is an App host of
  * THIS deployment (`resolveAppHost`) whose App belongs to the caller's OWN

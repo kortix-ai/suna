@@ -6,6 +6,7 @@
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
@@ -3512,12 +3513,38 @@ flow(
       r.status(404);
     });
 
+    // Both steps below WIDEN access (grant, then revoke every narrowing
+    // grant). Either write updates the object-grant cache on the replica
+    // that wrote it, but `apps/api/src/iam/authorize.ts` `loadObjectGrants`
+    // (~15 s TTL, per-process, invalidated only on the writing replica) can
+    // still serve another replica's PRE-widen map for up to that TTL. The lag
+    // only DENIES access, never grants it (#7665), so poll the post-widen
+    // read instead of asserting on a single one. Narrowing (the steps above)
+    // stays a single, immediate read — #7794 made narrowing take effect on
+    // every replica at once, so widening it back into a poll would hide a
+    // real regression there.
+    const eventuallyListed = async (who: typeof inSales, description: string, until: (row: any) => boolean) => {
+      let row: any;
+      await waitFor(
+        async () => {
+          row = (await listed(who)).find((c) => c.connection_id === connectionId);
+          return row;
+        },
+        { until, timeoutMs: 20_000, intervalMs: 1_000, description },
+      );
+      return row;
+    };
+
     let everyoneGrantId = '';
     await ctx.step('a grant to everyone in the project opens it again, beside the group grant', async () => {
       const r = await grant(ctx.P.OWNER, { type: 'project', id: project.id }, connectionId);
       r.status(201).body().has('$.principal_type', 'project');
       everyoneGrantId = r.json<any>().assignment_id;
-      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      const row = await eventuallyListed(
+        outsideSales,
+        'the project-wide grant to reach every replica',
+        (row) => row?.usable === true,
+      );
       assert({
         kind: 'body',
         description: 'everyone lists it again',
@@ -3536,7 +3563,11 @@ flow(
           });
         r.status(200).body().has('$.revoked', true);
       }
-      const row = (await listed(outsideSales)).find((c) => c.connection_id === connectionId);
+      const row = await eventuallyListed(
+        outsideSales,
+        'every replica to drop the revoked grants',
+        (row) => row?.usable === true && row?.shared_with?.length === 0,
+      );
       assert({
         kind: 'body',
         description: 'no grant left: usable by everyone, shared_with empty',
@@ -3923,7 +3954,26 @@ flow(
       await ctx.step('`kortix access grant --everyone --connection` opens it to the project again', async () => {
         const r = await kortix(owner, ['access', 'grant', '--everyone', '--connection', connectionId]);
         if (!r.stdout.includes('to everyone in project')) throw new Error(`grant output: ${r.all.slice(0, 600)}`);
-        const outside = await accountLabels(outsider);
+        // The widen just added a project-principal grant beside the group
+        // one. The outsider's own CLI process can land on a replica whose
+        // object-grant cache (`apps/api/src/iam/authorize.ts`
+        // `loadObjectGrants`, ~15 s TTL, invalidated only on the writing
+        // replica) still holds the pre-widen (group-only) map. That lag only
+        // DENIES the outsider, never grants early, so poll instead of
+        // asserting on one read.
+        let outside: string[] = [];
+        await waitFor(
+          async () => {
+            outside = await accountLabels(outsider);
+            return outside;
+          },
+          {
+            until: (labels) => labels.includes(LABEL),
+            timeoutMs: 20_000,
+            intervalMs: 1_000,
+            description: 'the outsider CLI process to see the project-wide grant',
+          },
+        );
         if (!outside.includes(LABEL)) throw new Error(`outsider after --everyone: ${outside.join(', ')}`);
         const line = await whoCanUse();
         if (!line.includes('everyone') || line.includes('(not you)')) {
