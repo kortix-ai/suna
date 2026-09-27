@@ -1,7 +1,7 @@
 /**
  * Attachment offload: inline image bytes out of OpenCode's SQLite transcript.
  *
- * The fixture mirrors opencode.db on Essentia box i67m4 (1.18.23, 2026-08-25):
+ * The fixture mirrors opencode.db on a live box (1.18.23, 2026-08-25):
  * `part` rows whose `data` JSON is a tool part with `state.attachments[]` of
  * file-shaped objects carrying base64 `data:` URLs.
  */
@@ -13,13 +13,9 @@ import { join } from 'node:path'
 
 import {
   OFFLOAD_PLACEHOLDER_URL,
-  decodeDataUrl,
-  inlineAttachmentsOf,
   runAttachmentOffloadPass,
-  selectCandidates,
   sidecarPathFor,
 } from '../harness/open-code/attachment-offload'
-import { stripInlineAttachmentBytes } from '../inline-attachments'
 
 let root: string
 let dbPath: string
@@ -121,38 +117,8 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('helpers', () => {
-  test('inlineAttachmentsOf sees tool attachments and top-level file parts', () => {
-    expect(inlineAttachmentsOf({ type: 'file', url: 'data:x', id: 'a' })).toHaveLength(1)
-    expect(inlineAttachmentsOf({ type: 'tool', state: { attachments: [{ url: 'data:y', id: 'b' }, { nope: 1 }] } })).toHaveLength(1)
-    expect(inlineAttachmentsOf({ type: 'text', text: 'hi' })).toHaveLength(0)
-  })
-
-  test('decodeDataUrl returns mime + bytes', () => {
-    const d = decodeDataUrl(`data:image/png;base64,${PNG_1PX_B64}`)!
-    expect(d.mime).toBe('image/png')
-    expect(d.bytes.byteLength).toBe(Buffer.from(PNG_1PX_B64, 'base64').byteLength)
-  })
-
-  test('sidecarPathFor never leaves the directory', () => {
-    expect(sidecarPathFor('/x', '../../etc/passwd')).toBe('/x/______etc_passwd')
-  })
-
-  test('selectCandidates keeps the newest N attachments per session and never the newest message', () => {
-    const rows = [
-      { id: 'p1', session_id: 's', message_id: 'm1', time_created: 1, attachmentCount: 5 },
-      { id: 'p2', session_id: 's', message_id: 'm2', time_created: 2, attachmentCount: 5 },
-      { id: 'p3', session_id: 's', message_id: 'm3', time_created: 3, attachmentCount: 5 },
-      { id: 'p4', session_id: 's', message_id: 'm4', time_created: 4, attachmentCount: 5 },
-      { id: 'pc', session_id: 's', message_id: 'm2', time_created: 2, attachmentCount: 1, compacted: true },
-    ]
-    const chosen = selectCandidates(rows, new Map([['s', 'm4']]), 12)
-    // newest message m4 untouched; the window keeps whole parts until AT LEAST
-    // 12 attachments are kept: p3 (5) + p2 (10) + p1 (15) all stay; compacted always goes
-    expect(chosen).toEqual(new Set(['pc']))
-    // With a 6-wide window p1 goes: p3 (5) + p2 (10 ≥ 6) kept, p1 offloaded.
-    expect(selectCandidates(rows, new Map([['s', 'm4']]), 6)).toEqual(new Set(['p1', 'pc']))
-  })
+test('sidecarPathFor never leaves the directory', () => {
+  expect(sidecarPathFor('/x', '../../etc/passwd')).toBe('/x/______etc_passwd')
 })
 
 describe('runAttachmentOffloadPass', () => {
@@ -196,6 +162,30 @@ describe('runAttachmentOffloadPass', () => {
     const again = await runAttachmentOffloadPass({ dbPath, sidecarDir, keepNewest: 12 })
     expect(again.offloaded).toBe(0)
     expect(again.errors).toBe(0)
+  })
+
+  // The window counts attachments, but keeps WHOLE parts until at least
+  // keepNewest attachments are kept. Four parts of 5 attachments each, older →
+  // newer, plus a live newest message that is never touched.
+  test.each([
+    [12, ['p1']],
+    [6, ['p1', 'p2']],
+  ] as const)('with keepNewest %i a multi-attachment session offloads %j', async (keepNewest, expected) => {
+    const db = new Database(dbPath)
+    const S = 'ses_root'
+    const parts = new Map<string, Seeded>()
+    for (let i = 1; i <= 4; i++) parts.set(`p${i}`, seedToolPart(db, S, `msg_${i}`, i, 1_000 + i, { attachments: 5 }))
+    seedToolPart(db, S, 'msg_live', 5, 2_000, { attachments: 5 })
+    db.close()
+
+    await runAttachmentOffloadPass({ dbPath, sidecarDir, keepNewest })
+
+    const check = new Database(dbPath, { readonly: true })
+    const offloaded = [...parts]
+      .filter(([, seeded]) => readPart(check, seeded.partId).state.attachments.every((a: any) => a.kortix?.offloaded))
+      .map(([name]) => name)
+    check.close()
+    expect(offloaded).toEqual([...expected])
   })
 
   test('a compacted tool result is offloaded even inside the newest window; tiny attachments stay inline', async () => {
@@ -249,44 +239,5 @@ describe('runAttachmentOffloadPass', () => {
     const result = await runAttachmentOffloadPass({ dbPath: join(root, 'nope', 'x.db'), sidecarDir })
     expect(result.errors).toBe(1)
     expect(result.offloaded).toBe(0)
-  })
-
-  test('the response stripper hands an offloaded attachment out as a ref regardless of its size', () => {
-    const offloaded = {
-      type: 'file',
-      id: 'prt_att',
-      messageID: 'msg_1',
-      mime: 'image/png',
-      url: OFFLOAD_PLACEHOLDER_URL,
-      kortix: { offloaded: true, sidecar: '/x/prt_att', bytes: 123, mime: 'image/png', at: 't' },
-    }
-    const result = stripInlineAttachmentBytes(
-      [{ info: { id: 'msg_1' }, parts: [{ type: 'tool', state: { attachments: [offloaded] } }] }],
-      (m, p) => `/kortix/part/s/${m}/${p}`,
-    )
-    expect(result.stripped).toBe(1)
-    const out = result.value as any
-    expect(out[0].parts[0].state.attachments[0].url).toBe('/kortix/part/s/msg_1/prt_att')
-  })
-})
-
-describe('what survives a read through OpenCode', () => {
-  test('the stripper turns a bare placeholder URL (no kortix marker) into an on-demand ref', () => {
-    const result = stripInlineAttachmentBytes(
-      [
-        {
-          info: { id: 'msg_1' },
-          parts: [
-            {
-              type: 'tool',
-              state: { attachments: [{ type: 'file', id: 'prt_att', mime: 'image/png', url: OFFLOAD_PLACEHOLDER_URL }] },
-            },
-          ],
-        },
-      ],
-      (m, p) => `/kortix/part/s/${m}/${p}`,
-    )
-    expect(result.stripped).toBe(1)
-    expect((result.value as any)[0].parts[0].state.attachments[0].url).toBe('/kortix/part/s/msg_1/prt_att')
   })
 })

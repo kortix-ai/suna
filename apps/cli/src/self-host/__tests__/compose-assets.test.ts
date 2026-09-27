@@ -153,7 +153,7 @@ describe('full self-host Docker distribution', () => {
   });
 
   test('passes the gateway request-body cap override through to llm-gateway', () => {
-    // Essentia 2026-08-25: image-heavy turns (>128 MiB) 413'd at the gateway
+    // SampleCo 2026-08-25: image-heavy turns (>128 MiB) 413'd at the gateway
     // default with no way to raise it from the box .env.
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { environment?: Record<string, string> }>;

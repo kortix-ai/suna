@@ -2,18 +2,29 @@ import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { sessionHoldsLiveTurn } from '../../projects/session-lifecycle/inbox-admission';
 import { currentChannelSelection } from '../slack/selection';
 import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
 import { buildAgentUnavailableCard } from './agent-picker';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
-import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
+import { postTeamsIdentityPrompt, teamsUserId } from './identity';
+import { chatUser, resolveChatActor } from '../core/identity';
+import {
+  type ChatThreadKey,
+  dropChatThread,
+  findChatThread,
+  findChatThreadSession,
+  followUpRoute,
+  touchChatThread,
+} from '../core/threads';
 import {
   buildTeamsTurnEnv,
   closeAbandonedTurn,
@@ -27,20 +38,27 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { channelTurnModel, modelReadsImages, promptModelOverride } from '../vision-model';
+import { modelReadsImages, promptModelOverride } from '../vision-model';
+import {
+  type ChannelModelScope,
+  planChannelFollowUp,
+  planChannelSessionStart,
+  projectChannelModelScope,
+} from '../model-access';
 import {
   extractTeamsAttachments,
   teamsMessageHasImage,
   type TeamsActivity,
   type TeamsLiveTurn,
 } from './types';
-import { describeTeamsConversation, stripTeamsMentions } from './util';
+import { describeTeamsConversation, isPersonalChat, stripTeamsMentions, teamsMessageText } from './util';
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
 const defaultTeamsSessionLifecycle = {
   continueSession: continueLifecycleSession,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
+  holdsLiveTurn: sessionHoldsLiveTurn,
 };
 
 let teamsSessionLifecycle = defaultTeamsSessionLifecycle;
@@ -67,7 +85,7 @@ async function resolveTeamsTurnActor(
   }
 
   const senderId = teamsUserId(activity);
-  const actor = await resolveTeamsActor(tenantId, senderId ?? '', accountId, projectId);
+  const actor = await resolveChatActor(chatUser('teams', tenantId, senderId ?? ''), { projectId, accountId });
   if ('userId' in actor) return actor.userId;
 
   // The live card is already on screen (it goes out before identity is
@@ -82,21 +100,20 @@ async function resolveTeamsTurnActor(
   return null;
 }
 
-/** True when a session is already bound to this conversation (a thread the bot owns). */
-export async function hasConversationSession(tenantId: string, conversationId: string): Promise<boolean> {
-  if (!tenantId || !conversationId) return false;
-  const [row] = await db
-    .select({ sessionId: chatThreads.sessionId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'teams'),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
+/**
+ * True when a session is already bound to this conversation (a thread the bot
+ * owns). With `projectId`, only a session of that project counts.
+ */
+export async function hasConversationSession(
+  tenantId: string,
+  conversationId: string,
+  projectId?: string,
+): Promise<boolean> {
+  return !!(await findChatThread(conversationThread(tenantId, conversationId), projectId));
+}
+
+function conversationThread(tenantId: string, conversationId: string): ChatThreadKey {
+  return { platform: 'teams', workspaceId: tenantId, threadId: conversationId };
 }
 
 export async function deliverTeamsFollowUpToSession(input: {
@@ -135,10 +152,44 @@ function agentGrantEnvFor(
   };
 }
 
+/** The project's default agent, as its manifest mirror records it. */
+function projectDefaultAgentOf(metadata: unknown): string | null {
+  const value = (metadata as Record<string, unknown> | null | undefined)?.default_agent;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 /** The model this session is pinned to, as `createProjectSession` recorded it. */
 function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
   const value = metadata?.opencode_model;
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Who a conversation's session is for. A personal chat with the bot is one
+ * person's conversation, so its session is private to them, as a web session
+ * is by default — and only a private session reaches that person's own API
+ * keys and ChatGPT subscription (spec 2026-09-22 §2.3). Group chats and
+ * channels stay shared with the project. With `TEAMS_REQUIRE_USER_IDENTITY`
+ * off, sessions run as the account owner, not as the person typing, so they
+ * stay shared and no one's personal keys count.
+ */
+function teamsSessionIsPersonal(activity: TeamsActivity): boolean {
+  return config.TEAMS_REQUIRE_USER_IDENTITY && isPersonalChat(activity);
+}
+
+/** The model scope of a Teams turn run as `userId` (see channels/model-access.ts). */
+async function teamsTurnScope(
+  project: { projectId: string; accountId: string; metadata: unknown },
+  activity: TeamsActivity,
+  userId: string,
+): Promise<ChannelModelScope | null> {
+  return projectChannelModelScope(project, {
+    linkedUserId: config.TEAMS_REQUIRE_USER_IDENTITY ? userId : null,
+    oneToOne: teamsSessionIsPersonal(activity),
+  }).catch((err) => {
+    console.warn('[teams-webhook] model scope unavailable; the legacy model check applies', err);
+    return null;
+  });
 }
 
 async function bindTurnToSession(handle: TeamsLiveTurn | null, sessionId: string): Promise<void> {
@@ -213,6 +264,8 @@ function turnIsLive(turn: TeamsLiveTurn | null, sessionStatus: string | null): b
 async function deliverFollowUp(input: {
   projectId: string;
   accountId: string;
+  /** The project row, for the conversation's model scope. */
+  project: { projectId: string; accountId: string; metadata: unknown };
   agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
   tenantId: string;
   conversationId: string;
@@ -230,8 +283,8 @@ async function deliverFollowUp(input: {
   // Who may continue this session (owner-only / owner-approval / open). The
   // verdict's notice replaces the requester's own live card; nothing reaches
   // the session until they are allowed in.
+  const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
   if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl) {
-    const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
     const verdict = await ensureTeamsThreadParticipant({
       projectId,
       tenantId,
@@ -259,7 +312,15 @@ async function deliverFollowUp(input: {
   }
 
   const inflight = await loadTurn(sessionId);
-  if (turnIsLive(inflight, input.sessionStatus)) {
+  // A card that has not moved for 10 minutes is not proof of a dead run: one
+  // long command (a build, a test suite) posts no step while it works. Before
+  // closing it as abandoned, ask the runtime's own turn ledger — the authority
+  // `GET .../turn` and inbox admission read. Closing a live run's card lost
+  // its answer: the card said "ended", and its `teams send` found no turn.
+  const live =
+    turnIsLive(inflight, input.sessionStatus) ||
+    (!!inflight && !inflight.finalized && (await teamsSessionLifecycle.holdsLiveTurn(sessionId).catch(() => false)));
+  if (live) {
     // A turn really is streaming: the running stream keeps its card, ours
     // becomes a short notice and is not saved as the turn.
     if (handle) await noticeOnLiveCard(handle, 'Got it — I’ll take this after the current step.');
@@ -287,11 +348,15 @@ async function deliverFollowUp(input: {
 
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
-  const turnModel = await channelTurnModel({
+  // The conversation's `/model` choice travels with this prompt, with its keys
+  // on the session; an unservable model is replaced for this turn.
+  const turnModel = await planChannelFollowUp({
     projectId,
     accountId: input.accountId,
     userId,
-    currentModel,
+    scope: await teamsTurnScope(input.project, activity, userId),
+    session: { sessionId, ownerUserId: input.sessionOwnerId, pinnedModel: currentModel },
+    chosenModel: selection?.opencodeModel,
     hasImage,
     agentGrantEnv: input.agentGrantEnv,
   });
@@ -308,16 +373,7 @@ async function deliverFollowUp(input: {
   });
 
   if (outcome === 'delivered') {
-    await db
-      .update(chatThreads)
-      .set({ lastMessageAt: new Date() })
-      .where(
-        and(
-          eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
-          eq(chatThreads.threadId, conversationId),
-        ),
-      );
+    await touchChatThread(conversationThread(tenantId, conversationId));
     return 'done';
   }
 
@@ -354,15 +410,7 @@ async function deliverFollowUp(input: {
   // stale mapping so the caller creates a fresh session on the same card.
   console.warn('[teams-webhook] conversation mapped to a deleted session — replacing', { tenantId, conversationId, sessionId });
   if (handle) await deleteTurn(sessionId);
-  await db
-    .delete(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'teams'),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-      ),
-    );
+  await dropChatThread(conversationThread(tenantId, conversationId));
   await clearConversationErrorNotice(tenantId, conversationId);
   return 'revive';
 }
@@ -372,15 +420,39 @@ export async function createOrJoinTeamsConversationSession(input: {
   tenantId: string;
   conversationId: string;
   activity: TeamsActivity;
+  /**
+   * Set by the per-project (BYO) webhook: its activities may reach only its
+   * own project, so a conversation another project's session owns is refused.
+   */
+  ownThreadsOnly?: boolean;
 }): Promise<void> {
-  const { projectId, tenantId, conversationId, activity } = input;
+  const { tenantId, conversationId, activity } = input;
+  let projectId = input.projectId;
 
-  const [project] = await db
+  let [project] = await db
     .select()
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!project) return;
+
+  // A conversation's session lives in exactly one project, and a follow-up is
+  // delivered THERE — so the sender is authorized against that project, never
+  // only against the one the conversation currently resolves to (a `/use`
+  // re-points the conversation, but its running session stays where it was
+  // created until `/new`).
+  const threadProject = (await findChatThread(conversationThread(tenantId, conversationId)))?.projectId;
+  const route = followUpRoute(threadProject, projectId, { ownThreadsOnly: input.ownThreadsOnly });
+  if (route.kind === 'refused') {
+    console.warn('[teams-webhook] conversation session belongs to another project — ignoring', { projectId });
+    return;
+  }
+  if (route.kind === 'thread_project') {
+    if (!(await projectFeatureFlagEnabled(route.projectId, 'teams'))) return;
+    projectId = route.projectId;
+    [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    if (!project) return;
+  }
 
   // Time-to-first-card: the "Working on it…" card depends on nothing below
   // this line, so it is posted before the identity link, the membership
@@ -400,28 +472,14 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   let revived = false;
   if (tenantId && conversationId) {
-    const [existing] = await db
-      .select({
-        sessionId: chatThreads.sessionId,
-        createdBy: projectSessions.createdBy,
-        metadata: projectSessions.metadata,
-        status: projectSessions.status,
-      })
-      .from(chatThreads)
-      .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
-      .where(
-        and(
-          eq(chatThreads.platform, 'teams'),
-          eq(chatThreads.workspaceId, tenantId),
-          eq(chatThreads.threadId, conversationId),
-        ),
-      )
-      .limit(1);
+    const existing = await findChatThreadSession(conversationThread(tenantId, conversationId), projectId);
     if (existing) {
       const next = await deliverFollowUp({
         projectId,
         accountId: project.accountId,
-        agentGrantEnv: agentGrantEnvFor(project, null),
+        project,
+        // The session's own agent: its secret grant decides which keys it may use.
+        agentGrantEnv: agentGrantEnvFor(project, existing.agentName ?? null),
         tenantId,
         conversationId,
         sessionId: existing.sessionId,
@@ -439,17 +497,23 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   const claimKey = tenantId && conversationId ? `teams:threadcreate:${tenantId}:${conversationId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
-    const sessionId = await waitForConversationSession(tenantId, conversationId);
+    const sessionId = await waitForConversationSession(tenantId, conversationId, projectId);
     if (sessionId) {
       const [row] = await db
-        .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata, status: projectSessions.status })
+        .select({
+          createdBy: projectSessions.createdBy,
+          agentName: projectSessions.agentName,
+          metadata: projectSessions.metadata,
+          status: projectSessions.status,
+        })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sessionId))
         .limit(1);
       await deliverFollowUp({
         projectId,
         accountId: project.accountId,
-        agentGrantEnv: agentGrantEnvFor(project, null),
+        project,
+        agentGrantEnv: agentGrantEnvFor(project, row?.agentName ?? null),
         tenantId,
         conversationId,
         sessionId,
@@ -475,16 +539,19 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   // A conversation that OPENS with an image has to start on a model that can
   // read one, and a `/model` pick that has since been retired has to be
-  // replaced — the session pin is what every later turn inherits.
-  const createModel =
-    (await channelTurnModel({
-      projectId,
-      accountId: project.accountId,
-      userId,
-      currentModel: selection?.opencodeModel,
-      hasImage: teamsMessageHasImage(activity),
-      agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
-    })) ?? selection?.opencodeModel;
+  // replaced — the session pin is what every later turn inherits. A pick that
+  // runs on provider keys starts with every key this conversation may use.
+  const start = await planChannelSessionStart({
+    projectId,
+    accountId: project.accountId,
+    userId,
+    scope: await teamsTurnScope(project, activity, userId),
+    chosenModel: selection?.opencodeModel,
+    agentName: selection?.agentName || projectDefaultAgentOf(project.metadata),
+    hasImage: teamsMessageHasImage(activity),
+    agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
+  });
+  const createModel = start.model;
 
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
@@ -495,6 +562,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
       ...(createModel ? { opencode_model: createModel } : {}),
+      ...(start.pools ? { provider_secret_pools: start.pools } : {}),
       initial_prompt: renderAgentPrompt(activity, revived),
       // Title from the user's actual words — without the `<at>…</at>` mention
       // markup Teams wraps around the bot's name in channels.
@@ -502,12 +570,24 @@ export async function createOrJoinTeamsConversationSession(input: {
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: claimKey,
+    // One key per inbound message, never per conversation. The lifecycle
+    // keeps a key forever (a unique index, no retention) and a chat is one
+    // conversation for life, so under the conversation's key its FIRST
+    // create_session command answered every later create: a failed first
+    // start (dead-lettered) failed every later message with the same error, a
+    // deleted session answered 409 IDEMPOTENCY_KEY_SESSION_DELETED — shown as
+    // "connect your account" — and `/new` got the old session back. Racing
+    // messages are already serialized by the thread-create claim; a Teams
+    // redelivery of the same activity still carries the same key.
+    idempotencyKey:
+      tenantId && conversationId && activity.id
+        ? `teams:create:${tenantId}:${conversationId}:${activity.id}`
+        : claimKey,
     postCreate:
       tenantId && conversationId
         ? [{ type: 'bind_chat_thread', platform: 'teams', workspaceId: tenantId, threadId: conversationId }]
         : undefined,
-    visibility: 'project',
+    visibility: teamsSessionIsPersonal(activity) ? 'private' : 'project',
     metadata: {
       source: 'teams',
       teams: {
@@ -517,6 +597,17 @@ export async function createOrJoinTeamsConversationSession(input: {
         activity_id: activity.id,
         // Frozen at start: a later `/policy` change applies to NEW sessions only.
         conversation_policy: normalizeConversationPolicy(selection?.conversationPolicy),
+        // The team a channel conversation lives in. Each turn gets it as
+        // MS_TEAMS_TEAM_GROUP_ID for that turn only; this is the durable
+        // record, so a channel session can be traced back to its team (Graph
+        // `/teams/{team}/channels/{channel}/…` needs the team id) after the
+        // activity is gone. Absent in a personal or group chat: no team.
+        ...(activity.channelData?.team?.aadGroupId
+          ? {
+              team_group_id: activity.channelData.team.aadGroupId,
+              ...(activity.channelData.team.name ? { team_name: activity.channelData.team.name } : {}),
+            }
+          : {}),
       },
     },
     extraEnvVars: buildTeamsTurnEnv(tenantId, activity),
@@ -524,6 +615,11 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   if (result.error) {
     console.error('[teams-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
+    // No session exists, so no mapping will ever be published under this
+    // claim. Held for its 5-minute TTL, it made every retry inside that
+    // window lose the claim, wait 8 s, and fail with "couldn't start" —
+    // including the retry the agent picker below asks for.
+    if (claimKey) await releaseThreadCreate(claimKey);
     if (handle) {
       // A deleted / renamed / disabled agent is rejected up front as
       // `400 AGENT_NOT_DECLARED`, and no amount of retrying revives it. Hand
@@ -597,7 +693,20 @@ async function claimThreadCreate(key: string): Promise<boolean> {
   }
 }
 
-async function waitForConversationSession(tenantId: string, conversationId: string): Promise<string | null> {
+async function releaseThreadCreate(key: string): Promise<void> {
+  try {
+    await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, key));
+  } catch (err) {
+    // The claim still expires on its own; only the retry window stays shut.
+    console.warn('[teams-webhook] thread-create claim release failed', err);
+  }
+}
+
+async function waitForConversationSession(
+  tenantId: string,
+  conversationId: string,
+  projectId: string,
+): Promise<string | null> {
   const deadline = Date.now() + 8_000;
   for (;;) {
     const [row] = await db
@@ -608,6 +717,7 @@ async function waitForConversationSession(tenantId: string, conversationId: stri
           eq(chatThreads.platform, 'teams'),
           eq(chatThreads.workspaceId, tenantId),
           eq(chatThreads.threadId, conversationId),
+          eq(chatThreads.projectId, projectId),
         ),
       )
       .limit(1);
@@ -626,24 +736,18 @@ const TURN_INSTRUCTIONS = [
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',
   '- Attach inline context with `--detail`, and surface a finished step result with `--output`:',
   '    teams step "Drafting summary" --output "Found 3 incidents, 1 P0"',
-  // TEAMS MUST NOT USE THE `question` TOOL YET.
-  //
-  // OpenCode's `question` tool BLOCKS. A channel session is supposed to release
-  // it with a sentinel so the turn ends — but that release is gated on
-  // `slackRelayContext()`, which reads SLACK_THREAD_TS / SLACK_CHANNEL_ID
-  // (kortix-sandbox-agent-server/src/harness/open-code/boot.ts). A Teams
-  // session carries MS_TEAMS_* instead, so the gate returns null, the call is
-  // "left open for the UI", and the agent hangs until the box is parked.
-  //
-  // The relay itself is ungated, so the CARD does get posted — which makes this
-  // worse than prose, not better: the user sees the question, answers it, and
-  // the turn that asked never finishes.
-  //
-  // Slack is unaffected and does point at the tool. Flip Teams over once the
-  // gate accepts a Teams session AND sandboxes carrying that daemon exist —
-  // the agent server is image-baked, so a fix reaches only NEW sandboxes.
-  '- Need to ask the user something? Use `teams send`, then END your turn — Teams questions are async: ask, stop, and resume when they reply.',
-  '- Do NOT use the built-in `question` tool in Teams. It blocks, and nothing releases it here, so the turn hangs after the card is posted.',
+  // The `question` tool renders a real Adaptive Card — one-tap buttons for a
+  // single question, a form with a picker per question for several — and it
+  // does NOT hang the turn. It used to: the daemons released the blocking call
+  // only for SLACK_* env, so a Teams agent that asked a question hung after its
+  // card was posted. `POST /turn-question` now releases it from the server for
+  // every chat-channel session (channels/question-release.ts), which reaches
+  // every sandbox the moment the API deploys — and this prompt ships in that
+  // same deploy, so it is never live without its release. Proven on a real dev
+  // runtime: the call blocked on `que_…`, the server-style reply returned 200,
+  // a second reply returned 404, and the agent resumed with the sentinel.
+  '- Need to ask the user something with DISCRETE choices? Use the built-in `question` tool. It renders a real Adaptive Card — one tap per option for a single question, a form with a picker per question for several, a multi-select when you pass `multiple`, and a text box when you pass no options. It returns at once: END your turn, and the answer arrives as a NEW turn with full context.',
+  '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 
@@ -681,7 +785,7 @@ function renderAttachments(activity: TeamsActivity): string[] {
 
 export function renderFollowUpPrompt(activity: TeamsActivity, imagesUnavailable = false): string {
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
-  const text = stripTeamsMentions(activity.text ?? '');
+  const text = teamsMessageText(activity);
   return [
     `New message from ${user} in the same Teams conversation:`,
     '',
@@ -697,7 +801,7 @@ function renderAgentPrompt(activity: TeamsActivity, revived = false): string {
   const tenant = activity.conversation?.tenantId ?? activity.channelData?.tenant?.id ?? 'unknown';
   const conversation = activity.conversation?.id ?? '?';
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
-  const text = stripTeamsMentions(activity.text ?? '');
+  const text = teamsMessageText(activity);
   return [
     ...(revived
       ? [

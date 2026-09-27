@@ -60,13 +60,87 @@ const MAX_LIFETIME_S = intFromEnv('DB_MAX_LIFETIME_S', 60 * 30); // 30 min
 const STATEMENT_TIMEOUT_MS = intFromEnv('DB_STATEMENT_TIMEOUT_MS', 25_000);
 
 /**
+ * Observability hooks for {@link createDb}.
+ *
+ * `onQuery` runs when a statement is dispatched (including the wait for a pool
+ * connection) and returns the function called when it settles. A transaction
+ * is reported as one operation spanning BEGIN..COMMIT, plus one per statement
+ * inside it. Hooks must never throw; they run on every query.
+ */
+export interface DbHooks {
+  onQuery?: () => () => void;
+}
+
+type AnySql = postgres.Sql<{}>;
+
+const QUERY_SETTLE_METHODS = ['then', 'catch', 'finally'] as const;
+
+/**
+ * Report a lazily-executed postgres.js query to `onQuery`. A postgres.js
+ * `Query` only starts on its first `then`/`catch`/`finally`, so the clock
+ * starts there. The settle observer uses the base `Promise.prototype.then`,
+ * which neither starts the query a second time nor leaves a rejection unhandled.
+ */
+function observeQuery<Q extends object>(query: Q, onQuery: () => () => void): Q {
+  let started = false;
+  const start = () => {
+    if (started) return;
+    started = true;
+    const end = onQuery();
+    Promise.prototype.then.call(query, end, end);
+  };
+  const target = query as Record<string, unknown>;
+  for (const method of QUERY_SETTLE_METHODS) {
+    const original = target[method];
+    if (typeof original !== 'function') continue;
+    target[method] = function (this: unknown, ...args: unknown[]) {
+      start();
+      return (original as (...a: unknown[]) => unknown).apply(query, args);
+    };
+  }
+  return query;
+}
+
+/**
+ * Wrap the three postgres.js entry points Drizzle uses — `unsafe` (every
+ * statement), `begin` (transactions) and `savepoint` (nested transactions) —
+ * so `onQuery` sees every round trip. Everything else passes through.
+ */
+export function instrumentSql<S extends object>(sql: S, onQuery: () => () => void): S {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'unsafe') {
+        return (...args: unknown[]) => observeQuery((value as (...a: unknown[]) => object).apply(target, args), onQuery);
+      }
+      if (property === 'begin' || property === 'savepoint') {
+        return (...args: unknown[]) => {
+          const last = args.length - 1;
+          const callback = args[last];
+          if (typeof callback === 'function') {
+            args[last] = (inner: object) => callback(instrumentSql(inner, onQuery));
+          }
+          const end = onQuery();
+          const pending = (value as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+          pending.then(end, end);
+          return pending;
+        };
+      }
+      return value;
+    },
+  });
+}
+
+/**
  * Create a Drizzle database client.
  *
  * @param databaseUrl - PostgreSQL connection string
  * @param options - Additional postgres.js options (override the defaults below)
+ * @param hooks - Optional observability hooks (see {@link DbHooks})
  * @returns Drizzle database client with full schema
  */
-export function createDb(databaseUrl: string, options?: postgres.Options<{}>) {
+export function createDb(databaseUrl: string, options?: postgres.Options<{}>, hooks?: DbHooks) {
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is required');
   }
@@ -91,7 +165,8 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>) {
     ...options,
   });
 
-  return drizzle(client, { schema });
+  const observed = hooks?.onQuery ? instrumentSql(client as AnySql, hooks.onQuery) : client;
+  return drizzle(observed as typeof client, { schema });
 }
 
 export type Database = ReturnType<typeof createDb>;

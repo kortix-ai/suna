@@ -33,7 +33,7 @@ describe('providers: bedrock mapping', () => {
 });
 
 describe('isProviderConnected — `providers ls` detection', () => {
-  test('bedrock shows connected with just bearer token + region set (the essentia case)', () => {
+  test('bedrock shows connected with just bearer token + region set (the sampleco case)', () => {
     const secrets = new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']);
     expect(isProviderConnected(PROVIDER_ENV_VARS.bedrock!, secrets)).toBe(true);
   });

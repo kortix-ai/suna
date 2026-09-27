@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
@@ -8,7 +9,7 @@ import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './stor
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
  * does to `kortix.session_lifecycle_commands`.
  *
- * They live here rather than inline in `routes/r8.ts` for one reason: every one
+ * They live here rather than inline in `routes/session-prompts.ts` for one reason: every one
  * of them has to carry the INBOX SCOPE, and a scope that is re-typed at four
  * call sites is a scope that will be forgotten at one of them. It already was:
  * `continue_session` is also how triggers, Slack and approval-resume deliver,
@@ -436,8 +437,29 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
   return released.length + requeued.length;
 }
 
-/** Release without asserting anything about whether a hold was set. */
-export function releaseInboxHold(sessionId: string): Promise<number> {
+/**
+ * Release without asserting anything about whether a hold was set.
+ *
+ * EVERY prompt POST calls this, and without a Stop the three ordered UPDATEs it
+ * runs match no rows at all — three round trips to change nothing. One read of
+ * the union of their predicates answers whether any of them can touch a row;
+ * when nothing is held there is nothing to release, so the writes are skipped.
+ * When something IS held the original three run, in their original order.
+ */
+export async function releaseInboxHold(sessionId: string): Promise<number> {
+  const [marked] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        inboxScope(sessionId),
+        sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+          OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
+          OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`,
+      ),
+    )
+    .limit(1);
+  if (!marked) return 0;
   return holdInboxPrompts(sessionId, false);
 }
 
@@ -498,7 +520,7 @@ export async function claimDueSessionInboxSiblings(input: {
         status: 'running',
         attempts: row.attempts + 1,
         lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
         updatedAt: now,
       })
       .where(

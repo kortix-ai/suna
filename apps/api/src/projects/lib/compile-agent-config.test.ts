@@ -60,6 +60,8 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  manifestPiPackageLists,
+  manifestPiPackages,
   manifestRuntime,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
@@ -77,11 +79,11 @@ agents:
   support:
     connectors: [github, slack]
     secrets: [STRIPE_KEY, GH_TOKEN]
-    kortix_cli: [project.session.start, project.cr.open]
+    kortix_permissions: [project.session.start, project.cr.open]
     workspace: runtime
   pr-bot:
     connectors: [github]
-    kortix_cli: [project.cr.open, project.cr.merge, project.review.submit]
+    kortix_permissions: [project.cr.open, project.cr.merge, project.review.submit]
 `;
 
 const V1_FIXTURE_TOML = `
@@ -207,12 +209,12 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
     });
   });
 
-  test('never copies governance fields (connectors/secrets/kortix_cli/workspace) — no runtime representation', () => {
+  test('never copies governance fields (connectors/secrets/kortix_permissions/workspace) — no runtime representation', () => {
     const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
     for (const agentConfig of Object.values(compiled.agent)) {
       expect(agentConfig).not.toHaveProperty('connectors');
       expect(agentConfig).not.toHaveProperty('secrets');
-      expect(agentConfig).not.toHaveProperty('kortix_cli');
+      expect(agentConfig).not.toHaveProperty('kortix_permissions');
       expect(agentConfig).not.toHaveProperty('workspace');
     }
   });
@@ -229,7 +231,7 @@ kortix_version: 2
 default_agent: pr-bot
 agents:
   pr-bot:
-    kortix_cli: []
+    kortix_permissions: []
 `);
     const compiled = compileAgentConfig(noModelManifest, 'opencode', {
       '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),
@@ -517,6 +519,67 @@ describe('manifestRuntime — the harness a manifest selects', () => {
     expect(manifestRuntime(parseYaml('kortix_version: 2\nruntime: opencode\n'))).toBe('opencode');
     expect(manifestRuntime(parseYaml('runtime: pi\n'))).toBe('opencode');
     expect(manifestRuntime(null)).toBe('opencode');
+  });
+});
+
+describe('manifestPiPackages — the project pi packages a manifest declares', () => {
+  test('the v2 harnesses.pi.packages list, entries kept as written', () => {
+    const raw = parseYaml('kortix_version: 2\nruntime: pi\nagents:\n  a: {}\nharnesses:\n  pi:\n    packages:\n      - npm:pi-web-access@0.30.0\n      - source: ./x.ts\n        skills: []\n');
+    expect(manifestPiPackages(raw)).toEqual(['npm:pi-web-access@0.30.0', { source: './x.ts', skills: [] }]);
+  });
+
+  const MULTI = parseYaml(
+    [
+      'kortix_version: 2',
+      'default_agent: builder',
+      'harnesses:',
+      '  pi:',
+      '    packages: [npm:pi-web-access@0.30.0, npm:shared@1.0.0, ./.kortix/pi/audit.ts]',
+      'agents:',
+      '  builder: {}',
+      '  researcher:',
+      '    harnesses:',
+      '      pi:',
+      '        packages: [npm:@juicesharp/rpiv-todo@2.11.0, { source: npm:shared@2.0.0, skills: [] }]',
+      '  reviewer:',
+      '    harnesses:',
+      '      pi:',
+      '        exclude: [pi-web-access, ./.kortix/pi/audit.ts]',
+      '  twin: {}',
+    ].join('\n'),
+  );
+
+  test('an agent gets the top-level list, minus its exclude, plus its own; its entry wins for the same package', () => {
+    expect(manifestPiPackages(MULTI, 'researcher')).toEqual([
+      'npm:pi-web-access@0.30.0',
+      { source: 'npm:shared@2.0.0', skills: [] },
+      './.kortix/pi/audit.ts',
+      'npm:@juicesharp/rpiv-todo@2.11.0',
+    ]);
+    expect(manifestPiPackages(MULTI, 'reviewer')).toEqual(['npm:shared@1.0.0']);
+    expect(manifestPiPackages(MULTI, 'builder')).toEqual(['npm:pi-web-access@0.30.0', 'npm:shared@1.0.0', './.kortix/pi/audit.ts']);
+  });
+
+  test('no agent named means the default agent; an unknown agent gets the top-level list', () => {
+    expect(manifestPiPackages(MULTI)).toEqual(manifestPiPackages(MULTI, 'builder'));
+    const reviewerDefault = { ...MULTI, default_agent: 'reviewer' };
+    expect(manifestPiPackages(reviewerDefault, 'default')).toEqual(['npm:shared@1.0.0']);
+    expect(manifestPiPackages(MULTI, 'ghost')).toEqual(manifestPiPackages(MULTI, 'builder'));
+  });
+
+  test('one list per distinct effective list: agents with the same list share it', () => {
+    const lists = manifestPiPackageLists(MULTI);
+    expect(lists).toHaveLength(3);
+    expect(lists).toContainEqual(manifestPiPackages(MULTI, 'builder'));
+    expect(lists).toContainEqual(manifestPiPackages(MULTI, 'researcher'));
+    expect(lists).toContainEqual(['npm:shared@1.0.0']);
+  });
+
+  test('empty for a v1 manifest, no harnesses block, or a malformed one', () => {
+    expect(manifestPiPackages(parseYaml('harnesses:\n  pi:\n    packages: [npm:a@1.0.0]\n'))).toEqual([]);
+    expect(manifestPiPackages(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toEqual([]);
+    expect(manifestPiPackages(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    packages: npm:a@1.0.0\n'))).toEqual([]);
+    expect(manifestPiPackages(null)).toEqual([]);
   });
 });
 

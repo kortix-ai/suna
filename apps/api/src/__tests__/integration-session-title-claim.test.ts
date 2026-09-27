@@ -9,22 +9,40 @@
  * duplicate overwrite a user rename. These tests pin both halves: the WHERE
  * clause (first-writer-wins) and the merge expression (no key loss).
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
+import {
+  PLACEHOLDER_TITLE_SQL_PATTERN,
+  isPlaceholderOpencodeTitle,
+} from '../projects/lib/opencode-title';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
-import { projectSessionMetadataMerge } from '../projects/lib/session-metadata-merge';
+import { transitionSession } from '../projects/session-lifecycle/status-transitions';
 import { persistTitle } from '../projects/session-title-generate';
 import { db } from '../shared/db';
 import { getPublicSessionInfo } from '../shared/public-session-share-view';
+
+// The OpenCode session list a running sandbox returns to the snapshot pass.
+const realOpencodeMapping = await import('../projects/opencode-mapping');
+mock.module('../projects/opencode-mapping', () => ({
+  ...realOpencodeMapping,
+  listSandboxOpencodeSessions: async () => ({
+    ok: true,
+    sessions: [{ id: 'ses_root', title: 'Runtime Title', parentID: null }],
+  }),
+}));
+const { syncOpencodeSessionSnapshot } = await import('../projects/opencode-session-snapshot');
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const USER = crypto.randomUUID();
 
 let n = 0;
-async function seed(metadata: Record<string, unknown>): Promise<ProjectSessionRow> {
+async function seed(
+  metadata: Record<string, unknown>,
+  status: (typeof projectSessions.$inferInsert)['status'] = undefined,
+): Promise<ProjectSessionRow> {
   n += 1;
   const sessionId = `title-cas-${n}-${crypto.randomUUID().slice(0, 8)}`;
   await db.insert(projectSessions).values({
@@ -34,6 +52,7 @@ async function seed(metadata: Record<string, unknown>): Promise<ProjectSessionRo
     branchName: sessionId,
     createdBy: USER,
     metadata,
+    ...(status ? { status } : {}),
   });
   return { sessionId, accountId: ACCOUNT, projectId: PROJECT, metadata } as ProjectSessionRow;
 }
@@ -92,9 +111,9 @@ describe('persistTitle — compare-and-set', () => {
     await persistTitle(row, 'Generated Title');
     expect((await metadataOf(row.sessionId)).name).toBe('Generated Title');
 
-    const veyris = await seed({ name: 'New agent' });
-    await persistTitle(veyris, 'Generated Veyris Title');
-    expect((await metadataOf(veyris.sessionId)).name).toBe('Generated Veyris Title');
+    const agentPlaceholder = await seed({ name: 'New agent' });
+    await persistTitle(agentPlaceholder, 'Generated Agent Title');
+    expect((await metadataOf(agentPlaceholder.sessionId)).name).toBe('Generated Agent Title');
 
     // …but a real title that merely starts with the word "New" is not.
     const near = await seed({ name: 'New sessions of work' });
@@ -161,15 +180,18 @@ describe('persistTitle — compare-and-set', () => {
     expect(metadata.provider_session_id).toBe('provider-1');
   });
 
-  test('no clobber: the provisioning_error merge preserves a title written after insert', async () => {
+  test('no clobber: a create failure keeps a title written after insert', async () => {
     // sessions.ts used to write `{ ...createTimeMetadata, provisioning_error }`,
     // which erased anything (title included) landing between insert and failure.
-    const row = await seed({ runtime_transport: 'rest' });
+    // It now fails the session through the `fail` transition, as here.
+    const row = await seed({ runtime_transport: 'rest' }, 'running');
     await persistTitle(row, 'Generated Title');
-    await db
-      .update(projectSessions)
-      .set({ metadata: projectSessionMetadataMerge({ provisioning_error: 'boom' }) })
-      .where(eq(projectSessions.sessionId, row.sessionId));
+    expect(
+      await transitionSession('fail', row.sessionId, {
+        error: 'boom',
+        metadata: { provisioning_error: 'boom' },
+      }),
+    ).toBe(true);
 
     const metadata = await metadataOf(row.sessionId);
     expect(metadata.name).toBe('Generated Title');
@@ -177,17 +199,64 @@ describe('persistTitle — compare-and-set', () => {
     expect(metadata.runtime_transport).toBe('rest');
   });
 
+  // The snapshot pass runs off the same prompt that fires title generation. It
+  // read the row before the title landed; its write must not drop that title.
+  test('no clobber: the opencode_sessions snapshot keeps a title committed after its read', async () => {
+    const row = await seed({ runtime_transport: 'rest' });
+    const staleRead = { ...row, opencodeSessionId: 'ses_root' } as ProjectSessionRow;
+    await persistTitle(row, 'Generated Title');
+
+    await syncOpencodeSessionSnapshot({ row: staleRead, externalId: 'sbx-snapshot' });
+
+    const metadata = await metadataOf(row.sessionId);
+    expect(metadata.name).toBe('Generated Title');
+    expect(metadata.runtime_transport).toBe('rest');
+    expect(metadata.opencode_sessions).toEqual([
+      {
+        id: 'ses_root',
+        title: 'Runtime Title',
+        parent_id: null,
+        project_id: null,
+        created_at: null,
+        updated_at: null,
+        archived_at: null,
+      },
+    ]);
+  });
+
   test('the CAS is scoped to the exact session/project/account triple', async () => {
     const row = await seed({});
     await persistTitle({ ...row, accountId: crypto.randomUUID() } as ProjectSessionRow, 'Wrong');
     expect((await metadataOf(row.sessionId)).name).toBeUndefined();
   });
+});
 
-  test('the placeholder predicate runs case-insensitively in Postgres', async () => {
+// The CAS matches placeholders with this SQL pattern; the TS `needsTitle` gate
+// uses `isPlaceholderOpencodeTitle`. If they disagree, the gate sends a row to
+// the gateway that the UPDATE then refuses: a billed title on every prompt.
+describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle in PostgreSQL', () => {
+  test.each([
+    'New session',
+    'New session - Jul 29',
+    'new SESSION x',
+    'New session_x',
+    'NEW SESSION',
+    '  New session - 2026-07-28  ',
+    'New sessions of work',
+    'Newsession',
+    'New session planning doc',
+    'New agent',
+    'NEW AGENT',
+    'New agent - Aug 3',
+    'New agents at work',
+    'New agent planning doc',
+    'Set Up MS Graph',
+    '',
+  ])('%p', async (title) => {
     const [check] = await db.execute(
-      sql`select ('new SESSION x' ~* '^new session([^[:alnum:]_]|$)')::bool as hit`,
+      sql`select (btrim(${title}::text) ~* ${PLACEHOLDER_TITLE_SQL_PATTERN})::bool as hit`,
     );
-    expect((check as { hit: boolean }).hit).toBe(true);
+    expect((check as { hit: boolean }).hit).toBe(isPlaceholderOpencodeTitle(title));
   });
 });
 

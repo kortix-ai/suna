@@ -16,7 +16,7 @@ const BLOB_NEW = 'd'.repeat(40);
 const storedGrant: AgentGrant = {
   agent: 'kortix',
   connectors: 'all',
-  kortixCli: 'all',
+  permissions: 'all',
   env: 'all',
   manifestRevision: BLOB_NEW,
   manifestCommit: COMMIT_NEW,
@@ -85,7 +85,7 @@ const { reconcileStoredSessionAgentGrant, remintDecisionFor, resetGrantRefreshCo
 const denyAll = (overrides: Partial<AgentGrant>): AgentGrant => ({
   agent: 'kortix',
   connectors: [],
-  kortixCli: [],
+  permissions: [],
   env: [],
   ...overrides,
 });
@@ -168,7 +168,7 @@ test('an unrestricted resolution over a narrower stored grant answers with the s
 });
 
 test('equal grants with new provenance are written once so the next comparison has a blob to reason with', async () => {
-  storedForTest = { agent: 'kortix', connectors: 'all', kortixCli: 'all', env: 'all' };
+  storedForTest = { agent: 'kortix', connectors: 'all', permissions: 'all', env: 'all' };
   resolvedGrant = { ...storedForTest, manifestRevision: BLOB_NEW, manifestCommit: COMMIT_NEW };
   const grant = await reconcileStoredSessionAgentGrant({ projectId: 'p1', sessionId: 's1' });
   expect(grant).toEqual(resolvedGrant);

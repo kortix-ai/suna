@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 process.env.KORTIX_API_URL = process.env.KORTIX_API_URL ?? 'https://api.test.invalid';
 process.env.GATEWAY_INTERNAL_TOKEN = process.env.GATEWAY_INTERNAL_TOKEN ?? 'test-internal-token';
 
-const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER } = await import('./server');
+const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER, messagesAuthorization } = await import('./server');
 
 // Piece B: `POST /v1/messages` (+ the `/v1/llm/messages` and `/v1/openai/messages`
 // aliases, mirroring the `/v1/chat/completions` alias namespaces) must be
@@ -38,8 +38,29 @@ describe('standalone gateway inference routes', () => {
       expect(body.type).toBe('error');
       expect(body.error.type).toBe('authentication_error');
       expect(body.error.message).toBe('Missing bearer token');
+      // Not the OpenAI-compat shape a chat completions 401 returns.
+      expect((body as unknown as { code?: unknown }).code).toBeUndefined();
     });
   }
+
+  // Anthropic SDKs, and Claude Code with ANTHROPIC_API_KEY, send the key as
+  // `x-api-key`, not as a bearer token.
+  test('messagesAuthorization accepts x-api-key when no Authorization header is set', () => {
+    expect(messagesAuthorization(undefined, 'kortix_gw_abc')).toBe('Bearer kortix_gw_abc');
+    expect(messagesAuthorization('Bearer kortix_gw_a', 'kortix_gw_b')).toBe('Bearer kortix_gw_a');
+    expect(messagesAuthorization(undefined, undefined)).toBeUndefined();
+    expect(messagesAuthorization(undefined, '  ')).toBeUndefined();
+  });
+
+  test('/v1/messages authenticates an x-api-key request instead of reporting a missing token', async () => {
+    const res = await app.request('/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'kortix_gw_not_real' },
+      body: JSON.stringify({ model: 'x', max_tokens: 8, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    const body = (await res.json()) as { error?: { message?: string } };
+    expect(body.error?.message).not.toBe('Missing bearer token');
+  });
 
   test('an unregistered path 404s (sanity check against an accidental catch-all)', async () => {
     const res = await post('/v1/not-a-real-messages-route');

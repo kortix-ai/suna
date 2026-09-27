@@ -7,6 +7,7 @@ import { OPENCODE_VERSION } from '@kortix/shared';
 import * as tar from 'tar';
 
 import { C, status } from './style.ts';
+import { isSupervised, SUPERVISED_NOTICE } from './supervised.ts';
 
 /**
  * Resolves the `opencode` binary that `kortix connect` hands the terminal to.
@@ -104,6 +105,13 @@ function probeOpencodeOnPath(): string | null {
  *   4. Download the exact version from the npm registry into the cache.
  * A failed download degrades to any PATH binary (with a version-skew warning)
  * before giving up, so an offline machine that has OpenCode still connects.
+ *
+ * Step 4 is SKIPPED inside a managed sandbox (`KORTIX_SUPERVISED=1`). There the
+ * platform owns which OpenCode exists — the image bakes the pin and the daemon
+ * converges it — so a silent 40 MB pull from registry.npmjs.org would install a
+ * second, unmanaged copy with no prompt and no TTY check whatsoever. Steps 1-3
+ * all still apply: an operator override, the managed cache and an exact PATH
+ * match are all binaries somebody already vouched for.
  */
 export async function ensureOpencodeBin(
   opts: EnsureOpencodeBinOpts = {},
@@ -121,6 +129,21 @@ export async function ensureOpencodeBin(
   const probe = opts.probePathVersion ?? probeOpencodeOnPath;
   const pathVersion = probe();
   if (pathVersion === version) return { bin: 'opencode', source: 'path', version };
+
+  if (isSupervised()) {
+    if (pathVersion) {
+      process.stderr.write(
+        `${status.warn(`Not downloading OpenCode v${version}.`)}\n` +
+          `  ${C.dim}${SUPERVISED_NOTICE}${C.reset}\n` +
+          `  ${C.dim}Using \`opencode\` v${pathVersion} from PATH — the session server runs v${version}, so the TUI may misbehave.${C.reset}\n`,
+      );
+      return { bin: 'opencode', source: 'path-fallback', version: pathVersion };
+    }
+    throw new Error(
+      `No OpenCode v${version} in this sandbox and the platform manages the binary, ` +
+        'so the CLI will not download one. Set KORTIX_OPENCODE_BIN to an existing binary.',
+    );
+  }
 
   try {
     await downloadOpencode(version, managed, opts.fetchImpl);

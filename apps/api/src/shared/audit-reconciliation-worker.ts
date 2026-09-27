@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { recordAuditEvent } from './audit';
 import { type AuditReconciliationResult, reconcileAuditEvents } from './audit-reconciliation';
 import { db } from './db';
+import { runWorkerTick } from './audit-scope';
 
 const PAGE_SIZE = 1_000;
 const ACTIVE_DELAY_MS = 100;
@@ -98,7 +99,7 @@ function schedule(delay: number): void {
   if (stopped || timer) return;
   timer = setTimeout(() => {
     timer = null;
-    const run = tick();
+    const run = runWorkerTick('audit-reconciliation', tick);
     active = run;
     void run.finally(() => {
       if (active === run) active = null;

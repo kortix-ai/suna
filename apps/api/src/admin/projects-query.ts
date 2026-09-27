@@ -12,6 +12,8 @@
  * dropping it would silently widen "one account" to "every account".
  */
 
+import { isUuid } from '../shared/validate';
+
 /** Members of the `kortix.project_status` enum (packages/db/src/schema/kortix.ts). */
 export const PROJECT_STATUS_VALUES = ['active', 'archived'] as const;
 export type AdminProjectStatus = (typeof PROJECT_STATUS_VALUES)[number];
@@ -33,8 +35,6 @@ export interface AdminProjectsListQuery {
   limit: number;
   offset: number;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function csv(value: string | undefined | null): string[] {
   return (value || '')
@@ -69,7 +69,7 @@ export function parseAdminProjectsListQuery(
   const limit = intIn(get('limit'), 50, 1, 100);
 
   const accountIdRaw = (get('accountId') || '').trim();
-  const accountId = UUID_RE.test(accountIdRaw) ? accountIdRaw : null;
+  const accountId = isUuid(accountIdRaw) ? accountIdRaw : null;
 
   const statusValues = [...new Set(csv(get('status')).filter(isProjectStatus))];
 

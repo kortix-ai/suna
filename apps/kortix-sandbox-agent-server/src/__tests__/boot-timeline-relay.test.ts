@@ -36,6 +36,9 @@ async function flush() {
 }
 
 afterEach(() => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  __resetBootTimelineRelayForTests()
   globalThis.fetch = realFetch
   process.env = { ...realEnv }
 })
@@ -64,36 +67,10 @@ describe('relayBootTimelineToApi', () => {
     expect(body.project_id).toBeUndefined()
   })
 
-  test('does not append a trailing /v1 twice when KORTIX_API_URL already ends in /v1', async () => {
-    setEnv({ ...BASE_ENV, KORTIX_API_URL: 'https://api.kortix.test/v1/' })
-    const calls: string[] = []
-    globalThis.fetch = (async (url: string) => {
-      calls.push(String(url))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    relayBootTimelineToApi(TIMELINE)
-    await flush()
-
-    expect(calls).toEqual(['https://api.kortix.test/v1/platform/boot-timeline'])
-  })
-
-  test('is a silent no-op when KORTIX_API_URL is unset (self-host / local dev with no control plane)', async () => {
+  test('is a silent no-op without a control plane (self-host / local dev)', async () => {
+    // relay-context.test.ts owns the per-variable table; this row proves the
+    // relay consults it.
     setEnv({ ...BASE_ENV, KORTIX_API_URL: undefined })
-    const calls: string[] = []
-    globalThis.fetch = (async (url: string) => {
-      calls.push(String(url))
-      return new Response('{}', { status: 200 })
-    }) as unknown as typeof fetch
-
-    relayBootTimelineToApi(TIMELINE)
-    await flush()
-
-    expect(calls).toEqual([])
-  })
-
-  test('is a silent no-op when no credential is configured', async () => {
-    setEnv({ ...BASE_ENV, KORTIX_TOKEN: undefined })
     const calls: string[] = []
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url))
@@ -120,40 +97,26 @@ describe('relayBootTimelineToApi', () => {
     expect(calls).toEqual([])
   })
 
-  test('never throws and never blocks the caller when the network call fails', async () => {
-    setEnv(BASE_ENV)
-    globalThis.fetch = (async () => {
+  test.each([
+    ['the network call rejects', async () => {
       throw new Error('network unreachable')
+    }],
+    ['the server answers 500', async () => new Response('{"error":"nope"}', { status: 500 })],
+  ])('never throws and never blocks the caller when %s', async (_name, impl) => {
+    setEnv(BASE_ENV)
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls++
+      return impl()
     }) as unknown as typeof fetch
 
     const started = Date.now()
     expect(() => relayBootTimelineToApi(TIMELINE)).not.toThrow()
     expect(Date.now() - started).toBeLessThan(50)
     await flush()
+    expect(calls).toBe(1)
   })
 
-  test('never throws when the server responds non-ok', async () => {
-    setEnv(BASE_ENV)
-    globalThis.fetch = (async () => new Response('{"error":"nope"}', { status: 500 })) as unknown as typeof fetch
-
-    expect(() => relayBootTimelineToApi(TIMELINE)).not.toThrow()
-    await flush()
-  })
-
-  test('does not await the network call — returns before the response resolves', async () => {
-    setEnv(BASE_ENV)
-    let resolveFetch: (() => void) | undefined
-    globalThis.fetch = (() =>
-      new Promise((resolve) => {
-        resolveFetch = () => resolve(new Response('{}', { status: 200 }))
-      })) as unknown as typeof fetch
-
-    const before = Date.now()
-    relayBootTimelineToApi(TIMELINE)
-    expect(Date.now() - before).toBeLessThan(10)
-    resolveFetch?.()
-    await flush()
-  })
   test('relays at most once per boot even though startSessionRuntime has two ready exits', async () => {
     setEnv(BASE_ENV)
     let posts = 0

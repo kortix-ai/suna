@@ -7,7 +7,8 @@ import type { ProjectEnvStore } from './project-env'
 import type { ResourceMonitor } from './resources'
 import { egressShimPort } from './egress-shim'
 import { logger } from './logger'
-import { registerAgentSwapBlocker } from './runtime-assets'
+import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from './runtime-assets'
+import { kortixEventBus } from './kortix-event-bus'
 import { createEnvRpcRouter } from './routes/env-rpc'
 import { createHarnessControlRouter } from './routes/harness-control'
 import { createRuntimeProxyRouter } from './routes/runtime-proxy'
@@ -238,6 +239,22 @@ export function startProxy(
   // installs it at the next start.
   registerAgentSwapBlocker('pty', () =>
     ptyRegistry.list().some((entry) => entry.status === 'running'),
+  )
+  // A swap must not exit this process while the runtime is COMING UP. The turn
+  // oracle cannot see a boot: it reads the root's newest assistant message, and
+  // a box that is still starting OpenCode has no turn in flight by that test, so
+  // it answers `false` and the swap proceeds — turning a recoverable restart (a
+  // verified reload, a boot fallback) into a dead box plus a supervisor restart.
+  // `getState()` is the harness's own answer to "am I serving", so it is the
+  // thing that answers rather than the updater guessing.
+  registerAgentSwapBlocker('runtime-starting', () => harness.lifecycle.getState() !== 'ok')
+  // Off by default — see `agentSwapRequiresUnattendedBox` for the trade. A swap
+  // severs every open SSE stream; the client reconnects and the ring replays,
+  // so the cost is visible but not lossy, and blocking on subscribers would stop
+  // a watched session from EVER converging.
+  registerAgentSwapBlocker(
+    'sse-subscriber',
+    () => agentSwapRequiresUnattendedBox() && kortixEventBus().subscriberCount > 0,
   )
   let app = buildDaemonApp(cfg, harness, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 

@@ -6,7 +6,7 @@
  * Emitting a phase AFTER its work completes makes a UI show a step as
  * finished while the one actually running sits idle — the checklist stalls
  * on the wrong row. Reads the file as text, same shape as
- * `routes/r1-provision-idempotency.test.ts`. No database, no GitHub, no
+ * `routes/projects-provision-idempotency.test.ts`. No database, no GitHub, no
  * `mock.module`.
  */
 import { describe, expect, test } from 'bun:test';

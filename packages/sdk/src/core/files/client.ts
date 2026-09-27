@@ -508,11 +508,31 @@ function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promis
 }
 
 /**
- * Create an EMPTY file at a path — 0 bytes, not one space.
+ * The path `createFile` was asked to create already holds a file or a folder.
  *
- * Implemented on `writeFile`, and that is a ROLLOUT requirement, not a style
- * choice. The `filename` form field `uploadFile` sends is read by the daemon,
- * and the daemon is **baked into the sandbox image**
+ * `createFile` is create-only: it never truncates an existing file and never
+ * replaces a folder. Hosts catch this to say "a file with that name already
+ * exists" instead of losing the user's data. `status` 409, `code` `FILE_EXISTS`.
+ */
+export class FileExistsError extends ApiError {
+  /** The absolute sandbox path that already exists. */
+  readonly path: string;
+
+  constructor(path: string) {
+    super(`A file or folder already exists at ${path}`, { status: 409, code: 'FILE_EXISTS' });
+    this.name = 'FileExistsError';
+    this.path = path;
+  }
+}
+
+/**
+ * Create an EMPTY file at a path — 0 bytes, not one space. CREATE-ONLY: when
+ * anything already exists at the path, it throws `FileExistsError` and changes
+ * nothing.
+ *
+ * Implemented as upload-then-rename, and that is a ROLLOUT requirement, not a
+ * style choice. The `filename` form field `uploadFile` sends is read by the
+ * daemon, and the daemon is **baked into the sandbox image**
  * (`/usr/local/bin/kortix-agent`, `apps/sandbox/Dockerfile`). `/v1/runtime-assets`
  * reconciles only the CLI binary and the managed skills (`cli_sha256`,
  * `managed_skills_hash`) — it does NOT ship the daemon. So this SDK reaches
@@ -521,7 +541,7 @@ function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promis
  *
  * On an old daemon a genuinely 0-byte part loses its filename in Bun's
  * multipart parser and a direct upload lands as a file literally named
- * "undefined". `writeFile` renames the path the daemon REPORTED onto the
+ * "undefined". The final rename moves the path the daemon REPORTED onto the
  * requested path, so both fleets converge on the right answer:
  *
  * - new daemon → temp name lands → renamed to the target;
@@ -531,6 +551,11 @@ function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promis
  * "undefined", the daemon's `O_EXCL` + suffix retry hands the second one
  * `undefined-<suffix>`, and each call renames only the path IT was told — so
  * they cannot cross.
+ *
+ * Existence is checked twice. The parent listing works on every daemon; the
+ * final rename asks for `overwrite: false`, which a current daemon enforces
+ * atomically (409). An older daemon ignores that flag, and its bare rename
+ * still cannot replace a directory.
  *
  * Returns `UploadResult[]` — the published shape, unchanged.
  */
@@ -543,11 +568,22 @@ export async function createFile(filePath: string, baseUrl?: string): Promise<Up
   // and a bare name anchors under /workspace.
   const fileName = parts.pop() || 'untitled';
   const dirPath = parts.join('/') || '/workspace';
-  const written = await writeFile(
-    `${dirPath}/${fileName}`,
-    new Blob([], { type: 'application/octet-stream' }),
-    base,
-  );
+  const target = toSandboxAbsolutePath(`${dirPath}/${fileName}`);
+
+  let siblings: FileNode[] = [];
+  try {
+    siblings = await listFiles(sandboxDirname(target), base);
+  } catch (error) {
+    // A missing parent folder holds nothing yet; it is created below.
+    if (!(error instanceof ApiError && error.status === 404)) throw error;
+  }
+  if (siblings.some((node) => node.name === sandboxBasename(target))) {
+    throw new FileExistsError(target);
+  }
+
+  const written = await placeUpload(target, new Blob([], { type: 'application/octet-stream' }), base, {
+    overwrite: false,
+  });
   return [{ path: written.path, size: written.bytes }];
 }
 
@@ -588,7 +624,7 @@ function sandboxBasename(absPath: string): string {
 }
 
 /**
- * Short high-entropy token for the temp + backup names below.
+ * Short high-entropy token for the temp upload names below.
  *
  * `crypto.randomUUID` exists only in a secure context (https or localhost), so
  * a self-hosted white-label served over plain http would throw — the same trap
@@ -616,10 +652,11 @@ function writeToken(): string {
  * toast — silent data loss.
  *
  * This is the missing primitive: upload to a temp name, then `POST /file/rename`
- * over the target (`fs.rename` overwrites atomically). The existing file is
- * moved aside first and restored if the swap fails, so a failed write can never
- * destroy the original. Reported as `{ path, bytes }` for the path the bytes
- * ended up at — which is always the path you asked for, or a throw.
+ * over the target (`fs.rename` replaces a file atomically). The target is never
+ * moved aside first: a failed rename leaves the original untouched, and a
+ * directory at the target makes the write fail instead of being replaced.
+ * Reported as `{ path, bytes }` for the path the bytes ended up at — which is
+ * always the path you asked for, or a throw.
  *
  * `apps/cli` (`writeSessionFile`) and `apps/mobile` each hand-rolled this; they
  * are the reason it belongs here.
@@ -631,9 +668,25 @@ export async function writeFile(
 ): Promise<WriteFileResult> {
   const base = requireBaseUrl(baseUrl);
   const absPath = toSandboxAbsolutePath(stripTrailingSlashes(filePath.trim()));
+  return placeUpload(absPath, content, base, { overwrite: true });
+}
+
+/**
+ * Upload `content` beside `absPath` under a temp name, then rename it onto
+ * `absPath`. The rename is the only step that touches the target: a file there
+ * is replaced atomically (`overwrite: true`) or refused (`overwrite: false`),
+ * and a directory there is never replaced. On any failure the temp upload is
+ * removed and the target is exactly as it was.
+ */
+async function placeUpload(
+  absPath: string,
+  content: Blob | File,
+  base: string,
+  options: { overwrite: boolean },
+): Promise<WriteFileResult> {
   const name = sandboxBasename(absPath);
   if (!name) {
-    throw new ApiError(`writeFile needs a file path, got "${filePath}"`, { code: 'INVALID_PATH' });
+    throw new ApiError(`writeFile needs a file path, got "${absPath}"`, { code: 'INVALID_PATH' });
   }
   const parent = sandboxDirname(absPath);
   // A missing parent is the common case for a brand-new file; an existing one
@@ -651,23 +704,15 @@ export async function writeFile(
   // would then move the wrong file.
   const actual = toSandboxAbsolutePath(uploaded);
 
-  const backupPath = `${absPath}.kortix-write-backup-${token}`;
-  let backedUp = false;
   try {
-    await renameFile(absPath, backupPath, base);
-    backedUp = true;
-  } catch {
-    // Nothing at the target yet — no backup needed, and no failure either.
-  }
-  try {
-    await renameFile(actual, absPath, base);
+    await moveFile(actual, absPath, base, options.overwrite);
   } catch (error) {
-    // Put the original back exactly where it was, then drop the orphaned temp.
-    if (backedUp) await renameFile(backupPath, absPath, base).catch(() => undefined);
     await deleteFile(actual, base).catch(() => undefined);
+    if (!options.overwrite && error instanceof ApiError && error.status === 409) {
+      throw new FileExistsError(absPath);
+    }
     throw error;
   }
-  if (backedUp) await deleteFile(backupPath, base).catch(() => undefined);
 
   const written = results[0]?.size;
   return { path: absPath, bytes: typeof written === 'number' ? written : content.size };
@@ -701,10 +746,15 @@ export async function mkdir(dirPath: string, baseUrl?: string): Promise<boolean>
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
 export async function renameFile(from: string, to: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file/rename`, {
+  return moveFile(from, to, requireBaseUrl(baseUrl), true);
+}
+
+/** Daemon `POST /file/rename`. `overwrite: false` asks for create-only (409 when taken). */
+async function moveFile(from: string, to: string, base: string, overwrite: boolean): Promise<boolean> {
+  const res = await authenticatedFetch(`${base}/file/rename`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to }),
+    body: JSON.stringify(overwrite ? { from, to } : { from, to, overwrite: false }),
   });
   if (!res.ok) {
     throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });

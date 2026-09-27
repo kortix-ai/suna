@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import { log } from '@/lib/logger';
 
@@ -18,59 +18,52 @@ interface TrackingContextType {
 
 const TrackingContext = React.createContext<TrackingContextType | undefined>(undefined);
 
+/**
+ * Tracking permission state. Launch only reads the current status; the iOS
+ * App Tracking Transparency prompt appears when a feature that tracks calls
+ * `requestTrackingPermission()`, never on cold start.
+ */
 export function TrackingProvider({ children }: { children: React.ReactNode }) {
   const [canTrack, setCanTrack] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkAndRequestTracking();
-  }, []);
+    let mounted = true;
 
-  const checkAndRequestTracking = async () => {
-    if (!Tracking) {
-      log.warn('⚠️ Tracking module not available, defaulting to no tracking');
-      setCanTrack(false);
-      setIsLoading(false);
-      return;
-    }
+    const checkTracking = async () => {
+      if (!Tracking) {
+        log.warn('⚠️ Tracking module not available, defaulting to no tracking');
+        setCanTrack(false);
+        setIsLoading(false);
+        return;
+      }
 
-    if (Platform.OS !== 'ios') {
-      setCanTrack(true);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const { status: currentStatus } = await Tracking.getTrackingPermissionsAsync();
-      
-      if (currentStatus === 'granted') {
-        log.log('✅ Tracking already authorized');
+      if (Platform.OS !== 'ios') {
         setCanTrack(true);
         setIsLoading(false);
         return;
       }
 
-      if (currentStatus === 'undetermined') {
-        log.log('⏳ Requesting tracking permission...');
-        const { status: newStatus } = await Tracking.requestTrackingPermissionsAsync();
-        const granted = newStatus === 'granted';
-        
-        log.log(granted ? '✅ Tracking authorized' : '❌ Tracking denied');
-        setCanTrack(granted);
-      } else {
-        log.log('❌ Tracking not authorized, status:', currentStatus);
+      try {
+        const { status } = await Tracking.getTrackingPermissionsAsync();
+        if (!mounted) return;
+        log.log(status === 'granted' ? '✅ Tracking already authorized' : `Tracking status: ${status}`);
+        setCanTrack(status === 'granted');
+      } catch (error) {
+        log.error('Error checking tracking permission:', error);
+        if (!mounted) return;
         setCanTrack(false);
       }
-      
       setIsLoading(false);
-    } catch (error) {
-      log.error('Error checking/requesting tracking permission:', error);
-      setCanTrack(false);
-      setIsLoading(false);
-    }
-  };
+    };
 
-  const requestTrackingPermission = async (): Promise<boolean> => {
+    void checkTracking();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const requestTrackingPermission = useCallback(async (): Promise<boolean> => {
     if (!Tracking) {
       log.warn('⚠️ Tracking module not available');
       return false;
@@ -89,13 +82,14 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
       log.error('Error requesting tracking permission:', error);
       return false;
     }
-  };
+  }, []);
 
-  return (
-    <TrackingContext.Provider value={{ canTrack, isLoading, requestTrackingPermission }}>
-      {children}
-    </TrackingContext.Provider>
+  const value = useMemo<TrackingContextType>(
+    () => ({ canTrack, isLoading, requestTrackingPermission }),
+    [canTrack, isLoading, requestTrackingPermission]
   );
+
+  return <TrackingContext.Provider value={value}>{children}</TrackingContext.Provider>;
 }
 
 export function useTracking() {
@@ -107,4 +101,3 @@ export function useTracking() {
   
   return context;
 }
-

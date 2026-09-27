@@ -126,14 +126,18 @@ async function replacementCandidates(input: {
   projectId: string;
   accountId: string;
   principalUserId: string;
+  personalUserId?: string | null;
   currentModel: string | null;
   needsVision: boolean;
   agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
 }): Promise<string[]> {
   const { projectId, accountId, principalUserId, currentModel, needsVision } = input;
-  const catalog = await servableProjectCatalog({ projectId, accountId, principalUserId }).catch(
-    () => null,
-  );
+  const catalog = await servableProjectCatalog({
+    projectId,
+    accountId,
+    principalUserId,
+    ...(input.personalUserId !== undefined ? { personalUserId: input.personalUserId } : {}),
+  }).catch(() => null);
   if (!catalog) return [];
 
   const usable = Object.entries(catalog.models).filter(
@@ -198,6 +202,21 @@ export async function channelTurnModel(input: {
   hasImage: boolean;
   /** Lazily resolved; only consulted for a `codex/*` candidate. */
   agentGrantEnv?: () => Promise<readonly string[] | 'all' | null>;
+  /**
+   * Whose personal keys the session reaches, as the gateway resolves it (a
+   * shared session: null). Absent = `userId` (legacy).
+   */
+  personalUserId?: string | null;
+  /** The live session: its saved key selection counts in the check. */
+  sessionId?: string;
+  /** A session not created yet: the keys it will select count in the check. */
+  providerSecretPools?: Record<string, string[]>;
+  /**
+   * The session does not run `currentModel` yet — a conversation's `/model`
+   * choice made after it started. A servable one is returned, so the choice
+   * travels with this prompt.
+   */
+  explicit?: boolean;
 }): Promise<string | null> {
   const { projectId, accountId, userId, currentModel, hasImage } = input;
   if (!userId) return null;
@@ -213,15 +232,20 @@ export async function channelTurnModel(input: {
   // `requires Kortix's managed provider, which is disabled on this deployment`
   // upstream. Two live Teams sessions were pinned to it on 2026-09-21, failing
   // every message with nothing shown to the user. A pre-filter on the catalog
-  // would have skipped exactly those. The probe is cached per
-  // account+project+model, so a burst of chat costs one resolution.
+  // would have skipped exactly those. The probe is cached per person, session
+  // and model, so a burst of chat costs one resolution.
   if (!hasImage && !currentModel) return null;
 
   if (!(await projectLlmGatewayEnabledById(projectId).catch(() => false))) return null;
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
   const probe = async (model: string): Promise<boolean> => {
-    const key = `${accountId}:${projectId}:${model}`;
+    // Per person and session, not per project: a model reached through one
+    // person's key or one session's key selection is not servable for the
+    // next conversation just because it was for this one.
+    const personal = input.personalUserId === undefined ? userId : (input.personalUserId ?? '-');
+    const pools = input.providerSecretPools ? JSON.stringify(input.providerSecretPools) : '-';
+    const key = `${accountId}:${projectId}:${userId}:${personal}:${input.sessionId ?? '-'}:${pools}:${model}`;
     const hit = cachedProbe(key);
     if (hit !== undefined) return hit;
     const servable = await isModelServableForAccount({
@@ -230,6 +254,9 @@ export async function channelTurnModel(input: {
       projectId,
       freeModelsOnly,
       model,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.providerSecretPools ? { providerSecretPools: input.providerSecretPools } : {}),
+      ...(input.personalUserId !== undefined ? { personalUserId: input.personalUserId } : {}),
     }).catch(() => false);
     probeCache.set(key, { at: Date.now(), servable });
     return servable;
@@ -247,13 +274,14 @@ export async function channelTurnModel(input: {
   if (hasImage && effectiveReadsImages && pinServable && currentModel) {
     return wireModelId(currentModel);
   }
-  if (!hasImage && pinServable) return null;
+  if (!hasImage && pinServable) return input.explicit && currentModel ? wireModelId(currentModel) : null;
 
   const needsVision = hasImage;
   const candidates = await replacementCandidates({
     projectId,
     accountId,
     principalUserId: userId,
+    ...(input.personalUserId !== undefined ? { personalUserId: input.personalUserId } : {}),
     currentModel: effective,
     needsVision,
     ...(input.agentGrantEnv ? { agentGrantEnv: input.agentGrantEnv } : {}),

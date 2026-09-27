@@ -2,8 +2,8 @@
 
 import { Badge } from '@/components/ui/badge';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { UnifiedMarkdown } from './unified-markdown';
 
@@ -35,7 +35,9 @@ export function parseFrontmatter(content: string): ParsedMarkdown {
   let currentParent: string | null = null;
 
   for (const rawLine of yaml.split(/\r?\n/)) {
-    const line = rawLine.replace(/\s+$/, '');
+    // `trimEnd` drops what `/\s+$/` did; the regex retried a whitespace run
+    // inside the line from every position in it (quadratic on V8).
+    const line = rawLine.trimEnd();
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
     // A nested key may be QUOTED, and in the opencode permission idiom it
@@ -181,7 +183,7 @@ export function MarkdownWithFrontmatter({
   return (
     <div className={className}>
       {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-      <UnifiedMarkdown content={body} allowHtml={false} />
+      <UnifiedMarkdown content={body} trust="agent" variant="document" />
     </div>
   );
 }

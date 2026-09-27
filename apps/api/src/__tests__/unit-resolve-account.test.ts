@@ -27,7 +27,7 @@ const state = {
 const insertCalls: Array<{ table: string; data: Record<string, unknown> }> = [];
 const upsertCustomerCalls: Array<Record<string, unknown>> = [];
 const upsertCreditAccountCalls: Array<{ accountId: string; data: Record<string, unknown> }> = [];
-const resetExpiringCreditsCalls: Array<any[]> = [];
+const walletResets: Array<Record<string, unknown>> = [];
 const stripeListCalls: string[] = [];
 
 function rowsForTable(table: { __table: string }) {
@@ -103,6 +103,16 @@ mock.module('@kortix/db', () => ({
   accountTokens: {},
   objectPolicies: {},
   permissions: {},
+  // iam/agent-principal.ts (imported by iam/actor.ts) reads the project's
+  // `agent_principal` flag from this table.
+  projects: {},
+  // projects/lib/on-behalf-of.ts (reached through the auth graph) reads the
+  // session row to resolve the human an agent session acts for.
+  projectSessions: {},
+  // iam/actor.ts imports this pure reader; a partial mock without it fails
+  // the whole import chain at module load. Identity is enough — no stored
+  // grant is read in this file.
+  readStoredAgentGrant: (raw: unknown) => raw ?? null,
 }));
 
 mock.module('../shared/db', () => ({ db: fakeDb }));
@@ -126,11 +136,13 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   },
 }));
 
-mock.module('../billing/services/credits', () => ({
-  resetExpiringCredits: async (...args: any[]) => {
-    resetExpiringCreditsCalls.push(args);
+mock.module('../billing/wallet', () => ({
+  wallet: {
+    reset: async (input: Record<string, unknown>) => {
+      walletResets.push(input);
+    },
+    grant: async () => ({ replayed: false, ledgerId: null }),
   },
-  grantCredits: async () => undefined,
 }));
 
 mock.module('../billing/services/tiers', () => ({
@@ -181,7 +193,7 @@ beforeEach(() => {
   insertCalls.length = 0;
   upsertCustomerCalls.length = 0;
   upsertCreditAccountCalls.length = 0;
-  resetExpiringCreditsCalls.length = 0;
+  walletResets.length = 0;
   stripeListCalls.length = 0;
 });
 
@@ -233,12 +245,12 @@ describe('resolveAccountId legacy billing sync', () => {
       active: true,
       provider: 'stripe',
     });
-    expect(resetExpiringCreditsCalls).toContainEqual([
-      'acct_paid_123',
-      20,
-      'Recovered legacy Stripe subscription: 20 credits',
-      'legacy_sync:sub_paid_123',
-    ]);
+    expect(walletResets).toContainEqual({
+      accountId: 'acct_paid_123',
+      amount: 20,
+      description: 'Recovered legacy Stripe subscription: 20 credits',
+      key: { event: 'legacy_sync:sub_paid_123' },
+    });
   });
 
   test('skips Stripe sync when the account already has a Stripe subscription row', async () => {

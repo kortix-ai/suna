@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { refusesSelfMerge, resolveChangeRequestBase, resolveChangeRequestOrigin } from './change-request-policy';
+import {
+  manifestGovernanceChanged,
+  refusesSelfMerge,
+  resolveChangeRequestBase,
+  resolveChangeRequestOrigin,
+} from './change-request-policy';
 
 const SESSION = 'sess-a';
 const OTHER = 'sess-b';
@@ -112,5 +117,34 @@ describe('resolveChangeRequestOrigin', () => {
   test("keeps a person's supplied session origin", () => {
     expect(resolveChangeRequestOrigin({ actorIsSession: false, actingSessionId: null, requestedSessionId: SESSION }))
       .toEqual({ ok: true, originSessionId: SESSION });
+  });
+});
+
+describe('manifestGovernanceChanged (spec 2026-09-22 §2.4)', () => {
+  const base = 'kortix_version: 2\nagents:\n  builder:\n    kortix_permissions: ["project.write"]\n';
+  test('a change outside agents and triggers is not governance', () => {
+    expect(manifestGovernanceChanged(base, `${base}project:\n  name: renamed\n`, 'yaml')).toBe(false);
+    expect(manifestGovernanceChanged(base, base, 'yaml')).toBe(false);
+    expect(manifestGovernanceChanged(null, null, 'yaml')).toBe(false);
+  });
+  test('widening agents.<a>.kortix_permissions is governance', () => {
+    expect(
+      manifestGovernanceChanged(base, base.replace('"project.write"]', '"project.write","project.secret.read"]'), 'yaml'),
+    ).toBe(true);
+  });
+  test('adding a trigger or an agent is governance', () => {
+    expect(manifestGovernanceChanged(base, `${base}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 * * * *"\n`, 'yaml')).toBe(true);
+    expect(manifestGovernanceChanged(base, `${base}  other: {}\n`, 'yaml')).toBe(true);
+  });
+  test('creating a manifest that declares agents, or deleting one, is governance', () => {
+    expect(manifestGovernanceChanged(null, base, 'yaml')).toBe(true);
+    expect(manifestGovernanceChanged(base, null, 'yaml')).toBe(true);
+  });
+  test('a manifest that does not parse is treated as governance (fail closed)', () => {
+    expect(manifestGovernanceChanged(base, 'agents: [unclosed', 'yaml')).toBe(true);
+  });
+  test('key order and formatting do not count as a change', () => {
+    const reordered = 'agents:\n  builder: { kortix_permissions: ["project.write"] }\nkortix_version: 2\n';
+    expect(manifestGovernanceChanged(base, reordered, 'yaml')).toBe(false);
   });
 });

@@ -9,7 +9,8 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, parseBoundedPositiveInt } from '../lib/serializers';
+import { parseBoundedPositiveInt } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import {
   buildSessionTranscriptDigest,
   buildSessionTranscriptSyncEnvelope,
@@ -62,7 +63,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const limit = parseBoundedPositiveInt(c.req.query('limit'), 40, 1, 500, 'limit');
     if (!limit.ok) return c.json({ error: limit.error }, 400);

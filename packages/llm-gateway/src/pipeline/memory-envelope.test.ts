@@ -5,7 +5,7 @@ import { handleChatCompletions } from './simple-handler';
 /**
  * Memory envelope for one mounted multimodal request.
  *
- * Reproduces the shape that OOM-killed the Essentia gateway on 2026-08-22:
+ * Reproduces the shape that OOM-killed the SampleCo gateway on 2026-08-22:
  * 40 base64 screenshots, ~28 MB on the wire. The assertion is on resident
  * memory measured INSIDE the provider fetch — the moment every live copy
  * (parsed graph, provider payload, encoded request bytes) coexists — relative

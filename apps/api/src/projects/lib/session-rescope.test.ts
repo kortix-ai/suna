@@ -159,11 +159,7 @@ describe('rescopeSessionBindings — SET semantics', () => {
 
 describe('the docs match the contract', () => {
   const REPO = join(import.meta.dir, '..', '..', '..', '..', '..');
-  const DOCS = [
-    join(REPO, 'docs', 'KORTIX_AS_A_BACKEND_GUIDE.md'),
-    join(REPO, 'apps', 'web', 'content', 'docs', 'backend.mdx'),
-    join(REPO, 'docs', 'KAAB_TESTING_GUIDE.md'),
-  ];
+  const DOCS = [join(REPO, 'apps', 'web', 'content', 'docs', 'backend.mdx')];
 
   test('no doc still calls secrets or connector_bindings create-only', () => {
     // These three said "create-only" for as long as the refusal existed. When the
@@ -336,7 +332,11 @@ describe('the scope route surfaces the narrowing', () => {
  */
 describe('the scope route validates for the session OWNER, not the caller', () => {
   test('availability is resolved against createdBy', () => {
-    expect(ROUTE).toContain('const secretsPrincipal = visible.row.createdBy ?? loaded.userId');
+    // The creator stays the legacy principal; under the agent-principal flag
+    // the session's personal owner (spec 2026-09-22 §2.3) replaces it —
+    // still the SESSION, never the caller.
+    expect(ROUTE).toContain('const secretsPrincipal = await resolveSessionPersonalOwner(');
+    expect(ROUTE).toContain('legacyUserId: visible.row.createdBy ?? loaded.userId');
     expect(ROUTE).toContain('listResolvedProjectSecrets(projectId, secretsPrincipal)');
   });
 

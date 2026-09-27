@@ -151,13 +151,25 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-prod-use2-terraform
       TF_ROOT: infra/terraform/environments/prod-us-east-2-shadow
       TARGET_ENV_BLOB: kortix-prod-us-east-2-env
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
-      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: prod
+
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN
+            CLOUDFLARE_API_KEY=kortix-ci-env:CLOUDFLARE_GLOBAL_API_KEY
+            CLOUDFLARE_EMAIL
 
       - name: Enforce trusted production ref
         run: |
@@ -283,6 +295,21 @@ jobs:
         with:
           ref: prod
 
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN
+            CLOUDFLARE_GLOBAL_API_KEY
+            CLOUDFLARE_EMAIL
+
       - name: Enforce trusted production ref
         run: |
           set -euo pipefail
@@ -344,10 +371,6 @@ jobs:
 
       - name: Keep shadow DNS proxied
         run: bash scripts/prod-us-east-2/ensure-shadow-dns.sh
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
-          CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
 
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

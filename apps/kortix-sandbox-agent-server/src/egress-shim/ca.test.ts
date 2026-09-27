@@ -20,26 +20,17 @@ const leaf = new LeafIssuer(ca).issue('api.example.com')
 const parse = (pem: string) => forge.pki.certificateFromPem(pem)
 
 describe('the chain carries the identifiers strict clients demand', () => {
-  test('the CA publishes a Subject Key Identifier', () => {
-    // An AKI can only reference a SKI that exists on the issuer, so this is the
-    // half that makes the leaf's reference resolvable.
-    expect(parse(ca.certPem).getExtension('subjectKeyIdentifier')).toBeTruthy()
-  })
-
-  test('the leaf carries BOTH its own SKI and an Authority Key Identifier', () => {
-    const cert = parse(leaf.certPem)
-    expect(cert.getExtension('subjectKeyIdentifier')).toBeTruthy()
-    expect(cert.getExtension('authorityKeyIdentifier')).toBeTruthy()
-  })
-
-  test("the leaf's AKI actually matches the CA's key id", () => {
-    // A present-but-wrong AKI is worse than none: it points the verifier at an
+  test("the leaf's AKI matches the CA's Subject Key Identifier", () => {
+    // An AKI can only reference a SKI that exists on the issuer, and a
+    // present-but-wrong AKI is worse than none: it points the verifier at an
     // issuer that does not exist. The first fix emitted exactly that and every
     // TLS handshake failed with "unable to verify the first certificate".
-    const caKeyId = parse(ca.certPem).generateSubjectKeyIdentifier().getBytes()
-    const aki = parse(leaf.certPem).getExtension('authorityKeyIdentifier') as
-      | { value?: string }
-      | undefined
+    const caCert = parse(ca.certPem)
+    const leafCert = parse(leaf.certPem)
+    expect(caCert.getExtension('subjectKeyIdentifier')).toBeTruthy()
+    expect(leafCert.getExtension('subjectKeyIdentifier')).toBeTruthy()
+    const caKeyId = caCert.generateSubjectKeyIdentifier().getBytes()
+    const aki = leafCert.getExtension('authorityKeyIdentifier') as { value?: string } | undefined
     expect(aki?.value).toContain(caKeyId)
   })
 })
@@ -97,15 +88,9 @@ describe('the serial number is a minimal, positive DER INTEGER', () => {
     0xbe, 0xcb, 0x33, 0xe5, 0xb5, 0xfa, 0xbc, 0xea,
   ])
 
-  test('a first byte of 0x00 does not become a redundant leading zero', () => {
-    // The exact fault: `00 00 ab …` — a leading zero followed by a byte whose
-    // high bit is clear. This is the case that shipped.
-    const hex = serialFromBytes(bytes(0x00))
-    expect(hex.startsWith('00')).toBe(false)
-  })
-
   test('no first byte at all produces a leading zero', () => {
     // 0x01..0x7f is the whole legal range for a minimal positive leading byte.
+    // 0x00 is the case that shipped: `00 00 ab …`.
     for (let first = 0; first <= 0xff; first++) {
       const lead = Number.parseInt(serialFromBytes(bytes(first)).slice(0, 2), 16)
       expect(lead).toBeGreaterThan(0x00)
@@ -113,20 +98,13 @@ describe('the serial number is a minimal, positive DER INTEGER', () => {
     }
   })
 
-  test('an empty input still yields a byte — a zero-length INTEGER is invalid too', () => {
-    // Unreachable from `serial()`, which always passes 16 bytes. Pinned so the
-    // function cannot quietly grow a second way to emit malformed DER.
-    const hex = serialFromBytes(new Uint8Array(0))
-    expect(hex.length).toBeGreaterThan(0)
-    const lead = Number.parseInt(hex.slice(0, 2), 16)
-    expect(lead).toBeGreaterThan(0x00)
-    expect(lead).toBeLessThan(0x80)
-  })
-
-  test('every serial keeps well over the 64 bits of entropy a serial owes', () => {
+  test('every minted serial keeps well over the 64 bits of entropy a serial owes', () => {
     // Clamping the leading byte costs one bit, not the field. CA/Browser Forum
-    // asks for >= 64 bits; this keeps ~127.
-    expect(serialFromBytes(bytes(0x00)).length / 2).toBeGreaterThanOrEqual(16)
+    // asks for >= 64 bits; 16 random bytes keep ~127. Read off real certificates,
+    // so a shorter SERIAL_BYTES fails here.
+    for (const pem of [ca.certPem, leaf.certPem]) {
+      expect(parse(pem).serialNumber.length).toBeGreaterThanOrEqual(32)
+    }
   })
 
   test('a certificate built from the worst-case serial actually loads', () => {

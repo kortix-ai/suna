@@ -134,7 +134,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });
@@ -155,7 +155,7 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
 
     const blockWrite = applyAgentBlockV2(manifest, 'release-bot', {
       connectors: ['github'],
-      kortix_cli: ['project.cr.open'],
+      kortix_permissions: ['project.cr.open'],
     });
     expect(blockWrite.ok).toBe(true);
     if (!blockWrite.ok) return;

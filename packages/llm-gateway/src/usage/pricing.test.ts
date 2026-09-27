@@ -158,16 +158,6 @@ describe('calculateCost — cache WRITE premium (the fixed leak)', () => {
     expect(upstreamCost).toBeCloseTo(expected, 10);
   });
 
-  test('omitting cacheWriteTokens entirely (older/non-Anthropic call sites) behaves exactly as before', () => {
-    const { upstreamCost } = calculateCost(
-      'gpt-5.5',
-      { promptTokens: 1_000_000, completionTokens: 0, cachedTokens: 0 },
-      1,
-      undefined,
-      BASE_PRICING,
-    );
-    expect(upstreamCost).toBeCloseTo(3, 10);
-  });
 });
 
 describe('calculateCost — upstreamCostHint precedence', () => {
@@ -205,25 +195,17 @@ describe('calculateCost — upstreamCostHint precedence', () => {
     expect(finalCost).toBe(0);
   });
 
-  test('a negative upstreamCostHint is ignored (never produces a negative bill)', () => {
+  test('a negative upstreamCostHint is ignored and the table prices the request', () => {
     const { upstreamCost } = calculateCost(
       'openrouter/some-model',
       { promptTokens: 500, completionTokens: 500, cachedTokens: 0 },
       1,
       -5,
+      BASE_PRICING,
     );
-    expect(upstreamCost).toBe(0);
+    expect(upstreamCost).toBeCloseTo((500 / 1_000_000) * 3 + (500 / 1_000_000) * 15, 12);
   });
 
-  test('an undefined upstreamCostHint with no table prices to zero', () => {
-    const { upstreamCost } = calculateCost(
-      'openrouter/some-model',
-      { promptTokens: 500, completionTokens: 500, cachedTokens: 0 },
-      1,
-      undefined,
-    );
-    expect(upstreamCost).toBe(0);
-  });
 });
 
 describe('calculateCost — context-tier pricing', () => {

@@ -7,7 +7,7 @@
  * after the first poll → runtime_boot_failed → pause the box". A resume that
  * has to converge a new OpenCode pin and then sit through that version's first
  * init blows straight through 90 s while doing exactly what it should
- * (Essentia 2026-08-25 17:23–17:24, both boxes). With this label the API can
+ * (SampleCo 2026-08-25 17:23–17:24, both boxes). With this label the API can
  * restart its clock whenever the phase CHANGES and only give up when the box
  * has made no progress at all — a stub launcher that respawns forever never
  * changes phase, so the failure it was meant to catch is still caught.

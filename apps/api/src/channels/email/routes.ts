@@ -6,6 +6,7 @@ import { emailWebhookApp } from './app';
 import { dispatchAgentMailEvent, resolveProjectForAgentMailInbox } from './session';
 import { verifyAgentMailSignature } from './verify';
 import type { AgentMailMessageReceivedEvent } from './types';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 emailWebhookApp.openapi(
   createRoute({
@@ -72,6 +73,7 @@ emailWebhookApp.openapi(
       });
       return c.json({ error: 'Invalid signature' }, 401);
     }
+    bindIntegrationPrincipal('agentmail');
 
     void dispatchAgentMailEvent(event).catch((err) => {
       console.error('[email-webhook] handler failed', err);

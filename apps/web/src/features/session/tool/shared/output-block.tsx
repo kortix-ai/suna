@@ -46,7 +46,7 @@ export function OutputBlock({
       className={cn('bg-muted/20 max-h-96 overflow-auto rounded-sm px-3 py-2', className)}
     >
       {markdown ? (
-        <UnifiedMarkdown content={text} />
+        <UnifiedMarkdown content={text} trust="agent" />
       ) : (
         <pre className="text-muted-foreground/80 font-mono text-xs wrap-break-word whitespace-pre-wrap">
           {text}

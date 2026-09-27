@@ -16,6 +16,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { mintWireMessageId } from '@kortix/sdk';
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
@@ -70,21 +71,18 @@ Needs project.session.start — the same permission as sending a message.
 `;
 
 /**
- * Mint an OpenCode wire message id.
+ * The OpenCode wire message id for one CLI prompt.
  *
- * The API refuses anything that is not `msg_` + 12 hex + 14 base62
- * (PROMPT_WIRE_MESSAGE_ID in apps/api/src/projects/routes/r8.ts): OpenCode
- * decides "has this prompt already been answered?" by id ORDER, so the id has
- * to sort above everything already on the transcript. Same construction as the
- * SDK's `ascendingId`, which is not on the public `@kortix/sdk` surface.
+ * The id is the prompt's POSITION in the transcript, and only a process that
+ * holds the transcript can place it. The CLI does not, so it mints with the
+ * SDK's `mintWireMessageId` (OpenCode's own encoding: the LOW 48 bits of
+ * `Date.now() * 0x1000`) and every enqueue asks the server to re-place it at
+ * delivery (`remint_on_delivery`). The hand-rolled mint this replaces kept the
+ * HIGH bits — ~40 days ahead of every real id — and every turn sent after a CLI
+ * prompt rendered above it.
  */
-export function wireMessageId(now = Date.now(), counter = 1): string {
-  const encoded = BigInt(now) * BigInt(0x1000) + BigInt(counter);
-  const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  let random = '';
-  for (let i = 0; i < 14; i += 1) random += chars[Math.floor(Math.random() * 62)];
-  return `msg_${hex}${random}`;
+export function wireMessageId(): string {
+  return mintWireMessageId();
 }
 
 /**
@@ -106,6 +104,7 @@ export async function queueSessionPrompt(
     message_id: wireMessageId(),
     parts: [{ type: 'text', text }],
     client_sent_at_ms: Date.now(),
+    remint_on_delivery: true,
   };
   if (defaults.agent || defaults.model) {
     body.overrides = {

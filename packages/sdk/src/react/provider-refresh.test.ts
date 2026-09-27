@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { QueryClient } from '@tanstack/react-query';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 import { providerConnectedInSecrets, refreshProjectProviderState } from './provider-refresh';
 import { qk } from './query-keys';
@@ -137,5 +137,95 @@ describe('refreshProjectProviderState — the gateway catalog behind the picker'
     await harness.queryClient.refetchQueries({ queryKey: harness.providersKey, type: 'all' });
 
     expect(harness.count()).toBe(2);
+  });
+});
+
+// THE DEFECT this covers: after "Disconnect ChatGPT" the card kept its
+// "connected" banner for seconds, or until the user gave up and reloaded.
+//
+// Every pass of this refresh invalidates and refetches the secrets entry, and
+// TanStack's default for both is `cancelRefetch: true`: a running read is
+// thrown away and a new one starts. The follow-up passes fire at
+// 500/1500/3000/6000 ms. When `GET /secrets` takes longer than the gap to the
+// next pass (it loads the project manifest from git on every call), each pass
+// discards the read the previous pass started. The correct, post-write answer
+// arrived and was dropped every time. Only the pass right after the write may
+// supersede an in-flight read, because only that read can predate the write.
+describe('refreshProjectProviderState — follow-up passes do not discard in-flight reads', () => {
+  const PROJECT_ID = 'proj_1';
+  const originalWindow = (globalThis as { window?: unknown }).window;
+
+  function withFakeWindow() {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    (globalThis as { window?: unknown }).window = {
+      setTimeout: (fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return timers.length;
+      },
+    };
+    return timers;
+  }
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+  });
+
+  test('a slow post-write read still lands after the 500 ms pass fires', async () => {
+    const timers = withFakeWindow();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = qk.project.secrets(PROJECT_ID);
+    const pending: Array<(value: { items: Array<{ name: string }> }) => void> = [];
+    queryClient.setQueryData(key, { items: [{ name: 'CODEX_AUTH_JSON' }] });
+    const observer = new QueryObserver(queryClient, {
+      queryKey: key,
+      queryFn: () => new Promise<{ items: Array<{ name: string }> }>((resolve) => pending.push(resolve)),
+      staleTime: 60_000,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+
+    // The write just succeeded; the immediate pass starts a post-write read.
+    refreshProjectProviderState(queryClient, PROJECT_ID);
+    const postWriteRead = pending.length - 1;
+    expect(postWriteRead).toBeGreaterThanOrEqual(0);
+
+    // The read is slow. The 500 ms follow-up pass fires before it returns.
+    timers.find((t) => t.ms === 500)!.fn();
+
+    // The post-write read now returns the truth: the credential is gone.
+    pending[postWriteRead]!({ items: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<unknown>(key)).toEqual({ items: [] });
+    unsubscribe();
+  });
+
+  test('the pass right after the write still supersedes a read that predates it', async () => {
+    withFakeWindow();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const key = qk.project.secrets(PROJECT_ID);
+    const pending: Array<(value: { items: Array<{ name: string }> }) => void> = [];
+    queryClient.setQueryData(key, { items: [{ name: 'CODEX_AUTH_JSON' }] });
+    const observer = new QueryObserver(queryClient, {
+      queryKey: key,
+      queryFn: () => new Promise<{ items: Array<{ name: string }> }>((resolve) => pending.push(resolve)),
+      staleTime: 60_000,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+
+    // A read started BEFORE the write (window focus, another surface).
+    void queryClient.refetchQueries({ queryKey: key });
+    const preWriteRead = pending.length - 1;
+
+    refreshProjectProviderState(queryClient, PROJECT_ID);
+    const postWriteRead = pending.length - 1;
+    expect(postWriteRead).toBeGreaterThan(preWriteRead);
+
+    // The stale pre-write answer arrives last-but-one; it must not win.
+    pending[postWriteRead]!({ items: [] });
+    pending[preWriteRead]!({ items: [{ name: 'CODEX_AUTH_JSON' }] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<unknown>(key)).toEqual({ items: [] });
+    unsubscribe();
   });
 });

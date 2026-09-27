@@ -15,7 +15,7 @@ import type { SessionDeliveryOutcome } from './types';
 // construction — `apps/api/src/sandbox-proxy/prompt-dedupe.ts`'s claim,
 // reached through the SAME `forwardToSandbox` call `send` makes, absorbs them.
 // A 'pending' RETURN from this function is a different case: the CALLER
-// (`executeQueuedContinue` in `engine.ts`) may re-invoke this whole loop later,
+// (`executeQueuedContinue` in `queued-continue.ts`) may re-invoke this whole loop later,
 // from a fresh queued-command drain. That re-invocation's no-blind-repost
 // guarantee is documented on `executeQueuedContinue`, not here — this file has
 // no knowledge of the caller's retry cadence.

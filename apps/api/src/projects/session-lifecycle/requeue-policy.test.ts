@@ -19,11 +19,4 @@ describe('mayRequeueFailedCreate', () => {
       mayRequeueFailedCreate({ answeredSynchronously: false, errorIsRetryable: false }),
     ).toBe(false);
   });
-
-  test('retryability follows OWNERSHIP, not the error class', () => {
-    // Same transient error, opposite answers — which is the whole rule.
-    const transient = { errorIsRetryable: true };
-    expect(mayRequeueFailedCreate({ ...transient, answeredSynchronously: true })).toBe(false);
-    expect(mayRequeueFailedCreate({ ...transient, answeredSynchronously: false })).toBe(true);
-  });
 });

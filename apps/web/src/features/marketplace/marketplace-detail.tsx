@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   ArrowRightIcon as ArrowRight,
   CubeIcon as Boxes,
@@ -7,7 +8,6 @@ import {
   CaretRightIcon as ChevronRight,
   FileTextIcon as FileText,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -134,7 +134,7 @@ function ReadmeMarkdown({ content }: { content: string }) {
   return (
     <div className="bg-secondary rounded-md border p-4">
       <div className="prose-sm text-foreground/90 max-w-none">
-        <UnifiedMarkdown content={content} allowHtml={false} />
+        <UnifiedMarkdown content={content} trust="untrusted" variant="document" />
       </div>
     </div>
   );

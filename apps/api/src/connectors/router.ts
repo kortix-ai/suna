@@ -45,6 +45,7 @@ import {
   MAX_CONNECTOR_ATTACHMENT_BYTES,
   type StageConnectorAttachmentInput,
 } from './attachments';
+import { ATTACHMENT_REF_KEY } from './attachment-inline';
 import type { ConnectorAuthDiscovery } from './auth-discovery';
 import type { ConnectorAuth } from './call';
 import { type GatewayDeps, handleCall } from './gateway';
@@ -165,6 +166,8 @@ const AttachmentUploadResponseSchema = z
     content_id: z.string().optional(),
     size: z.number().int().positive(),
     expires_at: z.string(),
+    /** Paste into call args; the gateway swaps in the file server-side. */
+    ref: z.object({ $kortix_attachment: z.string().uuid() }),
   })
   .openapi('ConnectorAttachmentUpload');
 
@@ -173,6 +176,9 @@ export interface ConnectorPrincipal {
   accountId: string;
   projectId: string;
   sessionId: string | null;
+  /** The presented account token's id, when the caller used one. With
+   *  `sessionId`, identifies the agent session a Kortix App assertion names. */
+  tokenId?: string | null;
   /** The acting identity resolved to its group memberships. */
   subject: { userId: string; groupIds: string[] };
   /** Per-agent grant from the session token — restricts which connectors this
@@ -192,6 +198,14 @@ export interface ConnectorPrincipal {
    * a connector could hold more than one reachable account.
    */
   requestedConnectorAccount?: string | null;
+  /**
+   * Present when the caller is an agent session under the agent-principal
+   * model (flag `agent_principal` ON, governed grant — spec
+   * docs/specs/2026-09-22-agents-as-principals.md §2.3). Personal resources
+   * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
+   * a private session, never on `userId` (the launcher). Absent = legacy.
+   */
+  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
 }
 
 interface CatalogAction {
@@ -288,6 +302,19 @@ export interface ProjectPoliciesViewResponse {
   errors: Array<{ path: string; error: string }>;
 }
 
+export interface ListCatalogOptions {
+  /** Restrict to one connector (by slug, canonicalized). */
+  slug?: string;
+  /**
+   * Include the full per-action JSON Schema. Default false — the dominant
+   * contributor to this route's payload (measured on prod: 439KB body,
+   * n=97 db queries for a bulk listing) and no bulk-listing caller reads it.
+   * `describeConnectorTool` (the one caller that needs a schema) passes
+   * `slug` + `true` together instead of fetching the whole catalog.
+   */
+  includeSchemas?: boolean;
+}
+
 export interface ConnectorRouterDeps {
   /** Gateway auth: resolve the connector token → principal, or null for 401. */
   resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null>;
@@ -300,7 +327,7 @@ export interface ConnectorRouterDeps {
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ConnectorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
-  listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]>;
+  listCatalog(p: ConnectorPrincipal, options?: ListCatalogOptions): Promise<CatalogConnector[]>;
   /** Private raw-byte staging used by the MCP attachment transport. */
   attachmentStore?: ConnectorAttachmentStore;
   /**
@@ -334,7 +361,11 @@ export interface ConnectorRouterDeps {
    * — reachability is per-row, not per-connector). Omit only when there is no
    * human caller to ask.
    */
-  listConnectors(projectId: string, actingUserId?: string | null): Promise<AdminConnectorView[]>;
+  listConnectors(
+    projectId: string,
+    actingUserId?: string | null,
+    options?: { includeSchemas?: boolean },
+  ): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
@@ -475,12 +506,15 @@ export interface ConnectorRouterDeps {
     slug: string;
     userId: string;
     sessionId: string | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null } | null;
   }): Promise<
     Array<{
       connection_id: string;
       label: string;
       owner_type: string;
       is_default: boolean;
+      /** Who the account was authorized as. `null` when unknown. */
+      connected_as?: string | null;
     }>
   >;
   /**
@@ -527,10 +561,20 @@ export interface ConnectorRouterDeps {
     selector?: { connectionId?: string; requestId?: string },
     /** Whose account the matching connect started on. Defaults to `me`. */
     owner?: ConnectorConnectOwner,
-  ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+  ): Promise<{
+    provider: string;
+    connected: boolean;
+    accountId?: string;
+    connectionId?: string;
+    isNoAuth?: boolean;
+    /** The authorized identity (an email, login, or name). `null` when unknown. */
+    connectedAs?: string | null;
+    /** The connection's label after finalize. A generic default becomes `connectedAs`. */
+    label?: string;
+  } | null>;
   /**
    * Does this caller hold the connections-manage capability on the project?
-   * The same gate r4's project-owned connection create asserts — connecting an
+   * The same gate the project-owned connection create (routes/connections.ts) asserts — connecting an
    * account the WHOLE project can then use is administration, not self-service.
    */
   resolveConnectionsManager?(
@@ -782,6 +826,17 @@ const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialRea
   'account_required',
 ]);
 
+// GET .../catalog query params, shared by all three catalog-listing routes
+// below (token-scoped, legacy /connectors, and project-explicit).
+const CatalogQuerySchema = z.object({
+  /** Restrict the catalog to one connector by slug. */
+  slug: z.string().optional(),
+  /** `false` omits the full per-action JSON Schema. Absent means INCLUDE:
+   *  sandboxes run a baked CLI that reads schemas from these routes, so the
+   *  default must match what those clients were built against. */
+  include_schemas: z.enum(['true', 'false']).optional(),
+});
+
 function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
   return CONNECTOR_DENIAL_REASONS.has(reason);
 }
@@ -793,7 +848,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   // from a scoped session token) and the project-EXPLICIT routes
   // (project from the path, any valid principal). One implementation, two faces.
   const catalogResponse = async (c: any, p: ConnectorPrincipal) => {
-    const connectors = await deps.listCatalog(p);
+    const query = c.req.valid('query') as { slug?: string; include_schemas?: 'true' | 'false' };
+    const slug = query.slug?.trim() || undefined;
+    const connectors = await deps.listCatalog(p, {
+      slug,
+      includeSchemas: query.include_schemas !== 'false',
+    });
     return c.json({ connectors });
   };
   const callResponse = async (c: any, p: ConnectorPrincipal) => {
@@ -877,6 +937,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       accountId: p.accountId,
       subject: p.subject,
       sessionId: p.sessionId,
+      actingTokenId: p.tokenId ?? null,
       connectorSlug,
       actionPath,
       args,
@@ -933,6 +994,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                   slug: connectorSlug,
                   userId: p.userId,
                   sessionId: p.sessionId,
+                  agentPrincipal: p.agentPrincipal ?? null,
                 })
                 .then((rows) => rows.map((row) => row.label))
                 .catch(() => [])
@@ -961,9 +1023,20 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
 
   const attachmentResponse = async (c: Context, p: ConnectorPrincipal) => {
     if (!deps.attachmentStore) return featureNotSupportedResponse(c, 'connector_attachments');
-    if (!principalMayUseConnector(p, canonicalConnectorAlias('kortix_email'))) {
+    // The connector the file is staged for. Clients published before this header
+    // existed send none; those uploads are for the native Email channel.
+    let target: string;
+    try {
+      target = decodedAttachmentHeader(c, 'X-Kortix-Attachment-Connector') || 'kortix_email';
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    if (target.length > 128) {
+      return c.json({ error: 'X-Kortix-Attachment-Connector must not exceed 128 characters' }, 400);
+    }
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(target))) {
       return c.json(
-        connectorDenialBody('connector_not_assigned', { principal: p, connector: 'kortix_email' }),
+        connectorDenialBody('connector_not_assigned', { principal: p, connector: target }),
         403,
       );
     }
@@ -987,18 +1060,16 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       throw error;
     }
     try {
-      return c.json(
-        await deps.attachmentStore.stage(
-          {
-            accountId: p.accountId,
-            projectId: p.projectId,
-            sessionId: p.sessionId,
-            userId: p.userId,
-          },
-          { ...metadata, bytes },
-        ),
-        201,
+      const staged = await deps.attachmentStore.stage(
+        {
+          accountId: p.accountId,
+          projectId: p.projectId,
+          sessionId: p.sessionId,
+          userId: p.userId,
+        },
+        { ...metadata, bytes },
       );
+      return c.json({ ...staged, ref: { [ATTACHMENT_REF_KEY]: staged.attachment_id } }, 201);
     } catch (error) {
       const message = (error as Error).message || 'attachment_upload_failed';
       if (message.includes('25 MiB')) return c.json({ error: message }, 413);
@@ -1022,6 +1093,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'List the connectors the connector principal can use',
       ...auth,
+      request: { query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
@@ -1044,6 +1116,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       summary: 'List usable connectors through the legacy route',
       deprecated: true,
       ...auth,
+      request: { query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
@@ -1062,6 +1135,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/attachments',
       tags: ['connector'],
       summary: 'Stage a private attachment from raw bytes',
+      description:
+        'Send the raw file bytes as the body with `Content-Type`, `X-Kortix-Attachment-Filename`, and optional `X-Kortix-Attachment-Disposition` / `X-Kortix-Attachment-Content-Id`. `X-Kortix-Attachment-Connector` names the connector the file is for; the caller must be able to use it. Without it, the file is for the native Email channel.',
       ...auth,
       responses: {
         201: json(AttachmentUploadResponseSchema, 'Opaque attachment handle'),
@@ -1180,6 +1255,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/projects/{projectId}/attachments',
       tags: ['connector'],
       summary: 'Stage a private attachment in a project from raw bytes',
+      description:
+        'Send the raw file bytes as the body with `Content-Type`, `X-Kortix-Attachment-Filename`, and optional `X-Kortix-Attachment-Disposition` / `X-Kortix-Attachment-Content-Id`. `X-Kortix-Attachment-Connector` names the connector the file is for; the caller must be able to use it. Without it, the file is for the native Email channel.',
       ...auth,
       request: { params: ProjectParam },
       responses: {
@@ -1298,7 +1375,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'List the connectors usable in a project (any valid principal)',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: ProjectParam, query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(403),
@@ -1395,6 +1472,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         slug,
         userId: p.userId,
         sessionId: p.sessionId,
+        agentPrincipal: p.agentPrincipal ?? null,
       });
       // The pinned account, when exactly one is pinned — the SAME "is a
       // default reachable" question an unnamed `/call` answers. Two or more
@@ -1417,7 +1495,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: "List a project's connectors with status (dashboard)",
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: ProjectParam, query: CatalogQuerySchema.pick({ include_schemas: true }) },
       responses: {
         200: json(AdminConnectorsResponseSchema, 'Connectors with admin status'),
         ...errors(403),
@@ -1435,9 +1513,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const canReadSecretIdentifiers = deps.resolveSecretReader
         ? Boolean(await deps.resolveSecretReader(c, projectId))
         : false;
+      const query = c.req.valid('query') as { include_schemas?: 'true' | 'false' };
       // Whose own credentialed accounts count as "connected" for a connector
       // with no project-wide shared credential — see listConnectors' doc.
-      const connectors = await deps.listConnectors(projectId, reader.userId);
+      const connectors = await deps.listConnectors(projectId, reader.userId, {
+        includeSchemas: query.include_schemas !== 'false',
+      });
       return c.json({
         connectors: canReadSecretIdentifiers
           ? connectors

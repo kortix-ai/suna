@@ -12,7 +12,7 @@ import { healBedrockModelKey } from './bedrock-invokable';
 // The catalog-default fix (commit 2e3e843cbe) made
 // `nativeProviderListFromCatalog` publish
 // `default['amazon-bedrock'] = 'global.anthropic.claude-opus-5'`. Verified
-// against the REAL catalog. Yet the deployed Essentia project-home composer
+// against the REAL catalog. Yet the deployed SampleCo project-home composer
 // still preselected "Grok 4.6" on a brand-new workspace.
 //
 // Because that default is only Priority 3 of the LAST source in the chain.
@@ -125,10 +125,10 @@ describe('healBedrockModelKey', () => {
 });
 
 // The end-to-end repro, on the REAL shipped catalog rather than a fixture:
-// the exact Essentia setup (Bedrock bearer token + region, native path, no
+// the exact SampleCo setup (Bedrock bearer token + region, native path, no
 // runtime yet) with the browser-global `native:` slot pinned to the bare id
 // the wedged workspace left behind.
-describe('the Essentia repro, against the real catalog', () => {
+describe('the SampleCo repro, against the real catalog', () => {
   test('a pinned xai.grok-4.6 resolves to an invokable inference profile', () => {
     const list = nativeProviderListFromCatalog(
       CATALOG as never,
@@ -205,7 +205,7 @@ describe('use-opencode-local applies the guard at every resolution seam', () => 
 // (`amazon-bedrock/global.anthropic.claude-opus-5`, `openrouter/z-ai/glm-5.3-flash`).
 // `bedrockInferenceProfileRank` strips that prefix, so a Bedrock profile served
 // through the gateway still ranks > 0 — and "the key's OWN provider", matched
-// by `providerID`, is the WHOLE catalog. On the deployed Essentia bundle (web
+// by `providerID`, is the WHOLE catalog. On the deployed SampleCo bundle (web
 // 39685da4, 2026-08-27) every pick without a `global.`/regional twin —
 // OpenRouter GLM-5.3-Flash, Bedrock GLM-5, Codex GPT-5.6 Sol — fell through to
 // step 3 and "healed" to the newest profile in the catalog, Claude Opus 5

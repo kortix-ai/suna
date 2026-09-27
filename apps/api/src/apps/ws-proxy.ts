@@ -5,6 +5,7 @@ import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
+import { ingressTargetUrl } from '../platform/providers/ingress-url';
 import { AppBudgetExceededError } from './budget';
 import {
   appRuntimeNeedsWake,
@@ -85,7 +86,10 @@ export async function prepareAppWsUpgrade(
   }
   const loaded = await dependencies.loadPublicApp(matched.routeKey);
   if (!loaded) return { ok: false, status: 404, message: 'App not found' };
-  const accessResponse = await dependencies.authorizeAppRequest(request, url, loaded.app);
+  const accessResponse = await dependencies.authorizeAppRequest(request, url, {
+    ...loaded.app,
+    agentPrincipal: loaded.agentPrincipal ?? false,
+  });
   if (accessResponse) {
     return { ok: false, status: accessResponse.status, message: 'App authentication required' };
   }
@@ -110,7 +114,7 @@ export async function prepareAppWsUpgrade(
       ok: true,
       data: {
         type: 'app-ws',
-        url: websocketUrl(`${ingress.url.replace(/\/$/, '')}${url.pathname}${url.search}`),
+        url: websocketUrl(ingressTargetUrl(ingress, `${url.pathname}${url.search}`)),
         headers: headerObject,
         runtimeId: runtime.runtimeId,
         idleTimeoutSeconds: loaded.app.idleTimeoutSeconds,

@@ -10,7 +10,6 @@ const cfg: {
 mock.module('../../config', () => ({ config: cfg }));
 
 const {
-  BILLING_LIVENESS_GRACE_FLOOR_MINUTES,
   billableWindowEnd,
   billingLivenessGraceMinutes,
   computeLivenessGraceMs,
@@ -37,31 +36,26 @@ describe('billingLivenessGraceMinutes — the money knob, and only the money kno
     expect(computeLivenessGraceMs()).toBe(GRACE);
   });
 
-  // BYTE-IDENTICAL. This is verbatim the arithmetic
-  // providerAutoStopBackstopMinutes() performed while the two were one number.
-  // The clamp is a pure function of graceMs, so proving graceMs is unchanged at
-  // every input proves the merged money guarantee is unchanged too.
-  test('REGRESSION: identical to the pre-split derivation at every idle window', () => {
-    const preSplit = (idle: number) => Math.max(60, Math.max(1, idle || 15) * 2);
-    for (const idle of [0, 1, 5, 15, 29, 30, 31, 45, 120, 720]) {
-      cfg.KORTIX_SANDBOX_AUTOSTOP_MINUTES = idle;
-      expect(billingLivenessGraceMinutes()).toBe(preSplit(idle));
-      expect(computeLivenessGraceMs()).toBe(preSplit(idle) * 60_000);
-    }
-  });
-
-  test('never dips below its floor', () => {
-    for (const idle of [undefined, 0, -5, 1, 29] as (number | undefined)[]) {
-      cfg.KORTIX_SANDBOX_AUTOSTOP_MINUTES = idle;
-      expect(billingLivenessGraceMinutes()).toBe(BILLING_LIVENESS_GRACE_FLOOR_MINUTES);
-    }
-  });
-
-  // At LEAST two maintenance cycles, or a single missed pass silently zeroes a
-  // healthy box's revenue.
-  test('covers at least two maintenance passes', () => {
-    const maintenanceIntervalMs = 5 * 60_000;
-    expect(computeLivenessGraceMs()).toBeGreaterThanOrEqual(2 * maintenanceIntervalMs);
+  // The grace in minutes per idle window: at least 60, else twice the idle
+  // window (the reaper may legitimately leave a box idle that long). Missing,
+  // zero, and negative idle windows fall back to the floor.
+  test.each([
+    [undefined, 60],
+    [-5, 60],
+    [0, 60],
+    [1, 60],
+    [5, 60],
+    [15, 60],
+    [29, 60],
+    [30, 60],
+    [31, 62],
+    [45, 90],
+    [120, 240],
+    [720, 1440],
+  ] as const)('an idle window of %p minutes gives a grace of %p minutes', (idle, minutes) => {
+    cfg.KORTIX_SANDBOX_AUTOSTOP_MINUTES = idle;
+    expect(billingLivenessGraceMinutes()).toBe(minutes);
+    expect(computeLivenessGraceMs()).toBe(minutes * 60_000);
   });
 
   // THE DECOUPLING, direction 2. The provider's idle timer is 12x this number
@@ -138,22 +132,14 @@ describe('billableWindowEnd — the clamp that caps the whole defect class', () 
 
   // THE 829-hour row: dead since 2026-06-24, still billing on 2026-07-29.
   // Pre-clamp this settles 829 hours. It must now settle exactly the grace.
-  test('REGRESSION: an 829-hour window bills only the grace past its last sighting', () => {
-    const lastAliveAt = new Date(NOW.getTime() - 829 * HOUR);
-    const end = billableWindowEnd({ requestedEnd: NOW, lastAliveAt, graceMs: GRACE });
-
-    expect(end.getTime()).toBe(lastAliveAt.getTime() + GRACE);
-    const billedHours = (end.getTime() - lastAliveAt.getTime()) / HOUR;
-    expect(billedHours).toBe(1);
-  });
-
-  test('REGRESSION: no window can ever bill more than the grace past liveness', () => {
-    for (const deadForHours of [2, 24, 100, 829, 10_000]) {
+  test.each([2, 24, 100, 829, 10_000])(
+    'REGRESSION: a box dead for %p hours bills exactly the grace past its last sighting',
+    (deadForHours) => {
       const lastAliveAt = new Date(NOW.getTime() - deadForHours * HOUR);
       const end = billableWindowEnd({ requestedEnd: NOW, lastAliveAt, graceMs: GRACE });
-      expect(end.getTime() - lastAliveAt.getTime()).toBeLessThanOrEqual(GRACE);
-    }
-  });
+      expect(end.getTime()).toBe(lastAliveAt.getTime() + GRACE);
+    },
+  );
 
   test('never extends a window that ends before the ceiling', () => {
     const requestedEnd = new Date(NOW.getTime() - 5 * HOUR);

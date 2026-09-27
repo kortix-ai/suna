@@ -45,8 +45,8 @@ import {
   lookupEmailsByUserIds,
   normalizeEmail,
   parseRole,
-  readBody,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 
 /**
@@ -170,14 +170,30 @@ export function registerMemberRoutes(): void {
       // MFA, group memberships, project grants): member-managers (owner / admin /
       // member.invite) see it on every row, everyone else only on their own —
       // enforced by canSeeSensitiveMemberColumns in the map below.
-      const canManageMembers = (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE))
-        .allowed;
-
-      // `account_members` is the DIRECTORY (who is here, since when, and the
-      // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
-      // the one store the engine reads — so this list can no longer disagree
-      // with what the gate says a moment later.
-      const [identityRows, accountRoles] = await Promise.all([
+      //
+      // Seven independent reads, each scoped to this account — none needs
+      // another's result (`emails` is the one exception: it needs the member
+      // user ids, so it's kicked off separately right below once `rows` is
+      // known). These used to run one at a time (measured: 10 DB round trips
+      // serialized to 479ms server time, 2026-09-27); firing them together
+      // turns that sum into roughly the slowest single one. Each already
+      // degrades independently (groups/PAT/MFA catch their own failures) so a
+      // `Promise.all` rejection from the authorize/identity/role reads is the
+      // only one allowed to fail the request — same as before.
+      const [
+        canManageMembers,
+        identityRows,
+        accountRoles,
+        [assignedGrants, activeProjects],
+        groupsByUser,
+        patCountByUser,
+        mfaByUser,
+      ] = await Promise.all([
+        authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE).then((r) => r.allowed),
+        // `account_members` is the DIRECTORY (who is here, since when, and the
+        // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
+        // the one store the engine reads — so this list can no longer disagree
+        // with what the gate says a moment later.
         db
           .select({
             userId: accountMembers.userId,
@@ -187,7 +203,90 @@ export function registerMemberRoutes(): void {
           .from(accountMembers)
           .where(eq(accountMembers.accountId, accountId)),
         accountRoleMap(accountId),
-      ]);
+        // Direct project grants per member, one batched query (name + role, not
+        // just a count) — powers both the "N projects" chip and a popover
+        // listing exactly which projects. Active projects only; archived
+        // projects don't clutter the chip. Group-derived and implicit
+        // (owner/admin) access aren't rows in project_members, so neither is
+        // enumerated here — that's the existing explicit_project_count scope.
+        Promise.all([
+          projectRoleGrants({ accountId }),
+          db
+            .select({ projectId: projects.projectId, name: projects.name })
+            .from(projects)
+            .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active'))),
+        ]),
+        // Group memberships for every member, in one query — so the member list
+        // can show which groups each person belongs to without N round-trips.
+        // Wrapped so a missing/drifted groups table degrades to "no chips"
+        // instead of 500-ing the whole member list.
+        (async () => {
+            const map = new Map<string, Array<{ group_id: string; name: string }>>();
+            try {
+              const groupRows = await db
+                .select({
+                  userId: accountGroupMembers.userId,
+                  groupId: accountGroups.groupId,
+                  name: accountGroups.name,
+                })
+                .from(accountGroupMembers)
+                .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
+                .where(eq(accountGroups.accountId, accountId));
+              for (const g of groupRows) {
+                const list = map.get(g.userId) ?? [];
+                list.push({ group_id: g.groupId, name: g.name });
+                map.set(g.userId, list);
+              }
+            } catch {
+              /* groups table unavailable — return members without group chips */
+            }
+            return map;
+          })(),
+          // Active-PAT counts per member, in one aggregate so the member list
+          // can flag who's automating against the account. Best-effort —
+          // failures degrade to "0".
+          (async () => {
+            const map = new Map<string, number>();
+            try {
+              const patRows = await db.execute<{ user_id: string; n: number }>(sql`
+      SELECT user_id::text, COUNT(*)::int AS n
+      FROM kortix.account_tokens
+      WHERE account_id = ${accountId}::uuid AND status = 'active'
+      GROUP BY user_id
+    `);
+              const patData = (patRows as unknown as { rows: typeof patRows }).rows ?? patRows;
+              for (const row of patData as Array<{ user_id: string; n: number }>) {
+                map.set(row.user_id, row.n);
+              }
+            } catch {
+              /* swallow — display "0 PATs" on failure */
+            }
+            return map;
+          })(),
+          // Verified-MFA flag per member from Supabase Auth. Same forgiving
+          // fallback as above so the list never 500s if auth.mfa_factors is
+          // unavailable in a given environment.
+          (async () => {
+            const map = new Map<string, boolean>();
+            try {
+              const mfaRows = await db.execute<{ user_id: string }>(sql`
+      SELECT DISTINCT user_id::text
+      FROM auth.mfa_factors
+      WHERE status = 'verified'
+        AND user_id IN (
+          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
+        )
+    `);
+              const mfaData = (mfaRows as unknown as { rows: typeof mfaRows }).rows ?? mfaRows;
+              for (const row of mfaData as Array<{ user_id: string }>) {
+                map.set(row.user_id, true);
+              }
+            } catch {
+              /* auth.mfa_factors unavailable in this env */
+            }
+            return map;
+          })(),
+        ]);
       const rows = identityRows.map((r) => ({
         ...r,
         // Floor label for a directory row with no account-scope assignment:
@@ -200,20 +299,10 @@ export function registerMemberRoutes(): void {
       // gated per-row below.
       const visibleRows = rows;
 
+      // The one read that genuinely depends on another (`rows`'s user ids), so
+      // it cannot join the batch above.
       const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
-      // Direct project grants per member, one batched query (name + role, not
-      // just a count) — powers both the "N projects" chip and a popover
-      // listing exactly which projects. Active projects only; archived
-      // projects don't clutter the chip. Group-derived and implicit
-      // (owner/admin) access aren't rows in project_members, so neither is
-      // enumerated here — that's the existing explicit_project_count scope.
-      const [assignedGrants, activeProjects] = await Promise.all([
-        projectRoleGrants({ accountId }),
-        db
-          .select({ projectId: projects.projectId, name: projects.name })
-          .from(projects)
-          .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active'))),
-      ]);
+
       const projectNameById = new Map(activeProjects.map((p) => [p.projectId, p.name] as const));
       const projectGrantRows = assignedGrants
         .filter((g) => projectNameById.has(g.projectId))
@@ -233,70 +322,6 @@ export function registerMemberRoutes(): void {
         const list = projectsByUser.get(r.userId) ?? [];
         list.push({ project_id: r.projectId, name: r.name, role: r.role });
         projectsByUser.set(r.userId, list);
-      }
-
-      // Group memberships for every member, in one query — so the member list can
-      // show which groups each person belongs to without N round-trips. Wrapped so
-      // a missing/drifted groups table degrades to "no chips" instead of 500-ing
-      // the whole member list.
-      const groupsByUser = new Map<string, Array<{ group_id: string; name: string }>>();
-      try {
-        const groupRows = await db
-          .select({
-            userId: accountGroupMembers.userId,
-            groupId: accountGroups.groupId,
-            name: accountGroups.name,
-          })
-          .from(accountGroupMembers)
-          .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
-          .where(eq(accountGroups.accountId, accountId));
-        for (const g of groupRows) {
-          const list = groupsByUser.get(g.userId) ?? [];
-          list.push({ group_id: g.groupId, name: g.name });
-          groupsByUser.set(g.userId, list);
-        }
-      } catch {
-        /* groups table unavailable — return members without group chips */
-      }
-
-      // Active-PAT counts per member, in one aggregate so the member list
-      // can flag who's automating against the account. Best-effort —
-      // failures degrade to "0".
-      const patCountByUser = new Map<string, number>();
-      try {
-        const patRows = await db.execute<{ user_id: string; n: number }>(sql`
-      SELECT user_id::text, COUNT(*)::int AS n
-      FROM kortix.account_tokens
-      WHERE account_id = ${accountId}::uuid AND status = 'active'
-      GROUP BY user_id
-    `);
-        const patData = (patRows as unknown as { rows: typeof patRows }).rows ?? patRows;
-        for (const row of patData as Array<{ user_id: string; n: number }>) {
-          patCountByUser.set(row.user_id, row.n);
-        }
-      } catch {
-        /* swallow — display "0 PATs" on failure */
-      }
-
-      // Verified-MFA flag per member from Supabase Auth. Same forgiving
-      // fallback as above so the list never 500s if auth.mfa_factors is
-      // unavailable in a given environment.
-      const mfaByUser = new Map<string, boolean>();
-      try {
-        const mfaRows = await db.execute<{ user_id: string }>(sql`
-      SELECT DISTINCT user_id::text
-      FROM auth.mfa_factors
-      WHERE status = 'verified'
-        AND user_id IN (
-          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
-        )
-    `);
-        const mfaData = (mfaRows as unknown as { rows: typeof mfaRows }).rows ?? mfaRows;
-        for (const row of mfaData as Array<{ user_id: string }>) {
-          mfaByUser.set(row.user_id, true);
-        }
-      } catch {
-        /* auth.mfa_factors unavailable in this env */
       }
 
       return c.json(
@@ -379,7 +404,7 @@ export function registerMemberRoutes(): void {
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const email = normalizeEmail(body.email);
       if (!email) return c.json({ error: 'A valid email is required' }, 400);
 
@@ -869,7 +894,7 @@ export function registerMemberRoutes(): void {
       if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
       if (!newRole) return c.json({ error: 'role must be one of owner|admin|member' }, 400);
 
@@ -909,7 +934,8 @@ export function registerMemberRoutes(): void {
 
       const writer = await actorOf(c, accountId);
       await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
-      await db
+      // Demoting an owner also clears the super-admin bypass the owner held
+      // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
       await grantAccountRole(writer, accountId, targetUserId, newRole);
 
       if (newRole === 'owner' || newRole === 'admin') {

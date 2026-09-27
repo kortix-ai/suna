@@ -25,6 +25,12 @@ let auditPending = 0;
 let auditLatestAt: Date | null = null;
 let auditLatestResolvedAt: Date | null = null;
 
+// The rendered WHERE of every `connector_calls` read, so a test can prove
+// which index the read can use.
+const auditWhere: string[] = [];
+let sessionProjectId: string | null = 'project-owner';
+const { PgDialect } = await import('drizzle-orm/pg-core');
+
 mock.module('../../shared/db', () => ({
   db: {
     select: (projection: Record<string, unknown>) => ({
@@ -33,6 +39,7 @@ mock.module('../../shared/db', () => ({
         // name: drizzle's `table._.name` is undefined in this version, so the
         // name-based branch was dead. The projection is unambiguous per read.
         const rows = () => {
+          if ('projectId' in projection) return sessionProjectId ? [{ projectId: sessionProjectId }] : [];
           if ('pending' in projection) return [{ pending: auditPending }];
           if ('latest' in projection)
             return [{ latest: auditLatestAt, latestResolved: auditLatestResolvedAt }];
@@ -41,7 +48,12 @@ mock.module('../../shared/db', () => ({
           return sandboxRow ? [sandboxRow] : [];
         };
         const stage = {
-          where: () => stage,
+          where: (condition?: unknown) => {
+            if (condition && ('pending' in projection || 'latest' in projection)) {
+              auditWhere.push(new PgDialect().sqlToQuery(condition as never).sql);
+            }
+            return stage;
+          },
           limit: () => stage,
           then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows()).then(resolve),
         };
@@ -207,6 +219,32 @@ describe('emission', () => {
       latest_resolved_at: null,
     });
     handle.release();
+  });
+
+  test('every audit read filters on the project, so the (project_id, session_id) index serves it', async () => {
+    auditWhere.length = 0;
+    const handle = acquireControlReconciler(`${SESSION}-audit-index`, 'project-given');
+    await handle.ready();
+    expect(auditWhere).toHaveLength(2);
+    for (const where of auditWhere) {
+      expect(where).toContain('"project_id" = $1');
+      expect(where).toContain('"session_id" = $2');
+    }
+    handle.release();
+  });
+
+  test('a session with no project publishes no audit frame and reads no connector_calls', async () => {
+    auditWhere.length = 0;
+    sessionProjectId = null;
+    try {
+      const handle = acquireControlReconciler(`${SESSION}-audit-orphan`);
+      await handle.ready();
+      expect(handle.snapshot().some((event) => event.type === 'kortix.control.audit')).toBe(false);
+      expect(auditWhere).toHaveLength(0);
+      handle.release();
+    } finally {
+      sessionProjectId = 'project-owner';
+    }
   });
 
   test('a resolution (pending falls, resolved instant moves) publishes ONE new audit frame', async () => {

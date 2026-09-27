@@ -42,10 +42,4 @@ export interface BasicToolProps {
   triggerAction?: React.ReactNode;
 }
 
-export interface ParsedJsonFailure {
-  errorSummary: string;
-  hint?: string;
-  status?: number;
-  nestedMessage?: string;
-  nestedError?: boolean;
-}
+export type { ParsedJsonFailure } from '@kortix/sdk';

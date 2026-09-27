@@ -1,21 +1,20 @@
 'use client';
 
-import { isSandboxNotReadyError } from '@kortix/sdk';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import { binaryBlobKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFileAsBlob } from '../api/runtime-files';
+import { keepBlobIfUnchanged } from './blob-identity';
 import { sandboxWakingRefetchInterval } from './file-read-retry';
 import { useServerHealth } from './use-server-health';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
-export const binaryBlobKeys = {
-  all: ['runtime-files', 'binary-blob'] as const,
-  file: (serverUrl: string, filePath: string) =>
-    ['runtime-files', 'binary-blob', serverUrl, filePath] as const,
-};
+// Keyed by the SDK factory: the live event stream invalidates it on
+// `file.edited` and at turn end, so an open viewer shows the agent's edit.
+export { binaryBlobKeys };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +32,12 @@ export const binaryBlobKeys = {
  *   revoked on unmount or when the underlying Blob changes.
  *   This prevents the stale-blob-URL bug where navigating away and
  *   back would serve a revoked URL from the query cache.
+ *
+ * A `kortix-attachment://` reference is read from the PLATFORM instead of the
+ * sandbox. Saved session history records one for every file an agent showed
+ * (the server copies it while the box is up), so a card from a stopped session
+ * renders its bytes instead of waiting on a box that is not coming. A stored
+ * copy is immutable, so it is never refetched and never polled.
  */
 export function useBinaryBlob(filePath: string | null): {
   blobUrl: string | null;
@@ -43,14 +48,22 @@ export function useBinaryBlob(filePath: string | null): {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
+  const stored = isSessionAttachmentRef(filePath);
+  const queryClient = useQueryClient();
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
-    queryKey: filePath
-      ? binaryBlobKeys.file(serverUrl, filePath)
-      : ['runtime-files', 'binary-blob', '__disabled__'],
-    queryFn: ({ signal }) =>
-      readRuntimeFileWithRetry(
+    queryKey: !filePath
+      ? ['runtime-files', 'binary-blob', '__disabled__']
+      : stored
+        ? // Globally unique on its own: no server URL, because no server.
+          // Outside `binaryBlobKeys.all` on purpose: a stored attachment never
+          // changes, so the turn-end invalidation must not re-download it.
+          ['session-attachment', 'blob', filePath]
+        : binaryBlobKeys.file(serverUrl, filePath),
+    queryFn: async ({ signal, queryKey }) => {
+      if (stored) return fetchSessionAttachment(filePath!, signal);
+      const blob = await readRuntimeFileWithRetry(
         filePath!,
         async () => {
           const blob = await readFileAsBlob(filePath!);
@@ -63,15 +76,21 @@ export function useBinaryBlob(filePath: string | null): {
         },
         undefined,
         signal,
-      ),
+      );
+      // The turn end refetches every open file; same bytes keep the same Blob,
+      // so the viewer does not reload a file the agent never touched.
+      return keepBlobIfUnchanged(queryClient.getQueryData<Blob>(queryKey), blob);
+    },
     enabled: !!filePath,
-    staleTime: 30_000,
+    staleTime: stored ? Number.POSITIVE_INFINITY : 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
     // A readiness 503 is a pending state, not a failure. A booting box earns the
-    // fast cadence; a parked one is watched slowly. See the helper.
-    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
+    // fast cadence; a parked one is watched slowly. See the helper. A stored
+    // copy has no box to wait for.
+    refetchInterval: (query) =>
+      stored ? false : sandboxWakingRefetchInterval(query.state.error, parked),
   });
 
   const cachedBlob = query.data ?? null;

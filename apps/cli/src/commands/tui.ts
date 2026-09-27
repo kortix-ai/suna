@@ -14,6 +14,7 @@ import {
   removeTuiCache,
   tuiCacheRoot,
 } from '../tui-bin.ts';
+import { isSupervised, SUPERVISED_NOTICE } from '../supervised.ts';
 
 const DOCS_URL = 'https://kortix.com/docs/tui';
 
@@ -294,6 +295,20 @@ async function install(
   skipPrompt: boolean,
   deps: TuiDeps,
 ): Promise<string | number> {
+  // Refuse BEFORE the prompt, not at the download. The question below defaults
+  // to yes and the Session terminal is a real PTY, so asking it inside a
+  // managed box is the same trap the update prompt was: one Enter and an 80 MB
+  // binary nobody converges lands in ~/.kortix/tui. The TUI is a client for a
+  // developer's own machine; a managed box has no managed copy of it.
+  if (isSupervised()) {
+    deps.stderr(
+      `${status.err('kortix tui cannot install itself in this sandbox.')}\n` +
+        `  ${C.dim}${SUPERVISED_NOTICE}${C.reset}\n` +
+        `  ${C.dim}Run ${C.reset}${C.cyan}kortix tui${C.reset}${C.dim} on your own machine, or set KORTIX_TUI_BIN.${C.reset}\n`,
+    );
+    return 1;
+  }
+
   if (!isValidTuiVersion(version)) {
     // The `dev` case: a local `bun run src/index.ts` or an unversioned build.
     deps.stderr(

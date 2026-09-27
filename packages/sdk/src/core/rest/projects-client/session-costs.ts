@@ -18,14 +18,14 @@ export interface SessionCostSummary {
   created_at: string;
   updated_at: string;
   last_activity_at: string | null;
+  /** LLM charges debited from the Kortix wallet. Excludes provider-side BYOK spend. */
   llm_cost: number;
   /**
-   * The `llm_cost` slice Kortix debited from your wallet — managed inference,
-   * or the platform fee on a BYOK route.
+   * Alias of `llm_cost`, retained for the additive payee breakdown.
    */
   llm_kortix_cost: number;
   /**
-   * The `llm_cost` slice you paid your own provider directly, on your own key.
+   * Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`.
    * Always 0 for Kortix-managed traffic, where the upstream price is Kortix's
    * wholesale cost rather than yours.
    */
@@ -212,12 +212,11 @@ export interface ProjectCostRow {
   session_count: number;
   llm_cost: number;
   /**
-   * The `llm_cost` slice Kortix debited from your wallet — managed inference,
-   * or the platform fee on a BYOK route.
+   * Alias of `llm_cost`, retained for the additive payee breakdown.
    */
   llm_kortix_cost: number;
   /**
-   * The `llm_cost` slice you paid your own provider directly, on your own key.
+   * Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`.
    * Always 0 for Kortix-managed traffic, where the upstream price is Kortix's
    * wholesale cost rather than yours.
    */
@@ -261,12 +260,11 @@ export async function listCostByProject(
 export interface CostSummaryTotals {
   llm_cost: number;
   /**
-   * The `llm_cost` slice Kortix debited from your wallet — managed inference,
-   * or the platform fee on a BYOK route.
+   * Alias of `llm_cost`, retained for the additive payee breakdown.
    */
   llm_kortix_cost: number;
   /**
-   * The `llm_cost` slice you paid your own provider directly, on your own key.
+   * Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`.
    * Always 0 for Kortix-managed traffic, where the upstream price is Kortix's
    * wholesale cost rather than yours.
    */

@@ -99,6 +99,10 @@ export interface AuthVariables {
    *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
    *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
   agentGrant?: AgentGrant | null;
+  /** The human an agent-session token acts on behalf of (spec
+   *  docs/specs/2026-09-22-agents-as-principals.md §2.3). Null for an
+   *  unattended run, a cleared session, or any non-session credential. */
+  onBehalfOfUserId?: string | null;
   /** Live impersonation grant id — set only while a platform admin acts as an
    *  account (middleware/impersonation.ts). Its presence means `accountId` is
    *  the TARGET account, not the caller's own. */

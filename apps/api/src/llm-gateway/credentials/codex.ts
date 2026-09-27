@@ -39,6 +39,9 @@ interface SecretRow {
 interface CodexCredentialContext {
   accountId?: string;
   sessionId?: string | null;
+  /** Whose personal CODEX_AUTH_JSON override applies (spec 2026-09-22 §2.3).
+   *  Absent = `userId` (legacy); null = the shared row only. */
+  principalUserId?: string | null;
 }
 
 async function loadCodexRow(
@@ -51,7 +54,7 @@ async function loadCodexRow(
     accountId: context.accountId,
     sessionId: context.sessionId,
     actorUserId: userId,
-    principalUserId: userId,
+    principalUserId: context.principalUserId === undefined ? userId : context.principalUserId,
     name: CODEX_AUTH_JSON_SECRET_NAME,
     consumer: 'llm_gateway',
   });

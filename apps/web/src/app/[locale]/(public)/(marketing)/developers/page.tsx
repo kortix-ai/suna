@@ -1,0 +1,1133 @@
+'use client';
+
+import { CliDemo } from '@/components/home/cli-demo';
+import { Reveal } from '@/components/home/reveal';
+import { HighlightedCode } from '@/components/markdown/code';
+import { Badge } from '@/components/ui/badge';
+import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { Button } from '@/components/ui/marketing/button';
+import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
+import { useCopy } from '@/hooks/use-copy';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
+import { cn } from '@/lib/utils';
+import {
+  CheckIcon as AiOutlineCheck,
+  ArrowRightIcon as ArrowRight,
+  CubeIcon as Boxes,
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  CpuIcon as Cpu,
+  FileCodeIcon as FileCode2,
+  GitBranchIcon as GitBranch,
+  GitPullRequestIcon as GitPullRequest,
+  ArrowRightIcon as HiArrowRight,
+  KeyIcon as KeyRound,
+  PlugIcon as Plug,
+  HardDrivesIcon as Server,
+  TerminalIcon,
+  FlowArrowIcon as Workflow,
+} from '@phosphor-icons/react';
+import Link from '@/components/site-link';
+import { useCallback } from 'react';
+
+const GITHUB_URL = 'https://github.com/kortix-ai/suna';
+const DOCS_URL = '/docs';
+const fav = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
+
+const C = {
+  c: 'text-muted-foreground/70',
+  s: 'text-kortix-green',
+  f: 'text-foreground',
+};
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <span className="text-muted-foreground font-mono text-xs">{children}</span>;
+}
+
+function CodeWindowFrame({
+  tab,
+  children,
+  className,
+}: {
+  tab?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className="border-border bg-card overflow-hidden rounded border">
+      {tab && (
+        <div className="border-border bg-card flex items-center gap-1 border-b p-2">
+          <span className="bg-foreground text-background rounded px-3 py-0.5 text-sm font-medium">
+            {tab}
+          </span>
+        </div>
+      )}
+      <div className={cn('min-h-[260px] overflow-x-auto px-5 py-4 font-mono text-sm', className)}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Terminal({ title, children }: { title?: string; children: React.ReactNode }) {
+  return <CodeWindowFrame tab={title}>{children}</CodeWindowFrame>;
+}
+
+function Line({
+  children = <> </>,
+  className,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  return <div className={cn('flex leading-relaxed whitespace-pre', className)}>{children}</div>;
+}
+
+function Done({ children }: { children: React.ReactNode }) {
+  return (
+    <Line className="items-center justify-start gap-2">
+      <span className={C.s}>
+        <AiOutlineCheck className="size-3" />
+      </span>
+      <span className={C.f}>{children}</span>
+    </Line>
+  );
+}
+
+function Working({ children }: { children: React.ReactNode }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  return (
+    <Line className="items-center justify-start gap-2">
+      <span className={C.s}>
+        <KortixAsterisk parentClass={'animate-spin mt-0 size-3'} index={0} variant="solid" />
+      </span>
+      <span className={C.f}>{children}</span>
+    </Line>
+  );
+}
+
+const PROMPT = <span className={cn(C.c, 'select-none')}>$ </span>;
+
+function Cmd({ children }: { children: React.ReactNode }) {
+  return (
+    <Line>
+      <span className={C.c}>{children}</span>
+    </Line>
+  );
+}
+
+function CodeFile({ name, code, language }: { name: string; code: string; language: string }) {
+  const tab = name.split('/').pop() ?? name;
+  return (
+    <CodeWindowFrame tab={tab} className="px-0">
+      {/* No wrapper classes: the frame already supplies the scroller, the
+          vertical padding, and `font-mono text-sm`. Every class this call used
+          to pass existed only to switch off the old card. */}
+      <HighlightedCode code={code.trim()} language={language} />
+    </CodeWindowFrame>
+  );
+}
+
+const MENTAL_MODEL = [
+  {
+    icon: Boxes,
+    title: 'Agents are sandboxes',
+    desc: 'Every agent runs in its own disposable cloud VM, on its own git branch. Spin up thousands in parallel — nothing is shared between runs.',
+  },
+  {
+    icon: FileCode2,
+    title: 'Work is code',
+    desc: 'Agents, skills, triggers, connectors and policies are plain files in one repo. Diff them, review them in a change request, roll them back.',
+  },
+  {
+    icon: Server,
+    title: 'You own the stack',
+    // ACCURACY: say "open source" and stop — never characterise the licence.
+    desc: 'Open source. Self-host the exact same stack, bring your own runtime and model keys. No black box, no lock-in.',
+  },
+];
+
+const CLI_GROUPS: { label: string; icon: typeof TerminalIcon; cmds: [string, string][] }[] = [
+  {
+    label: 'Scaffold & ship',
+    icon: TerminalIcon,
+    cmds: [
+      ['kortix init', 'Scaffold kortix.yaml + .kortix/'],
+      ['kortix ship', 'Commit, push, link & go live'],
+      ['kortix validate', 'Type-check your manifest'],
+    ],
+  },
+  {
+    label: 'Run & talk',
+    icon: Workflow,
+    cmds: [
+      ['kortix sessions', 'Spawn & manage sandbox sessions'],
+      ['kortix chat', "Talk to a session's agent"],
+      ['kortix files', 'Browse the repo, diffs & branches'],
+    ],
+  },
+  {
+    label: 'Automate',
+    icon: GitBranch,
+    cmds: [
+      ['kortix triggers', 'Cron & webhook automations'],
+      ['kortix channels', 'Connect Slack & chat surfaces'],
+    ],
+  },
+  {
+    label: 'Connect',
+    icon: Plug,
+    cmds: [
+      ['kortix connectors', 'Wire up 3,000+ tools'],
+      ['kortix secrets', 'Manage encrypted secrets'],
+      ['kortix env', 'Pull / push as dotenv'],
+    ],
+  },
+  {
+    label: 'Review',
+    icon: GitPullRequest,
+    cmds: [
+      ['kortix cr', 'Open, review & merge change requests'],
+      ['kortix access', 'Invite, grant & revoke access'],
+    ],
+  },
+  {
+    label: 'Operate',
+    icon: KeyRound,
+    cmds: [
+      ['kortix self-host', 'Run your own Kortix cloud'],
+      ['kortix hosts use', 'Switch cloud ↔ local'],
+      ['kortix providers', 'Bring your own model keys'],
+    ],
+  },
+];
+
+const RUNS_ANYWHERE = [
+  {
+    icon: Server,
+    title: 'Self-host anywhere',
+    // ACCURACY: not "air-gapped" — `self-host start` pulls images from docker.io.
+    desc: 'A laptop, a VPS, or your own VPC — the exact same stack as Kortix cloud.',
+  },
+  {
+    icon: Cpu,
+    title: 'Any runtime',
+    desc: 'An open runtime today, pluggable by design. The sandbox is yours to read and replace.',
+  },
+  {
+    icon: KeyRound,
+    title: 'Any model',
+    desc: 'Bring your own keys — Anthropic, OpenAI, or local models — or run on Kortix compute.',
+  },
+];
+
+const KORTIX_YAML_EXAMPLE = `kortix_version: 2
+
+project:
+  name: acme
+
+# the OpenCode runtime config dir
+opencode:
+  config_dir: .kortix/opencode
+
+# a trigger runs itself, on a schedule
+triggers:
+  - slug: daily-digest
+    type: cron
+    agent: research
+    cron: "0 0 9 * * 1-5"
+    prompt: Summarize yesterday across Slack & Linear
+
+# connect a tool's API as agent tools
+connectors:
+  - slug: stripe
+    provider: http
+    base_url: https://api.stripe.com
+
+# answer where your team works
+channels:
+  - platform: slack
+    agent: support`;
+
+const AGENT_MD = `---
+description: Acme's support agent. Resolves tickets end to end.
+mode: primary
+model: anthropic/claude-opus-4-8
+tools:
+  lookup_order: true
+---
+
+You are Acme's support agent. Resolve customer tickets
+end to end, with full product and order context.
+
+Issue refunds under $500 on your own. Anything higher
+goes to a human for approval.`;
+
+function Step({
+  n,
+  title,
+  body,
+  children,
+  flip = false,
+}: {
+  n: string;
+  title: string;
+  body: string;
+  children: React.ReactNode;
+  flip?: boolean;
+}) {
+  const { copied, copy } = useCopy();
+
+  const badgeClass =
+    'border-border bg-card text-foreground flex size-9 shrink-0 items-center justify-center rounded border font-mono text-sm font-medium ';
+
+  return (
+    <div className="relative mx-auto flex w-full max-w-[calc(70rem+9rem)] items-start gap-6">
+      <div className="bg-border absolute top-0 left-4 hidden h-dvh w-px rounded-full lg:flex" />
+      <span className="hidden lg:flex">
+        <span className={cn('sticky top-40 z-10 shrink-0', badgeClass)}>{n}</span>
+      </span>
+      <div className="grid w-full max-w-7xl min-w-0 flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-2 lg:gap-14">
+        <Reveal className={cn(flip && 'min-h-0 flex-1 grow space-y-5 lg:order-2')}>
+          <div className="flex items-center gap-3.5 lg:hidden">
+            <span className={cn(badgeClass)}>{n}</span>
+          </div>
+          <h3 className="text-foreground text-2xl font-medium tracking-tight sm:text-3xl">
+            {title}
+          </h3>
+          <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">{body}</p>
+          {n === '01' && (
+            <div className="bg-card mt-5 flex items-center justify-between gap-4 rounded-sm border p-3 px-5">
+              <div className="flex gap-3">
+                <span className="text-foreground font-mono text-sm">$ </span>
+                <span className="text-foreground font-mono text-sm select-all">
+                  {KORTIX_CLI_INSTALL_COMMAND}
+                </span>
+              </div>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}
+              >
+                {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
+              </Button>
+            </div>
+          )}
+        </Reveal>
+        <Reveal delay={0.1} className={cn('min-w-0', flip && 'lg:order-1')}>
+          {children}
+        </Reveal>
+      </div>
+    </div>
+  );
+}
+
+const KORTIX_YAML = `kortix_version: 2
+
+project:
+  name: acme-ops
+
+sandbox:
+  image: .kortix/Dockerfile
+
+agents:
+  support-triage:
+    connectors: [slack, linear]
+    skills: [ticket-triage, kortix-memory]
+
+triggers:
+  - type: cron
+    schedule: "0 8 * * *"
+    agent: support-triage`;
+
+const REPO_TREE: [string, number, 'dir' | 'file' | 'accent'][] = [
+  ['acme-ops', 0, 'dir'],
+  ['kortix.yaml', 1, 'accent'],
+  ['.kortix', 1, 'dir'],
+  ['opencode', 2, 'dir'],
+  ['agents', 3, 'dir'],
+  ['support-triage.md', 4, 'file'],
+  ['skills', 3, 'dir'],
+  ['ticket-triage', 4, 'dir'],
+  ['tools', 3, 'dir'],
+  ['web_search.ts', 4, 'file'],
+  ['Dockerfile', 2, 'file'],
+];
+
+const CONNECTOR_APPS: [string, string][] = [
+  ['slack.com', 'Slack'],
+  ['github.com', 'GitHub'],
+  ['salesforce.com', 'Salesforce'],
+  ['notion.so', 'Notion'],
+  ['stripe.com', 'Stripe'],
+  ['linear.app', 'Linear'],
+];
+
+const CONNECTOR_PROTOCOLS = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'] as const;
+
+function FlowLine({ label }: { label?: string }) {
+  return (
+    <div className="flex flex-col items-center py-1">
+      <div className="bg-border/70 h-3 w-px" aria-hidden />
+      {label ? (
+        <span className="text-muted-foreground py-1 text-center text-xs leading-snug sm:text-xs">
+          {label}
+        </span>
+      ) : null}
+      <div className="bg-border/70 h-3 w-px" aria-hidden />
+    </div>
+  );
+}
+
+function ConnectorsRequestPath() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  return (
+    <div className="border-border bg-card overflow-hidden rounded-sm border">
+      <div className="border-border/60 bg-background/30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2.5">
+        <span className="text-muted-foreground font-mono text-xs">
+          {tI18nHardcoded.raw(
+            'autoAppPublicMarketingDevelopersPageJsxTextConnectorsRequestPath28e55918',
+          )}
+        </span>
+        <div className="flex flex-wrap gap-1">
+          {CONNECTOR_PROTOCOLS.map((protocol) => (
+            <Badge key={protocol} variant={protocol === 'App' ? 'highlight' : 'outline'} size="sm">
+              {protocol}
+            </Badge>
+          ))}
+        </div>
+      </div>
+
+      <div className="text-foreground px-4 py-6 font-mono text-xs sm:text-sm">
+        <div className="border-border/60 bg-background/60 flex items-center gap-2.5 rounded-sm border border-dashed px-3 py-2.5">
+          <Boxes className="text-muted-foreground/70 size-4 shrink-0" />
+          <span className="font-medium">{tI18nHardcoded.raw('i18nComplete.textb7ad567477c8')}</span>
+          <span className="text-muted-foreground ml-auto text-xs">
+            {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextAgentRuntime00a9a84b')}
+          </span>
+        </div>
+
+        <FlowLine
+          label={tI18nHardcoded.raw(
+            'autoAppPublicMarketingDevelopersPageJsxAttrLabelOnlyAfa7b37b0',
+          )}
+        />
+
+        <div className="flex justify-center pb-1">
+          <span className="border-border bg-background/70 text-muted-foreground inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 font-mono text-xs sm:text-xs">
+            <KeyRound className="size-3 shrink-0" />
+            KORTIX_TOKEN
+          </span>
+        </div>
+
+        <FlowLine />
+
+        <div className="border-border bg-card ring-border/40 flex items-center gap-2.5 rounded-sm border px-3 py-3 ring-1">
+          <Server className="text-foreground size-4 shrink-0" />
+          <span className="font-medium">
+            {tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxTextKortixConnector80880ab2',
+            )}
+          </span>
+          <span className="text-muted-foreground ml-auto text-xs sm:text-xs">
+            {tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxTextConnectProxyGateway799c9a68',
+            )}
+          </span>
+        </div>
+
+        <FlowLine />
+
+        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
+          {CONNECTOR_APPS.map(([domain, name]) => (
+            <div
+              key={name}
+              className="border-border/50 bg-background/70 flex items-center gap-1.5 rounded-sm border px-2 py-1"
+            >
+              <img
+                src={fav(domain)}
+                alt={name}
+                width={14}
+                height={14}
+                loading="lazy"
+                className="size-3.5 shrink-0"
+              />
+              <span className="text-foreground text-xs font-medium">{name}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-muted-foreground/70 mt-2.5 text-center text-xs sm:text-xs">
+          {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxText3000Moree9562262')}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function HeroWorkspace() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="border-card bg-background overflow-hidden rounded-md border-4">
+        <div className="border-border/60 bg-muted/30 text-muted-foreground flex items-center gap-2 border-b px-4 py-2.5 font-mono text-xs">
+          <GitBranch className="size-3.5" />{' '}
+          {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheRepoIsf35cb375')}
+        </div>
+        <div className="text-foreground px-4 py-3 font-mono text-sm">
+          {REPO_TREE.map(([name, depth, kind]) => (
+            <div
+              key={name}
+              className="flex items-center gap-2 py-0.5"
+              style={{ paddingLeft: `${depth * 14}px` }}
+            >
+              {kind === 'dir' ? (
+                <Boxes className="text-muted-foreground/60 size-3.5 shrink-0" />
+              ) : (
+                <FileCode2
+                  className={cn(
+                    'size-3.5 shrink-0',
+                    kind === 'accent' ? 'text-kortix-green' : 'text-muted-foreground/60',
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  'tracking-normal',
+                  kind === 'accent'
+                    ? 'text-foreground font-medium'
+                    : kind === 'dir'
+                      ? 'text-muted-foreground'
+                      : 'text-muted-foreground',
+                )}
+              >
+                {name}
+                {kind === 'dir' ? '/' : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-card bg-background overflow-hidden rounded-md border-4">
+        <div className="border-border/60 bg-muted/30 flex items-center gap-2 border-b px-4 py-2.5">
+          <span className="bg-foreground text-background rounded px-2.5 py-0.5 font-mono text-xs font-medium">
+            {tI18nHardcoded.raw('i18nComplete.text1965f383021e')}
+          </span>
+          <span className="text-muted-foreground font-mono text-xs">
+            {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextDeclareItOnce7b7c95e7')}
+          </span>
+        </div>
+        <div className="text-foreground overflow-x-auto text-sm">
+          <HighlightedCode code={KORTIX_YAML} language="yaml" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function DevelopersPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localized = localizeUiCatalog(
+    { MENTAL_MODEL, CLI_GROUPS, RUNS_ANYWHERE },
+    tI18nComplete,
+    APP_REGISTRY_TRANSLATION_KEYS,
+  );
+  const { copied, copy } = useCopy();
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDevelopers = useTranslations('developers');
+  const tHome = useCallback(
+    (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
+    [tHardcodedUi],
+  );
+
+  return (
+    <div className="bg-background relative w-full">
+      <section
+        id="hero"
+        className="relative w-full max-w-none overflow-hidden pt-32 pb-12 sm:pt-36"
+      >
+        <div className="absolute inset-0 z-0 mask-y-to-95%">
+          <KortixLetterField seed={3382} />
+        </div>
+        <div className="relative z-10 mx-auto max-w-7xl px-6 lg:px-0">
+          <section className="w-full">
+            <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextOneKortixToml1138e741',
+              )}
+              <br />
+              <span className="text-muted-foreground">
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextYourEntireAI2f05f11a',
+                )}
+              </span>
+            </h1>
+            <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
+              {tDevelopers('heroDescription')}
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
+                <div className="flex gap-3">
+                  <span className="text-foreground font-mono text-sm">$ </span>
+                  <span className="text-foreground font-mono text-sm select-all">
+                    {KORTIX_CLI_INSTALL_COMMAND}
+                  </span>
+                </div>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => copy(KORTIX_CLI_INSTALL_COMMAND)}
+                >
+                  {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
+                </Button>
+              </div>
+              <Button
+                size="lg"
+                variant="secondary"
+                className="ring-ring/15 p-3 px-5 ring-2"
+                asChild
+              >
+                <Link href={DOCS_URL}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextReadTheDocs7dfe8373',
+                  )}
+                  <HiArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </div>
+          </section>
+
+          <div className="relative z-10 mt-12 sm:mt-14">
+            <Reveal>
+              <HeroWorkspace />
+            </Reveal>
+          </div>
+
+          <div id="demo" className="relative z-10 mt-6 h-full w-full scroll-mt-24 sm:mt-8">
+            <CliDemo />
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <Reveal>
+          <div className="mb-8 max-w-2xl">
+            <Eyebrow>
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheThesis2430ef03')}
+            </Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextTheCodingAgenta0a0e99f',
+              )}
+            </h2>
+            <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextDescribeIntentAnd6106e4a',
+              )}
+            </p>
+          </div>
+        </Reveal>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {localized.MENTAL_MODEL.map(({ icon: Icon, title, desc }, i) => (
+            <Reveal key={title} delay={i * 0.08}>
+              <div className="border-border bg-card flex h-full w-full flex-col justify-between space-y-8 rounded-sm border p-4">
+                <span className="border-border bg-background text-foreground flex size-10 items-center justify-center rounded-lg border">
+                  <Icon className="text-foreground size-5 shrink-0" />
+                </span>
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-foreground text-base">{title}</p>
+                  <p className="text-muted-foreground text-sm text-balance">{desc}</p>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <div className="mx-auto w-full max-w-7xl">
+          <Reveal>
+            <div className="mb-8 max-w-2xl">
+              <Eyebrow>
+                {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheLoopd95820b1')}
+              </Eyebrow>
+              <h2 className="text-muted-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+                {tI18nHardcoded.raw('i18nComplete.text218197693424')}{' '}
+                <span className="text-foreground font-mono">
+                  {tI18nHardcoded.raw('i18nComplete.text427e4b79b1f0')}
+                </span>{' '}
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextToProduction51bf7e67',
+                )}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextOneRepoOne9f702828',
+                )}
+              </p>
+            </div>
+          </Reveal>
+        </div>
+
+        <div className="flex flex-col gap-20 sm:gap-24">
+          <Step
+            n="01"
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleInstallScaffolda27ee59d',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyOneLinee5ce45d3',
+            )}
+          >
+            <Terminal title={tI18nHardcoded.raw('i18nComplete.textbb54068aea85')}>
+              <Cmd>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
+                )}
+              </Cmd>
+              <Done>{tI18nHardcoded.raw('i18nComplete.text1965f383021e')}</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.text46c0b3f64f0d')}</Done>
+            </Terminal>
+          </Step>
+
+          <Step
+            n="02"
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleBuildIte194e7c4',
+            )}
+            body={tDevelopers('agentBody')}
+            flip
+          >
+            <CodeFile
+              name=".kortix/opencode/agents/support.md"
+              code={AGENT_MD}
+              language="markdown"
+            />
+          </Step>
+
+          <Step
+            n="03"
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleDeclareThed1672ddf',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixToml8f2ef9df',
+            )}
+          >
+            <CodeFile name="kortix.yaml" code={KORTIX_YAML_EXAMPLE} language="yaml" />
+          </Step>
+
+          <Step
+            n="04"
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleShipItfb312d97',
+            )}
+            body={tDevelopers('shipBody')}
+            flip
+          >
+            <Terminal
+              title={tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxAttrTitleKortixShip3674108d',
+              )}
+            >
+              <Cmd>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextKortixShip0f78d303',
+                )}
+              </Cmd>
+              <Done>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextCommittedPushedTo6397bcf0',
+                )}
+                <span className={C.f}>main</span>
+              </Done>
+              <Done>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextSecretsSyncedSandboxa20399ce',
+                )}
+              </Done>
+              <Working>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextLiveTriggersChannels9865dd98',
+                )}
+              </Working>
+            </Terminal>
+          </Step>
+
+          <Step
+            n="05"
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleItRuns79baead9',
+            )}
+            body={tDevelopers('fleetBody')}
+          >
+            <Terminal>
+              <Line>
+                <span className="text-foreground">main</span>
+                <span className="text-muted-foreground/50"> ──────●────────●────────●────▶</span>
+              </Line>
+              <Line>
+                <span className="text-muted-foreground/50"> ├─ </span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSession1f3a8c59f56e',
+                  )}
+                </span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextSandbox2bdd3ae7')}
+                </span>
+              </Line>
+              <Line>
+                <span className="text-muted-foreground/50"> ├─ </span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSession9b220421e426',
+                  )}
+                </span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSandboxChange7917aca8',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                <span className="text-muted-foreground/50"> ├─ </span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSession4e0708b094fc',
+                  )}
+                </span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSandboxRequests9e4d59fa',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                <span className="text-muted-foreground/50"> └─ </span>
+                <span className="text-foreground">… ×1000</span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSandboxeseeb779e1',
+                  )}
+                </span>
+              </Line>
+              <Line> </Line>
+              <Line>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextReviewMergeMain18972c6f',
+                  )}
+                </span>
+              </Line>
+            </Terminal>
+          </Step>
+
+          <Step
+            n="06"
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleBringYourc9b3722b',
+            )}
+            body={tDevelopers('runtimeBody')}
+            flip
+          >
+            <Terminal>
+              <Line>
+                {PROMPT}
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersLogind1e6302d',
+                  )}
+                </span>
+              </Line>
+              <Done>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextUsingYourOwn244e5bb8',
+                )}
+                <span className="text-muted-foreground/60">
+                  {tI18nHardcoded.raw('i18nComplete.text0479e05f1b8d')}
+                </span>
+              </Done>
+              <Line> </Line>
+              <Line>
+                <span className="text-muted-foreground/50">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextOrPointAtc877fc5b',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                {PROMPT}
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersSetc86bed30',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                {PROMPT}
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersSet4a7972ff',
+                  )}
+                </span>
+              </Line>
+            </Terminal>
+          </Step>
+        </div>
+      </section>
+
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <Reveal>
+          <div className="mb-8 max-w-2xl">
+            <Eyebrow>
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextOneCLI8f2d2b85')}
+            </Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextTheWholeLifecyclecb116839',
+              )}
+            </h2>
+            <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+              {tDevelopers('lifecycleDescription')}
+            </p>
+          </div>
+        </Reveal>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {localized.CLI_GROUPS.map(({ label, icon: Icon, cmds }, i) => (
+            <Reveal key={label} delay={(i % 3) * 0.06}>
+              <div className="group border-border bg-card hover:bg-background flex h-full flex-col rounded-sm border p-5 transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="border-border bg-background text-foreground flex size-10 items-center justify-center rounded-lg border">
+                    <Icon className="text-foreground size-4" />
+                  </span>
+                  <h3 className="text-foreground text-sm font-semibold">{label}</h3>
+                </div>
+                <div className="mt-4 flex flex-col gap-0.5">
+                  {cmds.map(([cmd, desc]) => (
+                    <div
+                      key={cmd}
+                      className="hover:bg-muted/60 -mx-2 rounded-md px-2 py-1.5 transition-colors"
+                    >
+                      <code className="font-mono text-sm">
+                        <span className="text-muted-foreground/40 select-none">$ </span>
+                        <span className="text-foreground">{cmd}</span>
+                      </code>
+                      <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+        <Reveal delay={0.1}>
+          <div>
+            <Link
+              href={`${DOCS_URL}/reference/cli`}
+              className="group text-foreground inline-flex items-center gap-1.5 text-sm font-medium"
+            >
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextFullCLIReferencefed1886e',
+              )}
+              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* Scalability */}
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
+          <Reveal>
+            <Eyebrow>{tI18nHardcoded.raw('i18nComplete.textf102986b39ef')}</Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxText1Session1543175ef')}
+            </h2>
+            <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
+              {tDevelopers('scaleDescription')}
+            </p>
+            <ul className="mt-6 max-w-md space-y-2.5">
+              {[
+                tI18nHardcoded.raw('i18nComplete.text529cc39f4f51'),
+                tI18nHardcoded.raw('i18nComplete.texted6b62273213'),
+                tI18nHardcoded.raw('i18nComplete.text3d99a138241e'),
+                tI18nHardcoded.raw('i18nComplete.text3eb4246eeb6a'),
+                tI18nHardcoded.raw('i18nComplete.texta7f9ed2fe099'),
+              ].map((b, i) => (
+                <li key={b} className="text-muted-foreground flex gap-2.5 text-sm leading-relaxed">
+                  <KortixAsterisk index={i} />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <CodeWindowFrame
+              tab={tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxAttrTabGitLog7b106744',
+              )}
+            >
+              <Line>
+                <span className={C.s}>*</span>
+                <span className={C.f}>{tI18nHardcoded.raw('i18nComplete.textaaae63b7a273')}</span>
+                <span className={C.c}>{'   (main)'}</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'|\\'}</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{tI18nHardcoded.raw('i18nComplete.textf5cbd7086bf2')}</span>
+                <span className={C.f}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextTriage14Tickets9e98fe81',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                <span className={C.c}>{tI18nHardcoded.raw('i18nComplete.text5c65b1b1e2e6')}</span>
+                <span className={C.f}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextBuildBoardDeck30c6ad92',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                <span className={C.c}>{tI18nHardcoded.raw('i18nComplete.text7ebef26162b5')}</span>
+                <span className={C.f}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa',
+                  )}
+                </span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'|/'}</span>
+              </Line>
+              <Line>
+                <span className={C.s}>*</span>
+                <span className={C.f}>{tI18nHardcoded.raw('i18nComplete.textf998e7571a88')}</span>
+                <span className={C.c}>{'   (main)'}</span>
+              </Line>
+              <Line> </Line>
+              <Line>
+                <span className={C.c}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextMillionsOfBranchesd3dbd3cb',
+                  )}
+                </span>
+              </Line>
+            </CodeWindowFrame>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Connectors */}
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
+          <Reveal className="lg:order-2">
+            <Eyebrow>{tI18nHardcoded.raw('i18nComplete.textc3d2e79ebdd0')}</Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextEveryToolBehindf2d74753',
+              )}
+            </h2>
+            <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
+              {tDevelopers('connectorsDescription')}
+            </p>
+            <ul className="mt-6 max-w-md space-y-2.5">
+              {[
+                tI18nHardcoded.raw('i18nComplete.text46c38eba6711'),
+                tI18nHardcoded.raw('i18nComplete.text6a034c1a3651'),
+                tI18nHardcoded.raw('i18nComplete.textd4115d8863a0'),
+                tI18nHardcoded.raw('i18nComplete.text0d7206389fb5'),
+              ].map((b, i) => (
+                <li key={b} className="text-muted-foreground flex gap-2.5 text-sm leading-relaxed">
+                  <KortixAsterisk index={i} />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={0.1} className="lg:order-1">
+            <ConnectorsRequestPath />
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
+        <Reveal>
+          <div className="mb-2 max-w-2xl">
+            <Eyebrow>
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextItSAlla4bb94e8')}
+            </Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextAPlatformThat026eb45c',
+              )}
+            </h2>
+            <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+              {tDevelopers('codeDescription')}
+            </p>
+          </div>
+        </Reveal>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              icon: FileCode2,
+              title: tI18nHardcoded.raw('i18nComplete.text81c55672efb4'),
+              body: tI18nHardcoded.raw('i18nComplete.texta90d90f6b829'),
+            },
+            {
+              icon: Workflow,
+              title: tI18nHardcoded.raw('i18nComplete.text4b9fba028c95'),
+              body: tI18nHardcoded.raw('i18nComplete.text229b158743e5'),
+            },
+            {
+              icon: GitPullRequest,
+              title: tI18nHardcoded.raw('i18nComplete.text581059f4eb56'),
+              body: tI18nHardcoded.raw('i18nComplete.text443590eec311'),
+            },
+            {
+              icon: Plug,
+              title: tI18nHardcoded.raw('i18nComplete.text2c884ecef610'),
+              body: tI18nHardcoded.raw('i18nComplete.textb6343d314d8e'),
+            },
+            {
+              icon: Cpu,
+              title: tI18nHardcoded.raw('i18nComplete.text71e68e9c4045'),
+              body: tI18nHardcoded.raw('i18nComplete.text24f5c57e884c'),
+            },
+            {
+              icon: TerminalIcon,
+              title: tI18nHardcoded.raw('i18nComplete.text49b0ceefa555'),
+              body: tI18nHardcoded.raw('i18nComplete.text70e874a5defd'),
+            },
+          ].map((f) => (
+            <Reveal key={f.title}>
+              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6">
+                <span className="border-border bg-background text-foreground flex size-10 items-center justify-center rounded-lg border">
+                  <f.icon className="size-5" />
+                </span>
+                <h3 className="text-foreground mt-4 text-base font-medium tracking-tight">
+                  {f.title}
+                </h3>
+                <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{f.body}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}

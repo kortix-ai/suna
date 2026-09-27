@@ -10,6 +10,7 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { type CommandLease, ownedByLease } from './command-lease';
 
 /**
  * The `session_sandboxes.metadata` of each session's box, keyed by session id.
@@ -44,7 +45,7 @@ export async function loadSandboxMetadataForSessions(
  * say why a row is still queued.
  */
 export async function releaseCommandToOwningInstance(
-  commandId: string,
+  lease: CommandLease,
   opts: { availableAt: Date; owner: string | null },
 ): Promise<void> {
   await db
@@ -59,5 +60,6 @@ export async function releaseCommandToOwningInstance(
         || ${JSON.stringify({ deferred_to_instance: opts.owner })}::jsonb`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionLifecycleCommands.commandId, commandId));
+    // Only this drain's claim: a row another worker holds is not ours to hand back.
+    .where(ownedByLease(lease));
 }

@@ -5,6 +5,13 @@ export interface AuthedPrincipal {
   sessionId?: string;
   /** Current session token grant. Account resources are filtered again at use time. */
   agentGrant?: { env?: string[] | 'all' } | null;
+  /**
+   * Whose PERSONAL provider keys / personal secret overrides this principal may
+   * use (spec docs/specs/2026-09-22-agents-as-principals.md §2.3). Absent =
+   * `userId` (legacy). `null` = none: an agent-principal session with no
+   * on-behalf-of human, a shared session, or a session another human prompted.
+   */
+  personalUserId?: string | null;
   keyId?: string;
   // Resolved billing tier (e.g. 'free', 'pro', 'per_seat'). Attached once at
   // authentication so it travels with the principal — including across the RPC
@@ -31,4 +38,6 @@ export interface AuthedPrincipal {
   billingHold?: { amountUsd: number };
 }
 
+// `platform-fee` remains readable for historical gateway rows. New BYOK
+// requests always use `none`.
 export type BillingMode = 'credits' | 'platform-fee' | 'none';

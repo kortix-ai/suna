@@ -120,7 +120,7 @@ export const PANE_META: Partial<Record<AccountSection, { title: string; descript
   billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
   transactions: {
     title: 'Usage',
-    description: 'Session costs and credit ledger for this account.',
+    description: 'Kortix charges and credit ledger for this account.',
   },
   tokens: {
     title: 'API keys',

@@ -32,12 +32,24 @@ const managedModelSchema = z.object({
     context: z.number().int().positive(),
     output: z.number().int().positive(),
   }),
+  morphModelId: z.string().min(1).optional(),
+  morphPricing: z.object({
+    inputPerMillion: z.number().nonnegative(),
+    outputPerMillion: z.number().nonnegative(),
+    cachedInputPerMillion: z.number().nonnegative().optional(),
+  }).optional(),
+  // `only` is required: OpenRouter may fall back only inside this endpoint pool.
   openrouterProvider: z.object({
-    only: z.tuple([z.string().min(1)]),
-    allow_fallbacks: z.literal(false),
+    only: z.array(z.string().min(1)).min(1),
+    allow_fallbacks: z.boolean(),
     zdr: z.literal(true),
     data_collection: z.literal('deny'),
+    max_price: z
+      .object({ prompt: z.number().nonnegative(), completion: z.number().nonnegative() })
+      .optional(),
   }),
+}).refine((model) => Boolean(model.morphModelId) === Boolean(model.morphPricing), {
+  message: 'morphModelId and morphPricing must be set together',
 });
 
 export function parseManagedModels(

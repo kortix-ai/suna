@@ -29,10 +29,12 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { syncSsoMembership } from '../iam/sso-sync';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { authorize } from '../iam/authorize';
 import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
+import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -61,7 +63,7 @@ beforeAll(async () => {
   await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'sso' });
   // The group grants MANAGER on the project — this is the admin-configured
   // group→project→role binding the synced membership rides on.
-  await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
+  await insertIntoView(db, projectGroupGrants, { projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
   await db.insert(accountSsoProviders).values({
     ssoProviderId: crypto.randomUUID(),
     accountId: ACCOUNT,
@@ -70,6 +72,8 @@ beforeAll(async () => {
     primaryDomain: 'acme-inc.com',
     groupClaimName: 'memberOf',
     autoCreateMembers: true,
+    // Identity merges trust the asserted email only on a verified domain.
+    domainVerifiedAt: new Date(),
   });
   await db.insert(accountSsoGroupMappings).values({
     accountId: ACCOUNT,
@@ -278,6 +282,92 @@ describe('Azure AD directory-sync → authorization', () => {
     } finally {
       await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
       await db.update(accountSsoProviders).set({ autoCreateMembers: true }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('an unverified domain never merges an existing identity into the SSO identity', async () => {
+    await db.update(accountSsoProviders).set({ domainVerifiedAt: null }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    const oldUser = crypto.randomUUID();
+    const ssoUser = crypto.randomUUID();
+    const email = `unverified-${ssoUser}@acme-inc.com`;
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${oldUser}::uuid, ${email})`);
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: oldUser });
+
+      const out = await syncSsoMembership({ userId: ssoUser, email, jwtPayload: jwt([]) });
+      expect(out.memberCreated).toBe(true);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, oldUser)))).length).toBe(1);
+      expect((await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ssoUser)))).length).toBe(1);
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${oldUser}::uuid`);
+      await db.update(accountSsoProviders).set({ domainVerifiedAt: new Date() }).where(eq(accountSsoProviders.accountId, ACCOUNT));
+    }
+  });
+
+  test('an owner or a super-admin with the same email is never merged into the SSO identity', async () => {
+    const owner = crypto.randomUUID();
+    const superAdmin = crypto.randomUUID();
+    const ownerSso = crypto.randomUUID();
+    const superAdminSso = crypto.randomUUID();
+    const ownerEmail = `owner-${owner}@acme-inc.com`;
+    const superAdminEmail = `super-${superAdmin}@acme-inc.com`;
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${owner}::uuid, ${ownerEmail}), (${superAdmin}::uuid, ${superAdminEmail})`);
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: owner });
+      await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+        principal: { type: 'user', id: owner },
+        roleKey: 'owner',
+        scope: { type: 'account' },
+        exclusive: true,
+      });
+      await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: superAdmin, isSuperAdmin: true });
+
+      await syncSsoMembership({ userId: ownerSso, email: ownerEmail, jwtPayload: jwt([]) });
+      await syncSsoMembership({ userId: superAdminSso, email: superAdminEmail, jwtPayload: jwt([]) });
+
+      const [ownerRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, owner)));
+      expect(ownerRow?.accountRole).toBe('owner');
+      const [ownerSsoRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, ownerSso)));
+      expect(ownerSsoRow?.accountRole).toBe('member');
+      const [superRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, superAdmin)));
+      expect(superRow?.isSuperAdmin).toBe(true);
+      const [superSsoRow] = await db.select().from(accountMembers).where(and(eq(accountMembers.accountId, ACCOUNT), eq(accountMembers.userId, superAdminSso)));
+      expect(superSsoRow?.isSuperAdmin).toBe(false);
+    } finally {
+      await db.execute(sql`DELETE FROM kortix.role_assignments WHERE account_id=${ACCOUNT}::uuid AND principal_id IN (${owner}::uuid, ${superAdmin}::uuid, ${ownerSso}::uuid, ${superAdminSso}::uuid)`);
+      await db.execute(sql`DELETE FROM auth.users WHERE id IN (${owner}::uuid, ${superAdmin}::uuid)`);
+    }
+  });
+
+  test('email admission ignores another account\'s SSO identity whose domain is unverified', async () => {
+    const foreignAccount = crypto.randomUUID();
+    const foreignProvider = crypto.randomUUID();
+    const foreignSsoUser = crypto.randomUUID();
+    const email = `foreign-${foreignSsoUser}@elsewhere.test`;
+    try {
+      await db.insert(accounts).values({ accountId: foreignAccount, name: 'foreign-idp' });
+      await db.insert(accountSsoProviders).values({
+        accountId: foreignAccount,
+        supabaseSsoProviderId: foreignProvider,
+        name: 'Foreign IdP',
+        primaryDomain: 'foreign-idp.test',
+      });
+      await db.execute(sql`
+        INSERT INTO auth.users (id, email, is_sso_user, raw_app_meta_data)
+        VALUES (${foreignSsoUser}::uuid, ${email}, true, ${JSON.stringify({ provider: `sso:${foreignProvider}`, providers: [`sso:${foreignProvider}`] })}::jsonb)
+      `);
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email)).toEqual({ userId: null, ambiguous: false });
+
+      // Verified, but for a different domain than the email's: still not proof.
+      await db.update(accountSsoProviders).set({ domainVerifiedAt: new Date() }).where(eq(accountSsoProviders.accountId, foreignAccount));
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email)).toEqual({ userId: null, ambiguous: false });
+
+      // Verified for the email's own domain: the IdP vouches for the address.
+      await db.update(accountSsoProviders).set({ primaryDomain: 'elsewhere.test' }).where(eq(accountSsoProviders.accountId, foreignAccount));
+      expect(await resolveAccountIdentityByEmail(ACCOUNT, email)).toEqual({ userId: foreignSsoUser, ambiguous: false });
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${foreignSsoUser}::uuid`);
+      await db.delete(accounts).where(eq(accounts.accountId, foreignAccount));
     }
   });
 

@@ -168,6 +168,12 @@ export interface ResolvedSandboxIngress {
   url: string;
   headers: Record<string, string>;
   effectivePort: number;
+  /**
+   * A credential the upstream also accepts as a query parameter and reads
+   * BEFORE its header form. Build request URLs with `ingressTargetUrl` so a
+   * client query parameter of the same name cannot shadow it.
+   */
+  queryToken?: { name: string; value: string };
   websocket?: {
     userContextQueryParam?: string;
     queryDefaults?: Record<string, string>;
@@ -251,6 +257,18 @@ export interface SandboxExecOptions {
   timeoutMs: number;
 }
 
+export interface SandboxStartOptions {
+  /**
+   * Called while start() waits on provider-side work that legitimately
+   * outlasts a plain start: today a Platinum restore from cold storage, which
+   * takes minutes under load. A caller holding a time-boxed claim on the start
+   * (a wake or restart lease) renews it here, so the claim does not lapse and
+   * hand the box to cleanup while it is still coming up. Called at most every
+   * 30 s, only while that work is observed in progress; a throw is ignored.
+   */
+  onProgress?: () => Promise<void>;
+}
+
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
@@ -285,7 +303,7 @@ export interface SandboxProvider {
     externalTemplateId: string,
     opts: CreateSandboxOpts,
   ): Promise<ProvisionResult>;
-  start(externalId: string): Promise<void>;
+  start(externalId: string, opts?: SandboxStartOptions): Promise<void>;
   /**
    * Renew the provider-native lifecycle deadline for a sandbox that Kortix has
    * already confirmed is running and whose `session_sandboxes.deadline_at` is

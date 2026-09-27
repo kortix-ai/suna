@@ -63,7 +63,7 @@ import { config } from '../../config';
  * than the idle window a box is allowed to sit in — a box the reaper is still
  * legitimately waiting on must not fall out of billing while it waits.
  */
-export const BILLING_LIVENESS_GRACE_FLOOR_MINUTES = 60;
+const BILLING_LIVENESS_GRACE_FLOOR_MINUTES = 60;
 
 /**
  * THE BILLING GRACE. How long a window may keep billing after the last
@@ -115,7 +115,7 @@ export function lastAliveAtOf(row: {
 
 /**
  * THE CLAMP. The end of the billable window: never later than the last
- * affirmative liveness evidence plus the provider's own auto-stop ceiling.
+ * affirmative liveness evidence plus the billing grace.
  *
  * This single expression is what caps the entire defect class. It does not need
  * to know why the box died, whether a reaper pass reached it, whether the

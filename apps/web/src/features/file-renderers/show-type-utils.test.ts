@@ -61,3 +61,22 @@ describe('shouldRenderFromSandboxFile', () => {
     expect(shouldRenderFromSandboxFile(null, 'some text')).toBe(false);
   });
 });
+
+describe('Mermaid files', () => {
+  it('map .mmd and .mermaid to the mermaid category', () => {
+    expect(getShowFileCategory('/workspace/flow.mmd')).toBe('mermaid');
+    expect(getShowFileCategory('/workspace/flow.MERMAID')).toBe('mermaid');
+    expect(getShowFileCategory('/workspace/flow.md')).toBe('file');
+  });
+
+  it('override a textish declared type', () => {
+    expect(resolveShowType('file', '/workspace/flow.mmd')).toBe('mermaid');
+    expect(resolveShowType('markdown', '/workspace/flow.mmd')).toBe('mermaid');
+    expect(resolveShowType('code', '/workspace/flow.mermaid')).toBe('mermaid');
+    expect(resolveShowType('text', '/workspace/flow.mmd')).toBe('mermaid');
+  });
+
+  it('leave an explicit non-textual declaration alone', () => {
+    expect(resolveShowType('url', '/workspace/flow.mmd')).toBe('url');
+  });
+});

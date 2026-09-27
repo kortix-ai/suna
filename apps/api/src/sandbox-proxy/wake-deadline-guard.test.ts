@@ -106,7 +106,7 @@ describe('wakeSandbox — a provider start obeys the deadline', () => {
   });
 
   test('a box that was STOPPED at the provider has its open turns recovered after the start', async () => {
-    // Essentia 2026-08-25 15:56: the UI woke a provider-paused box through
+    // SampleCo 2026-08-25 15:56: the UI woke a provider-paused box through
     // this path; the fresh runtime's first idle read then closed the killed
     // turn `completed` and its prompt was never redelivered.
     reset(new Date(Date.now() + 60 * 60_000));

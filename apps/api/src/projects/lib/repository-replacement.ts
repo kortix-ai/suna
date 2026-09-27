@@ -201,8 +201,17 @@ export async function persistProjectRepositoryReplacement(input: {
       ? oldProject.metadata as Record<string, unknown> : {};
     const metadata = {
       ...existingMetadata,
-      // Old sessions keep this mismatch as a UI warning. Their stable project
-      // Git proxy origin resolves the current upstream under normal ref policy.
+      // What this generation still decides, and all it decides: the git-proxy
+      // authorization memo and the upstream memo are keyed by it, so a
+      // replacement busts both instead of serving the old upstream for another
+      // 30 s (`sameRepository` in projects/lib/git.ts, `resolveProjectUpstreamMemo`
+      // in git-proxy/index.ts); `/start` reports it as telemetry; and the web
+      // shows an older session a notice about its own clone. It does NOT
+      // freeze the session: every session of this project receives the
+      // project's current config release and converges normally
+      // (docs/specs/config-releases.md, "Repository replacement"). What is
+      // left is physical — that clone and the new origin hold unrelated
+      // histories, so Git itself refuses a push without a rebase.
       repository_generation: randomUUID(),
       git: {
         url: input.repo.clone_url, default_branch: input.defaultBranch,
@@ -229,5 +238,9 @@ export async function persistProjectRepositoryReplacement(input: {
   });
 
   invalidateProjectMirror(input.projectId);
+  // The base branch now points into another repository: new config.
+  void import('./config-convergence-triggers')
+    .then((triggers) => triggers.notifyBaseBranchMoved(input.projectId, input.defaultBranch, 'repository-replacement'))
+    .catch(() => {});
   return result;
 }

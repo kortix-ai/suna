@@ -207,6 +207,31 @@ flow(
       r.status(404);
     });
 
+    await ctx.step("approve with a non-object scope or a non-string expiresAt → 400 before the request lookup", async () => {
+      // No JSON content-type, so the route validator does not run. The
+      // handler parses the body with the same schema and rejects it.
+      for (const body of ['{"scope":"x"}', '{"scope":[]}', '{"scope":null}', '{"expiresAt":{}}', '{"expiresAt":true}', '{"expiresAt":4102444800000}']) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post("/v1/tunnel/permission-requests/:requestId/approve", body, {
+            params: { requestId: MISSING_UUID },
+            raw: true,
+          });
+        r.status(400);
+      }
+    });
+
+    await ctx.step("approve with an object scope and a string expiresAt reaches the request lookup → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/tunnel/permission-requests/:requestId/approve",
+          '{"scope":{},"expiresAt":"2999-01-01T00:00:00Z"}',
+          { params: { requestId: MISSING_UUID }, raw: true },
+        );
+      r.status(404);
+    });
+
     await ctx.step("deny unknown request → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

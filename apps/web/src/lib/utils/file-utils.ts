@@ -37,6 +37,7 @@ import {
   FileVueIcon,
   FileXlsIcon,
   FileZipIcon,
+  TreeStructureIcon,
 } from '@phosphor-icons/react';
 
 type PhosphorIcon = typeof FileTextIcon;
@@ -179,6 +180,10 @@ const ICON_BY_EXTENSION: Readonly<Record<string, PhosphorIcon>> = {
   zsh: FileCodeIcon,
   ps1: FileCodeIcon,
   svelte: FileCodeIcon,
+
+  // Diagrams
+  mmd: TreeStructureIcon,
+  mermaid: TreeStructureIcon,
 };
 
 /**

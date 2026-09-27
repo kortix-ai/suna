@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { createHmac } from 'node:crypto';
 import { signLoginState, verifyLoginState, buildSlackLoginUrl } from '../login';
 import { config } from '../../../config';
 
@@ -73,3 +74,51 @@ describe('slack login-state token', () => {
     }
   });
 });
+
+/**
+ * A deployment without the canonical Slack app has no SLACK_SIGNING_SECRET
+ * (config defaults it to ''), and an HMAC keyed with '' is one anyone can
+ * compute. The login key must never be empty, and a token MACed with an empty
+ * key must never verify.
+ */
+describe('slack login-state key', () => {
+  function forge(key: string): string {
+    const body = Buffer.from(
+      JSON.stringify({ teamId: 'T1', slackUserId: 'U-other', exp: Date.now() + 60_000, nonce: 'n' }),
+    ).toString('base64url');
+    return `${body}.${createHmac('sha256', key).update(body).digest('base64url')}`;
+  }
+
+  test('a token MACed with an empty key does not verify, even when SLACK_SIGNING_SECRET is empty', () => {
+    const original = config.SLACK_SIGNING_SECRET;
+    try {
+      config.SLACK_SIGNING_SECRET = '';
+      expect(verifyLoginState(forge(''))).toBeNull();
+    } finally {
+      config.SLACK_SIGNING_SECRET = original;
+    }
+  });
+
+  test('a token MACed with the Slack request-signing secret does not verify', () => {
+    const original = config.SLACK_SIGNING_SECRET;
+    try {
+      config.SLACK_SIGNING_SECRET = 'slack-signing-secret';
+      expect(verifyLoginState(forge('slack-signing-secret'))).toBeNull();
+    } finally {
+      config.SLACK_SIGNING_SECRET = original;
+    }
+  });
+
+  test('signing refuses to run without a key, and verifying answers null', () => {
+    const token = signLoginState({ teamId: 'T1', slackUserId: 'U1' });
+    const original = config.API_KEY_SECRET;
+    try {
+      config.API_KEY_SECRET = '';
+      expect(() => signLoginState({ teamId: 'T1', slackUserId: 'U1' })).toThrow(/API_KEY_SECRET/);
+      expect(verifyLoginState(token)).toBeNull();
+    } finally {
+      config.API_KEY_SECRET = original;
+    }
+  });
+});
+

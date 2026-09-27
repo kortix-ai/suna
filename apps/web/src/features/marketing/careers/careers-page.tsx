@@ -12,7 +12,7 @@ import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { useState, type ReactNode } from 'react';
 import { ApplyModal } from './apply-modal';
 import { getLocalizedCareersContent } from './content';

@@ -32,10 +32,10 @@ import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { normalizeAppPathname, SANDBOX_PORTS } from '@kortix/sdk';
 import { useCreatePty } from '@kortix/sdk/react';
-import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 import { Button } from '../ui/button';
+import { SidebarToggle as PanelRight } from '@/features/icon/icons/sidebar-toggle';
 
 // ============================================================================
 // Main Right Sidebar — Quick actions (no file explorer — that's /files now)

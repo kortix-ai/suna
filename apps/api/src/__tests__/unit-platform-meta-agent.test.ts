@@ -45,7 +45,7 @@ describe('platform meta agent', () => {
       scope: {
         env: [],
         connectors: [],
-        kortix_cli: 'all',
+        kortix_permissions: 'all',
       },
     });
     expect(config.open_code_default_agent).toBe('meta');
@@ -73,7 +73,7 @@ describe('platform meta agent', () => {
   test('grants the coordinator every project action without secrets or connectors', () => {
     expect(platformMetaAgentGrant()).toEqual({
       agent: 'meta',
-      kortixCli: 'all',
+      permissions: 'all',
       connectors: [],
       env: [],
     });

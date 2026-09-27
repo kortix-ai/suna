@@ -23,6 +23,7 @@ import type { RegisteredFlow } from '../core/flow';
 import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
 import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
+import { stopAllSessionRefresh, type SupabaseSessionAuth } from './supabase-session';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
 import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
@@ -44,9 +45,11 @@ export interface World {
   /**
    * Fixtures for ONE flow attempt. `attempt` (1-based) namespaces every
    * user-chosen name the attempt derives, so a retry cannot collide with the
-   * rows its own previous attempt committed before failing.
+   * rows its own previous attempt committed before failing. `signal` aborts
+   * when the attempt ends; fixtures still waiting (a queued or rate-limited
+   * project provision) stop instead of outliving the flow.
    */
-  makeFixtures(stack: ResourceStack, attempt?: number): Fixtures;
+  makeFixtures(stack: ResourceStack, attempt?: number, signal?: AbortSignal): Fixtures;
   fixtureStats(): FixtureStats;
   teardownAll(): Promise<void>;
 }
@@ -65,6 +68,29 @@ export function attemptSuffix(attempt: number): string {
 
 const ANON_PRINCIPAL: Principal = { label: 'ANON', auth: { mode: 'none' } };
 
+/**
+ * Share one in-flight or settled creation between callers, but forget a
+ * rejection so the next caller creates it again.
+ *
+ * `sharedProject()` used to cache its first promise forever. On preview run
+ * 36067774228 that first provision failed on a GitHub rate limit at 23:04Z,
+ * and every later flow that asked for the shared project failed in 0.0 s with
+ * the same error, through CONN-5 at 23:37Z, without one new attempt.
+ */
+export function memoizeUntilRejected<T>(factory: () => Promise<T>): () => Promise<T> {
+  let cached: Promise<T> | null = null;
+  return () => {
+    if (!cached) {
+      const created = factory();
+      cached = created;
+      created.catch(() => {
+        if (cached === created) cached = null;
+      });
+    }
+    return cached;
+  };
+}
+
 function principalsProxy(provided: Partial<Principals>): Principals {
   return new Proxy(provided, {
     get(target, prop: string) {
@@ -80,7 +106,8 @@ function principalsProxy(provided: Partial<Principals>): Principals {
 
 interface EphemeralPlatformAdmin {
   userId: string;
-  jwt: string;
+  /** Self-renewing credential; `env.adminToken` reads its current token. */
+  session: SupabaseSessionAuth;
   /** Remove the granted role at teardown. */
   revoke: () => Promise<void>;
   /** Undo everything this fixture created, for an aborted buildWorld. */
@@ -102,7 +129,7 @@ async function provisionPlatformAdmin(
   }
   return {
     userId: platformAdmin.user.id,
-    jwt: platformAdmin.jwt,
+    session: platformAdmin.session,
     revoke,
     release: async () => {
       await revoke().catch(() => undefined);
@@ -165,7 +192,13 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     const platformAdmin = adminSettled.value;
     provisioned.supabaseUserIds.push(platformAdmin.userId);
     revokePlatformAdmin = platformAdmin.revoke;
-    env.adminToken = platformAdmin.jwt;
+    // A getter, not a snapshot: flows call withBearer(env.adminToken) at use
+    // time and must get the renewed token after the first hour.
+    Object.defineProperty(env, 'adminToken', {
+      configurable: true,
+      enumerable: true,
+      get: () => platformAdmin.session.token,
+    });
     env.capabilities.admin = true;
     log.step(`provision: run-scoped platform admin ${platformAdmin.userId} active`);
   }
@@ -184,9 +217,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   // it can never succeed against a database-only project's ke2e.invalid remote.
   // Sessions on those projects are written straight to the database instead.
   const databaseProjectIds = new Set<string>();
-  // One shared read-only project, provisioned at most once per run.
-  let sharedProjectPromise: Promise<CreatedProject> | null = null;
-  let sharedSeededProjectPromise: Promise<CreatedProject> | null = null;
+  // Owns the run-scoped shared projects (see sharedProject below).
   const sharedStack = new ResourceStack(adminClient, deleteDatabaseProjectFixture);
 
   async function createProject(
@@ -199,6 +230,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       allowAllSecrets?: boolean;
       metadata?: Record<string, unknown>;
     },
+    signal?: AbortSignal,
   ): Promise<CreatedProject> {
     const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
     const accountId = opts?.accountId ?? owner.accountId!;
@@ -223,41 +255,38 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       return { ...project, accountId };
     }
 
-    const id = await provisionProject(adminClient, {
-      name,
-      ...(opts?.accountId ? { account_id: opts.accountId } : {}),
-      ...(opts?.seed ? { seed_starter: true } : {}),
-    });
+    const id = await provisionProject(
+      adminClient,
+      {
+        name,
+        ...(opts?.accountId ? { account_id: opts.accountId } : {}),
+        ...(opts?.seed ? { seed_starter: true } : {}),
+      },
+      { signal },
+    );
     managedProjectCount++;
     stack.push('project', id);
     if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
     return { id, name, accountId } as CreatedProject;
   }
 
-  const fixturesFor = (stack: ResourceStack, attempt = 1): Fixtures => {
+  // Run-scoped: no attempt signal. One flow's timeout must not abort the
+  // shared project every other flow is waiting on.
+  const sharedProject = memoizeUntilRejected(() =>
+    createProject(sharedStack, { name: `e2e-${runId}-shared`, managedGit: true }),
+  );
+  const sharedSeededProject = memoizeUntilRejected(() =>
+    createProject(sharedStack, { name: `e2e-${runId}-shared-seeded`, seed: true }),
+  );
+
+  const fixturesFor = (stack: ResourceStack, attempt = 1, signal?: AbortSignal): Fixtures => {
     const suffix = attemptSuffix(attempt);
     return {
     name: (slug) => `e2e-${runId}-${slug}${suffix}`,
-    sharedProject() {
-      if (!sharedProjectPromise) {
-        sharedProjectPromise = createProject(sharedStack, {
-          name: `e2e-${runId}-shared`,
-          managedGit: true,
-        });
-      }
-      return sharedProjectPromise;
-    },
-    sharedSeededProject() {
-      if (!sharedSeededProjectPromise) {
-        sharedSeededProjectPromise = createProject(sharedStack, {
-          name: `e2e-${runId}-shared-seeded`,
-          seed: true,
-        });
-      }
-      return sharedSeededProjectPromise;
-    },
+    sharedProject,
+    sharedSeededProject,
     async project(opts) {
-      return createProject(stack, opts);
+      return createProject(stack, opts, signal);
     },
     async team(opts) {
       const res = await adminClient.post('/v1/accounts', {
@@ -328,11 +357,15 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           }
         },
         async project(o) {
-          return createProject(stack, {
-            ...o,
-            name: o?.name ?? `e2e-${runId}-tproj-${rand()}`,
-            accountId,
-          });
+          return createProject(
+            stack,
+            {
+              ...o,
+              name: o?.name ?? `e2e-${runId}-tproj-${rand()}`,
+              accountId,
+            },
+            signal,
+          );
         },
       };
     },
@@ -417,6 +450,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     makeFixtures: fixturesFor,
     fixtureStats: () => ({ databaseProjectCount, managedProjectCount }),
     async teardownAll() {
+      stopAllSessionRefresh();
       log.info(
         `fixtures: ${databaseProjectCount} database-only projects · ${managedProjectCount} managed repositories`,
       );

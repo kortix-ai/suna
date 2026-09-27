@@ -1,51 +1,37 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
-import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
-import { linkSlackIdentity } from './slack/identity';
+import { chatUser, linkChatIdentity, lookupChatIdentity } from './core/identity';
+import {
+  frontendBase,
+  installHandoffUrl,
+  stateForCaller,
+  type InstallCompletion,
+} from './core/install-completion';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { makeOpenApiApp, errors } from '../openapi';
+import { signChannelState, verifyChannelState } from './core/signed-state';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 interface StatePayload {
   projectId: string;
   userId: string;
-  exp: number;
-  nonce: string;
 }
 
-function stateSigningKey(): string {
-  return config.SLACK_SIGNING_SECRET ?? 'kortix-dev-state-key';
-}
-
-function signState(payload: Omit<StatePayload, 'nonce'>): string {
-  const full: StatePayload = { ...payload, nonce: randomBytes(8).toString('hex') };
-  const body = Buffer.from(JSON.stringify(full)).toString('base64url');
-  const mac = createHmac('sha256', stateSigningKey()).update(body).digest('base64url');
-  return `${body}.${mac}`;
+function signState(payload: StatePayload): string {
+  return signChannelState('slack-install', { ...payload }, STATE_TTL_MS);
 }
 
 function verifyState(token: string): StatePayload | null {
-  const [body, mac] = token.split('.');
-  if (!body || !mac) return null;
-  const expected = createHmac('sha256', stateSigningKey()).update(body).digest('base64url');
-  const a = Buffer.from(mac);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as StatePayload;
-    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const payload = verifyChannelState('slack-install', token);
+  if (!payload) return null;
+  if (typeof payload.projectId !== 'string' || typeof payload.userId !== 'string') return null;
+  return { projectId: payload.projectId, userId: payload.userId };
 }
 
 export function buildSlackInstallUrl(projectId: string, userId: string): string {
@@ -53,7 +39,7 @@ export function buildSlackInstallUrl(projectId: string, userId: string): string 
   if (!mode.available || !mode.clientId) {
     throw new Error('Slack OAuth is not configured on this server.');
   }
-  const state = signState({ projectId, userId, exp: Date.now() + STATE_TTL_MS });
+  const state = signState({ projectId, userId });
   const params = new URLSearchParams({
     client_id: mode.clientId,
     scope: mode.scopes,
@@ -65,12 +51,13 @@ export function buildSlackInstallUrl(projectId: string, userId: string): string 
 
 export const slackOauthApp = makeOpenApiApp();
 
+// The registered redirect URI. It installs nothing: see install-completion.ts.
 slackOauthApp.openapi(
   createRoute({
     method: 'get',
     path: '/callback',
     tags: ['channels'],
-    summary: 'Slack OAuth install callback (redirects to dashboard)',
+    summary: 'Slack OAuth install callback (hands off to the web completion page)',
     request: {
       query: z.object({
         code: z.string().optional(),
@@ -79,26 +66,53 @@ slackOauthApp.openapi(
       }),
     },
     responses: {
-      302: { description: 'Redirect to the Kortix dashboard' },
+      302: { description: 'Redirect to the web completion page or the Kortix dashboard' },
       ...errors(400, 503),
     },
   }),
   async (c: any) => {
+    const mode = slackOauthMode();
+    if (!mode.available || !mode.clientId || !mode.clientSecret) {
+      return c.json({ error: 'Slack OAuth is not configured on this server.' }, 503);
+    }
+    const code = c.req.query('code');
+    const state = c.req.query('state');
+    const slackError = c.req.query('error');
+    const payload = state ? verifyState(state) : null;
+    if (slackError) return c.redirect(dashboardUrl({ projectId: payload?.projectId, error: slackError }), 302);
+    if (!code || !state) return c.json({ error: 'Missing code or state' }, 400);
+    if (!payload) return c.json({ error: 'Invalid or expired state' }, 400);
+    return c.redirect(installHandoffUrl('slack', { projectId: payload.projectId, code, state }), 302);
+  },
+);
+
+/**
+ * Finish a Slack OAuth install for the signed-in caller. The caller must be
+ * the Kortix user who started it, for the same project; the code is exchanged
+ * only after that check.
+ */
+export async function completeSlackOauthInstall(input: {
+  projectId: string;
+  userId: string;
+  code: string;
+  state: string;
+}): Promise<InstallCompletion> {
+  // The state is checked first, so a bad or foreign state answers the same on
+  // every deployment; only a valid one learns whether Slack OAuth is set up.
+  const checked = stateForCaller(verifyState(input.state), input);
+  if (!checked.ok) return checked;
+  const payload = checked.state;
   const mode = slackOauthMode();
   if (!mode.available || !mode.clientId || !mode.clientSecret) {
-    return c.json({ error: 'Slack OAuth is not configured on this server.' }, 503);
+    return { ok: false, status: 503, error: 'Slack OAuth is not configured on this server.' };
   }
-
-  const code = c.req.query('code');
-  const state = c.req.query('state');
-  const slackError = c.req.query('error');
-  const payload = state ? verifyState(state) : null;
-  if (slackError) return redirectToDashboard(c, { projectId: payload?.projectId, error: slackError });
-  if (!code || !state) return c.json({ error: 'Missing code or state' }, 400);
-  if (!payload) return c.json({ error: 'Invalid or expired state' }, 400);
+  const done = (qs: Record<string, string | undefined>): InstallCompletion => ({
+    ok: true,
+    redirectUrl: dashboardUrl({ projectId: payload.projectId, ...qs }),
+  });
 
   const exchangeBody = new URLSearchParams({
-    code,
+    code: input.code,
     client_id: mode.clientId,
     client_secret: mode.clientSecret,
   });
@@ -117,13 +131,10 @@ slackOauthApp.openapi(
       projectId: payload.projectId,
       error: (err as Error).message,
     });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'oauth_exchange_failed' });
+    return done({ error: 'oauth_exchange_failed' });
   }
   if (!tokenJson.ok || !tokenJson.access_token || !tokenJson.team?.id) {
-    return redirectToDashboard(c, {
-      projectId: payload.projectId,
-      error: tokenJson.error ?? 'oauth_exchange_failed',
-    });
+    return done({ error: tokenJson.error ?? 'oauth_exchange_failed' });
   }
 
   let project: { projectId: string } | undefined;
@@ -139,11 +150,9 @@ slackOauthApp.openapi(
       workspaceId: tokenJson.team.id,
       error: (err as Error).message,
     });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_lookup_failed' });
+    return done({ error: 'project_lookup_failed' });
   }
-  if (!project) {
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_not_found' });
-  }
+  if (!project) return done({ error: 'project_not_found' });
 
   try {
     await saveSlackOauthInstall({
@@ -159,16 +168,17 @@ slackOauthApp.openapi(
       workspaceId: tokenJson.team.id,
       error: (err as Error).message,
     });
-    return redirectToDashboard(c, { projectId: payload.projectId, error: 'slack_install_save_failed' });
+    return done({ error: 'slack_install_save_failed' });
   }
 
   // Seed the installer's identity so the admin who just connected is linked
   // immediately and never hits the `/login` block on their own messages. Slack
-  // returns the authorizing user as `authed_user.id`. Best-effort, and only when
-  // the per-user identity feature is enabled (the whole feature is flag-gated).
+  // returns the authorizing user as `authed_user.id`. Best-effort, only when
+  // the per-user identity feature is on, and never over a live link to another
+  // Kortix user: that person re-links through `/login` themselves.
   if (config.SLACK_REQUIRE_USER_IDENTITY && tokenJson.authed_user?.id) {
     try {
-      await linkSlackIdentity({
+      await seedInstallerIdentity({
         teamId: tokenJson.team.id,
         slackUserId: tokenJson.authed_user.id,
         userId: payload.userId,
@@ -185,30 +195,39 @@ slackOauthApp.openapi(
   // after connecting (best-effort; never blocks the redirect).
   void reconcileChannelConnectors(payload.projectId);
 
-  return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
-},
-);
+  return done({ success: '1' });
+}
 
-function redirectToDashboard(
-  c: Context,
-  qs: Record<string, string | undefined>,
-): Response {
-  // Mirror dashboardBaseUrl()'s fallback chain so an OAuth callback never
-  // redirects to localhost in a deployed environment where FRONTEND_URL
-  // happens to be unset.
-  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+/** Link the installer's Slack user to `userId` unless it is linked to someone else. */
+export async function seedInstallerIdentity(input: {
+  teamId: string;
+  slackUserId: string;
+  userId: string;
+}): Promise<'linked' | 'kept'> {
+  const installer = chatUser('slack', input.teamId, input.slackUserId);
+  const existing = await lookupChatIdentity(installer);
+  if (existing && existing.userId !== input.userId) return 'kept';
+  await linkChatIdentity(installer, input.userId);
+  return 'linked';
+}
+
+/**
+ * The dashboard page an install outcome lands on. Mirrors dashboardBaseUrl()'s
+ * fallback chain so a deployed environment never redirects to localhost.
+ */
+function dashboardUrl(qs: Record<string, string | undefined>): string {
+  const base = frontendBase();
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);
   }
   // Land on the real project page, then let the web shell open Customize from
   // query params. The /customize shim renders null while client routing runs,
-  // which is too fragile as an external OAuth callback target.
+  // which is too fragile as an external OAuth landing target.
   if (qs.projectId) params.set('customize', 'connectors');
-  const target = qs.projectId
+  return qs.projectId
     ? `${base}/projects/${qs.projectId}?${params.toString()}`
     : `${base}/?${params.toString()}`;
-  return c.redirect(target, 302);
 }
 
 interface SlackOauthResponse {

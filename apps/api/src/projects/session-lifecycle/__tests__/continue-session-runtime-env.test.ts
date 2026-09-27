@@ -1,5 +1,5 @@
 // A channel follow-up must enable its OpenCode runtime features before the
-// prompt is delivered. This test isolates engine.ts because Bun mocks are
+// prompt is delivered. This test isolates continue-session.ts because Bun mocks are
 // process-global; run this file separately from other engine mock tests.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects } from '@kortix/db';
@@ -18,7 +18,7 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({
   // `mock.module` replaces the WHOLE module: every export the import graph
   // reaches must exist here. `hasDatabase` entered this test's graph when
-  // engine.ts started importing opencode-mapping (staged-revert check).
+  // runtime-client.ts imports opencode-mapping (staged-revert check).
   hasDatabase: false,
   db: {
     select: () => ({
@@ -44,7 +44,13 @@ mock.module('../../../shared/db', () => ({
         }),
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => {} }) }),
+    update: () => ({
+      set: () => ({
+        // Awaitable, and `.returning()` for the on_behalf_of clear an email
+        // delivery runs (no token to clear here).
+        where: () => Object.assign(Promise.resolve(), { returning: async () => [] }),
+      }),
+    }),
   },
 }));
 
@@ -67,7 +73,7 @@ mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
   // Complete-module stand-ins: every export the (growing) import graph
   // reaches must exist, or the whole file dies with "Export named X not
-  // found". `resolveServiceKey` is reached via engine.ts → opencode-mapping.
+  // found". `resolveServiceKey` is reached via runtime-client.ts → opencode-mapping.
   resolveServiceKey: async () => 'service-key-1',
 }));
 
@@ -75,17 +81,11 @@ mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'service-key-1',
 }));
 
+const syncInputs: Array<Record<string, unknown>> = [];
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async (input: Record<string, unknown>) => {
     events.push('sync');
-    expect(input).toMatchObject({
-      projectId: PROJECT_ID,
-      sessionId: SESSION_ID,
-      serviceKey: 'service-key-1',
-      previewUrl: 'https://sandbox.test',
-      providerName: 'daytona',
-      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-    });
+    syncInputs.push(input);
   },
 }));
 
@@ -127,7 +127,7 @@ mock.module('../store', () => ({
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
   // The landing proof requeues a prompt the runtime never showed (fresh
-  // attempt, fresh idempotency key). `engine.ts` imports it by name, so every
+  // attempt, fresh idempotency key). `queued-continue.ts` imports it by name, so every
   // store mock has to carry it or the engine import fails outright. Nothing in
   // this file fails a landing.
   requeueUnlandedPrompt: async () => {
@@ -151,22 +151,39 @@ mock.module('../store', () => ({
   },
 }));
 
-const { continueSession } = await import('../engine');
+const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
   events.length = 0;
+  syncInputs.length = 0;
 });
 
+// Every delivery converges the box before the prompt goes out: a box whose
+// boot-time gateway URL, secrets or model catalog went stale would otherwise
+// run the prompt against them. A channel follow-up also enables its own
+// OpenCode runtime features in the same sync.
 describe('continueSession runtime env', () => {
-  test('syncs OpenCode env after runtime readiness and before prompt delivery', async () => {
+  test.each([
+    ['a channel follow-up with an opencodeEnv override', { KORTIX_CONNECTORS_MCP_ENABLED: '1' }],
+    ['an ordinary prompt', undefined],
+  ])('%s syncs the box after readiness and before the prompt', async (_label, opencodeEnv) => {
     expect(
       await continueSession({
         source: 'email',
         sessionId: SESSION_ID,
         text: 'new email',
-        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+        ...(opencodeEnv ? { opencodeEnv } : {}),
       }),
     ).toBe('delivered');
     expect(events).toEqual(['open', 'sync', 'prompt']);
+    expect(syncInputs[0]).toMatchObject({
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      serviceKey: 'service-key-1',
+      previewUrl: 'https://sandbox.test',
+      providerName: 'daytona',
+    });
+    if (opencodeEnv) expect(syncInputs[0]?.opencodeEnv).toEqual(opencodeEnv);
+    else expect(syncInputs[0]?.opencodeEnv).toBeUndefined();
   });
 });

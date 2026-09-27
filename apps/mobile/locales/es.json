@@ -135,7 +135,9 @@
     "openEmailApp": "Abrir aplicación de correo electrónico",
     "goToSignIn": "Ir a iniciar sesión",
     "verifyEmailInstructions": "Haga clic en el enlace del correo electrónico para verificar su cuenta y luego inicie sesión.",
-    "browseAsGuest": "Navegar como invitado"
+    "browseAsGuest": "Navegar como invitado",
+    "signOutFailed": "No se pudo cerrar sesión. Comprueba tu conexión e inténtalo de nuevo.",
+    "signingOut": "Cerrando sesión…"
   },
   "onboarding": {
     "welcome": "Descubre lo que Kortix puede hacer",
@@ -537,7 +539,22 @@
     "buyCredits": "Comprar Créditos",
     "availableCredits": "Créditos disponibles",
     "creditPackages": "Paquetes de Créditos",
-    "choosePackageBoost": "Elige un paquete y aumenta tu saldo de créditos"
+    "choosePackageBoost": "Elige un paquete y aumenta tu saldo de créditos",
+    "title": "Facturación",
+    "nextDailyRefresh": "Próxima recarga diaria",
+    "in1Hour": "en 1 hora",
+    "cancelsOn": "Se cancela el",
+    "manageOnWeb": "Gestionar en kortix.com",
+    "openWebFailed": "No se pudo abrir kortix.com. Inténtalo de nuevo.",
+    "scheduledChange": "Cambio programado",
+    "newPlan": "Nuevo plan",
+    "startsOn": "Empieza el",
+    "keepCurrentPlan": "Mantener plan actual",
+    "keepPlanTitle": "¿Mantener {{plan}}?",
+    "keepPlanFailed": "No se pudo cancelar el cambio. Inténtalo de nuevo.",
+    "keepPlanDescription": "Se cancela el cambio a {{plan}} del {{date}}.",
+    "keepPlan": "Mantener plan",
+    "keepingPlan": "Manteniendo plan…"
   },
   "theme": {
     "title": "Apariencia",
@@ -593,7 +610,25 @@
     "deletionCancelledSuccess": "Tu cuenta está segura. La eliminación ha sido cancelada.",
     "failedToRequest": "Error al solicitar eliminación de cuenta",
     "failedToCancel": "Error al cancelar eliminación de cuenta",
-    "cancelRequestDescription": "Puedes cancelar esta solicitud en cualquier momento antes de la fecha de eliminación. Todos tus datos serán preservados si cancelas."
+    "cancelRequestDescription": "Puedes cancelar esta solicitud en cualquier momento antes de la fecha de eliminación. Todos tus datos serán preservados si cancelas.",
+    "scheduledBadge": "Programada",
+    "notAvailableTitle": "No disponible en este servidor",
+    "projectsAndSessions": "Proyectos y sesiones",
+    "credentialsAndConnections": "Credenciales y conexiones",
+    "subscriptionAndBilling": "Suscripción y facturación",
+    "when": "Cuándo",
+    "in30Days": "En 30 días",
+    "immediately": "Inmediatamente",
+    "deleteTitle": "¿Eliminar cuenta?",
+    "deleteNowTitle": "¿Eliminar cuenta ahora?",
+    "deleteScheduledDescription": "Tu cuenta se eliminará en 30 días. Puedes cancelarlo antes.",
+    "deleteNowDescription": "Tu cuenta y sus datos se eliminan ahora. Esto no se puede deshacer.",
+    "deleteNow": "Eliminar ahora",
+    "deleting": "Eliminando…",
+    "cancelling": "Cancelando…",
+    "finalTitle": "¿Estás seguro?",
+    "finalDescriptionNow": "Todo lo de tu cuenta se elimina ahora: proyectos, sesiones, credenciales y facturación. Esto no se puede deshacer.",
+    "finalDescriptionScheduled": "Todo lo de tu cuenta se eliminará en 30 días: proyectos, sesiones, credenciales y facturación. Puedes cancelarlo antes."
   },
   "models": {
     "selectModel": "Elegir Modelo",
@@ -1112,5 +1147,40 @@
     "openSettings": "Abrir configuración",
     "enableAll": "Habilitar todo",
     "disableAll": "Deshabilitar todo"
+  },
+  "account": {
+    "title": "Cuenta",
+    "preferences": "Preferencias",
+    "sounds": "Sonidos",
+    "workspace": "Espacio de trabajo",
+    "accounts": "Cuentas",
+    "help": "Ayuda",
+    "docs": "Documentación",
+    "support": "Soporte",
+    "advanced": "Avanzado"
+  },
+  "profile": {
+    "changePhoto": "Cambiar foto de perfil",
+    "photoFailed": "No se pudo actualizar tu foto. Inténtalo de nuevo."
+  },
+  "plans": {
+    "title": "Planes",
+    "plan": "Plan",
+    "current": "Actual",
+    "currentPlan": "Plan actual",
+    "seats": "{{count}} puestos × ${{price}}",
+    "perMonth": "${{total}} / mes",
+    "includes": "{{plan}} incluye",
+    "askOwner": "Pide a un propietario de la cuenta que mejore el plan",
+    "contactSales": "Contactar con ventas",
+    "upgradeTo": "Mejorar a {{plan}}",
+    "switchTo": "Cambiar a {{plan}}"
+  },
+  "upgrade": {
+    "teamPlan": "Kortix Team",
+    "perSeatMonthly": "por puesto / mes",
+    "includes": "Incluye",
+    "askOwner": "Pide un puesto a un propietario de la cuenta",
+    "notNow": "Ahora no"
   }
 }

@@ -63,7 +63,7 @@ function principalFor(sessionId: string | null) {
     subject: { userId: USER, groupIds: [] },
     // Agent grant allows both connectors, so the agent-grant filter is not the
     // thing hiding them — the binding resolution is.
-    agentGrant: { agent: 'test', connectors: ['veyris', 'unbound', 'revoked'], kortixCli: [] },
+    agentGrant: { agent: 'test', connectors: ['veyris', 'unbound', 'revoked'], permissions: [] },
   };
 }
 
@@ -337,11 +337,16 @@ describe('connector catalog and call resolver use one session scope', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connector: 'unbound', action: 'read', args: {} }),
     });
-    expect(callResponse.status).toBe(404);
-    expect(await callResponse.json()).toEqual({
+    // The row exists in the project; the session scope leaves it no usable
+    // connection. Since 45357b024d that is an honest `connector_not_connected`
+    // (403), not `connector_not_found` (404). Either way the call fails closed.
+    expect(callResponse.status).toBe(403);
+    expect(await callResponse.json()).toMatchObject({
       ok: false,
       status: 'denied',
-      reason: 'connector_not_found',
+      reason: 'connector_not_connected',
+      connector: 'unbound',
+      action: 'read',
     });
   });
 

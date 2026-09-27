@@ -25,6 +25,7 @@ import {
   reconcileSandboxStoppedByExternalId,
   reconcileSandboxRemovedByExternalId,
 } from '../../projects/sandbox-reaper';
+import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
 
@@ -130,6 +131,7 @@ export async function handleDaytonaWebhook(
     signature: getHeader('webhook-signature') ?? getHeader('svix-signature'),
   });
   if (!ok) return { status: 401, body: { error: 'invalid signature' } };
+  bindIntegrationPrincipal('daytona');
 
   let event: any;
   try {
@@ -168,6 +170,7 @@ export async function handlePlatinumWebhook(
   if (!verifyHmacSha256(rawBody, secret, sig)) {
     return { status: 401, body: { error: 'invalid signature' } };
   }
+  bindIntegrationPrincipal('platinum');
 
   let event: any;
   try {

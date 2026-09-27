@@ -1,5 +1,5 @@
 import { chatChannelBindings, chatInstalls, projectSecrets } from '@kortix/db';
-import { and, eq, isNull, like } from 'drizzle-orm';
+import { and, eq, isNull, like, ne } from 'drizzle-orm';
 import {
   encryptProjectSecret,
   getProjectSecretValueForConsumer,
@@ -666,6 +666,18 @@ export interface TeamsBotCredentials {
 
 export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsInstallSummary> {
   const { projectId, tenantId } = input;
+  // One tenant per project (MS_TEAMS_TENANT_ID is single-valued). A reconnect
+  // to another tenant retires the old tenant's row, so the install record the
+  // inbound routes and the file proxy trust names only the tenant proven last.
+  await db
+    .delete(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, 'teams'),
+        eq(chatInstalls.projectId, projectId),
+        ne(chatInstalls.workspaceId, tenantId),
+      ),
+    );
   await db
     .insert(chatInstalls)
     .values({ platform: 'teams', workspaceId: tenantId, projectId })

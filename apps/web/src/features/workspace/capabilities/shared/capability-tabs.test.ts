@@ -123,7 +123,7 @@ describe('CapabilityTabs stays pinned to the top', () => {
   const layout = code(
     readFileSync(
       fileURLToPath(
-        new URL('../../../../app/(app)/projects/[id]/(capabilities)/layout.tsx', import.meta.url),
+        new URL('../../../../app/[locale]/(app)/projects/[id]/(capabilities)/layout.tsx', import.meta.url),
       ),
       'utf8',
     ),

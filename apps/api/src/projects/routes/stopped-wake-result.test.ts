@@ -1,7 +1,7 @@
 /**
  * `/start` must never replay a stamped failure as a terminal answer.
  *
- * Essentia 2026-08-26, two live captures:
+ * SampleCo 2026-08-26, two live captures:
  *   - session e06ad0c4 answered `open-session:failed` in 47ms — no provider
  *     call — because a wake that ran out of its FIXED 240s budget had stamped
  *     `runtime_wake_failed`. The manual restart reached ready in 10s.

@@ -7,6 +7,31 @@ export interface TriggerRuntimeCatalogStore {
   ): Promise<Array<{ slug: string; sessionId?: string | null; scheduleRevision?: string | null }>>;
   upsert(projectId: string, spec: GitTriggerSpec, scheduleRevision: string): Promise<void>;
   remove(projectId: string, slug: string): Promise<void>;
+  /**
+   * The subset of `sessionIds` that are sessions of `projectId`. A pinned
+   * `session_id` is manifest text; a value outside the project is recorded as
+   * no pin. Optional so an in-memory store can omit it.
+   */
+  sessionsOfProject?(projectId: string, sessionIds: readonly string[]): Promise<ReadonlySet<string>>;
+}
+
+/**
+ * Drop every pinned session id that is not a session of this project. The
+ * runtime catalog then never names a foreign session, and a later fire takes
+ * the trigger's own reuse/create path.
+ */
+async function withProjectPins(
+  projectId: string,
+  specs: readonly GitTriggerSpec[],
+  store: TriggerRuntimeCatalogStore,
+): Promise<readonly GitTriggerSpec[]> {
+  if (!store.sessionsOfProject) return specs;
+  const pinned = [...new Set(specs.flatMap((spec) => (spec.pinnedSessionId ? [spec.pinnedSessionId] : [])))];
+  if (pinned.length === 0) return specs;
+  const owned = await store.sessionsOfProject(projectId, pinned);
+  return specs.map((spec) =>
+    spec.pinnedSessionId && !owned.has(spec.pinnedSessionId) ? { ...spec, pinnedSessionId: null } : spec,
+  );
 }
 
 /**
@@ -21,6 +46,7 @@ export async function reconcileProjectTriggerRuntimeWithStore(
   store: TriggerRuntimeCatalogStore,
   options: { pruneStale?: boolean } = {},
 ): Promise<{ upserted: number; removed: number }> {
+  specs = await withProjectPins(projectId, specs, store);
   const existing = await store.list(projectId);
   const existingBySlug = new Map(existing.map((row) => [row.slug, row]));
   const declaredSlugs = new Set(specs.map((spec) => spec.slug));

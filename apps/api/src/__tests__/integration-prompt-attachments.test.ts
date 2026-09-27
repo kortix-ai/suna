@@ -492,15 +492,19 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
     .from(promptAttachments)
     .where(eq(promptAttachments.attachmentId, id));
   const cleanupAt = new Date(initial.expiresAt.getTime() + 1);
-  const transaction = db.transaction.bind(db);
+  // `db` is the request-context Proxy from shared/db-context.ts. Bun's spyOn
+  // cannot install a spy through a Proxy (it records 0 calls), so spy on the
+  // pooled database the Proxy forwards to outside a request.
+  const pooled = (globalThis as { __kortixApiDb?: typeof db }).__kortixApiDb!;
+  const transaction = pooled.transaction.bind(pooled);
   // Replay the READ COMMITTED interleaving deterministically: candidate SELECT
   // sees no reference, binding commits without changing the attachment tuple,
   // then cleanup acquires the tuple lock and receives its stale candidate.
-  // The sweep's first transaction is the delivery release, which runs as is;
-  // the second is the batch claim this test intercepts.
-  const intercepted = spyOn(db, 'transaction')
-    .mockImplementationOnce((work) => transaction(work))
-    .mockImplementationOnce((work) =>
+  // The interception keys on the statement, not on which transaction of the
+  // sweep runs it: the first `FOR UPDATE` select from prompt_attachments is the
+  // batch claim.
+  let injected = false;
+  const intercepted = spyOn(pooled, 'transaction').mockImplementation((work) =>
     transaction(async (tx) => {
       const proxy = new Proxy(tx, {
         get(target, property) {
@@ -510,7 +514,11 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
             const from = selection.from.bind(selection);
             selection.from = ((...fromArgs: Parameters<typeof from>) => {
               const query = from(...fromArgs);
-              query.for = () => {
+              if (fromArgs[0] !== promptAttachments) return query;
+              const lockFor = query.for.bind(query);
+              query.for = ((...forArgs: Parameters<typeof lockFor>) => {
+                if (injected || forArgs[0] !== 'update') return lockFor(...forArgs);
+                injected = true;
                 const result = (async () => {
                   const candidates = await query;
                   await enqueue(id);
@@ -527,7 +535,7 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
                     return Reflect.get(target, property, receiver);
                   },
                 });
-              };
+              }) as typeof query.for;
               return query;
             }) as typeof selection.from;
             return selection;
@@ -542,6 +550,7 @@ test('cleanup rechecks references committed after its candidate snapshot but bef
   } finally {
     intercepted.mockRestore();
   }
+  expect(injected).toBe(true);
   const [retained] = await db
     .select()
     .from(promptAttachments)

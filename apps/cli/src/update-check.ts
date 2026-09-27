@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { configFilePath } from './api/config.ts';
 import { C, stripAnsi } from './style.ts';
+import { isSupervised } from './supervised.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Update notifier.
@@ -43,6 +44,14 @@ function cachePath(): string {
 /** Update checks are pointless or unwanted in these cases. */
 function isDisabled(current: string): boolean {
   if (process.env.KORTIX_NO_UPDATE_CHECK || process.env.KORTIX_SKIP_UPDATE_CHECK) return true;
+  // Inside a managed sandbox the platform owns this binary. The notice is not
+  // just noise there, it is a trap: the prompt it fronts defaults to YES, the
+  // Session terminal IS a real TTY, and accepting installs a PUBLIC CLI into
+  // ~/.local/bin — first on the image PATH, ahead of the /usr/local/bin/kortix
+  // the daemon converges, and pointed at the public API. Killing the STATUS
+  // here kills the box, the one-line nudge and the prompt in one place, because
+  // all three come from resolveUpdateStatus.
+  if (isSupervised()) return true;
   // CI/scripts: don't nag, and don't add latency to piped output.
   if (process.stdout.isTTY !== true) return true;
   if (process.env.CI) return true;

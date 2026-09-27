@@ -14,7 +14,7 @@ import { CaretLeftIcon as ChevronLeft } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 
-import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
+import { useDesktopBackTarget } from '@/components/desktop/desktop-back-button';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { AuthMobileLogo } from '@/features/auth/auth-primitives';
 import { openExternalRoute } from '@/lib/desktop';
@@ -71,9 +71,9 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
 
 /**
  * The quiet page frame every auth surface shares: mark, centered column, legal
- * footer, and — on the desktop shell, for a signed-in user — Back. The frame has
- * no sidebar and many of its screens have no in-page exit, and the shell has no
- * browser toolbar, so without Back those screens are dead ends there.
+ * footer. The frame has no sidebar and many of its screens have no in-page
+ * exit; the root layout's `DesktopBackButton` is their exit on the desktop
+ * shell. `backHref` tells that Back where this flow started.
  */
 export function AuthFrame({
   children,
@@ -93,9 +93,9 @@ export function AuthFrame({
    */
   backHref?: string;
 }) {
+  useDesktopBackTarget(backHref);
   return (
     <div className="bg-background relative flex min-h-svh flex-col">
-      <DesktopBackButton href={backHref} />
       <AuthMobileLogo />
       <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
         <div className="w-full max-w-[380px]">{children}</div>

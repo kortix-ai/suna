@@ -28,7 +28,7 @@ export const MIGRATE_TO_V2_PROMPT = `Migrate this project's manifest from kortix
 ## 1. Read before you write
 
 - The current manifest: \`kortix.toml\` (or \`kortix.yaml\` if this project already partially moved — check \`kortix_version\` at the top either way).
-- Any \`[[agents]]\` entries in the v1 manifest — these carry \`connectors\`, \`kortix_cli\`, and \`env\` grants per agent name. An agent name with NO \`[[agents]]\` entry at all is today unrestricted (v1's back-compat default is "all" when a grant key is omitted).
+- Any \`[[agents]]\` entries in the v1 manifest — these carry \`connectors\`, \`kortix_permissions\` (older manifests spell it \`kortix_cli\`), and \`env\` grants per agent name. An agent name with NO \`[[agents]]\` entry at all is today unrestricted (v1's back-compat default is "all" when a grant key is omitted).
 - \`.kortix/opencode/opencode.jsonc\` — if it sets a top-level \`default_agent\`, that is the project's existing default; use it. If it doesn't, pick the agent whose \`.kortix/opencode/agents/*.md\` frontmatter has \`mode: primary\` and reads as the general/primary one (usually the first-created or the one with the broadest permissions). Record which you picked and why in the change request description — a human reviews this before it merges, so a defensible choice beats blocking on it.
 - **You do NOT need to read each agent's \`.md\` frontmatter to migrate it.** v1's frontmatter (mode/model/temperature/permission/prompt/…) is ALREADY valid v2 OpenCode behavior — it stays exactly where it is, unchanged. This migration is governance-only.
 
@@ -53,7 +53,7 @@ The schema, this prompt, and \`kortix validate\` all enforce the same rules — 
 
 ## 4. The v2 shape you're producing
 
-v2's \`agents:\` map is GOVERNANCE ONLY — connectors/secrets/skills/kortix_cli/workspace/enabled. OpenCode behavior (mode/model/temperature/permission/the prompt itself) is NOT part of the manifest at all; it lives entirely in each agent's own native \`.kortix/opencode/agents/<name>.md\` frontmatter + body, exactly as it does today. The agent's NAME is the join between this map's keys and that \`.md\`'s filename.
+v2's \`agents:\` map is GOVERNANCE ONLY — connectors/secrets/skills/kortix_permissions/workspace/enabled. OpenCode behavior (mode/model/temperature/permission/the prompt itself) is NOT part of the manifest at all; it lives entirely in each agent's own native \`.kortix/opencode/agents/<name>.md\` frontmatter + body, exactly as it does today. The agent's NAME is the join between this map's keys and that \`.md\`'s filename.
 
 \`\`\`yaml
 kortix_version: 2
@@ -64,7 +64,7 @@ agents:
     enabled: true                # optional; false = can't start sessions (default true)
     connectors: all               # connector slugs | "all" | "none"
     secrets: all                  # renamed from v1's "env" — names | "all" | "none"
-    kortix_cli: all                # kortix_cli leaf names | "all" | "none"
+    kortix_permissions: all        # project.* permission names | "all" | "none"
     skills: all                    # names of .kortix/opencode/skills/* this agent may invoke | "all" | "none"
     repository_access: false       # optional — true (default) | false
 \`\`\`
@@ -77,7 +77,7 @@ Rules that the schema enforces (get these right or \`kortix validate\` fails):
 - \`default_agent\` is required at the top level and must name a declared, enabled (\`enabled\` not \`false\`) agent.
 - Any behavioral field (\`description\`, \`model\`, \`mode\`, \`temperature\`, \`top_p\`, \`steps\`, \`variant\`, \`color\`, \`hidden\`, \`permission\`, \`prompt\`, or a nested \`opencode:\` block) authored on the manifest agent block is a hard error, pointing you at the agent's own \`.md\` frontmatter instead — because that's where it already lives, untouched.
 - \`disable\` is a hard error too — it's the manifest-governance \`enabled\` (inverted): write \`enabled: false\` instead. (This is unrelated to a NATIVE \`disable\` key that might already be hand-authored in an agent's own \`.md\` frontmatter — leave that alone; it's a different, runtime-level concept.)
-- \`env\` is a hard error in v2 — it is renamed \`secrets\`. **v2 defaults every omitted grant (\`connectors\`/\`secrets\`/\`kortix_cli\`/\`skills\`) to \`"none"\` (deny-by-default), unlike v1 which defaulted an omitted grant to \`"all"\`.** To avoid silently narrowing an agent's access during migration, write the EXPLICIT value that reproduces today's behavior for every agent — if a v1 agent had no \`[[agents]]\` entry, or its \`env\`/\`connectors\`/\`kortix_cli\` were omitted or set to \`all\`, write \`secrets: all\`, \`connectors: all\`, \`kortix_cli: all\` explicitly in its v2 block. Only narrow a grant if the v1 manifest already narrowed it (an explicit list, or \`none\`) — carry that exact list over. \`skills\` has no v1 equivalent; default new agents to \`all\` unless you have a specific reason to narrow.
+- \`env\` is a hard error in v2 — it is renamed \`secrets\`. **v2 defaults every omitted grant (\`connectors\`/\`secrets\`/\`kortix_permissions\`/\`skills\`) to \`"none"\` (deny-by-default), unlike v1 which defaulted an omitted grant to \`"all"\`.** To avoid silently narrowing an agent's access during migration, write the EXPLICIT value that reproduces today's behavior for every agent — if a v1 agent had no \`[[agents]]\` entry, or its \`env\`/\`connectors\`/\`kortix_cli\` (or \`kortix_permissions\`) were omitted or set to \`all\`, write \`secrets: all\`, \`connectors: all\`, \`kortix_permissions: all\` explicitly in its v2 block. Only narrow a grant if the v1 manifest already narrowed it (an explicit list, or \`none\`) — carry that exact list over. \`skills\` has no v1 equivalent; default new agents to \`all\` unless you have a specific reason to narrow.
 - \`channels\` is removed entirely in v2 — delete any \`[[channels]]\` block. Channel↔agent routing now lives in the dashboard (Customize → Channels), not in git. Do not try to replicate it in the manifest.
 - Every other top-level section (\`project\`, \`env\` for required/optional documentation vars — NOT the per-agent grant, top-level \`opencode\` config-dir settings, \`sandbox\`, \`triggers\`, \`connectors\`, \`apps\`) keeps its v1 shape unchanged — translated to YAML, not restructured. If \`triggers[].agent\` names an agent, make sure that name still exists in the new \`agents\` map (rename references if you renamed an agent).
 - If an agent has no \`.md\` today (a bare \`[[agents]]\` entry with no matching OpenCode agent file), still declare it in \`agents:\` with its governance grants carried over — don't drop it. It will simply have no behavior until someone adds \`.kortix/opencode/agents/<name>.md\`.
@@ -86,7 +86,7 @@ Rules that the schema enforces (get these right or \`kortix validate\` fails):
 
 v1 tolerates several retired keys with a deprecation warning; v2 makes every one of them a hard error. Remove them as part of the conversion and note each removal in the change request description:
 
-- **Retired \`kortix_cli\` actions** — \`project.session.exec\`, \`project.gateway.routing.edit\`, \`project.schedule.read\`, \`project.schedule.write\`, \`project.webhook.read\`, \`project.webhook.write\`, \`channel.read\`, \`channel.connect\`, \`channel.send\`, \`channel.disconnect\`. These were removed from the enforcement catalog and have been no-ops for a while — granting or omitting them never had any effect, so deleting them from a grant list changes nothing. Do NOT substitute a broader grant (e.g. \`all\`) to "cover" a deleted action.
+- **Retired \`kortix_permissions\` actions** — \`project.session.exec\`, \`project.gateway.routing.edit\`, \`project.schedule.read\`, \`project.schedule.write\`, \`project.webhook.read\`, \`project.webhook.write\`, \`channel.read\`, \`channel.connect\`, \`channel.send\`, \`channel.disconnect\`. These were removed from the enforcement catalog and have been no-ops for a while — granting or omitting them never had any effect, so deleting them from a grant list changes nothing. Do NOT substitute a broader grant (e.g. \`all\`) to "cover" a deleted action.
 - **\`credential = "per_user"\` on a \`[[connectors]]\` entry** — the per-user credential mode was removed; every connector is \`"shared"\` now. Delete the \`credential\` key (or write \`shared\` explicitly if the entry already spelled it out).
 - **\`agent_scope\` on a \`[[connectors]]\` entry** — retired; the runtime no longer reads it. Per-agent connector access is expressed from the OTHER side now: each agent's \`connectors:\` grant in the \`agents:\` map. If a v1 connector had \`agent_scope = ["a", "b"]\`, make sure agents outside that list don't get that connector slug in their \`connectors\` grant (use an explicit slug list instead of \`all\` for the agents that should keep access), then delete the key.
 - **Legacy singular \`[sandbox]\` image keys** (\`image\`, \`dockerfile\`, \`cpu\`, \`memory\`, \`disk\`, …) — already an error in v1's validator; if \`kortix validate\` flags them, move the image definition under \`[[sandbox.templates]]\` → \`sandbox.templates:\` with a named slug.
@@ -151,7 +151,7 @@ agents:
       - github
       - linear
     secrets: all          # v1 "env = all", renamed
-    kortix_cli:           # project.session.exec dropped — retired no-op action
+    kortix_permissions:   # renamed from v1's kortix_cli; project.session.exec dropped — retired no-op action
       - project.file.read
       - project.file.write
     skills: all
@@ -161,7 +161,7 @@ agents:
     # An explicit list preserves today's effective behavior instead.
     connectors: none
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
 
 triggers:

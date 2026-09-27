@@ -50,7 +50,14 @@ export interface ProjectConfigSummary {
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
+      /** Kortix permissions (`project.*` actions) the agent may exercise. */
+      kortix_permissions: string[] | 'all';
+      /** @deprecated Wire alias of `kortix_permissions` for pre-rename clients. */
       kortix_cli: string[] | 'all';
+      /** Kortix Apps (by slug) the agent may open when restricted/private
+       *  (spec 2026-09-22 §2.5). `[]` = none (the default). Optional: the
+       *  platform meta-agent's synthetic entry carries no App grant. */
+      apps?: string[] | 'all';
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;

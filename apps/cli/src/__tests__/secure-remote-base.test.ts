@@ -12,7 +12,7 @@ describe('secureRemoteBase', () => {
     for (const [base, expected] of [
       ['http://dev-api.kortix.com', 'https://dev-api.kortix.com'],
       ['http://api.kortix.com', 'https://api.kortix.com'],
-      ['http://api.essentia.kortix.cloud', 'https://api.essentia.kortix.cloud'],
+      ['http://api.sampleco.kortix.cloud', 'https://api.sampleco.kortix.cloud'],
       ['http://example.com:8443/v1', 'https://example.com:8443/v1'],
       ['http://11.0.0.1:8000', 'https://11.0.0.1:8000'],
       ['http://172.32.0.1:8000', 'https://172.32.0.1:8000'],

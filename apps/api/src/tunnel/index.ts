@@ -49,7 +49,10 @@ import { tunnelRateLimiter } from './core/rate-limiter';
 // and the tunnel is stuck "offline" forever. See the prod-timeout incident note.
 import { fingerprintTunnelCredentialHash, isTunnelToken, verifySecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
+import { runWorkerTick } from '../shared/audit-scope';
+import { expireTunnelPermissions } from './permission-expiry';
 import { reconcileComputerConnectors } from '../connectors/sync';
+import { type AuditEventInput, recordAuditEvent } from '../shared/audit';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
@@ -95,6 +98,51 @@ tunnelApp.route('/rpc', createRpcRouter());
 tunnelApp.route('/audit', createAuditRouter());
 tunnelApp.route('/device-auth', createDeviceAuthRouter());
 
+// ─── Handshake audit ─────────────────────────────────────────────────────────
+
+type TunnelAgentAuthRefusal = 'not_a_tunnel_token' | 'bad_secret' | 'capabilities_rejected';
+
+/**
+ * The audit row for a tunnel agent's handshake. The machine's setup token
+ * arrives in the first WebSocket message, outside any HTTP request, so no
+ * request audit sees it; this authenticator records it itself. A refusal
+ * proves nobody, so it is `anonymous` — but on the tunnel's account when the
+ * tunnel exists, so its owner sees the attempt. Exported for tests.
+ */
+export function tunnelAgentAuthAuditEvent(input: {
+  tunnelId: string;
+  accountId: string | null;
+  outcome: 'success' | 'denied';
+  reason?: TunnelAgentAuthRefusal;
+  credentialFingerprint?: string | null;
+}): AuditEventInput {
+  return {
+    accountId: input.accountId,
+    actorType: input.outcome === 'success' ? 'system' : 'anonymous',
+    actorUserId: null,
+    authoritativeSource: 'tunnel_agent',
+    outcome: input.outcome,
+    action: 'tunnel.agent.authenticate',
+    resourceType: 'tunnel',
+    resourceId: input.tunnelId,
+    metadata: {
+      auth: {
+        kind: 'tunnel_setup_token',
+        ...(input.credentialFingerprint
+          ? { credential_fingerprint: input.credentialFingerprint }
+          : {}),
+      },
+      ...(input.reason ? { reason: input.reason } : {}),
+    },
+  };
+}
+
+function recordTunnelAgentAuth(input: Parameters<typeof tunnelAgentAuthAuditEvent>[0]): void {
+  void recordAuditEvent(tunnelAgentAuthAuditEvent(input)).catch((error) => {
+    console.error('[tunnel] handshake audit failed:', error);
+  });
+}
+
 // ─── WS Handlers (used by index.ts Bun server) ──────────────────────────────
 
 const wsHandlers = createWsHandlers(tunnelRelay, {
@@ -108,14 +156,25 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
     // Only the machine-specific setup token can become a tunnel agent.
     // User, PAT, service-account, and sandbox credentials are HTTP principals;
     // accepting them here lets those callers impersonate and replace a machine.
-    if (!isTunnelToken(token)) return null;
+    if (!isTunnelToken(token)) {
+      recordTunnelAgentAuth({ tunnelId, accountId: null, outcome: 'denied', reason: 'not_a_tunnel_token' });
+      return null;
+    }
     const [tunnel] = await db
       .select()
       .from(tunnelConnections)
       .where(eq(tunnelConnections.tunnelId, tunnelId));
     // Resolve the untrusted tunnel id before running the intentionally costly
     // secret verifier. Random ids cannot become a synchronous scrypt DoS.
-    if (!tunnel?.setupTokenHash || !verifySecretKey(token, tunnel.setupTokenHash)) return null;
+    if (!tunnel?.setupTokenHash || !verifySecretKey(token, tunnel.setupTokenHash)) {
+      recordTunnelAgentAuth({
+        tunnelId,
+        accountId: tunnel?.accountId ?? null,
+        outcome: 'denied',
+        reason: 'bad_secret',
+      });
+      return null;
+    }
 
     // The DB list is the browser-approved ceiling. The auth list is the exact
     // handler surface registered by this agent process. Intersect both so an
@@ -124,7 +183,15 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
       auth.capabilities ?? [],
       tunnel.capabilities,
     );
-    if (!capabilities) return null;
+    if (!capabilities) {
+      recordTunnelAgentAuth({
+        tunnelId,
+        accountId: tunnel.accountId,
+        outcome: 'denied',
+        reason: 'capabilities_rejected',
+      });
+      return null;
+    }
     const agentVersion =
       typeof auth.agentVersion === 'string' &&
       auth.agentVersion.length <= 64 &&
@@ -136,6 +203,13 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
     // Reconnecting never reuses the HMAC key, so captured frames cannot replay
     // after a reconnect even when the long-lived setup token is unchanged.
     const signingKey = randomBytes(32).toString('hex');
+    const credentialFingerprint = fingerprintTunnelCredentialHash(tunnel.setupTokenHash);
+    recordTunnelAgentAuth({
+      tunnelId,
+      accountId: tunnel.accountId,
+      outcome: 'success',
+      credentialFingerprint,
+    });
     return {
       signingKey,
       metadata: {
@@ -144,7 +218,7 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
         approvedCapabilities: tunnel.capabilities || [],
         agentVersion,
         machineInfo: tunnel.machineInfo ?? {},
-        credentialFingerprint: fingerprintTunnelCredentialHash(tunnel.setupTokenHash),
+        credentialFingerprint,
       },
     };
   },
@@ -332,14 +406,9 @@ function startTunnelService(): void {
 
   // ── Permission expiry cleanup ────────────────────────────────────────
 
-  permissionCleanupInterval = setInterval(async () => {
+  permissionCleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', async () => {
     try {
-      await db
-        .update(tunnelPermissions)
-        .set({ status: 'expired', updatedAt: new Date() })
-        .where(
-          and(eq(tunnelPermissions.status, 'active'), lt(tunnelPermissions.expiresAt, new Date())),
-        );
+      await expireTunnelPermissions(new Date());
       tunnelRateLimiter.cleanup();
 
       // Expire pending device auth requests
@@ -370,7 +439,7 @@ function startTunnelService(): void {
     } catch (err) {
       console.warn('[TUNNEL] Permission cleanup error:', err);
     }
-  }, 5 * 60_000);
+  }), 5 * 60_000);
 
   console.log('[TUNNEL] Tunnel service started');
 }

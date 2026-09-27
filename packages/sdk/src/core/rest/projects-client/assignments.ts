@@ -16,15 +16,20 @@ import { unwrap } from './shared';
 
 /** What a role can be bound to. `user` is an auth uid, `group` an `iam_groups`
  *  row, `service_account` the identity an agent runs as, `pending` an invitee
- *  who has not accepted yet (keyed by email). */
-export type AssignmentPrincipalType = 'user' | 'group' | 'service_account' | 'pending';
+ *  who has not accepted yet (keyed by email), `project` everyone with access to
+ *  the project (its id; valid only as an object grant on that project with the
+ *  `agent-user` role). */
+export type AssignmentPrincipalType = 'user' | 'group' | 'service_account' | 'pending' | 'project';
 
 /** A role binds at exactly one of two scopes. `account` covers every project in
  *  the account; `project` covers the one project named by `scope_id`. */
 export type AssignmentScopeType = 'account' | 'project';
 
-/** An assignment may narrow further to a single object inside its scope. */
-export type AssignmentObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger';
+/** An assignment may narrow further to a single object inside its scope.
+ *  `connection` is a shared connector account (its `connection_id`): grants
+ *  narrow who may use it, and writing one needs the connections-manage
+ *  capability. */
+export type AssignmentObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection';
 
 /** Where the row came from. `manual` is a human write; `scim`/`sso` are
  *  directory sync; `invite` is a bootstrap grant; `system` is seeded. */

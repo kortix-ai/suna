@@ -6,7 +6,7 @@
  * it. The transcript digest only READS the mirror and must not carry that
  * graph — `session-transcript.ts` therefore imports the sibling read module and
  * turn-end reports and manual stop import this writer. (Concretely: without the
- * split, `unit-session-transcript.test.ts`'s `../shared/db` mock stopped
+ * split, the transcript read test's `../shared/db` mock stopped
  * satisfying the engine's own imports and the whole file failed to load.)
  *
  * The rationale for capturing at TURN END — and the identity/attachment-bytes
@@ -30,7 +30,7 @@ import {
 } from './session-transcript-attachments';
 import { sessionAttachmentStore } from './session-attachments';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/engine';
+import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
 import {
   MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGES,

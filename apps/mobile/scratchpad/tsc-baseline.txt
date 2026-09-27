@@ -1,0 +1,47 @@
+app/(settings)/changelog.tsx(301,50): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+app/(settings)/instances.tsx(253,46): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/agents/AgentAvatar.tsx(36,7): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+components/agents/AgentAvatar.tsx(37,7): error TS2322: Type 'string | null | undefined' is not assignable to type 'string | undefined'.
+components/pages/AgentBrowserPage.tsx(241,10): error TS2769: No overload matches this call.
+components/pages/AgentBrowserPage.tsx(251,25): error TS7006: Parameter 'e' implicitly has an 'any' type.
+components/pages/ApiKeysPage.tsx(501,9): error TS2322: Type 'RefObject<BottomSheetModal | null>' is not assignable to type 'RefObject<BottomSheetModal>'.
+components/pages/ApiKeysPage.tsx(514,9): error TS2322: Type 'RefObject<BottomSheetModal | null>' is not assignable to type 'RefObject<BottomSheetModal>'.
+components/pages/ApiKeysPage.tsx(527,9): error TS2322: Type 'RefObject<BottomSheetModal | null>' is not assignable to type 'RefObject<BottomSheetModal>'.
+components/pages/BrowserPage.tsx(261,12): error TS2769: No overload matches this call.
+components/pages/ScheduledTasksPage.tsx(306,9): error TS2322: Type 'RefObject<BottomSheetModal | null>' is not assignable to type 'RefObject<BottomSheetModal>'.
+components/pages/ScheduledTasksPage.tsx(323,9): error TS2322: Type 'RefObject<BottomSheetModal | null>' is not assignable to type 'RefObject<BottomSheetModal>'.
+components/pages/SecretsNavPage.tsx(110,26): error TS2339: Property 'usable_by_me' does not exist on type 'ProjectSecret'.
+components/pages/SecretsNavPage.tsx(491,28): error TS2339: Property 'sharing' does not exist on type 'ProjectSecret'.
+components/pages/SecretsNavPage.tsx(510,52): error TS2339: Property 'usable_by_me' does not exist on type 'ProjectSecret'.
+components/pages/SecretsNavPage.tsx(512,38): error TS2339: Property 'sharing' does not exist on type 'ProjectSecret'.
+components/pages/SecretsNavPage.tsx(748,50): error TS2339: Property 'sharing' does not exist on type 'ProjectSecret'.
+components/pages/SSHPage.tsx(227,51): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/pages/SSHPage.tsx(439,55): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/pages/TerminalPage.tsx(1332,12): error TS2769: No overload matches this call.
+components/pages/TerminalPage.tsx(1352,23): error TS7006: Parameter 'syntheticEvent' implicitly has an 'any' type.
+components/pages/TunnelPage.tsx(320,16): error TS2769: No overload matches this call.
+components/pages/TunnelPage.tsx(368,37): error TS2503: Cannot find namespace 'JSX'.
+components/pages/TunnelPage.tsx(483,35): error TS2503: Cannot find namespace 'JSX'.
+components/pages/UpdatesPage.tsx(131,40): error TS2345: Argument of type 'string | null' is not assignable to parameter of type 'string | undefined'.
+components/pages/UpdatesPage.tsx(286,61): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/projects/NewProjectSheet.tsx(103,5): error TS2304: Cannot find name 'setIncludeGKW'.
+components/projects/project-starter-template.test.ts(4,50): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+components/session/CommandPalette.tsx(88,27): error TS2554: Expected 1 arguments, but got 0.
+components/session/SessionErrorBanner.tsx(74,32): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/session/useMentions.ts(65,27): error TS2554: Expected 1 arguments, but got 0.
+components/session/UserMenuSheet.tsx(201,55): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/kortix/animated-toggle-icon.tsx(23,60): error TS2339: Property 'glyphMap' does not exist on type 'ComponentType<IconProps>'.
+components/kortix/animated-toggle-icon.tsx(64,22): error TS2769: No overload matches this call.
+components/kortix/selectable-markdown.tsx(1222,11): error TS2322: Type 'RefObject<BottomSheetModal | null>' is not assignable to type 'RefObject<BottomSheetModal>'.
+components/updates/UpdateDialog.tsx(241,63): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/updates/UpdateDialog.tsx(276,69): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/updates/UpdateDialog.tsx(309,63): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/updates/UpdateDialog.tsx(366,55): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/updates/UpdateDialog.tsx(396,58): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+components/updates/UpdateDialog.tsx(553,47): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'ViewStyle | RecursiveArray<ViewStyle | Falsy | RegisteredStyle<ViewStyle>>'.
+lib/agents/hooks.ts(197,9): error TS2783: 'name' is specified more than once, so this usage will be overwritten.
+lib/auth/mobile-admission.ts(3,47): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
+lib/projects/hooks.ts(514,5): error TS2322: Type '(input: ProvisionProjectInput, options?: ApiClientOptions) => Promise<KortixProject>' is not assignable to type 'MutationFunction<KortixProject, ProvisionProjectInput>'.
+lib/triggers/index.ts(11,3): error TS2305: Module '"./hooks"' has no exported member 'triggerKeys'.
+../../packages/shared/src/project-glyphs.test.ts(32,29): error TS2769: No overload matches this call.
+../../packages/shared/src/sandbox/__tests__/fast-dockerfile.test.ts(96,7): error TS2769: No overload matches this call.

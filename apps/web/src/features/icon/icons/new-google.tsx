@@ -1,9 +1,6 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
-
 export const NewGoogle = ({ className }: { className?: string }) => {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <svg
       version="1.1"
@@ -94,9 +91,7 @@ export const NewGoogle = ({ className }: { className?: string }) => {
           xlinkHref="#b"
           id="m"
           gradientUnits="userSpaceOnUse"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix193688518debb5b5',
-          )}
+          gradientTransform="matrix(-1.936885,1.043001,1.455731,2.555422,290.5254,-400.6338)"
           cx="109.6267"
           cy="135.8619"
           fx="109.6267"
@@ -107,9 +102,7 @@ export const NewGoogle = ({ className }: { className?: string }) => {
           xlinkHref="#c"
           id="n"
           gradientUnits="userSpaceOnUse"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix35125954e5619e4d',
-          )}
+          gradientTransform="matrix(-3.512595,-4.45809,-1.692547,1.260616,870.8006,191.554)"
           cx="45.25866"
           cy="279.2738"
           fx="45.25866"
@@ -124,18 +117,14 @@ export const NewGoogle = ({ className }: { className?: string }) => {
           fx="304.0166"
           fy="118.0089"
           r="47.85445"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix20643534620b14ef',
-          )}
+          gradientTransform="matrix(2.064353,-4.926832e-6,-2.901531e-6,2.592041,-297.6788,-151.7469)"
           gradientUnits="userSpaceOnUse"
         />
         <radialGradient
           xlinkHref="#e"
           id="o"
           gradientUnits="userSpaceOnUse"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix024857832979fd706',
-          )}
+          gradientTransform="matrix(-0.2485783,2.083138,2.962486,0.3341668,-255.1463,-331.1636)"
           cx="181.001"
           cy="177.2013"
           fx="181.001"
@@ -150,18 +139,14 @@ export const NewGoogle = ({ className }: { className?: string }) => {
           fx="207.6733"
           fy="108.0972"
           r="41.1025"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix1249206127d8954d',
-          )}
+          gradientTransform="matrix(-1.249206,1.343263,-3.896837,-3.425693,880.5011,194.9051)"
           gradientUnits="userSpaceOnUse"
         />
         <radialGradient
           xlinkHref="#g"
           id="r"
           gradientUnits="userSpaceOnUse"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix19368851b3aa9e38',
-          )}
+          gradientTransform="matrix(-1.936885,-1.043001,1.455731,-2.555422,290.5254,838.6834)"
           cx="109.6267"
           cy="135.8619"
           fx="109.6267"
@@ -172,9 +157,7 @@ export const NewGoogle = ({ className }: { className?: string }) => {
           xlinkHref="#h"
           id="j"
           gradientUnits="userSpaceOnUse"
-          gradientTransform={tI18nHardcoded.raw(
-            'autoFeaturesIconIconJsxAttrGradientTransformMatrix008140216c322569',
-          )}
+          gradientTransform="matrix(-0.081402,-1.93722,2.926737,-0.1162508,-215.1345,632.8606)"
           cx="154.8697"
           cy="145.9691"
           fx="154.8697"
@@ -208,9 +191,7 @@ export const NewGoogle = ({ className }: { className?: string }) => {
           />
         </clipPath>
       </defs>
-      <g
-        transform={tI18nHardcoded.raw('autoFeaturesIconIconJsxAttrTransformMatrix09579220ee393908')}
-      >
+      <g transform="matrix(0.957922,0,0,0.985255,-90.17436,-78.85577)">
         <g clipPath="url(#i)">
           <path
             d="M92.08 219.96c.15 22.14 6.5 44.98 16.12 63.42v.13c6.95 13.39 16.44 23.97 27.26 34.45l65.33-23.67c-12.36-6.23-14.25-10.05-23.1-17.03-9.05-9.07-15.8-19.47-20-31.68h-.17l.17-.13c-2.76-8.06-3.04-16.61-3.14-25.5Z"

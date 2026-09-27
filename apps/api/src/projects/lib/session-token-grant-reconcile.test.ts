@@ -5,13 +5,13 @@ import * as realSecretGrant from './secret-grant';
 const storedGrantDefault: AgentGrant = {
   agent: 'kortix',
   connectors: ['slack'],
-  kortixCli: 'all',
+  permissions: 'all',
   env: 'all',
 };
 const currentGrant: AgentGrant = {
   agent: 'kortix',
   connectors: ['slack', 'google_workspace'],
-  kortixCli: 'all',
+  permissions: 'all',
   env: 'all',
 };
 
@@ -184,7 +184,7 @@ test('a token already carrying an undeclared agent heals to the session agent on
   storedGrant = {
     agent: 'chief-of-staff',
     connectors: [],
-    kortixCli: [],
+    permissions: [],
     env: [],
   };
 

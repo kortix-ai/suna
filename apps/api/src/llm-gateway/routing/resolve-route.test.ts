@@ -31,11 +31,25 @@ describe('gateway control-plane route resolver', () => {
     });
   });
 
-  test('uses the principal default without changing explicit model requests', async () => {
-    expect((await resolveRoute({ ...principal, defaultModel: 'account-model' }, {
-      requestedModel: 'account-model',
+  test('the principal default is the default request; every other model stays explicit', async () => {
+    // `account-model` lacks image input: only as the principal's default does
+    // an image request reroute it to the vision model.
+    const imageRequest = { requestedModel: 'account-model', requires: { imageInput: true } };
+    expect((await resolveRoute({ ...principal, defaultModel: 'account-model' }, imageRequest)).primaryModel)
+      .toBe('model-vision');
+    expect((await resolveRoute(principal, imageRequest)).primaryModel).toBe('account-model');
+
+    expect(await resolveRoute(principal, {
+      requestedModel: 'model-default',
       requires: { imageInput: false },
-    }))?.primaryModel).toBe('account-model');
+    })).toEqual({
+      policyId: 'default-degrade',
+      primaryModel: 'model-default',
+      fallbackModels: ['model-fallback'],
+      fallbackOn: 'any-error',
+      generationDefaults: undefined,
+      generationDefaultsForModel: expect.any(Function),
+    });
     expect(await resolveRoute(principal, {
       requestedModel: 'explicit-model',
       requires: { imageInput: false },
@@ -72,12 +86,30 @@ describe('gateway control-plane route resolver', () => {
       getProjectPolicy: async () => ({
         visionModel: 'project-vision',
         defaultFallback: { models: ['project-fallback'], fallbackOn: 'any-error' },
-        rules: [{
-          model: 'explicit-primary',
-          fallbackModels: ['specific-fallback'],
-          fallbackOn: 'transient',
-        }],
+        rules: [
+          {
+            model: 'explicit-primary',
+            fallbackModels: ['specific-fallback'],
+            fallbackOn: 'transient',
+          },
+          {
+            model: 'platform-default',
+            fallbackModels: ['default-rule-fallback'],
+            fallbackOn: 'transient',
+          },
+        ],
       }),
+    });
+
+    // The default request matches both the exact rule and the default chain;
+    // the exact rule wins.
+    expect(await projectResolver({ ...principal, projectId: 'p1' }, {
+      requestedModel: 'platform-default',
+      requires: { imageInput: false },
+    })).toMatchObject({
+      policyId: 'project:exact:platform-default',
+      fallbackModels: ['default-rule-fallback'],
+      fallbackOn: 'transient',
     });
 
     expect(await projectResolver({ ...principal, projectId: 'p1' }, {
@@ -195,15 +227,6 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
     const resolveRoute = resolverFor({
       'reasoning-model': { temperature: 1.5, topP: 0.9 },
     });
-    const route = await resolveRoute(genPrincipal, {
-      requestedModel: 'reasoning-model',
-      requires: { imageInput: false },
-    });
-    expect(route.generationDefaults).toBeUndefined();
-  });
-
-  test('no configured entry for the resolved model → no generationDefaults', async () => {
-    const resolveRoute = resolverFor({ 'other-model': { temperature: 0.5 } });
     const route = await resolveRoute(genPrincipal, {
       requestedModel: 'reasoning-model',
       requires: { imageInput: false },

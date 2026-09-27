@@ -1,5 +1,5 @@
 import type { Config } from '../config'
-import type { ConfigDirSyncResult, RepoInfo } from '../git'
+import type { RepoInfo } from '../git'
 import type { ProjectEnvStore } from '../project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
@@ -36,7 +36,8 @@ export interface HarnessEnvironmentResult {
 export interface HarnessRefreshInput {
   syncBase: boolean
   skipRestart: boolean
-  syncConfigDir: boolean
+  /** Leave the checkout exactly as it is — no pull of the session branch. */
+  skipRepo?: boolean
   baseSha?: string
   forceFail: boolean
 }
@@ -44,7 +45,6 @@ export interface HarnessRefreshInput {
 export interface HarnessRefreshResult {
   ok: true
   repo: { before: RepoInfo; after: RepoInfo }
-  config_dir?: ConfigDirSyncResult
   reload?: {
     outcome: 'swapped' | 'kept-old'
     port?: number
@@ -68,9 +68,51 @@ export interface HarnessAbortAfterToolInput {
   messageId: string
 }
 
+/** The health `config` block. Spec: docs/specs/config-releases.md, "Health". */
+export interface HarnessConfigReleaseReport {
+  release_id: string | null
+  desired_release_id: string | null
+  /** `workspace` only while `config_releases` is off for the project. */
+  source: 'release' | 'workspace' | 'image-default'
+  /** Null before the first convergence; `follow-base` is the only mode. */
+  mode: 'follow-base' | null
+  proven: boolean
+  fallback_reason: string | null
+  failed_release_id: string | null
+}
+
+/** Response of `POST /kortix/config/converge`. */
+export interface HarnessConfigConvergeResult {
+  ok: boolean
+  outcome: 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed'
+  config: HarnessConfigReleaseReport
+  reload: { how: 'restarted'; turn_ended: boolean | null } | null
+  reason: string | null
+}
+
+/**
+ * The longest a fault-injected delay may hold a convergence.
+ *
+ * It lives on the harness CONTRACT, not inside an adapter, because the route
+ * that parses the query parameter may not import an adapter (the ownership
+ * boundary tripwire in `__tests__/harness-boundary.test.ts`).
+ */
+export const MAX_SWAP_DELAY_MS = 30_000
+
+/** Test-only inputs on the convergence. See `ConvergeDeps.delayBeforeSwapMs`. */
+export interface HarnessConfigConvergeOptions {
+  delayBeforeSwapMs?: number
+}
+
 export interface HarnessControlOperations {
   applyEnvironment(input: HarnessEnvironmentInput): Promise<HarnessEnvironmentResult>
   refresh(input: HarnessRefreshInput): Promise<HarnessRefreshResult>
+  /**
+   * Fetch the desired config release from the API and apply it. Absent on a
+   * runtime without config releases. Throws an error named
+   * `ConvergeBusyError` while another convergence runs.
+   */
+  convergeConfig?(options?: HarnessConfigConvergeOptions): Promise<HarnessConfigConvergeResult>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */

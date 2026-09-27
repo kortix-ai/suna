@@ -148,6 +148,8 @@ describe('createTurnAutoResumer', () => {
     expect(part.text).toContain('Do not redo work that already succeeded');
     // No model override — the session keeps its own model.
     expect('model' in (prompt.body as Record<string, unknown>)).toBe(false);
+    // T22: the session was read at the error AND again at fire time.
+    expect(h.sessionReads).toBe(2);
   });
 
   test('never resumes a subagent session', async () => {
@@ -157,12 +159,33 @@ describe('createTurnAutoResumer', () => {
     expect(h.prompts.length).toBe(0);
   });
 
-  test('never resumes a permanent error', async () => {
+  test('an abort the runtime made on its own is resumed as a runtime fault, with its own prompt', async () => {
+    // instance-guard.ts: a turn aborted before it reached the model while
+    // nobody asked for a stop. The instance is healed first; the resume only
+    // re-asks the request.
     const h = makeHarness();
-    expect(
-      await h.resumer.maybeResume('ses_root', { name: 'MessageAbortedError', message: 'aborted' }),
-    ).toBe(false);
-    expect(h.prompts.length).toBe(0);
+    const aborted = { name: 'MessageAbortedError', message: 'Aborted' };
+    expect(await h.resumer.maybeResume('ses_root', aborted, { cause: 'runtime-fault' })).toBe(true);
+    expect(h.prompts.length).toBe(1);
+    const part = (h.prompts[0]?.body as { parts: Array<{ text: string }> }).parts[0];
+    expect(part?.text).toContain('stopped your previous turn before it started');
+    expect(part?.text).not.toContain('transient provider error');
+    // The same error without the cause is still a stop, never resumed.
+    expect(await h.resumer.maybeResume('ses_root', aborted)).toBe(false);
+    expect(h.prompts.length).toBe(1);
+  });
+
+  test('a runtime-fault resume respects the root check and the budget', async () => {
+    const h = makeHarness();
+    const aborted = { name: 'MessageAbortedError', message: 'Aborted' };
+    h.setIsRoot(false);
+    expect(await h.resumer.maybeResume('ses_child', aborted, { cause: 'runtime-fault' })).toBe(false);
+    h.setIsRoot(true);
+    expect(await h.resumer.maybeResume('ses_root', aborted, { cause: 'runtime-fault' })).toBe(true);
+    expect(await h.resumer.maybeResume('ses_root', aborted, { cause: 'runtime-fault' })).toBe(true);
+    expect(await h.resumer.maybeResume('ses_root', aborted, { cause: 'runtime-fault' })).toBe(true);
+    expect(await h.resumer.maybeResume('ses_root', aborted, { cause: 'runtime-fault' })).toBe(false);
+    expect(h.prompts.length).toBe(3);
   });
 
   test('budget: at most 3 resumes per window, then the error surfaces', async () => {
@@ -225,13 +248,6 @@ describe('createTurnAutoResumer', () => {
       expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
       expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
       expect(h.prompts.length).toBe(3);
-    });
-
-    test('no revert staged — resumes exactly as before (unchanged path)', async () => {
-      const h = makeHarness();
-      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
-      expect(h.prompts.length).toBe(1);
-      expect(h.sessionReads).toBeGreaterThan(0);
     });
 
     test('a revert staged DURING the backoff wait is caught at fire time', async () => {

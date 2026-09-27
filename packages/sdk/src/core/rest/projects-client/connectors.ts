@@ -74,6 +74,11 @@ export interface ConnectorAttachmentUploadInput {
   contentType: string;
   contentDisposition?: 'attachment' | 'inline';
   contentId?: string;
+  /**
+   * Slug of the connector the file is for, e.g. `microsoft-graph`. The caller
+   * must be able to use that connector. Omit it for the native Email channel.
+   */
+  connector?: string;
 }
 
 export interface ConnectorAttachmentUploadResult {
@@ -84,6 +89,13 @@ export interface ConnectorAttachmentUploadResult {
   content_id?: string;
   size: number;
   expires_at: string;
+  /**
+   * The value to place in call arguments, e.g. as a Microsoft Graph
+   * `body.message.attachments[]` element or as a `contentBytes` string. The
+   * gateway replaces it with the file server-side. Absent from servers that
+   * predate it; build `{ $kortix_attachment: attachment_id }` yourself there.
+   */
+  ref?: { $kortix_attachment: string };
 }
 
 function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
@@ -92,10 +104,33 @@ function connectorGatewayPath(projectId: string | undefined, suffix: string): st
     : `/connectors/${suffix}`;
 }
 
-export async function getConnectorCatalog(projectId?: string): Promise<ConnectorCatalogEntry[]> {
+export interface GetConnectorCatalogOptions {
+  /** Restrict the catalog to one connector by slug. */
+  slug?: string;
+  /**
+   * The full per-action JSON Schema. Omitted from the request by default, and
+   * the API then INCLUDES it: sandboxes run a baked CLI whose connector
+   * gateway reads schemas from this route, so the server default can never
+   * flip. Pass `false` from a surface that renders no schema (it is the bulk
+   * of the payload: 439 KB on prod); `describeConnectorTool` narrows with
+   * `slug` instead.
+   */
+  includeSchemas?: boolean;
+}
+
+export async function getConnectorCatalog(
+  projectId?: string,
+  options?: GetConnectorCatalogOptions,
+): Promise<ConnectorCatalogEntry[]> {
+  const params = new URLSearchParams();
+  if (options?.slug) params.set('slug', options.slug);
+  if (options?.includeSchemas !== undefined) {
+    params.set('include_schemas', String(options.includeSchemas));
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
-      connectorGatewayPath(projectId, 'catalog'),
+      `${connectorGatewayPath(projectId, 'catalog')}${query}`,
     ),
   );
   return result.connectors ?? [];
@@ -103,6 +138,9 @@ export async function getConnectorCatalog(projectId?: string): Promise<Connector
 
 export async function listConnectorTools(projectId?: string): Promise<ConnectorTool[]> {
   const tools: ConnectorTool[] = [];
+  // Neither this nor any caller of it (search, discover) reads `inputSchema` —
+  // only `describeConnectorTool` below does, and it fetches its own schema
+  // directly instead of going through this bulk listing.
   for (const connector of await getConnectorCatalog(projectId)) {
     for (const action of connector.actions) {
       tools.push({
@@ -139,7 +177,33 @@ export async function describeConnectorTool(
   projectId: string | undefined,
   tool: string,
 ): Promise<ConnectorTool | null> {
-  return (await listConnectorTools(projectId)).find((candidate) => candidate.tool === tool) ?? null;
+  const separator = tool.indexOf('.');
+  if (separator < 0) return null;
+  const connectorSlug = tool.slice(0, separator).trim();
+  if (!connectorSlug) return null;
+  // Fetch ONE connector, with its schema, instead of the whole catalog —
+  // this used to call listConnectorTools (the full, unfiltered, schema-less
+  // catalog) just to pick out a single action.
+  // Match by slug, never take the first entry: an API that predates the
+  // `slug` filter answers the whole catalog, and the CLI ships separately.
+  const connector = (
+    await getConnectorCatalog(projectId, { slug: connectorSlug, includeSchemas: true })
+  ).find((entry) => entry.slug === connectorSlug);
+  if (!connector) return null;
+  for (const action of connector.actions) {
+    const candidateTool = `${connector.slug}.${action.path}`;
+    if (candidateTool === tool) {
+      return {
+        tool: candidateTool,
+        connector: connector.slug,
+        action: action.path,
+        risk: action.risk,
+        description: action.description || action.name,
+        inputSchema: action.inputSchema,
+      };
+    }
+  }
+  return null;
 }
 
 function parseConnectorTool(tool: string): { connector: string; action: string } {
@@ -160,6 +224,8 @@ export interface ConnectorAccount {
   owner_type: string;
   /** True for the account an unselected call resolves to. */
   is_default: boolean;
+  /** Who the account was authorized as. `null` (or absent, on older servers) when unknown. */
+  connected_as?: string | null;
 }
 
 export interface ConnectorCallOptions {
@@ -245,6 +311,9 @@ export async function uploadConnectorAttachment(
   };
   if (input.contentId?.trim()) {
     headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
+  }
+  if (input.connector?.trim()) {
+    headers['X-Kortix-Attachment-Connector'] = encodeURIComponent(input.connector.trim());
   }
 
   const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
@@ -410,10 +479,55 @@ interface ConnectionFields {
   status: 'active' | 'revoked' | 'error';
   is_default: boolean;
   metadata: Record<string, unknown>;
+  /**
+   * Who the account was authorized as: an email, a login, or a display name,
+   * read from the provider when the authorization finalized. `null` (or
+   * absent, on older servers) when the provider exposes none or no account
+   * is authorized yet.
+   */
+  connected_as?: string | null;
+  /**
+   * Who may use a shared (`owner_type: 'project'`) account: the grants that
+   * narrow it. Empty, or holding a `project` grant, means everyone in the
+   * project — `connectionSharedWithEveryone` reads it. Absent on every other
+   * owner type, and on older servers.
+   */
+  shared_with?: ConnectionShare[];
+  /**
+   * `false` = the caller is outside this shared account's audience and sees it
+   * only because they manage the project's connections; it cannot be bound to
+   * a session. Absent on older servers, which means usable.
+   */
+  usable?: boolean;
+}
+
+/** One grant naming who may use a shared account. Grant or revoke through
+ *  `createAssignment` / `revokeAssignment` (`object: { type: 'connection' }`). */
+export interface ConnectionShare {
+  /** The assignment id; `revokeAssignment` takes it. */
+  grant_id: string;
+  /** `project` = everyone with access to the project. */
+  principal_type: 'member' | 'group' | 'project';
+  principal_id: string;
+  /** A member's email, a group's name, or the project's name. */
+  label: string;
+  expires_at: string | null;
 }
 
 export interface Connection extends ConnectionFields {
   connection_id: string;
+}
+
+/**
+ * Is this a shared account everyone in the project may use? True when nobody
+ * narrowed it (no grant — including an older server that sends no
+ * `shared_with`) or a grant names the whole project. False for a narrowed
+ * shared account and for every private one.
+ */
+export function connectionSharedWithEveryone(connection: Connection): boolean {
+  if (connection.owner_type !== 'project') return false;
+  const shares = connection.shared_with ?? [];
+  return shares.length === 0 || shares.some((share) => share.principal_type === 'project');
 }
 
 export interface ReconcileConnectionInput {
@@ -822,6 +936,45 @@ export async function setDefaultConnection(projectId: string, connectionId: stri
   );
 }
 
+/**
+ * Rename a connection. Only the label changes: the authorized account, the
+ * owner, the default flag, and the provider state stay as they are, so no
+ * re-authorization is needed. The server refuses `me`, `project`, UUID-shaped
+ * labels (400), and a label another account of the same owner already has,
+ * compared case-insensitively (409).
+ */
+export async function renameConnection(projectId: string, connectionId: string, label: string) {
+  return unwrap(
+    await backendApi.put<Connection>(`/projects/${projectId}/connections/${connectionId}/label`, {
+      label,
+    }),
+  );
+}
+
+/** Who may use a shared account: a person, a group, or everyone in the project. */
+export interface ConnectionSharePrincipal {
+  principal_type: 'user' | 'group' | 'project';
+  principal_id: string;
+}
+
+/**
+ * Share the caller's OWN private account: it becomes a shared account only
+ * `principals` may use (an empty list: everyone in the project). Needs the
+ * right to manage the project's connections. The account is never open to the
+ * whole project in between: the server writes the grants first.
+ */
+export async function shareConnection(
+  projectId: string,
+  connectionId: string,
+  principals: ConnectionSharePrincipal[] = [],
+) {
+  return unwrap(
+    await backendApi.post<Connection>(`/projects/${projectId}/connections/${connectionId}/share`, {
+      principals,
+    }),
+  );
+}
+
 /** Managed connector providers that can issue a hosted Connect Link. */
 export type ConnectorConnectProvider = 'composio' | 'pipedream';
 
@@ -895,13 +1048,26 @@ export async function pipedreamFinalizeConnection(
   );
 }
 
-export async function listConnectors(projectId: string) {
+export interface ListConnectorsOptions {
+  /**
+   * The full per-action JSON Schema on every connector's actions. The API
+   * includes it unless this is `false` (older CLIs read it and cannot be
+   * updated in place). The dashboard passes `false`: the schemas were 1.6 MB
+   * of the prod response and no list renders them.
+   */
+  includeSchemas?: boolean;
+}
+
+export async function listConnectors(projectId: string, options?: ListConnectorsOptions) {
+  const query =
+    options?.includeSchemas === undefined ? '' : `?include_schemas=${options.includeSchemas}`;
   return unwrap(
     // Background read fired at workspace mount (project-home tiles, sidebar
     // setup checklist) — never global-toast; callers render their own state.
-    await backendApi.get<ConnectorsResponse>(`/connectors/projects/${projectId}/connectors`, {
-      showErrors: false,
-    }),
+    await backendApi.get<ConnectorsResponse>(
+      `/connectors/projects/${projectId}/connectors${query}`,
+      { showErrors: false },
+    ),
   );
 }
 

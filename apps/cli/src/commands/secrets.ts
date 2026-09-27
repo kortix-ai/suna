@@ -52,8 +52,12 @@ Subcommands:
                                     differs) + manifest [env] spec. --json.
                                     JSON mirrors API fields: name, configured,
                                     available, effective_source, strategy,
-                                    consumer, and delivery_status. Legacy key
-                                    and has_value aliases remain available.
+                                    consumer, delivery_status, and granted.
+                                    Legacy key and has_value aliases remain
+                                    available. In an agent session only that
+                                    agent's granted secrets are listed; a
+                                    declared key outside the grant shows
+                                    \`not granted\`, not \`missing\`.
   set KEY=VALUE [KEY=VALUE …]       Upsert one or more secrets. Identifier
                                     defaults to KEY.
                                     Use \`KEY=-\` to read VALUE from stdin.
@@ -64,12 +68,16 @@ Subcommands:
                                     chat. Surface the URL (web: fill-in
                                     modal, Slack: tappable link). Reuse a live
                                     link across runs — do not re-mint/re-post
-                                    while one is unexpired.
+                                    while one is unexpired. Warns when this
+                                    session's agent will not receive a name.
                                     --scope runtime|connector  --expires <min>
-  sync                              Force a re-push of all project secrets to
-                                    this session's sandbox. Use after setting
-                                    a secret via the intake link or after a
-                                    secret was updated mid-session.
+  sync                              Re-push secrets into sandboxes. In an agent
+                                    session: pulls THIS session's secrets and
+                                    grant now (the per-prompt sync, on
+                                    demand). As a person: every active
+                                    sandbox of the project. Use after a secret
+                                    is set via the intake link, updated, or
+                                    newly granted to the agent mid-session.
   delivery IDENTIFIER EXPOSURE      Set environment (default), enforced, or
                                     none. \`enforced\` is EXPERIMENTAL and needs
                                     the project's \`secrets_egress\` feature flag
@@ -203,6 +211,9 @@ type SecretRow = {
   consumer: ProjectSecret['consumer'];
   deliveryStatus: 'available' | 'unavailable' | 'disabled';
   requiresRotation: boolean;
+  /** False for a declared key the calling agent's grant excludes: a value may
+   *  be set, but this session never receives it and the API does not list it. */
+  granted: boolean;
 };
 
 /**
@@ -290,10 +301,20 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       requiresRotation: secret.requires_rotation ?? false,
     } as const;
   };
+  // Inside an agent session the API lists only the identifiers that agent is
+  // granted. A declared key it omits is then NOT known to be missing — it may be
+  // set and simply withheld from this agent. Reporting it as "missing" is what
+  // sent humans to re-enter values that were already saved.
+  const agentScope = resp.agent_scope ?? null;
+  const scopedGrant =
+    agentScope && agentScope.secrets !== 'all'
+      ? new Set(agentScope.secrets.map((identifier) => identifier.toUpperCase()))
+      : null;
+  const isGranted = (identifier: string) => !scopedGrant || scopedGrant.has(identifier.toUpperCase());
   const availableKeys = new Set(
     resp.items.filter((secret) => itemState(secret).available).map((secret) => secret.name),
   );
-  const requiredMissing = required.filter((key) => !availableKeys.has(key));
+  const requiredMissing = required.filter((key) => !availableKeys.has(key) && isGranted(key));
 
   const declaredOrder: string[] = [];
   const seenDeclared = new Set<string>();
@@ -320,18 +341,25 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         consumer: 'sandbox',
         deliveryStatus: 'available',
         requiresRotation: false,
+        granted: isGranted(key),
       });
     } else {
       for (const s of backing) {
         const state = itemState(s);
-        allRows.push({ identifier: s.identifier, key: s.name, spec, ...state });
+        allRows.push({ identifier: s.identifier, key: s.name, spec, ...state, granted: true });
       }
     }
   }
   for (const s of resp.items) {
     if (!seenDeclared.has(s.name)) {
       const state = itemState(s);
-      allRows.push({ identifier: s.identifier, key: s.name, spec: 'undeclared', ...state });
+      allRows.push({
+        identifier: s.identifier,
+        key: s.name,
+        spec: 'undeclared',
+        ...state,
+        granted: true,
+      });
     }
   }
 
@@ -347,6 +375,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         consumer: r.consumer,
         delivery_status: r.deliveryStatus,
         requires_rotation: r.requiresRotation,
+        granted: r.granted,
         // Backward-compatible aliases for older CLI JSON consumers.
         key: r.key,
         has_value: r.available,
@@ -357,6 +386,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         required,
         optional,
       },
+      agent_scope: agentScope,
     });
     return 0;
   }
@@ -387,8 +417,11 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     ...rendered.map((entry) => visibleWidth(entry.delivery)),
     'DELIVERY'.length,
   );
+  const statusOf = (r: SecretRow) =>
+    !r.granted ? 'not granted' : r.available ? (r.effectiveSource === 'mine' ? 'personal' : 'set') : 'missing';
+  const statusW = Math.max(...allRows.map((r) => statusOf(r).length), 'STATUS'.length, 'personal'.length);
   process.stdout.write(
-    `  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    ${pad('DELIVERY', deliveryW)}  SPEC${C.reset}\n`,
+    `  ${C.dim}${pad('IDENTIFIER', nameW)}   ${pad('STATUS', statusW)}  ${pad('DELIVERY', deliveryW)}  SPEC${C.reset}\n`,
   );
   for (const { row: r, delivery } of rendered) {
     // A stored value is not a delivered one. Green-for-configured alone let a
@@ -399,11 +432,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       : r.deliveryStatus === 'unavailable'
         ? `${C.red}● ${C.reset}`
         : `${C.green}● ${C.reset}`;
-    const statusTxt = r.available
-      ? r.effectiveSource === 'mine'
-        ? 'personal'
-        : 'set     '
-      : 'missing ';
+    const statusTxt = pad(statusOf(r), statusW);
     const specColor =
       r.spec === 'required' && !r.available ? C.yellow : r.spec === 'undeclared' ? C.faded : C.dim;
     // Show the injected env key only when it differs from the identifier —
@@ -432,6 +461,24 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
           undeliverable.length === 1 ? '' : 's'
         } cannot be delivered — the chosen path is not available on this project.`,
       )}\n`,
+    );
+  }
+  const notGranted = allRows.filter((row) => !row.granted);
+  if (agentScope && notGranted.length > 0) {
+    const names = notGranted.map((row) => row.key).join(', ');
+    process.stdout.write(
+      `  ${status.warn(
+        `${notGranted.length} secret${notGranted.length === 1 ? ' is' : 's are'} not granted to agent ${agentScope.agent} (${names}) — ` +
+          'a value may be set, but this session never receives it.',
+      )}\n` +
+        `  ${C.dim}Fix (a person with project access; an agent cannot widen its own grant): ` +
+        `Customize → Agents → ${agentScope.agent} → Secrets and enable ${notGranted.length === 1 ? 'it' : 'them'}. ` +
+        `Then run \`kortix secrets sync\` to pull ${notGranted.length === 1 ? 'it' : 'them'} into this session.${C.reset}\n`,
+    );
+  }
+  if (scopedGrant && agentScope) {
+    process.stdout.write(
+      `  ${C.dim}Listed: only the secrets agent ${agentScope.agent} is granted. Others are hidden, not missing.${C.reset}\n`,
     );
   }
   const availableCount = allRows.filter((row) => row.available).length;
@@ -992,7 +1039,15 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  let resp: { url: string; names: string[]; scope: string; expires_at: string };
+  let resp: {
+    url: string;
+    names: string[];
+    scope: string;
+    expires_at: string;
+    agent?: string;
+    withheld?: Array<{ name: string; reason: 'agent_grant' | 'session_allowlist' }>;
+    withheld_fix?: string;
+  };
   try {
     resp = await ctx.client.post(`/projects/${ctx.projectId}/secret-requests`, {
       names,
@@ -1015,6 +1070,15 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
       `  ${C.dim}Valid for ${describeLinkValidity(resp.expires_at, Date.now())} (until ${resp.expires_at}).${C.reset}\n` +
       `  ${C.dim}Reuse this link until it expires — do not mint a new one while this one is live.${C.reset}\n\n`,
   );
+  // The value will be saved, and this session still will not see it. Say so
+  // now, so the human does the one extra step in the same visit.
+  if (resp.withheld && resp.withheld.length > 0) {
+    process.stdout.write(
+      `  ${status.warn(`This session will not receive ${resp.withheld.map((w) => w.name).join(', ')} after it is saved.`)}\n` +
+        (resp.withheld_fix ? `  ${C.dim}${resp.withheld_fix}${C.reset}\n` : '') +
+        '\n',
+    );
+  }
   return 0;
 }
 

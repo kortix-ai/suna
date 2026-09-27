@@ -65,6 +65,7 @@ export async function createAuthUser(
     requireEnvValue("SUPABASE_SERVICE_ROLE_KEY", ...envFiles(options)),
     "SUPABASE_SERVICE_ROLE_KEY",
   );
+  let timedOut = false;
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     const response = await fetch(`${options.supabaseUrl}/auth/v1/admin/users`, {
       method: "POST",
@@ -76,9 +77,21 @@ export async function createAuthUser(
       }),
     });
     if (response.status === 504 && attempt < 6) {
+      timedOut = true;
       await response.text();
       await new Promise((resolve) => setTimeout(resolve, 2_000));
       continue;
+    }
+    // A 504 is the proxy giving up, not GoTrue: the timed-out create can
+    // still commit. The resend then meets that user (422 `email_exists`, or
+    // 500 `23505` while the first insert is in flight). The email is unique
+    // to this journey, so that user is ours: resolve it by signing in.
+    if (timedOut && (response.status === 422 || response.status === 500)) {
+      const text = await response.text();
+      if (/email_exists|23505/.test(text)) return (await signIn(email, options)).user;
+      throw new Error(
+        `Expected 200 from ${response.url}, got ${response.status}: ${text}`,
+      );
     }
     const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
     return body.user ?? body;

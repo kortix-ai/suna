@@ -40,7 +40,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * member is scoped to, same direct-or-via-group shape), plus a top-level
  * `group_access` array — one entry per group with SOME access to this
  * project. Field names are copied byte-for-byte from the live handler
- * (`apps/api/src/projects/routes/r6.ts`). The SDK's `ProjectAccessMember` /
+ * (`apps/api/src/projects/routes/project-access.ts`). The SDK's `ProjectAccessMember` /
  * `ProjectAccessResponse` types do not carry these fields yet, so this file
  * declares its own extension types below rather than editing the SDK's
  * published types out from under a separate change.
@@ -49,7 +49,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * `group_access` entries carry no `expires_at` for the group's own
  * `built_in_role` grant (`project_group_grants.expires_at` exists in the
  * database and on `attachGroupToProject`/`updateProjectGroupGrant`'s params,
- * but `r6.ts`'s `groupAccessById` builder does not select it onto the
+ * but `project-access.ts`'s `groupAccessById` builder does not select it onto the
  * response). A group row therefore shows an expiry ONLY when its custom-role
  * policy carries one, rather than fabricating "never" for a value it cannot
  * see.
@@ -69,9 +69,10 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
+import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -111,14 +112,22 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
+  agentIdentitiesQueryKey,
+  agentRolesQueryKey,
+  fetchProjectAgentAssignments,
+  projectAgentAssignmentsQueryKey,
+} from '@/features/workspace/shared/access/agent-principals';
+import {
   approveProjectAccessRequest,
   detachGroupFromProject,
   getProject,
+  listAgentIdentities,
   listPendingProjectInvites,
   listProjectAccess,
   listProjectAccessRequests,
   listProjectResourceGrants,
   listProjectsForAccount,
+  listRoles,
   rejectProjectAccessRequest,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
@@ -172,7 +181,8 @@ interface ResourceGrantEntry {
   resource_type: 'agent' | 'skill';
   resource_id: string;
   expires_at: string | null;
-  source?: 'direct' | 'group';
+  /** `project` = granted to everyone in the project, not to this row. */
+  source?: 'direct' | 'group' | 'project';
   group_id?: string | null;
   group_name?: string | null;
 }
@@ -226,15 +236,21 @@ function agentGrantsOf(grants: ResourceGrantEntry[] | undefined): ResourceGrantE
  * instead of agents renders "Agents: 2 of 3" for a person who reaches one.
  * Direct rows win, so `directAgentIds` below still filters correctly.
  */
-function distinctAgentGrants(grants: ResourceGrantEntry[]): ResourceGrantEntry[] {
+export function distinctAgentGrants(grants: ResourceGrantEntry[]): ResourceGrantEntry[] {
   const byResource = new Map<string, ResourceGrantEntry>();
   for (const grant of grants) {
     const existing = byResource.get(grant.resource_id);
-    if (!existing || (existing.source === 'group' && grant.source !== 'group')) {
+    if (!existing || (!isDirectGrant(existing) && isDirectGrant(grant))) {
       byResource.set(grant.resource_id, grant);
     }
   }
   return [...byResource.values()];
+}
+
+/** A grant that names this row itself — not one inherited through a group or
+ *  given to everyone in the project. Only these are this row's to edit. */
+export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolean {
+  return grant.source !== 'group' && grant.source !== 'project';
 }
 
 /** "via account admin" / "via Engineering +1 more" / "no access". `null` for
@@ -571,6 +587,42 @@ function ProjectAccessPanel({
     retry: false,
   });
   const projectAgentCount = projectResourcesQuery.data?.resources.agents.length;
+
+  // `ProjectAgentAccessList` (the "Agents that hold a role here" block below)
+  // mounts only once `accessQuery` settles (`settledRows`) AND `canManageRoles`
+  // is true — a render gate that is correct (it must not flash the block before
+  // its own permission verdict is known) but happens to sit well behind
+  // `accessQuery`. Its three reads (agent identities, the account's role list,
+  // this project's + the account's service-account assignments) have no data
+  // dependency on `accessQuery` at all: they only need `accountId`/`projectId`,
+  // both already props here. Firing them now — the instant `canManageRoles`
+  // is known, in parallel with `accessQuery` instead of after it — means
+  // `ProjectAgentAccessList` finds warm cache the moment it mounts instead of
+  // starting three more requests from zero. Same query keys and staleTime as
+  // `useAgentIdentities` / `agentRolesQueryKey` / `fetchProjectAgentAssignments`
+  // (`agent-principals.ts`), so this is a pure accelerator, never a second
+  // fetch under a different slot. Gated on `canManageRoles` (already resolved
+  // by the account hub's one batched `:effective:batch` probe) so a non-admin
+  // viewer — who will never see this block — never pays for the 403 these
+  // routes would otherwise answer.
+  useEffect(() => {
+    if (!canManageRoles || !accountId || !projectId) return;
+    void queryClient.prefetchQuery({
+      queryKey: agentIdentitiesQueryKey(accountId),
+      queryFn: () => listAgentIdentities(accountId),
+      staleTime: 60_000,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: agentRolesQueryKey(accountId),
+      queryFn: () => listRoles(accountId),
+      staleTime: 30_000,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: projectAgentAssignmentsQueryKey(accountId, projectId),
+      queryFn: () => fetchProjectAgentAssignments(accountId, projectId),
+      staleTime: 30_000,
+    });
+  }, [canManageRoles, accountId, projectId, queryClient]);
 
   function invalidateAccess() {
     // Every caller of this function has just changed who can do what on this
@@ -973,6 +1025,16 @@ function ProjectAccessPanel({
         </AccessList>
       )}
 
+      {/* ── Agents that hold a role here (their ceiling) ─────────────────── */}
+      {canManageRoles && settledRows ? (
+        <ProjectAgentAccessList
+          accountId={accountId}
+          projectId={projectId}
+          projectName={projectName}
+          rbacEnabled={rbacEnabled}
+        />
+      ) : null}
+
       {/* ── The one grant / edit modal ────────────────────────────────── */}
       <AccessDialog
         open={grantOpen}
@@ -1119,7 +1181,7 @@ function MemberAccessRow({
     : roleValueLabel('project', displayRole, undefined, tI18nComplete);
 
   const agentGrants = distinctAgentGrants(agentGrantsOf(member.resource_grants));
-  const directAgentIds = agentGrants.filter((g) => g.source !== 'group').map((g) => g.resource_id);
+  const directAgentIds = agentGrants.filter(isDirectGrant).map((g) => g.resource_id);
   const expiresAt = policy ? policy.expires_at : (member.expires_at ?? null);
   const via = accessVia(member);
   const inheritedFrom = (member.group_sources ?? []).map((g) => g.group_name);

@@ -1,5 +1,5 @@
 import {
-  CATALOG,
+  CATALOG_PROVIDER_ENV,
   type ProviderAuthRequirement,
   autoSeedDefaultModel,
   bedrockInferenceProfileRank,
@@ -22,11 +22,15 @@ export type ProviderListResponse = SdkProviderListResponse;
  * `LLM_PROVIDERS` (built from the same catalog + the same override table),
  * so connection inference is identical without depending on the web-only
  * provider-modal catalog module.
+ *
+ * Reads `CATALOG_PROVIDER_ENV` (the catalog's `{ id, env }` projection), not
+ * `CATALOG`: this module is in every browser route's graph, and `CATALOG` is
+ * the full ~7.6 MB models.dev snapshot.
  */
 export const LLM_PROVIDER_CREDENTIALS: Array<{
   id: string;
   authRequirement: ProviderAuthRequirement;
-}> = CATALOG.providers.map((provider) => ({
+}> = CATALOG_PROVIDER_ENV.map((provider) => ({
   id: provider.id,
   authRequirement: providerAuthRequirement(provider),
 }));

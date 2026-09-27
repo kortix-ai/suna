@@ -7,7 +7,7 @@ function spec(name: string, enabled = true): AgentSpec {
     path: `kortix.yaml#agents.${name}`,
     enabled,
     connectors: 'all',
-    kortixCli: 'all',
+    permissions: 'all',
     env: 'all',
     file: null,
     model: null,

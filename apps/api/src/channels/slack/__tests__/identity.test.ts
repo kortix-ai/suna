@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { PROJECT_ACTIONS } from '../../../iam/actions';
 
-// resolveSlackActor is the authoritative security gate: it must return a userId
-// ONLY when the Slack user is linked, in the project's account, and allowed to
-// start work in that project.
+// Where the Slack identity prompts land. The actor check itself is tested at
+// channels/core/identity.test.ts.
 
 let dbResults: unknown[][] = [];
 let authorizeAllowed = true;
@@ -41,44 +40,12 @@ mock.module('../../../iam', () => ({
   unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
 }));
 
-const { postIdentityPrompt, resolveSlackActor } = await import('../identity');
+const { postIdentityPrompt } = await import('../identity');
 
 beforeEach(() => {
   dbResults = [];
   authorizeAllowed = true;
   ephemerals = [];
-});
-
-describe('resolveSlackActor', () => {
-  test('no Slack user → unlinked, without touching the db', async () => {
-    const r = await resolveSlackActor('T1', '', 'acct1', 'proj1');
-    expect(r).toEqual({ reason: 'unlinked' });
-  });
-
-  test('no mapping row → unlinked', async () => {
-    dbResults = [[]]; // identity lookup misses
-    const r = await resolveSlackActor('T1', 'U1', 'acct1', 'proj1');
-    expect(r).toEqual({ reason: 'unlinked' });
-  });
-
-  test('linked but NOT a member of the account → not_member', async () => {
-    dbResults = [[{ userId: 'u1' }], []]; // identity hit, membership miss
-    const r = await resolveSlackActor('T1', 'U1', 'acct1', 'proj1');
-    expect(r).toEqual({ reason: 'not_member' });
-  });
-
-  test('linked and org member but missing project write → not_member', async () => {
-    authorizeAllowed = false;
-    dbResults = [[{ userId: 'u1' }], [{ userId: 'u1' }]]; // identity hit, membership hit
-    const r = await resolveSlackActor('T1', 'U1', 'acct1', 'proj1');
-    expect(r).toEqual({ reason: 'not_member' });
-  });
-
-  test('linked and project-write-capable → returns the Kortix userId', async () => {
-    dbResults = [[{ userId: 'u1' }], [{ userId: 'u1' }]]; // identity hit, membership hit
-    const r = await resolveSlackActor('T1', 'U1', 'acct1', 'proj1');
-    expect(r).toEqual({ userId: 'u1' });
-  });
 });
 
 describe('postIdentityPrompt', () => {

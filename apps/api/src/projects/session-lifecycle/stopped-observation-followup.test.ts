@@ -1,24 +1,21 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
-import {
-  STOPPED_OBSERVATION_FOLLOW_UP_MS,
-  resetStoppedObservationFollowUps,
-  runStoppedObservationFollowUp,
-} from './stopped-observation-followup';
+import { describe, expect, test } from 'bun:test';
+import { MIDTURN_STOP_CONFIRMATION_MS } from '../reaping/sandbox-state-sync';
+import { runStoppedObservationFollowUp } from './stopped-observation-followup';
 
 const noSleep = async () => {};
 
-beforeEach(() => resetStoppedObservationFollowUps());
+// Every case uses its own sandbox id: the in-flight set is keyed by it and a
+// follow-up releases its key when it settles.
 
 describe('runStoppedObservationFollowUp', () => {
   test('THE INCIDENT: a silently-failed resume reconciles the row within the bound', async () => {
-    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a1cc1kynlg46k8:
-    // `/start` answered 202, the E2B resume never produced a running box, and
-    // the rows read `running` for 5+ minutes while the provider reported
-    // "sandbox … is not running (status: stopped)".
+    // 2026-08-26, a prod session on E2B: `/start` answered 202, the resume
+    // never produced a running box, and the rows read `running` for 5+ minutes
+    // while the provider reported "sandbox … is not running (status: stopped)".
     let delayed = -1;
     let reconciled = 0;
     const result = await runStoppedObservationFollowUp({
-      externalId: 'inqwpv4a1cc1kynlg46k8',
+      externalId: 'ext-1',
       sandboxId: 'sbx-1',
       getStatus: async () => 'stopped',
       reconcile: async () => {
@@ -31,9 +28,9 @@ describe('runStoppedObservationFollowUp', () => {
     });
     expect(result).toBe('reconciled');
     expect(reconciled).toBe(1);
-    // One confirmation window (60s) plus a second, so the window has provably
-    // closed by the time decideStoppedObservation is asked again.
-    expect(delayed).toBe(STOPPED_OBSERVATION_FOLLOW_UP_MS);
+    // The re-read waits out the confirmation window, or the reconcile it feeds
+    // is still inside the window and cannot park. It stays bounded.
+    expect(delayed).toBeGreaterThan(MIDTURN_STOP_CONFIRMATION_MS);
     expect(delayed).toBeLessThanOrEqual(61_000);
   });
 

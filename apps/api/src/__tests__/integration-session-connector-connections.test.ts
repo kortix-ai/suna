@@ -466,7 +466,7 @@ describe('session connector isolation', () => {
       projectId: PROJECT_A,
       sessionId,
       subject: { userId, groupIds: [] },
-      agentGrant: { agent: 'veyris', connectors: ['veyris'] as string[], kortixCli: [] },
+      agentGrant: { agent: 'veyris', connectors: ['veyris'] as string[], permissions: [] },
     });
     const depsA = makeDbGatewayDeps(principal(SESSION_A, USER));
     const depsB = makeDbGatewayDeps(principal(SESSION_B, OTHER_USER));
@@ -492,7 +492,7 @@ describe('session connector isolation', () => {
       projectId: PROJECT_A,
       sessionId: SESSION_DEFAULT,
       subject: { userId: USER, groupIds: [] },
-      agentGrant: { agent: 'secret-agent', connectors: ['secret_backed'], kortixCli: [] },
+      agentGrant: { agent: 'secret-agent', connectors: ['secret_backed'], permissions: [] },
     });
     const connector = await deps.loadConnectorBySlug(PROJECT_A, 'secret_backed');
     if (!connector) throw new Error('Expected secret-backed connector');
@@ -729,7 +729,7 @@ describe('session connector isolation', () => {
       projectId: PROJECT_A,
       sessionId: SESSION_DEFAULT,
       subject: { userId: USER, groupIds: [] },
-      agentGrant: { agent: 'veyris', connectors: ['kortix_email'], kortixCli: [] },
+      agentGrant: { agent: 'veyris', connectors: ['kortix_email'], permissions: [] },
     });
     expect(await deps.loadEmailSessionContext?.(PROJECT_A, SESSION_DEFAULT)).toBeNull();
   });
@@ -1423,7 +1423,7 @@ describe('account_required — several reachable accounts, none named, none pinn
       projectId: PROJECT_A,
       sessionId: null,
       subject: { userId: USER, groupIds: [] },
-      agentGrant: { agent: 'veyris', connectors: ['ambiguous_multi'], kortixCli: [] },
+      agentGrant: { agent: 'veyris', connectors: ['ambiguous_multi'], permissions: [] },
     });
     expect(await deps.loadConnectorBySlug(PROJECT_A, 'ambiguous_multi')).toBeNull();
     expect(await deps.explainMissingConnector?.(PROJECT_A, 'ambiguous_multi')).toBe('account_required');

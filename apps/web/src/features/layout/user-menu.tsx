@@ -1,6 +1,5 @@
 'use client';
 
-import { ReferralModal } from '@/components/referrals/referral-modal';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -31,7 +30,6 @@ import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { hubTarget } from '@/stores/account-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useReferralDialog } from '@/stores/referral-dialog';
 import {
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
@@ -66,7 +64,6 @@ export function UserMenu({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const sidebar = React.useContext(SidebarContext);
   const { selectedAccountId } = useCurrentAccountStore();
-  const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -287,7 +284,6 @@ export function UserMenu({
         dropdown
       )}
 
-      <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
       {logoutDialog}
     </>
   );

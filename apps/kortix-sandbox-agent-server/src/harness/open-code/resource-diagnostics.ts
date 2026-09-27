@@ -5,7 +5,15 @@ import {
   type ResourceSnapshot,
 } from '../../resources'
 
-/** Pids whose /proc/<pid>/cmdline mentions `opencode`. Linux only; [] elsewhere. */
+/** Match executable and subcommand arguments, never arbitrary test-file paths. */
+export function isOpenCodeServeCommand(cmdline: string): boolean {
+  const args = cmdline.split('\0').filter(Boolean)
+  const executable = args[0]?.split('/').pop()
+  return (executable === 'opencode' || executable === 'opencode.exe' ||
+    executable === 'opencode-kortix' || executable === 'opencode.current') && args[1] === 'serve'
+}
+
+/** Pids running `opencode serve`. Linux only; [] elsewhere. */
 export async function findOpencodePids(): Promise<number[]> {
   let entries: string[]
   try {
@@ -14,14 +22,13 @@ export async function findOpencodePids(): Promise<number[]> {
     return []
   }
   const pids: number[] = []
-  await Promise.all(
-    entries
-      .filter((e) => /^\d+$/.test(e))
-      .map(async (e) => {
-        const cmd = await readFile(`/proc/${e}/cmdline`, 'utf8').catch(() => null)
-        if (cmd && /opencode/.test(cmd) && /\bserve\b/.test(cmd.replace(/\0/g, ' '))) pids.push(Number(e))
-      }),
-  )
+  const numericEntries = entries.filter((entry) => /^\d+$/.test(entry))
+  for (let offset = 0; offset < numericEntries.length; offset += 32) {
+    await Promise.all(numericEntries.slice(offset, offset + 32).map(async (e) => {
+      const cmd = await readFile(`/proc/${e}/cmdline`, 'utf8').catch(() => null)
+      if (cmd && isOpenCodeServeCommand(cmd)) pids.push(Number(e))
+    }))
+  }
   return pids.sort((a, b) => a - b)
 }
 
@@ -53,9 +60,19 @@ export function evaluateOpenCodePressure(
   )
 }
 
+/** RAM-backed files at or above this share of memory are named in the guard's reason. */
+const NAMED_SHMEM_MIN_MB = 256
+
 export function formatOpenCodeMemoryGuardReason(snapshot: ResourceSnapshot, pct: number): string {
-  return `sandbox memory at ${pct}% (opencode ${snapshot.runtime?.rssMb ?? '?'} MB RSS of ` +
-    `${snapshot.cgroup.maxMb ?? snapshot.memory.totalMb ?? '?'} MB): turn stopped before the kernel would kill opencode`
+  // A RAM-backed /tmp was half of a 4 GiB box when the guard fired on prod
+  // (2026-09-24), and the message named only OpenCode. Say what else holds it.
+  const shmem = snapshot.memory.shmemMb ?? 0
+  const files = shmem >= NAMED_SHMEM_MIN_MB ? `, ${shmem} MB in RAM-backed files such as /tmp,` : ''
+  const largestOther = snapshot.topProcesses?.find((process) =>
+    process.pid !== snapshot.runtime?.pid && process.pid !== snapshot.daemon?.pid && process.rssMb >= 256)
+  const other = largestOther ? `, largest other process ${largestOther.name} ${largestOther.rssMb} MB RSS` : ''
+  return `sandbox memory at ${pct}% (opencode ${snapshot.runtime?.rssMb ?? '?'} MB RSS${other}${files} of ` +
+    `${snapshot.cgroup.maxMb ?? snapshot.memory.totalMb ?? '?'} MB): turn stopped to prevent a kernel OOM kill`
 }
 
 export function formatOpenCodeResourceState(state: string | null): Record<string, unknown> {

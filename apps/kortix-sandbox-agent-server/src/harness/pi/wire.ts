@@ -188,11 +188,14 @@ export class PiWireAdapter {
       case 'tool_execution_update': {
         const t = this.toolIndex.get(event.toolCallId)
         if (!t || t.endedAt !== undefined) return []
+        // Partial `details` ride along as metadata: a task part names its child session while it runs.
+        const details = (event.partialResult as { details?: unknown } | null)?.details
+        const partial = details && typeof details === 'object' && !Array.isArray(details) ? (details as Record<string, unknown>) : {}
         return [
           this.toolPart(t.partId, t.name, {
             status: 'running',
             input: t.input ?? {},
-            metadata: { output: toolOutputText(event.partialResult) },
+            metadata: { ...partial, output: toolOutputText(event.partialResult) },
             time: { start: t.startedAt },
           }),
         ]

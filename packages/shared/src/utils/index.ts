@@ -9,3 +9,5 @@ export * from "./credit-formatter";
 export * from "./string";
 export * from "./format-relative";
 export * from "./chalk-colors";
+export * from "./configure-prompts";
+export * from "./ambiguous-write";

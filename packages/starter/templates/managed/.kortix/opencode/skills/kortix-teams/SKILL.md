@@ -111,16 +111,16 @@ teams send "It was api@a3f1 — the new auth middleware drops the trace header o
 
 - **Mark phase transitions, not every shell call.** ~3–6 per turn is right for most tasks; one per `bash` is noise.
 - **Set `--detail` and `--output` once per step.** They're truncated at 500 chars upstream; aim for one tight sentence.
-- **Don't `teams step` after `teams send`.** The card is closed once the answer ships; further steps drop silently.
+- **Don't `teams step` after `teams send`.** The card is closed once the answer ships; a later step from the same run is dropped.
 </live-stream>
 
 <keeping-it-lively>
-Unlike Slack's streaming (which hard-fails after ~5 minutes of silence), the Teams live card is a posted message the server **edits in place** — it does **not** expire if you go quiet, so a long, silent step won't paint a false "error". That's the good news.
+Unlike Slack's streaming (which hard-fails after ~5 minutes of silence), the Teams live card is a posted message the server **edits in place**. It stays open as long as your run is alive, so a long, silent step (a build, a test suite) won't paint a false "error". That's the good news.
 
 The flip side: Teams **rate-limits** how fast a message can be edited, so the server coalesces rapid updates. Two practical consequences:
 
 - **Don't spam steps.** Firing ten `teams step`s in two seconds is pointless — intermediate edits get dropped by the throttle and only the latest survives. Space them at real phase boundaries.
-- **Still don't go dark for ages.** There's no timeout to trip, but a wall of nothing for ten minutes is bad UX. Post a step before anything slow (`git clone`, `pnpm install`, a test suite, a build, deep research, a big LLM call) so the conversation always shows fresh, honest progress.
+- **Still don't go dark for ages.** A live run has no timeout to trip, but a wall of nothing for ten minutes is bad UX. Post a step before anything slow (`git clone`, `pnpm install`, a test suite, a build, deep research, a big LLM call) so the conversation always shows fresh, honest progress.
 
 The rule of thumb: **one checkpoint per meaningful phase** — enough that a teammate watching always knows what's happening, not so many that you're fighting the throttle.
 </keeping-it-lively>
@@ -134,21 +134,55 @@ teams send "Reverted api@a3f1 — the new auth middleware dropped the trace head
 
 This finalizes the live card: the plan flips to **Task complete**, your answer renders below it, and a link back to the Kortix session is appended automatically. The server wraps your text into the Adaptive Card — you don't build the card yourself; just write a clear, well-structured message.
 
-- **One `teams send` per turn.** It closes the card; a second call drops silently. If you have multiple things to say, fold them into one message.
-- **Send the answer LAST.** Any `teams step` after it is ignored.
+- **One `teams send` per turn.** It closes the card; a second call from the same run is dropped. If you have multiple things to say, fold them into one message.
+- **Send the answer LAST.** A `teams step` after it is dropped.
 </final-answer>
 
 <asking-the-user>
-**Need to ask the user something? Post the question with `teams send`, then END your turn.**
+**Need to ask the user something with choices? Call the built-in `question` tool, then END your turn.**
 
-Teams questions are **async**: ask, stop, and resume when they reply — their reply arrives as a fresh turn with full context. Don't sit waiting for an answer inside a turn.
+It renders a real card, the same shape as asking in the Kortix app:
 
-### `teams ask --form-file <path>` — ask with real inputs
+- **one question, up to 6 options, one answer** → a button per option, one tap;
+- **several questions, a multi-select, or more than 6 options** → a form: each
+  question with its options listed, a box for an answer of their own, and one
+  Submit;
+- **a question with no options** → a text box.
 
-When you need structured answers, post a **form** instead of prose. Teams
-renders it as a card with actual text boxes, dropdowns, toggles and one Submit
-button — the same shape as asking in the Kortix app. Write a small JSON spec;
-the server builds the card.
+Put the detail in each option's `description` — the card shows it. The user
+can always reply in the chat instead of using the card, so a closed list never
+traps them. The tool returns **at once** with a note telling you to end your
+turn — it does not block. The user's answer arrives as your NEXT turn, with
+full context. Don't sit waiting for it inside a turn.
+
+A numbered list of choices written into `teams send` is the wrong shape: the
+user cannot tap it. Use `teams send` for a question only when it is genuinely
+open-ended prose with nothing to pick.
+
+```jsonc
+{
+  "questions": [
+    {
+      "question": "Which environment should I deploy to?",
+      "header": "Environment",          // shown above the question (max 30 chars)
+      "options": [
+        { "label": "Production", "description": "Live traffic; needs a rollback plan" },
+        { "label": "Staging",    "description": "Mirrors prod data; safe to break" }
+      ]
+      // "multiple": true lets the user pick several
+    }
+  ]
+}
+```
+
+The answer comes back labelled with its question, one line per question.
+
+### `teams ask --form-file <path>` — a form the `question` tool cannot express
+
+When you need an input the `question` tool has no shape for — a date, a time,
+a number, a toggle — write the form yourself. Teams renders it as a card with
+real text boxes, dropdowns, toggles and one Submit button. Write a small JSON
+spec; the server builds the card.
 
 ```sh
 cat > /tmp/form.json <<'JSON'
@@ -174,20 +208,10 @@ Field `type`: `text`, `textarea`, `number`, `date`, `time`, `choice`,
 `ask` **finalizes the turn**, exactly like `send`. The user's Submit arrives as
 your NEXT turn with their answers, so post the form and then END your turn.
 
-**Ask with a card, not with prose.** Teams renders real controls, so a question
-written as a numbered list in `teams send` is a worse version of what the
-platform already gives you. Reach for prose only when there is genuinely
-nothing to pick or fill in.
-
-The built-in `question` tool DOES work here: the Kortix server renders it as a
-card with a button per option and returns immediately with a note telling you
-to end your turn. It does not block. Use it for a quick either/or; use
-`teams ask --form-file` when you need typed input or several answers at once.
-
 | When you want to… | Use |
 | --- | --- |
-| Ask a quick either/or | the `question` tool — buttons, one tap |
-| Ask for typed input, or several answers | `teams ask --form-file` |
+| Ask anything with choices — one question or several | the `question` tool |
+| Ask for a date, time, number, or toggle | `teams ask --form-file` |
 | Ask something genuinely open-ended | `teams send` with the question |
 | Deliver the final answer | `teams send` |
 | Show progress along the way | `teams step` |
@@ -199,19 +223,24 @@ Whichever you use, the reply arrives as your NEXT turn. Ask, then END the turn.
 <files-and-artifacts>
 ### Sending a file: `teams send --file <path>`
 
-When the work produces an artifact (a PDF, CSV, report, diff, screenshot), offer it with `--file`. Delivery depends on WHERE the conversation is, and the server picks the right method from the env — you always just run `teams send --file`:
+When the work produces an artifact (a PDF, CSV, report, diff, screenshot), offer it with `--file`. The server picks the delivery from the env — you always just run `teams send --file`:
 
-- **Personal chat** → a **file consent card**: you offer the file, the user clicks Accept, and only then does Teams upload it. Two-step and asynchronous; it does NOT finalize the turn.
-- **Team channel / group chat** → an **image** is posted inline instantly; any **other file** is uploaded to the team's SharePoint drive and shared as a link card (needs the bot app's `Files.ReadWrite.All` permission — if it is missing, the command returns a clear error you can relay).
+- **An image** (PNG, JPEG, GIF, WebP) → shown **inline** in the conversation, in every scope: personal chat, group chat, channel.
+- **Any other file, personal chat** → a **file consent card**: you offer the file, the user clicks Accept, and only then does Teams upload it. Two-step and asynchronous.
+- **Any other file, channel** → uploaded to the team's SharePoint drive and shared as a link card (needs the bot app's `Files.ReadWrite.All` permission — if it is missing, the command returns a clear error you can relay).
+- **Any other file, group chat** → not possible: Teams gives a bot no way to send a file into a group chat. Share a link in `teams send` instead.
+
+An image too large for Teams to show inline falls back to the same path as any other file; in a group chat the command returns an error that asks for a smaller image.
 
 The conversation context is taken from the env, so you don't pass IDs:
 
 ```sh
+teams send --file /workspace/output/chart.png --text "Sign-ups by source"
 teams send --file /workspace/output/report.pdf --text "Incident report — accept to download."
 ```
 
-- `--text` is the consent-card description (what the user sees before accepting). Optional.
-- This posts a **separate** consent card — it does **not** finalize the turn. Follow it with a regular `teams send "..."` to close the live card:
+- `--text` is the caption, or the consent-card description (what the user sees before accepting). Optional.
+- `--file` posts a **separate** message — it does **not** finalize the turn. Follow it with a regular `teams send "..."` to close the live card:
 
 ```sh
 teams send --file /workspace/output/report.pdf --text "Full report — accept to download."
@@ -232,8 +261,9 @@ The download runs through the Kortix server (the credential stays server-side); 
 
 ### Images: download, then just look at them
 
-A pasted screenshot arrives as an attachment marked `(image)`. Download it and
-open it with the **`read` tool** — you can see images directly.
+A pasted screenshot arrives as an attachment marked `(image)` — in a personal
+chat, a group chat, and a channel alike. Download it and open it with the
+**`read` tool** — you can see images directly.
 
 ```sh
 teams download --url "<downloadUrl from the prompt>" --out /workspace/attachment.png
@@ -248,6 +278,34 @@ API are all the wrong move — if `read` shows you the image, describe what you
 see. If it genuinely does not, say so in `teams send` rather than ending the
 turn silently.
 </files-and-artifacts>
+
+<reading-the-conversation>
+### `teams history` / `teams thread` — what was said before you were mentioned
+
+In a **channel** the bot acts only on messages that @mention it. The
+discussion you were asked about is NOT in your session. Read it:
+
+```sh
+teams thread              # the thread you were mentioned in: the root post + every reply
+teams history --limit 20  # recent posts in this channel
+```
+
+Both print JSON: `messages[]` with `from`, `text` (HTML stripped), `at`, and
+`id`, oldest first. Deleted and system messages are dropped. The channel,
+thread, and team come from the env — pass `--team`, `--channel`, or
+`--message` only to read somewhere else.
+
+- **In a personal chat you need neither.** Every message there already
+  reaches this session. Both commands return `NOT_A_CHANNEL`.
+- **`NO_TEAM`**: Teams did not send the team id with this message. Pass
+  `--team <team-id>` if the user gave you one; otherwise say in `teams send`
+  that you cannot read the channel. Do not guess an id.
+- **A `403` from Microsoft Graph** means the Kortix app is not installed in
+  that team, or the tenant has not granted it permission to read messages.
+  Say so in `teams send`; do not retry.
+- **`teams history` prints the help instead of JSON**: this sandbox was built
+  before the command existed. Say you cannot read the channel from here.
+</reading-the-conversation>
 
 <posting-somewhere-else>
 ### Proactive posting — `teams post`
@@ -294,10 +352,10 @@ Reply like a colleague messaging on Teams:
 
 <gotchas>
 - **Standard Markdown, not Slack mrkdwn.** `**bold**` and `[label](url)` — never `*bold*` / `<url|label>`.
-- **`teams step` after `teams send` drops silently.** Always send the answer last.
-- **One `teams send` per turn** finalizes the card; a second call is ignored.
-- **Asking → `teams send` + end the turn.** The `question` tool has no Teams renderer; never call it on a Teams turn.
-- **`teams send --file` in a personal chat is a consent card, not an instant upload** — the user must Accept, and it does NOT finalize the turn, so follow it with a `teams send "..."`. In a channel an image posts inline and a document becomes a drive link. Limit ~4 MB.
+- **Send the answer last.** A `teams step` after `teams send` is dropped.
+- **One `teams send` per turn** finalizes the card; a second call from the same run is dropped. After a `question` card, do not `teams send` at all — the card is your reply.
+- **Asking → the `question` tool + end the turn.** It renders a real card and returns at once; the answer is your next turn. An older copy of this skill said the tool had no Teams renderer — that is no longer true.
+- **`teams send --file`: an image is shown inline in every scope.** Any other file in a personal chat is a consent card — the user must Accept, and it does NOT finalize the turn, so follow it with a `teams send "..."`. In a channel a document becomes a drive link. An image too large to show inline falls back the same way; in a group chat it comes back as an error asking for a smaller one. Limit ~4 MB.
 - **Downloads come from the prompt.** Attached-file URLs are listed in your prompt; pass them to `teams download`.
 - **Don't go quiet on long work, but don't spam steps either** — Teams throttles card edits. One checkpoint per real phase.
 - **`$MS_TEAMS_*` env vars are pre-injected on Teams turns.** Use them; don't hard-code conversation/tenant IDs.

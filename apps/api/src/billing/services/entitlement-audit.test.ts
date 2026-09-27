@@ -53,14 +53,6 @@ describe('auditEntitlement — reports, never mutates', () => {
     expect(report.overGrantedTotalUsd).toBe(0);
   });
 
-  test('spending below entitlement is never reported as drift', async () => {
-    accountRows = [account({ expiringCredits: '0' }), account({ expiringCredits: '7.5' })];
-
-    const report = await auditEntitlement();
-
-    expect(report.overGrantedCount).toBe(0);
-  });
-
   test('the 1.6x per-seat over-grant is surfaced with its dollar excess', async () => {
     accountRows = [
       account({

@@ -54,9 +54,7 @@ import {
   CaretRightIcon as ChevronRight,
   MinusCircleIcon as CircleMinus,
   PlusCircleIcon as CirclePlus,
-  DownloadIcon as Download,
   DotsThreeIcon as Ellipsis,
-  SidebarSimpleIcon as PanelLeft,
   ArrowClockwiseIcon as RotateCw,
   MagnifyingGlassIcon as Search,
   UploadIcon as Upload,
@@ -90,6 +88,7 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 // Imported directly (not via the `@/features/file-viewer` barrel) to avoid a
 // module cycle: that barrel re-exports FileContentRenderer, which lazy-loads
 // PdfRenderer, which renders this file.
@@ -97,6 +96,7 @@ import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import { downloadBlob } from '@/lib/utils/download';
 import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 export type PDFViewerPageOverlayProps = {
   pageNumber: number;
@@ -518,45 +518,40 @@ function ToolbarTooltip({ label, children }: { label: string; children: React.Re
   );
 }
 
+/**
+ * Upload is the only action left behind a menu here. Download is a visible
+ * button (`ViewerDownloadButton`) in the toolbar itself, so a menu that would
+ * hold nothing but Download is not rendered at all.
+ */
 function PDFViewerFileActionsMenu({
-  downloadDisabled,
-  isPreparingDownload = false,
-  onDownload,
   onUploadFile,
-  showDownload = false,
   showUpload = false,
 }: {
-  downloadDisabled?: boolean;
-  isPreparingDownload?: boolean;
-  onDownload?: () => void;
   onUploadFile?: (file: File) => void;
-  showDownload?: boolean;
   showUpload?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  if (!showDownload && !showUpload) return null;
+  if (!showUpload || !onUploadFile) return null;
 
   return (
     <>
-      {showUpload && onUploadFile ? (
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/pdf,.pdf"
-          className="sr-only"
-          tabIndex={-1}
-          onChange={(event) => {
-            const nextFile = event.target.files?.[0];
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={(event) => {
+          const nextFile = event.target.files?.[0];
 
-            if (nextFile) {
-              onUploadFile(nextFile);
-              event.currentTarget.value = '';
-            }
-          }}
-        />
-      ) : null}
+          if (nextFile) {
+            onUploadFile(nextFile);
+            event.currentTarget.value = '';
+          }
+        }}
+      />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -570,22 +565,10 @@ function PDFViewerFileActionsMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
-          {showDownload && onDownload ? (
-            <DropdownMenuItem disabled={downloadDisabled} onClick={onDownload}>
-              {isPreparingDownload ? (
-                <Spinner className="size-4" />
-              ) : (
-                <Download className="size-4" />
-              )}
-              {tI18nComplete.raw('textd6eafe823591')}
-            </DropdownMenuItem>
-          ) : null}
-          {showUpload && onUploadFile ? (
-            <DropdownMenuItem onClick={() => inputRef.current?.click()}>
-              <Upload className="size-4" />
-              {tI18nComplete.raw('text865e89de78d9')}
-            </DropdownMenuItem>
-          ) : null}
+          <DropdownMenuItem onClick={() => inputRef.current?.click()}>
+            <Upload className="size-4" />
+            {tI18nComplete.raw('text865e89de78d9')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </>
@@ -993,9 +976,7 @@ function PDFViewerThumbnails({
           pageRotationDelta % 2 === 1
             ? {
                 height: meta.width,
-                transform: tI18nComplete('text8c5f37b673ef', {
-                  value0: rotationToDegrees(pageRotationDelta),
-                }),
+                transform: `rotate(${rotationToDegrees(pageRotationDelta)}deg)`,
                 width: meta.height,
               }
             : {
@@ -1003,9 +984,7 @@ function PDFViewerThumbnails({
                 transform:
                   pageRotationDelta === 0
                     ? undefined
-                    : tI18nComplete('text8c5f37b673ef', {
-                        value0: rotationToDegrees(pageRotationDelta),
-                      }),
+                    : `rotate(${rotationToDegrees(pageRotationDelta)}deg)`,
                 width: meta.width,
               };
 
@@ -1392,6 +1371,24 @@ function isEditableCopyTarget(target: EventTarget | null) {
   return Boolean(target.closest("input, textarea, [contenteditable='true']"));
 }
 
+/**
+ * True when a keydown is the copy shortcut for the PDF selection.
+ *
+ * `KeyboardEvent.key` is typed `string`, but Safari can deliver a `keydown`
+ * whose `key` is `undefined`. This listener is on `document`, so it sees every
+ * keystroke on the page — the unguarded `event.key.toLowerCase()` threw a
+ * `TypeError` on those events. A copy shortcut needs a real key, so a missing
+ * key is never the shortcut.
+ */
+export function isPdfCopyShortcut(event: {
+  key: string | undefined;
+  metaKey: boolean;
+  ctrlKey: boolean;
+}): boolean {
+  if (typeof event.key !== 'string' || event.key.toLowerCase() !== 'c') return false;
+  return event.metaKey || event.ctrlKey;
+}
+
 function PDFViewerSelectionCopyShortcut({ documentId }: { documentId: string }) {
   const { provides: selection } = useSelectionCapability();
 
@@ -1407,8 +1404,7 @@ function PDFViewerSelectionCopyShortcut({ documentId }: { documentId: string }) 
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'c') return;
-      if (!event.metaKey && !event.ctrlKey) return;
+      if (!isPdfCopyShortcut(event)) return;
 
       copySelectedPdfText(event);
     };
@@ -1796,7 +1792,6 @@ function PDFViewerInner({
   const numPages = pdfDocument?.pageCount ?? 0;
   const isLoading = !pdfDocument;
   const controlsDisabled = !numPages;
-  const downloadDisabled = controlsDisabled || isPreparingDownload;
   const thumbnailSidebarVisible = sidebarOpen && !isLoading;
   const currentZoomLevel = zoomState.currentZoomLevel;
   const alignedThumbnailSidebarDocumentRef = React.useRef<string | null>(null);
@@ -2321,14 +2316,14 @@ function PDFViewerInner({
               {showDownload || showUpload ? (
                 <>
                   <Separator orientation="vertical" className="mx-1 h-4 self-center" />
-                  <PDFViewerFileActionsMenu
-                    downloadDisabled={downloadDisabled}
-                    isPreparingDownload={isPreparingDownload}
-                    onDownload={handleDownload}
-                    onUploadFile={handleUpload}
-                    showDownload={showDownload}
-                    showUpload={showUpload}
-                  />
+                  <PDFViewerFileActionsMenu onUploadFile={handleUpload} showUpload={showUpload} />
+                  {showDownload ? (
+                    <ViewerDownloadButton
+                      disabled={controlsDisabled}
+                      pending={isPreparingDownload}
+                      onDownload={() => void handleDownload()}
+                    />
+                  ) : null}
                 </>
               ) : null}
             </div>

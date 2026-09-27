@@ -1,9 +1,9 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import { kortixApiKeys } from '@kortix/db';
 import { db } from '../shared/db';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   hashSecretKey,
-  candidateSecretKeyHashes,
   generateApiKeyPair,
   generateSandboxKeyPair,
   isApiKeySecretConfigured,
@@ -175,7 +175,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
   }
 
   try {
-    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
+    const secretKeyHashes = await candidateSecretKeyHashesAsync(secretKey);
 
     const [row] = await db
       .select({
@@ -196,8 +196,9 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
       .limit(1);
 
     if (!row) {
-      const hasAnyKeys = await db.select({ keyId: kortixApiKeys.keyId }).from(kortixApiKeys).limit(1);
-      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..." anyKeysInDb=${hasAnyKeys.length > 0}`);
+      // No second probe query here: a miss must cost one indexed lookup, not
+      // two, because anyone can present an unknown token.
+      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..."`);
       return { isValid: false, error: 'API key not found or invalid' };
     }
 
@@ -205,6 +206,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
       return { isValid: false, error: 'API key expired' };
     }
 
+    markTokenValidated(secretKey);
     // Fire-and-forget: update last_used_at (throttled)
     updateLastUsedThrottled(row.keyId).catch(() => {});
 

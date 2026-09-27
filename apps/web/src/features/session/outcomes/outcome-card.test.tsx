@@ -128,3 +128,34 @@ describe('actions', () => {
     expect(out).toContain('target="_blank"');
   });
 });
+
+describe('pending', () => {
+  // A row whose action does not exist yet — `setup-link-button.tsx` renders
+  // one while the setup link's URL is still streaming. It keeps the exact
+  // footprint of the finished row, so nothing moves when the action arrives.
+  const pendingHtml = (o: Outcome) =>
+    renderToStaticMarkup(<OutcomeCard outcome={o} index={0} onOpen={() => {}} pending />);
+
+  test('the action renders disabled and the row reports itself busy', () => {
+    const out = pendingHtml(outcome());
+    expect(out).toMatch(/<button[^>]*\bdisabled=""/);
+    expect(out).toContain('aria-busy="true"');
+  });
+
+  test('a pending link action is not an anchor yet', () => {
+    const out = pendingHtml(
+      outcome({
+        kind: 'external',
+        action: { label: 'Open in GitHub', intent: 'link', href: 'https://github.com/a/b/pull/1' },
+      }),
+    );
+    expect(out).not.toContain('href=');
+    expect(out).toMatch(/<button[^>]*\bdisabled=""/);
+  });
+
+  test('a settled row is neither busy nor disabled', () => {
+    const out = html(outcome());
+    expect(out).not.toContain('aria-busy');
+    expect(out).not.toMatch(/\bdisabled=""/);
+  });
+});

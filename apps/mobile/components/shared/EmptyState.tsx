@@ -9,10 +9,10 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import type { LucideIcon } from 'lucide-react-native';
+import { type AppIcon } from '@/lib/icons';
 
 interface EmptyStateProps {
-  icon: LucideIcon;
+  icon: AppIcon;
   title: string;
   description: string;
   actionLabel?: string;

@@ -56,6 +56,15 @@ import {
   type ConnectorCallResult,
   type ConnectorConnectOptions,
   type ConnectorConnectOwner,
+  renameConnection,
+  shareConnection,
+  connectionSharedWithEveryone,
+  describeConnectorTool,
+  getConnectorCatalog,
+  listConnectorTools,
+  type Connection,
+  type ConnectionShare,
+  type ConnectionSharePrincipal,
 } from './connectors';
 
 const canonicalConnectionType: import('./connectors').Connection = {
@@ -281,6 +290,40 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().url).toContain('/connections/connection-1/activate');
   await setDefaultConnection('P1', 'connection-1');
   expect(last().url).toContain('/connections/connection-1/default');
+
+  nextResponse = {
+    status: 200,
+    body: {
+      connection_id: 'connection-1',
+      connector_alias: 'gmail',
+      owner_type: 'project',
+      owner_id: null,
+      label: 'Support inbox',
+      status: 'active',
+      is_default: true,
+      metadata: {},
+      connected_as: 'support@example.test',
+    },
+  };
+  const renamed = await renameConnection('P1', 'connection-1', 'Support inbox');
+  expect(last()).toMatchObject({ method: 'PUT', body: { label: 'Support inbox' } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/label');
+  expect(renamed.label).toBe('Support inbox');
+  expect(renamed.connected_as).toBe('support@example.test');
+
+  // Your own private account, shared: POST .../share with who may use it; an
+  // empty list shares it with everyone in the project.
+  nextResponse = {
+    status: 200,
+    body: { ...canonicalConnectionType, connection_id: 'connection-1', owner_type: 'project', is_default: false },
+  };
+  const audience: ConnectionSharePrincipal[] = [{ principal_type: 'group', principal_id: 'group-1' }];
+  const shared = await shareConnection('P1', 'connection-1', audience);
+  expect(last()).toMatchObject({ method: 'POST', body: { principals: audience } });
+  expect(last().url).toContain('/projects/P1/connections/connection-1/share');
+  expect(shared.owner_type).toBe('project');
+  await shareConnection('P1', 'connection-1');
+  expect(last().body).toEqual({ principals: [] });
 
   nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
   await ensureProjectConnectorConnection('P1', 'gmail');
@@ -1219,4 +1262,170 @@ test('ConnectorConnectOwner is the two words every connect surface accepts', () 
   const options: ConnectorConnectOptions = { owner: 'project' };
   expect(owners).toEqual(['project', 'me']);
   expect(options.owner).toBe('project');
+});
+
+// ── Who may use a shared account ────────────────────────────────────────────
+
+const sharedAccount = (shared_with: ConnectionShare[] | undefined): Connection => ({
+  connection_id: 'c-shared',
+  connector_alias: 'crm',
+  owner_type: 'project',
+  owner_id: null,
+  label: 'Sales CRM',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+  ...(shared_with ? { shared_with } : {}),
+});
+
+const share = (principal_type: ConnectionShare['principal_type'], label: string): ConnectionShare => ({
+  grant_id: `g-${label}`,
+  principal_type,
+  principal_id: `id-${label}`,
+  label,
+  expires_at: null,
+});
+
+test('listConnections carries a shared account audience and whether the caller may use it', async () => {
+  const sales = share('group', 'Sales');
+  nextResponse = {
+    status: 200,
+    body: { connections: [{ ...sharedAccount([sales]), usable: false }] },
+  };
+  const { connections } = await listConnections('P1');
+  expect(connections[0]?.shared_with).toEqual([sales]);
+  expect(connections[0]?.usable).toBe(false);
+});
+
+test('connectionSharedWithEveryone: no grant, or a grant to the project, is everyone', () => {
+  expect(connectionSharedWithEveryone(sharedAccount([]))).toBe(true);
+  // An older server sends no `shared_with`: a shared account was everyone's.
+  expect(connectionSharedWithEveryone(sharedAccount(undefined))).toBe(true);
+  expect(
+    connectionSharedWithEveryone(sharedAccount([share('group', 'Sales'), share('project', 'Acme')])),
+  ).toBe(true);
+  expect(connectionSharedWithEveryone(sharedAccount([share('group', 'Sales')]))).toBe(false);
+  expect(connectionSharedWithEveryone(sharedAccount([share('member', 'ada@example.test')]))).toBe(false);
+});
+
+test('connectionSharedWithEveryone: a private account is nobody else\'s', () => {
+  expect(
+    connectionSharedWithEveryone({ ...sharedAccount(undefined), owner_type: 'member', owner_id: 'u-1' }),
+  ).toBe(false);
+});
+
+// ─── Payload-size fix: schemas are opt-in, not the default ─────────────────
+//
+// The full per-action JSON Schema was the dominant contributor to
+// GET /connectors/projects/:id/connectors (1.6MB body) and
+// GET /connectors/projects/:id/catalog (439KB body) on prod. The API includes
+// `inputSchema` unless a caller sends `include_schemas=false`; an explicit
+// `false` MUST reach the wire, or the opt-out does nothing.
+
+test('listConnectors sends no query by default, and forwards an explicit includeSchemas either way', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await listConnectors('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/connectors');
+
+  await listConnectors('P1', { includeSchemas: false });
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/connectors?include_schemas=false',
+  );
+
+  await listConnectors('P1', { includeSchemas: true });
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/connectors?include_schemas=true',
+  );
+});
+
+test('getConnectorCatalog forwards an explicit includeSchemas: false', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await getConnectorCatalog('P1', { includeSchemas: false });
+  expect(new URL(last()!.url).searchParams.get('include_schemas')).toBe('false');
+});
+
+test('getConnectorCatalog forwards slug and includeSchemas as query params', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await getConnectorCatalog('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+
+  await getConnectorCatalog('P1', { slug: 'gmail', includeSchemas: true });
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.searchParams.get('slug')).toBe('gmail');
+  expect(url.searchParams.get('include_schemas')).toBe('true');
+});
+
+test('listConnectorTools never asks for schemas — no caller of it reads inputSchema', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          provider: 'composio',
+          status: 'active',
+          actions: [{ path: 'send', name: 'Send', description: '', risk: 'write', inputSchema: null }],
+        },
+      ],
+    },
+  };
+  await listConnectorTools('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+});
+
+test('describeConnectorTool fetches ONE connector, with its schema, instead of the whole catalog', async () => {
+  const schema = { type: 'object', properties: { to: { type: 'string' } } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          provider: 'composio',
+          status: 'active',
+          actions: [{ path: 'send', name: 'Send', description: 'Send mail', risk: 'write', inputSchema: schema }],
+        },
+      ],
+    },
+  };
+  const tool = await describeConnectorTool('P1', 'gmail.send');
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.searchParams.get('slug')).toBe('gmail');
+  expect(url.searchParams.get('include_schemas')).toBe('true');
+  expect(tool?.inputSchema).toEqual(schema);
+});
+
+test('describeConnectorTool picks the named connector when the server ignores slug', async () => {
+  // An older API (the CLI ships separately) answers the whole catalog; the
+  // requested connector is not guaranteed to be the first entry.
+  const schema = { type: 'object', properties: { message: { type: 'object' } } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { slug: 'echo', name: 'Echo', provider: 'http', status: 'active', actions: [] },
+        {
+          slug: 'graph',
+          name: 'Graph',
+          provider: 'openapi',
+          status: 'active',
+          actions: [{ path: 'sendMail', name: 'Send mail', description: '', risk: 'write', inputSchema: schema }],
+        },
+      ],
+    },
+  };
+  const tool = await describeConnectorTool('P1', 'graph.sendMail');
+  expect(tool?.connector).toBe('graph');
+  expect(tool?.inputSchema).toEqual(schema);
+});
+
+test('describeConnectorTool: a malformed tool name (no dot) resolves to null without a request', async () => {
+  calls = [];
+  const tool = await describeConnectorTool('P1', 'not-a-tool-name');
+  expect(tool).toBeNull();
+  expect(calls).toHaveLength(0);
 });

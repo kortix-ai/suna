@@ -5,7 +5,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 /**
  * All · Pick · None — the one governance grant-mode machine, parameterized so
  * both a flat checklist (skills/connectors/secrets) and a grouped catalog
- * (kortix_cli) share the same state transitions instead of re-implementing
+ * (kortix_permissions) share the same state transitions instead of re-implementing
  * them twice.
  */
 
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
-import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
+import { KORTIX_PERMISSIONS_CATALOG } from './agent-editor-catalog';
 
 export type GrantMode = 'all' | 'pick' | 'none';
 
@@ -228,8 +228,8 @@ export function GrantSetField({
   );
 }
 
-/** All · Pick · None over the grouped grantable CLI action catalog. */
-export function KortixCliField({
+/** All · Pick · None over the grouped grantable Kortix permission catalog. */
+export function KortixPermissionsField({
   value,
   onChange,
 }: {
@@ -246,7 +246,7 @@ export function KortixCliField({
     >
       {({ selected, toggle }) => (
         <div className="border-border/60 max-h-64 space-y-3 overflow-y-auto rounded-md border p-2.5">
-          {KORTIX_CLI_CATALOG.map((grp) => (
+          {KORTIX_PERMISSIONS_CATALOG.map((grp) => (
             <div key={grp.group} className="space-y-1.5">
               <p className="text-muted-foreground text-xs font-medium">{grp.group}</p>
               <div className="flex flex-wrap gap-1">

@@ -12,13 +12,16 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import Loading from '@/components/ui/loading';
+import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, type ProviderListResponse, useModelStore } from '@kortix/sdk/react';
+import {
+  contract, qk, type ProviderListResponse, useFeatureFlag, useModelAccess, useModelStore,
+} from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   CaretDownIcon as ChevronDown,
@@ -350,6 +353,13 @@ export interface ModelSelectorProps {
   projectId?: string;
 
   /**
+   * Offer the member's own ChatGPT subscription (pooled provider secrets) at
+   * the end of the list. Only an interactive session can use a personal
+   * account; a scheduled or background run cannot, so its pickers leave this off.
+   */
+  offerChatGptAccounts?: boolean;
+
+  /**
    * Controlled open state. Omit for the normal case — the trigger owns its
    * own popover and nothing changes.
    *
@@ -379,6 +389,7 @@ export function ModelSelector({
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
+  offerChatGptAccounts = false,
   open: openProp,
   onOpenChange,
 }: ModelSelectorProps) {
@@ -421,6 +432,17 @@ export function ModelSelector({
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  // Bring your own ChatGPT subscription (pooled provider secrets). Any member
+  // connects their own account from here; Customize is not needed. Hidden when
+  // a manager disabled the ChatGPT provider for the project.
+  const tPooled = useTranslations('pooledSecrets');
+  const pooledSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
+  const chatGptPossible =
+    offerChatGptAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
+  const modelAccess = useModelAccess(chatGptPossible ? projectId : null);
+  const chatGptAvailable =
+    chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
+  const [chatGptOpen, setChatGptOpen] = useState(false);
   // Every write this picker offers is `project.customize.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
@@ -482,6 +504,12 @@ export function ModelSelector({
    *  state below branches on this: "no models match your search" and "you have
    *  no models" are different problems with different ways out. */
   const hasAnyModel = useMemo(() => baseModels.some((m) => m.enabled !== false), [baseModels]);
+  /** Does this member already have ChatGPT subscription models? Then the row
+   *  manages their accounts instead of offering to connect one. */
+  const hasChatGptModels = useMemo(
+    () => baseModels.some((m) => m.enabled !== false && pickerGroupId(m) === 'codex'),
+    [baseModels],
+  );
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -575,9 +603,17 @@ export function ModelSelector({
     openUpgrade();
   }, [openUpgrade, setOpen]);
 
+  const handleOpenChatGpt = useCallback(() => {
+    setOpen(false);
+    setChatGptOpen(true);
+  }, [setOpen]);
+
   return (
     <>
       {connectionModal}
+      {projectId && chatGptPossible && (
+        <ChatGptAccountsDialog projectId={projectId} open={chatGptOpen} onOpenChange={setChatGptOpen} />
+      )}
       <CommandPopover
         open={disabled ? false : open}
         onOpenChange={(next) => !disabled && setOpen(next)}
@@ -781,6 +817,36 @@ export function ModelSelector({
                       </Fragment>
                     );
                   })}
+                  {/* The member's own way in to ChatGPT: connect a subscription,
+                      or manage the accounts behind the ChatGPT section above.
+                      Not a search result, so it stays out of a filtered list. */}
+                  {chatGptAvailable && !searching && (
+                    <>
+                      <CommandSeparator />
+                      <CommandGroup forceMount>
+                        <CommandItem
+                          value="chatgpt-subscription"
+                          onSelect={handleOpenChatGpt}
+                          className="cursor-pointer"
+                        >
+                          <ProviderLogo
+                            providerID="codex"
+                            name="ChatGPT"
+                            size="small"
+                            className="size-4 rounded-none bg-transparent"
+                          />
+                          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+                            {hasChatGptModels
+                              ? tPooled('manageChatGptAccounts')
+                              : tPooled('useYourChatGpt')}
+                          </span>
+                          {!hasChatGptModels && (
+                            <span className="text-muted-foreground text-xs">{tPooled('connect')}</span>
+                          )}
+                        </CommandItem>
+                      </CommandGroup>
+                    </>
+                  )}
                 </>
               ) : hasAnyModel ? (
                 /* Models ARE connected — the SEARCH matched none of them.
@@ -825,6 +891,11 @@ export function ModelSelector({
                       <KeyRound className="size-3.5" />
                       {tModel('connectProvider')}
                     </Button>
+                    {chatGptAvailable && (
+                      <Button type="button" size="xs" variant="outline" onClick={handleOpenChatGpt}>
+                        {tPooled('connectChatGpt')}
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}

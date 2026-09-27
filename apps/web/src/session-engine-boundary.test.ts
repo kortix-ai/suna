@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const pageSource = readFileSync(
-  resolve(import.meta.dir, 'app/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+  resolve(import.meta.dir, 'app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 const chatSource = readFileSync(

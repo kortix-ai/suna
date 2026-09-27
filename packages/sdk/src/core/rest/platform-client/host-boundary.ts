@@ -201,9 +201,22 @@ export function submitOAuthConsent(
 }
 
 export interface ConnectorSetupLinkInfo {
+  /** The project the link belongs to. Absent on older servers. */
+  project_id?: string;
   project_name: string;
+  /** The name the agent suggested for the new account, or `null`. Absent on older servers. */
+  label?: string | null;
+  /** Whose account the agent meant the link to create. Absent on older servers. */
+  owner?: 'me' | 'project';
   slug: string;
   app: string | null;
+  /**
+   * The connector's display name ("Google Calendar"), so a card can name the
+   * app before it is opened. Optional: servers older than this field omit it.
+   */
+  name?: string | null;
+  /** The app's logo. `null` when the catalog has none; absent on older servers. */
+  icon_url?: string | null;
   expires_at: string;
 }
 
@@ -214,10 +227,43 @@ export function getConnectorSetupLink(
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * What `POST /setup-links/connectors/:token/start` answers.
+ *
+ * `connect_url` is `null` when there is nothing to authorize: the toolkit
+ * needs no auth, or the slot already holds an active account, which the
+ * provider reuses rather than re-authorizing. `connected` is then `true`, and
+ * `already_connected` tells the two apart. Neither case is an error.
+ */
+export interface ConnectorSetupLinkStart {
+  connect_url: string | null;
+  connected?: boolean;
+  already_connected?: boolean;
+}
+
+/** What `POST /setup-links/connectors/:token/finalize` answers. */
+export interface ConnectorSetupLinkFinalize {
+  connected: boolean;
+  /**
+   * Who the account was authorized as: an email, a login, or a display name.
+   * `null` (or absent, on older servers) when the provider exposes none.
+   */
+  connected_as?: string | null;
+  /** The account finalized, when the call named one (`connectionId`). */
+  connection_id?: string;
+  /** That account's name, when the call named one. */
+  label?: string;
+}
+
+/** Name ONE account the link's dialog created, so the session is told about it. */
+export interface FinalizeConnectorSetupLinkInput {
+  connectionId?: string;
+}
+
 export function startConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
-): Promise<{ connect_url: string }> {
+): Promise<ConnectorSetupLinkStart> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/start`, options, {
     method: 'POST',
     body: {},
@@ -234,10 +280,11 @@ export function startConnectorSetupLink(
 export function finalizeConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
-): Promise<{ connected: boolean }> {
+  input: FinalizeConnectorSetupLinkInput = {},
+): Promise<ConnectorSetupLinkFinalize> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
     method: 'POST',
-    body: {},
+    body: input.connectionId ? { connection_id: input.connectionId } : {},
   });
 }
 
@@ -258,11 +305,41 @@ export function getSecretSetupLink(
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * Why a saved secret never reaches the session that requested it:
+ * `agent_grant` — outside the session agent's `secrets` grant (a person with
+ * project access can widen it); `session_allowlist` — outside the session's
+ * create-time allowlist (fixed; start a new session).
+ */
+export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';
+
+export interface SecretSetupLinkWithheld {
+  name: string;
+  reason: SecretWithheldReason;
+}
+
+/** What `POST /setup-links/secret/:token` answers. */
+export interface SecretSetupLinkSubmitResult {
+  ok: boolean;
+  /** Names whose values were saved. */
+  saved: string[];
+  /**
+   * The requesting session's agent. Present only with `withheld`, and absent
+   * on servers older than this field.
+   */
+  agent?: string;
+  /**
+   * Saved names the requesting session will not receive. The value IS saved;
+   * a person must widen the grant before the agent can read it.
+   */
+  withheld?: SecretSetupLinkWithheld[];
+}
+
 export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
-): Promise<unknown> {
+): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
     body: { values },
@@ -332,7 +409,7 @@ export async function downloadAccountAudit(
     actor?: string;
     project_id?: string;
     session_id?: string;
-    actor_type?: 'human' | 'agent' | 'service_account' | 'system';
+    actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
     source?: string;
     phase?: string;
     outcome?: 'success' | 'failure' | 'denied' | 'pending';

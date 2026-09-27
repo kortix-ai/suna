@@ -23,7 +23,7 @@ export function usePipedreamConnectMember(
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
       let connectionId: string | null = null;
-      return runConnectLinkFlow(
+      const result = await runConnectLinkFlow(
         async () => {
           const connection = await reconcileMemberConnection(projectId, {
             connector_alias: slug,
@@ -37,6 +37,8 @@ export function usePipedreamConnectMember(
           return pipedreamFinalizeConnection(projectId, connectionId);
         },
       );
+      // The account just created, so a caller can finalize exactly that one.
+      return { ...result, connectionId };
     },
     onSuccess: (res) => {
       if (!res.connected) return;

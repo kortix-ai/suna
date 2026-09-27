@@ -131,7 +131,7 @@ export function normalizeLine(line: string): Record<string, unknown> {
  * Truncating here (rather than only server-side) keeps an 80 MB runaway line
  * out of the queue and off the wire. Mirrors truncateMonitorLine in apps/api.
  */
-export function truncateLine(line: Record<string, unknown>): Record<string, unknown> {
+function truncateLine(line: Record<string, unknown>): Record<string, unknown> {
   const encoded = JSON.stringify(line)
   if (Buffer.byteLength(encoded, 'utf8') <= MONITOR_LINE_MAX_BYTES) return line
   // Reserve room for the `{"raw":…,"truncated":true}` envelope itself.

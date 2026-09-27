@@ -3,7 +3,7 @@ import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
-import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from './llm-spend';
+import { kortixBilledSpendSql, providerBilledSpendSql } from './llm-spend';
 import { billedComputeSecondsExpression } from './session-costs';
 
 export interface ProjectCostRow {
@@ -11,9 +11,9 @@ export interface ProjectCostRow {
   project_name: string;
   session_count: number;
   llm_cost: number;
-  /** The `llm_cost` slice debited from the Kortix wallet. */
+  /** Alias of `llm_cost`, retained for the additive payee breakdown. */
   llm_kortix_cost: number;
-  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
@@ -164,7 +164,7 @@ export async function listCostByProject(input: {
     db
       .select({
         projectId: gatewayRequestLogs.projectId,
-        llmCost: totalSpendSql,
+        llmCost: kortixBilledSpendSql,
         llmKortixCost: kortixBilledSpendSql,
         llmProviderCost: providerBilledSpendSql,
         sessionCount: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
@@ -286,9 +286,9 @@ export function buildCostSeries(
 
 export interface CostSummaryTotals {
   llm_cost: number;
-  /** The `llm_cost` slice debited from the Kortix wallet. */
+  /** Alias of `llm_cost`, retained for the additive payee breakdown. */
   llm_kortix_cost: number;
-  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  /** Provider-side BYOK spend. Excluded from `llm_cost` and `total_cost`. */
   llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
@@ -474,7 +474,7 @@ export async function getCostSummary(input: {
   ] = await Promise.all([
     db
       .select({
-        llmCost: totalSpendSql,
+        llmCost: kortixBilledSpendSql,
         llmKortixCost: kortixBilledSpendSql,
         llmProviderCost: providerBilledSpendSql,
         requestCount: sql<number>`count(*)::int`,
@@ -485,7 +485,7 @@ export async function getCostSummary(input: {
     db
       .select({
         day: LLM_DAY_EXPRESSION,
-        cost: totalSpendSql,
+        cost: kortixBilledSpendSql,
       })
       .from(gatewayRequestLogs)
       .where(llmScope(window))
@@ -494,7 +494,7 @@ export async function getCostSummary(input: {
       .select({
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
-        cost: totalSpendSql,
+        cost: kortixBilledSpendSql,
         requestCount: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -504,13 +504,13 @@ export async function getCostSummary(input: {
       // tie-break — without it, which model lands on the 10th row of a tie
       // is unspecified and can flip between refreshes.
       .orderBy(
-        desc(totalSpendSql),
+        desc(kortixBilledSpendSql),
         desc(gatewayRequestLogs.provider),
         desc(gatewayRequestLogs.resolvedModel),
       )
       .limit(10),
     db
-      .select({ cost: totalSpendSql })
+      .select({ cost: kortixBilledSpendSql })
       .from(gatewayRequestLogs)
       .where(llmScope(previous)),
     llmProjectIdsQuery,

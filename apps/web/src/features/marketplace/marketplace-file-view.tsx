@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
+import { useQuery } from '@tanstack/react-query';
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import Loading from '@/components/ui/loading';
@@ -73,7 +73,8 @@ export function MarketplaceFileView({
           <div className="prose-sm text-foreground/90 max-w-none">
             <UnifiedMarkdown
               content={useLoadedReadme ? content : stripFrontmatter(content)}
-              allowHtml={false}
+              trust="untrusted"
+              variant="document"
             />
           </div>
         ) : (

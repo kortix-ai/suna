@@ -536,7 +536,7 @@ function cmdInstall(binPath: string, argv: string[]): number {
 
 // ── update / rollback ────────────────────────────────────────────────────────
 
-export interface ResolvedTarget {
+interface ResolvedTarget {
   /** Expected content digest (sha256 hex) of the target build. */
   sha256: string
   /** Bytes of the target build, or null if not fetched yet (manifest-only). */
@@ -570,10 +570,7 @@ export interface UpdateOptions {
   supervised?: boolean
   /** Where `agent.next` is staged when {@link supervised}. Defaults to `agentStateDir()`. */
   stateDir?: string
-  fetchImpl?: typeof fetch
   spawn?: SpawnDeps
-  /** Test seam: resolve the target directly instead of hitting the network. */
-  resolveTarget?: (opts: UpdateOptions) => Promise<ResolvedTarget>
 }
 
 export interface UpdateResult {
@@ -612,8 +609,7 @@ function resolveArtifactUrl(apiRoot: string, path: unknown, fallback: string): s
   return `${origin}${path}`
 }
 
-async function defaultResolveTarget(opts: UpdateOptions): Promise<ResolvedTarget> {
-  const fetchImpl = opts.fetchImpl ?? fetch
+async function resolveTarget(opts: UpdateOptions): Promise<ResolvedTarget> {
   const from = opts.from?.trim()
 
   // 1) Explicit local file — the operator points us at a built binary.
@@ -623,7 +619,7 @@ async function defaultResolveTarget(opts: UpdateOptions): Promise<ResolvedTarget
   }
   // 2) Explicit URL — download; the bytes' own digest is the expectation.
   if (from && /^https?:\/\//.test(from)) {
-    const res = await fetchImpl(from, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
+    const res = await fetch(from, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
     if (!res.ok) throw new Error(`download from ${from} returned ${res.status}`)
     const bytes = Buffer.from(await res.arrayBuffer())
     return { sha256: sha256Bytes(bytes), bytes, source: 'url', version: from }
@@ -634,7 +630,7 @@ async function defaultResolveTarget(opts: UpdateOptions): Promise<ResolvedTarget
     throw new Error('no update source: pass --from <path|url>, or set KORTIX_API_URL + a token')
   }
   const base = `${api.apiRoot}/runtime-assets`
-  const manRes = await fetchImpl(`${base}/manifest`, {
+  const manRes = await fetch(`${base}/manifest`, {
     headers: { Authorization: `Bearer ${api.token}` },
     signal: AbortSignal.timeout(MANIFEST_TIMEOUT_MS),
   })
@@ -671,7 +667,6 @@ async function defaultResolveTarget(opts: UpdateOptions): Promise<ResolvedTarget
  */
 export async function performUpdate(opts: UpdateOptions): Promise<UpdateResult> {
   const spawn = opts.spawn ?? defaultSpawn
-  const fetchImpl = opts.fetchImpl ?? fetch
   const target = opts.targetPath
   const prev = `${target}.prev`
   const dir = dirname(target)
@@ -688,7 +683,7 @@ export async function performUpdate(opts: UpdateOptions): Promise<UpdateResult> 
   // Resolve what we should be running (cheap: manifest is tiny).
   let resolved: ResolvedTarget
   try {
-    resolved = await (opts.resolveTarget ?? defaultResolveTarget)(opts)
+    resolved = await resolveTarget(opts)
   } catch (e) {
     return fail(`could not resolve update target: ${e instanceof Error ? e.message : String(e)}`)
   }
@@ -729,7 +724,7 @@ export async function performUpdate(opts: UpdateOptions): Promise<UpdateResult> 
     try {
       const api = resolveApi(opts)
       const headers = api ? { Authorization: `Bearer ${api.token}` } : undefined
-      const res = await fetchImpl(resolved.downloadUrl, {
+      const res = await fetch(resolved.downloadUrl, {
         headers,
         signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
       })

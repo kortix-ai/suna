@@ -468,29 +468,23 @@ test("28 — eager composer uploads before Send and reuses handles after refusal
     );
     await input.press("Enter");
 
-    // THE SEND IS REAL FROM THE KEYPRESS, not from the create's answer. The
-    // create is parked open below, so everything asserted here is the surface
-    // the user is looking at while the round trip runs — the window that used
-    // to show the typed sentence frozen in a locked box behind a spinner
-    // (measured 1165ms end to end on localhost, `POST .../sessions` 908ms of
-    // it). The box is empty and the message is on screen as its own bubble,
-    // with the picture it carries, exactly as the session it is about to open
-    // will draw it.
+    // The create is parked open below, so everything asserted here is the
+    // surface the user sees while the round trip runs. Project home paints no
+    // bubble and no "Thinking" row on send: the page stays the welcome screen,
+    // the sentence stays in the composer, and the instant shell draws the
+    // first turn only once the session route opens. A turn painted here made
+    // a slow or stuck create look like a live session.
     await heldCreateHold.observed;
     const optimisticTurn = page.locator("[data-turn-id='optimistic']");
-    await expect(optimisticTurn).toBeVisible();
-    await expect(optimisticTurn).toContainText("Eager attachment first prompt");
-    await expect(input).toHaveText("");
-    // The project-home heading is gone: the column is a thread now, and the
-    // composer has left the hero position for the dock under it.
-    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
+    await expect(optimisticTurn).toHaveCount(0);
+    await expect(input).toHaveText("Eager attachment first prompt");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     heldCreateHold.release();
 
     expect(attachmentIds((await heldCreate).postDataJSON())).toEqual([]);
     expect(promptBodies).toHaveLength(0);
     // The injected create refusal keeps the draft and returns every upload.
-    // NOTHING was created and nothing navigated, so the bubble goes back to
-    // being an editable draft rather than staying on screen as a lie.
+    // NOTHING was created and nothing navigated, so no turn is on screen.
     await expect(optimisticTurn).toHaveCount(0, { timeout: 10_000 });
     await expect(input).toHaveText("Eager attachment first prompt", {
       timeout: 10_000,

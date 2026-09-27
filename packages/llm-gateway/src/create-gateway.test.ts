@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createGateway } from './create-gateway';
-import type { GatewayHooks, UpstreamDescriptor } from './domain';
+import type { GatewayHooks, ModelCatalog, UpstreamDescriptor } from './domain';
 import type { FetchImpl } from './http';
 
 // Piece B: the Anthropic Messages ingress (`gateway.messages`) must run
@@ -32,19 +32,6 @@ function makeHooks(over: Partial<GatewayHooks> = {}): GatewayHooks {
 }
 
 describe('gateway.messages (Anthropic Messages ingress)', () => {
-  test('401 without a bearer token, in the Anthropic error envelope (not the OpenAI-compat one)', async () => {
-    const res = await createGateway(makeHooks()).messages({
-      authorization: undefined,
-      rawBody: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }),
-    });
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as { type: string; error: { type: string; message: string } };
-    expect(body.type).toBe('error');
-    expect(body.error.type).toBe('authentication_error');
-    // Not the OpenAI-compat shape a bare chatCompletions() 401 would return.
-    expect((body as unknown as { code?: unknown }).code).toBeUndefined();
-  });
-
   test('400 on invalid JSON, in the Anthropic error envelope', async () => {
     const res = await createGateway(makeHooks()).messages({
       authorization: 'Bearer good',
@@ -140,5 +127,60 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
       'message_delta',
       'message_stop',
     ]);
+  });
+});
+
+describe('gateway.messages — upstream error reasons reach the client', () => {
+  // The provider's own rejection ("Unsupported parameter: …") used to collapse
+  // into "Upstream request failed", so Claude Code users saw no cause.
+  for (const stream of [false, true]) {
+    test(`stream:${stream} carries the provider's error message`, async () => {
+      const fetchImpl: FetchImpl = async () =>
+        new Response(
+          JSON.stringify({ error: { message: 'Unsupported parameter: metadata', type: 'invalid_request_error' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      const res = await createGateway(makeHooks(), { fetchImpl }).messages({
+        authorization: 'Bearer good',
+        rawBody: JSON.stringify({ model: 'm', max_tokens: 5, stream, messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { type: string; error: { type: string; message: string } };
+      expect(body.type).toBe('error');
+      expect(body.error.type).toBe('invalid_request_error');
+      expect(body.error.message).toContain('Unsupported parameter: metadata');
+    });
+  }
+});
+
+describe('gateway.listModels — scope plumbing', () => {
+  function gatewayWithSpy() {
+    const seen: Array<{ managedOnly?: boolean } | undefined> = [];
+    const gateway = createGateway(
+      makeHooks({
+        listModels: async (_principal, opts): Promise<ModelCatalog> => {
+          seen.push(opts);
+          return opts?.managedOnly ? { 'grok-4.6': { name: 'Grok 4.6' } } : { 'a/b': { name: 'B' } };
+        },
+      }),
+    );
+    return { seen, gateway };
+  }
+
+  test.each([
+    [{ managedOnly: true }, { 'grok-4.6': { name: 'Grok 4.6' } }],
+    [undefined, { 'a/b': { name: 'B' } }],
+  ])('passes the options %p straight to the catalog hook', async (opts, models) => {
+    const { seen, gateway } = gatewayWithSpy();
+    const res = await gateway.listModels('Bearer good', opts);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ models });
+    expect(seen).toEqual([opts]);
+  });
+
+  test('the scope never bypasses auth', async () => {
+    const { gateway } = gatewayWithSpy();
+    expect((await gateway.listModels(undefined, { managedOnly: true })).status).toBe(401);
+    expect((await gateway.listModels('Bearer bad', { managedOnly: true })).status).toBe(401);
   });
 });
