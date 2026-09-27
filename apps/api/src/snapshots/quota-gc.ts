@@ -105,10 +105,12 @@ export async function loadReferencedSnapshotNames(now: number): Promise<Set<stri
   );
   // A deployment is a valid rollback target for as long as (and only as long
   // as) it holds `status = 'ready'` — the rollback route's own gate
-  // (`routes.ts`, `POST /apps/{appId}/rollback`). Nothing ever moves a
-  // deployment BACK to `ready`, so once a row drops out of this query its
-  // name is permanently dead weight, not "maybe still needed" — see
-  // `quota-gc-select.ts`'s `QUOTA_GC_APP_DEPLOYMENT_REAP_GRACE_MS` header.
+  // (`routes.ts`, `POST /apps/{appId}/rollback`). This protects THIS
+  // environment's ready deployments outright; it is not itself what makes a
+  // `kortix-app-` snapshot reapable. dev/staging/prod share the Daytona org
+  // but not a database, so this query is blind to a foreign environment's
+  // `ready` row — the actual reap gate is rule 5's idle floor in
+  // `quota-gc-select.ts` (see `APP_DEPLOYMENT_PREFIX`'s header for why).
   for (const row of await db
     .select({ deploymentId: appDeployments.deploymentId })
     .from(appDeployments)

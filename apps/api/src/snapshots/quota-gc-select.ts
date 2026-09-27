@@ -68,31 +68,30 @@ export const QUOTA_GC_KEEP_FRESHEST_DEFAULTS = 12;
 /** Unreferenced user templates / legacy warm bases must be idle this long. */
 export const QUOTA_GC_MIN_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * Grace window for a dead App-deployment image before it is reapable — the
- * same margin `reapSupersededMetaSnapshots` uses (`RUNTIME_REAP_PROTECT_MS`).
- * Unlike the 7-day idle gate below, eligibility here is a DB fact (no `ready`
- * row references the name), not a calendar heuristic, so a short buffer is
- * enough to clear the "just finished building, DB hasn't flipped yet" race —
- * see `isManaged`'s header comment for why a longer wait is neither needed
- * nor safe to substitute for the real signal.
- */
-export const QUOTA_GC_APP_DEPLOYMENT_REAP_GRACE_MS = 60 * 60 * 1000;
-
 /** Max deletions per sweep pass — keeps each pass cheap and observable. */
 export const QUOTA_GC_MAX_PER_PASS = 15;
 
 export const DEFAULT_PREFIX = 'kortix-default-';
 /**
  * `kortix-app-<deploymentId-no-dashes>` — one per App deployment build
- * (`deployment-worker.ts`). A deployment never returns to being a valid
- * rollback target once it leaves `status = 'ready'` (the rollback route's own
- * gate), and a hard-deleted App cascades its `app_deployments` rows away
- * entirely — either way the name drops out of `referenced` for good. See the
- * 2026-08-13 "anything created per-deploy needs a reaper" incident: this
- * namespace was deliberately left unmanaged pending a bounded-retention
- * design; it had grown to 39/99 org snapshots, including entries over 40 days
- * idle, with zero code path ever reclaiming one.
+ * (`deployment-worker.ts`). It was never in `MANAGED_PREFIXES`, so quota-gc
+ * could not see or reclaim any of it: 39/99 org snapshots on 2026-09-27, 25 of
+ * them 38+ days idle, with zero code path ever reclaiming one (the sibling of
+ * the 2026-08-13 "anything created per-deploy needs a reaper" incident).
+ *
+ * Deliberately reaped through the SAME rule 5 (unreferenced + idle >
+ * `QUOTA_GC_MIN_IDLE_MS`) as `kortix-tpl-` / `kortix-wproj-`, not a dedicated
+ * DB-status rule, even though a deployment's own `status` column is a more
+ * precise, always-correct signal for THIS environment (a deployment is a
+ * valid rollback target only while `status = 'ready'` — the rollback route's
+ * own gate — and nothing ever moves a row back to `ready`). The reason is the
+ * cross-environment safety argument above: dev/staging/prod share this ORG
+ * but not a database, so `referenced` (built from the CALLING environment's
+ * `app_deployments`) is blind to another environment's `ready` deployment. A
+ * DB-status-only rule would treat a foreign, live, actively-serving App image
+ * as "no row says ready" and delete it out from under it. `referenced` here
+ * is strictly a same-environment PROTECTION on top of the idle floor, never
+ * the sole reason to reap — exactly the role it already plays for `kortix-tpl-`.
  */
 export const APP_DEPLOYMENT_PREFIX = 'kortix-app-';
 /** Namespaces we own and may reap. Anything else (stock/bench images) is untouched. */
@@ -244,20 +243,6 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     claim(s, 'retired per-project warm image');
   }
 
-  // 3. Dead App-deployment images — the deployment they were built for is no
-  //    longer `ready` (or no longer exists at all), so `referenced` already
-  //    excludes it: this is a DB fact, not a heuristic, so it does not wait
-  //    out the 7-day idle gate below. Only a short race-clearing grace period
-  //    applies (see the constant's header).
-  for (const s of pool) {
-    if (!s.name.startsWith(APP_DEPLOYMENT_PREFIX)) continue;
-    const t = lastTouch(s);
-    if (!Number.isFinite(t)) continue;
-    if (now - t > QUOTA_GC_APP_DEPLOYMENT_REAP_GRACE_MS) {
-      claim(s, 'dead app-deployment image (no ready deployment references it)');
-    }
-  }
-
   // 4. Superseded platform defaults — keep only the freshest N. Not idle-gated
   //    (see the header): a superseded default's lastUsedAt is fresh by construction.
   const defaults = pool.filter((s) => s.name.startsWith(DEFAULT_PREFIX)).sort(byFreshestFirst);
@@ -265,17 +250,14 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     claim(s, 'superseded default (beyond freshest N)');
   }
 
-  // 5. Everything else we own (user templates `kortix-tpl-`, legacy `kortix-wproj-`):
-  //    conservative idle gate. These can encode real user intent, so they get the
-  //    benefit of the doubt that a content-addressed default does not.
+  // 5. Everything else we own (user templates `kortix-tpl-`, legacy
+  //    `kortix-wproj-`, App-deployment images `kortix-app-`): conservative
+  //    idle gate. These can encode real user intent — or, for `kortix-app-`,
+  //    a foreign environment's live rollback target that `referenced` cannot
+  //    see (see `APP_DEPLOYMENT_PREFIX`'s header) — so they get the benefit
+  //    of the doubt that a content-addressed default does not.
   for (const s of pool) {
-    if (
-      s.name.startsWith(DEFAULT_PREFIX) ||
-      isPpwarmNamespaceName(s.name) ||
-      s.name.startsWith(APP_DEPLOYMENT_PREFIX)
-    ) {
-      continue;
-    }
+    if (s.name.startsWith(DEFAULT_PREFIX) || isPpwarmNamespaceName(s.name)) continue;
     const t = lastTouch(s);
     if (!Number.isFinite(t)) continue;
     if (now - t > QUOTA_GC_MIN_IDLE_MS) {
