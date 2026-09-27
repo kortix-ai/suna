@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * Built for speed: keyboard-driven (j/k, Enter, a, e, d, 1-3, /, ?), every
  * action is undoable, and live search. Multi-select left the UI on 2026-09-03;
  * the bulk plumbing (`onBulkAct`, `resolveBulkOutcome`) stays for `d`.
- * Prototype: mock data, optimistic local actions. See docs/REVIEW_CENTER_DESIGN.md.
+ * Prototype: mock data, optimistic local actions.
  */
 
 import { Badge } from '@/components/ui/badge';

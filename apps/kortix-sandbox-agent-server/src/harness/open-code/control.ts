@@ -389,7 +389,7 @@ export function createOpenCodeControlService(
             opencode_pid: opencode.getPid(),
           }
         },
-        // Config releases (docs/specs/config-releases.md). The descriptor is
+        // Config releases. The descriptor is
         // always fetched from the API; nothing here takes one as input.
         convergeConfig: (options) =>
           convergeConfigRelease({

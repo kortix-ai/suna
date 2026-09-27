@@ -751,8 +751,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // restored in the background right after boot (scheduleHistoryBackfill).
     // It is worth ~1.5x on the clone, no more — the dominant cost is the
     // working tree plus the transatlantic git-proxy hop (sandbox US → API
-    // eu-west-2 → GitHub US). See
-    // docs/specs/2026-07-25-session-boot-latency-attribution.md, Finding 1.
+    // eu-west-2 → GitHub US).
     KORTIX_CLONE_FILTER: '',
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
@@ -1380,8 +1379,7 @@ export async function createProjectSession(input: {
       },
     };
   }
-  // MANDATORY DECLARED AGENTS (flagged — docs/specs/2026-07-05-agent-first-config-
-  // unification.md §2.1/§3 Phase 2). Only projects "subject" to enforcement (the
+  // MANDATORY DECLARED AGENTS (flagged — Phase 2). Only projects "subject" to enforcement (the
   // platform-wide flag, or a project stamped `metadata.require_declared_agents`
   // at creation) pay for this: an extra manifest read, done synchronously here so
   // an undeclared agent is REJECTED with an explicit 400 before any row is

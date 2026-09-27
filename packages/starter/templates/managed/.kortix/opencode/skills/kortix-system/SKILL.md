@@ -549,8 +549,7 @@ cross-field rules the static schema can't express, e.g. `default_agent` must
 name a declared agent).
 
 **v2 in one paragraph** (see `<agent-authorization>` below for the fuller
-write-up, and `docs/specs/2026-07-05-agent-first-config-unification.md` for
-the design rationale): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
+write-up): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
 and every block is **governance only** —
 `enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`/`workspace`. `env` was
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/

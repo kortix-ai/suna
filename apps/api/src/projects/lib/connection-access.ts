@@ -76,8 +76,7 @@ export function connectionNeedsPrivateSession(
  * reachable only inside a `private` session, so a shared session can never run
  * as one person's identity.
  *
- * `agentPrincipal` (spec docs/specs/2026-09-22-agents-as-principals.md §2.3):
- * present when the caller is an agent session under the agent-principal model
+ * `agentPrincipal`: present when the caller is an agent session under the agent-principal model
  * (flag `agent_principal` ON, governed grant). Its acting principal is the
  * agent's service account, so neither `actingUserId` (the launcher) nor the
  * service-account flag decides. A `member` row is reachable only when

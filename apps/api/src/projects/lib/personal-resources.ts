@@ -1,6 +1,5 @@
 /**
- * Personal resources of an agent session — spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.3.
+ * Personal resources of an agent session.
  *
  * A resource owned by one human (a member-owned connector connection, a
  * personal project-secret override, a personal provider key, that human's own

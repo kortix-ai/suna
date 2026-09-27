@@ -5,8 +5,7 @@ deployment system.** Terraform provisions a single EC2 box exactly once —
 instance, a durable data volume, a security group, an Elastic IP, optional
 Route53 records, and daily snapshots — then cloud-init runs the *exact same*
 `kortix self-host init` / `kortix self-host start` any self-host user runs by
-hand (see `scripts/kortix-selfhost-up.sh` and
-`docs/runbooks/self-hosting.md`). After that, the box keeps itself current via
+hand (see `scripts/kortix-selfhost-up.sh`). After that, the box keeps itself current via
 the in-compose nightly `kortix-updater` service. **Re-running `terraform
 apply` does not redeploy the app** — there is no Terraform-side update
 mechanism to keep in sync with the updater, on purpose.

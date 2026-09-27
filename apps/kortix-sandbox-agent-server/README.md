@@ -30,7 +30,6 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
   Opencode never starts; its routes 503 honestly. `GET /kortix/health`
   reports `workload: "monitor"` — the API's reconciler uses that field to
   detect (and recycle) a box whose baked agent binary predates monitor mode.
-  Contract: `docs/specs/2026-08-12-monitors.md`.
 
 **Scope:**
 

@@ -14,7 +14,7 @@
  *
  * Built against an injected `ConnectorRouterDeps` so the e2e drives the real HTTP
  * layer + real gateway logic with in-memory fakes (db + upstream) at the
- * boundary; production wires DB-backed deps (db-deps.ts). See docs/specs/connector.md.
+ * boundary; production wires DB-backed deps (db-deps.ts).
  */
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
@@ -200,8 +200,7 @@ export interface ConnectorPrincipal {
   requestedConnectorAccount?: string | null;
   /**
    * Present when the caller is an agent session under the agent-principal
-   * model (flag `agent_principal` ON, governed grant — spec
-   * docs/specs/2026-09-22-agents-as-principals.md §2.3). Personal resources
+   * model (flag `agent_principal` ON, governed grant). Personal resources
    * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
@@ -2015,9 +2014,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   );
 
   // ── Admin: connector credential mode — restricted to a `shared`-only no-op.
-  // `per_user` (each member brings their own) was removed 2026-07-05
-  // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5). The route
-  // stays for back-compat callers but only ever accepts `shared` now.
+  // `per_user` (each member brings their own) was removed 2026-07-05.
+  // The route stays for back-compat callers but only ever accepts `shared` now.
   app.openapi(
     createRoute({
       method: 'put',

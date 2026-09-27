@@ -228,7 +228,7 @@ describe('convergeSessionConfig with config releases', () => {
 
 // Repository replacement no longer freezes a session: a session created before
 // the replacement converges onto the project's CURRENT config exactly like any
-// other (docs/specs/config-releases.md, "Repository replacement").
+// other.
 describe('convergeSessionConfig for a session from a previous repository generation', () => {
   test('converges like any other session — the generation decides nothing', async () => {
     for (const schedule of ['wake', 'trigger', 'turn-start'] as const) {

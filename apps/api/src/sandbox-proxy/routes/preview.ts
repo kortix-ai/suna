@@ -546,8 +546,7 @@ async function agentSwitchRefusal(
 
 // A prompt's explicit `agent` only constitutes a prohibited switch when it would
 // run a DIFFERENT *concrete* agent than the one this session's connector token was
-// minted for. That — and only that — is the escalation the policy prevents (see
-// docs/specs/2026-06-28-token-session-agent-identity.md). The sentinel 'default'
+// minted for. That — and only that — is the escalation the policy prevents. The sentinel 'default'
 // is non-binding on EITHER side: a session stored as 'default' has no privileged
 // agent-specific grant to inherit, and a prompt asking for 'default' just means
 // "this session's own default agent".

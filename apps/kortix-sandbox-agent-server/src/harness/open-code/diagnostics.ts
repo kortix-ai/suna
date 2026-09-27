@@ -251,7 +251,7 @@ async function readOpenCodeHealth(
     // from the live process env, so it tracks a hot push as well as a boot.
     agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
     // Which config release OpenCode runs, which one the API wants, and why they
-    // differ (docs/specs/config-releases.md, "Health").
+    // differ.
     // The SAME read `runtimeReady` was computed from, so no health sample can
     // ever show `runtimeReady: true` beside a `config` block that disagrees.
     config: configReport,
