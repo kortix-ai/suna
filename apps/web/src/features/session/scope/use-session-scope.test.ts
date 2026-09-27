@@ -124,6 +124,37 @@ describe('loadSessionScopeCatalog', () => {
     expect(calls).toBe(1);
   });
 
+  test('reuses the canonical project-connectors cache — never a second raw request for the same list', async () => {
+    // The project shell's Customize prefetch (`use-customize-prefetch.ts`)
+    // already warms `qk.project.connectors(projectId)` on session-view mount.
+    // Before this fix, `listConnectors` bypassed the cache entirely and asked
+    // the network again — two identical `GET /connectors/...` calls for one
+    // paint (`docs/specs/turn-latency.md` R4, the census's `connectors x2`).
+    const queryClient = new QueryClient();
+    let calls = 0;
+    const response = { connectors: [connector('mail')] };
+    const fetchConnectors = async () => {
+      calls += 1;
+      return response;
+    };
+    const sources = createSessionScopeCatalogSources(queryClient, undefined, undefined, fetchConnectors);
+
+    const [canonical, catalogItems] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: qk.project.connectors('project-1'),
+        queryFn: () => fetchConnectors('project-1', { includeSchemas: false }),
+        staleTime: 60_000,
+      }),
+      sources.listConnectors('project-1'),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(canonical.connectors).toEqual(response.connectors);
+    expect(catalogItems).toEqual(response.connectors);
+    expect(await sources.listConnectors('project-1')).toEqual(response.connectors);
+    expect(calls).toBe(1);
+  });
+
   test('loads all catalog axes as ready states', async () => {
     const calls: string[] = [];
     const result = await loadSessionScopeCatalog('project-1', {

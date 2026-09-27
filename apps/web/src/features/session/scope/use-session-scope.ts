@@ -11,7 +11,7 @@ import {
   type ProjectSecret,
   type SessionScopeInput,
 } from '@kortix/sdk';
-import { contract, qk, useProjectConfig } from '@kortix/sdk/react';
+import { FRESHNESS, contract, qk, useProjectConfig } from '@kortix/sdk/react';
 import {
   useIsFetching,
   useMutation,
@@ -85,6 +85,7 @@ export function createSessionScopeCatalogSources(
   queryClient: QueryClient,
   fetchSecrets: typeof listProjectSecrets = listProjectSecrets,
   fetchConnections: typeof listConnections = listConnections,
+  fetchConnectors: typeof listConnectors = listConnectors,
 ): SessionScopeCatalogSources {
   return {
     listSecrets: async (projectId) =>
@@ -95,8 +96,19 @@ export function createSessionScopeCatalogSources(
           ...contract('config'),
         })
       ).items,
+    // The CANONICAL `qk.project.connectors(id)` slot — the same key the
+    // project shell's Customize prefetch (`use-customize-prefetch.ts`) warms
+    // on every session-view mount. Reading it straight (as this used to)
+    // ignored that warm entry and issued a second, identical
+    // `GET /connectors/...` for one paint (`docs/specs/turn-latency.md` R4).
     listConnectors: async (projectId) =>
-      (await listConnectors(projectId, { includeSchemas: false })).connectors,
+      (
+        await queryClient.fetchQuery({
+          queryKey: qk.project.connectors(projectId),
+          queryFn: () => fetchConnectors(projectId, { includeSchemas: false }),
+          ...contract(FRESHNESS.connectors),
+        })
+      ).connectors,
     // A session binds only accounts its creator may USE. A shared account a
     // connections manager sees just to manage it (`usable: false`) is not one.
     listConnections: async (projectId) =>
@@ -227,7 +239,15 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
     queryFn: () => getProjectSessionScope(projectId as string, sessionId as string),
     enabled: Boolean(projectId && sessionId),
     retry: false,
-    staleTime: 0,
+    // `useSessionScope` mounts from several sibling surfaces on one session
+    // view at once (the composer, the permission prompt, the overrides
+    // toolbar, the scope control) — `staleTime: 0` meant every one of them
+    // past the first re-issued the SAME `GET .../scope` request the instant
+    // it mounted (`docs/specs/turn-latency.md` R4, the census's `scope x2`).
+    // 3s absorbs one paint's mount burst; `saveScope`'s `setQueryData` below
+    // still lands a fresh answer on the SAME tick a save resolves, so this
+    // never delays a scope EDIT — only a redundant re-read of an unedited one.
+    staleTime: 3_000,
   });
   // Ask ONCE for both leaves (useProjectCans batches into a single probe), then
   // only request the axes this user may actually read.
