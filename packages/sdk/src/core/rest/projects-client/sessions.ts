@@ -782,12 +782,19 @@ export async function getSessionTranscriptSync(
      * rather than silently returning the newest window again.
      */
     before?: string | null;
+    /**
+     * A sub-agent's OpenCode session inside this session (`ses_…`, the id a
+     * sub-agent row opens). Returns that sub-agent's own saved transcript
+     * instead of the conversation; `available: false` when nothing was saved.
+     */
+    child?: string | null;
   },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
   if (options?.history) search.set('history', 'true');
   if (options?.before) search.set('before', options.before);
+  if (options?.child) search.set('child', options.child);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
