@@ -87,6 +87,37 @@ describe('selectDivergedBoxes', () => {
     expect(diverged.map((row) => row.sandboxId).sort()).toEqual(['sb-a', 'sb-c']);
   });
 
+  test('a box mid-create is never a candidate, in either layer', () => {
+    // THE DANGEROUS FALSE POSITIVE, named. A test suite (or a user) provisions
+    // a box; the provider `create` returns and the row is `provisioning` for a
+    // moment before it reaches `active`. If that window counted as "row parked,
+    // VM running", this sweep would switch off a box somebody is about to use,
+    // and every flow holding it would fail for reasons that look nothing like
+    // a reaper.
+    expect(
+      selectDivergedBoxes(
+        [box('sbx-a'), box('sbx-b')],
+        [
+          { provider: 'platinum', externalId: 'sbx-a', status: 'provisioning', sandboxId: 'sb-a' },
+          { provider: 'platinum', externalId: 'sbx-b', status: 'active', sandboxId: 'sb-b' },
+        ],
+      ),
+    ).toEqual([]);
+    // And the decision re-checks it after the authoritative re-read, so a row
+    // that moved between the bulk scan and the decision is judged on what it
+    // says NOW, not on what the scan saw.
+    for (const rowStatus of ['provisioning', 'active', 'error'] as const) {
+      expect(
+        decideRowVmDivergence({
+          rowStatus,
+          transitionInProgress: false,
+          ownedByThisInstance: true,
+          rowSettledForMs: 24 * 3600_000,
+        }),
+      ).toBe('skip');
+    }
+  });
+
   test('the same external id under a different provider is a different box', () => {
     const diverged = selectDivergedBoxes(
       [box('sbx-a', 'daytona')],
