@@ -373,19 +373,21 @@ describe('shortRelative', () => {
 });
 
 describe('resolveSessionListViewState', () => {
-  test('loading wins regardless of error or counts', () => {
+  test('a list with no data and no error is loading, never "empty"', () => {
+    // The first load running, paused offline (TanStack `fetchStatus: 'paused'`,
+    // `isLoading` false), or not enabled yet: none of them means "no sessions".
     const state = resolveSessionListViewState({
-      isLoading: true,
-      isError: true,
-      totalCount: 5,
-      visibleCount: 5,
+      hasData: false,
+      isError: false,
+      totalCount: 0,
+      visibleCount: 0,
     });
     expect(state).toBe('loading');
   });
 
-  test('error wins over empty/no-matches once loading has settled', () => {
+  test('a first load that failed is "error"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: false,
       isError: true,
       totalCount: 0,
       visibleCount: 0,
@@ -393,9 +395,30 @@ describe('resolveSessionListViewState', () => {
     expect(state).toBe('error');
   });
 
+  test('rows win over a failed refetch or "Load more"', () => {
+    // TanStack v5 keeps the loaded pages and sets `status: 'error'`.
+    const state = resolveSessionListViewState({
+      hasData: true,
+      isError: true,
+      totalCount: 5,
+      visibleCount: 5,
+    });
+    expect(state).toBe('content');
+  });
+
+  test('an empty list stays "empty" when its refetch fails', () => {
+    const state = resolveSessionListViewState({
+      hasData: true,
+      isError: true,
+      totalCount: 0,
+      visibleCount: 0,
+    });
+    expect(state).toBe('empty');
+  });
+
   test('no sessions at all is "empty"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 0,
       visibleCount: 0,
@@ -405,7 +428,7 @@ describe('resolveSessionListViewState', () => {
 
   test('sessions exist but the active filter matches none: "no-matches"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 3,
       visibleCount: 0,
@@ -415,7 +438,7 @@ describe('resolveSessionListViewState', () => {
 
   test('sessions exist and the filter matches some: "content"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 3,
       visibleCount: 2,

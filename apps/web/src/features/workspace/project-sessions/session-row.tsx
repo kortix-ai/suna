@@ -1,6 +1,12 @@
 'use client';
 
-import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
+import {
+  SESSION_STATUS_TRANSLATION_KEY,
+  sessionDisplayStatus,
+  sessionSource,
+  type SessionDisplayStatus,
+  type SessionSourceKind,
+} from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -24,7 +30,11 @@ import {
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
+import {
+  SESSION_LIST_STATUS,
+  type ProjectSession,
+  type StatusTone as SessionStatusTone,
+} from '@kortix/sdk';
 import {
   ArrowCounterClockwiseIcon,
   CalendarDotsIcon,
@@ -115,14 +125,28 @@ const SECONDARY_TILE: Pick<StatusTile, 'tile' | 'icon'> = {
   icon: 'text-muted-foreground',
 };
 
+/** Tile colour per status tone: green only for live or actionable, never for finished. */
+const TONE_TILE: Record<SessionStatusTone, Pick<StatusTile, 'tile' | 'icon'>> = {
+  live: { tile: 'bg-kortix-green/15', icon: 'text-kortix-green' },
+  actionable: { tile: 'bg-kortix-green/15', icon: 'text-kortix-green' },
+  progress: { tile: 'bg-kortix-yellow/15', icon: 'text-kortix-yellow' },
+  danger: { tile: 'bg-kortix-red/15', icon: 'text-kortix-red' },
+  muted: SECONDARY_TILE,
+};
+
 /**
  * Status colour on the source-icon tile. Deleted wins over lifecycle status.
- * Palette follows kortix design-system status tokens.
+ *
+ * The lifecycle word is the one every list uses (`sessionDisplayStatus`): this
+ * page used to name the raw sandbox status ("Queued", "Branching",
+ * "Provisioning", "Completed") where the sidebar beside it said "Starting" and
+ * "Done" for the same session.
  */
 function sessionStatusTile(
-  status: ProjectSessionStatus,
+  session: ProjectSession,
   options: { deleted: boolean; metadataOnly: boolean },
   tI18nComplete: UiTranslator,
+  statusLabel: (status: SessionDisplayStatus) => string,
 ): StatusTile {
   if (options.deleted) {
     return {
@@ -134,47 +158,8 @@ function sessionStatusTile(
   if (options.metadataOnly) {
     return { label: tI18nComplete.raw('textdf0453d185c4'), ...SECONDARY_TILE };
   }
-
-  switch (status) {
-    case 'running':
-      return {
-        label: tI18nComplete.raw('textf4ccae29e1bb'),
-        tile: 'bg-kortix-green/15',
-        icon: 'text-kortix-green',
-      };
-    case 'queued':
-      return {
-        label: tI18nComplete.raw('text661ff40a07e0'),
-        tile: 'bg-kortix-yellow/15',
-        icon: 'text-kortix-yellow',
-      };
-    case 'branching':
-      return {
-        label: tI18nComplete.raw('text9aa73337127b'),
-        tile: 'bg-kortix-yellow/15',
-        icon: 'text-kortix-yellow',
-      };
-    case 'provisioning':
-      return {
-        label: tI18nComplete.raw('textc2b1b8e2e039'),
-        tile: 'bg-kortix-yellow/15',
-        icon: 'text-kortix-yellow',
-      };
-    case 'failed':
-      return {
-        label: tI18nComplete.raw('text031a8f0f659d'),
-        tile: 'bg-kortix-red/15',
-        icon: 'text-kortix-red',
-      };
-    case 'completed':
-      return { label: tI18nComplete.raw('text22a970d2e5b1'), ...SECONDARY_TILE };
-    case 'stopped':
-      return { label: tI18nComplete.raw('text1a4f630ac1b6'), ...SECONDARY_TILE };
-    default: {
-      const _exhaustive: never = status;
-      throw new Error(`Unhandled session status: ${String(_exhaustive)}`);
-    }
-  }
+  const status = sessionDisplayStatus(session);
+  return { label: statusLabel(status), ...TONE_TILE[SESSION_LIST_STATUS[status].tone] };
 }
 
 export interface SessionRowActions {
@@ -219,6 +204,7 @@ function SessionRowImpl({
   children,
 }: SessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tStatus = useTranslations('sidebar.sessionList.status');
   const [menuOpen, setMenuOpen] = useState(false);
   const title = getSessionDisplayTitle(session);
   const source = sessionSource(session, tI18nComplete);
@@ -235,12 +221,13 @@ function SessionRowImpl({
   const hasActions = hasLifecycleActions;
   const relativeLabel = time.relative ? shortRelative(time.relative) : '';
   const statusTile = sessionStatusTile(
-    session.status,
+    session,
     {
       deleted: isDeleted,
       metadataOnly: session.can_access === false,
     },
     tI18nComplete,
+    (status) => tStatus(SESSION_STATUS_TRANSLATION_KEY[status]),
   );
 
   const deferAfterClose = (fn: () => void) => {
@@ -338,7 +325,7 @@ function SessionRowImpl({
               <time
                 className={cn(
                   SESSION_RELATIVE_TIME_CLASS,
-                  'pr-1.5 transition-opacity duration-150',
+                  'pr-1.5 transition-opacity duration-normal',
                   hasActions &&
                     cn(
                       'opacity-100 group-hover/row:opacity-0 group-has-data-[state=open]/row:opacity-0',
@@ -368,7 +355,7 @@ function SessionRowImpl({
                       size="icon-sm"
                       aria-label={tI18nComplete('text33da220b1a34', { value0: title })}
                       className={cn(
-                        'absolute top-1/2 right-0.5 -translate-y-1/2 transition-opacity duration-150',
+                        'absolute top-1/2 right-0.5 -translate-y-1/2 transition-opacity duration-normal',
                         'focus:ring-0 focus-visible:ring-0 active:scale-[0.96]',
                         relativeLabel
                           ? cn(

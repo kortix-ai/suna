@@ -23,6 +23,7 @@ import {
   runGit,
   runGitCapture,
 } from './mirror';
+import { recentBranchList } from './branch-list-cache';
 import type { GitBackedProject, GitBranchInfo } from './types';
 
 // Bounded concurrency for blob hashing below — enough to cut many-file
@@ -275,18 +276,30 @@ async function readCachedBranchMetadata(
  * without transferring commit history. A valid warm mirror may enrich the
  * response with commit metadata, but this read never creates or refreshes it.
  */
-export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
-  const result = await runGit(
-    ['ls-remote', '--heads', project.repoUrl],
-    undefined,
-    true,
-    project.gitAuthToken,
-    undefined,
-    hostFromRepoUrl(project.repoUrl),
-    BRANCH_LIST_TIMEOUT_MS,
-    project.gitAuthHeaders,
-  );
-  const branches = parseRemoteBranches(result.stdout, project.defaultBranch);
+export async function listBranches(
+  project: GitBackedProject,
+  options: {
+    /** A view that may show a listing up to 5 min old (see `branch-list-cache.ts`). */
+    allowRecent?: boolean;
+  } = {},
+): Promise<GitBranchInfo[]> {
+  const readUpstream = async () => {
+    const result = await runGit(
+      ['ls-remote', '--heads', project.repoUrl],
+      undefined,
+      true,
+      project.gitAuthToken,
+      undefined,
+      hostFromRepoUrl(project.repoUrl),
+      BRANCH_LIST_TIMEOUT_MS,
+      project.gitAuthHeaders,
+    );
+    return result.stdout;
+  };
+  const stdout = options.allowRecent
+    ? await recentBranchList(project.projectId, project.repoUrl, readUpstream)
+    : await readUpstream();
+  const branches = parseRemoteBranches(stdout, project.defaultBranch);
   const repoPath = existingProjectMirrorPath(project);
   if (!repoPath || branches.length === 0) return branches;
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
+  ACCOUNTS_LIST_UNAVAILABLE_CODE,
   ANALYTICS_UNAVAILABLE_CODE,
   backendApi,
   isAdminBypassEnabled,
@@ -1148,6 +1149,90 @@ describe('makeRequest classifies a typed analytics_unavailable 503 as silent to 
     });
     try {
       const res = await backendApi.get('/admin/analytics/usage?days=30');
+      expect(res.success).toBe(false);
+      expect(res.error?.status).toBe(503);
+      // A genuine defect (no typed code) still reports — the gate must never
+      // swallow it.
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// Regression for a prod incident (2026-09-27): `GET /v1/admin/api/accounts`
+// (the admin console's `/admin/accounts` page) returned an `ApiError: Failed
+// query: select … "kortix"."credit_accounts"."balance_precise" …` (HTTP 500)
+// after the `accounts LEFT JOIN credit_accounts` query exceeded the 25s
+// `statement_timeout` (SQLSTATE 57014) — API logs showed the route at
+// 25013/25019/25056 ms (2026-09-27T01:21-01:22Z). The API now answers that
+// expected capacity state with a TYPED 503
+// (`code: 'accounts_list_unavailable'`, plain sentence, SQL logged
+// server-side); `makeRequest` classifies it as SILENT to `onError` (Sentry)
+// but still returns the `ApiError` so the console renders its own
+// unavailable state. A genuine 503 with another code/message still reports.
+// Mirrors the analytics_unavailable classification above.
+describe('makeRequest classifies a typed accounts_list_unavailable 503 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 503 with code=accounts_list_unavailable does NOT fire onError but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(503, {
+      error: true,
+      code: 'accounts_list_unavailable',
+      message: 'The accounts list is temporarily unavailable. Try again in a moment.',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.get('/admin/api/accounts?page=1&limit=50');
+      expect(res.success).toBe(false);
+      // The ApiError is still returned so the console can show its own state.
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(503);
+      expect(res.error?.code).toBe(ACCOUNTS_LIST_UNAVAILABLE_CODE);
+      // The message carries no SQL — the raw `Failed query` body must be gone.
+      expect(res.error?.message).not.toContain('Failed query');
+      expect(res.error?.message).not.toContain('credit_accounts');
+      // The expected capacity state must NEVER page Sentry.
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 503 without the typed code STILL fires onError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(503, {
+      error: true,
+      message: 'Failed query: select * from "kortix"."credit_accounts"',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.get('/admin/api/accounts?page=1&limit=50');
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(503);
       // A genuine defect (no typed code) still reports — the gate must never
