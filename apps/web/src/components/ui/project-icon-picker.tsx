@@ -1,9 +1,10 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useState } from 'react';
 
-import { EmojiPicker, type EmojiSelection } from '@/components/ui/emoji-picker';
-import { GlyphPicker, type GlyphSelection } from '@/components/ui/glyph-picker';
+import type { EmojiSelection } from '@/components/ui/emoji-picker';
+import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
@@ -27,6 +28,38 @@ import { cn } from '@/lib/utils';
  * `GlyphPicker` renders — cheap, since unlike `EmojiPicker` it fetches
  * nothing.
  */
+/**
+ * The two panels load on demand. The settings panel is mounted on every
+ * project page (project-shell.tsx) and renders this picker through
+ * ProjectIconField, so static imports put frimousse and the 202-glyph
+ * registry in the project home's largest chunk (338 KB decoded on dev,
+ * 2026-09-27) for a popover almost nobody opens. The placeholder has both
+ * panels' exact geometry (`h-[368px] w-full`), so the popover never resizes
+ * when a panel arrives; `preloadProjectIconPicker` fetches them before the
+ * popover opens.
+ */
+const loadEmojiPicker = () => import('@/components/ui/emoji-picker');
+const loadGlyphPicker = () => import('@/components/ui/glyph-picker');
+
+function PanelPlaceholder() {
+  return <div aria-busy="true" className="h-[368px] w-full" />;
+}
+
+const EmojiPicker = dynamic(() => loadEmojiPicker().then((m) => m.EmojiPicker), {
+  ssr: false,
+  loading: PanelPlaceholder,
+});
+const GlyphPicker = dynamic(() => loadGlyphPicker().then((m) => m.GlyphPicker), {
+  ssr: false,
+  loading: PanelPlaceholder,
+});
+
+/** Start fetching both panels; safe to call repeatedly. */
+export function preloadProjectIconPicker(): void {
+  void loadEmojiPicker();
+  void loadGlyphPicker();
+}
+
 export function ProjectIconPicker({
   onEmojiSelect,
   onGlyphSelect,

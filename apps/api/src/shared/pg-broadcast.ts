@@ -19,7 +19,9 @@
  * WHY A DEDICATED CONNECTION. `sql.listen()` takes a connection out of the pool
  * for the lifetime of the subscription. Taken from the request pool that is one
  * fewer connection for traffic, and a pool hiccup would take the subscription
- * with it. This opens its own `max: 1` client instead.
+ * with it. This opens its own `max: PG_BROADCAST_POOL_MAX` (1) client instead.
+ * It is a long-lived, per-task connection: `database-capacity.ts` must count it
+ * in the rolling-deployment ceiling (2026-09-27 incident — it didn't).
  *
  * IT IS AN OPTIMISATION, NEVER AN AUTHORITY. Every failure — a pooler that does
  * not speak LISTEN, a dropped connection, a malformed payload — degrades to the
@@ -29,6 +31,7 @@
 
 import postgres from 'postgres';
 import { config } from '../config';
+import { PG_BROADCAST_POOL_MAX } from './database-capacity';
 import { isUuid } from './validate';
 import type { DesiredInvalidationTransport } from '../projects/lib/turn-start-convergence';
 
@@ -80,7 +83,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
   if (!config.DATABASE_URL) return false;
   try {
     const sql = postgres(config.DATABASE_URL, {
-      max: 1,
+      max: PG_BROADCAST_POOL_MAX,
       // A subscription connection runs no statements of its own, so the
       // request pool's statement timeout would only be a way to lose it.
       idle_timeout: 0,

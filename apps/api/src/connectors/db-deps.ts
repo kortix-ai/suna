@@ -1,3 +1,4 @@
+import { mapLimit } from '@kortix/registry';
 import {
   connectorConnections,
   connectorActions,
@@ -1312,20 +1313,26 @@ async function listCatalog(
       loadConnectorPoliciesForMany(connectorIds),
     ]);
 
-  const out: CatalogConnector[] = [];
-  for (const row of conns) {
+  // Each connector's resolution reads only: its session outcome, its accounts
+  // and its credential. They are independent (the session row is request-
+  // memoized), so they run concurrently instead of one connector at a time.
+  // Measured on dev-api 2026-09-27 with 8 connectors: 8.0-16.9 s, db n=71-80
+  // serial; prod showed db n=113 on this route. Bounded, because a project can
+  // hold dozens of connectors. `mapLimit` keeps the connector order.
+  const CATALOG_RESOLVE_CONCURRENCY = 8;
+  const resolved = await mapLimit(conns, CATALOG_RESOLVE_CONCURRENCY, async (row): Promise<CatalogConnector | null> => {
     if (
       isLegacyComputerAggregate(row) &&
       !(await principalHasLegacyComputerBinding(p, row.connectorId))
     ) {
-      continue;
+      return null;
     }
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     // This is the ONLY access gate — connectors are project-wide visible to
     // every human with project access (no per-connector member scoping).
     // Canonical on both sides — the grant is canonicalized at construction.
-    if (!principalMayUseConnector(p, canonicalConnectorAlias(row.slug))) continue;
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(row.slug))) return null;
     // The accounts come first, and they decide whether the connector is listed.
     // `resolveActiveConnectorConnection` answers "what would an UNNAMED call run
     // as" — and under the account_required rule that is null when several
@@ -1347,19 +1354,19 @@ async function listCatalog(
       account: null,
       agentPrincipal: p.agentPrincipal ?? null,
     });
-    if (outcome.kind === 'none') continue;
+    if (outcome.kind === 'none') return null;
     const connection =
       outcome.kind === 'ok' && outcome.connection.status === 'active' ? outcome.connection : null;
-    if (outcome.kind === 'ok' && !connection) continue;
+    if (outcome.kind === 'ok' && !connection) return null;
     const accounts = await catalogAccountsFor(p, row.slug, accountVisibility);
     const { hasAuth } = authOf(row);
     if (connection && hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
-      if (!(await connectorConnected(row, null, connection))) continue;
+      if (!(await connectorConnected(row, null, connection))) return null;
     }
     const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
     const actions = actionsByConnector.get(row.connectorId) ?? [];
-    out.push({
+    return {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
@@ -1391,9 +1398,9 @@ async function listCatalog(
       default_account:
         accounts.find((account) => account.is_default)?.label ??
         (accounts.length === 1 ? accounts[0].label : null),
-    });
-  }
-  return out;
+    };
+  });
+  return resolved.filter((entry): entry is CatalogConnector => entry !== null);
 }
 
 async function resolveProjectUserWith(

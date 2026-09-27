@@ -61,7 +61,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Confetti, type ConfettiRef } from '@/components/magicui/confetti';
-import { glyphComponent } from '@/components/ui/glyph-registry';
+import { glyphFace as glyphDrawing } from '@/components/ui/glyph-face';
 import { glyphForeground } from '@/components/ui/glyph-tint';
 import { resolveConfettiFace, type ConfettiIdentity } from '@/lib/confetti-identity';
 import {
@@ -145,7 +145,7 @@ export interface IdentityConfettiProps extends ConfettiIdentity {
  * the burst degrades to default shapes rather than to nothing.
  */
 function resolveGlyphFace(name: string, color: string) {
-  const GlyphComponent = glyphComponent(name);
+  const GlyphComponent = glyphDrawing(name);
   return GlyphComponent ? { GlyphComponent, color } : null;
 }
 

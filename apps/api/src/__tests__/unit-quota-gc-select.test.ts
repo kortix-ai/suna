@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  APP_DEPLOYMENT_PREFIX,
   DAYTONA_ORG_SNAPSHOT_LIMIT,
   PPWARM_PREFIX,
   QUOTA_GC_KEEP_FRESHEST_DEFAULTS,
   QUOTA_GC_MAX_PER_PASS,
+  QUOTA_GC_MIN_IDLE_MS,
   QUOTA_GC_ORG_HIGH_WATER,
   QUOTA_GC_ORG_TARGET,
   SCOPED_PPWARM_PREFIX,
@@ -240,6 +242,70 @@ describe('selectSnapshotsToReap — budget shortfall reporting', () => {
     expect(res.orgTotal).toBe(107);
     expect(res.underPressure).toBe(true);
     expect(res.budgetUnresolved).toBe(false);
+  });
+});
+
+/**
+ * The 2026-09-27 incident: `kortix-app-*` (App deployment images) had no reap
+ * rule at all — 39 of a 99-snapshot org, 25 of them 38+ days idle — because
+ * `isManaged` never matched the prefix. Now managed and reaped by the SAME
+ * rule 5 idle gate as `kortix-tpl-` / `kortix-wproj-`, deliberately NOT a
+ * dedicated DB-status rule: dev/staging/prod share the Daytona org but not a
+ * database, so a snapshot unreferenced in THIS environment's `app_deployments`
+ * may still be another environment's live, `ready` rollback target — only the
+ * idle floor (a provider-visible, environment-agnostic fact) is safe to act
+ * on alone. `referenced` is a same-environment protection on top of that
+ * floor, never the sole reap trigger, exactly as it already works for
+ * `kortix-tpl-`. See `APP_DEPLOYMENT_PREFIX`'s header in `quota-gc-select.ts`.
+ */
+describe('selectSnapshotsToReap — App-deployment images share the idle gate', () => {
+  it('reaps an unreferenced app-deployment image once it clears the 7-day idle floor', () => {
+    const dead = snap(`${APP_DEPLOYMENT_PREFIX}deaddeaddead`, { lastUsedAt: ago(38) });
+    const res = run(padToOrgSize([dead], QUOTA_GC_ORG_HIGH_WATER));
+    expect(names(res)).toContain(dead.name);
+  });
+
+  it('never reaps one THIS environment still has a `ready` deployment for, however old', () => {
+    const live = snap(`${APP_DEPLOYMENT_PREFIX}aliveailveaive`, { lastUsedAt: ago(38) });
+    const res = run(padToOrgSize([live], QUOTA_GC_ORG_HIGH_WATER), [live.name]);
+    expect(names(res)).not.toContain(live.name);
+  });
+
+  // The cross-environment safety property: an unreferenced name is NOT proof
+  // of death by itself — it might be a foreign environment's live deployment,
+  // whose `app_deployments` row this environment cannot see at all. Only the
+  // idle floor may act alone; recent activity must still protect it.
+  it('does NOT reap an unreferenced image that is still well within the idle floor', () => {
+    const maybeForeignButLive = snap(`${APP_DEPLOYMENT_PREFIX}stillquick`, { lastUsedAt: ago(2) });
+    const res = run(padToOrgSize([maybeForeignButLive], QUOTA_GC_ORG_HIGH_WATER));
+    expect(names(res)).not.toContain(maybeForeignButLive.name);
+  });
+
+  it('sits exactly on QUOTA_GC_MIN_IDLE_MS, the same threshold kortix-tpl- uses', () => {
+    const justUnder = snap(`${APP_DEPLOYMENT_PREFIX}justunder`, {
+      lastUsedAt: new Date(NOW - QUOTA_GC_MIN_IDLE_MS + 60_000).toISOString(),
+    });
+    const justOver = snap(`${APP_DEPLOYMENT_PREFIX}justover`, {
+      lastUsedAt: new Date(NOW - QUOTA_GC_MIN_IDLE_MS - 60_000).toISOString(),
+    });
+    const res = run(padToOrgSize([justUnder, justOver], QUOTA_GC_ORG_HIGH_WATER));
+    expect(names(res)).not.toContain(justUnder.name);
+    expect(names(res)).toContain(justOver.name);
+  });
+
+  it('keeps an unreferenced image with no usable timestamp — cannot prove it is idle', () => {
+    // Built directly (not via `snap()`) because `??` treats an explicit `null`
+    // as nullish too, so `snap(name, { lastUsedAt: null })` would silently
+    // fall back to a real timestamp instead of testing the no-timestamp case.
+    const notime: SnapshotLike = {
+      id: 'id-notime',
+      name: `${APP_DEPLOYMENT_PREFIX}notime`,
+      state: 'active',
+      createdAt: null,
+      lastUsedAt: null,
+    };
+    const all = padToOrgSize([notime], QUOTA_GC_ORG_HIGH_WATER);
+    expect(names(run(all))).not.toContain(notime.name);
   });
 });
 
