@@ -1781,6 +1781,58 @@ export async function forwardToSandbox(
           exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
         );
       }
+
+      // ── Rule 5 — kill the opaque 500 (the runtime-convergence contract (PR #7785) §3) ──
+      // A turn that cannot run because the box's model map lacks the requested
+      // model answers `500 {"name":"UnknownError","ref":"err_…"}` today — a bug,
+      // not a state. Named here rather than fixed on the daemon (a parallel
+      // branch owns the turn-start model-catalog refresh): if this session's
+      // box is exactly the one Rule 1's diff already flags as behind on its
+      // catalog, replace the opaque body with one that names the cause and
+      // carries both fingerprints. Conservative by construction — only fires
+      // with POSITIVE evidence (the box reported a DIFFERENT fingerprint than
+      // the platform's current one); anything else passes through unchanged.
+      if (promptDelivery && !sandboxAuthored && upstream.status === 500) {
+        const bodyText = await upstream.text();
+        const named = await (async () => {
+          try {
+            const { nameStaleModelCatalogError } = await import(
+              '../../runtime-convergence/name-stale-catalog-error'
+            );
+            return await nameStaleModelCatalogError(bodyText, {
+              desiredRuntime: async () =>
+                (await import('../../runtime-convergence/desired')).computeDesiredRuntime({ releaseId: null }),
+              actualRuntime: async () => {
+                const { readSandboxConfigState } = await import('../../projects/lib/session-reload');
+                const { UNREPORTED_ACTUAL_RUNTIME } = await import('../../runtime-convergence/actual');
+                const state = await readSandboxConfigState({ sessionId: record.sessionId }).catch(() => null);
+                return state?.runtimeTruth ?? UNREPORTED_ACTUAL_RUNTIME;
+              },
+            });
+          } catch {
+            return null;
+          }
+        })();
+        if (named) {
+          respHeaders.set('content-type', 'application/json; charset=utf-8');
+          respHeaders.delete('content-length');
+          respHeaders.delete('content-encoding');
+          return new Response(JSON.stringify(named), {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: respHeaders,
+          });
+        }
+        // Not our cause to name — pass the bytes we already read through
+        // unchanged (the stream itself is consumed, so this can't fall
+        // through to the generic `upstream.body` passthrough below).
+        return new Response(bodyText, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
+      }
+
       // The transcript list leaves the API WITHOUT its attachment bytes.
       //
       // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
