@@ -7,7 +7,7 @@ committed text — no `terraform plan`, no provider, no AWS credentials. That is
 the whole point: this is the enforcer for the class of incident this migration
 fixes (an API stack silently drifting away from its database's region), and it
 has to work for an operator who cannot get AWS credentials in this account
-(see docs/runbooks/region-colocation-dev-staging.md) and for CI, which never
+(see the apply runbook in PR #7844) and for CI, which never
 carries them for infra/terraform/scripts/*.py (see terraform-ci.yml).
 
 Region-of-truth per environment:

@@ -12,7 +12,7 @@
 # Shadow verification hostnames only — ../staging keeps serving
 # staging-api-ecs-fargate.kortix.com / gateway-staging-ecs-fargate.kortix.com
 # until the runbook's cutover step. See
-# docs/runbooks/region-colocation-dev-staging.md.
+# the apply runbook in PR #7844.
 #
 # Naming: local.name is "kortix-staging-euw2", not "kortix-staging" — IAM
 # roles/policies are account-global and the project-snapshots S3 bucket name

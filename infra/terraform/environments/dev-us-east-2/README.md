@@ -6,7 +6,7 @@ Supabase database's region)** and different resource names (`kortix-dev-use2`)
 so it can exist alongside `../dev` (us-west-2) without any name collision —
 IAM roles and the project-snapshots S3 bucket name are account/global-namespace
 scoped, not region-scoped, so they cannot share `../dev`'s names while both are
-live. See `docs/runbooks/region-colocation-dev-staging.md` for the full
+live. See the apply runbook in PR #7844 for the full
 rationale, apply sequence, and cutover/rollback.
 
 | Surface | Where it runs | Managed by |
@@ -35,7 +35,7 @@ does not remove the sequential-round-trip count (a separate, larger change).
 ## Apply
 
 Not yet wired into `deploy-dev.yml` — this is a **new, not-yet-applied** root.
-Follow `docs/runbooks/region-colocation-dev-staging.md` for the exact,
+Follow the apply runbook in PR #7844 for the exact,
 ordered `terraform init` / `plan` / `apply` sequence, required
 `TF_VAR_secret_arn`-equivalent inputs, and the DNS cutover + decommission
 steps that come after verification.

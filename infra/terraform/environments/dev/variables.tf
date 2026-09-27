@@ -15,7 +15,7 @@ variable "database_region" {
     colocation change. It intentionally DISAGREES with aws_region today
     (us-west-2 API vs us-east-2 database): that is the cross-continent hop
     ../dev-us-east-2 exists to remove. This root stays live, unmigrated,
-    until docs/runbooks/region-colocation-dev-staging.md's cutover +
+    until the apply runbook in PR #7844's cutover +
     decommission steps run; the enforcer is expected to keep failing on this
     root until then.
   EOT

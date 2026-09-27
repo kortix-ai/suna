@@ -121,7 +121,7 @@ variable "manage_dns" {
     gateway-dev-ecs-fargate.kortix.com (../dev still owns those, and the
     dev-api Worker still routes to ../dev's ALB) until the runbook's cutover
     step explicitly repoints them — see
-    docs/runbooks/region-colocation-dev-staging.md.
+    the apply runbook in PR #7844.
   EOT
   type        = bool
   default     = true

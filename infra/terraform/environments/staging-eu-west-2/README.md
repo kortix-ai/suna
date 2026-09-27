@@ -4,7 +4,7 @@ Standing-up-before-tearing-down twin of `../staging`. Same module set, same
 Fargate/Spot sizing, **different region (eu-west-2, matching the staging
 Supabase database's region and matching prod's own topology)**, different
 resource names (`kortix-staging-euw2`). See
-`docs/runbooks/region-colocation-dev-staging.md` for rationale, apply
+the apply runbook in PR #7844 for rationale, apply
 sequence, and cutover/rollback.
 
 | Surface | Where it runs | Managed by |
@@ -37,7 +37,7 @@ not the wildcard-reuse shortcut `../dev-us-east-2` gets from the
 ## Apply
 
 Not yet wired into `deploy-staging.yml` — follow
-`docs/runbooks/region-colocation-dev-staging.md`.
+the apply runbook in PR #7844.
 
 ```bash
 cd infra/terraform/environments/staging-eu-west-2

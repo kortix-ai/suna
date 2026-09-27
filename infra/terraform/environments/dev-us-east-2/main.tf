@@ -14,7 +14,7 @@
 # does not touch dev-api-ecs-fargate.kortix.com, gateway-dev-ecs-fargate.
 # kortix.com, or the dev-api Worker's ACTIVE_BACKEND — ../dev keeps serving
 # live traffic until the runbook's cutover step repoints DNS. See
-# docs/runbooks/region-colocation-dev-staging.md for the full apply sequence,
+# the apply runbook in PR #7844 for the full apply sequence,
 # what gets created, what (later) gets destroyed, and the rollback.
 #
 # Naming: local.name is "kortix-dev-use2", NOT "kortix-dev". IAM roles and
