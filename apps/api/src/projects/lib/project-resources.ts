@@ -17,6 +17,7 @@ import { actorForToken } from '../../iam/actor';
 import { loadProjectConfig, listRepoFiles } from '../git';
 import { refreshMirror } from '../git/mirror';
 import { withProjectGitAuth } from './git';
+import { ttlMemo } from '../../shared/ttl-memo';
 
 /**
  * Load a project's config WITH its repo file list. File-based agents/skills
@@ -41,6 +42,47 @@ export async function loadConfigWithFiles(
     // Repo momentarily unreachable — fall back to manifest-only discovery.
   }
   return loadProjectConfig(gitProject, files);
+}
+
+/**
+ * How long a project's config (agents/skills) is reused by
+ * {@link loadConfigWithFilesCached}.
+ *
+ * A commit's content is immutable, but this reads at the DEFAULT BRANCH, which
+ * moves — so unlike `config-releases/agent-roster.ts` (memoized per commit),
+ * this needs an actual TTL for freshness, not just a memory bound. 20s is short
+ * enough that a just-pushed agent/skill shows up on the admin's next click, but
+ * long enough to collapse the burst of near-simultaneous reads a many-project
+ * enumeration (the IAM agent-identity picker) fires against the same handful of
+ * frequently-open projects.
+ */
+export const CONFIG_WITH_FILES_TTL_MS = 20_000;
+
+const configWithFilesMemo = ttlMemo({
+  ttlMs: CONFIG_WITH_FILES_TTL_MS,
+  keyFn: (row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string }) => row.projectId,
+  loader: (row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string }) => loadConfigWithFiles(row),
+  maxEntries: 5_000,
+});
+
+/**
+ * Cached read path for {@link loadConfigWithFiles} — never forces a mirror
+ * refresh (forceRefresh is a `loadConfigWithFiles` opt-in this wrapper doesn't
+ * expose) and answers repeat callers within the TTL window without re-cloning
+ * or re-listing the repo. Use this for a read that enumerates MANY projects per
+ * request and can tolerate a config up to {@link CONFIG_WITH_FILES_TTL_MS} old
+ * (e.g. the IAM agent-identity picker across an account's whole project list).
+ * A caller that must see a just-pushed commit (a 404 the file might just have
+ * fixed) keeps calling `loadConfigWithFiles` directly.
+ */
+export function loadConfigWithFilesCached(
+  row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string },
+): Promise<ProjectConfigSummary> {
+  return configWithFilesMemo(row);
+}
+
+export function __clearConfigWithFilesCacheForTests(): void {
+  configWithFilesMemo.clear();
 }
 
 export interface ProjectResourceItem {
