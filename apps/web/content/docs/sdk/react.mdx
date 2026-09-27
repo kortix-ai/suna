@@ -212,7 +212,9 @@ by their original IDs. Hosts do not need a separate history request or message s
 
 This flag is off by default. Sessions without saved history use the existing runtime read.
 Saved history renders exactly like the live transcript: text, reasoning, and every tool call
-with its input, output and error. The initial window contains the newest 40 messages, at
+with its input, output and error. A sub-agent's full view reads the sub-agent's own saved
+transcript: pass the parent's scope and `savedChild: true` to
+`useSessionSync(subAgentSessionId, { kortixSessionScope, savedChild: true })`. The initial window contains the newest 40 messages, at
 most 1,000,000 characters. Scrolling up loads older windows from saved history, also while
 the computer is off. Attachments that require the computer become available when the
 runtime is ready.
