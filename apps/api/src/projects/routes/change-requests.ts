@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import {
   getCrById,
   getNextCrNumber,
+  listChangeRequestsForProject,
   recordRequestedChange,
   serializeChangeRequest,
 } from '../change-requests';
@@ -18,7 +19,7 @@ import {
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -74,23 +75,35 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
     const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
-    const whereClauses = [eq(changeRequests.projectId, projectId)];
-    if (statusFilter && statusFilter !== 'all') {
-      if (!['open', 'merged', 'closed'].includes(statusFilter)) {
-        return c.json({ error: 'Invalid status filter' }, 400);
-      }
-      whereClauses.push(eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'));
+    if (statusFilter && statusFilter !== 'all' && !['open', 'merged', 'closed'].includes(statusFilter)) {
+      return c.json({ error: 'Invalid status filter' }, 400);
     }
 
-    const rows = await db
-      .select()
-      .from(changeRequests)
-      .where(and(...whereClauses))
-      .orderBy(desc(changeRequests.number));
+    // A session's "outcome" cards (apps/web session-outcomes-provider) used to
+    // fetch the WHOLE project's change requests — every open session thread,
+    // every 60s — just to filter client-side down to the 1-2 CRs that session
+    // actually opened. This scopes that at the source.
+    const originSessionId = normalizeString(c.req.query('origin_session_id'));
 
-    return c.json({
-      change_requests: rows.map(serializeChangeRequest),
+    // `limit` is opt-in: omitted keeps the historical unbounded behavior every
+    // existing caller (the panel, the open-CR badge, `kortix cr list`) already
+    // depends on. A caller that adopts it gets a bounded, capped page.
+    const rawLimit = normalizeString(c.req.query('limit'));
+    let limit: number | undefined;
+    if (rawLimit !== undefined) {
+      limit = Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1) {
+        return c.json({ error: 'Invalid limit' }, 400);
+      }
+    }
+
+    const change_requests = await listChangeRequestsForProject(projectId, {
+      status: statusFilter as 'open' | 'merged' | 'closed' | 'all' | undefined,
+      originSessionId: originSessionId ?? undefined,
+      limit,
     });
+
+    return c.json({ change_requests });
   },
 );
 
