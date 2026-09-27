@@ -9,24 +9,38 @@ const EMPTY_USAGE: TokenCounts = {
 
 export type TraceFields = Partial<GatewayTrace> & { status: number; ok: boolean };
 
-export type TraceEmitter = (fields: TraceFields) => void;
+/**
+ * Emits one trace. `mark` records when the request reached a pipeline point,
+ * so the trace can split its latency: `metadata.timing.prep_ms` is admission,
+ * routing and resolution up to the upstream call; `upstream_response_ms` is
+ * the wait for the upstream's response headers — for a stream, its first byte.
+ * Measured on dev-api 2026-09-27, a managed call's total latency could not be
+ * attributed to either side without them.
+ */
+export type TraceEmitter = ((fields: TraceFields) => void) & {
+  mark: (point: 'dispatch' | 'upstream_response') => void;
+};
 
 function logTrace(logger: GatewayLogger, trace: GatewayTrace): void {
   const model = trace.resolvedModel || trace.requestedModel || 'unknown';
   const tokens = trace.usage.promptTokens + trace.usage.completionTokens;
   const tried = trace.candidatesTried.length > 1 ? ` tried=${trace.candidatesTried.join(',')}` : '';
   const upstream = trace.upstream ? ` upstream=${trace.upstream.provider}:${trace.upstream.model}` : '';
+  const timing = trace.metadata.timing as { prep_ms?: number; upstream_response_ms?: number } | undefined;
+  const split = timing
+    ? ` prep=${timing.prep_ms ?? '-'}ms upstream_response=${timing.upstream_response_ms ?? '-'}ms`
+    : '';
 
   if (trace.ok) {
     logger.info(
-      `[gateway] ✓ ${trace.requestId} ${model} via ${trace.provider} ${trace.status} ${trace.latencyMs}ms ${tokens}tok $${trace.finalCost.toFixed(5)}${tried}${upstream}`,
+      `[gateway] ✓ ${trace.requestId} ${model} via ${trace.provider} ${trace.status} ${trace.latencyMs}ms${split} ${tokens}tok $${trace.finalCost.toFixed(5)}${tried}${upstream}`,
     );
     return;
   }
 
   const reason = trace.errorMessage ? ` "${String(trace.errorMessage).slice(0, 200)}"` : '';
   logger.warn(
-    `[gateway] ✗ ${trace.requestId} ${model} ${trace.status} ${trace.errorCode ?? 'error'}${reason} ${trace.latencyMs}ms${tried}${upstream}`,
+    `[gateway] ✗ ${trace.requestId} ${model} ${trace.status} ${trace.errorCode ?? 'error'}${reason} ${trace.latencyMs}ms${split}${tried}${upstream}`,
   );
 }
 
@@ -37,7 +51,18 @@ export function createTraceEmitter(
   startedAt: string,
   startMs: number,
 ): TraceEmitter {
-  return (fields) => {
+  const marks: { dispatch?: number; upstream_response?: number } = {};
+  const timing = (): Record<string, number> | null => {
+    if (marks.dispatch === undefined) return null;
+    return {
+      prep_ms: marks.dispatch - startMs,
+      ...(marks.upstream_response !== undefined
+        ? { upstream_response_ms: marks.upstream_response - marks.dispatch }
+        : {}),
+    };
+  };
+  const emit = ((fields) => {
+    const split = timing();
     const trace: GatewayTrace = {
       requestId,
       startedAt,
@@ -65,7 +90,7 @@ export function createTraceEmitter(
       finalCost: fields.finalCost ?? 0,
       request: fields.request,
       response: fields.response,
-      metadata: fields.metadata ?? {},
+      metadata: split ? { ...(fields.metadata ?? {}), timing: split } : (fields.metadata ?? {}),
     };
 
     logTrace(logger, trace);
@@ -81,5 +106,10 @@ export function createTraceEmitter(
         ),
       );
     }
+  }) as TraceEmitter;
+  // First mark wins: a fallback chain's later attempts do not move the split.
+  emit.mark = (point) => {
+    marks[point] ??= Date.now();
   };
+  return emit;
 }
