@@ -5,7 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubToken } from '../git-backends';
-import { GitHubPersonalInstallationCreateError, commitFile, createRepo, getFileSha } from '../github';
+import { commitFile, createRepo, getFileSha } from '../github';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -317,8 +317,8 @@ projectsApp.openapi(
     } catch (error) {
       lastRepoError = error;
       if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
-      if (error instanceof GitHubPersonalInstallationCreateError) {
-        return c.json({ error: 'github_personal_installation_create_unsupported', message: error.message }, 409);
+      if ((error as Error)?.name === 'GitHubPersonalInstallationCreateError') {
+        return c.json({ error: 'github_personal_installation_create_unsupported', message: (error as Error).message }, 409);
       }
       return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
     }
