@@ -35,8 +35,10 @@ import {
   MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGES,
   captureScope,
+  capturedMessageIndex,
   capturedPageGate,
   headCompleteAfterCapture,
+  mirrorHoldsStrippedRows,
   mirrorRowsFromOpencodePayload,
 } from './session-transcript-mirror';
 
@@ -114,11 +116,11 @@ const liveCaptureDeps: CaptureDeps = {
 
       A message counts as unchanged only when it is stored AND completed AND
       its completion time matches. An uncompleted message can still grow, so it
-      is never evidence of anything.
+      is never evidence of anything. A row the old mirror stored stripped (tool
+      calls without their input) is not counted as stored at all, so the walk
+      reads past it and this capture writes it again, 1:1.
     */
-    const completedById = new Map(
-      previous.map((row) => [row.messageId, row.messageCompletedAt?.getTime() ?? null]),
-    );
+    const completedById = capturedMessageIndex(previous);
     const [mirror] = options?.fullHistory
       ? await db
           .select({ headComplete: sessionTranscriptMirrors.headComplete })
@@ -543,8 +545,17 @@ export function backfillSessionTranscriptMirrorOnWake(
       // still maintained at turn end exactly as before.
       if (!resolveFeatureFlag(row.metadata, 'session_transcript_history')) return settle();
       // Already whole, for the root this session actually runs. Nothing a
-      // backfill could add — a re-pinned root is NOT whole, whatever the row says.
-      if (row.headComplete && row.mirrorRoot && row.mirrorRoot === row.root) return settle();
+      // backfill could add — a re-pinned root is NOT whole, whatever the row says,
+      // and neither is a history the old mirror stored with its tool calls
+      // stripped: this wake is the one chance to read them again.
+      if (
+        row.headComplete &&
+        row.mirrorRoot &&
+        row.mirrorRoot === row.root &&
+        !(await mirrorHoldsStrippedRows(sessionId))
+      ) {
+        return settle();
+      }
       // A RESULT settles it; null means the read could not run (no pinned root
       // yet, box not reachable) and the next open is allowed to try again.
       if (await captureSessionTranscriptMirror(sessionId, deps)) settle();

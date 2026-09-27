@@ -210,3 +210,84 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
     await db.end();
   }
 });
+
+test('a wake reads a history the old mirror stripped again, and leaves a 1:1 one alone', async () => {
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  const seeded: SeededProject[] = [];
+  let accountId = '';
+  try {
+    accountId = await seedAccount('transcript-backfill-stripped-test');
+    const project = await seedProject(`backfill-stripped-${randomUUID().slice(0, 8)}`, {
+      accountId,
+      metadata: { experimental: { session_transcript_history: true } },
+    });
+    seeded.push(project);
+    const sessionId = await seedSessionRow(project, randomUUID());
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+      sessionId,
+      ROOT,
+    ]);
+    const call = (state: Record<string, unknown>) => ({
+      id: 'prt_call',
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call_1',
+      state: { status: 'completed', title: 'List the build output', time: { start: 1, end: 2 }, ...state },
+    });
+    const info = {
+      id: 'msg_000000000001',
+      sessionID: ROOT,
+      role: 'assistant',
+      time: { created: 1, completed: 2 },
+    };
+    // What the old mirror wrote: whole (`head_complete`), same root, and the
+    // tool call without its input or output.
+    await db.query(
+      `INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete)
+       SELECT $1, project_id, account_id, $2, true FROM kortix.project_sessions WHERE session_id = $1`,
+      [sessionId, ROOT],
+    );
+    await db.query(
+      `INSERT INTO kortix.session_transcript_messages
+         (session_id, message_id, opencode_session_id, role, message_created_at, message_completed_at, info, parts)
+       VALUES ($1, $2, $3, 'assistant', to_timestamp(0.001), to_timestamp(0.002), $4::jsonb, $5::jsonb)`,
+      [sessionId, info.id, ROOT, JSON.stringify(info), JSON.stringify([call({})])],
+    );
+
+    let reads = 0;
+    const deps = {
+      readMessages: async () => {
+        reads += 1;
+        return {
+          opencodeSessionId: ROOT,
+          payload: [{ info, parts: [call({ input: { command: 'ls dist' }, output: 'app.js' })] }],
+          headComplete: true,
+          complete: true,
+        };
+      },
+    };
+    const storedState = async () =>
+      (
+        await db.query(
+          'SELECT parts FROM kortix.session_transcript_messages WHERE session_id = $1 AND message_id = $2',
+          [sessionId, info.id],
+        )
+      ).rows[0].parts[0].state;
+
+    await backfillSessionTranscriptMirrorOnWake(sessionId, deps);
+    expect(reads).toBe(1);
+    expect(await storedState()).toMatchObject({ input: { command: 'ls dist' }, output: 'app.js' });
+
+    // 1:1 now: the next wake has nothing to add and reads nothing.
+    resetTranscriptBackfillMemoForTests();
+    await backfillSessionTranscriptMirrorOnWake(sessionId, deps);
+    expect(reads).toBe(1);
+  } finally {
+    await removeSeeded(seeded).catch(() => {});
+    if (accountId) {
+      await db.query('DELETE FROM kortix.accounts WHERE account_id = $1', [accountId]).catch(() => {});
+    }
+    await db.end();
+  }
+});

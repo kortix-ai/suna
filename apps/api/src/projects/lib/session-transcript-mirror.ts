@@ -45,10 +45,19 @@
  * dimmed to "Queued". `use-session-sync.ts` states the acceptance criterion for
  * any replacement: it must read the MESSAGE, not its shape. This does.
  *
- * ATTACHMENT BYTES NEVER ENTER TRANSCRIPT ROWS. `sanitizeParts` strips a file part's
- * `url` (base64 data URLs are what made those bodies 7-19 MB) and a tool part's
- * `state.input`/`state.output` — except the bounded input of a `show` card,
- * which is what that card is drawn from. A `data:` URL is refused there too.
+ * EVERY PART IS KEPT 1:1, EXCEPT BYTES. Saved history is what a client renders
+ * while the computer is off, and what every client (web, mobile, CLI, SDK)
+ * pages through, so a row must draw exactly what the live transcript draws:
+ * text, reasoning, and every tool call with its input, output, error and
+ * metadata. Tool cards draw from their input (the command, the path, the
+ * pattern) and most from their output; an earlier mirror dropped both and saved
+ * history drew empty cards.
+ *
+ * ATTACHMENT BYTES NEVER ENTER TRANSCRIPT ROWS. `sanitizeParts` removes a file
+ * part's `url` unless it is a private attachment reference (base64 data URLs
+ * are what made those bodies 7-19 MB), the same from a tool call's
+ * `attachments`, and any `data:` URL anywhere in a tool payload. Strings are
+ * bounded only against pathological sizes (see MIRROR_MAX_PART_CHARS).
  *
  * THIS MODULE IS THE READ SIDE plus the pure projections. The WRITE side lives
  * in `session-transcript-capture.ts`, because it needs the session-lifecycle
@@ -72,19 +81,35 @@ export const MIRROR_CAPTURE_LIMIT = 80;
  *  Pruning clears `head_complete`: losing the head is what that bit records. */
 export const MIRROR_MAX_MESSAGES = 500;
 
-/** Per text-like part. Real messages are 2-10 KB; this only stops one
- *  pathological part from becoming a pathological row. */
+/** Per string: a text-like part, or one string in a tool call's payload. Real
+ *  messages are 2-10 KB and OpenCode cuts a tool's output at 50 KB, so this
+ *  only stops one pathological string from becoming a pathological row. */
 export const MIRROR_MAX_PART_CHARS = 200_000;
 
-/** Per message, across all text-like parts, spent in order. */
+/** Per message, twice: once across its text-like parts, once across its tool
+ *  payloads. Separate budgets, so a message's tool output can never cut its
+ *  reply text, and the reverse. */
 export const MIRROR_MAX_MESSAGE_CHARS = 1_000_000;
+
+/** One sync window, serialized. A cold open waits for the first window, and
+ *  1:1 tool payloads make 40 messages of a tool-heavy thread megabytes. The
+ *  window keeps its NEWEST messages that fit; the rest is one cursor away. */
+export const MIRROR_WINDOW_MAX_CHARS = 1_000_000;
+
+/** A file part's mention `source` (`@path` plus its offsets in the prompt) is
+ *  small by construction. One larger than this is not a mention: dropped, not
+ *  cut, because cut offsets would highlight the wrong characters. */
+const MIRROR_MAX_SOURCE_CHARS = 4_096;
+
+/** Nesting a tool payload is walked to. Real payloads nest a handful of
+ *  levels; a deeper value is dropped rather than stored unscanned. */
+const MAX_PAYLOAD_DEPTH = 64;
 
 /** One mirrored message in the shape the sync store hydrates from. */
 export interface MirrorMessage {
   /** OpenCode's message envelope, verbatim (`Message` in @opencode-ai/sdk). */
   info: Record<string, unknown>;
-  /** The part array, minus tool inputs/outputs and file urls (a `show`
-   *  card keeps its bounded input — see INPUT_RENDERED_TOOLS). */
+  /** The part array 1:1, minus attachment bytes (see `sanitizeParts`). */
   parts: Array<Record<string, unknown>>;
 }
 
@@ -109,25 +134,18 @@ export interface MirrorSnapshot {
   next_cursor: string | null;
 }
 
-/** Fields whose size is unbounded and whose content is already represented by
- *  a sibling the transcript renders (a tool's name + status, a file's name +
- *  mime). Removing them is what keeps a mirrored row small. */
-const TOOL_STATE_KEEP = new Set(['status', 'title', 'time', 'metadata']);
-
 /**
- * Tools whose card is DRAWN FROM ITS INPUT.
+ * Tools whose input is a CARD PAYLOAD that can carry bytes inside a string.
  *
- * The rule above holds for almost every tool: a `bash` or `read` input/output
- * is a payload the transcript never draws. `show` is the exception, and it is
- * the tool that matters most in saved history — it is how an agent hands the
- * user a result (an image, a file, a chart, a page). Its renderer reads
- * `state.input` and nothing else, and the SDK's `isEmptyShowPart` DROPS a
- * completed `show` whose input is empty. Stripping it made every result an
- * agent had shown vanish from the saved transcript — present live, silently
- * gone while the sandbox was off.
+ * `show` is how an agent hands the user a result (an image, a file, a chart, a
+ * page). Its renderer reads `state.input` and nothing else, and the SDK's
+ * `isEmptyShowPart` DROPS a completed `show` whose input draws nothing. Its
+ * input is kept field by field (`sanitizeShowPayload`) rather than walked like
+ * any other payload, because `items` arrives as a JSON STRING that can carry a
+ * `data:` URL inside it, past a check that only looks at whole strings.
  *
  * Same normalization as the SDK's `normalizeActivityToolName`, so the mirror
- * keeps exactly the parts the renderer treats as `show`.
+ * treats exactly the parts the renderer treats as `show` this way.
  */
 const INPUT_RENDERED_TOOLS = new Set(['show', 'show_user']);
 const normalizeToolName = (name: unknown) =>
@@ -212,59 +230,227 @@ function sanitizeShowPayload(
   return Object.keys(out).length > 0 ? out : null;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** A tool call that has ended. OpenCode's schema gives both a required
+ *  `input`, which is what `mirrorPartsAreStripped` relies on. */
+const isSettledToolStatus = (status: unknown) => status === 'completed' || status === 'error';
+
+/** A string budget: every string is cut to the per-string cap, and `spend`
+ *  also cuts to what is left of the message's budget. `count` debits the
+ *  budget and never cuts — for the strings that identify a call. */
+function stringBudget(total: number) {
+  let left = total;
+  return {
+    spend(text: string): string {
+      const cap = Math.max(0, Math.min(MIRROR_MAX_PART_CHARS, left));
+      const kept = text.length > cap ? text.slice(0, cap) : text;
+      left -= kept.length;
+      return kept;
+    },
+    count(text: string): string {
+      const kept = text.length > MIRROR_MAX_PART_CHARS ? text.slice(0, MIRROR_MAX_PART_CHARS) : text;
+      left -= kept.length;
+      return kept;
+    },
+  };
+}
+
 /**
- * Pure: strip the unbounded fields out of a part array and bound what is left.
+ * Pure: a JSON value with every `data:` URL string removed, and every other
+ * string passed through `bound`. A removed array element is dropped, a removed
+ * object field is deleted, and `undefined` means the value itself was bytes.
+ */
+function withoutBytes(
+  value: unknown,
+  bound: ((text: string) => string) | null,
+  depth = 0,
+): unknown {
+  if (typeof value === 'string') {
+    if (isDataUrl(value)) return undefined;
+    return bound ? bound(value) : value;
+  }
+  if (typeof value !== 'object' || value === null) return value;
+  if (depth >= MAX_PAYLOAD_DEPTH) return undefined;
+  if (Array.isArray(value)) {
+    const kept: unknown[] = [];
+    for (const item of value) {
+      const next = withoutBytes(item, bound, depth + 1);
+      if (next !== undefined) kept.push(next);
+    }
+    return kept;
+  }
+  const kept: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const next = withoutBytes(item, bound, depth + 1);
+    if (next !== undefined) kept[key] = next;
+  }
+  return kept;
+}
+
+/**
+ * Pure: a file part (a prompt attachment, or one of a tool call's
+ * `attachments`) without its bytes. A private attachment reference is the
+ * one `url` kept: it names bytes already copied to the attachment store.
+ */
+function sanitizeFilePart(raw: Record<string, unknown>): Record<string, unknown> {
+  const part = { ...raw };
+  // A base64 `data:` url here is the entire 7-19 MB transcript incident.
+  if (!parseSessionAttachmentRef(part.url)) delete part.url;
+  if ('source' in part) {
+    let size = Number.POSITIVE_INFINITY;
+    try {
+      size = JSON.stringify(part.source)?.length ?? Number.POSITIVE_INFINITY;
+    } catch {
+      // Not JSON: not a mention.
+    }
+    if (!isRecord(part.source) || size > MIRROR_MAX_SOURCE_CHARS) delete part.source;
+  }
+  return part;
+}
+
+/**
+ * Pure: a tool call's `state`, 1:1 except for bytes.
  *
- * Everything a transcript needs to render survives — text, reasoning, tool
- * names and statuses, file names and types, step boundaries, and the bounded
- * input a `show` card is drawn from (see INPUT_RENDERED_TOOLS).
+ * `input` identifies the call (the command, the path, the pattern), so its
+ * strings are counted against the budget but never cut by it. `output`,
+ * `error` and a pending call's streamed `raw` are the payload, and are cut
+ * when the message's tool budget runs out. `metadata` is stored as OpenCode
+ * wrote it (an edit's diff is drawn from it), minus `data:` URLs.
+ */
+function sanitizeToolState(
+  tool: unknown,
+  raw: Record<string, unknown>,
+  budget: ReturnType<typeof stringBudget>,
+): Record<string, unknown> {
+  const show = INPUT_RENDERED_TOOLS.has(normalizeToolName(tool));
+  const state: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'input' && show) {
+      state.input = sanitizeShowPayload(value, budget.spend) ?? {};
+      continue;
+    }
+    if (key === 'attachments') {
+      if (Array.isArray(value)) state.attachments = value.filter(isRecord).map(sanitizeFilePart);
+      continue;
+    }
+    const bound =
+      key === 'metadata' ? null : key === 'input' || key === 'title' ? budget.count : budget.spend;
+    const kept = withoutBytes(value, bound);
+    if (kept !== undefined) state[key] = kept;
+  }
+  // Every settled call carries an input, as OpenCode's schema requires. A
+  // settled call WITHOUT one is therefore a row the old mirror stripped, which
+  // is how `mirrorPartsAreStripped` finds the rows to capture again.
+  if (isSettledToolStatus(state.status) && !('input' in state)) state.input = {};
+  return state;
+}
+
+/**
+ * Pure: a part array as the mirror stores it — every part 1:1, except bytes.
+ *
+ * Text, reasoning, step boundaries, file names and mention sources, and every
+ * tool call's input, output, error, title, metadata and time are kept. Only
+ * attachment bytes are removed (see the module header), and strings are
+ * bounded against pathological sizes: MIRROR_MAX_PART_CHARS per string, and
+ * MIRROR_MAX_MESSAGE_CHARS per message, once for text and once for tool
+ * payloads.
  */
 export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(raw)) return [];
-  let budget = MIRROR_MAX_MESSAGE_CHARS;
-  /** Cut `text` to what the message may still spend, and debit it. */
-  const spend = (text: string): string => {
-    const cap = Math.max(0, Math.min(MIRROR_MAX_PART_CHARS, budget));
-    const kept = text.length > cap ? text.slice(0, cap) : text;
-    budget -= kept.length;
-    return kept;
-  };
+  const text = stringBudget(MIRROR_MAX_MESSAGE_CHARS);
+  const tools = stringBudget(MIRROR_MAX_MESSAGE_CHARS);
   const out: Array<Record<string, unknown>> = [];
   for (const item of raw) {
-    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
-    const part = { ...(item as Record<string, unknown>) };
-    const type = typeof part.type === 'string' ? part.type : '';
+    if (!isRecord(item)) continue;
+    const type = typeof item.type === 'string' ? item.type : '';
+    const part = type === 'file' ? sanitizeFilePart(item) : { ...item };
 
-    if (type === 'file') {
-      // A base64 `data:` url here is the entire 7-19 MB transcript incident.
-      if (!parseSessionAttachmentRef(part.url)) delete part.url;
-      delete part.source;
+    if (type === 'tool' && isRecord(part.state)) {
+      part.state = sanitizeToolState(part.tool, part.state, tools);
     }
 
-    if (type === 'tool') {
-      const state = part.state;
-      if (state && typeof state === 'object' && !Array.isArray(state)) {
-        const kept: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(state as Record<string, unknown>)) {
-          if (TOOL_STATE_KEEP.has(k)) kept[k] = v;
-        }
-        // `input`/`output` are the tool's whole payload — a file read, a build
-        // log, a page of HTML. The compact projection never showed them and the
-        // renderer does not need them. EXCEPT for a tool drawn from its input:
-        // see INPUT_RENDERED_TOOLS. Its `output` is still dropped.
-        if (INPUT_RENDERED_TOOLS.has(normalizeToolName(part.tool))) {
-          const input = sanitizeShowPayload((state as Record<string, unknown>).input, spend);
-          if (input) kept.input = input;
-        }
-        part.state = kept;
-      }
-    }
-
-    if (typeof part.text === 'string') part.text = spend(part.text);
+    if (typeof part.text === 'string') part.text = text.spend(part.text);
 
     out.push(part);
   }
   return out;
+}
+
+/**
+ * Pure: does this stored part array carry a settled tool call without its
+ * input? Only the old mirror wrote that shape (it stripped every tool call's
+ * input, output and error); `sanitizeParts` never does. Such a row is
+ * complete by every other test, so without this a walk would stop on it and
+ * the history would stay stripped forever.
+ */
+export function mirrorPartsAreStripped(parts: unknown): boolean {
+  if (!Array.isArray(parts)) return false;
+  return parts.some(
+    (part) =>
+      isRecord(part) &&
+      part.type === 'tool' &&
+      isRecord(part.state) &&
+      isSettledToolStatus(part.state.status) &&
+      !('input' in part.state),
+  );
+}
+
+/**
+ * Pure: the index the capture's early stop reads (see `capturedPageGate`):
+ * message id -> stored `message_completed_at` in epoch ms, null when stored
+ * but not completed. A row in the old stripped format is left OUT, so a walk
+ * reads past it and the capture writes it again, 1:1.
+ */
+export function capturedMessageIndex(
+  rows: ReadonlyArray<{ messageId: string; parts: unknown; messageCompletedAt: Date | null }>,
+): Map<string, number | null> {
+  const index = new Map<string, number | null>();
+  for (const row of rows) {
+    if (mirrorPartsAreStripped(row.parts)) continue;
+    index.set(row.messageId, row.messageCompletedAt?.getTime() ?? null);
+  }
+  return index;
+}
+
+/**
+ * Does this session's mirror still hold a row in the old stripped format? The
+ * same question as `mirrorPartsAreStripped`, asked of the database: the wake
+ * backfill reads the box again for such a history, because a mirror that
+ * proved its head is otherwise left alone for good.
+ */
+export async function mirrorHoldsStrippedRows(sessionId: string): Promise<boolean> {
+  const result = await db.execute(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM kortix.session_transcript_messages
+       WHERE session_id = ${sessionId}
+         AND parts @? '$[*] ? (@.type == "tool" && (@.state.status == "completed" || @.state.status == "error") && !(exists (@.state.input)))'
+    ) AS stripped
+  `);
+  const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
+  return (rows[0] as { stripped?: unknown } | undefined)?.stripped === true;
+}
+
+/**
+ * Pure: a mirror window bounded by size. Keeps the NEWEST messages whose
+ * serialized size fits `maxChars`, and always at least one, so paging older
+ * always moves. A cut window points its cursor at the oldest message it kept:
+ * the next window starts strictly behind it.
+ */
+export function boundMirrorWindow(mirror: MirrorSnapshot, maxChars: number): MirrorSnapshot {
+  const { messages } = mirror;
+  let start = messages.length;
+  let size = 0;
+  while (start > 0) {
+    const next = JSON.stringify(messages[start - 1]).length;
+    if (start < messages.length && size + next > maxChars) break;
+    size += next;
+    start -= 1;
+  }
+  if (start === 0) return mirror;
+  const kept = messages.slice(start);
+  return { ...mirror, messages: kept, next_cursor: String(kept[0].info.id) };
 }
 
 type RawMessage = {

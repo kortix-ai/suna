@@ -18,14 +18,14 @@ import {
 import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/transcript
-// Compact server-side transcript read for project automation. Unlike the raw
-// /v1/p sandbox proxy, this endpoint is callable with project-scoped session
-// tokens and strips tool inputs/outputs before returning messages.
+// Server-side transcript read for project automation. Unlike the raw /v1/p
+// sandbox proxy, this endpoint is callable with project-scoped session tokens.
 //
 // Two shapes, one route. `shape=compact` (the default, unchanged for every
-// existing caller) returns the digest rows. `shape=sync` returns OpenCode
-// message envelopes verbatim — the shape the SDK sync store hydrates from —
-// and is served from the durable mirror only.
+// existing caller) returns the digest rows, without tool inputs/outputs.
+// `shape=sync` returns OpenCode message envelopes with every part 1:1 except
+// attachment bytes — the shape the SDK sync store hydrates from — and is
+// served from the durable mirror only, in windows bounded by count and size.
 //
 // BOTH shapes carry `source` ('live' | 'mirror' | 'none') and `complete`. A
 // non-running session no longer answers `unavailable` when a mirror exists: it
