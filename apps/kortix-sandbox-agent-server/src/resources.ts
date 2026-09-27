@@ -346,13 +346,51 @@ export function evaluatePressure(s: ResourceSnapshot, previous?: ResourceSnapsho
 }
 
 /**
+ * Which of `topProcesses` may be SHED (SIGKILLed) to relieve pressure without
+ * ending the turn — the daemon itself, the harness runtime, and anything the
+ * caller additionally protects are never candidates. Sorted desc by RSS
+ * already (readTopMemoryProcesses); this returns the largest survivor, or
+ * `null` when nothing is left to shed (the daemon/runtime themselves are the
+ * whole box's memory, and only `abortTurn` is left).
+ */
+export function pickShedCandidate(
+  topProcesses: readonly MemoryConsumer[],
+  protectedPids: ReadonlySet<number>,
+): MemoryConsumer | null {
+  for (const p of topProcesses) {
+    if (p.pid <= 1) continue // never the VM's init
+    if (protectedPids.has(p.pid)) continue
+    return p
+  }
+  return null
+}
+
+/** `process.kill`, swallowed: ESRCH (already gone) and EPERM both just mean "not killed". */
+export function killProcess(pid: number, signal: NodeJS.Signals = 'SIGKILL'): boolean {
+  try {
+    process.kill(pid, signal)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * The memory guard: act BEFORE the kernel does.
  *
  * Above `elevatedPct` (80) the monitor samples every `fastIntervalMs` (10 s)
- * instead of every minute. At `guardPct` (92) with a turn in flight it calls
- * `abortTurn` delegates cancellation to the selected harness.
- * `onGuard` reports the reason. Check each active turn while pressure remains
- * high: a detached child can keep the box above the guard after one abort.
+ * instead of every minute. At `guardPct` (92) with a turn in flight, PREFER
+ * SHEDDING: SIGKILL the largest non-daemon, non-runtime process
+ * (`topProcesses`, already sampled at `elevatedPct` — a stray `docker`,
+ * `pnpm`, or shell child the current tool spawned and moved on from) and let
+ * the turn keep running. `abortTurn` (ending the turn) is the fallback, used
+ * only when there is nothing left to shed or `maxShedAttempts` sheds in this
+ * elevated episode have not brought memory back down — a shed that does not
+ * work must not spin forever while the VM itself is seconds from being
+ * killed by the provider (2026-09-27 census, class B: Platinum stopped 8
+ * boxes mid-turn at 89-97% memory before any guard action landed).
+ * `onGuard` reports which action fired and, always, a concrete reason —
+ * never a silent abort.
  */
 export interface MemoryGuardOptions {
   /** 0..100 of box memory (or cgroup, whichever is higher). Default 92. */
@@ -362,8 +400,22 @@ export interface MemoryGuardOptions {
   fastIntervalMs?: number
   turnInFlight: () => Promise<boolean | null>
   abortTurn: (reason: string) => Promise<boolean>
+  /** Disable shedding for a harness with nothing safe to kill. Default: shed. */
+  disableProcessShedding?: boolean
+  /** Extra pids to never kill, beyond the daemon and the runtime. */
+  protectedPids?: () => number[]
+  /** Sheds one process at a time before falling back to `abortTurn`. Default 2. */
+  maxShedAttemptsPerEpisode?: number
+  /** Injectable for tests. Defaults to the real `killProcess`. */
+  killProcess?: (pid: number, signal: NodeJS.Signals) => boolean
   formatReason?: (snapshot: ResourceSnapshot, pct: number) => string
-  onGuard?: (info: { reason: string; snapshot: ResourceSnapshot; aborted: boolean }) => void | Promise<void>
+  onGuard?: (info: {
+    reason: string
+    snapshot: ResourceSnapshot
+    aborted: boolean
+    /** The process(es) SIGKILLed this cycle to relieve pressure, if any. */
+    shed: MemoryConsumer[]
+  }) => void | Promise<void>
 }
 
 export interface ResourceMonitorOptions {
@@ -422,12 +474,17 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
   let ticking = false
   let stopped = false
   let fastTimer: ReturnType<typeof setInterval> | null = null
+  const doKill = guard?.killProcess ?? killProcess
+  const maxShedAttempts = guard?.maxShedAttemptsPerEpisode ?? 2
+  /** Sheds spent in THIS elevated episode; reset once memory clears `elevatedPct`. */
+  let shedAttempts = 0
 
   async function runGuard(s: ResourceSnapshot): Promise<void> {
     if (!guard) return
     const pct = memoryPressurePct(s)
     if (pct === null) return
     if (pct < elevatedPct) {
+      shedAttempts = 0
       if (fastTimer) {
         clearInterval(fastTimer)
         fastTimer = null
@@ -443,13 +500,50 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
     if (pct < guardPct) return
     const inFlight = await guard.turnInFlight().catch(() => null)
     if (inFlight === false) return
+
+    // PREFER SHEDDING over losing the whole VM: kill the largest non-daemon,
+    // non-runtime process instead of ending the turn, as long as this
+    // elevated episode has not already spent its budget. `topProcesses` is
+    // only populated at/above 80% (readResourceSnapshot), which is exactly
+    // where this branch runs.
+    const protectedPids = new Set<number>([process.pid, s.daemon?.pid ?? -1, s.runtime?.pid ?? -1, ...(guard.protectedPids?.() ?? [])])
+    const candidate = guard.disableProcessShedding
+      ? null
+      : shedAttempts < maxShedAttempts
+        ? pickShedCandidate(s.topProcesses ?? [], protectedPids)
+        : null
+
+    if (candidate) {
+      shedAttempts += 1
+      const killed = doKill(candidate.pid, 'SIGKILL')
+      const reason = guard.formatReason?.(s, pct) ?? (
+        `sandbox memory at ${pct}% (runtime ${s.runtime?.rssMb ?? '?'} MB RSS of ` +
+        `${s.cgroup.maxMb ?? s.memory.totalMb ?? '?'} MB): killed "${candidate.name}" ` +
+        `(pid ${candidate.pid}, ${candidate.rssMb} MB) to relieve pressure without stopping the turn`)
+      logger.error('[resources] memory guard shed a runaway process', {
+        pct, guardPct, inFlight, killed, candidate, shedAttempts, maxShedAttempts, reason, ...formatSnapshot(s),
+      })
+      try {
+        await guard.onGuard?.({ reason, snapshot: s, aborted: false, shed: killed ? [candidate] : [] })
+      } catch (err) {
+        logger.warn('[resources] memory guard relay failed', { err: (err as Error).message })
+      }
+      // Re-sampled on the next fast tick (10 s): if the kill did not help,
+      // either another candidate sheds next time or the budget runs out and
+      // the branch below aborts the turn instead of shedding forever.
+      return
+    }
+
     const reason = guard.formatReason?.(s, pct) ?? (
       `sandbox memory at ${pct}% (runtime ${s.runtime?.rssMb ?? '?'} MB RSS of ` +
-      `${s.cgroup.maxMb ?? s.memory.totalMb ?? '?'} MB): turn stopped before the kernel would kill runtime`)
+      `${s.cgroup.maxMb ?? s.memory.totalMb ?? '?'} MB): ` +
+      (guard.disableProcessShedding || shedAttempts === 0
+        ? 'no non-critical process to shed; turn stopped before the kernel would kill runtime'
+        : `${shedAttempts} process(es) already shed without relief; turn stopped before the kernel would kill runtime`))
     const aborted = await guard.abortTurn(reason).catch(() => false)
     logger.error('[resources] memory guard', { pct, guardPct, inFlight, aborted, reason, ...formatSnapshot(s) })
     try {
-      await guard.onGuard?.({ reason, snapshot: s, aborted })
+      await guard.onGuard?.({ reason, snapshot: s, aborted, shed: [] })
     } catch (err) {
       logger.warn('[resources] memory guard relay failed', { err: (err as Error).message })
     }
