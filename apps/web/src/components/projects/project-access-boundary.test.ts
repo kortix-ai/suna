@@ -11,6 +11,7 @@ import {
   gateStateForError,
   gateStateForRequestResult,
   isForbiddenState,
+  resolveBoundaryView,
   resolveGateState,
   routeSessionIdFromParams,
   shouldPollForApproval,
@@ -47,11 +48,10 @@ describe('project access waits for the authenticated identity', () => {
     expect(componentSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
   });
 
-  test('unresolved auth shows pending before cached success or error screens', () => {
-    const pending = componentSource.indexOf('if (!authReady || query.isPending)');
-    const success = componentSource.indexOf('if (query.isSuccess)');
-    expect(pending).toBeGreaterThan(-1);
-    expect(success).toBeGreaterThan(pending);
+  test('the boundary renders what resolveBoundaryView decides', () => {
+    expect(componentSource).toContain('const view = resolveBoundaryView({');
+    expect(componentSource).toContain("if (view === 'pending') return <ProjectPendingScreen />;");
+    expect(componentSource).toContain("if (view === 'project') return <>{children}</>;");
     expect(componentSource).toContain('const polling = authReady &&');
   });
 
@@ -209,6 +209,48 @@ describe('resolveGateState', () => {
 
   test('falls back to the error screen rather than a form it cannot justify', () => {
     expect(resolveGateState(null, null)).toBe('unavailable');
+  });
+});
+
+describe('resolveBoundaryView', () => {
+  const ready = { authReady: true, isPending: false };
+
+  test('unresolved auth shows pending, even over a cached project', () => {
+    expect(
+      resolveBoundaryView({ authReady: false, isPending: false, hasData: true, errorState: null }),
+    ).toBe('pending');
+    expect(
+      resolveBoundaryView({ authReady: true, isPending: true, hasData: false, errorState: null }),
+    ).toBe('pending');
+  });
+
+  test('a readable project renders', () => {
+    expect(resolveBoundaryView({ ...ready, hasData: true, errorState: null })).toBe('project');
+  });
+
+  test('a failed refetch keeps the working shell', () => {
+    // TanStack v5 keeps `data` when a refetch fails and sets `status: 'error'`.
+    // A 500, a timeout, an expired token or a dropped tunnel after the project
+    // opened must not replace the whole app with the error screen.
+    for (const error of [{ status: 500 }, { status: 401 }, new Error('timeout')]) {
+      const errorState = gateStateForError(error);
+      expect(resolveBoundaryView({ ...ready, hasData: true, errorState })).toBe('project');
+    }
+  });
+
+  test('a terminal verdict replaces the shell even when data is cached', () => {
+    // Access revoked, or the project deleted, while the user was in it.
+    for (const status of [403, 404]) {
+      const errorState = gateStateForError({ status });
+      expect(resolveBoundaryView({ ...ready, hasData: true, errorState })).toBe('gate');
+    }
+  });
+
+  test('a first load that failed shows the gate screen', () => {
+    for (const status of [403, 404, 500]) {
+      const errorState = gateStateForError({ status });
+      expect(resolveBoundaryView({ ...ready, hasData: false, errorState })).toBe('gate');
+    }
   });
 });
 
@@ -478,7 +520,7 @@ describe('session open read starts beside getProject', () => {
     );
     expect(effect).not.toBeNull();
     const prefetchAt = componentSource.indexOf('void prefetchSessionOpen(');
-    const pendingGateAt = componentSource.indexOf('if (!authReady || query.isPending) return');
+    const pendingGateAt = componentSource.indexOf("if (view === 'pending') return");
     expect(prefetchAt).toBeGreaterThan(0);
     expect(prefetchAt).toBeLessThan(pendingGateAt);
   });

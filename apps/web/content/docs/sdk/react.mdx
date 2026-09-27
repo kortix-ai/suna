@@ -128,6 +128,46 @@ import { prefetchSessionOpen } from '@kortix/sdk/react';
 />;
 ```
 
+## Render from cache on a reload
+
+Two stores keep what a user already saw, so a reload or a cold app start renders it
+in the first frame and refreshes it in place. Both are per user and bounded, and a
+host clears both on sign-out.
+
+- `createPersistedQueryCache` keeps the React Query results a user navigates by:
+  accounts, projects, project detail, the paged session list, and session rows
+  (`isPersistableQueryKey`). A restored entry keeps its original age, so it refetches
+  on mount. The default bounds are 1,000,000 characters and 7 days.
+- `createSavedCopyStore` keeps the last saved copies of transcripts that the server
+  sent. Register it with `setSavedCopyStore`, and `useSession` paints the kept copy
+  before the first frame. The server's copy then reconciles into it by message ID, and
+  the SDK re-reads it 3 seconds after each turn ends. The default bounds are 12
+  sessions, 1,500,000 characters, and 14 days.
+
+```tsx
+import {
+  browserKeyValueStorage,
+  createPersistedQueryCache,
+  createSavedCopyStore,
+  isPersistableQueryKey,
+  setSavedCopyStore,
+} from '@kortix/sdk';
+
+const storage = browserKeyValueStorage(); // null where there is no localStorage
+if (storage) {
+  const cache = createPersistedQueryCache({ storage, userId, shouldPersist: isPersistableQueryKey });
+  cache.restore(queryClient); // synchronous with localStorage: no pending frame
+  const stop = cache.persist(queryClient);
+  setSavedCopyStore(createSavedCopyStore({ storage, userId }));
+}
+```
+
+On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
+
+The saved-copy store keeps only server captures: the transcript mirror that the API
+writes when a turn ends. The live transcript is never written to the device, so a
+stopped turn cannot come back as a running one.
+
 ## Sign-out and account switching
 
 The SDK keeps per-user session state in memory: transcripts, pending questions
@@ -149,6 +189,11 @@ supabase.auth.onAuthStateChange((event, session) => {
 `resetIdentityState()` also removes the model store's `localStorage` entry. It
 does not clear the host's own caches, such as React Query, or the token source
 passed to `createKortix`. Reset those in the same handler. It never throws.
+
+With the stores from [Render from cache on a reload](#render-from-cache-on-a-reload),
+clear them in the same handler: `await cache.clear()`, then
+`await savedCopies.clear()` and `setSavedCopyStore(null)`. Neither store ever
+restores data for a different user, but a signed-out device should not keep it.
 
 ## Next
 
