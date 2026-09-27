@@ -59,6 +59,9 @@ import {
   renameConnection,
   shareConnection,
   connectionSharedWithEveryone,
+  describeConnectorTool,
+  getConnectorCatalog,
+  listConnectorTools,
   type Connection,
   type ConnectionShare,
   type ConnectionSharePrincipal,
@@ -1309,4 +1312,84 @@ test('connectionSharedWithEveryone: a private account is nobody else\'s', () => 
   expect(
     connectionSharedWithEveryone({ ...sharedAccount(undefined), owner_type: 'member', owner_id: 'u-1' }),
   ).toBe(false);
+});
+
+// ─── Payload-size fix: schemas are opt-in, not the default ─────────────────
+//
+// The full per-action JSON Schema was the dominant contributor to
+// GET /connectors/projects/:id/connectors (1.6MB body) and
+// GET /connectors/projects/:id/catalog (439KB body) on prod. Both routes now
+// omit `inputSchema` unless the caller explicitly asks for it.
+
+test('listConnectors defaults to no query string, and forwards includeSchemas as include_schemas=true', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await listConnectors('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/connectors');
+
+  await listConnectors('P1', { includeSchemas: true });
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/connectors?include_schemas=true',
+  );
+});
+
+test('getConnectorCatalog forwards slug and includeSchemas as query params', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await getConnectorCatalog('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+
+  await getConnectorCatalog('P1', { slug: 'gmail', includeSchemas: true });
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.searchParams.get('slug')).toBe('gmail');
+  expect(url.searchParams.get('include_schemas')).toBe('true');
+});
+
+test('listConnectorTools never asks for schemas — no caller of it reads inputSchema', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          provider: 'composio',
+          status: 'active',
+          actions: [{ path: 'send', name: 'Send', description: '', risk: 'write', inputSchema: null }],
+        },
+      ],
+    },
+  };
+  await listConnectorTools('P1');
+  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+});
+
+test('describeConnectorTool fetches ONE connector, with its schema, instead of the whole catalog', async () => {
+  const schema = { type: 'object', properties: { to: { type: 'string' } } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'gmail',
+          name: 'Gmail',
+          provider: 'composio',
+          status: 'active',
+          actions: [{ path: 'send', name: 'Send', description: 'Send mail', risk: 'write', inputSchema: schema }],
+        },
+      ],
+    },
+  };
+  const tool = await describeConnectorTool('P1', 'gmail.send');
+  const url = new URL(last()!.url);
+  expect(url.pathname).toBe('/connectors/projects/P1/catalog');
+  expect(url.searchParams.get('slug')).toBe('gmail');
+  expect(url.searchParams.get('include_schemas')).toBe('true');
+  expect(tool?.inputSchema).toEqual(schema);
+});
+
+test('describeConnectorTool: a malformed tool name (no dot) resolves to null without a request', async () => {
+  calls = [];
+  const tool = await describeConnectorTool('P1', 'not-a-tool-name');
+  expect(tool).toBeNull();
+  expect(calls).toHaveLength(0);
 });
