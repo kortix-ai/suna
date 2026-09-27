@@ -32,6 +32,59 @@ const BRANCH_COMPARE_CONCURRENCY = 8;
 const BRANCH_COMPARE_LIMIT = 100;
 const BRANCH_LIST_TIMEOUT_MS = 15_000;
 
+// A session branch's name IS the session id — createRemoteSessionBranch
+// (../lib/sessions.ts) never prefixes it, and every session id is a
+// validated UUID (isUuid, ../lib/sessions.ts) before a branch is ever cut
+// from it. A project with a long history can carry thousands of these, and
+// a human never picks one by name — every UI branch picker searches/limits
+// on the human branches. Excluding them from the default response is what
+// cut GET /:projectId/branches from ~977KB (thousands of session branches on
+// a busy project) down to the human-authored set.
+const SESSION_BRANCH_NAME_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isSessionBranchName(name: string): boolean {
+  return SESSION_BRANCH_NAME_RE.test(name);
+}
+
+export const BRANCH_LIST_DEFAULT_LIMIT = 500;
+export const BRANCH_LIST_MAX_LIMIT = 2000;
+
+export interface BranchListFilter {
+  /** Case-insensitive substring match on branch name. */
+  q?: string;
+  /** Capped at BRANCH_LIST_MAX_LIMIT regardless of what's requested. */
+  limit?: number;
+  /** Opt-in escape hatch for callers that genuinely want every branch
+   *  (e.g. the CLI's full-table listing). Default excludes session
+   *  branches — see SESSION_BRANCH_NAME_RE above. */
+  includeSessionBranches?: boolean;
+}
+
+/**
+ * Applies the response-shaping filters for GET /:projectId/branches. Kept as
+ * a pure function, separate from the git subprocess call in `listBranches`
+ * below, so the filtering rules are unit-testable without a repository.
+ */
+export function filterBranchesForResponse(
+  branches: readonly GitBranchInfo[],
+  filter: BranchListFilter = {},
+): GitBranchInfo[] {
+  const q = filter.q?.trim().toLowerCase();
+  const limit = Math.min(
+    Math.max(Math.floor(filter.limit ?? BRANCH_LIST_DEFAULT_LIMIT), 1),
+    BRANCH_LIST_MAX_LIMIT,
+  );
+  const filtered = branches.filter((branch) => {
+    if (!filter.includeSessionBranches && !branch.is_default && isSessionBranchName(branch.name)) {
+      return false;
+    }
+    if (q && !branch.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  return filtered.slice(0, limit);
+}
+
 export interface ExpectedFileRevision {
   path: string;
   sha: string | null;

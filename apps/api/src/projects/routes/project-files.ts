@@ -3,6 +3,8 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
   archiveRepoSubtree,
+  BRANCH_LIST_MAX_LIMIT,
+  filterBranchesForResponse,
   getBranchDiff,
   getCommit,
   getCommitDiff,
@@ -326,7 +328,15 @@ projectsApp.openapi(
 },
 );
 
-// GET /v1/projects/:projectId/branches
+// GET /v1/projects/:projectId/branches?q=...&limit=...&include_session_branches=...
+//
+// A project's remote can carry thousands of auto-created session branches —
+// createRemoteSessionBranch names each one after the session's own UUID (see
+// ../git/branches.ts). No human ever picks one of those by name, and every
+// UI branch picker (apps/web BranchPicker, mobile OpenCRSheet) only ever
+// shows a bounded, human-relevant subset anyway. The default response now
+// excludes them and caps the result; a caller that genuinely wants the full
+// remote (the CLI's `files branches` table) opts back in explicitly.
 
 projectsApp.openapi(
   createRoute({
@@ -337,6 +347,11 @@ projectsApp.openapi(
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
+        query: z.object({
+          q: z.string().optional(),
+          limit: z.coerce.number().int().min(1).max(BRANCH_LIST_MAX_LIMIT).optional(),
+          include_session_branches: z.coerce.boolean().optional(),
+        }),
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -349,8 +364,14 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
+  const query = c.req.valid('query');
   try {
-    const branches = await listBranches(await withProjectGitAuth(loaded.row));
+    const allBranches = await listBranches(await withProjectGitAuth(loaded.row));
+    const branches = filterBranchesForResponse(allBranches, {
+      q: query.q,
+      limit: query.limit,
+      includeSessionBranches: query.include_session_branches === true,
+    });
     return c.json({
       default_branch: loaded.row.defaultBranch,
       branches,
