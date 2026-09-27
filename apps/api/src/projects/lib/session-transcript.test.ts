@@ -282,6 +282,48 @@ describe('a window is bounded by size as well as by count', () => {
   });
 });
 
+describe("a sub-agent's saved transcript is its own window", () => {
+  test('the child id reaches the reader, and the window names the child', async () => {
+    const asked: Array<string | null | undefined> = [];
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40, child: 'ses_child' },
+      {
+        readMirror: async (_id, _limit, _before, opencodeSessionId) => {
+          asked.push(opencodeSessionId);
+          return snapshot({ opencode_session_id: 'ses_child' });
+        },
+      },
+    );
+    expect(asked).toEqual(['ses_child']);
+    expect(envelope.available).toBe(true);
+    expect(envelope.opencode_session_id).toBe('ses_child');
+  });
+
+  test('a root read asks for the root, never a child', async () => {
+    const asked: Array<string | null | undefined> = [];
+    await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40 },
+      {
+        readMirror: async (_id, _limit, _before, opencodeSessionId) => {
+          asked.push(opencodeSessionId);
+          return snapshot();
+        },
+      },
+    );
+    expect(asked).toEqual([null]);
+  });
+
+  test('a child nothing was saved for is unavailable, not an empty transcript', async () => {
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40, child: 'ses_child' },
+      { readMirror: async () => null },
+    );
+    expect(envelope.available).toBe(false);
+    expect(envelope.source).toBe('none');
+    expect(envelope.opencode_session_id).toBe('ses_child');
+  });
+});
+
 describe('early history requires the current server-owned root', () => {
   test('a replaced root cannot seed a stale transcript before the runtime starts', async () => {
     const envelope = await buildSessionTranscriptSyncEnvelope(

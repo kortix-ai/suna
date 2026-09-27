@@ -33,7 +33,8 @@ import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 // merged.
 //
 // `shape=sync` pages BACKWARDS with `before=<message id>`, taken from the
-// previous window's `next_cursor`, and reports `total`. Without them a reader
+// previous window's `next_cursor`, and reports `total`. `child=<ses_…>` reads
+// a sub-agent's own saved transcript instead of the root conversation. Without them a reader
 // could only ever see the newest `limit` messages of a history the mirror
 // retains in full — the startup view asks for 40, and 25 of 375 mirrored dev
 // sessions already hold more than that.
@@ -53,6 +54,7 @@ projectsApp.openapi(
         shape: z.enum(['compact', 'sync']).optional(),
         history: z.enum(['true', 'false']).optional(),
         before: z.string().optional(),
+        child: z.string().optional(),
       }),
     },
     responses: {
@@ -102,6 +104,13 @@ projectsApp.openapi(
       if (before !== undefined && (before.length === 0 || before.length > 128)) {
         return c.json({ error: 'Invalid cursor' }, 400);
       }
+      // A sub-agent's own saved transcript, by its OpenCode session id. Only
+      // rows stored under THIS session can answer, so an id from anywhere
+      // else reads as nothing saved.
+      const child = c.req.query('child');
+      if (child !== undefined && !/^ses_[A-Za-z0-9]{1,124}$/.test(child)) {
+        return c.json({ error: 'Invalid child session' }, 400);
+      }
       try {
         return c.json(
           await buildSessionTranscriptSyncEnvelope({
@@ -109,6 +118,7 @@ projectsApp.openapi(
             limit: limit.value,
             requireCurrentRoot: history,
             before: before ?? null,
+            child: child ?? null,
           }),
         );
       } catch (err) {

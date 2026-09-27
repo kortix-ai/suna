@@ -114,7 +114,12 @@ export interface MirrorMessage {
 }
 
 export interface MirrorSnapshot {
+  /** The OpenCode session whose messages this window holds: the root, or
+   *  the sub-agent session a child read asked for. */
   opencode_session_id: string | null;
+  /** The OpenCode root the mirror was captured from. Equal to
+   *  `opencode_session_id` for a root read. */
+  root_opencode_session_id?: string | null;
   captured_at: string;
   /** Every message the mirror holds for this session, not just this window. */
   total: number;
@@ -414,6 +419,116 @@ export function capturedMessageIndex(
   return index;
 }
 
+// ── Sub-agent sessions ──────────────────────────────────────────────────────
+//
+// A sub-agent runs in its OWN OpenCode session, and its row in the parent opens
+// that session's transcript. The mirror keeps those transcripts under the same
+// Kortix session (rows carry their own `opencode_session_id`), so the row opens
+// onto its steps while the computer is off too.
+
+/** Tools that dispatch a sub-agent: the SDK's `getChildSessionId` list. */
+const SUBAGENT_TOOLS = new Set([
+  'task',
+  'agent_spawn',
+  'agent-spawn',
+  'agent_message',
+  'agent-message',
+  'agent_task',
+  'agent-task',
+  'agent_task_update',
+  'agent-task-update',
+  'agent_task_message',
+  'agent-task-message',
+  'agent_task_start',
+  'agent-task-start',
+  'task_create',
+  'task-create',
+  'task_start',
+  'task-start',
+  'task_update',
+  'task-update',
+  'task_message',
+  'task-message',
+]);
+const SESSION_ID_IN_TEXT = /\bses_[a-zA-Z0-9]+/;
+const SPAWNED_SESSION_IN_OUTPUT = /\*?\*?Session:?\*?\*?\s*(ses_[a-zA-Z0-9]+)/;
+
+/**
+ * Pure: the OpenCode session a tool call dispatched, by the renderer's own
+ * rule (the SDK's `getChildSessionId`; `session-transcript-children.test.ts`
+ * holds the two equal). A copy rather than an import: the SDK's root barrel
+ * is not loaded into the API for one function.
+ */
+export function childSessionIdOf(part: unknown): string | undefined {
+  if (!isRecord(part)) return undefined;
+  const tool = typeof part.tool === 'string' ? part.tool : '';
+  const state = isRecord(part.state) ? part.state : undefined;
+  if (SUBAGENT_TOOLS.has(tool)) {
+    const fromMetadata = isRecord(state?.metadata) ? state.metadata.sessionId : undefined;
+    if (typeof fromMetadata === 'string' && fromMetadata) return fromMetadata;
+    if (typeof state?.title === 'string' && state.title) {
+      const match = state.title.match(SESSION_ID_IN_TEXT);
+      if (match) return match[0];
+    }
+    if (typeof state?.output === 'string' && state.output) {
+      const match = state.output.match(SESSION_ID_IN_TEXT);
+      if (match) return match[0];
+    }
+    return undefined;
+  }
+  const name = tool.replace(/-/g, '_');
+  if ((name === 'session_spawn' || name === 'session_start_background') && typeof state?.output === 'string') {
+    return state.output.match(SPAWNED_SESSION_IN_OUTPUT)?.[1];
+  }
+  return undefined;
+}
+
+export interface ChildSessionReference {
+  id: string;
+  /** Every call that references the session has ended, so the sub-agent has too. */
+  settled: boolean;
+}
+
+/** Pure: the sub-agent sessions these rows dispatched, in order, each once. */
+export function childSessionReferences(
+  rows: ReadonlyArray<{ parts: unknown }>,
+): ChildSessionReference[] {
+  const found = new Map<string, boolean>();
+  for (const row of rows) {
+    if (!Array.isArray(row.parts)) continue;
+    for (const part of row.parts) {
+      const id = childSessionIdOf(part);
+      if (!id) continue;
+      const settled = isRecord(part) && isRecord(part.state) && isSettledToolStatus(part.state.status);
+      found.set(id, (found.get(id) ?? true) && settled);
+    }
+  }
+  return [...found].map(([id, settled]) => ({ id, settled }));
+}
+
+/**
+ * Pure: which sub-agent transcripts one capture reads, at most `limit`.
+ *
+ * A sub-agent whose dispatching call ended, and whose saved transcript has no
+ * open message, is final: it is never read again. One that is new, still
+ * running, or saved mid-flight is read. So each finished sub-agent costs one
+ * read in its life, not one per turn end.
+ */
+export function childSessionsToCapture(input: {
+  references: ReadonlyArray<ChildSessionReference>;
+  /** Sub-agent session id -> every stored message of it has ended. */
+  stored: ReadonlyMap<string, { settled: boolean }>;
+  limit: number;
+}): string[] {
+  return input.references
+    .filter((reference) => {
+      const saved = input.stored.get(reference.id);
+      return !saved || !reference.settled || !saved.settled;
+    })
+    .map((reference) => reference.id)
+    .slice(0, Math.max(0, input.limit));
+}
+
 /**
  * Does this session's mirror still hold a row in the old stripped format? The
  * same question as `mirrorPartsAreStripped`, asked of the database: the wake
@@ -606,6 +721,13 @@ export async function readSessionTranscriptMirror(input: {
   /** A message id from a previous window's `next_cursor`. Rows STRICTLY older
    *  than it are returned. */
   before?: string | null;
+  /**
+   * A sub-agent's OpenCode session inside this session. Omitted: the root.
+   * A window holds ONE OpenCode session's messages: the mirror also stores
+   * the transcripts of the sub-agents the root dispatched, and a root read
+   * must never interleave them into the conversation.
+   */
+  opencodeSessionId?: string | null;
 }): Promise<MirrorSnapshot | null> {
   return db.transaction(
     async (tx) => {
@@ -620,10 +742,18 @@ export async function readSessionTranscriptMirror(input: {
         .limit(1);
       if (!state) return null;
 
+      const target = input.opencodeSessionId || state.opencodeSessionId;
+      const scope = target
+        ? and(
+            eq(sessionTranscriptMessages.sessionId, input.sessionId),
+            eq(sessionTranscriptMessages.opencodeSessionId, target),
+          )
+        : eq(sessionTranscriptMessages.sessionId, input.sessionId);
+
       const [totals] = await tx
         .select({ total: count() })
         .from(sessionTranscriptMessages)
-        .where(eq(sessionTranscriptMessages.sessionId, input.sessionId));
+        .where(scope);
       const total = totals?.total ?? 0;
       if (total === 0) return null;
 
@@ -635,12 +765,7 @@ export async function readSessionTranscriptMirror(input: {
             messageId: sessionTranscriptMessages.messageId,
           })
           .from(sessionTranscriptMessages)
-          .where(
-            and(
-              eq(sessionTranscriptMessages.sessionId, input.sessionId),
-              eq(sessionTranscriptMessages.messageId, input.before),
-            ),
-          )
+          .where(and(scope, eq(sessionTranscriptMessages.messageId, input.before)))
           .limit(1);
         // The cursor is a message id this session mirrored, so a miss means the
         // row was pruned or the caller invented it. Both are the caller's to
@@ -677,11 +802,7 @@ export async function readSessionTranscriptMirror(input: {
           parts: sessionTranscriptMessages.parts,
         })
         .from(sessionTranscriptMessages)
-        .where(
-          older
-            ? and(eq(sessionTranscriptMessages.sessionId, input.sessionId), older)
-            : eq(sessionTranscriptMessages.sessionId, input.sessionId),
-        )
+        .where(older ? and(scope, older) : scope)
         .orderBy(
           sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
           sql`${sessionTranscriptMessages.messageId} DESC`,
@@ -692,10 +813,13 @@ export async function readSessionTranscriptMirror(input: {
       const kept = hasOlder ? window.slice(0, input.limit) : window;
 
       return {
-        opencode_session_id: state.opencodeSessionId ?? null,
+        opencode_session_id: target ?? null,
+        root_opencode_session_id: state.opencodeSessionId ?? null,
         captured_at: new Date(state.capturedAt).toISOString(),
         total,
-        head_complete: state.headComplete,
+        // A sub-agent's rows are written only from a read that reached its
+        // first message (see the capture), so a stored child is whole.
+        head_complete: input.opencodeSessionId ? true : state.headComplete,
         // The oldest row IN this window, so the next request starts strictly
         // behind it. Null when this window already reaches the oldest row.
         next_cursor: hasOlder ? (kept.at(-1)?.messageId ?? null) : null,

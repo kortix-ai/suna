@@ -91,6 +91,8 @@ export interface SessionTranscriptDeps {
     sessionId: string,
     limit: number,
     before?: string | null,
+    /** A sub-agent's OpenCode session; null reads the root. */
+    opencodeSessionId?: string | null,
   ) => Promise<MirrorSnapshot | null>;
 }
 
@@ -233,6 +235,9 @@ export async function buildSessionTranscriptSyncEnvelope(
     requireCurrentRoot?: boolean;
     /** A `next_cursor` from a previous window — read the window older than it. */
     before?: string | null;
+    /** A sub-agent's OpenCode session inside this session: its own saved
+     *  transcript. Omitted: the root conversation. */
+    child?: string | null;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptSyncEnvelope> {
@@ -240,12 +245,14 @@ export async function buildSessionTranscriptSyncEnvelope(
     input.session.sessionId,
     input.limit,
     input.before ?? null,
+    input.child ?? null,
   );
   // Bounded by size as well as by count: rows keep every tool payload 1:1, and
   // a cold open waits for this window. What does not fit is one cursor away.
   const mirror = read ? boundMirrorWindow(read, MIRROR_WINDOW_MAX_CHARS) : null;
+  const mirrorRoot = mirror?.root_opencode_session_id ?? mirror?.opencode_session_id;
   const rootMismatch = input.requireCurrentRoot && (
-    !input.session.opencodeSessionId || mirror?.opencode_session_id !== input.session.opencodeSessionId
+    !input.session.opencodeSessionId || mirrorRoot !== input.session.opencodeSessionId
   );
   if (!mirror || rootMismatch) {
     return {
@@ -254,7 +261,7 @@ export async function buildSessionTranscriptSyncEnvelope(
       source: 'none',
       complete: false,
       captured_at: null,
-      opencode_session_id: input.session.opencodeSessionId,
+      opencode_session_id: input.child ?? input.session.opencodeSessionId,
       message_count: 0,
       total: 0,
       next_cursor: null,
@@ -287,9 +294,10 @@ async function readMirrorSafely(
   sessionId: string,
   limit: number,
   before?: string | null,
+  opencodeSessionId?: string | null,
 ): Promise<MirrorSnapshot | null> {
   try {
-    return await readSessionTranscriptMirror({ sessionId, limit, before });
+    return await readSessionTranscriptMirror({ sessionId, limit, before, opencodeSessionId });
   } catch (err) {
     // A cursor the caller supplied is the caller's error, not a mirror
     // failure, and swallowing it here would answer "nothing was captured" for
