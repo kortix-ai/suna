@@ -43,7 +43,7 @@ describe('the top-level documentation tree', () => {
       // Rendered into EC2 user_data, which is not in ignore_changes: any edit
       // stops and starts every deployed self-host instance on the next apply.
       ':!infra/terraform/modules/selfhost-ec2/templates/user-data.sh.tftpl',
-      // `docs/SKILL.md` there is a path inside a skill's own directory.
+      // Its fixture path sits inside a skill's own directory, not the repo root.
       ':!packages/sdk/src/core/turns/tools/skill-helpers.test.ts',
     ]);
     expect(offenders).toEqual([]);
