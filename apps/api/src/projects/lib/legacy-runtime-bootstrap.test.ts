@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import type { SandboxExecResult } from '../../platform/providers';
-import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
 import {
   LEGACY_BOOTSTRAP_COOLDOWN_MS,
   LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
