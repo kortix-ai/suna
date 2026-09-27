@@ -407,7 +407,8 @@ function RepositoryGroup({
   const queryClient = useQueryClient();
   const branchesQuery = useQuery({
     queryKey: qk.project.branches(project.project_id),
-    queryFn: () => listProjectBranches(project.project_id),
+    // A default branch is never a session's own branch: skip the thousands.
+    queryFn: () => listProjectBranches(project.project_id, { includeSessionBranches: false }),
     ...contract('config'),
   });
   const branchNames = branchesQuery.data?.branches.map((branch) => branch.name) ?? [];

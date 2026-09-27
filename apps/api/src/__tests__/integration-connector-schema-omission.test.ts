@@ -7,9 +7,10 @@
  * `kortix connectors ls`, the MCP `"connectors"`/`"discover"` tools all
  * render name/status/action count only).
  *
- * Both routes now omit it by default (`inputSchema: null`) and require an
- * explicit `includeSchemas` opt-in — a contract-safe change since the field's
- * type (`Record<string, unknown> | null`) was already nullable.
+ * Both routes INCLUDE it unless the caller passes `includeSchemas: false`.
+ * The default cannot flip: sandboxes run a baked CLI whose connector gateway
+ * reads schemas from `/catalog`, and it cannot be updated in place. The
+ * dashboard opts out, which is where the 1.6 MB was measured.
  *
  * Real-Postgres tenant contract — mirrors
  * ./integration-connector-list-query-count.test.ts.
@@ -74,9 +75,9 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-describe('listConnectors omits inputSchema unless includeSchemas is requested', () => {
-  test('default: inputSchema is null', async () => {
-    const list = await dbConnectorRouterDeps.listConnectors(PROJECT, USER_A);
+describe('listConnectors keeps inputSchema unless a caller opts out', () => {
+  test('includeSchemas: false omits the schema', async () => {
+    const list = await dbConnectorRouterDeps.listConnectors(PROJECT, USER_A, { includeSchemas: false });
     const mailer = list.find((c) => c.slug === 'mailer');
     expect(mailer?.actions).toHaveLength(1);
     expect(mailer?.actions[0]?.inputSchema).toBeNull();
@@ -85,14 +86,14 @@ describe('listConnectors omits inputSchema unless includeSchemas is requested', 
     expect(mailer?.actions[0]?.risk).toBe('write');
   });
 
-  test('includeSchemas: true returns the real schema', async () => {
-    const list = await dbConnectorRouterDeps.listConnectors(PROJECT, USER_A, { includeSchemas: true });
+  test('default: the real schema, as every baked CLI expects', async () => {
+    const list = await dbConnectorRouterDeps.listConnectors(PROJECT, USER_A);
     const mailer = list.find((c) => c.slug === 'mailer');
     expect(mailer?.actions[0]?.inputSchema).toEqual(REAL_SCHEMA);
   });
 });
 
-describe('listCatalog omits inputSchema unless includeSchemas is requested, and slug filters to one connector', () => {
+describe('listCatalog keeps inputSchema unless a caller opts out, and slug filters to one connector', () => {
   const principal = {
     accountId: ACCOUNT,
     projectId: PROJECT,
@@ -102,14 +103,14 @@ describe('listCatalog omits inputSchema unless includeSchemas is requested, and 
     agentPrincipal: null,
   };
 
-  test('default: inputSchema is null', async () => {
-    const list = await dbConnectorRouterDeps.listCatalog(principal);
+  test('includeSchemas: false omits the schema', async () => {
+    const list = await dbConnectorRouterDeps.listCatalog(principal, { includeSchemas: false });
     const mailer = list.find((c) => c.slug === 'mailer');
     expect(mailer?.actions[0]?.inputSchema).toBeNull();
   });
 
-  test('includeSchemas: true returns the real schema', async () => {
-    const list = await dbConnectorRouterDeps.listCatalog(principal, { includeSchemas: true });
+  test('default: the real schema — the sandbox connector gateway reads it here', async () => {
+    const list = await dbConnectorRouterDeps.listCatalog(principal);
     const mailer = list.find((c) => c.slug === 'mailer');
     expect(mailer?.actions[0]?.inputSchema).toEqual(REAL_SCHEMA);
   });

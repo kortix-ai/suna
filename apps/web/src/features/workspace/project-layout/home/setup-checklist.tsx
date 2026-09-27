@@ -167,7 +167,7 @@ export function ProjectSetupChecklist({
 
   const connectors = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     enabled: wants('connectors'),
     ...contract('config'),
   });

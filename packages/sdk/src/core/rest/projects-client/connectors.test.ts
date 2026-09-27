@@ -1318,18 +1318,30 @@ test('connectionSharedWithEveryone: a private account is nobody else\'s', () => 
 //
 // The full per-action JSON Schema was the dominant contributor to
 // GET /connectors/projects/:id/connectors (1.6MB body) and
-// GET /connectors/projects/:id/catalog (439KB body) on prod. Both routes now
-// omit `inputSchema` unless the caller explicitly asks for it.
+// GET /connectors/projects/:id/catalog (439KB body) on prod. The API includes
+// `inputSchema` unless a caller sends `include_schemas=false`; an explicit
+// `false` MUST reach the wire, or the opt-out does nothing.
 
-test('listConnectors defaults to no query string, and forwards includeSchemas as include_schemas=true', async () => {
+test('listConnectors sends no query by default, and forwards an explicit includeSchemas either way', async () => {
   nextResponse = { status: 200, body: { connectors: [] } };
   await listConnectors('P1');
   expect(last()!.url).toBe('http://test.local/connectors/projects/P1/connectors');
+
+  await listConnectors('P1', { includeSchemas: false });
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/connectors?include_schemas=false',
+  );
 
   await listConnectors('P1', { includeSchemas: true });
   expect(last()!.url).toBe(
     'http://test.local/connectors/projects/P1/connectors?include_schemas=true',
   );
+});
+
+test('getConnectorCatalog forwards an explicit includeSchemas: false', async () => {
+  nextResponse = { status: 200, body: { connectors: [] } };
+  await getConnectorCatalog('P1', { includeSchemas: false });
+  expect(new URL(last()!.url).searchParams.get('include_schemas')).toBe('false');
 });
 
 test('getConnectorCatalog forwards slug and includeSchemas as query params', async () => {

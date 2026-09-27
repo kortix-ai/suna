@@ -108,12 +108,12 @@ export interface GetConnectorCatalogOptions {
   /** Restrict the catalog to one connector by slug. */
   slug?: string;
   /**
-   * Include the full per-action JSON Schema. Default false — it is the
-   * dominant contributor to this route's payload (measured on prod: 439KB
-   * body, n=97 db queries for a bulk listing) and `listConnectorTools` /
-   * `searchConnectorTools` never read it. `describeConnectorTool` (the one
-   * caller that needs a schema) passes `slug` + `true` together instead of
-   * fetching the whole catalog.
+   * The full per-action JSON Schema. Omitted from the request by default, and
+   * the API then INCLUDES it: sandboxes run a baked CLI whose connector
+   * gateway reads schemas from this route, so the server default can never
+   * flip. Pass `false` from a surface that renders no schema (it is the bulk
+   * of the payload: 439 KB on prod); `describeConnectorTool` narrows with
+   * `slug` instead.
    */
   includeSchemas?: boolean;
 }
@@ -124,7 +124,9 @@ export async function getConnectorCatalog(
 ): Promise<ConnectorCatalogEntry[]> {
   const params = new URLSearchParams();
   if (options?.slug) params.set('slug', options.slug);
-  if (options?.includeSchemas) params.set('include_schemas', 'true');
+  if (options?.includeSchemas !== undefined) {
+    params.set('include_schemas', String(options.includeSchemas));
+  }
   const query = params.toString() ? `?${params.toString()}` : '';
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
@@ -1047,16 +1049,17 @@ export async function pipedreamFinalizeConnection(
 
 export interface ListConnectorsOptions {
   /**
-   * Include the full per-action JSON Schema on every connector's actions.
-   * Default false — the dominant contributor to this route's payload
-   * (measured on prod: 1.6MB body) and no dashboard/CLI-summary caller reads
-   * it. Use {@link getConnectorCatalog} with `slug` for one connector's schema.
+   * The full per-action JSON Schema on every connector's actions. The API
+   * includes it unless this is `false` (older CLIs read it and cannot be
+   * updated in place). The dashboard passes `false`: the schemas were 1.6 MB
+   * of the prod response and no list renders them.
    */
   includeSchemas?: boolean;
 }
 
 export async function listConnectors(projectId: string, options?: ListConnectorsOptions) {
-  const query = options?.includeSchemas ? '?include_schemas=true' : '';
+  const query =
+    options?.includeSchemas === undefined ? '' : `?include_schemas=${options.includeSchemas}`;
   return unwrap(
     // Background read fired at workspace mount (project-home tiles, sidebar
     // setup checklist) — never global-toast; callers render their own state.

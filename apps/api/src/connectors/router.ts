@@ -831,8 +831,9 @@ const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialRea
 const CatalogQuerySchema = z.object({
   /** Restrict the catalog to one connector by slug. */
   slug: z.string().optional(),
-  /** Include the full per-action JSON Schema. Default omits it — see
-   *  `ListCatalogOptions.includeSchemas`. */
+  /** `false` omits the full per-action JSON Schema. Absent means INCLUDE:
+   *  sandboxes run a baked CLI that reads schemas from these routes, so the
+   *  default must match what those clients were built against. */
   include_schemas: z.enum(['true', 'false']).optional(),
 });
 
@@ -851,7 +852,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     const slug = query.slug?.trim() || undefined;
     const connectors = await deps.listCatalog(p, {
       slug,
-      includeSchemas: query.include_schemas === 'true',
+      includeSchemas: query.include_schemas !== 'false',
     });
     return c.json({ connectors });
   };
@@ -1516,7 +1517,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       // Whose own credentialed accounts count as "connected" for a connector
       // with no project-wide shared credential — see listConnectors' doc.
       const connectors = await deps.listConnectors(projectId, reader.userId, {
-        includeSchemas: query.include_schemas === 'true',
+        includeSchemas: query.include_schemas !== 'false',
       });
       return c.json({
         connectors: canReadSecretIdentifiers

@@ -1382,7 +1382,7 @@ async function listCatalog(
           name: a.name,
           description: a.description ?? '',
           risk: a.risk,
-          inputSchema: options.includeSchemas ? (a.inputSchema ?? null) : null,
+          inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
         })),
       accounts,
       // What an UNNAMED call runs as: the one pinned account, or the only
@@ -1716,13 +1716,11 @@ async function listConnectors(
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
-        // The full per-action JSON Schema is the dominant contributor to this
-        // route's payload (measured on prod: 1.6MB body) and no bulk-listing
-        // caller reads it (dashboard, grant pickers, `connectors ls`/`show`
-        // all render name/status/action count only) — see `../router.ts`
-        // `ListCatalogOptions` for the sibling `/catalog` route's identical
-        // rule. Opt in with `?include_schemas=true`.
-        inputSchema: options.includeSchemas ? (a.inputSchema ?? null) : null,
+        // The full per-action JSON Schema is the bulk of this route's payload
+        // (1.6 MB on prod). It is included unless the caller passes
+        // `includeSchemas: false` (`?include_schemas=false`): baked sandbox
+        // CLIs read it and cannot be updated in place.
+        inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
       })),
       requestAuthType: auth.type,
       requiresAuth: hasAuth,
