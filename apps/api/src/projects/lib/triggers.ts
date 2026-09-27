@@ -15,6 +15,7 @@ import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
+import { isRemotePushPolicyRejection } from '../git/mirror';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import {
   createSession,
@@ -2010,6 +2011,12 @@ export async function commitRepoFile(
   } catch (err) {
     if (err instanceof Error && err.name === 'GitFileRevisionConflictError') {
       return { error: err.message, status: 409 };
+    }
+    if (isRemotePushPolicyRejection(err)) {
+      return {
+        error: 'The repository rejected the push because of branch protection or repository rules. Allow the Kortix GitHub App to push to the default branch, or connect a repository where it can, then try again.',
+        status: 409,
+      };
     }
     return {
       error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,
