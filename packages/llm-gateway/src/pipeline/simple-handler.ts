@@ -270,6 +270,7 @@ export async function handleChatCompletions(
     });
   }
   let principal = admission.principal;
+  emit.mark('admitted');
 
   // `body` is the ONLY reference to the parsed request graph from here on.
   // It is nulled the moment dispatch has taken it (below), so a slow
@@ -311,6 +312,7 @@ export async function handleChatCompletions(
         requires: { imageInput: hasImage(body) },
       })) ?? null;
     routedModel = route?.primaryModel || requestedModel;
+    emit.mark('routed');
   } catch (error) {
     refundHold(hooks, principal, logger);
     emit({
@@ -338,6 +340,7 @@ export async function handleChatCompletions(
   try {
     resolvedCandidates = await hooks.resolveUpstream(principal, routedModel);
     descriptor = resolvedCandidates[0];
+    emit.mark('resolved');
   } catch (error) {
     refundHold(hooks, principal, logger);
     const resolution = error instanceof GatewayResolutionError ? error : null;
@@ -370,6 +373,7 @@ export async function handleChatCompletions(
   if (descriptor.billingMode !== 'none' && !principal.billingHold) {
     try {
       const billing = await hooks.assertBillingActive(principal.accountId);
+      emit.mark('billed');
       if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
     } catch (error) {
       const reason = (error as { reason?: unknown })?.reason;

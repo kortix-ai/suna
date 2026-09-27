@@ -1153,3 +1153,49 @@ describe('trace timing', () => {
     });
   }
 });
+
+describe('trace timing segments', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test('names which admission step spent the time before dispatch', async () => {
+    const traces: GatewayTrace[] = [];
+    const base = hooks([], traces);
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...base,
+          authorize: async () => {
+            await sleep(40);
+            return { ok: true, principal };
+          },
+          resolveRoute: async (p, input) => {
+            await sleep(60);
+            return base.resolveRoute!(p, input);
+          },
+          resolveUpstream: async () => {
+            await sleep(80);
+            return [primary];
+          },
+          assertBillingActive: async () => {
+            await sleep(100);
+          },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    await response.text();
+    for (let i = 0; i < 50 && traces.length === 0; i++) await sleep(10);
+    const timing = traces[0]!.metadata.timing as Record<string, number>;
+    expect(timing.admit_ms).toBeGreaterThanOrEqual(35);
+    expect(timing.route_ms).toBeGreaterThanOrEqual(55);
+    expect(timing.resolve_ms).toBeGreaterThanOrEqual(75);
+    expect(timing.billing_ms).toBeGreaterThanOrEqual(95);
+    expect(timing.admit_ms + timing.route_ms + timing.resolve_ms + timing.billing_ms).toBeLessThanOrEqual(timing.prep_ms);
+  });
+});

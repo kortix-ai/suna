@@ -356,7 +356,7 @@ async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: 
  * or block — trace persistence or billing.
  */
 export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
-  const timing = trace.metadata?.timing as { prep_ms?: unknown; upstream_response_ms?: unknown } | undefined;
+  const timing = trace.metadata?.timing as Record<string, unknown> | undefined;
   if (!isOtelTraceExporterConfigured()) return;
   try {
     const attemptFailures = trace.attemptFailures ?? [];
@@ -399,12 +399,13 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         // false on every span.
         'kortix.fallback_recovered': trace.ok && attemptFailures.length > 0,
         ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
-        // Latency split (packages/llm-gateway pipeline/trace.ts): admission up
-        // to the upstream call, then the wait for the upstream's first byte.
-        ...(typeof timing?.prep_ms === 'number' ? { 'kortix.prep_ms': timing.prep_ms } : {}),
-        ...(typeof timing?.upstream_response_ms === 'number'
-          ? { 'kortix.upstream_response_ms': timing.upstream_response_ms }
-          : {}),
+        // Latency split (packages/llm-gateway pipeline/trace.ts): prep_ms and
+        // its admit/route/resolve/billing segments, then upstream_response_ms.
+        ...Object.fromEntries(
+          Object.entries(timing ?? {})
+            .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+            .map(([key, value]) => [`kortix.${key}`, value]),
+        ),
       },
     }).catch((error) => {
       console.warn(
