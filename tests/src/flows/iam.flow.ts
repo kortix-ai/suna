@@ -2005,9 +2005,16 @@ flow(
       });
       r.status(200).body().has('$.enabled', false);
       await eventually('admin refused again', async () => (await readSession(asAdmin)).statusCode === 404);
-      if ((await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {
-        throw new Error('manager inventory still listed the private session after oversight was turned off');
-      }
+      // Same replica-cache lag as the session read above: the inventory read
+      // hits whichever replica answers the request, and that replica's
+      // manager-inventory cache can still hold the pre-flip (oversight-on)
+      // answer for up to the ~15 s IAM cache TTL. Poll it exactly like the
+      // session read, instead of asserting on one read that can race the
+      // cache. See IAM-40 fail-open note in this file's flow doc comment for
+      // what this lag exposes while it lasts.
+      await eventually('manager inventory drops the private session', async () => {
+        return !(await inventoryIds(asAdmin, 'project')).has(privateSessionId);
+      });
     });
   },
 );
