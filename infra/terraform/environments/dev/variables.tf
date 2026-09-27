@@ -4,6 +4,25 @@ variable "aws_region" {
   default     = "us-west-2"
 }
 
+variable "database_region" {
+  description = <<-EOT
+    AWS region of the dev DATABASE_URL secret (the hosted Supabase Postgres
+    instance dev's API talks to). Declared explicitly, independent of
+    aws_region, so infra/terraform/scripts/test_region_colocation.py can
+    assert the two agree with no AWS credentials.
+
+    Documentation only — this root is not modified by the 2026-09-27 region
+    colocation change. It intentionally DISAGREES with aws_region today
+    (us-west-2 API vs us-east-2 database): that is the cross-continent hop
+    ../dev-us-east-2 exists to remove. This root stays live, unmigrated,
+    until docs/runbooks/region-colocation-dev-staging.md's cutover +
+    decommission steps run; the enforcer is expected to keep failing on this
+    root until then.
+  EOT
+  type        = string
+  default     = "us-east-2"
+}
+
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string
