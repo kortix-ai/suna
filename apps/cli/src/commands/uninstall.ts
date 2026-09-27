@@ -100,7 +100,12 @@ function collectTargets(flags: UninstallFlags): Target[] {
   const found: Target[] = [];
 
   // 1. The /usr/local/bin symlink, if it points at us.
-  const candidatePaths = ['/usr/local/bin/kortix', resolve(homedir(), '.local', 'bin', 'kortix')];
+  const candidatePaths = [
+    '/usr/local/bin/kortix',
+    '/usr/local/bin/kortixt',
+    resolve(homedir(), '.local', 'bin', 'kortix'),
+    resolve(homedir(), '.local', 'bin', 'kortixt'),
+  ];
   for (const p of candidatePaths) {
     if (existsSymlinkOrFile(p)) {
       found.push({ path: p, kind: 'symlink' });

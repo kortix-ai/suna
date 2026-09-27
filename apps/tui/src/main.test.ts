@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import type { ResolvedHost } from './auth/hosts.ts';
 import { initKortix, resetKortixForTest } from './kortix.ts';
-import { resolveProjectId } from './main.tsx';
+import { bootSession, resolveProjectId } from './main.tsx';
 
 /**
  * `runTui()` itself needs a renderer and a real tty, so it is proved by the
@@ -126,5 +126,40 @@ describe('resolveProjectId', () => {
   test('no client at all resolves to null — the login screen is the next state', async () => {
     resetKortixForTest();
     expect(await resolveProjectId([null, undefined])).toBeNull();
+  });
+});
+
+describe('bootSession (kortixt --new)', () => {
+  test('creates the session in the project with the agent and returns its id', async () => {
+    const calls: unknown[] = [];
+    const id = await bootSession('proj_1', { agentName: 'engineering' }, () => {}, {
+      createSession: async (p, a) => (calls.push([p, a]), { session_id: 'ses_new' }),
+    });
+    expect(id).toBe('ses_new');
+    expect(calls).toEqual([['proj_1', 'engineering']]);
+  });
+  test('no request → nothing created', async () => {
+    expect(
+      await bootSession('proj_1', null, () => {}, {
+        createSession: async () => {
+          throw new Error('no');
+        },
+      }),
+    ).toBeNull();
+  });
+  test('a failed create is a note, never a dead TUI', async () => {
+    const notes: string[] = [];
+    const id = await bootSession('proj_1', { agentName: 'x' }, (t) => notes.push(t), {
+      createSession: async () => {
+        throw new Error('402 out of credits');
+      },
+    });
+    expect(id).toBeNull();
+    expect(notes).toEqual(['Could not create a session for agent x: 402 out of credits']);
+  });
+  test('no project → a note that says so', async () => {
+    const notes: string[] = [];
+    expect(await bootSession(null, {}, (t) => notes.push(t))).toBeNull();
+    expect(notes[0]).toContain('--new needs a project');
   });
 });

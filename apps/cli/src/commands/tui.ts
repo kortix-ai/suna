@@ -35,7 +35,13 @@ Experimental. Open the Kortix terminal client: the sidebar of sessions, the
 transcript and composer, a real shell inside the session sandbox, and the
 Files, Review, Apps, Customize and Account screens — all in your terminal.
 
-\`kortix t\` is the short spelling.
+\`kortix t\` is the short spelling, and \`kortixt\` (one word, installed beside
+\`kortix\`) is the one-keystroke door: bind it to a key in your terminal.
+
+A cloud engineering desk in one command:
+  kortixt --project <id> --new --terminal
+creates a session in that project (\`--agent <name>\` picks the agent; the
+project default otherwise) and opens it with the sandbox shell focused.
 
 The TUI is a SEPARATE binary (\`kortix-tui\`, ~80 MB). \`kortix\` does not carry
 it. The first \`kortix tui\` asks to install the copy that matches this CLI's
@@ -53,6 +59,9 @@ Options:
   --project <id>    List this project's sessions (default: the host's default
                     project, else its first project).
   --session <id>    Open this session at boot.
+  --new             Create a session in the project at boot and open it.
+  --agent <name>    Agent for the new session. Default: the project's default.
+  --terminal        Open the sandbox terminal panel at boot (focused).
   --install         Install the TUI binary now and exit. No prompt.
   --uninstall       Remove ~/.kortix/tui/ and exit.
   -h, --help        Show this help.
@@ -94,6 +103,12 @@ export interface TuiFlags {
   host?: string;
   project?: string;
   session?: string;
+  /** Create a session at boot and open it (`--new`). */
+  newSession: boolean;
+  /** Agent for that new session (`--agent`); the project default otherwise. */
+  agent?: string;
+  /** Open the sandbox terminal panel at boot (`--terminal`). */
+  terminal: boolean;
   install: boolean;
   uninstall: boolean;
   help: boolean;
@@ -102,7 +117,13 @@ export interface TuiFlags {
 /** `kortix tui` takes flags only — a bare positional is a typo, not an id. */
 export function parseTuiFlags(argv: string[]): TuiFlags {
   const rest = [...argv];
-  const flags: TuiFlags = { help: false, install: false, uninstall: false };
+  const flags: TuiFlags = {
+    help: false,
+    install: false,
+    uninstall: false,
+    newSession: false,
+    terminal: false,
+  };
   for (let i = rest.length - 1; i >= 0; i -= 1) {
     const arg = rest[i];
     if (arg === '-h' || arg === '--help') {
@@ -114,11 +135,18 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     } else if (arg === '--uninstall') {
       flags.uninstall = true;
       rest.splice(i, 1);
+    } else if (arg === '--new') {
+      flags.newSession = true;
+      rest.splice(i, 1);
+    } else if (arg === '--terminal') {
+      flags.terminal = true;
+      rest.splice(i, 1);
     }
   }
   flags.host = takeFlagValue(rest, ['--host']);
   flags.project = takeFlagValue(rest, ['--project']);
   flags.session = takeFlagValue(rest, ['--session']);
+  flags.agent = takeFlagValue(rest, ['--agent']);
   const left = rest[0];
   if (left !== undefined) {
     throw new Error(
@@ -141,7 +169,9 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
  * (apps/tui/src/index.tsx).
  */
 export function tuiChildEnv(
-  flags: Pick<TuiFlags, 'host' | 'project' | 'session'>,
+  flags: Partial<
+    Pick<TuiFlags, 'host' | 'project' | 'session' | 'newSession' | 'agent' | 'terminal'>
+  >,
   base: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
   return {
@@ -149,6 +179,9 @@ export function tuiChildEnv(
     ...(flags.host ? { KORTIX_TUI_HOST: flags.host } : {}),
     ...(flags.project ? { KORTIX_PROJECT_ID: flags.project } : {}),
     ...(flags.session ? { KORTIX_SESSION_ID: flags.session } : {}),
+    ...(flags.newSession ? { KORTIX_TUI_NEW: '1' } : {}),
+    ...(flags.agent ? { KORTIX_TUI_AGENT: flags.agent } : {}),
+    ...(flags.terminal ? { KORTIX_TUI_TERMINAL: '1' } : {}),
   };
 }
 

@@ -51,6 +51,47 @@ export interface RunTuiOptions {
   projectId?: string | null;
   /** Open this session at boot. */
   sessionId?: string | null;
+  /** Create a session in the project at boot and open it (`kortixt --new`). */
+  newSession?: { agentName?: string } | null;
+  /** Open the sandbox terminal panel at boot, focused (`--terminal`). */
+  openTerminal?: boolean;
+}
+
+export interface BootSessionDeps {
+  createSession: (projectId: string, agentName?: string) => Promise<{ session_id: string }>;
+}
+
+const DEFAULT_BOOT_SESSION_DEPS: BootSessionDeps = {
+  createSession: (projectId, agentName) =>
+    kortix().projects.createSession(projectId, agentName ? { agent_name: agentName } : {}),
+};
+
+/**
+ * `--new`: the session `kortixt` opens. Created BEFORE the renderer exists so
+ * the app boots straight into it; a failure is a note, not a dead TUI — the
+ * sidebar still works and Ctrl+N is one key away.
+ */
+export async function bootSession(
+  projectId: string | null,
+  request: RunTuiOptions['newSession'],
+  note: (text: string) => void,
+  deps: BootSessionDeps = DEFAULT_BOOT_SESSION_DEPS,
+): Promise<string | null> {
+  if (!request) return null;
+  if (!projectId) {
+    note('--new needs a project: none is configured on this host.');
+    return null;
+  }
+  try {
+    const created = await deps.createSession(projectId, request.agentName);
+    return created.session_id;
+  } catch (error) {
+    const reason = error instanceof Error && error.message ? error.message : String(error);
+    note(
+      `Could not create a session${request.agentName ? ` for agent ${request.agentName}` : ''}: ${reason}`,
+    );
+    return null;
+  }
 }
 
 export interface ResolveProjectDeps {
@@ -113,6 +154,10 @@ export async function resolveProjectId(
 }
 
 interface RootProps {
+  /** The account the boot project belongs to (may differ from the host's active account). */
+  initialAccountId: string | null;
+  /** `--terminal`: open the sandbox terminal panel at boot. */
+  initialTerminalOpen: boolean;
   /** What boot had to work around (a dead default project), shown once as a toast. */
   bootNotice: string | null;
   initialHost: ResolvedHost | null;
@@ -137,6 +182,8 @@ function Root({
   bootNotice,
   initialProjectId,
   initialSessionId,
+  initialAccountId,
+  initialTerminalOpen,
   onQuit,
 }: RootProps) {
   const [host, setHost] = useState<ResolvedHost | null>(initialHost);
@@ -186,8 +233,9 @@ function Root({
       key={`${host.name}:${host.backendUrl}:${generation}`}
       host={host}
       projectId={projectId}
-      accountId={host.accountId || null}
+      accountId={initialAccountId ?? (host.accountId || null)}
       initialSessionId={initialSessionId}
+      initialTerminalOpen={initialTerminalOpen}
       onQuit={onQuit}
       onSwitchHost={() => {
         setPreviousHost(host);
@@ -242,6 +290,25 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         },
       })
     : null;
+
+  // `--project` may name a project outside the host's active account; the
+  // sidebar and every account-scoped read follow the PROJECT's account.
+  let bootAccountId: string | null = null;
+  if (host && projectId) {
+    try {
+      const project = (await kortix().projects.get(projectId)) as { account_id?: string | null };
+      bootAccountId = project.account_id ?? null;
+    } catch {
+      bootAccountId = null;
+    }
+  }
+  const createdSessionId = host
+    ? await bootSession(projectId, options.newSession ?? null, (text) => {
+        bootNotes.push(text);
+        process.stderr.write(`${text}\n`);
+      })
+    : null;
+  const initialSessionId = createdSessionId ?? options.sessionId?.trim() ?? null;
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -298,7 +365,9 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
           initialNotice={notice}
           bootNotice={bootNotes.length ? bootNotes.join(' ') : null}
           initialProjectId={projectId}
-          initialSessionId={options.sessionId?.trim() || null}
+          initialSessionId={initialSessionId}
+          initialAccountId={bootAccountId}
+          initialTerminalOpen={Boolean(options.openTerminal) && Boolean(initialSessionId)}
           onQuit={() => shutdown(0)}
         />
       </QueryClientProvider>,

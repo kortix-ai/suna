@@ -787,7 +787,9 @@ function finish(code: number): void {
   }
 }
 
-main(process.argv.slice(2))
+import { argvForInvocation } from './invocation.ts';
+
+main(argvForInvocation(process.argv0 ?? '', process.argv.slice(2)))
   // A refused call names the action, never the identity. Answer that here —
   // once, after the command's own output, and only when something was refused.
   .then(async (code) => {

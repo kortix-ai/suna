@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { argvForInvocation } from '../invocation.ts';
 
 import { stripAnsi } from '../style.ts';
 import { EXPERIMENTAL_NOTICE, type TuiDeps, parseTuiFlags, runTui, tuiChildEnv } from './tui.ts';
@@ -67,6 +68,15 @@ function harness(
   };
 }
 
+describe('kortixt — the one-word door', () => {
+  test('a binary invoked as kortixt runs the tui command with the same arguments', async () => {
+    expect(argvForInvocation('kortixt', ['--new'])).toEqual(['t', '--new']);
+    expect(argvForInvocation('/usr/local/bin/kortixt', [])).toEqual(['t']);
+    expect(argvForInvocation('kortix', ['sessions', 'ls'])).toEqual(['sessions', 'ls']);
+    expect(argvForInvocation('/Users/x/.local/bin/kortix-dev', ['t'])).toEqual(['t']);
+  });
+});
+
 describe('kortix tui — flags', () => {
   test('parses every flag and leaves nothing behind', () => {
     expect(
@@ -75,6 +85,8 @@ describe('kortix tui — flags', () => {
       help: false,
       install: true,
       uninstall: false,
+      newSession: false,
+      terminal: false,
       host: 'cloud',
       project: 'p1',
       session: 's1',
@@ -86,9 +98,31 @@ describe('kortix tui — flags', () => {
       help: false,
       install: false,
       uninstall: false,
+      newSession: false,
+      terminal: false,
       project: 'p2',
       session: 's2',
     });
+  });
+
+  test('--new, --agent and --terminal are the kortixt desk flags, and travel as env', () => {
+    const flags = parseTuiFlags([
+      '--project',
+      'p1',
+      '--new',
+      '--agent',
+      'engineering',
+      '--terminal',
+    ]);
+    expect(flags).toMatchObject({ newSession: true, agent: 'engineering', terminal: true });
+    const env = tuiChildEnv(flags, {});
+    expect(env).toEqual({
+      KORTIX_PROJECT_ID: 'p1',
+      KORTIX_TUI_NEW: '1',
+      KORTIX_TUI_AGENT: 'engineering',
+      KORTIX_TUI_TERMINAL: '1',
+    });
+    expect(tuiChildEnv(parseTuiFlags([]), {})).toEqual({});
   });
 
   test('-h and --help both ask for help; --uninstall is its own verb', () => {

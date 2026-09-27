@@ -23,6 +23,11 @@ Files, Review, Apps, Customize and Account screens.
 kortix login          # writes ~/.config/kortix/config.json
 kortix tui            # first run: "Install now? [Y/n]"
 kortix t              # the short spelling
+kortixt               # one word, installed beside kortix — bind it to a key
+
+# One keystroke to a cloud engineering desk: a new session in the project,
+# with its default agent (or --agent <name>), the sandbox shell open.
+kortixt --project <project-id> --new --terminal
 ```
 
 `kortix tui` signs in with the host you are already on, so there is nothing to

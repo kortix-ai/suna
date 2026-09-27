@@ -16,6 +16,11 @@ this file is the longer operator's guide.
 kortix login            # writes ~/.config/kortix/config.json
 kortix tui              # first run: "Install now? [Y/n]" — experimental
 kortix t                # same thing, short
+kortixt                 # one word — installed beside `kortix`; bind it to a key
+
+# A cloud engineering desk in one keystroke: a fresh session in one project,
+# the project's agent (or --agent <name>), the sandbox shell open and focused.
+kortixt --project <project-id> --new --terminal
 ```
 
 `kortix tui` is a **launcher**, not the app. The `kortix` binary does not carry

@@ -117,6 +117,8 @@ export interface AppProps {
   accountId?: string | null;
   /** Pre-selected session, from `KORTIX_SESSION_ID`. */
   initialSessionId?: string | null;
+  /** `--terminal`: open the sandbox terminal panel at boot, focused. Needs a session. */
+  initialTerminalOpen?: boolean;
   /** Tear the renderer down and leave. `src/main.tsx` owns the real exit. */
   onQuit: () => void;
   /** `Ctrl+H`. `src/main.tsx` remounts the app on the new host. */
@@ -132,6 +134,7 @@ export function App({
   projectId: initialProjectId,
   accountId: initialAccountId = null,
   initialSessionId = null,
+  initialTerminalOpen = false,
   onQuit,
   onSwitchHost,
   bootNotice = null,
@@ -144,8 +147,11 @@ export function App({
 
   const [route, setRoute] = useState<Route>('session');
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [focus, setFocus] = useState<Focus>(initialSessionId ? 'composer' : 'sidebar');
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const bootTerminal = initialTerminalOpen && Boolean(initialSessionId);
+  const [focus, setFocus] = useState<Focus>(
+    bootTerminal ? 'terminal' : initialSessionId ? 'composer' : 'sidebar',
+  );
+  const [terminalOpen, setTerminalOpen] = useState(bootTerminal);
   const [quitArmed, setQuitArmed] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [accountId, setAccountId] = useState<string | null>(
