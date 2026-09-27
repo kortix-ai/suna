@@ -177,7 +177,10 @@ and `package.json` work around. Each one was measured, not assumed:
 - It treats `node:*` built-ins as packages and looks for `node_modules/@types/node`
   in its root and in `packageRoot`. A clean pnpm install links only declared
   dependencies there, so `@types/node` is a declared devDependency. Without it,
-  every `node:*` import reports `Cannot find module`.
+  every `node:*` import reports `Cannot find module`. It stays at the version
+  `bun-types` resolves in `pnpm-lock.yaml` (20.19.43): `apps/api` typechecks
+  daemon source through a test, and a second `@types/node` version in that
+  program breaks its typecheck.
 - A tsconfig-aliased file outside the plugin root (`@kortix/api-contract`)
   arrives as an absolute path. The egress-shim entry allows the absolute and the
   root-relative form.
