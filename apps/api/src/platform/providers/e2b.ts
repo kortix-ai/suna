@@ -59,6 +59,8 @@ const KORTIX_APPD_HEALTH_WAIT =
   '-H "Authorization: Bearer $KORTIX_APPD_TOKEN" ' +
   'http://127.0.0.1:7331/v1/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
+
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';
 // The E2B SDK accepts requestTimeoutMs, but a live kill call remained pending
@@ -464,7 +466,7 @@ export class E2BProvider implements SandboxProvider {
       ...apiOpts(),
       envs: envVars,
       metadata: {
-        [MANAGED_METADATA]: 'true',
+        [MANAGED_METADATA]: await sandboxOwnershipMarker(),
         [ENV_METADATA]: config.INTERNAL_KORTIX_ENV,
         kortix_account_id: opts.accountId,
         kortix_created_by: opts.userId,
@@ -788,7 +790,7 @@ export class E2BProvider implements SandboxProvider {
       ...apiOpts(),
       limit: 100,
       query: {
-        metadata: { [MANAGED_METADATA]: 'true', [ENV_METADATA]: config.INTERNAL_KORTIX_ENV },
+        metadata: { [MANAGED_METADATA]: await sandboxOwnershipMarker(), [ENV_METADATA]: config.INTERNAL_KORTIX_ENV },
         state: ['running'],
       },
     });

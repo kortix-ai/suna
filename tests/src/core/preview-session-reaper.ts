@@ -18,7 +18,7 @@
  *     every running session box idle longer than the idle limit, tagged or not.
  *
  * Two guards hold in every path. A box qualifies only when its metadata says
- * `kortix.managed=true`, `kortix.env=preview` and `kortix.workload=session`, so
+ * a Kortix managed marker, `kortix.env=preview` and `kortix.workload=session`, so
  * dev, staging and production boxes are never selected. A host sandbox
  * (`kortix-preview-pr-*`, `kortix-env-*`, or any box with an `owner`) is never
  * selected: hosts belong to the preview lifecycle, not to this sweep.
@@ -73,7 +73,7 @@ export function isPreviewSessionSandbox(sandbox: PlatinumListedSandbox): boolean
   if (isPreviewHostSandbox(sandbox)) return false;
   if (meta(sandbox, 'owner') !== '') return false;
   return (
-    meta(sandbox, 'kortix.managed') === 'true' &&
+    (meta(sandbox, 'kortix.managed') === 'true' || /^v2-[0-9a-f]{64}$/.test(meta(sandbox, 'kortix.managed'))) &&
     meta(sandbox, 'kortix.env') === 'preview' &&
     meta(sandbox, 'kortix.workload') === 'session'
   );
@@ -151,7 +151,9 @@ export function selectStalePreviewSessions(
       stops.push({ id: sandbox.id, owner, reason: 'owner-gone', idleMinutes });
       continue;
     }
-    if (usedAt !== null && input.nowMs - usedAt > maxIdleMs) {
+    // Database-owned boxes use their API's turn authority for idle stops.
+    // An org-wide listing cannot prove that a long-running turn has ended.
+    if (meta(sandbox, 'kortix.managed') === 'true' && usedAt !== null && input.nowMs - usedAt > maxIdleMs) {
       stops.push({ id: sandbox.id, owner, reason: 'idle', idleMinutes });
     }
   }
