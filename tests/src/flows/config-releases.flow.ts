@@ -1700,6 +1700,11 @@ flow(
       // Entitle the REAL way — the same fixture the BILL flows use — rather
       // than pin a default-tier model, because this flow is about a real
       // model turn reaching the box, not about which tier can afford it.
+      // `subscribe()` does not return until `waitForCredits` confirms the
+      // grant landed: the monthly credit grant is the async Stripe
+      // `invoice.paid` webhook, not the subscribe call itself, so this step
+      // being awaited before the box boots is what makes the entitlement
+      // synchronous with the turn below, not a race with it.
       await ctx.step('the account is entitled to the managed lineup', async () => {
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
