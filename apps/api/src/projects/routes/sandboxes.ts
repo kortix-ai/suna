@@ -251,18 +251,24 @@ async function buildSandboxHealth(
   loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
   projectId: string,
 ): Promise<SandboxHealthPayload> {
-  const project = await loadGitProject(loaded);
   const observation = templateProviderObservation(loaded.row.metadata);
+  // The build-log DB read needs only `projectId` — it has no dependency on
+  // git-auth resolution or the provider template lookup, so start it
+  // concurrently with them instead of after (measured prod: db 387ms/14,
+  // git 742ms/15, http 180ms/1 — all previously serial). Each leg keeps its
+  // own catch so one degrading independently never blocks the other.
+  const buildsPromise = listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   try {
     // Repo unreachable / manifest broken / provider slow — render as "no
     // templates" rather than failing the whole poll. Each adapter owns its
     // provider-call timeout.
+    const project = await loadGitProject(loaded);
     templates = await listSandboxTemplates(project, observation.listOptions);
   } catch {
     /* no templates */
   }
-  const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
+  const builds = await buildsPromise;
   const resolved = projectSandboxStatus({
     templates,
     builds,

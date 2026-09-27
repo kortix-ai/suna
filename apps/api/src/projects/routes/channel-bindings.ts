@@ -21,6 +21,8 @@ import {
   setChannelModel,
 } from "../../channels/slack/selection";
 import { backfillChannelName } from "../../channels/slack/dispatch";
+import { loadSlackTokenForProject } from "../../channels/install-store";
+import { requestMemo } from "../../lib/request-context";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
@@ -73,7 +75,7 @@ interface ModelResolutionCtx {
  * §2.3), and a conversation pinned to one failed every message with
  * "Connect Codex to use this model".
  */
-async function conversationCanRun(input: {
+async function conversationCanRunUncached(input: {
   userId: string;
   accountId: string;
   projectId: string;
@@ -99,6 +101,30 @@ async function conversationCanRun(input: {
     model: input.model,
   }).catch(() => null);
   return keys ? isModelServableForAccount({ ...base, providerSecretPools: { [keys.providerId]: keys.secretIds } }) : false;
+}
+
+/**
+ * Request-scoped memo over {@link conversationCanRunUncached}.
+ *
+ * `GET /channels/bindings` calls this once per binding via
+ * `resolveBindingEffectiveModel` (N+1: measured 93 DB queries / 621ms server
+ * time across ~29 bindings in prod, 2026-09-27). Multiple channels commonly
+ * pin the SAME model, and every other input is constant across the whole
+ * request (one project, one requesting user) — so the only key that varies is
+ * `model`. `requestMemo` collapses repeats to one servability probe per unique
+ * model for the lifetime of this request; it never persists across requests,
+ * so a key just revoked/granted is still re-checked on the very next call.
+ */
+async function conversationCanRun(input: {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  freeModelsOnly: boolean;
+  pooledEnabled: boolean;
+  model: string;
+}): Promise<boolean> {
+  const key = `channel-bindings:conversationCanRun:${input.accountId}:${input.projectId}:${input.userId}:${input.freeModelsOnly}:${input.pooledEnabled}:${input.model}`;
+  return requestMemo(key, () => conversationCanRunUncached(input));
 }
 
 // Mirrors resolveEffectiveModel (default-model.ts) but batches the account
@@ -148,6 +174,21 @@ function oneToOneConversation(row: ChannelBindingRow): boolean {
   if (row.platform === "teams") return row.channelType === "personal";
   if (row.platform === "slack") return row.channelId.startsWith("D");
   return false;
+}
+
+/**
+ * Should `GET /channels/bindings` call `backfillChannelName` for this row?
+ *
+ * A Slack DM (`oneToOneConversation`) never carries a `name` on the
+ * conversation, so `backfillChannelName` always returns null for one — asking
+ * anyway wastes one Slack API round trip per DM binding, on EVERY poll,
+ * forever (measured prod: 29 HTTP calls / 453ms on a project whose bindings
+ * were mostly DMs — see the call site's comment). Exported so the "which rows
+ * get backfilled" rule has one definition, pinned by a test, instead of being
+ * re-derived inline where it is easy to silently drop the DM exclusion again.
+ */
+export function needsSlackNameBackfill(binding: ChannelBindingRow): boolean {
+  return binding.platform === "slack" && !binding.channelName && !oneToOneConversation(binding);
 }
 
 async function serializeBinding(
@@ -212,19 +253,36 @@ projectsApp.openapi(
     // have `channelName === null`. Resolve those live on read so the settings
     // page shows the real Slack channel name on the very next load instead of
     // waiting for the channel's next Slack event.
-    await Promise.all(
-      bindings
-        .filter((b) => b.platform === "slack" && !b.channelName)
-        .map(async (b) => {
-          b.channelName = await backfillChannelName(b.workspaceId, b.channelId, projectId);
+    //
+    // Slack DMs (`channelId` starts with `D`) never carry a `name` on the
+    // conversation — backfillChannelName always returns null for them (see its
+    // comment in channels/slack/dispatch.ts) — so calling it every single poll
+    // wasted one Slack API round trip per DM binding forever (measured: 29 HTTP
+    // calls / 453ms on a project whose bindings were mostly DMs). Skip those up
+    // front; the UI already falls back to `channelName ?? channelId`.
+    //
+    // The bot token is the SAME for every Slack binding in this one project —
+    // load it once instead of once per binding (each load decrypts a project
+    // secret, the other half of the 93-query N+1 measured on this route).
+    const needsBackfill = bindings.filter(needsSlackNameBackfill);
+    if (needsBackfill.length > 0) {
+      const slackToken = await loadSlackTokenForProject(projectId);
+      await Promise.all(
+        needsBackfill.map(async (b) => {
+          b.channelName = await backfillChannelName(b.workspaceId, b.channelId, projectId, slackToken);
         }),
-    );
+      );
+    }
+    const [modelDefaults, mayUseManagedModels] = await Promise.all([
+      getAccountModelDefaults(accountId, projectId),
+      accountMayUseManagedModels(accountId),
+    ]);
     const modelCtx: ModelResolutionCtx = {
       userId: loaded.userId,
       accountId,
       projectId,
-      modelDefaults: await getAccountModelDefaults(accountId, projectId),
-      freeModelsOnly: !(await accountMayUseManagedModels(accountId)),
+      modelDefaults,
+      freeModelsOnly: !mayUseManagedModels,
       llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       pooledEnabled: resolveFeatureFlag(loaded.row.metadata, "pooled_provider_secrets"),
     };

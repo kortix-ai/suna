@@ -13,6 +13,7 @@ import {
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
 import { isGitPathNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
+import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileAtRefResult,
   GetFileHistoryOptions,
@@ -30,11 +31,18 @@ export async function listRepoFiles(
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
   const treePath = normalizeTreePath(path);
-  const args = ['ls-tree', '-r', treeRef, '--'];
-  if (treePath) args.push(treePath);
-  const result = await runGit(args, repoPath, false);
-  if (!result.stdout.trim()) return [];
-  return result.stdout
+  // Keyed by the commit the ref points at now (see read-cache.ts).
+  const sha = await resolveRefSha(repoPath, treeRef);
+  const listTree = (at: string) => {
+    const args = ['ls-tree', '-r', at, '--'];
+    if (treePath) args.push(treePath);
+    return runGit(args, repoPath, false).then((result) => result.stdout);
+  };
+  const stdout = sha
+    ? await cachedGitRead(repoPath, sha, 'ls-tree-r', treePath ?? '', () => listTree(sha))
+    : await listTree(treeRef);
+  if (!stdout.trim()) return [];
+  return stdout
     .split('\n')
     .map<ProjectFileEntry | null>((line) => {
       const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\t(.+)$/);
@@ -120,8 +128,20 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
   try {
-    const result = await runGit(['show', `${treeRef}:${normalized}`], repoPath, false);
-    return result.stdout;
+    const sha = await resolveRefSha(repoPath, treeRef);
+    if (!sha) return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
+    // "Not in this commit" is an answer too, so it is cached as one; any other
+    // failure rejects and is retried by the next read.
+    const shown = await cachedGitRead(repoPath, sha, 'show', normalized, async () => {
+      try {
+        return { found: true as const, content: (await runGit(['show', `${sha}:${normalized}`], repoPath, false)).stdout };
+      } catch (err) {
+        if (isGitPathNotFoundError(err)) return { found: false as const, error: err };
+        throw err;
+      }
+    });
+    if (!shown.found) throw shown.error;
+    return shown.content;
   } catch (err) {
     // A "path does not exist in '<ref>'" `git show` failure is an expected
     // client condition (the path simply isn't in the repo at this ref), not a
@@ -224,7 +244,14 @@ export async function readManifestFromRepo(
   const repoPath = await refreshMirror(project, opts?.forceRefresh, { freshRef: treeRef });
   // A pathspec-scoped ls-tree prints only the candidates present at this ref
   // (order-agnostic), so we pick the highest-priority one ourselves.
-  const listed = await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
+  const treeSha = await resolveRefSha(repoPath, treeRef);
+  const listed = treeSha
+    ? await cachedGitRead(repoPath, treeSha, 'ls-tree-candidates', normalized.join('\u0000'), async () => {
+        const captured = await runGitCapture(['ls-tree', treeSha, '--', ...normalized], repoPath);
+        if (captured.exitCode !== 0) throw new Error(captured.stderr || 'ls-tree failed');
+        return captured;
+      }).catch(() => runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath))
+    : await runGitCapture(['ls-tree', treeRef, '--', ...normalized], repoPath);
   if (listed.exitCode !== 0 && opts?.strictRef) {
     // A ref that does not resolve is NOT "the manifest is absent". Returning
     // null here made an unreadable mirror indistinguishable from a blank
@@ -242,8 +269,15 @@ export async function readManifestFromRepo(
   if (!winner) return null;
   const revision = revisions.get(winner);
   if (!revision) return null;
-  const shown = await runGit(['show', `${treeRef}:${winner}`], repoPath, false);
-  const resolved = await runGitCapture(['rev-parse', '--verify', '--quiet', `${treeRef}^{commit}`], repoPath);
+  // A blob is addressed by its own id: the same bytes at every commit.
+  const shown = await cachedGitRead(repoPath, revision, 'blob', winner, () =>
+    runGit(['show', `${treeSha ?? treeRef}:${winner}`], repoPath, false),
+  );
+  const resolveCommit = () =>
+    runGitCapture(['rev-parse', '--verify', '--quiet', `${treeSha ?? treeRef}^{commit}`], repoPath);
+  const resolved = treeSha
+    ? await cachedGitRead(repoPath, treeSha, 'commit', '', resolveCommit)
+    : await resolveCommit();
   const commit = resolved.exitCode === 0 ? resolved.stdout.trim() || null : null;
   const found = {
     path: winner,
@@ -281,9 +315,13 @@ export async function readManifestFromRepo(
 
 /** `ManifestImportReader` over a bare mirror at one fixed ref. */
 function gitManifestImportReader(repoPath: string, ref: string): ManifestImportReader {
+  // `ref` is the commit the root manifest was read at, so reads are cacheable
+  // under it whenever it is a full SHA.
+  const cache = <T>(op: string, arg: string, load: () => Promise<T>) =>
+    /^[0-9a-f]{40}$/.test(ref) ? cachedGitRead(repoPath, ref, op, arg, load) : load();
   return {
     async list(path) {
-      const listed = await runGitCapture(['ls-tree', '-r', ref, '--', path], repoPath);
+      const listed = await cache('import-ls-tree', path, () => runGitCapture(['ls-tree', '-r', ref, '--', path], repoPath));
       if (listed.exitCode !== 0) {
         throw new Error(
           `git ls-tree ${ref} -- ${path} failed (exit ${listed.exitCode}): ${listed.stderr.trim() || 'no output'}`,
@@ -297,7 +335,7 @@ function gitManifestImportReader(repoPath: string, ref: string): ManifestImportR
       return entries;
     },
     async read(path) {
-      return (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout;
+      return cache('import-show', path, async () => (await runGit(['show', `${ref}:${path}`], repoPath, false)).stdout);
     },
   };
 }
@@ -388,9 +426,18 @@ export async function getFileAtRef(
   if (!normalized) return { content: '', found: false };
   validateRef(ref);
   const repoPath = await refreshMirror(project);
+  const read = async (at: string): Promise<GetFileAtRefResult> => {
+    try {
+      const result = await runGit(['show', `${at}:${normalized}`], repoPath, false);
+      return { content: result.stdout, found: true };
+    } catch (err) {
+      if (isGitPathNotFoundError(err)) return { content: '', found: false };
+      throw err;
+    }
+  };
   try {
-    const result = await runGit(['show', `${ref}:${normalized}`], repoPath, false);
-    return { content: result.stdout, found: true };
+    const sha = await resolveRefSha(repoPath, ref);
+    return sha ? await cachedGitRead(repoPath, sha, 'show-at', normalized, () => read(sha)) : await read(ref);
   } catch {
     return { content: '', found: false };
   }

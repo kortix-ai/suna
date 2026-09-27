@@ -214,7 +214,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
   });
 
@@ -844,7 +844,7 @@ export function ProjectSecretDialog({
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
     enabled: open,
   });
