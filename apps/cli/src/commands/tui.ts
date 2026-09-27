@@ -62,6 +62,10 @@ Options:
   --new             Create a session in the project at boot and open it.
   --agent <name>    Agent for the new session. Default: the project's default.
   --terminal        Open the sandbox terminal panel at boot (focused).
+  --no-sidebar      Start with the sidebar hidden. Alt+b shows it again.
+  --mouse           Let the TUI take the mouse. Off by default, so your
+                    terminal's own text selection, copy-on-select and
+                    Cmd+click on a URL keep working inside the TUI.
   --install         Install the TUI binary now and exit. No prompt.
   --uninstall       Remove ~/.kortix/tui/ and exit.
   -h, --help        Show this help.
@@ -76,6 +80,9 @@ Keys:
   Ctrl+p            Session switcher across every project.
   Ctrl+n            New session in this project.
   Alt+t             Toggle the sandbox terminal beside the transcript.
+  Alt+b             Hide or show the sidebar.
+  Alt+l             Links: every URL in the transcript or on the terminal
+                    screen (wrapped ones rejoined). Enter opens it.
   Alt+f / Alt+r     Files · Review.
   Alt+a / Alt+c     Apps · Customize.
   Alt+u / Alt+h     Account · switch host.
@@ -109,6 +116,11 @@ export interface TuiFlags {
   agent?: string;
   /** Open the sandbox terminal panel at boot (`--terminal`). */
   terminal: boolean;
+  /** Start with the sidebar hidden (`--no-sidebar`); Alt+B shows it. */
+  noSidebar: boolean;
+  /** Let the TUI take the mouse (`--mouse`). Off by default so the terminal's
+   *  own selection, copy-on-select and Cmd+click on URLs keep working. */
+  mouse: boolean;
   install: boolean;
   uninstall: boolean;
   help: boolean;
@@ -123,6 +135,8 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     uninstall: false,
     newSession: false,
     terminal: false,
+    noSidebar: false,
+    mouse: false,
   };
   for (let i = rest.length - 1; i >= 0; i -= 1) {
     const arg = rest[i];
@@ -140,6 +154,12 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
       rest.splice(i, 1);
     } else if (arg === '--terminal') {
       flags.terminal = true;
+      rest.splice(i, 1);
+    } else if (arg === '--no-sidebar') {
+      flags.noSidebar = true;
+      rest.splice(i, 1);
+    } else if (arg === '--mouse') {
+      flags.mouse = true;
       rest.splice(i, 1);
     }
   }
@@ -170,7 +190,10 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
  */
 export function tuiChildEnv(
   flags: Partial<
-    Pick<TuiFlags, 'host' | 'project' | 'session' | 'newSession' | 'agent' | 'terminal'>
+    Pick<
+      TuiFlags,
+      'host' | 'project' | 'session' | 'newSession' | 'agent' | 'terminal' | 'noSidebar' | 'mouse'
+    >
   >,
   base: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
@@ -182,6 +205,8 @@ export function tuiChildEnv(
     ...(flags.newSession ? { KORTIX_TUI_NEW: '1' } : {}),
     ...(flags.agent ? { KORTIX_TUI_AGENT: flags.agent } : {}),
     ...(flags.terminal ? { KORTIX_TUI_TERMINAL: '1' } : {}),
+    ...(flags.noSidebar ? { KORTIX_TUI_SIDEBAR: '0' } : {}),
+    ...(flags.mouse ? { KORTIX_TUI_MOUSE: '1' } : {}),
   };
 }
 

@@ -40,6 +40,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { copyToClipboard } from '../../lib/clipboard.ts';
 import { theme } from '../../theme.ts';
 import { Panel, type ToastKind } from '../../ui/index.ts';
+import { bootStatus } from '../session/transcript/boot-status.ts';
 import { ConnectHint, connectCommand } from './connect-hint.tsx';
 import { isReservedWhileTerminalFocused, matchesTerminalBinding } from './keys.ts';
 import { openPtyWebSocket } from './open-socket.ts';
@@ -60,6 +61,9 @@ const HINT_ROWS = 5;
 /** Debounce on the size PATCH — a drag emits a resize per frame. */
 const RESIZE_DEBOUNCE_MS = 100;
 
+/** Trailing-edge throttle for `onScreen`. */
+const SCREEN_TAP_MS = 300;
+
 const IDLE_STATE: PtySessionState = {
   phase: 'idle',
   attempt: 0,
@@ -75,7 +79,10 @@ export interface TerminalPanelProps {
    * and `runtimeUrl` is the origin the parked-box probe reads (null until the
    * runtime is ready).
    */
-  session: Pick<ReturnType<typeof useSession>, 'switched' | 'phase' | 'runtimeUrl'>;
+  session: Pick<
+    ReturnType<typeof useSession>,
+    'switched' | 'phase' | 'runtimeUrl' | 'stage' | 'reason' | 'failure'
+  >;
   focused: boolean;
   /** Outer width in cells, border included. */
   width: number;
@@ -91,6 +98,14 @@ export interface TerminalPanelProps {
    * from here — a detector bug must not blank the terminal.
    */
   onOutput?: (text: string) => void;
+  /**
+   * The emulator's screen after it changed, throttled to one call per
+   * `SCREEN_TAP_MS`. The Links panel (`features/links`) reads URLs off it,
+   * wrapped rows rejoined — the raw byte stream (`onOutput`) cannot give that,
+   * because a full-screen program redraws a wrapped URL row by row with cursor
+   * moves in between. Never throws from here.
+   */
+  onScreen?: (screen: { lines: string[]; columns: number }) => void;
   /**
    * Socket factory. The default is the real Bun WebSocket. `scripts/
    * dev-terminal.tsx` overrides it to hold the socket and drop it on purpose,
@@ -109,6 +124,7 @@ export function TerminalPanel({
   onClose,
   onToast,
   onOutput,
+  onScreen,
   openSocket = openPtyWebSocket,
 }: TerminalPanelProps) {
   const terminalRef = useRef<EmbeddedTerminalRenderable | null>(null);
@@ -118,6 +134,9 @@ export function TerminalPanel({
   // changed.
   const onOutputRef = useRef(onOutput);
   onOutputRef.current = onOutput;
+  const onScreenRef = useRef(onScreen);
+  onScreenRef.current = onScreen;
+  const screenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusedRef = useRef(false);
   const ptySessionRef = useRef<PtySession | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -281,6 +300,31 @@ export function TerminalPanel({
     if (terminal && focusedRef.current) terminal.focus();
   }, []);
 
+  // One screen read per `SCREEN_TAP_MS`, on the trailing edge: a program
+  // repainting at 60 Hz must not cost a URL scan per frame.
+  const onScreenChange = useCallback(() => {
+    if (!onScreenRef.current || screenTimerRef.current) return;
+    screenTimerRef.current = setTimeout(() => {
+      screenTimerRef.current = null;
+      const terminal = terminalRef.current;
+      const tap = onScreenRef.current;
+      if (!terminal || !tap) return;
+      try {
+        const screen = terminal.screen();
+        tap({ lines: screen.lines, columns: screen.columns });
+      } catch {
+        // A detector bug must not blank the terminal.
+      }
+    }, SCREEN_TAP_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (screenTimerRef.current) clearTimeout(screenTimerRef.current);
+    },
+    [],
+  );
+
   const copyConnect = useCallback(async () => {
     const result = await copyToClipboard(connectCommand(sessionId));
     if (result.ok) onToast?.(`Copied the connect command (${result.tool}).`);
@@ -318,7 +362,24 @@ export function TerminalPanel({
     if (isReservedWhileTerminalFocused(key)) key.preventDefault();
   });
 
-  const detail = ensureError ?? statusDetail(state, ready, session.phase, asleep);
+  const detail =
+    ensureError ??
+    statusDetail(
+      state,
+      ready,
+      session.phase === 'starting'
+        ? (bootStatus({
+            phase: 'starting',
+            stage: session.stage,
+            reason: session.reason,
+            failure: session.failure,
+            msInStage: 0,
+            msTotal: 0,
+            now: Date.now(),
+          })?.label ?? 'Starting')
+        : session.phase,
+      asleep,
+    );
 
   return (
     <Panel
@@ -336,6 +397,7 @@ export function TerminalPanel({
             width={cols}
             height={rows}
             onData={(bytes: Uint8Array) => ptySessionRef.current?.send(bytes)}
+            onScreenChange={onScreenChange}
             onTerminalResize={(nextCols: number, nextRows: number) =>
               sendResize(nextCols, nextRows)
             }
@@ -356,7 +418,7 @@ function statusDetail(
   phase: string,
   asleep: boolean,
 ): string {
-  if (!ready) return `Waiting for the sandbox (${phase})…`;
+  if (!ready) return `${phase}…`;
   if (asleep) return 'Sandbox is parked · Alt+Enter wakes it';
   if (state.phase === 'reconnecting') {
     return `Reconnecting (${state.attempt})${state.reason ? ` — ${state.reason}` : ''}`;

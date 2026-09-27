@@ -48,26 +48,31 @@ export const TERMINAL_KEYMAP: readonly Binding[] = [
     chords: [],
     description:
       'Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; ' +
-      'Tab, Alt+T and Alt+P still move focus, toggle the panel, and open the Ports panel.',
+      'Tab, Alt+T, Alt+P and Alt+L still move focus, toggle the panel, and open the Ports ' +
+      'and Links panels.',
   },
 ] as const;
 
 /**
- * The five chords the APP keeps while the terminal is focused. The panel
+ * The six chords the APP keeps while the terminal is focused. The panel
  * swallows them (`preventDefault`) so the shell never sees them:
  *
  *   Tab / Shift+Tab  cycle focus out of the panel
  *   Alt+T            toggle the panel
  *   Alt+P            open the Ports panel
+ *   Alt+L            open the Links panel — the URL a CLI just printed is
+ *                    exactly what a user in the shell wants to open
  *   Ctrl+Q           quit the TUI
  *
- * `Ctrl+C` is deliberately absent — it is the shell's.
+ * `Ctrl+C` is deliberately absent — it is the shell's. So is `Alt+B`: readline
+ * reads it as backward-word, and the sidebar can be toggled after a Tab.
  */
 export const TERMINAL_RESERVED_CHORDS: readonly Chord[] = [
   { key: 'tab' },
   { key: 'tab', shift: true },
   { key: 't', alt: true },
   { key: 'p', alt: true },
+  { key: 'l', alt: true },
   { key: 'q', ctrl: true },
 ] as const;
 

@@ -27,6 +27,7 @@ import { ACCOUNT_KEYS } from './features/account/keys.ts';
 import { APPS_KEYS } from './features/apps/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
+import { LINKS_KEYS } from './features/links/keys.ts';
 import { LOGIN_KEYS } from './features/login/keys.ts';
 import { PORTS_KEYS } from './features/ports/keys.ts';
 import { REVIEW_KEYS } from './features/review/keys.ts';
@@ -56,6 +57,7 @@ export type KeyScope =
   | 'login'
   | 'account'
   | 'ports'
+  | 'links'
   | 'modal';
 
 /** Help-overlay section titles, in the order the overlay prints them. */
@@ -72,6 +74,7 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
   'account',
   'login',
   'ports',
+  'links',
   'modal',
 ] as const;
 
@@ -88,6 +91,7 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   account: 'Account',
   login: 'Login',
   ports: 'Ports panel',
+  links: 'Links panel',
   modal: 'Lists, pickers and dialogs',
 };
 
@@ -165,6 +169,20 @@ export const KEYMAP: readonly Binding[] = [
     scope: 'global',
     chords: [chord('t', { alt: true })],
     description: 'Toggle the terminal panel.',
+  },
+  {
+    id: 'panel.sidebar',
+    scope: 'global',
+    chords: [chord('b', { alt: true })],
+    description: 'Hide or show the sidebar. Ctrl+P still switches sessions while it is hidden.',
+  },
+  {
+    id: 'links',
+    scope: 'global',
+    chords: [chord('l', { alt: true })],
+    description:
+      'Open the Links panel: every URL in the transcript and on the terminal screen, ' +
+      'wrapped ones rejoined. Enter opens one in the browser.',
   },
   {
     id: 'ports',
@@ -273,6 +291,7 @@ function featureTables(): readonly (readonly Binding[])[] {
     ACCOUNT_KEYS,
     LOGIN_KEYS,
     PORTS_KEYS,
+    LINKS_KEYS,
   ];
 }
 

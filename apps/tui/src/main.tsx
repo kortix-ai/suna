@@ -55,6 +55,15 @@ export interface RunTuiOptions {
   newSession?: { agentName?: string } | null;
   /** Open the sandbox terminal panel at boot, focused (`--terminal`). */
   openTerminal?: boolean;
+  /** Start with the sidebar hidden (`--no-sidebar`). `Alt+B` shows it. */
+  hideSidebar?: boolean;
+  /**
+   * Take the mouse (`--mouse`). Off by default: with mouse reporting on, the
+   * host terminal hands every click and drag to the app, so its own text
+   * selection, copy-on-select and Cmd+click on a URL stop working — and the
+   * app has no mouse features to give back for that.
+   */
+  mouse?: boolean;
 }
 
 export interface BootSessionDeps {
@@ -158,6 +167,8 @@ interface RootProps {
   initialAccountId: string | null;
   /** `--terminal`: open the sandbox terminal panel at boot. */
   initialTerminalOpen: boolean;
+  /** `--no-sidebar`: start with the sidebar hidden. */
+  initialSidebarHidden: boolean;
   /** What boot had to work around (a dead default project), shown once as a toast. */
   bootNotice: string | null;
   initialHost: ResolvedHost | null;
@@ -184,6 +195,7 @@ function Root({
   initialSessionId,
   initialAccountId,
   initialTerminalOpen,
+  initialSidebarHidden,
   onQuit,
 }: RootProps) {
   const [host, setHost] = useState<ResolvedHost | null>(initialHost);
@@ -236,6 +248,7 @@ function Root({
       accountId={initialAccountId ?? (host.accountId || null)}
       initialSessionId={initialSessionId}
       initialTerminalOpen={initialTerminalOpen}
+      initialSidebarHidden={initialSidebarHidden}
       onQuit={onQuit}
       onSwitchHost={() => {
         setPreviousHost(host);
@@ -322,7 +335,10 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
     },
   });
 
-  const renderer = await createCliRenderer({ exitOnCtrlC: false });
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: false,
+    useMouse: Boolean(options.mouse),
+  });
   const root = createRoot(renderer);
 
   return await new Promise<number>((resolve) => {
@@ -368,6 +384,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
           initialSessionId={initialSessionId}
           initialAccountId={bootAccountId}
           initialTerminalOpen={Boolean(options.openTerminal) && Boolean(initialSessionId)}
+          initialSidebarHidden={Boolean(options.hideSidebar)}
           onQuit={() => shutdown(0)}
         />
       </QueryClientProvider>,

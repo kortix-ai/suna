@@ -24,6 +24,8 @@ const code = await runTui({
       ? { agentName: process.env.KORTIX_TUI_AGENT?.trim() || undefined }
       : null,
   openTerminal: process.env.KORTIX_TUI_TERMINAL === '1',
+  hideSidebar: process.env.KORTIX_TUI_SIDEBAR === '0',
+  mouse: process.env.KORTIX_TUI_MOUSE === '1',
 });
 
 process.exit(code);

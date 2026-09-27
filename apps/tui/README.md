@@ -140,6 +140,7 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | Help | `?` | Every binding below, generated from the keymap. |
 | Switcher | `Ctrl+P` | Filter over every session and project. |
 | Ports | `Alt+P` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). |
+| Links | `Alt+L` | Every URL in the transcript or on the terminal screen, wrapped ones rejoined. See [Links](#links). |
 
 ## Ports
 
@@ -173,6 +174,40 @@ same as the CLI's `kortix sessions forward <session-id> --port <sandbox>[:<local
 (see `apps/cli/README.md`) — the panel reuses that exact engine
 (`@kortix/cli/src/port-forward.ts`) rather than a second implementation.
 
+## Links
+
+The terminal panel is a VT emulator drawn into cells, so the host terminal
+cannot click inside it: a URL longer than the panel wraps across rows, and
+Ghostty or iTerm2 sees several unrelated rows, never one link. An OAuth
+sign-in URL a CLI prints (`codex login`, `gh auth login`) is the common case.
+
+`Alt+L` opens the Links panel — every `http(s)://` URL in the transcript
+(assistant text and tool output) and on the terminal screen right now,
+wrapped rows rejoined, newest first:
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, `g`/`G` | Move the selection. |
+| `Enter` / `o` | Open the selected URL in the browser (`open` / `xdg-open`). |
+| `y` | Copy the selected URL to the clipboard. |
+| `Esc` | Close the panel. |
+
+`Alt+L` works while the terminal panel is focused, so the URL a CLI just
+printed is one chord away. Only `http:` and `https:` URLs are opened.
+
+## Mouse, selection and copying
+
+The TUI does not take the mouse. Your terminal's own text selection,
+copy-on-select and `Cmd`/`Ctrl`+click on a URL therefore keep working inside
+it, exactly as in a plain shell; in Ghostty that means drag to select and the
+selection is on the clipboard. Nothing in the app needs a click. `kortix tui
+--mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
+then Shift+drag is the way to select natively in most terminals.
+
+The sidebar can be hidden: `Alt+B` toggles it, `kortix tui --no-sidebar`
+(`KORTIX_TUI_SIDEBAR=0`) starts without it. `Ctrl+P` still switches sessions
+and projects while it is hidden, and the status bar shows `Alt+B sidebar`.
+
 ## Keys
 
 The `?` overlay prints this table live: it is generated from `src/keymap.ts`
@@ -190,6 +225,8 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Ctrl+p` | Open the session switcher. |
 | `Ctrl+n` | Create a session in this project and open it. |
 | `Alt+t` | Toggle the terminal panel. |
+| `Alt+b` | Hide or show the sidebar. Ctrl+P still switches sessions while it is hidden. |
+| `Alt+l` | Open the Links panel: every URL in the transcript and on the terminal screen, wrapped ones rejoined. Enter opens one in the browser. |
 | `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |
 | `Alt+r` | Open the review screen. |
@@ -251,7 +288,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Alt+y` | Copy `kortix sessions connect <id>` to the clipboard. |
 | `Alt+x` | Close the terminal panel. |
 | `Alt+Enter` | Reconnect the terminal now. |
-| `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab, Alt+T and Alt+P still move focus, toggle the panel, and open the Ports panel. |
+| `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab, Alt+T, Alt+P and Alt+L still move focus, toggle the panel, and open the Ports and Links panels. |
 
 ### Files
 
@@ -382,6 +419,14 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `a` | Add a sandbox port to forward, by number. |
 | `Esc` | Close the Ports panel. Open forwards keep running. |
 
+### Links panel
+
+| Keys | Action |
+| --- | --- |
+| `Enter / o` | Open the selected URL in the browser. |
+| `y` | Copy the selected URL to the clipboard. |
+| `Esc` | Close the Links panel. |
+
 ### Lists, pickers and dialogs
 
 | Keys | Action |
@@ -394,7 +439,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_150 bindings._
+_155 bindings._
 
 ## Tests
 

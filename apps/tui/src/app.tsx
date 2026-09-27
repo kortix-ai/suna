@@ -43,6 +43,7 @@ import { type AttachStatus, type RunAttachResult, runAttach } from './features/a
 import { CustomizeScreen } from './features/customize/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { HelpOverlay } from './features/help/index.ts';
+import { type LinkRow, LinksOverlay } from './features/links/index.ts';
 import { PortsOverlay, type UsePortsResult } from './features/ports/index.ts';
 import { ReviewScreen } from './features/review/index.ts';
 import { SessionView } from './features/session/index.ts';
@@ -102,6 +103,15 @@ export function terminalToggle(
   return { open: true, focus: 'terminal', toast: null };
 }
 
+/**
+ * Whether the sidebar column is drawn: hidden by the user (`Alt+B`,
+ * `--no-sidebar`) or squeezed out by a narrow terminal. Pure so both rules are
+ * asserted without a renderer.
+ */
+export function sidebarVisible(width: number, hidden: boolean): boolean {
+  return !hidden && width >= SIDEBAR_MIN_COLUMNS;
+}
+
 export function nextFocus(current: Focus, order: Focus[], step: 1 | -1): Focus {
   const index = order.indexOf(current);
   if (index < 0) return order[0] as Focus;
@@ -119,6 +129,8 @@ export interface AppProps {
   initialSessionId?: string | null;
   /** `--terminal`: open the sandbox terminal panel at boot, focused. Needs a session. */
   initialTerminalOpen?: boolean;
+  /** `--no-sidebar`: start with the sidebar hidden. `Alt+B` brings it back. */
+  initialSidebarHidden?: boolean;
   /** Tear the renderer down and leave. `src/main.tsx` owns the real exit. */
   onQuit: () => void;
   /** `Ctrl+H`. `src/main.tsx` remounts the app on the new host. */
@@ -135,6 +147,7 @@ export function App({
   accountId: initialAccountId = null,
   initialSessionId = null,
   initialTerminalOpen = false,
+  initialSidebarHidden = false,
   onQuit,
   onSwitchHost,
   bootNotice = null,
@@ -152,6 +165,7 @@ export function App({
     bootTerminal ? 'terminal' : initialSessionId ? 'composer' : 'sidebar',
   );
   const [terminalOpen, setTerminalOpen] = useState(bootTerminal);
+  const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden);
   const [quitArmed, setQuitArmed] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [accountId, setAccountId] = useState<string | null>(
@@ -167,9 +181,10 @@ export function App({
   // just below for why overlays live at the root and state flows up to it.
   const [portsApi, setPortsApi] = useState<UsePortsResult | null>(null);
   const onPortsApi = useCallback((api: UsePortsResult) => setPortsApi(api), []);
+  const [links, setLinks] = useState<LinkRow[]>([]);
 
   const wide = dimensions.width >= SPLIT_MIN_COLUMNS;
-  const showSidebar = dimensions.width >= SIDEBAR_MIN_COLUMNS;
+  const showSidebar = sidebarVisible(dimensions.width, sidebarHidden);
   const order = useMemo(
     () => focusOrder(route, showSidebar, terminalOpen),
     [route, showSidebar, terminalOpen],
@@ -186,6 +201,7 @@ export function App({
   // biome-ignore lint/correctness/useExhaustiveDependencies(sessionId): trigger-only dependency, not read in the body.
   useEffect(() => {
     setPortsApi(null);
+    setLinks([]);
   }, [sessionId]);
 
   useEffect(() => {
@@ -217,6 +233,14 @@ export function App({
     setRoute('session');
     setOverlay(null);
     setFocus('composer');
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden((hidden) => {
+      // Showing it again also focuses it: that is what the key is for.
+      if (hidden) setFocus('sidebar');
+      return !hidden;
+    });
   }, []);
 
   const toggleTerminal = useCallback(() => {
@@ -321,6 +345,8 @@ export function App({
         return setFocus((current) => nextFocus(current, order, action.step));
       case 'toggle-terminal':
         return toggleTerminal();
+      case 'toggle-sidebar':
+        return toggleSidebar();
       case 'overlay':
         if (action.overlay === 'ports' && !portsApi) {
           return pushToast('Open a session first.', 'error');
@@ -355,7 +381,7 @@ export function App({
     ? 'opencode has the terminal…'
     : quitArmed
       ? 'Press Ctrl+C again to quit'
-      : `${portsHint}${focusHints(focus)} · ? help`;
+      : `${portsHint}${focusHints(focus)}${sidebarHidden ? ' · Alt+B sidebar' : ''} · ? help`;
 
   return (
     <box
@@ -430,6 +456,7 @@ export function App({
             onCommand={runCommand}
             onToast={pushToast}
             onPortsApi={onPortsApi}
+            onLinks={setLinks}
           />
         ) : null}
 
@@ -515,6 +542,10 @@ export function App({
           }}
           onClose={() => setOverlay(null)}
         />
+      ) : null}
+
+      {overlay === 'links' ? (
+        <LinksOverlay rows={links} onClose={() => setOverlay(null)} onToast={pushToast} />
       ) : null}
 
       {overlay === 'ports' && portsApi ? (

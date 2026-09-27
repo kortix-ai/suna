@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Focus } from './app-keys.ts';
-import { focusOrder, nextFocus, terminalToggle } from './app.tsx';
+import {
+  SIDEBAR_MIN_COLUMNS,
+  focusOrder,
+  nextFocus,
+  sidebarVisible,
+  terminalToggle,
+} from './app.tsx';
 
 describe('focusOrder', () => {
   test('the session route is sidebar → transcript → composer', () => {
@@ -24,6 +30,18 @@ describe('focusOrder', () => {
   test('a secondary screen is one region, and has no terminal panel', () => {
     expect(focusOrder('files', true, true)).toEqual(['sidebar', 'screen']);
     expect(focusOrder('account', false, false)).toEqual(['screen']);
+  });
+});
+
+describe('sidebarVisible', () => {
+  test('hidden by the user wins over a wide terminal', () => {
+    expect(sidebarVisible(200, true)).toBe(false);
+    expect(sidebarVisible(200, false)).toBe(true);
+  });
+
+  test('a narrow terminal squeezes it out even when not hidden', () => {
+    expect(sidebarVisible(SIDEBAR_MIN_COLUMNS - 1, false)).toBe(false);
+    expect(sidebarVisible(SIDEBAR_MIN_COLUMNS, false)).toBe(true);
   });
 });
 

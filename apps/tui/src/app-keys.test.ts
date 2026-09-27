@@ -214,3 +214,31 @@ describe('attach mode suspends the keyboard', () => {
     }
   });
 });
+
+describe('sidebar toggle and the Links panel', () => {
+  test('Alt+B toggles the sidebar from a list region and from the composer', () => {
+    for (const focus of ['sidebar', 'transcript', 'composer', 'screen'] as Focus[]) {
+      expect(globalKeyAction(key('b', { meta: true }), state({ focus }))).toEqual({
+        kind: 'toggle-sidebar',
+      });
+    }
+  });
+
+  test('Alt+B inside the terminal is readline backward-word, not ours', () => {
+    expect(globalKeyAction(key('b', { meta: true }), state({ focus: 'terminal' }))).toBeNull();
+  });
+
+  test('Alt+L opens the Links panel everywhere, the terminal included', () => {
+    for (const focus of ['sidebar', 'composer', 'terminal', 'screen'] as Focus[]) {
+      expect(globalKeyAction(key('l', { meta: true }), state({ focus }))).toEqual({
+        kind: 'overlay',
+        overlay: 'links',
+      });
+    }
+  });
+
+  test('an open overlay keeps both keys', () => {
+    expect(globalKeyAction(key('b', { meta: true }), state({ overlay: 'links' }))).toBeNull();
+    expect(globalKeyAction(key('l', { meta: true }), state({ overlay: 'help' }))).toBeNull();
+  });
+});

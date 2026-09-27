@@ -133,7 +133,10 @@ describe('bootSession (kortixt --new)', () => {
   test('creates the session in the project with the agent and returns its id', async () => {
     const calls: unknown[] = [];
     const id = await bootSession('proj_1', { agentName: 'engineering' }, () => {}, {
-      createSession: async (p, a) => (calls.push([p, a]), { session_id: 'ses_new' }),
+      createSession: async (p, a) => {
+        calls.push([p, a]);
+        return { session_id: 'ses_new' };
+      },
     });
     expect(id).toBe('ses_new');
     expect(calls).toEqual([['proj_1', 'engineering']]);
