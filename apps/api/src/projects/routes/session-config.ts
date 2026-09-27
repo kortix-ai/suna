@@ -89,9 +89,6 @@ projectsApp.openapi(
 
     // ── A daemon with config releases (spec, "`GET /config`, extended") ──
     if (releasesEnabled && running.configReleases && running.release) {
-      // Health carries `failed_release_id` and `proven`: the project
-      // quarantine learns from every read, not only from reloads.
-      await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
       // The SAME resolution the daemon's descriptor request makes, minus the
       // write: a read must never disagree with the assignment about `stale`.
       const repointSubject = {
@@ -100,13 +97,24 @@ projectsApp.openapi(
         sessionId,
         ownerUserId: visible.row.createdBy ?? null,
       };
-      const desired = await resolveDesiredRelease({
-        project,
-        baseRef,
-        sessionAgent: visible.row.agentName ?? null,
-        repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
-        ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
-      }).catch(() => null);
+      // `recordDaemonConfigReport` (a DB write of what the daemon just
+      // reported) and `resolveDesiredRelease` (a git-heavy read of what SHOULD
+      // be desired) don't depend on each other's result — they used to run
+      // one after another. Measured prod: git 1693ms/21 ops, db 192ms/13,
+      // http 219ms/1 for this route; `resolveDesiredRelease` is the dominant
+      // git cost (base-ref resolve + roster load + release build), so
+      // overlapping it with the report write removes that write's latency
+      // from the critical path instead of adding to it.
+      const [, desired] = await Promise.all([
+        recordDaemonConfigReport({ projectId, sessionId, report: running.release }),
+        resolveDesiredRelease({
+          project,
+          baseRef,
+          sessionAgent: visible.row.agentName ?? null,
+          repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+          ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+        }).catch(() => null),
+      ]);
       const release = toSessionConfigRelease(
         running.release,
         desired ? desired.descriptor.release_id : undefined,
