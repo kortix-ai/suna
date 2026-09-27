@@ -819,8 +819,8 @@ export class PlatinumProvider implements SandboxProvider {
 
   async remove(externalId: string): Promise<void> {
     // No credential replicas to erase first: Kortix stopped registering secrets
-    // at the Platinum edge when one mechanism took over every provider
-    // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). The value is
+    // at the Platinum edge when one mechanism took over every provider.
+    // The value is
     // substituted server-side per request and never leaves the API.
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }

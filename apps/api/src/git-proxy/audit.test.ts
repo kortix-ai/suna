@@ -1,6 +1,6 @@
 /**
  * Git proxy audit rows: `git.clone` / `git.push` with refs and old → new sha,
- * attributed to the principal (spec docs/specs/2026-09-22-agents-as-principals.md §2).
+ * attributed to the principal.
  */
 import { describe, expect, test } from 'bun:test';
 import { gitAuditOutcome, gitPrincipalEnvelope, gitPushRefSummary } from './audit';

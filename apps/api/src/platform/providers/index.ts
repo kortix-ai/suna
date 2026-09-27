@@ -99,8 +99,7 @@ export interface CreateSandboxOpts {
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
    *
-   * `monitor` is the per-project monitor box (docs/specs/2026-08-12-monitors.md
-   * D3): the SAME image and the SAME agent port as a session, running the
+   * `monitor` is the per-project monitor box: the SAME image and the SAME agent port as a session, running the
    * daemon in monitor mode instead of opencode. It differs from a session only
    * in lifecycle (`autoStopInterval: 0` → persistent) and in having no
    * `session_sandboxes` row.

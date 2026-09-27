@@ -1,7 +1,7 @@
 # @kortix/worker
 
 The pi-based session worker: the harness, and only the harness. Part of the
-harness/worker split (`docs/specs/2026-08-26-harness-worker-split.md`).
+harness/worker split.
 
 ## What this package is
 

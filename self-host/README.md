@@ -7,11 +7,7 @@ provider (Daytona, E2B, or Platinum) — sandboxes are managed compute, not part
 of this box.
 
 This is the whole self-contained distribution: a Terraform module for
-provisioning an AWS/EC2 box declaratively, plus this README. For the full
-day-to-day operator reference (troubleshooting, every CLI flag, backup/restore
-mechanics, the auto-updater's internals) see
-[`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md) in the
-main Kortix repo — this page is intentionally the tight version.
+provisioning an AWS/EC2 box declaratively, plus this README.
 
 ## 1. Any VPS — quickstart
 
@@ -85,12 +81,6 @@ kortix whoami
 kortix projects ls
 cd your-project && kortix ship
 ```
-
-See
-[`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md) for the
-no-public-domain Cloudflare-tunnel evaluation path, email, using the CLI
-from a different machine than the one you self-hosted on, uninstalling, and
-the full `kortix self-host` command reference.
 
 ## 2. Want something more robust on AWS? There's a Terraform for that
 
@@ -203,10 +193,6 @@ kortix self-host uninstall         # stop + permanently delete this instance's d
    handles "volume has an existing filesystem" on boot, so it mounts as-is and
    `kortix self-host` reconciles against the restored state.
 4. `kortix self-host start` to bring the stack back up.
-
-Full detail (whole-directory `tar` backups, logical `pg_dump` backups, and
-every troubleshooting scenario) lives in
-[`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md).
 
 ## 4. Run a specific version or your own build
 

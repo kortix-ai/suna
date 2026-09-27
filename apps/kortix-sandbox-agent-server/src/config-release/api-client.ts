@@ -5,8 +5,7 @@ import {
 } from './descriptor'
 
 /**
- * The two API calls a config release needs. Spec: docs/specs/config-releases.md,
- * "Routes" and "Download path".
+ * The two API calls a config release needs.
  *
  * Both calls use the session's sandbox token as the bearer. The bearer goes to
  * the API origin only: the archive route may answer `302` to a signed storage
@@ -62,8 +61,7 @@ export class ConfigReleaseApiError extends Error {
 
 /**
  * The API's code for a project whose `config_releases` feature flag is off —
- * per project, or platform-wide through the operator kill switch
- * (docs/specs/config-releases.md, "Feature flag"). Emitted by
+ * per project, or platform-wide through the operator kill switch. Emitted by
  * `requireFeatureFlag` as `403`.
  */
 export const FEATURE_DISABLED = 'feature_disabled'

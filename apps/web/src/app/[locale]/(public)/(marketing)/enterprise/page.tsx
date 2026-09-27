@@ -45,8 +45,7 @@ const DIFFERENTIATORS = [
  *
  * ACCURACY GATE on `checklistSecretsDescription`: do NOT restore "never visible
  * to the model". A granted runtime secret is a real env value inside the
- * session, readable by any command the agent runs — see
- * `docs/ENV_SECRET_EXPOSURE_BASELINE.md`. The two true, narrower claims are the
+ * session, readable by any command the agent runs. The two true, narrower claims are the
  * ones in the string today: CONNECTOR credentials are brokered server-side and
  * never enter the machine, and delivery of a runtime secret is gated by the
  * role of the person who started the session intersected with the agent grant.

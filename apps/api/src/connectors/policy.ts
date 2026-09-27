@@ -2,7 +2,7 @@
  * Tool-call policy engine — globbed pattern match, first-match-wins, layered
  * resolution. Mirrors connector.sh's model.
  *
- * Two scopes, both declared in kortix.yaml (docs/specs/connector.md §8):
+ * Two scopes, both declared in kortix.yaml:
  *   • project-level `policies:` — patterns are fully-qualified (`<slug>.<path>`),
  *     apply across ALL connectors, evaluated FIRST.
  *   • connector-level `connectors[].policies` — patterns are relative

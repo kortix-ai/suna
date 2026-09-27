@@ -118,10 +118,6 @@ aws ec2 describe-flow-logs --region us-east-2 \
   --filter Name=resource-id,Values=vpc-03371e6a60dafbd25
 ```
 
-Run the Velero backup and restore procedure in
-`docs/runbooks/disaster-recovery.md` after any bucket, role, chart, or schedule
-change.
-
 ## Drata monitor exclusions
 
 Drata test `8025`, **Access Policies Restrict Broad Access**, is disabled as a

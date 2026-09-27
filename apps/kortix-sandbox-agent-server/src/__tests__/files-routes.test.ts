@@ -140,8 +140,7 @@ describe('daemon file write routes', () => {
       opencode: 'ok',
       capabilities: ['file.import', 'file.append', 'config.release.v1'],
     })
-    // docs/specs/config-releases.md, "Health": the config block and the
-    // legacy config_dir_sha field.
+    // The config block and the legacy config_dir_sha field.
     expect(Object.keys(body.config as object).sort()).toEqual([
       'desired_release_id',
       'failed_release_id',

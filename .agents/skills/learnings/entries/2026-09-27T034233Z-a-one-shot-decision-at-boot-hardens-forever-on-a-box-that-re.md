@@ -40,7 +40,7 @@ two convergence lanes may not race. (4) A box proves its capability, its
 daemon-build floor and its catalog fingerprint before a session is handed to it,
 or it is replaced.
 
-**Enforcement:** contract in `docs/specs/runtime-convergence.md` (PR #7785);
+**Enforcement:** contract in PR #7785;
 implementations #7792 (box side), #7793 (API side, admission enforcement
 default-OFF until boxes report), #7791 (swap/convergence race and the
 self-inflicted quarantine), #7786 (catalog). Acceptance is five self-heal

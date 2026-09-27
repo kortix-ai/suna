@@ -376,8 +376,6 @@ Projects can opt into `session_transcript_history` in Settings → Feature flags
 then reads saved messages from the platform database while `/start` continues. It uses the
 server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
 The flag is off by default. Missing or rejected history falls back to the existing runtime path.
-See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
-and local verification.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in

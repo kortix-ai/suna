@@ -181,8 +181,7 @@ describe('connection reachability', () => {
   });
 });
 
-// Spec docs/specs/2026-09-22-agents-as-principals.md §2.3: under the
-// agent-principal model the acting principal is the agent's service account,
+// Under the agent-principal model the acting principal is the agent's service account,
 // so a member-owned account keys on `on_behalf_of` AND a private session.
 describe('connection reachability for an agent-principal session', () => {
   const agentSession = (onBehalfOfUserId: string | null, visibility: 'private' | 'project' | 'restricted' | null) => ({

@@ -48,8 +48,7 @@ export interface AuditEventInput {
   agentName?: string | null;
   initiatorActorType?: string | null;
   initiatorActorId?: string | null;
-  /** The human an agent session acted on behalf of (spec
-   *  docs/specs/2026-09-22-agents-as-principals.md §2). Null otherwise. */
+  /** The human an agent session acted on behalf of. Null otherwise. */
   onBehalfOfUserId?: string | null;
   parentEventId?: string | null;
   delegationDepth?: number;
