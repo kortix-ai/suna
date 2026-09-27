@@ -72,7 +72,7 @@ fi
 
 # No top-level docs/ tree. Skills hold durable knowledge, the learnings ledger
 # holds incident rules, and the PR body holds detail. tests/unit/no-docs-tree.test.ts
-# enforces the same rule in CI.
+# and pre-push enforce the same rule.
 new_docs=$(git diff --cached --name-only --diff-filter=AR | grep -E '^docs/' || true)
 if [ -n "$new_docs" ]; then
   echo "pre-commit: the repository has no docs/ tree. Refusing:" >&2
