@@ -139,7 +139,7 @@ export async function prefetchCustomize(
     work.push(
       queryClient.prefetchQuery({
         queryKey: qk.project.connectors(projectId),
-        queryFn: () => api.listConnectors(projectId),
+        queryFn: () => api.listConnectors(projectId, { includeSchemas: false }),
         ...contract(FRESHNESS.connectors),
         ...gc,
       }),
@@ -209,7 +209,7 @@ export async function prefetchCustomize(
       }),
       queryClient.prefetchQuery({
         queryKey: qk.project.branches(projectId),
-        queryFn: () => api.listProjectBranches(projectId),
+        queryFn: () => api.listProjectBranches(projectId, { includeSessionBranches: false }),
         ...config,
       }),
     );

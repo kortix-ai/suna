@@ -3417,6 +3417,16 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
     index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
     index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
+    // Partial index for GET /:projectId/gateway/errors (only-failed-rows
+    // lookup by project+time window). Built CONCURRENTLY in
+    // 20260926234956893_gateway_logs_project_ok_time.concurrent.ts, which also
+    // adds `INCLUDE (error_code)` — drizzle-orm 0.45's index builder cannot
+    // express INCLUDE, and the schema contract only checks relation +
+    // uniqueness, so the declaration here (without INCLUDE) is enough to keep
+    // it in sync; see that migration for the real built definition.
+    index('idx_gateway_logs_project_failed_time')
+      .on(table.projectId, table.createdAt)
+      .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
   ],
 );
