@@ -24,11 +24,11 @@ export interface ScannedFile {
   source: ts.SourceFile
 }
 
-export const BOOT_PATH_FILE = 'services/harness/open-code/boot-config-path.ts'
-export const BOOT_LINK_FILE = 'services/harness/open-code/boot-link.ts'
-export const CONFIG_STATE_FILE = 'services/harness/open-code/config-release.ts'
-export const LIFECYCLE_FILE = 'services/harness/open-code/lifecycle.ts'
-export const DIAGNOSTICS_FILE = 'services/harness/open-code/diagnostics.ts'
+export const BOOT_PATH_FILE = 'harness/open-code/boot-config-path.ts'
+export const BOOT_LINK_FILE = 'harness/open-code/boot-link.ts'
+export const CONFIG_STATE_FILE = 'harness/open-code/config-release.ts'
+export const LIFECYCLE_FILE = 'harness/open-code/lifecycle.ts'
+export const DIAGNOSTICS_FILE = 'harness/open-code/diagnostics.ts'
 /** Defines `pointBootLink`, so its own definition is not a second caller. */
 export const STORE_FILE = 'services/config-release/boot-config.ts'
 
@@ -127,7 +127,7 @@ export function bootLinkWriters(files: readonly ScannedFile[]): string[] {
 /** OpenCode-harness files that open the readiness gate. */
 export function readinessGateSites(files: readonly ScannedFile[]): string[] {
   return [...callers(files, 'markWorkspaceReady').keys()]
-    .filter((name) => name.startsWith('services/harness/open-code/') && name !== LIFECYCLE_FILE)
+    .filter((name) => name.startsWith('harness/open-code/') && name !== LIFECYCLE_FILE)
     .sort()
 }
 
@@ -175,7 +175,7 @@ export function gateFollowsProof(text: string): GateOrder {
  * letting a box report ready on an unproven config again.
  */
 export function readinessDependsOnProof(source: ts.SourceFile | undefined): { ok: boolean; found: string } {
-  if (!source) return { ok: false, found: 'services/harness/open-code/diagnostics.ts is absent' }
+  if (!source) return { ok: false, found: 'harness/open-code/diagnostics.ts is absent' }
   const declarations = new Map<string, string>()
   walk(source, (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {

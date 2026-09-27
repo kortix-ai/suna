@@ -15,7 +15,7 @@ import {
   createAuditRelay,
   retryAfterMs,
   sanitizeOpenCodeEvent,
-} from '../services/harness/open-code/opencode-audit-relay';
+} from '../harness/open-code/opencode-audit-relay';
 
 describe('OpenCode canonical audit relay', () => {
   test('uses deterministic ids and never forwards prompts, credentials, or raw output', () => {

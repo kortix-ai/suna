@@ -104,7 +104,7 @@ describe('the shell profile hook restores the Kortix tool directories', () => {
 
   test('reads the same agent env file the daemon writes', () => {
     const daemonSource = readFileSync(
-      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/services/harness/shared/agent-env-file.ts'),
+      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts'),
       'utf8',
     );
     const dir = /export const AGENT_ENV_DIR = '([^']+)'/.exec(daemonSource)?.[1];

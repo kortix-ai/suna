@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { __resetBootTimelineRelayForTests, relayBootTimelineToApi } from '../services/harness/shared/boot-timeline-relay'
+import { __resetBootTimelineRelayForTests, relayBootTimelineToApi } from '../harness/shared/boot-timeline-relay'
 
 const BASE_ENV = {
   KORTIX_PROJECT_ID: 'proj-1',

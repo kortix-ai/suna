@@ -22,7 +22,7 @@
  * behavior.
  *
  * WHAT IS NOT HERE. Three other places touch the clock, each on purpose:
- *  - `apps/kortix-sandbox-agent-server/src/services/harness/pi/wire-id.ts` is the one
+ *  - `apps/kortix-sandbox-agent-server/src/harness/pi/wire-id.ts` is the one
  *    remaining COPY: it mints the pi harness's reply ids. kortixd is a
  *    standalone compiled binary with no workspace dependencies. The copy
  *    orders on the ring through its own `wireIdClockDelta`, and

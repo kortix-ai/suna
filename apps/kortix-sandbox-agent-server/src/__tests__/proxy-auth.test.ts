@@ -14,14 +14,14 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import {
   buildOpenCodeTestApp,
   signTestUserContext,
   TEST_SANDBOX_TOKEN,
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
-import { finalizeInitialSession } from '../services/harness/open-code/boot'
+import { finalizeInitialSession } from '../harness/open-code/boot'
 import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
 import { egressShimPort } from '../services/egress-shim'
 

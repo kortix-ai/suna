@@ -88,7 +88,7 @@ export const KORTIX_USER_PATH_DIRS =
 
 /**
  * Live project secrets on tmpfs. The kortix-agent daemon writes this file
- * (apps/kortix-sandbox-agent-server/src/services/harness/shared/agent-env-file.ts `AGENT_ENV_SH`).
+ * (apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts `AGENT_ENV_SH`).
  */
 export const KORTIX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
 
@@ -638,7 +638,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // run opencode here once to complete the migration and bake the migrated db
     // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
     // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
-    // daemon's spawn (apps/kortix-sandbox-agent-server/src/services/harness/open-code/lifecycle.ts). The
+    // daemon's spawn (apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). The
     // build fails if OpenCode cannot serve. A platform image without this state
     // moves the database migration onto every session's startup path.
     ...(opencodeWarmupScriptPath ? [

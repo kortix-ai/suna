@@ -739,7 +739,7 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
   test('the daemon health payload publishes opencode_port', async () => {
     const health = await Bun.file(
       new URL(
-        '../../../kortix-sandbox-agent-server/src/services/harness/open-code/diagnostics.ts',
+        '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
         import.meta.url,
       ).pathname,
     ).text();

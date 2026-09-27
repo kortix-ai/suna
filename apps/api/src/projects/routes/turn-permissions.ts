@@ -11,7 +11,7 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 
 // POST /v1/projects/:projectId/turn-permission
 // Sandbox-to-apps/api relay for OpenCode's `permission.asked` event
-// (apps/kortix-sandbox-agent-server/src/services/harness/open-code/permission-relay.ts).
+// (apps/kortix-sandbox-agent-server/src/harness/open-code/permission-relay.ts).
 // It only notifies: the session creator's devices get one "needs your
 // approval" push per request id. It never answers the permission — the user
 // approves in the session UI, over OpenCode's own API. Session resolution

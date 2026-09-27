@@ -20,14 +20,14 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { egressShimEnv, stopEgressShim } from '../services/egress-shim'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../services/sandbox-env/project-env'
 import { Hono } from 'hono'
 import { createEnvRouter } from '../routes/kortix/env'
-import { createOpenCodeControlService } from '../services/harness/open-code/control'
-import { createOpenCodeQuickQueueInterrupt } from '../services/harness/open-code/background'
+import { createOpenCodeControlService } from '../harness/open-code/control'
+import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 
 const TEST_TOKEN = 'egress-shim-test-kortix-token-32ch'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-shim-'))

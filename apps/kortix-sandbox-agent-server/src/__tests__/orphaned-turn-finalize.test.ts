@@ -17,15 +17,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { finalizeOrphanedTurn } from '../services/harness/open-code/boot'
+import { finalizeOrphanedTurn } from '../harness/open-code/boot'
 import { TURN_PROBE_WINDOW, inspectOpencodeRoot,
   observeOpencodeDelivery,
   opencodeDeliveryInFlight,
   opencodeTurnInFlight,
-} from '../services/harness/open-code/opencode-turn-state';
-import { writeOpenCodeSessionPin } from '../services/harness/open-code/runtime-state';
+} from '../harness/open-code/opencode-turn-state';
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state';
 import { createHealthRouter } from '../routes/kortix/health';
-import { createOpenCodeDiagnosticsService, observeRequestedTurn } from '../services/harness/open-code/diagnostics';
+import { createOpenCodeDiagnosticsService, observeRequestedTurn } from '../harness/open-code/diagnostics';
 
 const BASE = 'http://127.0.0.1:4096';
 const WORKSPACE = '/workspace';

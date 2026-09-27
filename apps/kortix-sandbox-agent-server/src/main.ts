@@ -1,6 +1,6 @@
 import { dispatchCli, isManagementSubcommand } from './app/cli'
 import { runGitCredentialHelper } from './lib/git/git'
-import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from './services/harness/harness'
+import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from './harness/harness'
 import { kortixEventBus } from './services/event-bus/kortix-event-bus'
 import { enableDaemonLogFile, logger } from './lib/log/logger'
 import { runMonitorMode } from './app/monitor-mode'

@@ -18,8 +18,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import type { Opencode, VerifiedReloadResult } from '../services/harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode, VerifiedReloadResult } from '../harness/open-code/lifecycle'
 import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
 import {
   buildOpenCodeTestApp,
@@ -27,7 +27,7 @@ import {
   TEST_SANDBOX_TOKEN,
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
-import { resolveHarness } from '../services/harness/harness'
+import { resolveHarness } from '../harness/harness'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '../services/runtime-assets/runtime-assets'
 
 // Production registers this lookup in main.ts before anything runs.

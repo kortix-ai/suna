@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Config } from '../../lib/config/config'
-import type { HarnessControlOperations } from '../../services/harness/contract/control'
+import type { HarnessControlOperations } from '../../harness/contract/control'
 import { logger } from '../../lib/log/logger'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
 

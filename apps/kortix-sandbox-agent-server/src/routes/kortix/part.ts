@@ -1,6 +1,6 @@
 /** HTTP caching and delivery for attachment bytes resolved by the selected harness. */
 import { Hono } from 'hono'
-import type { HarnessAttachmentService } from '../../services/harness/contract/queries'
+import type { HarnessAttachmentService } from '../../harness/contract/queries'
 
 export function createPartRouter(attachments: HarnessAttachmentService): Hono {
   const app = new Hono()

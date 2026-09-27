@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { bootPhaseLabel } from '../services/harness/open-code/boot-phase';
+import { bootPhaseLabel } from '../harness/open-code/boot-phase';
 
 describe('bootPhaseLabel', () => {
   test('an OpenCode install in flight is visible as its own phase', () => {

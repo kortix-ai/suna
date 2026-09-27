@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { HarnessAssetOutcome } from './port'
 import { logger } from '../../lib/log/logger'
 import { runtimeConvergenceReport } from './runtime-assets'
+import type { ConfigReleaseReport } from '../../types/config-release'
 
 /**
  * the runtime-convergence contract (PR #7785) — the BOX side.
@@ -25,7 +26,7 @@ import { runtimeConvergenceReport } from './runtime-assets'
  *
  * HARNESS BOUNDARY (eslint.config.mjs, ARCHITECTURE.md): this file is a
  * service, so it must never import a concrete adapter
- * (`services/harness/open-code/*`, `services/harness/pi/*`) directly. `cli`/`managed_skills`/
+ * (`harness/open-code/*`, `harness/pi/*`) directly. `cli`/`managed_skills`/
  * `daemon` read `./runtime-assets` directly because that module is already
  * harness-neutral. `config_release` and `catalog` are OpenCode-specific
  * concepts with no neutral contract of their own, so this file asks for them
@@ -147,19 +148,14 @@ export function nextComponentEntry(
 // ---------------------------------------------------------------------------
 
 /**
- * The box's own config-release state — structurally the same fields as
- * `services/harness/open-code/config-release.ts`'s `ConfigReleaseReport`, but declared
- * locally so this host-level file never imports that concrete adapter (see
- * the harness-boundary note above). A real `ConfigReleaseReport` satisfies
- * this type as-is.
+ * The fields of the box's config-release report this ledger reads. The OpenCode
+ * adapter produces the full `ConfigReleaseReport` (src/types/config-release.ts,
+ * shared so this service never imports the adapter).
  */
-export interface RuntimeTruthConfigReleaseState {
-  release_id: string | null
-  desired_release_id: string | null
-  source: string
-  proven: boolean
-  fallback_reason: string | null
-}
+export type RuntimeTruthConfigReleaseState = Pick<
+  ConfigReleaseReport,
+  'release_id' | 'desired_release_id' | 'source' | 'proven' | 'fallback_reason'
+>
 
 export function deriveConfigReleaseSignal(report: RuntimeTruthConfigReleaseState): RuntimeTruthSignal {
   if (report.source === 'workspace' && report.release_id === null && report.desired_release_id === null) {

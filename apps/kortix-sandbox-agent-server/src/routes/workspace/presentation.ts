@@ -1,4 +1,4 @@
-import { resolveHarness } from '../../services/harness/harness'
+import { resolveHarness } from '../../harness/harness'
 import { Hono } from 'hono'
 import path from 'node:path'
 import fs from 'node:fs/promises'

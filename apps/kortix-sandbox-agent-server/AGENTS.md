@@ -2,17 +2,21 @@
 
 ## Architecture
 
-The source is layered: `src/lib/` → `src/services/<name>/` → `src/services/harness/`
-→ `src/routes/` and `src/app/`. [ARCHITECTURE.md](ARCHITECTURE.md) lists the folders,
-the import rules and where new code goes. `bun run lint` enforces them, and `bun test`
-runs the lint.
+The source has four layers, bottom to top: **shared** (`src/lib/`, `src/types/`),
+**services** (`src/services/<name>/`), **harness** (`src/harness/`), and **app**
+(`src/main.ts`, `src/app/`, `src/routes/`). A layer imports only from the layers below it.
+[ARCHITECTURE.md](ARCHITECTURE.md) lists the folders, the import rules and where new code
+goes. `bun run lint` enforces them, and `bun test` runs the lint.
 
 - **Never disable the boundary rule.** When it fires, move the code, or hand the lower
   layer what it needs from the layer above (`HarnessBootContext.serve`,
   `registerHarnessAssets`). Do not import upward "just for a type".
-- **A file lives next to its only consumer.** Move it to `shared/` or `src/lib/` only
-  when a second consumer exists. Update every importer and test, and delete the old
-  path, in the same change.
+- **A file lives next to its only consumer.** Move it to `src/harness/shared/`, `src/lib/`
+  or `src/types/` only when a second consumer exists. Update every importer and test, and
+  delete the old path, in the same change.
+- **A type two isolated modules share goes to `src/types/`** (two adapters, a service and
+  an adapter, two services) instead of being copied. `src/types/` holds type declarations
+  only.
 - **A rule change ships with its proof:** `eslint.config.mjs`, a case in
   `scripts/check-architecture.mjs`, and ARCHITECTURE.md, in one PR.
 

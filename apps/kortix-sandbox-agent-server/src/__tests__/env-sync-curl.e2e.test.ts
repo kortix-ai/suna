@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../services/sandbox-env/project-env'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
 

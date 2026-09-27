@@ -58,10 +58,11 @@ in-process daemon.
 
 ## Source layout
 
-The source has four layers: `src/lib/` (building blocks), `src/services/` (host
-capabilities), `src/services/harness/` (the session runtime: OpenCode and pi), and
-`src/routes/` plus `src/app/` (HTTP controllers and startup). A layer imports only
-from the layers below it. [ARCHITECTURE.md](ARCHITECTURE.md) lists every folder, the
+The source has four layers, bottom to top: **shared** (`src/lib/` building blocks and
+`src/types/` shared types), **services** (`src/services/`, host capabilities),
+**harness** (`src/harness/`, the session runtime: OpenCode and pi), and **app**
+(`src/main.ts`, `src/app/`, `src/routes/`: startup and HTTP controllers). A layer
+imports only from the layers below it. [ARCHITECTURE.md](ARCHITECTURE.md) lists every folder, the
 import rules, and where new code goes; `bun run lint` enforces them.
 
 ## Boot flow

@@ -19,18 +19,18 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../services/sandbox-env/project-env'
 import { Hono } from 'hono'
 import { createEnvRouter } from '../routes/kortix/env'
-import { createOpenCodeControlService } from '../services/harness/open-code/control'
-import { resetConfigReleaseStateForTests } from '../services/harness/open-code/config-release'
-import { createOpenCodeQuickQueueInterrupt } from '../services/harness/open-code/background'
+import { createOpenCodeControlService } from '../harness/open-code/control'
+import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
 import {
   __resetRuntimeProjectionRelayForTests,
   __setRuntimeProjectionStateReaderForTests,
-} from '../services/harness/open-code/runtime-projection-relay'
+} from '../harness/open-code/runtime-projection-relay'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))

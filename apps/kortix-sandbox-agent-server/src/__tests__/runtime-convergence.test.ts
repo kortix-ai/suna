@@ -37,8 +37,8 @@ import {
   createOpenCodeAssetsService,
   type OpenCodeAssetsOptions,
   type OpenCodeAssetsRuntime,
-} from '../services/harness/open-code/assets'
-import { resolveHarness } from '../services/harness/harness'
+} from '../harness/open-code/assets'
+import { resolveHarness } from '../harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))

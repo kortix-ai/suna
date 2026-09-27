@@ -6,13 +6,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import { __flushDaemonLogFileForTests, __resetLoggerFileSinkForTests, enableDaemonLogFile, logger } from '../lib/log/logger'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { startResourceMonitor } from '../services/resources/resources'
 import { createDiagRouter } from '../routes/kortix/diag'
-import { createOpenCodeDiagnosticsService } from '../services/harness/open-code/diagnostics'
-import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../services/harness/contract/diagnostics'
+import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
+import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../harness/contract/diagnostics'
 
 let root: string
 const savedEnv = process.env.KORTIX_DAEMON_LOG_FILE

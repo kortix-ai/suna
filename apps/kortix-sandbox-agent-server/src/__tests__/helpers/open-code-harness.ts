@@ -1,12 +1,12 @@
 import { createHmac } from 'node:crypto'
 
 import type { Config } from '../../lib/config/config'
-import type { OpenCodeConfig } from '../../services/harness/open-code/config'
+import type { OpenCodeConfig } from '../../harness/open-code/config'
 import type { ProjectEnvStore } from '../../services/sandbox-env/project-env'
-import type { OpenCodeBootState } from '../../services/harness/open-code/boot-state'
-import { requireOpenCodeConfig } from '../../services/harness/open-code/config'
-import type { Opencode } from '../../services/harness/open-code/lifecycle'
-import { composeOpenCodeHarnessService } from '../../services/harness/open-code/service'
+import type { OpenCodeBootState } from '../../harness/open-code/boot-state'
+import { requireOpenCodeConfig } from '../../harness/open-code/config'
+import type { Opencode } from '../../harness/open-code/lifecycle'
+import { composeOpenCodeHarnessService } from '../../harness/open-code/service'
 import { buildDaemonApp } from '../../app/server'
 import type { PtyRegistry } from '../../routes/kortix/pty'
 

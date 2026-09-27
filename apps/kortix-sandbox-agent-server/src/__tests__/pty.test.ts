@@ -1,11 +1,11 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'bun:test'
 import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
 import { startProxy } from '../app/server'
-import { requireOpenCodeConfig } from '../services/harness/open-code/config'
-import { composeOpenCodeHarnessService } from '../services/harness/open-code/service'
+import { requireOpenCodeConfig } from '../harness/open-code/config'
+import { composeOpenCodeHarnessService } from '../harness/open-code/service'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 

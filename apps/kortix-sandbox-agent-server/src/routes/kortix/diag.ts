@@ -13,7 +13,7 @@
  * Nothing secret: no env dump, no tokens. Same auth as `/kortix/logs`.
  */
 import { Hono } from 'hono'
-import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../../services/harness/contract/diagnostics'
+import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../../harness/contract/diagnostics'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
 import { logger } from '../../lib/log/logger'
 

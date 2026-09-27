@@ -1,4 +1,4 @@
-import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '../services/harness/open-code/event-bus'
+import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '../harness/open-code/event-bus'
 /**
  * The sequencer — the property the whole stream design rests on.
  *

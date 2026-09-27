@@ -21,7 +21,7 @@ import { resolve } from 'node:path'
  * unarmed cancel does not throw, it just never fires.
  */
 
-const harness = resolve(import.meta.dir, '..', 'services', 'harness', 'open-code')
+const harness = resolve(import.meta.dir, '..', 'harness', 'open-code')
 
 /** The argument object a named call passes, brace-matched from the source. */
 function callArguments(source: string, callee: string): string[] {

@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 
-import { harnessProtectedPathSegments } from '../services/harness/harness'
+import { harnessProtectedPathSegments } from '../harness/harness'
 import { startStaticWebServer, type StaticWebServer } from '../services/static-web/static-web'
 
 const execFileAsync = promisify(execFile)

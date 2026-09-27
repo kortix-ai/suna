@@ -1,19 +1,28 @@
 # kortixd architecture
 
-kortixd groups its source into four layers. A layer imports only from the
-layers below it. `eslint.config.mjs` enforces every rule on this page, and
+kortixd has four layers. A layer imports only from the layers below it.
+`eslint.config.mjs` enforces every rule on this page, and
 `scripts/check-architecture.mjs` proves that each rule allows and rejects what
 this page says.
 
 ```
  app       src/main.ts, src/app/, src/routes/     composition root and HTTP controllers
    ↓
- harness   src/services/harness/                  the session runtime; adapters are isolated
+ harness   src/harness/                           the session runtime: OpenCode and pi, isolated from each other
    ↓
- services  src/services/<name>/                   host capabilities; each declares its dependencies
+ services  src/services/<name>/                   host capabilities; each declares the other services it uses
    ↓
- lib       src/lib/                               building blocks; no service state, no Hono
+ shared    src/lib/, src/types/                   building blocks and shared types; no service state, no Hono
 ```
+
+A layer is a set of folders, not a folder. The shared layer is `src/lib/` plus
+`src/types/`; `eslint.config.mjs` names that set `{sharedLayer}`.
+
+Why the harness is a layer of its own: it composes the services. It imports 8
+of them (`config-release`, `runtime-assets`, `sandbox-env`, `event-bus`,
+`llm-proxy`, `resources`, `skills`, `config-provider`), and no service imports
+it. It sits above the services for the same reason the services sit above the
+shared layer.
 
 ## Folders
 
@@ -24,10 +33,10 @@ this page says.
 | `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/opencode/*`), pty, env-rpc, git. Each route checks its own credential. |
 | `src/routes/workspace/` | app | `/file`, `/find`, `/presentation`: daemon-owned access to `/workspace`, behind the user-context gate. |
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
-| `src/services/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (steps both adapters run), `open-code/`, `pi/`. See its [README](src/services/harness/README.md). |
+| `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (steps both adapters run), `open-code/`, `pi/`. See its [README](src/harness/README.md). |
 | `src/services/config-provider/` | services | Project acquisition: `git`, `prefer-s3`, `require-s3`. |
 | `src/services/config-release/` | services | The config-release store outside the repository, its descriptor, notice and API calls. |
-| `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update). `port.ts` is the contract a harness implements. |
+| `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
 | `src/services/egress-shim/` | services | The in-guest egress proxy that substitutes secret handles. |
 | `src/services/llm-proxy/` | services | Localhost credential-injecting proxies to the LLM gateway and connectors; the inline-image window. |
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
@@ -36,38 +45,58 @@ this page says.
 | `src/services/monitor/` | services | The monitor process runner for monitor boxes. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
-| `src/lib/config/` | lib | Host env parsing (`loadHostConfig`), manifest reads, the runtime state directory. |
-| `src/lib/log/` | lib | The daemon logger and log tailing. |
-| `src/lib/git/` | lib | The git runner, identity, credential helper, project materialization and compiled checkouts. |
-| `src/lib/kortix-api/` | lib | Control-plane contracts: relay context, `X-Kortix-User-Context` verification, the dead-token breaker. |
-| `src/lib/shutdown-state.ts` | lib | The process-wide "shutting down" flag. |
+| `src/lib/config/` | shared | Host env parsing (`loadHostConfig`), manifest reads, the runtime state directory. |
+| `src/lib/log/` | shared | The daemon logger and log tailing. |
+| `src/lib/git/` | shared | The git runner, identity, credential helper, project materialization and compiled checkouts. |
+| `src/lib/kortix-api/` | shared | Control-plane contracts: relay context, `X-Kortix-User-Context` verification, the dead-token breaker. |
+| `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
+| `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
 | `src/__tests__/` | none | Tests. They may import anything they exercise. |
 
 ## Import rules
 
 | Files | May import | Packages beyond `node:*`, `bun`, `zod`, `tar` |
 | --- | --- | --- |
-| `src/lib/**` | `src/lib/**` | none |
-| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, `src/lib/**` | `egress-shim`: `node-forge`, `@kortix/api-contract` |
-| `src/services/harness/harness.ts` | the harness, all services, `src/lib/**` | none |
-| `src/services/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, `src/lib/**` | `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox` |
-| `src/services/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, `src/lib/**` | none |
-| `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, `src/lib/**` | `hono` |
+| `src/types/**` | `src/types/**` | none, and no runtime code at all |
+| `src/lib/**` | the shared layer | none |
+| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract` |
+| `src/harness/harness.ts` | the harness, all services, the shared layer | none |
+| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox` |
+| `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | none |
+| `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono` |
 | anything else under `src/` | nothing: a file outside every layer fails the lint | — |
 
 Consequences:
 
-- Only `harness.ts` imports an adapter. An adapter never imports another
-  adapter, a route, or `src/app/`.
+- Only `src/harness/harness.ts` imports an adapter. An adapter never imports
+  another adapter, a route, or `src/app/`.
+- No service imports the harness.
 - Hono lives only in `src/routes/` and `src/app/`.
-- pi's packages load only from `src/services/harness/pi/`, so an OpenCode boot
-  never pays for them.
+- pi's packages load only from `src/harness/pi/`, so an OpenCode boot never pays
+  for them.
 - A service imports another service only through a declared edge. Today there
   are two: `runtime-assets` → `config-release` (`withReleaseStoreLock`) and
   `config-release` → `skills` (`managedSkillsDir`).
+- `src/types/` declares types and nothing that exists at runtime (no variable,
+  function, class, enum, namespace, default export or statement). Importing a
+  shared type never pulls code or a module graph into the importer.
 - Type-only imports, dynamic `import()` and `export * from` count the same as
   value imports.
+
+## Where a type goes
+
+1. A type its consumers may already import stays with its owner. The harness
+   ports stay in `src/harness/contract/`, next to what implements them; every
+   adapter, route and `src/app/` may import them.
+2. A type that two modules need and that neither may import from the other goes
+   to `src/types/`: two adapters, a service and an adapter, or two services.
+   Move it, point every user at it, and delete the copies.
+3. A type the API also uses goes to `packages/api-contract`, not `src/types/`.
+
+`src/types/` files are named by the contract they describe, not collected in
+one file. A constants folder joins the shared layer by the same rule, with its
+first constant that has no owning module; there is none today.
 
 ## When a lower layer needs something from a higher one
 
@@ -80,23 +109,25 @@ Do not import it. The higher layer hands it down:
 - `startStaticWebServer` receives the protected paths
   (`harnessProtectedPathSegments()`) as a parameter.
 - A process-wide fact that several layers read (the shutdown flag) lives in
-  `src/lib/`.
+  `src/lib/`. A shape several layers read lives in `src/types/`.
 
 ## Where new code goes
 
 1. It handles an HTTP request: `src/routes/<zone>/`, by URL. A helper that only
    routes use sits next to them.
 2. It wires startup, shutdown or a workload: `src/app/`.
-3. It is harness-specific: `src/services/harness/<adapter>/`. Both adapters
-   need it: `shared/`. App or routes call it: a port in `contract/`.
+3. It is harness-specific: `src/harness/<adapter>/`. Both adapters need it:
+   `src/harness/shared/`. App or routes call it: a port in
+   `src/harness/contract/`.
 4. It is a host capability with its own state or lifecycle: an existing
    service, or a new `src/services/<name>/`.
 5. It is a stateless building block with no product state and no Hono:
-   `src/lib/`.
+   `src/lib/`. It is a type two isolated modules share: `src/types/`.
 
-A file lives next to its only consumer. Move it down to `shared/` or `src/lib/`
-only when a second consumer exists. Then move the implementation, update every
-importer and test, and delete the old path in the same change.
+A file lives next to its only consumer. Move it down to `shared/`, `src/lib/`
+or `src/types/` only when a second consumer exists. Then move the
+implementation, update every importer and test, and delete the old path in the
+same change.
 
 ## Changing a boundary
 
@@ -107,13 +138,16 @@ Change the rule, the proof and this page in the same PR:
 - **New service-to-service edge:** add the dependency to that service's
   `SERVICES` entry with a comment that names the function it needs, add an
   allowed case to `scripts/check-architecture.mjs`, and list it above.
-- **New adapter:** create `src/services/harness/<id>/`, add it to `ADAPTERS`,
-  and register it in `resolveHarness`.
+- **New adapter:** create `src/harness/<id>/`, add it to `ADAPTERS`, and
+  register it in `resolveHarness`.
+- **New shared folder** (for example a constants folder): add it to
+  `sharedLayer`, give it its own `layer(...)` entry, and add cases.
 - **New npm package:** allow it in `RUNTIME` (every layer) or in one layer's
   list, in both forms (`pkg('<name>')`).
 
-Never disable `project-structure/independent-modules`. When it fires, move the
-code, or hand the lower layer what it needs from the layer above.
+Never disable `project-structure/independent-modules` or the `src/types/`
+`no-restricted-syntax` rule. When one fires, move the code, or hand the lower
+layer what it needs from the layer above.
 
 ## Checks
 
@@ -134,8 +168,10 @@ works around. Each one was measured, not assumed:
 - It resolves every pattern against the directory above the first
   `node_modules` in its own real path, and has no option to change that. pnpm
   links it from the monorepo root; `bun install` in this directory installs it
-  here. The config prefixes every pattern with this package's path from that
-  root, so both layouts check the same files.
+  here. The config prefixes every pattern, `packageRoot` and the
+  `@kortix/api-contract` alias with this package's path from that root, so both
+  layouts check the same files. Setting `pathAliases.baseUrl` to that path
+  instead silently disables the rule.
 - It records some packages bare (`hono`) and others as a declaration path
   (`zod/index.d.ts`). `pkg()` allows both forms.
 - A tsconfig-aliased file outside the plugin root (`@kortix/api-contract`)

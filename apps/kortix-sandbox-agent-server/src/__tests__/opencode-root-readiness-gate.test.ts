@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { waitForOpencodeRootReadiness } from '../services/harness/open-code/boot'
+import { waitForOpencodeRootReadiness } from '../harness/open-code/boot'
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void

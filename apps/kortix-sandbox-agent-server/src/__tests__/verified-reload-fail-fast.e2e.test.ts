@@ -11,9 +11,9 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import { waitForOpencodeReady } from '../services/harness/open-code/lifecycle'
-import { createOpenCodeHarnessService } from '../services/harness/open-code/service'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { waitForOpencodeReady } from '../harness/open-code/lifecycle'
+import { createOpenCodeHarnessService } from '../harness/open-code/service'
 
 let root: string
 let stop: (() => Promise<void>) | null = null

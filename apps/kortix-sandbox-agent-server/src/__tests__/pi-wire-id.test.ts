@@ -9,7 +9,7 @@ import {
   mintWireMessageId,
   wireIdClockDelta,
   wireIdTime,
-} from '../services/harness/pi/wire-id'
+} from '../harness/pi/wire-id'
 
 interface WireIdVectors {
   backdateMs: number

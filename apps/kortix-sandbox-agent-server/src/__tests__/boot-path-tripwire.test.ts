@@ -78,9 +78,9 @@ describe('the one boot path is enforced, not merely intended', () => {
     const probe: ScannedFile[] = [
       { name: 'services/config-release/boot-config.ts', source: parse('export async function pointBootLink(){}') },
       { name: BOOT_LINK_FILE, source: parse('await pointBootLink(dir, root)') },
-      { name: 'services/harness/open-code/boot.ts', source: parse('await pointBootLink(other)') },
+      { name: 'harness/open-code/boot.ts', source: parse('await pointBootLink(other)') },
     ]
-    expect(bootLinkWriters(probe)).toEqual([BOOT_LINK_FILE, 'services/harness/open-code/boot.ts'])
+    expect(bootLinkWriters(probe)).toEqual([BOOT_LINK_FILE, 'harness/open-code/boot.ts'])
   })
 
   test('T3 — one readiness gate, in the boot path, and it follows the proof', () => {
@@ -105,9 +105,9 @@ describe('the one boot path is enforced, not merely intended', () => {
   test('T3 negative — a second gate file, a gate before the state, and a readiness that ignores the proof', () => {
     const twoFiles: ScannedFile[] = [
       { name: BOOT_PATH_FILE, source: parse('opencode.markWorkspaceReady()') },
-      { name: 'services/harness/open-code/boot.ts', source: parse('opencode.markWorkspaceReady()') },
+      { name: 'harness/open-code/boot.ts', source: parse('opencode.markWorkspaceReady()') },
     ]
-    expect(readinessGateSites(twoFiles)).toEqual([BOOT_PATH_FILE, 'services/harness/open-code/boot.ts'])
+    expect(readinessGateSites(twoFiles)).toEqual([BOOT_PATH_FILE, 'harness/open-code/boot.ts'])
 
     const early = gateFollowsProof('opencode.markWorkspaceReady()\nconst proof = await prove(dir)\nsetRunningConfig({})')
     expect(early.stateBeforeEveryGate).toBe(false)
@@ -140,8 +140,8 @@ describe('the one boot path is enforced, not merely intended', () => {
         'function elsewhere(){ running.proven = true }',
     )
     expect(runningWriters(probe)).toEqual(['setRunningConfig:running', 'elsewhere:running.proven'])
-    expect(runningWriteLeaks([{ name: 'services/harness/open-code/boot.ts', source: probe }])).toEqual([
-      'services/harness/open-code/boot.ts',
+    expect(runningWriteLeaks([{ name: 'harness/open-code/boot.ts', source: probe }])).toEqual([
+      'harness/open-code/boot.ts',
     ])
   })
 
@@ -189,11 +189,11 @@ describe('the one boot path is enforced, not merely intended', () => {
     expect([...callers(sources, 'resolveOpencodeConfigDir').keys()].sort()).toEqual([
       BOOT_PATH_FILE,
       CONFIG_STATE_FILE,
-      'services/harness/open-code/config.ts',
+      'harness/open-code/config.ts',
     ])
     // And the candidates are built in exactly one function.
     expect([...callers(sources, 'bootCandidates').keys()]).toEqual([BOOT_PATH_FILE])
-    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['services/harness/open-code/boot.ts'])
+    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts'])
   })
 
   test('the five rules pass as one verdict list, which is what the proof script prints', () => {

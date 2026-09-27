@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pointBootLink, quarantineRelease, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '../services/config-release/boot-config'
 import type { ConfigReleaseApi } from '../services/config-release/api-client'
-import type { OpenCodeConfig } from '../services/harness/open-code/config'
+import type { OpenCodeConfig } from '../harness/open-code/config'
 import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '../services/config-release/notice'
 import {
   __setDaemonShuttingDownForTests,
@@ -29,14 +29,14 @@ import {
   resetConfigReleaseStateForTests,
   runningSourceCommit,
   setRunningConfig,
-} from '../services/harness/open-code/config-release'
+} from '../harness/open-code/config-release'
 import {
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
 } from '../services/runtime-assets/runtime-assets'
-import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../services/harness/open-code/lifecycle'
-import { provenCheck, toolNamesFromFiles } from '../services/harness/open-code/proven-check'
+import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../harness/open-code/lifecycle'
+import { provenCheck, toolNamesFromFiles } from '../harness/open-code/proven-check'
 import {
   buildRelease,
   commitAll,
@@ -1049,9 +1049,9 @@ describe('the session is told which commit it runs', () => {
     // The channel is the agent's system context, not a transcript message:
     // applying a release restarts OpenCode, and `instructions` is composed at
     // every spawn, so the note survives the restart the convergence performs.
-    const lifecycle = readFileSync(join(import.meta.dir, '..', 'services', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
+    const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../services/config-release/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
   })

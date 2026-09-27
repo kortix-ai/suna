@@ -7,8 +7,8 @@ import {
   relayInitialTurnAcceptedToApi,
   relayTurnBeginAfterInitialAcceptance,
   resetClaimedInitialTurnForTests,
-} from '../services/harness/open-code/boot';
-import type { OpenCodeBootState as SandboxBootState } from '../services/harness/open-code/boot-state';
+} from '../harness/open-code/boot';
+import type { OpenCodeBootState as SandboxBootState } from '../harness/open-code/boot-state';
 
 const KEYS = [
   'KORTIX_PROJECT_ID',

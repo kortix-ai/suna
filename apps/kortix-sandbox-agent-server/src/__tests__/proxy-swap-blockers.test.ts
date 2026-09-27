@@ -17,7 +17,7 @@
  * a source-text one.
  *
  * `harness.control.convergenceInFlight` — not a direct import of
- * `services/harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * `harness/open-code/config-release` — is deliberate: `app/server.ts`
  * is host production code, and importing a concrete adapter from there is
  * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
  * an adapter") forbids.
@@ -27,10 +27,10 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import type { HarnessService } from '../services/harness/harness'
-import type { HarnessQueryService } from '../services/harness/contract/queries'
-import { requireOpenCodeConfig } from '../services/harness/open-code/config'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { HarnessService } from '../harness/harness'
+import type { HarnessQueryService } from '../harness/contract/queries'
+import { requireOpenCodeConfig } from '../harness/open-code/config'
 import { startProxy } from '../app/server'
 import {
   requestAgentSwapIfIdle,

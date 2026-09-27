@@ -28,7 +28,6 @@ const DAEMON_OPENCODE = resolve(
   '..',
   'kortix-sandbox-agent-server',
   'src',
-  'services',
   'harness',
   'open-code',
   'lifecycle.ts',

@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { logger } from '../lib/log/logger'
-import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '../services/harness/open-code/resource-diagnostics'
+import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '../harness/open-code/resource-diagnostics'
 import {
   type MemoryConsumer,
   type ResourceSnapshot,

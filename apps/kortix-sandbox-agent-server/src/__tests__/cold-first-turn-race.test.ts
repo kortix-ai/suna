@@ -3,15 +3,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { startOpencodeEventLoop } from '../services/harness/open-code/events'
+import { startOpencodeEventLoop } from '../harness/open-code/events'
 import {
   __resetRelayedTurnSignatures,
   reconcileFinishedFirstTurn,
   relayTurnEndToApi,
-} from '../services/harness/open-code/boot'
-import type { OpenCodeConfig as Config } from '../services/harness/open-code/config'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
-import { writeOpenCodeSessionPin } from '../services/harness/open-code/runtime-state'
+} from '../harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state'
 
 // The COLD-first-turn event-loss race, driven through the REAL daemon
 // primitives (startOpencodeEventLoop + dispatch + relayTurnEndToApi +

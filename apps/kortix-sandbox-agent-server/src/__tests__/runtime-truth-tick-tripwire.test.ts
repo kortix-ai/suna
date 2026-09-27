@@ -16,7 +16,7 @@ import { resolve } from 'node:path'
  *
  *  1. `runtime-truth.ts`'s `runReconcileTick` calls every one of those
  *     closures — a hook nobody calls is dead wiring.
- *  2. `services/harness/open-code/runtime-truth-glue.ts` — the ONE place those
+ *  2. `harness/open-code/runtime-truth-glue.ts` — the ONE place those
  *     closures are built — actually calls the real state-materializing
  *     function behind each one, not a no-op.
  *
@@ -31,7 +31,7 @@ import { resolve } from 'node:path'
  */
 
 const runtimeTruthSource = readFileSync(resolve(import.meta.dir, '..', 'services', 'runtime-assets', 'runtime-truth.ts'), 'utf8')
-const glueSource = readFileSync(resolve(import.meta.dir, '..', 'services', 'harness', 'open-code', 'runtime-truth-glue.ts'), 'utf8')
+const glueSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'runtime-truth-glue.ts'), 'utf8')
 
 /** Every `name` in `names` must be called (`name(`) somewhere in `source`. Returns the ones that are not. */
 export function callsMissingFrom(source: string, names: readonly string[]): string[] {
@@ -82,7 +82,7 @@ describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', (
   })
 
   test('the glue file is wired from a runtime-ready exit, not a one-shot boot script that could stop being called', () => {
-    const bootSource = readFileSync(resolve(import.meta.dir, '..', 'services', 'harness', 'open-code', 'boot.ts'), 'utf8')
+    const bootSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     expect(bootSource).toContain('wireRuntimeTruth(')
   })
 

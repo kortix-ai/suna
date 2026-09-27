@@ -168,7 +168,7 @@ export type Config = {
 
 /**
  * The host's fields only. The daemon configuration is `loadConfig` in
- * services/harness/harness.ts: these fields plus the selected adapter's own.
+ * harness/harness.ts: these fields plus the selected adapter's own.
  */
 export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({

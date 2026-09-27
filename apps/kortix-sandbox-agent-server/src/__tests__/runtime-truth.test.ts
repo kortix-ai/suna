@@ -48,15 +48,15 @@ import {
   configReleaseReport,
   resetConfigReleaseStateForTests,
   setRunningConfig,
-} from '../services/harness/open-code/config-release'
-import { resolveHarness } from '../services/harness/harness'
+} from '../harness/open-code/config-release'
+import { resolveHarness } from '../harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
 afterAll(() => resetHarnessAssetsForTests())
 
 /**
- * The fake wiring `services/harness/open-code/runtime-truth-glue.ts` would
+ * The fake wiring `harness/open-code/runtime-truth-glue.ts` would
  * install on a real box. Test files are exempt from the boundary lint
  * (eslint.config.mjs), so this can import the real config-release module
  * directly — the point is to prove `runReconcileTick` reads whatever the

@@ -27,13 +27,13 @@ import {
 } from '../services/config-release/boot-config'
 import type { Config } from '../lib/config/config'
 import type { ConfigReleaseApi } from '../services/config-release/api-client'
-import type { HarnessConfigReleaseReport } from '../services/harness/contract/control'
-import { createOpenCodeDiagnosticsService } from '../services/harness/open-code/diagnostics'
-import type { Opencode } from '../services/harness/open-code/lifecycle'
-import { bootOpenCodeConfig, type BootConfigPathResult } from '../services/harness/open-code/boot-config-path'
-import { configReleaseReport, resetConfigReleaseStateForTests } from '../services/harness/open-code/config-release'
+import type { HarnessConfigReleaseReport } from '../harness/contract/control'
+import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
+import type { Opencode } from '../harness/open-code/lifecycle'
+import { bootOpenCodeConfig, type BootConfigPathResult } from '../harness/open-code/boot-config-path'
+import { configReleaseReport, resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '../services/config-release/notice'
-import type { OpenCodeConfig } from '../services/harness/open-code/config'
+import type { OpenCodeConfig } from '../harness/open-code/config'
 import {
   buildRelease,
   commitAll,
@@ -148,7 +148,7 @@ async function boot(
     },
     prove: async (baseUrl, deadline, input) => {
       run.gateOpenAtProof.push(run.gateOpened)
-      const { provenCheck } = await import('../services/harness/open-code/proven-check')
+      const { provenCheck } = await import('../harness/open-code/proven-check')
       return provenCheck(baseUrl, deadline, input)
     },
     ...(typeof overrides === 'function' ? overrides(run) : overrides),
@@ -296,7 +296,7 @@ describe('valve A: present, but it does not load', () => {
         tracked.gateOpenAtProof.push(tracked.gateOpened)
         // The release fails; the image default answers.
         if (proofs === 1) return { ok: false, fatal: true, reason: 'ConfigJsonError in opencode.jsonc: PropertyNameExpected at line 1, column 2' }
-        const { provenCheck } = await import('../services/harness/open-code/proven-check')
+        const { provenCheck } = await import('../harness/open-code/proven-check')
         return provenCheck(baseUrl, deadline, input)
       },
     }))
@@ -324,7 +324,7 @@ describe('valve A: present, but it does not load', () => {
       prove: async (baseUrl, deadline, input) => {
         proofs += 1
         if (proofs === 1) return { ok: false, fatal: true, reason: 'the newer release does not load' }
-        const { provenCheck } = await import('../services/harness/open-code/proven-check')
+        const { provenCheck } = await import('../harness/open-code/proven-check')
         return provenCheck(baseUrl, deadline, input)
       },
     })

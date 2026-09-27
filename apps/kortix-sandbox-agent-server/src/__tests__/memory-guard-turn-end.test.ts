@@ -23,7 +23,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { writeOpenCodeSessionPin } from '../services/harness/open-code/runtime-state'
+import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state'
 import * as realResources from '../services/resources/resources'
 
 const ROOT = 'ses_root'
@@ -125,10 +125,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 4_000): Promise<voi
   while (!predicate() && Date.now() < deadline) await Bun.sleep(10)
 }
 
-let startOpenCodeBackground: typeof import('../services/harness/open-code/background').startOpenCodeBackground
+let startOpenCodeBackground: typeof import('../harness/open-code/background').startOpenCodeBackground
 
 beforeAll(async () => {
-  ;({ startOpenCodeBackground } = await import('../services/harness/open-code/background'))
+  ;({ startOpenCodeBackground } = await import('../harness/open-code/background'))
 })
 
 afterEach(() => {

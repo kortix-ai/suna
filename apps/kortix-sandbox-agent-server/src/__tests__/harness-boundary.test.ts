@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { loadConfig, resolveHarness, type HarnessService } from '../services/harness/harness'
+import { loadConfig, resolveHarness, type HarnessService } from '../harness/harness'
 import { buildDaemonApp } from '../app/server'
 import { createRuntimeProxyRouter } from '../routes/proxy/runtime-proxy'
-import type { HarnessQueryService } from '../services/harness/contract/queries'
+import type { HarnessQueryService } from '../harness/contract/queries'
 
 // Which imports are allowed between host, harness and adapters is the lint's job
 // (eslint.config.mjs, run by architecture-boundaries.test.ts). This file owns the

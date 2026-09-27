@@ -14,7 +14,7 @@
  */
 import { Hono } from 'hono'
 import type { Config } from '../../lib/config/config'
-import type { HarnessDiagnosticsService } from '../../services/harness/contract/diagnostics'
+import type { HarnessDiagnosticsService } from '../../harness/contract/diagnostics'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
 import { logger } from '../../lib/log/logger'
 

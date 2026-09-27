@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { createAbortRouter } from '../routes/kortix/abort'
 import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
 import type { Config } from '../lib/config/config'
-import type { HarnessAbortAfterToolInput, HarnessControlOperations } from '../services/harness/contract/control'
+import type { HarnessAbortAfterToolInput, HarnessControlOperations } from '../harness/contract/control'
 
 const secret = 'local-test-secret'
 const body = Buffer.from(JSON.stringify({

@@ -15,8 +15,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../lib/config/config'
-import { createOpenCodeAssetsService } from '../services/harness/open-code/assets'
-import { resetConfigReleaseStateForTests } from '../services/harness/open-code/config-release'
+import { createOpenCodeAssetsService } from '../harness/open-code/assets'
+import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 
 const roots: string[] = []

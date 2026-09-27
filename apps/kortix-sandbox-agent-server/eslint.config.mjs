@@ -3,10 +3,10 @@
 // rule are in ARCHITECTURE.md. `scripts/check-architecture.mjs` proves each rule
 // allows and rejects what it claims to.
 //
-//   app/, main.ts, routes/   composition root and HTTP controllers
-//   services/harness/        the session runtime; adapters are isolated
-//   services/<name>/         host capabilities; each declares its dependencies
-//   lib/                     building blocks; no service state, no Hono
+//   app      main.ts, app/, routes/   composition root and HTTP controllers
+//   harness  harness/                 the session runtime; adapters are isolated
+//   services services/<name>/         host capabilities; each declares its dependencies
+//   shared   lib/, types/             building blocks and shared types; no service state, no Hono
 import { realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { posix, relative, resolve, sep } from 'node:path'
@@ -66,9 +66,12 @@ export const ADAPTERS = {
 }
 
 const lib = at('src/lib/**')
+const types = at('src/types/**')
 const services = Object.keys(SERVICES).map((name) => at(`src/services/${name}/**`))
-const harnessCore = [at('src/services/harness/*.ts'), at('src/services/harness/contract/**'), at('src/services/harness/shared/**')]
-const adapters = Object.keys(ADAPTERS).map((name) => at(`src/services/harness/${name}/**`))
+const harnessCore = [at('src/harness/*.ts'), at('src/harness/contract/**'), at('src/harness/shared/**')]
+const adapters = Object.keys(ADAPTERS).map((name) => at(`src/harness/${name}/**`))
+// The shared layer is a set of folders, not a folder: every layer may import it.
+const SHARED = '{sharedLayer}'
 
 /**
  * @param {string} name
@@ -92,30 +95,34 @@ const independentModules = createIndependentModules({
   // tsconfig.json's alias, restated with this package's prefix: the plugin
   // resolves `paths` against its root, which under pnpm is the monorepo root.
   pathAliases: { baseUrl: '.', paths: { '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')] } },
+  reusableImportPatterns: { sharedLayer: [lib, types] },
   modules: [
     // Tests reach whatever they exercise; the layers bind production code.
     { name: 'tests', pattern: [at('src/**/__tests__/**'), at('src/**/*.test.ts')], allowImportsFrom: ['**'] },
-    layer('lib', lib, [lib], RUNTIME, 'lib/ imports lib/ and runtime built-ins only.'),
+    // types/ is the leaf of the shared layer: type declarations only (see the
+    // no-restricted-syntax rule below), importing nothing but other types.
+    layer('types', types, [types], [], 'types/ holds type declarations and imports only types/.'),
+    layer('lib', lib, [SHARED], RUNTIME, 'lib/ imports the shared layer (lib/, types/) and runtime built-ins only.'),
     layer(
       'harness-resolver',
-      at('src/services/harness/harness.ts'),
-      [...harnessCore, ...adapters, ...services, lib],
+      at('src/harness/harness.ts'),
+      [...harnessCore, ...adapters, ...services, SHARED],
       RUNTIME,
-      'The harness resolver imports the harness, services and lib/.',
+      'The harness resolver imports the harness, services and the shared layer.',
     ),
     ...Object.entries(ADAPTERS).map(([name, externals]) =>
       layer(
         `harness-${name}`,
-        at(`src/services/harness/${name}/**`),
-        [at(`src/services/harness/${name}/**`), ...harnessCore, ...services, lib],
+        at(`src/harness/${name}/**`),
+        [at(`src/harness/${name}/**`), ...harnessCore, ...services, SHARED],
         [...RUNTIME, ...externals],
-        `The ${name} adapter imports its own folder, the harness contract and shared code, services and lib/. Never another adapter, routes/ or app/.`,
+        `The ${name} adapter imports its own folder, the harness contract and shared code, services and the shared layer. Never another adapter, routes/ or app/.`,
       ),
     ),
     layer(
       'harness-core',
       harnessCore,
-      [...harnessCore, ...services, lib],
+      [...harnessCore, ...services, SHARED],
       RUNTIME,
       'Harness contract and shared code never import an adapter; only harness.ts does.',
     ),
@@ -123,24 +130,24 @@ const independentModules = createIndependentModules({
       layer(
         `service-${name}`,
         at(`src/services/${name}/**`),
-        [at(`src/services/${name}/**`), ...deps.map((dep) => at(`src/services/${dep}/**`)), lib],
+        [at(`src/services/${name}/**`), ...deps.map((dep) => at(`src/services/${dep}/**`)), SHARED],
         [...RUNTIME, ...(SERVICE_EXTERNALS[name] ?? [])],
-        `services/${name} imports its own folder, lib/ and the services SERVICES declares for it.`,
+        `services/${name} imports its own folder, the shared layer and the services SERVICES declares for it. Never the harness.`,
       ),
     ),
     layer(
       'routes',
       at('src/routes/**'),
-      [at('src/routes/**'), ...harnessCore, ...services, lib],
+      [at('src/routes/**'), ...harnessCore, ...services, SHARED],
       [...RUNTIME, ...pkg('hono')],
-      'Routes import routes/, the harness contract, services and lib/. Never app/ or an adapter.',
+      'Routes import routes/, the harness contract, services and the shared layer. Never app/ or an adapter.',
     ),
     layer(
       'app',
       [at('src/app/**'), at('src/main.ts')],
-      [at('src/app/**'), at('src/routes/**'), ...harnessCore, ...services, lib, at('package.json')],
+      [at('src/app/**'), at('src/routes/**'), ...harnessCore, ...services, SHARED, at('package.json')],
       [...RUNTIME, ...pkg('hono')],
-      'app/ composes routes, the harness contract, services and lib/. Never an adapter.',
+      'app/ composes routes, the harness contract, services and the shared layer. Never an adapter.',
     ),
     // Last: a file no layer above matched is in no layer at all (a new
     // top-level folder, an unregistered service or adapter).
@@ -156,5 +163,22 @@ export default tseslint.config(
     linterOptions: { reportUnusedDisableDirectives: 'off' },
     plugins: { 'project-structure': projectStructurePlugin },
     rules: { 'project-structure/independent-modules': ['error', independentModules] },
+  },
+  {
+    // Importing a shared type must never pull code or a module graph into the
+    // importer, so types/ declares types and nothing that exists at runtime.
+    files: ['src/types/**/*.ts'],
+    ignores: ['src/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...['VariableDeclaration', 'FunctionDeclaration', 'ClassDeclaration', 'TSEnumDeclaration', 'TSModuleDeclaration'].flatMap((node) => [
+          { selector: `Program > ${node}`, message: `types/ holds type declarations only: move this ${node} to its owning module.` },
+          { selector: `Program > ExportNamedDeclaration > ${node}`, message: `types/ holds type declarations only: move this ${node} to its owning module.` },
+        ]),
+        { selector: 'Program > ExportDefaultDeclaration', message: 'types/ holds named type declarations only.' },
+        { selector: 'Program > ExpressionStatement', message: 'types/ holds type declarations only: no statements run at import time.' },
+      ],
+    },
   },
 )
