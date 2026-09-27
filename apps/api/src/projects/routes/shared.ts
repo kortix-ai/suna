@@ -19,7 +19,6 @@ import { db } from '../../shared/db';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { admitRunningSandbox } from '../../runtime-convergence/admit-running-sandbox';
 import { runtimeAdmissionEnforced } from '../../runtime-convergence/admission';
-import { guaranteeCurrentRuntimeOnOpen } from '../lib/legacy-runtime-bootstrap-wiring';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
@@ -1550,6 +1549,16 @@ async function runOpenSession(args: {
   // population is covered only by the reaper's background pass, not
   // synchronously at message time.
   if (!booting) {
+    // DYNAMIC import on purpose — breaks a module-init cycle. The wiring
+    // module imports `sandbox-proxy/backend`, and `sandbox-proxy/index.ts`
+    // imports (transitively) this file's route registration, so a static
+    // top-level import here closed a cycle that threw
+    // `ReferenceError: Cannot access 'preview' before initialization` at
+    // server boot (CI run 36351579974: the whole stack never came up). Same
+    // pattern as `session-lifecycle/stop.ts`'s `captureSessionTranscriptMirror`
+    // dynamic import — this call site is already inside an async function,
+    // so the dynamic import costs nothing extra on the hot path.
+    const { guaranteeCurrentRuntimeOnOpen } = await import('../lib/legacy-runtime-bootstrap-wiring');
     const guarantee = await guaranteeCurrentRuntimeOnOpen({
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,
