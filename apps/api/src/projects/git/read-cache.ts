@@ -15,7 +15,7 @@
  * seen on the very next read. There is no invalidation to forget.
  */
 import { execFile } from 'node:child_process';
-import { open, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -121,34 +121,29 @@ async function readLooseRef(repoPath: string, ref: string, depth: number): Promi
   return null;
 }
 
-const packedRefs = new Map<string, { mtimeMs: number; size: number; refs: Map<string, string> }>();
+const packedRefs = new Map<string, { text: string; refs: Map<string, string> }>();
 
 async function readPackedRef(repoPath: string, ref: string): Promise<string | null> {
   const file = join(repoPath, 'packed-refs');
-  // One handle for both the stat and the read, so the parsed refs always
-  // belong to the file version whose mtime/size keys them.
-  let handle;
+  let text: string;
   try {
-    handle = await open(file, 'r');
+    text = await readFile(file, 'utf8');
   } catch {
     return null;
   }
-  try {
-    const info = await handle.stat();
-    let cached = packedRefs.get(file);
-    if (!cached || cached.mtimeMs !== info.mtimeMs || cached.size !== info.size) {
-      const refs = new Map<string, string>();
-      for (const line of (await handle.readFile('utf8')).split('\n')) {
-        const match = line.match(/^([0-9a-f]{40}) (\S+)$/);
-        if (match) refs.set(match[2]!, match[1]!);
-      }
-      cached = { mtimeMs: info.mtimeMs, size: info.size, refs };
-      packedRefs.set(file, cached);
+  // Keyed by the bytes just read, so the parsed refs always belong to the
+  // file version this call saw; re-parsed only when the file changed.
+  let cached = packedRefs.get(file);
+  if (!cached || cached.text !== text) {
+    const refs = new Map<string, string>();
+    for (const line of text.split('\n')) {
+      const match = line.match(/^([0-9a-f]{40}) (\S+)$/);
+      if (match) refs.set(match[2]!, match[1]!);
     }
-    return cached.refs.get(ref) ?? null;
-  } finally {
-    await handle.close().catch(() => {});
+    cached = { text, refs };
+    packedRefs.set(file, cached);
   }
+  return cached.refs.get(ref) ?? null;
 }
 
 async function resolveDiskRef(repoPath: string, ref: string, depth = 0): Promise<string | null> {
