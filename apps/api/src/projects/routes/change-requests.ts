@@ -88,9 +88,11 @@ projectsApp.openapi(
     // `limit` is opt-in: omitted keeps the historical unbounded behavior every
     // existing caller (the panel, the open-CR badge, `kortix cr list`) already
     // depends on. A caller that adopts it gets a bounded, capped page.
+    // normalizeString answers null for an absent param: test nullish, or
+    // every plain list is refused as "Invalid limit" (Number(null) is 0).
     const rawLimit = normalizeString(c.req.query('limit'));
     let limit: number | undefined;
-    if (rawLimit !== undefined) {
+    if (rawLimit != null) {
       limit = Number(rawLimit);
       if (!Number.isInteger(limit) || limit < 1) {
         return c.json({ error: 'Invalid limit' }, 400);
