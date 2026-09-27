@@ -102,6 +102,11 @@ if (SENTRY_DSN) {
       'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
+      // Firefox: an extension set `window.onerror` before this SDK loaded, and
+      // the SDK's chained `_oldOnErrorHandler.apply(...)` is refused across the
+      // extension compartment. The frame is the SDK in our bundle, so only
+      // this anchored message gate can drop it.
+      /^(?:Error: )?Permission denied to access property "apply"$/,
       // Third-party injected scripts / wallet extensions
       'MetaMask extension not found',
       'Looks like your website URL has changed',

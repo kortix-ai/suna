@@ -1520,6 +1520,133 @@ async function runOpenSession(args: {
     await clearRuntimeReadinessClocks(row);
   }
 
+  // ── Session-open runtime guarantee ──────────────────────────────────────
+  // "Open any session and it works, or it says precisely why not." Same
+  // chokepoint as Rule 4 below (`!booting`, box confirmed provider-running,
+  // OpenCode answered) — but UNCONDITIONAL, not scoped to
+  // `configReleasesEnabled`: a project with config releases off still runs a
+  // daemon, a CLI and a model catalog, and a box stuck `components.agent:
+  // 'staged'` for 31 days with `cli: 'failed'` every pass is exactly the
+  // failure this closes regardless of that flag. Gated only by the reaper's
+  // own kill switch (`LEGACY_RUNTIME_BOOTSTRAP`), so an operator can turn
+  // BOTH the background and the open-time repair off with one switch.
+  //
+  // Shares the exact classification and the exact repair the reaper already
+  // schedules in the background (`guaranteeCurrentRuntimeOnOpen` →
+  // `classifyDaemonHealth` + `scheduleLegacyRuntimeBootstrap`) — never a
+  // second implementation. Bounded to a health probe (+ one OpenCode status
+  // probe only for an actually-stale box): a few seconds, not the 8-minute
+  // converge budget the reaper tolerates. The repair itself is fired and NOT
+  // awaited here — a relaunch kills PTYs, so this must never block on it, and
+  // it never fires under a live turn (the same idle gate `bootstrapLegacyRuntime`
+  // uses). Client sees `stage:'starting', reason:'runtime_updating'` and
+  // polls again; the SAME check on the next poll reads the now-repaired box.
+  //
+  // KNOWN GAP, shared with Rule 4 below: `continue-session.ts`'s FAST PATH for
+  // an already-warm session (see its own comment — a deliberate perf
+  // optimization) reads the DB row directly and does not call
+  // `runOpenSession` at all, so it does not run this check either. That
+  // population is covered only by the reaper's background pass, not
+  // synchronously at message time.
+  if (!booting) {
+    // DYNAMIC import on purpose — breaks a module-init cycle. The wiring
+    // module imports `sandbox-proxy/backend`, and `sandbox-proxy/index.ts`
+    // imports (transitively) this file's route registration, so a static
+    // top-level import here closed a cycle that threw
+    // `ReferenceError: Cannot access 'preview' before initialization` at
+    // server boot (CI run 36351579974: the whole stack never came up). Same
+    // pattern as `session-lifecycle/stop.ts`'s `captureSessionTranscriptMirror`
+    // dynamic import — this call site is already inside an async function,
+    // so the dynamic import costs nothing extra on the hot path.
+    const { guaranteeCurrentRuntimeOnOpen } = await import('../lib/legacy-runtime-bootstrap-wiring');
+    const guarantee = await guaranteeCurrentRuntimeOnOpen({
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      accountId: row.accountId,
+      projectId,
+      provider: row.provider,
+      externalId: runningExternalId,
+      metadata: row.metadata as Record<string, unknown> | null,
+    }).catch((err) => {
+      console.warn(`[start] runtime guarantee probe failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err);
+      return { action: 'proceed' as const, classification: null };
+    });
+
+    if (guarantee.action === 'repairing') {
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: 'runtime_updating',
+      };
+    }
+    if (guarantee.action === 'blocked') {
+      // The daemon's OWN supervisor already tried an update and rolled it
+      // back, latching updates off (`pinned: true`). Never looped — this is
+      // Rule 2's `blocked`: a human must look at this box, not another
+      // automatic attempt.
+      return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: false,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: 'runtime_update_blocked',
+        failure: {
+          category: 'sandbox-provider',
+          message:
+            "This session's runtime updated itself, failed, and rolled back — it needs an operator, not another automatic retry.",
+          retryable: false,
+          evidence: {
+            check: guarantee.classification?.detail.join('; ') || 'pinned',
+            observed_at: new Date().toISOString(),
+            error: null,
+            attempts: 0,
+            next_retry_at: null,
+          },
+        },
+      };
+    }
+    if (guarantee.action === 'exhausted') {
+      const retry = guarantee.retry;
+      const detail = guarantee.classification?.detail ?? [];
+      return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        // Named failure, `retry: true`: the reaper keeps this box's cooldown
+        // moving in the background and an operator can `--force` it; this
+        // call itself made no progress, so the client must poll again rather
+        // than treat this as a dead end.
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: 'runtime_update_exhausted',
+        failure: {
+          category: 'sandbox-provider',
+          message:
+            "This session's runtime is out of date and the automatic update has not succeeded after repeated attempts. Try again shortly, or ask an operator to check it.",
+          retryable: true,
+          evidence: {
+            check: detail.length > 0 ? detail.join('; ') : 'runtime_stale',
+            observed_at: new Date().toISOString(),
+            error: retry?.lastError ?? null,
+            attempts: retry?.attempts ?? 0,
+            next_retry_at: null,
+          },
+        },
+      };
+    }
+    // 'proceed' (current, or the guarantee's own probe failed/disabled — fail
+    // open) and 'defer_turn_running' (a live turn owns the box; the reaper's
+    // idle gate applies) both fall through unchanged — the box is handed
+    // over exactly as it was before this check existed.
+  }
+
   // ── Rule 4 admission control (the runtime-convergence contract (PR #7785)) ─────────
   // "Before a box is handed to a session, it must prove its runtime identity…
   // A box that fails admission is replaced, not used." This is the ONE

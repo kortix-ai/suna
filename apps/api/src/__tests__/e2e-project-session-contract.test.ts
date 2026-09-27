@@ -417,7 +417,14 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
+// Spread the real module (see the comment on the next mock — the same rule
+// applies here): a bare stub deleted `mintSessionToken`, which the
+// session-open runtime guarantee's dynamic import
+// (legacy-runtime-bootstrap-wiring.ts) now reaches on every `/start`,
+// surfacing as an unrelated 500 attributed to no test.
+const realSessionSandbox = await import('../platform/services/session-sandbox');
 mock.module('../platform/services/session-sandbox', () => ({
+  ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
     sandboxProvisionCalls += 1;
     lastProvisionInput = input;
