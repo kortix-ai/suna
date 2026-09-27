@@ -20,9 +20,9 @@
  * the pass does nothing.
  */
 
-import { sandboxTemplates } from '@kortix/db';
+import { appDeployments, sandboxTemplates } from '@kortix/db';
 import { type BudgetReportState, decideBudgetReport } from './budget-report-policy';
-import { isNotNull, sql } from 'drizzle-orm';
+import { eq, isNotNull, sql } from 'drizzle-orm';
 import {
   deleteDaytonaSnapshotById,
   isDaytonaConfigured,
@@ -30,6 +30,7 @@ import {
 } from '../shared/daytona';
 import { db } from '../shared/db';
 import {
+  APP_DEPLOYMENT_PREFIX,
   DAYTONA_ORG_SNAPSHOT_LIMIT,
   QUOTA_GC_MAX_PER_PASS,
   QUOTA_GC_ORG_TARGET,
@@ -82,7 +83,18 @@ export interface SnapshotQuotaIo {
   deleteSnapshotById(snapshotId: string): Promise<boolean>;
 }
 
-async function loadReferencedSnapshotNames(now: number): Promise<Set<string>> {
+/**
+ * The name of the App-deployment snapshot a `ready` deployment row still
+ * needs — must match `deployment-worker.ts`'s
+ * `` `kortix-app-${deploymentId.replaceAll('-', '')}` `` exactly, or a live
+ * rollback target would silently fall out of `referenced` and get reaped.
+ */
+export function appDeploymentSnapshotName(deploymentId: string): string {
+  return `${APP_DEPLOYMENT_PREFIX}${deploymentId.replaceAll('-', '')}`;
+}
+
+/** Exported for the integration test — hits the real DB, no provider IO. */
+export async function loadReferencedSnapshotNames(now: number): Promise<Set<string>> {
   const referenced = new Set(
     (
       await db
@@ -91,6 +103,18 @@ async function loadReferencedSnapshotNames(now: number): Promise<Set<string>> {
         .where(isNotNull(sandboxTemplates.providerSnapshotName))
     ).map((r) => r.name as string),
   );
+  // A deployment is a valid rollback target for as long as (and only as long
+  // as) it holds `status = 'ready'` — the rollback route's own gate
+  // (`routes.ts`, `POST /apps/{appId}/rollback`). Nothing ever moves a
+  // deployment BACK to `ready`, so once a row drops out of this query its
+  // name is permanently dead weight, not "maybe still needed" — see
+  // `quota-gc-select.ts`'s `QUOTA_GC_APP_DEPLOYMENT_REAP_GRACE_MS` header.
+  for (const row of await db
+    .select({ deploymentId: appDeployments.deploymentId })
+    .from(appDeployments)
+    .where(eq(appDeployments.status, 'ready'))) {
+    referenced.add(appDeploymentSnapshotName(row.deploymentId));
+  }
   return referenced;
 }
 

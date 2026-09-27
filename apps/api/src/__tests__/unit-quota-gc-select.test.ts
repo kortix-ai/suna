@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  APP_DEPLOYMENT_PREFIX,
   DAYTONA_ORG_SNAPSHOT_LIMIT,
   PPWARM_PREFIX,
+  QUOTA_GC_APP_DEPLOYMENT_REAP_GRACE_MS,
   QUOTA_GC_KEEP_FRESHEST_DEFAULTS,
   QUOTA_GC_MAX_PER_PASS,
   QUOTA_GC_ORG_HIGH_WATER,
@@ -240,6 +242,67 @@ describe('selectSnapshotsToReap — budget shortfall reporting', () => {
     expect(res.orgTotal).toBe(107);
     expect(res.underPressure).toBe(true);
     expect(res.budgetUnresolved).toBe(false);
+  });
+});
+
+/**
+ * The 2026-09-27 incident: `kortix-app-*` (App deployment images) had no reap
+ * rule at all — 39 of a 99-snapshot org, some over 40 days old — because a
+ * dead deployment's name simply isn't in `sandbox_templates` and so never hit
+ * ANY existing rule. Eligibility here is a DB fact (no `ready` deployment
+ * references the name, wired through `referenced` by `quota-gc.ts`), not a
+ * calendar heuristic, so it must not wait out the 7-day idle gate rule 5 uses
+ * for `kortix-tpl-` / `kortix-wproj-`.
+ */
+describe('selectSnapshotsToReap — dead App-deployment images', () => {
+  const grace = QUOTA_GC_APP_DEPLOYMENT_REAP_GRACE_MS;
+
+  it('reaps an unreferenced app-deployment image once it clears the grace window', () => {
+    const dead = snap(`${APP_DEPLOYMENT_PREFIX}deaddeaddead`, {
+      lastUsedAt: new Date(NOW - grace - 60_000).toISOString(),
+    });
+    const res = run(padToOrgSize([dead], QUOTA_GC_ORG_HIGH_WATER));
+    expect(names(res)).toContain(dead.name);
+  });
+
+  it('never reaps one a `ready` deployment still references', () => {
+    const live = snap(`${APP_DEPLOYMENT_PREFIX}aliveailveaive`, {
+      lastUsedAt: new Date(NOW - grace - 60_000).toISOString(),
+    });
+    const res = run(padToOrgSize([live], QUOTA_GC_ORG_HIGH_WATER), [live.name]);
+    expect(names(res)).not.toContain(live.name);
+  });
+
+  it('protects a just-built image inside the grace window even if unreferenced', () => {
+    const fresh = snap(`${APP_DEPLOYMENT_PREFIX}freshfreshfre`, {
+      lastUsedAt: new Date(NOW - grace + 60_000).toISOString(),
+    });
+    const res = run(padToOrgSize([fresh], QUOTA_GC_ORG_HIGH_WATER));
+    expect(names(res)).not.toContain(fresh.name);
+  });
+
+  it('does NOT make it wait out the 7-day idle gate rule 5 applies to kortix-tpl-', () => {
+    // Same age as a `kortix-tpl-` snapshot that rule 5 would still protect
+    // (well under QUOTA_GC_MIN_IDLE_MS) — the app-deployment rule must reap
+    // it anyway, because its eligibility is authoritative, not idle-based.
+    const dead = snap(`${APP_DEPLOYMENT_PREFIX}stillquick`, { lastUsedAt: ago(2) });
+    const res = run(padToOrgSize([dead], QUOTA_GC_ORG_HIGH_WATER));
+    expect(names(res)).toContain(dead.name);
+  });
+
+  it('keeps an unreferenced image with no usable timestamp — cannot prove it is safe', () => {
+    // Built directly (not via `snap()`) because `??` treats an explicit `null`
+    // as nullish too, so `snap(name, { lastUsedAt: null })` would silently
+    // fall back to a real timestamp instead of testing the no-timestamp case.
+    const notime: SnapshotLike = {
+      id: 'id-notime',
+      name: `${APP_DEPLOYMENT_PREFIX}notime`,
+      state: 'active',
+      createdAt: null,
+      lastUsedAt: null,
+    };
+    const all = padToOrgSize([notime], QUOTA_GC_ORG_HIGH_WATER);
+    expect(names(run(all))).not.toContain(notime.name);
   });
 });
 
