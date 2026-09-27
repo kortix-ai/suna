@@ -568,7 +568,7 @@ export class PlatinumProvider implements SandboxProvider {
    * (`autoStopMinutes: 720`) — exactly its own idle timeout, because nothing
    * had confirmed the stop and nothing was watching that box again.
    *
-   * Poll bounded to `STOP_CONFIRM_DEADLINE_MS`: long enough for an ordinary
+   * Poll bounded to `stopConfirmDeadlineMs()`: long enough for an ordinary
    * power-off, short enough not to serialize a reaper batch pass (stops run
    * with bounded concurrency — see `REAP_CONCURRENCY` in box-reaper.ts). A
    * timeout throws instead of returning silently, so the caller
