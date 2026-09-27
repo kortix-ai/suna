@@ -68,7 +68,7 @@ async function listParkedBoxes(): Promise<ParkedBox[]> {
   await withTimeout(
     (async () => {
       for await (const box of getDaytona().list({
-        labels: { ...managedSandboxLabels(), [PARK_LABEL]: '1' },
+        labels: { ...await managedSandboxLabels(), [PARK_LABEL]: '1' },
         limit: 100,
       } as never)) {
         const raw = box as unknown as {
@@ -108,7 +108,7 @@ async function createParkedBox(snapshotName: string, contentHash: string): Promi
           KORTIX_SERVICE_PORT: '8000',
         },
         labels: {
-          ...managedSandboxLabels(),
+          ...await managedSandboxLabels(),
           [PARK_LABEL]: '1',
           [HASH_LABEL]: contentHash,
           [TOKEN_LABEL]: parkToken,
@@ -213,7 +213,7 @@ export async function claimParkedPiWorkerBox(
         setAutostopInterval(minutes: number): Promise<void>;
       };
       await mutable
-        .setLabels({ ...managedSandboxLabels(), 'kortix.piworker-claimed': '1' })
+        .setLabels({ ...await managedSandboxLabels(), 'kortix.piworker-claimed': '1' })
         .catch((err: unknown) =>
           console.warn(`[pi-pool] relabel of claimed ${box.externalId} failed:`, err),
         );
