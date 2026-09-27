@@ -1,9 +1,20 @@
 name: Terraform CI
 
 # Static analysis gate for all IaC. fmt/validate/tflint are hard gates (cloud-free,
-# deterministic). Checkov reports to the Security tab. A scheduled drift job runs a
-# read-only plan against every root and flags diffs — it is skipped unless the repo
-# variable TF_PLAN_ROLE_ARN is set, so it can't fail before that role is provisioned.
+# deterministic). Checkov reports to the Security tab.
+#
+# PULL REQUEST PLAN: `plan` runs a read-only `terraform plan` for every root a
+# pull request affects (terraform_roots.py), runs the destructive-change guard
+# in report mode, and keeps ONE sticky comment (`<!-- terraform-plan -->`) with
+# the per-root summary. The repository is public, so the comment and the job log
+# carry resource addresses and action counts only, never attribute values. It
+# assumes kortix-gha-tf-plan-pr through the `terraform-plan-pr` environment and
+# runs only for branches of this repository (a fork gets no OIDC token).
+#
+# DRIFT: a scheduled job plans every root read-only and FAILS on drift, so an
+# unapplied or hand-edited change turns the run red instead of a warning nobody
+# reads. Both are skipped until their role variable is set;
+# `apply-pipeline-health` fails while any variable is unset.
 
 on:
   pull_request:
@@ -11,6 +22,8 @@ on:
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform-ci.yml"
+      - ".github/workflows/terraform-apply.yml"
+      - ".github/workflows/terraform-apply-global.yml"
       # The `preview runtime contract tests` step below asserts the security
       # invariants of the pull request preview pipeline. Those invariants now
       # live in the workflow and the sandbox preview runtime, not only in
@@ -67,6 +80,8 @@ jobs:
         run: python3 infra/terraform/scripts/test_alb_target_response_time_alarms.py
       - name: reconciler Lambda IAM coverage test
         run: python3 infra/terraform/scripts/test_reconciler_iam_coverage.py
+      - name: plan guard + plan-root selection tests
+        run: python3 infra/terraform/scripts/test_plan_guard.py
       - name: preview runtime contract tests
         run: python3 infra/scripts/test-ecs-preview-runtime.py
       - name: terraform validate (every root)
@@ -126,6 +141,153 @@ jobs:
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov-terraform
+
+  plan-roots:
+    name: plan roots
+    # Branches of this repository only: a fork pull request gets no OIDC token.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && vars.TF_PLAN_PR_ROLE_ARN != ''
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 5
+    outputs:
+      roots: ${{ steps.roots.outputs.roots }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: select the roots this pull request affects
+        id: roots
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          roots="$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}" | python3 infra/terraform/scripts/terraform_roots.py)"
+          echo "Affected roots: ${roots}"
+          echo "roots=${roots}" >> "$GITHUB_OUTPUT"
+
+  plan:
+    name: plan
+    needs: plan-roots
+    if: needs.plan-roots.outputs.roots != '' && needs.plan-roots.outputs.roots != '[]'
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 30
+    # The environment is part of the OIDC subject that kortix-gha-tf-plan-pr
+    # trusts (security-baseline/iam-gha-tf-plan.tf). Give it required
+    # reviewers: this job runs pull request code with account-wide read.
+    environment: terraform-plan-pr
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.plan-roots.outputs.roots) }}
+    env:
+      ROOT: ${{ matrix.root }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # Every environments/* root declares a `cloudflare` provider; see the
+      # drift job for why the plan needs the token.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            TF_VAR_cloudflare_api_token=kortix-ci-env:CLOUDFLARE_API_TOKEN
+      - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ vars.TF_PLAN_PR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      # The full plan stays out of the public log: it carries attribute values.
+      # On an error, print only the error lines.
+      - name: terraform plan (read-only)
+        run: |
+          set -uo pipefail
+          terraform -chdir="$ROOT" init -input=false -no-color > "$RUNNER_TEMP/init.log" 2>&1 \
+            || { grep -E '^(Error|│)' "$RUNNER_TEMP/init.log" | head -40; exit 1; }
+          terraform -chdir="$ROOT" plan -lock=false -input=false -no-color -out=tf.plan > "$RUNNER_TEMP/plan.log" 2>&1 \
+            || { grep -E '^(Error|│)' "$RUNNER_TEMP/plan.log" | head -40; exit 1; }
+          grep -E '^(Plan: |No changes\.)' "$RUNNER_TEMP/plan.log" || true
+      - name: guard (report only)
+        run: |
+          set -euo pipefail
+          terraform -chdir="$ROOT" show -json tf.plan > "$RUNNER_TEMP/plan.json"
+          mkdir -p "$RUNNER_TEMP/summary"
+          out="$RUNNER_TEMP/summary/$(printf '%s' "$ROOT" | tr '/' '-').md"
+          python3 infra/terraform/scripts/plan_guard.py "$RUNNER_TEMP/plan.json" \
+            --root "$ROOT" --report-only --summary "$out"
+          cat "$out" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: terraform-plan-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/summary/*.md
+          retention-days: 7
+
+  plan-comment:
+    name: plan comment
+    needs: [plan-roots, plan]
+    if: ${{ !cancelled() && needs.plan-roots.outputs.roots != '' && needs.plan-roots.outputs.roots != '[]' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: terraform-plan-*
+          merge-multiple: true
+          path: summaries
+      - name: upsert the sticky plan comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ROOTS: ${{ needs.plan-roots.outputs.roots }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          marker='<!-- terraform-plan -->'
+          {
+            echo "$marker"
+            echo "## Terraform plan"
+            echo
+            echo "Head \`${HEAD_SHA:0:7}\` · [run](${RUN_URL}) · read-only plan, addresses and counts only."
+            echo "A delete blocks the apply on \`main\` unless this pull request carries the \`terraform-destroy-ok\` label."
+            echo
+            for root in $(printf '%s' "$ROOTS" | python3 -c 'import json,sys; print("\n".join(json.load(sys.stdin)))'); do
+              file="summaries/$(printf '%s' "$root" | tr '/' '-').md"
+              if [ -f "$file" ]; then
+                head -c 20000 "$file"
+              else
+                # shellcheck disable=SC2016 # the backticks are Markdown
+                printf '#### `%s`\n\nPlan **failed**: see the run.\n' "$root"
+              fi
+              echo
+            done
+          } > body.md
+          id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@body.md >/dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@body.md >/dev/null
+          fi
 
   nacl-audit:
     name: nacl admin-port audit
@@ -218,19 +380,29 @@ jobs:
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
+      # Drift FAILS the job. Until 2026-09-27 it was a warning, and three roots
+      # (staging-web, prod-web, compliance-monitoring) drifted for days with
+      # every run green. A red scheduled run is the signal; the job summary
+      # names the root and the change count.
       - name: plan -detailed-exitcode
+        env:
+          ROOT: ${{ matrix.root }}
         run: |
           set -uo pipefail
-          terraform -chdir="${{ matrix.root }}" init -input=false -no-color
-          terraform -chdir="${{ matrix.root }}" plan -detailed-exitcode -lock=false -input=false -no-color
-          code=$?
+          terraform -chdir="$ROOT" init -input=false -no-color || exit 1
+          terraform -chdir="$ROOT" plan -detailed-exitcode -lock=false -input=false -no-color \
+            | tee "$RUNNER_TEMP/plan.txt"
+          code=${PIPESTATUS[0]}
           if [ "$code" = "2" ]; then
-            echo "::warning title=Drift detected::${{ matrix.root }} has drifted from its Terraform state"
-          fi
-          if [ "$code" = "1" ]; then
+            counts="$(grep -E '^Plan: ' "$RUNNER_TEMP/plan.txt" | tail -1)"
+            echo "::error title=Drift detected::${ROOT} has drifted from its Terraform state. ${counts}"
+            {
+              echo "### Drift: \`${ROOT}\`"
+              echo "${counts:-Plan shows changes.} Apply the root from main (Terraform Apply), or revert the out-of-band change."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          exit 0
+          exit "$code"
 
   apply-pipeline-health:
     name: apply pipeline health
@@ -264,11 +436,13 @@ jobs:
           TF_APPLY_ROLE_ARN_STAGING: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
           TF_APPLY_ROLE_ARN_PROD: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
           TF_APPLY_ROLE_ARN_GLOBAL: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
+          TF_PLAN_PR_ROLE_ARN: ${{ vars.TF_PLAN_PR_ROLE_ARN }}
         run: |
           set -uo pipefail
           missing=0
           for name in \
             TF_PLAN_ROLE_ARN \
+            TF_PLAN_PR_ROLE_ARN \
             TF_APPLY_ROLE_ARN_DEV \
             TF_APPLY_ROLE_ARN_STAGING \
             TF_APPLY_ROLE_ARN_PROD \

@@ -11,6 +11,13 @@ name: Terraform Apply Global
 # resources point at, so applying the baseline against a stale monitoring stack
 # can reference a web ACL or topic that does not exist yet.
 #
+# DELETES: the guard in terraform-apply.yml blocks every planned delete. Two
+# reviewed overrides exist: the `allow_deletes` input of a manual dispatch, and
+# the `terraform-destroy-ok` label on the merged pull request of a push. The
+# `destroy-approval` job reads that label. It approves every delete in the plan
+# of that merge commit; when two merges queue, the newest merge's label
+# decides, and the guard output lists every delete either way.
+#
 # The job is skipped while TF_APPLY_ROLE_ARN_GLOBAL is unset, so this workflow
 # is safe to merge before the role exists. terraform-ci.yml's
 # `apply-pipeline-health` job fails loudly if the variable stays unset — a
@@ -43,9 +50,40 @@ permissions:
   id-token: write
 
 jobs:
+  # Reads the `terraform-destroy-ok` label of the pull request that produced
+  # this push. Any lookup error resolves to "not approved": the guard then
+  # blocks deletes as before, and every other change still applies.
+  destroy-approval:
+    name: terraform-destroy-ok label
+    if: github.event_name == 'push' && vars.TF_APPLY_ROLE_ARN_GLOBAL != ''
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      allowed: ${{ steps.label.outputs.allowed }}
+    steps:
+      - name: Read the merged pull request labels
+        id: label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          labels="$(
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main") | .labels[].name] | unique | join(",")'
+          )" || { echo "::warning::Cannot read the pull request for ${SHA}. Deletes stay blocked."; labels=""; }
+          allowed=false
+          case ",${labels}," in *,terraform-destroy-ok,*) allowed=true ;; esac
+          echo "Labels of the merged pull request: ${labels:-none}. Deletes allowed: ${allowed}."
+          echo "allowed=${allowed}" >> "$GITHUB_OUTPUT"
+
   compliance-monitoring:
     name: compliance-monitoring
-    if: vars.TF_APPLY_ROLE_ARN_GLOBAL != ''
+    needs: destroy-approval
+    if: ${{ !cancelled() && vars.TF_APPLY_ROLE_ARN_GLOBAL != '' }}
     uses: ./.github/workflows/terraform-apply.yml
     permissions:
       contents: read
@@ -56,12 +94,12 @@ jobs:
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
       trusted_branch: main
-      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
+      allow_deletes: ${{ (github.event_name == 'workflow_dispatch' && inputs.allow_deletes) || needs.destroy-approval.outputs.allowed == 'true' }}
 
   security-baseline:
     name: security-baseline
-    needs: compliance-monitoring
-    if: vars.TF_APPLY_ROLE_ARN_GLOBAL != ''
+    needs: [destroy-approval, compliance-monitoring]
+    if: ${{ !cancelled() && vars.TF_APPLY_ROLE_ARN_GLOBAL != '' && needs.compliance-monitoring.result == 'success' }}
     uses: ./.github/workflows/terraform-apply.yml
     permissions:
       contents: read
@@ -72,4 +110,4 @@ jobs:
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
       github_environment: infra-global
       trusted_branch: main
-      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
+      allow_deletes: ${{ (github.event_name == 'workflow_dispatch' && inputs.allow_deletes) || needs.destroy-approval.outputs.allowed == 'true' }}
