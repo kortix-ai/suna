@@ -1,7 +1,7 @@
 /**
  * T17 — page.tsx's phase-gate seam (PR #6273's "unguarded seam 1").
  *
- * `apps/web/src/app/(app)/projects/[id]/sessions/[sessionId]/page.tsx` decides
+ * `apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx` decides
  * whether to render the full-screen error card with:
  *
  *   const runtimeError = gatedRuntimeError({ phase: sessionState.phase, runtimeError: sessionState.runtimeError });

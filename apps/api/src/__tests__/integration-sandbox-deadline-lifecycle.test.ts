@@ -78,25 +78,9 @@ beforeAll(async () => {
       (sandbox_id, session_id, account_id, project_id, status, external_id)
     VALUES (${SANDBOX_ID}::uuid, ${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid,
             'active', ${EXTERNAL_ID})`);
-  // The reaper is a PLATFORM sweep: it judges every active row, including any
-  // left lying around by local dev. Park those for the duration (a live
-  // deadline makes the sweep skip them) so this test cannot mutate a
-  // developer's other work, and restore them afterwards.
-  await db.execute(sql`
-    UPDATE kortix.session_sandboxes
-       SET deadline_at = LEAST(active_since + interval '24 hours', now() + interval '1 hour')
-     WHERE status = 'active' AND sandbox_id <> ${SANDBOX_ID}::uuid`);
 });
 
 afterAll(async () => {
-  // Hand the parked rows back to the reaper.
-  await db
-    .execute(
-      sql`
-      UPDATE kortix.session_sandboxes SET deadline_at = now()
-       WHERE status = 'active' AND sandbox_id <> ${SANDBOX_ID}::uuid`,
-    )
-    .catch(() => undefined);
   // The identity guard refuses to delete an established sandbox unless its
   // session is tombstoned, so tombstone it first.
   await db
@@ -122,17 +106,15 @@ afterAll(async () => {
 });
 
 describe('a sandbox lifetime, start to death', () => {
-  test('1. a fresh box gets the 15-minute boot floor from the trigger', async () => {
-    expect(await minutesLeft()).toBe(15);
-  });
-
-  test('2. a control-plane-OBSERVED turn start buys the full 4h grant', async () => {
+  // The 15-minute boot floor an INSERT gets is the trigger's contract, proven
+  // in integration-sandbox-deadline-schema.test.ts.
+  test('1. a control-plane-OBSERVED turn start buys the full 4h grant', async () => {
     await extendSandboxDeadline({ externalId: EXTERNAL_ID });
 
     expect(await minutesLeft()).toBe(240);
   });
 
-  test('3. the sandbox-reported turn end pulls it in to the 15-minute idle tail', async () => {
+  test('2. the sandbox-reported turn end pulls it in to the 15-minute idle tail', async () => {
     await shortenSandboxDeadline(SESSION_ID);
 
     expect(await minutesLeft()).toBe(15);
@@ -140,14 +122,20 @@ describe('a sandbox lifetime, start to death', () => {
 
   // THE INVARIANT, live: a sandbox-reported signal may only SHORTEN. Replaying
   // the turn end — the thing a wedged box does forever — buys nothing.
-  test('4. replaying the sandbox report cannot buy the box more life', async () => {
+  test('3. replaying the sandbox report cannot buy the box more life', async () => {
+    // Start SHORTER than the idle tail, so a GREATEST or a plain assignment
+    // would lengthen the box and only LEAST keeps it.
+    await db.execute(sql`
+      UPDATE kortix.session_sandboxes SET deadline_at = now() + interval '5 minutes'
+       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+
     await shortenSandboxDeadline(SESSION_ID);
     await shortenSandboxDeadline(SESSION_ID);
 
-    expect(await minutesLeft()).toBe(15);
+    expect(await minutesLeft()).toBe(5);
   });
 
-  test('5. an unexpired box SURVIVES a real reaper pass', async () => {
+  test('4. an unexpired box SURVIVES a real reaper pass', async () => {
     await reapAndReconcileSandboxes(new Date());
 
     expect(stops).toEqual([]);
@@ -155,7 +143,7 @@ describe('a sandbox lifetime, start to death', () => {
     expect((await statusOf()).sandbox).toBe('active');
   });
 
-  test('6. past its deadline, the REAL reaper stops it and closes the session', async () => {
+  test('5. past its deadline, the REAL reaper stops it and closes the session', async () => {
     await db.execute(sql`
       UPDATE kortix.session_sandboxes SET deadline_at = now() - interval '1 second'
        WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
@@ -173,13 +161,30 @@ describe('a sandbox lifetime, start to death', () => {
   });
 
   // 264h -> at most 4h even in the worst case, and 15 min in the normal one.
-  test('7. a stopped box cannot be healed back by passive traffic', async () => {
+  test('6. an idle child session past its grace stays stopped under passive traffic', async () => {
+    // The reaper just stopped this box past its deadline (test 5). Mark the
+    // session as a coordinator-spawned child, the shape a factory worker has.
+    await db.execute(sql`
+      UPDATE kortix.project_sessions
+         SET metadata = coalesce(metadata, '{}'::jsonb)
+                      || jsonb_build_object('spawned_by_session', 'coordinator-session')
+       WHERE session_id = ${SESSION_ID}`);
+
     const { markSandboxUsed } = await import('../sandbox-proxy/backend');
     await markSandboxUsed(EXTERNAL_ID);
 
     // The heal is gated on `deadline_at > now()`, and a reaper-stopped box has
     // an expired deadline BY CONSTRUCTION. This is the 1,597-phantom-active-row
     // resurrection bug, closed by a predicate instead of a metadata flag.
-    expect((await statusOf()).sandbox).toBe('stopped');
+    //
+    // The SESSION must stay stopped too. The session write used to be
+    // unconditional, so one passive request to the parked box flipped the
+    // session back to `running` while the box stayed stopped — the stale
+    // `running` an idle child session showed for hours after its last turn
+    // (KRTX-378). A stopped box can never make its session claim to run.
+    expect(await statusOf()).toEqual({
+      sandbox: 'stopped',
+      session: 'stopped',
+    });
   });
 });

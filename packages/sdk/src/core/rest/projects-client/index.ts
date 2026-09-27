@@ -35,6 +35,7 @@ export * from './account-lifecycle';
 export * from './admin-providers';
 export * from './presentations';
 export * from './review';
+export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './tokens';

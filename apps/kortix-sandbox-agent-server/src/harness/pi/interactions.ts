@@ -126,6 +126,11 @@ function resolveRule(config: PermissionRuleConfig | undefined, tool: string, arg
   return config['*']
 }
 
+/** One call's rule under `policy`: the tool's entry, else `*`. `undefined` means the policy says nothing. */
+export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
+  return resolveRule(policy[tool] !== undefined ? policy[tool] : policy['*'], tool, args)
+}
+
 export class PermissionBroker {
   private readonly pending = new Map<string, { request: PermissionRequestWire; resolve: (reply: PermissionReply) => void }>()
   private readonly alwaysAllowed = new Set<string>()
@@ -141,8 +146,7 @@ export class PermissionBroker {
   }
 
   rule(tool: string, args?: unknown): PermissionRule {
-    const config = this.policy[tool] !== undefined ? this.policy[tool] : this.policy['*']
-    const resolved = resolveRule(config, tool, args)
+    const resolved = resolvePolicyRule(this.policy, tool, args)
     // A deny outranks an earlier "always": approving `ls` must not unlock the
     // `rm -rf *` the same pattern map denies.
     if (resolved === 'deny') return 'deny'

@@ -13,7 +13,7 @@ import {
   attemptsFor,
   classifyFlowError,
   clearRegistry,
-  KE2E_FLOW_TIMEOUT,
+  withFlowDeadline,
   maxAttemptBound,
   readAttemptPolicy,
   resolveFlowTimeoutMs,
@@ -151,6 +151,9 @@ async function runOneFlow(
     attempt++;
     steps.length = 0;
     const stack = world.newStack();
+    // Aborted when this attempt ends for any reason, so fixture work it left
+    // behind (a queued or rate-limited provision) stops with it.
+    const attemptController = new AbortController();
     const ctx: FlowContext = {
       // Every flow's client retries gateway-generated transient 502/503/504
       // (incl. the Cloudflare worker's MAINTENANCE_MODE laundering of an
@@ -171,7 +174,7 @@ async function runOneFlow(
       },
       // Attempt-scoped: a retry must not re-derive the SAME names its failed
       // predecessor already committed (see world.ts attemptSuffix).
-      fixtures: world.makeFixtures(stack, attempt),
+      fixtures: world.makeFixtures(stack, attempt, attemptController.signal),
       step: async (name, fn) => {
         const collector = new StepCollector(routesHit);
         const start = performance.now();
@@ -196,10 +199,14 @@ async function runOneFlow(
     };
 
     try {
-      await withTimeout(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id);
+      await withFlowDeadline(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id, attemptController);
+      attemptController.abort(new Error(`flow ${f.id} attempt ${attempt} finished`));
       await stack.teardown();
       return mkResult(f, "pass", undefined, steps, performance.now() - flowStart, attempt);
     } catch (err) {
+      if (!attemptController.signal.aborted) {
+        attemptController.abort(new Error(`flow ${f.id} attempt ${attempt} failed`));
+      }
       await stack.teardown();
       if (err instanceof SkipSignal) {
         return mkResult(f, "skip", err.reason, steps, performance.now() - flowStart, attempt);
@@ -267,30 +274,6 @@ function mkResult(
         ? steps.some((s) => s.status === "pass" || s.assertions.some((a) => a.pass))
         : undefined,
   };
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, id: string): Promise<T> {
-  return new Promise<T>((res, rej) => {
-    const t = setTimeout(() => {
-      // NOT ke2eRetryable. A flow that burned its whole declared timeout is
-      // hung, not blipping; retrying it spends the same timeout again on the
-      // most expensive flows in the suite. Tagged as its own class so
-      // KE2E_TIMEOUT_ATTEMPTS can re-enable retries deliberately.
-      const e = new Error(`flow ${id} exceeded ${ms}ms`);
-      (e as any)[KE2E_FLOW_TIMEOUT] = true;
-      rej(e);
-    }, ms);
-    p.then(
-      (v) => {
-        clearTimeout(t);
-        res(v);
-      },
-      (e) => {
-        clearTimeout(t);
-        rej(e);
-      },
-    );
-  });
 }
 
 function positiveWorkerCount(value: number | undefined, fallback: number): number {

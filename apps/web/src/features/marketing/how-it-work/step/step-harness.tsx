@@ -42,7 +42,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
  *     (`apps/api/src/projects/lib/compile-agent-config.ts`). `tools:` and
  *     `skills:` are NOT frontmatter keys — an earlier version of this panel
  *     showed both and neither would have parsed. Do not add them.
- *   - Opening a change request is real: `project.cr.open` is a `kortix_cli`
+ *   - Opening a change request is real: `project.cr.open` is a `kortix_permissions`
  *     grant in the shipped starter manifest, and layer 06 is where it lands.
  *   - OpenCode is the only harness that may be named, and it is named plainly.
  *   - A denied step is not a failure and must never be coloured like one in the

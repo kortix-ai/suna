@@ -6,10 +6,10 @@
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
+import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   generateServiceAccountSecret,
   hashSecretKey,
-  candidateSecretKeyHashes,
   isApiKeySecretConfigured,
   isServiceAccountToken,
 } from '../shared/crypto';
@@ -279,7 +279,7 @@ export async function validateServiceAccountToken(
     return { isValid: false, error: 'Invalid SA format — expected kortix_sa_ prefix' };
   }
   try {
-    const secretHashes = candidateSecretKeyHashes(secret);
+    const secretHashes = await candidateSecretKeyHashesAsync(secret);
     const [row] = await db
       .select({
         serviceAccountId: serviceAccounts.serviceAccountId,
@@ -297,6 +297,7 @@ export async function validateServiceAccountToken(
       return { isValid: false, error: 'Service account expired' };
     }
 
+    markTokenValidated(secret);
     updateLastUsedThrottled(row.serviceAccountId).catch(() => {});
 
     return {

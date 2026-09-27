@@ -1,7 +1,7 @@
 import { auditEvents } from '@kortix/db';
 import { sql, type SQL } from 'drizzle-orm';
+import { isUuid } from './validate';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export type AuditEventRow = typeof auditEvents.$inferSelect;
@@ -33,7 +33,7 @@ export function parseAuditCursor(
   const instant = value.slice(0, separator);
   const eventId = value.slice(separator + 1);
   const occurredAt = parseAuditInstant(instant, 'cursor timestamp');
-  if (!occurredAt || !UUID_RE.test(eventId)) throw new Error('cursor is invalid');
+  if (!occurredAt || !isUuid(eventId)) throw new Error('cursor is invalid');
   return { occurredAt, eventId };
 }
 
@@ -72,7 +72,7 @@ export function parseAuditSessionCursor(
   if (value === null) return null;
   const match = /^(\d+)\|([0-9a-f-]+)$/i.exec(value);
   const eventId = match?.[2];
-  if (!eventId || !UUID_RE.test(eventId)) throw new Error('cursor is invalid');
+  if (!eventId || !isUuid(eventId)) throw new Error('cursor is invalid');
   const sequence = Number(match[1]);
   if (!Number.isSafeInteger(sequence) || sequence < 0) throw new Error('cursor is invalid');
   return { sequence, eventId };
@@ -97,6 +97,7 @@ export function serializeAuditEvent(row: AuditEventRow) {
     agent_name: row.agentName,
     initiator_actor_type: row.initiatorActorType,
     initiator_actor_id: row.initiatorActorId,
+    on_behalf_of_user_id: row.onBehalfOfUserId ?? null,
     parent_event_id: row.parentEventId,
     delegation_depth: row.delegationDepth,
     source: row.source,

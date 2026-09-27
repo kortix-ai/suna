@@ -50,7 +50,7 @@ function parseStart(start: number | string | undefined): number | undefined {
   return Number.isFinite(value) ? value : undefined;
 }
 
-// Shared by UnifiedMarkdown and DocMarkdown so the two renderers cannot drift.
+// The ordered-list renderer used by UnifiedMarkdown.
 export function MarkdownOrderedList({ children, start, reversed }: MarkdownOrderedListProps) {
   const startOrdinal = parseStart(start);
   const itemCount = React.Children.toArray(children).filter(React.isValidElement).length;

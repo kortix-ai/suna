@@ -15,6 +15,18 @@ const execFileAsync = promisify(execFile)
 const BAKED_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
 
 /**
+ * Where the managed-skill overlay lives on this box. ONE resolver, because two
+ * modules have to agree on it: the injector here and the config release
+ * verification (boot-config.ts). When verification read "no directory passed"
+ * as "no managed skills", every overlay directory counted as a file someone had
+ * ADDED to the copy, verification failed on every call, and the copy was
+ * silently re-extracted (#7403 preview, 2026-09-18).
+ */
+export function managedSkillsDir(): string {
+  return (process.env.KORTIX_MANAGED_SKILLS_DIR ?? '').trim() || BAKED_MANAGED_SKILLS_DIR
+}
+
+/**
  * Keep the overlay out of the user's `git status`.
  *
  * The managed family is deliberately NOT part of the scaffold commit (see
@@ -151,21 +163,58 @@ async function pathExists(p: string): Promise<boolean> {
  */
 export async function ensureInjectedManagedSkills(
   configDir: string,
-  opts: { bakedDir?: string } = {},
+  opts: {
+    bakedDir?: string
+    /**
+     * `configDir` is a sealed config release. A release built before the box
+     * had an overlay seals a tracked copy of a managed skill read-only (the
+     * old-starter shape tracks `skills/kortix-cli`); give the owner write
+     * access back before overwriting it. Never set for a working tree.
+     */
+    unsealManaged?: boolean
+  } = {},
 ): Promise<void> {
-  const bakedDir = opts.bakedDir ?? BAKED_MANAGED_SKILLS_DIR
+  const bakedDir = opts.bakedDir ?? managedSkillsDir()
   try {
     if (!(await pathExists(bakedDir))) return // nothing baked → leave repo copies as-is
     const skillsDir = join(configDir, 'skills')
+    // A sealed release has `skills/` and its root read-only, so that an agent
+    // writing there fails instead of having its file silently reverted by the
+    // next verification (`seal`, boot-config.ts). This injection is the one
+    // legitimate writer: it opens what it needs and puts the seal straight
+    // back, so the hole does not reopen for everyone else.
+    const resealed: string[] = []
+    if (opts.unsealManaged) {
+      for (const dir of [configDir, skillsDir]) {
+        if (!(await pathExists(dir))) continue
+        await execFileAsync('chmod', ['u+w', dir]).then(
+          () => resealed.push(dir),
+          () => undefined,
+        )
+      }
+    }
     const entries = await readdir(bakedDir, { withFileTypes: true })
     const injectedNames: string[] = []
+    const failed: string[] = []
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      await cp(join(bakedDir, entry.name), join(skillsDir, entry.name), {
-        recursive: true,
-        force: true, // overwrite → the injected body always wins over the repo copy
-      })
-      injectedNames.push(entry.name)
+      const target = join(skillsDir, entry.name)
+      try {
+        if (opts.unsealManaged && (await pathExists(target))) {
+          await execFileAsync('chmod', ['-R', 'u+w', target])
+        }
+        await cp(join(bakedDir, entry.name), target, {
+          recursive: true,
+          force: true, // overwrite → the injected body always wins over the repo copy
+        })
+        injectedNames.push(entry.name)
+      } catch (err) {
+        // One unwritable skill must not stop the rest of the family.
+        failed.push(`${entry.name}: ${String(err)}`)
+      }
+    }
+    if (failed.length > 0) {
+      logger.warn('[boot] managed-skill injection skipped', { configDir, err: failed.join('; ') })
     }
     if (injectedNames.length > 0) {
       logger.info('[boot] injected managed kortix skills', {
@@ -174,6 +223,10 @@ export async function ensureInjectedManagedSkills(
         injected: injectedNames.length,
       })
       await excludeInjectedSkillsFromGit(skillsDir, injectedNames)
+    }
+    // Deepest first: `skills/` before the root that contains it.
+    for (const dir of [...resealed].reverse()) {
+      await execFileAsync('chmod', ['u-w', dir]).catch(() => undefined)
     }
   } catch (err) {
     // Non-fatal: the repo's own copy (if any) stays in place.

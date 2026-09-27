@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from 'bun:test';
 mock.module('../config', () => ({
   config: {
     MICROSOFT_APP_PASSWORD: 'teams-secret',
+    API_KEY_SECRET: 'unit-test-api-key-secret',
     KORTIX_URL: '',
     FRONTEND_URL: 'https://app.kortix.com',
   },

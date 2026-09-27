@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
  * never re-POST, and the ones that must take a dedupe claim.
  *
  * THREE endpoints, not two. `/command` was missing, and that omission is the
- * whole of the duplicate-send bug observed on 2026-08-11 (session 9f6b0d87):
+ * whole of the duplicate-send bug observed on 2026-08-11 (a prod session):
  * one `/webapp` submit produced four identical user messages, 11.0s / 11.8s /
  * 13.7s apart. A `/` slash-command posts to `POST /session/:id/command`, which
  * creates a user message and runs a turn exactly like `/message` does — but it
@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
  * timeout/abort, four attempts, four executions.
  *
  * Keep this as the ONE list. The predicate it replaced was
- * `shouldSyncProjectEnvBeforeProxy`, whose name is about env sync and whose
+ * `isTurnStartEnvSync`, whose name is about env sync and whose
  * path list happened to double as "is this non-idempotent" — so adding an
  * endpoint to one concern silently meant opting into the other, and forgetting
  * to meant opting out of every safety guard at once. Env sync keeps its own
@@ -44,45 +44,55 @@ export function isNonIdempotentSessionWrite(
 }
 
 /**
- * Should this delivery take a dedupe CLAIM, as opposed to merely being
- * protected from retries?
+ * Is this delivery key an IDENTITY the caller supplied, as opposed to a hash of
+ * what it happened to say?
  *
- * Two different questions, and conflating them costs a message either way.
+ * Only an identity-bound key may take a dedupe CLAIM. Two different questions,
+ * and conflating them costs a message either way.
  * `isNonIdempotentSessionWrite` answers "may the proxy re-send this?" — it must
- * be true for all three endpoints, and that is what stopped the 4x duplicate.
+ * be true for all four endpoints, and that is what stopped the 4x duplicate.
  * This answers "may the proxy short-circuit a LATER request that looks the
  * same?", which is a much stronger claim, and it is only safe when the key
- * genuinely identifies one logical submission.
+ * genuinely names ONE logical submission.
  *
- * A prompt body carries client-generated content that differs between two
- * separate submissions, so its content hash is a sound identity. A COMMAND body
- * is `{command, arguments, agent, model}` and nothing else — running
- * `/webapp build a site` twice on purpose produces byte-identical bodies. With
- * a blanket claim the second is answered `200 {"deduplicated": true}` and
- * silently never runs, which is the worst outcome available: no error, no
- * message, no turn. And it fires in exactly the situation the user is already
- * in — re-sending a command that appeared to fail.
+ * `promptDeliveryKey` already ranks exactly that: `idem:` is the caller's own
+ * `Idempotency-Key`, `msgid:` is the body's wire `messageID` — both unique per
+ * submission and stable across its retries — and `hash:` is neither. A `hash:`
+ * key says only "these bytes matched"; a deliberate re-send of the same words
+ * produces it too, and claiming on it answers that re-send `200
+ * {"deduplicated": true}`. No error, no message, no turn — the worst outcome
+ * available, and it fires in exactly the situation the user is already in:
+ * re-sending something that appeared to fail.
  *
- * So a command claims only when the CALLER supplied an `Idempotency-Key` (the
- * CLI mints one per logical prompt). A deliberate re-run then gets through,
- * while a genuine retry under the same key is still short-circuited. The
- * browser, which sends no key, relies on the retry guards instead — and now
- * that `/command` is retried by nobody (proxy, TanStack, and the in-flight ref
- * all refuse), there is no duplicate left for the claim to catch.
+ * TWO measured incidents, one rule. A COMMAND body is `{command, arguments,
+ * agent, model}` and nothing else, so running `/webapp build a site` twice on
+ * purpose is byte-identical; `/summarize` is `{providerID, modelID}` and
+ * repeats the same way. Both were exempted by path. A PROMPT body was assumed
+ * to differ between submissions and was not — `kortix sessions chat` sends
+ * `{parts:[{type:'text',text}]}` with no key and no id (the SDK's
+ * `session(p,s).send()`), so a second "Answer with the marker" inside
+ * `DEDUPE_TTL_MS` hashed to the first one's key and was swallowed. Measured on
+ * a real Platinum box, 2026-09-25: no user row, no assistant row, and a CLI
+ * that died on the `{status:'duplicate'}` body it could not read as a message.
+ *
+ * So the rule is about the KEY, not the path: an endpoint list can be extended
+ * with an endpoint nobody remembers to exempt, while a key that names no
+ * submission is never sound to claim on, whatever route it arrived through.
+ * Callers with an identity keep the claim — the web mints a wire `messageID`
+ * (`submissionWireId`), and every server-side delivery carries
+ * `Idempotency-Key` (`postPrompt`, the inbox drain). Callers without one keep
+ * the protection that actually matters for them: the proxy never re-sends a
+ * non-idempotent write, so no duplicate of ITS making exists to catch.
  */
-export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boolean): boolean {
-  // `/summarize` shares the command trap: its whole body is `{providerID,
-  // modelID}`, byte-identical between two deliberate runs, so a keyless claim
-  // would answer a user's retry `200 {"deduplicated":true}` and never run it.
-  const isByteIdenticalBody = /^\/session\/[^/]+\/(?:command|summarize)(?:$|[/?#])/.test(path);
-  return isByteIdenticalBody ? hasIdempotencyKey : true;
+export function deliveryKeyIdentifiesOneSubmission(key: string): boolean {
+  return key.startsWith('idem:') || key.startsWith('msgid:');
 }
 
 // T13: 10 minutes, not 60s. A wake from auto-stop routinely takes
 // longer than 60s on its own (see BOOT_BACKOFF_MS in the SDK's messages.ts,
 // which windows a client-side retry out to ~30s before this cache would even
 // see the repeat), and the API's own queued `continue_session` retry
-// (session-lifecycle/engine.ts, deliverWithRetry) can land a second attempt
+// (session-lifecycle/continue-session.ts, deliverWithRetry) can land a second attempt
 // well past the old TTL once the scheduler's drain tick is added on top. The
 // old 60s TTL let exactly that combination through as an un-deduped double
 // delivery. 10 minutes is not an arbitrary round number: it matches this
@@ -101,7 +111,7 @@ export function shouldClaimPromptDelivery(path: string, hasIdempotencyKey: boole
 // `DEDUPE_TTL_MS >= UNDELIVERED_PROMPT_STARVATION_MS`; deriving one from the
 // other makes that an invariant instead of a comment two files have to stay
 // in sync by hand. `session-lifecycle` already imports from `sandbox-proxy`
-// (engine.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
+// (session-lifecycle/runtime-client.ts -> `../../sandbox-proxy/routes/preview`), so this follows the
 // SAME existing module-boundary direction rather than opening a new one.
 export const DEDUPE_TTL_MS = 10 * 60_000;
 const MAX_ENTRIES = 2_000;
@@ -188,7 +198,7 @@ export function promptDeliveryKey(opts: {
 }): string {
   // Scoped by sandbox + session like the two precedences below. A create
   // retry re-provisions onto a DIFFERENT session/sandbox while reusing the
-  // same command-scoped Idempotency-Key (session-lifecycle/engine.ts); an
+  // same command-scoped Idempotency-Key (session-lifecycle/create-session.ts); an
   // unscoped key let the first attempt's claim swallow the retry's delivery
   // to the new box — which genuinely never saw the prompt — as a "duplicate".
   const provided = opts.idempotencyKey?.trim();

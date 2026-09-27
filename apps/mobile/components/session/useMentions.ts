@@ -11,11 +11,16 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
 import { searchFiles, rankFile } from '@/lib/utils/file-search';
+import { appendFileMention } from '@/lib/session/session-files';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface MentionItem {
-  kind: 'file' | 'agent' | 'session';
+  // 'skill' is produced by `useSkillMentions.ts` (the composer's separate
+  // `#` trigger), not by this hook — the kind is widened here so
+  // `MentionSuggestions.tsx` can render both @-mention and #-skill rows
+  // through one component. `@` itself never produces a 'skill' item.
+  kind: 'file' | 'agent' | 'session' | 'skill';
   label: string;
   value?: string;       // session ID for sessions, file path for files
   description?: string;
@@ -62,7 +67,7 @@ export function useMentions({
   const [mentions, setMentions] = useState<TrackedMention[]>([]);
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
-  const fileSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fileSearchSeq = useRef(0);
   const fileResultsCache = useRef<Set<string>>(new Set());
 
@@ -231,7 +236,10 @@ export function useMentions({
       setMentions((prev) => [
         ...prev,
         {
-          kind: item.kind,
+          // This hook's own `mentionItems` never produces a 'skill' item —
+          // that kind only exists on `MentionItem` so `MentionSuggestions`
+          // can render `useSkillMentions.ts`'s rows too. Safe to narrow here.
+          kind: item.kind as TrackedMention['kind'],
           label: item.label,
           ...(item.kind === 'session' ? { value: item.value } : {}),
         },
@@ -245,6 +253,18 @@ export function useMentions({
     },
     [mentionQuery],
   );
+
+  // ── Add a file mention from outside the popover (the Recent files sheet) ──
+
+  const addFileMention = useCallback((label: string, text: string): string => {
+    setMentions((prev) =>
+      prev.some((m) => m.kind === 'file' && m.label === label)
+        ? prev
+        : [...prev, { kind: 'file', label }],
+    );
+    setMentionQuery(null);
+    return appendFileMention(text, label);
+  }, []);
 
   // ── Navigation ──────────────────────────────────────────────────────────
 
@@ -280,6 +300,7 @@ export function useMentions({
     fileSearchLoading,
     handleTextChange,
     selectMention,
+    addFileMention,
     moveUp,
     moveDown,
     dismiss,

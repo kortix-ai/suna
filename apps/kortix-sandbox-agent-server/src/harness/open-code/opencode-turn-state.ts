@@ -1,8 +1,5 @@
-import { readFileSync } from 'node:fs'
-
 import { logger } from '../../logger'
-import { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
-export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
+import { readOpenCodeSessionPin } from './runtime-state'
 
 /**
  * Is opencode mid-turn, and did a turn get orphaned?
@@ -26,20 +23,10 @@ export { OPENCODE_SESSION_PIN_PATH } from './runtime-state'
  * old `msgs[msgs.length - 1]` read that as "no turn running, prompt dropped".
  */
 /**
- * The canonical opencode root, or null when nothing is pinned yet.
- *
- * The value goes into a URL, so it is shape-checked rather than trusted: the pin
- * file is daemon-written and 0600, but "a file decides part of an outbound
- * request" is worth closing off regardless of who writes it today. opencode ids
- * are `ses_` + base-ish chars; anything else is treated as no pin at all.
- */
-const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
-
-/**
  * How many of a root's NEWEST messages a turn probe reads.
  *
  * Every probe here used to list the whole root. A root that has run for hours
- * is not a small list: on 2026-08-25 one Essentia session's list was 276.7 MB
+ * is not a small list: on 2026-08-25 one SampleCo session's list was 276.7 MB
  * (base64 image parts inline in every assistant message), and parsing it did
  * not fit the probe's budget. The daemon then answered `turn_in_flight: null`
  * — "could not tell" — on every reaper visit for 2.5 hours after the turn had
@@ -56,6 +43,17 @@ const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
 export const TURN_PROBE_WINDOW = 12
 /** Twenty newest messages can still be ~26 MB on an image-heavy root. */
 export const TURN_PROBE_TIMEOUT_MS = 20_000
+/**
+ * The budget for the orphan read a verified reload does before the kill.
+ *
+ * Much shorter than `TURN_PROBE_TIMEOUT_MS`, and deliberately: the reload has
+ * already promoted the replacement, so this read is the only thing standing
+ * between a wedged old process and its SIGTERM. Two OpenCode processes on a
+ * 4 GB box is how the September `/tmp`-tmpfs OOM started. A read that does not
+ * answer in three seconds costs one un-repaired row; twenty seconds of an extra
+ * process costs the box.
+ */
+export const ORPHAN_READ_TIMEOUT_MS = 3_000
 
 function recentMessagesUrl(baseUrl: string, workspace: string, sessionId: string): string {
   return (
@@ -95,19 +93,6 @@ async function opencodeMessageExists(
   }
 }
 
-export function readPinnedSessionId(): string | null {
-  try {
-    const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
-    if (!OPENCODE_SESSION_ID.test(id)) {
-      if (id.length > 0) logger.warn('[turn-state] ignoring a malformed pinned session id')
-      return null
-    }
-    return id
-  } catch {
-    return null
-  }
-}
-
 export interface RootInspection {
   /** The root has messages — a prompt was delivered. */
   hasMessages: boolean
@@ -127,6 +112,16 @@ export interface RootInspection {
   /** An incomplete assistant turn still owns runtime. */
   turnInFlight: boolean
   /**
+   * The id of the newest assistant message that has no completion time, or
+   * `null`.
+   *
+   * It is the row a client is streaming right now. A process that is killed
+   * emits neither `session.idle` nor `session.error`, so that row stays open
+   * for ever and the API has nothing to settle it by — unless the id is read
+   * from the OUTGOING process, before it dies, and reported.
+   */
+  openAssistantMessageId: string | null
+  /**
    * False when the read failed — opencode unreachable, non-2xx, unparseable.
    *
    * Without this the two "no turn here" answers are indistinguishable: a session
@@ -141,12 +136,14 @@ export async function inspectOpencodeRoot(
   baseUrl: string,
   workspace: string,
   sessionId: string,
+  timeoutMs: number = TURN_PROBE_TIMEOUT_MS,
 ): Promise<RootInspection> {
   const unknown = {
     hasMessages: false,
     lastTurnIncomplete: false,
     orphanedPrompt: false,
     turnInFlight: false,
+    openAssistantMessageId: null,
     known: false,
   }
   try {
@@ -156,7 +153,7 @@ export async function inspectOpencodeRoot(
     // has an answer — lives at the tail. A window with assistant messages and
     // no user message means the prompt is older than the window and answered.
     const res = await fetch(recentMessagesUrl(baseUrl, workspace, sessionId), {
-      signal: AbortSignal.timeout(TURN_PROBE_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!res.ok) return unknown
     const msgs = (await res.json()) as Array<{
@@ -174,6 +171,7 @@ export async function inspectOpencodeRoot(
         lastTurnIncomplete: false,
         orphanedPrompt: false,
         turnInFlight: false,
+        openAssistantMessageId: null,
         known: true,
       }
 
@@ -216,11 +214,35 @@ export async function inspectOpencodeRoot(
       // `orphanedPrompt`. An open assistant message IS, even when a newer user
       // row sits after it.
       turnInFlight: lastTurnIncomplete,
+      openAssistantMessageId: lastTurnIncomplete && typeof newest?.id === 'string' ? newest.id : null,
       known: true,
     }
   } catch {
     return unknown
   }
+}
+
+/**
+ * The open assistant message on a root, read from the process that owns it.
+ *
+ * Called on the OUTGOING OpenCode immediately before a verified reload kills
+ * it: afterwards nothing can answer for that row. `null` means "no open turn,
+ * or could not tell" — both are "report nothing", because a repair must never
+ * be invented for a turn that finished normally.
+ */
+export async function openAssistantMessageIdOnRoot(
+  baseUrl: string,
+  workspace: string,
+  rootSessionId: string | null = readOpenCodeSessionPin(),
+): Promise<string | null> {
+  if (!rootSessionId) return null
+  const inspection = await inspectOpencodeRoot(
+    baseUrl,
+    workspace,
+    rootSessionId,
+    ORPHAN_READ_TIMEOUT_MS,
+  ).catch(() => null)
+  return inspection?.known ? inspection.openAssistantMessageId : null
 }
 
 /**
@@ -237,11 +259,8 @@ export async function inspectOpencodeRoot(
 export async function opencodeTurnInFlight(
   baseUrl: string,
   workspace: string,
-  /** The root to ask about. Defaults to the pinned one; passed explicitly by
-   *  tests, which have no pin file. */
-  rootSessionId: string | null = readPinnedSessionId(),
 ): Promise<boolean | null> {
-  const sessionId = rootSessionId
+  const sessionId = readOpenCodeSessionPin()
   if (!sessionId) return false
   try {
     // ASK, don't infer. `/session/status` is OpenCode's own answer to this
@@ -410,8 +429,8 @@ export async function observeOpencodeDelivery(
     // SAME loop still streams the older turn's steps; and between two steps of
     // one turn the latest assistant message reads completed while tools run
     // and the next step's message does not exist yet. Both shapes read
-    // "terminal" here and were: live incident 2026-08-20 (Essentia session
-    // d1b74954) — the reaper destroyed a streaming turn's authority at
+    // "terminal" here and were: live incident 2026-08-20 (a customer
+    // session) — the reaper destroyed a streaming turn's authority at
     // 12:48:51Z on the newer-user rule; its step completed at 12:48:54Z. So no
     // terminal verdict leaves this function while the root itself reports
     // busy, and an unreadable status is unknown, never terminal.

@@ -44,8 +44,25 @@ export function providerConnectedInSecrets(
   return connectedGatewayProviderIdsFromSecretNames(names).has(expectedProviderId);
 }
 
-function invalidateProviderQueries(queryClient: QueryClient, projectId: string): void {
+/**
+ * `supersede` decides what happens to a read that is already running.
+ *
+ * - `true` (the pass right after a write): cancel it and read again. Only a
+ *   read in flight at this moment can have started before the write, so only
+ *   this pass may discard one.
+ * - `false` (every follow-up pass): keep it and share it. TanStack's default
+ *   `cancelRefetch: true` made each follow-up pass discard the read the
+ *   previous pass started. When `GET /secrets` took longer than the gap to the
+ *   next pass, the correct post-write answer was dropped again and again, and
+ *   a disconnected credential stayed on screen for seconds.
+ */
+function invalidateProviderQueries(
+  queryClient: QueryClient,
+  projectId: string,
+  supersede: boolean,
+): void {
   const projectProviderKey = ['project-providers', projectId];
+  const fetchOptions = supersede ? undefined : { cancelRefetch: false };
   clearProjectProviderCache(projectId);
   // FIRST, and never optional: the gateway provider list is a PROJECTION of
   // `/model-picker`, which lives under its own key at the `config` tier (60s)
@@ -57,16 +74,19 @@ function invalidateProviderQueries(queryClient: QueryClient, projectId: string):
   // an actual request. `refetchType: 'all'` so a picker with no mounted
   // observer is refreshed too — the projection's own `fetchQuery` then dedupes
   // onto this in-flight read rather than adding a second one.
-  void queryClient.invalidateQueries({
-    queryKey: qk.project.modelPicker(projectId),
-    refetchType: 'all',
-  });
-  void queryClient.invalidateQueries({ queryKey: projectProviderKey });
-  void queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-  void queryClient.refetchQueries({ queryKey: qk.project.secrets(projectId), type: 'all' });
-  void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' });
-  void queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
-  void queryClient.invalidateQueries({ queryKey: configKeys.all });
+  void queryClient.invalidateQueries(
+    { queryKey: qk.project.modelPicker(projectId), refetchType: 'all' },
+    fetchOptions,
+  );
+  void queryClient.invalidateQueries({ queryKey: projectProviderKey }, fetchOptions);
+  void queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) }, fetchOptions);
+  void queryClient.refetchQueries(
+    { queryKey: qk.project.secrets(projectId), type: 'all' },
+    fetchOptions,
+  );
+  void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' }, fetchOptions);
+  void queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() }, fetchOptions);
+  void queryClient.invalidateQueries({ queryKey: configKeys.all }, fetchOptions);
 }
 
 export function refreshProjectProviderState(
@@ -78,7 +98,7 @@ export function refreshProjectProviderState(
   if (opts.removeProjectScopedCache) {
     queryClient.removeQueries({ queryKey: projectProviderKey });
   }
-  invalidateProviderQueries(queryClient, projectId);
+  invalidateProviderQueries(queryClient, projectId, true);
 
   if (typeof window === 'undefined') return;
 
@@ -93,7 +113,7 @@ export function refreshProjectProviderState(
   const expected = opts.expectProviderId;
   if (!expected) {
     for (const delay of [500, 1500, 3000, 6000]) {
-      window.setTimeout(() => invalidateProviderQueries(queryClient, projectId), delay);
+      window.setTimeout(() => invalidateProviderQueries(queryClient, projectId, false), delay);
     }
     return;
   }
@@ -120,7 +140,7 @@ export function refreshProjectProviderState(
       // transient fetch failure — keep polling until the deadline
     }
     if (connected) {
-      invalidateProviderQueries(queryClient, projectId);
+      invalidateProviderQueries(queryClient, projectId, false);
       return;
     }
     if (Date.now() - startedAt >= CONVERGE_DEADLINE_MS) return;

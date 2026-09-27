@@ -24,7 +24,7 @@ export interface HoverPrefetchLinkProps extends Omit<NextLinkProps, 'prefetch'> 
  * the page actually being opened and 19-20 more for every *other* session row
  * the sidebar rendered, because `<Link>` prefetches everything in the viewport.
  * Each of those is a dynamic server render of a full session page (~24KB of
- * flight payload, median 480ms server time on the Essentia deployment, 423 hits
+ * flight payload, median 480ms server time on the SampleCo deployment, 423 hits
  * across a 20-open corpus) for a route the user will almost never open.
  *
  * Intent-gating keeps the click fast — a pointer reaches a sidebar row 100-300ms

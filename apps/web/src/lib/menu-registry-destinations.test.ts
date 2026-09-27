@@ -76,7 +76,8 @@ function collectRoutes(dir: string, segments: string[] = [], out: string[][] = [
   return out;
 }
 
-const APP_DIR = join(import.meta.dir, '..', 'app');
+// Every page lives under app/[locale]; its URL is the path below that segment.
+const APP_DIR = join(import.meta.dir, '..', 'app', '[locale]');
 const ROUTES = collectRoutes(APP_DIR);
 
 /**

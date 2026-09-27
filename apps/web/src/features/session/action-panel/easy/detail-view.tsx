@@ -30,7 +30,6 @@ import type { ToolPart } from '@/ui';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
-  SidebarSimpleIcon as PanelLeft,
   XIcon as X,
 } from '@phosphor-icons/react';
 import {
@@ -51,6 +50,7 @@ import {
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { PanelWidthButton } from './viewer-actions';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
 export function CloseButton({ onClose }: { onClose: () => void }) {

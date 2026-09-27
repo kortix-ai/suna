@@ -28,10 +28,10 @@ agents:
   kortix:
     connectors: all
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
   scout:
-    kortix_cli: [project.cr.open]
+    kortix_permissions: [project.cr.open]
     connectors: [github]
 triggers:
   - slug: nightly
@@ -81,7 +81,7 @@ describe('YAML v2 manifest — parse + extract', () => {
     const names = specs.map((s) => s.name).sort();
     expect(names).toEqual(['kortix', 'scout']);
     const scout = specs.find((s) => s.name === 'scout')!;
-    expect(scout.kortixCli).toEqual(['project.cr.open']);
+    expect(scout.permissions).toEqual(['project.cr.open']);
     expect(scout.connectors).toEqual(['github']);
     const kortix = specs.find((s) => s.name === 'kortix')!;
     expect(kortix.connectors).toBe('all');
@@ -178,7 +178,7 @@ agents:
   kortix:
     connectors: all
     secrets: all
-    kortix_cli: all
+    kortix_permissions: all
     skills: all
 triggers:
   - slug: loop

@@ -21,7 +21,7 @@ import { db } from '../../shared/db';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseMonitorIngestBody } from '../lib/monitor-events';
 import { ingestMonitorEvents, loadMonitorBoxForToken } from '../lib/monitor-ingest';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 const MonitorIngestResultSchema = z.object({
   accepted: z.number(),
@@ -72,7 +72,7 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, project.metadata, 'monitors');
     if (gate) return gate;
 
-    const parsed = parseMonitorIngestBody(await readBody(c));
+    const parsed = parseMonitorIngestBody(await readJsonObject(c));
     if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 
     // Events from a superseded boot must not fire: `seq` restarts per epoch, so

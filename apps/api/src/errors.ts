@@ -16,6 +16,8 @@ export class InsufficientCreditsError extends BillingError {
   constructor(
     public readonly balance: number,
     public readonly required: number,
+    /** Why the wallet refused, e.g. `Insufficient credits` or `No credit account found`. */
+    public readonly reason: string = 'Insufficient credits',
   ) {
     super(`Insufficient credits. Balance: $${balance.toFixed(4)}, required: $${required.toFixed(4)}`, 402);
     this.name = 'InsufficientCreditsError';

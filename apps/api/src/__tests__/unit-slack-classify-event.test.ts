@@ -15,9 +15,14 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // ─── DB mock: FIFO of query results (only threadIsOwned touches the DB) ───────
 let dbResults: unknown[][] = [];
+let lastWhere: unknown = null;
 function makeChain(): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit']) chain[m] = () => chain;
+  for (const m of ['from', 'limit']) chain[m] = () => chain;
+  chain.where = (cond: unknown) => {
+    lastWhere = cond;
+    return chain;
+  };
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
@@ -77,6 +82,8 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 const { classifyEvent } = await import('../channels/slack/dispatch');
+const { PgDialect } = await import('drizzle-orm/pg-core');
+type SQL = import('drizzle-orm').SQL;
 
 const BOT = 'B1';
 const ev = (e: Record<string, unknown>) => ({ type: 'message', ...e }) as any;
@@ -84,7 +91,11 @@ const ev = (e: Record<string, unknown>) => ({ type: 'message', ...e }) as any;
 afterAll(() => mock.restore());
 beforeEach(() => {
   dbResults = [];
+  lastWhere = null;
 });
+
+// The bound parameters of the thread-ownership WHERE clause, as PostgreSQL gets them.
+const whereParams = (): unknown[] => new PgDialect().sqlToQuery(lastWhere as SQL).params;
 
 describe('classifyEvent — a message that @-mentions the bot is a mention', () => {
   test('THE FIX: message with the bot mention inside a thread → mention (was wrongly ignored)', async () => {
@@ -184,6 +195,25 @@ describe('classifyEvent — non-mention routing is unchanged', () => {
     dbResults = [[]]; // threadIsOwned → not found
     const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: 'just chatting' }), BOT);
     expect(cls).toBe('ignore');
+  });
+
+  test('PROD 2026-09-22: with a projectId, thread ownership is scoped to that project', async () => {
+    dbResults = [[]]; // the thread belongs to ANOTHER project's session → no row
+    const cls = await classifyEvent(
+      'T1',
+      ev({ thread_ts: '90.0', channel_type: 'channel', text: 'do u have access now' }),
+      BOT,
+      'proj-incident-reporter',
+    );
+    expect(cls).toBe('ignore');
+    expect(whereParams()).toEqual(['slack', 'T1', '90.0', 'proj-incident-reporter']);
+  });
+
+  test('without a projectId, thread ownership stays workspace-wide (shared OAuth app)', async () => {
+    dbResults = [[{ id: 'thread-row' }]];
+    const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: 'make it concise' }), BOT);
+    expect(cls).toBe('follow_up');
+    expect(whereParams()).toEqual(['slack', 'T1', '90.0']);
   });
 
   test('channel-root message without a mention → ignore', async () => {

@@ -24,12 +24,22 @@ interface AgentContextType {
 
 const AgentContext = React.createContext<AgentContextType | undefined>(undefined);
 
+/**
+ * The API has no account-level `GET /v1/agents` list route any more (agents are
+ * project-scoped: `/v1/projects/:projectId/agents/:agentName/*`). Every request
+ * would fail and retry, so the list query stays off. The provider keeps its
+ * shape for the legacy consumers; `refetch()` ignores `enabled`, so every call
+ * site checks this flag too.
+ */
+const AGENTS_LIST_AVAILABLE = false;
+
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuthContext();
 
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | undefined>(undefined);
   const [selectedModelId, setSelectedModelId] = React.useState<string | undefined>(undefined);
-  const [hasInitialized, setHasInitialized] = React.useState(false);
+  // Nothing loads, so the provider is initialised from the first render.
+  const [hasInitialized, setHasInitialized] = React.useState(!AGENTS_LIST_AVAILABLE);
 
   const prevSessionRef = React.useRef(session);
 
@@ -40,8 +50,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       sort_order: 'asc'
     },
     {
-      // Only fetch if user is authenticated
-      enabled: !!session,
+      enabled: AGENTS_LIST_AVAILABLE && !!session,
       // Don't refetch on window focus - avoid unnecessary requests
       refetchOnWindowFocus: false,
       // Don't refetch on reconnect - we'll handle this manually
@@ -66,7 +75,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     const currentUserId = session?.user?.id;
 
     // Only refetch when user actually changes (login/logout/user switch)
-    if ((!hadSession && hasSession) || (hadSession && hasSession && prevUserId !== currentUserId)) {
+    if (
+      AGENTS_LIST_AVAILABLE &&
+      ((!hadSession && hasSession) || (hadSession && hasSession && prevUserId !== currentUserId))
+    ) {
       log.log('🔄 Session changed, refetching agents...');
       setHasInitialized(false); // Reset initialization when session changes
       refetch();
@@ -155,6 +167,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loadAgents = React.useCallback(async () => {
+    if (!AGENTS_LIST_AVAILABLE) return;
     try {
       await refetch();
     } catch (error) {
@@ -182,7 +195,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       log.log('🧹 Clearing agent selection...');
       setSelectedAgentId(undefined);
       setSelectedModelId(undefined);
-      setHasInitialized(false);
+      setHasInitialized(!AGENTS_LIST_AVAILABLE);
       await Promise.all([
         AsyncStorage.removeItem(AGENT_STORAGE_KEY),
         AsyncStorage.removeItem(MODEL_STORAGE_KEY),

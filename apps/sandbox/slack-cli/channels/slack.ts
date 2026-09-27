@@ -5,6 +5,7 @@ import {
   getEnv,
   handleError,
   kortixConnectorCall,
+  kortixDownload,
   kortixGet,
   kortixPost,
   kortixProjectId,
@@ -375,35 +376,12 @@ async function fileInfo(opts: { fileId: string }) {
 }
 
 async function download(opts: { url: string; out: string }) {
-  // Fetch via the server-side proxy — the bot token stays on the server. Binary,
-  // so a raw fetch (not the JSON kortix client), authed with the session token.
-  const apiUrl = getEnv('KORTIX_API_URL');
-  const tok = getEnv('KORTIX_TOKEN');
+  // Fetch via the server-side proxy — the bot token stays on the server.
   const projectId = kortixProjectId();
-  if (!apiUrl || !tok || !projectId) {
-    throw new CliError(
-      'KORTIX_API_URL / KORTIX_TOKEN / KORTIX_PROJECT_ID not set — cannot download.',
-    );
-  }
-  const proxyUrl = new URL(
-    `/v1/projects/${projectId}/channels/slack/file?url=${encodeURIComponent(opts.url)}`,
-    apiUrl,
-  ).href;
-  const res = await fetch(proxyUrl, {
-    headers: { Authorization: `Bearer ${tok}` },
-    signal: AbortSignal.timeout(60_000),
+  if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot download.');
+  const buf = await kortixDownload(`/projects/${projectId}/channels/slack/file`, {
+    url: opts.url,
   });
-  if (!res.ok) {
-    let msg = `Download failed: HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as { error?: string };
-      if (j?.error) msg = j.error;
-    } catch {
-      /* keep */
-    }
-    throw new CliError(msg);
-  }
-  const buf = await res.arrayBuffer();
   const dir = opts.out.split('/').slice(0, -1).join('/');
   if (dir) mkdirSync(dir, { recursive: true });
   writeFileSync(opts.out, Buffer.from(buf));

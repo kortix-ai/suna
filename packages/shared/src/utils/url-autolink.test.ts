@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { autoLinkUrls } from './url-autolink';
+import { autoLinkUrls, openMarkdownLinkAtEnd } from './url-autolink';
 
 describe('autoLinkUrls', () => {
   test('returns empty string unchanged', () => {
@@ -116,6 +116,66 @@ describe('autoLinkUrls', () => {
     expect(autoLinkUrls('math $x = example.com$ end')).toBe('math $x = example.com$ end');
   });
 
+  // `[1]: https://…` defines the target of a reference-style link, `[text][1]`.
+  // Linkifying its URL turned the definition into `[1]: [https://…](https://…)`,
+  // a destination beginning `[https`: sanitize stripped it and every reference
+  // rendered as `text [blocked]`.
+  describe('link reference definitions', () => {
+    test('leave the definition line as written', () => {
+      const input = [
+        'Sources: [the docs][1] and [the changelog][two].',
+        '',
+        '[1]: https://example.com/docs',
+        '[two]: https://example.com/changelog "Changelog"',
+        '   [x]: https://example.com/x',
+      ].join('\n');
+      expect(autoLinkUrls(input)).toBe(input);
+    });
+
+    test('bare urls elsewhere in the text still link', () => {
+      expect(autoLinkUrls('See example.com.\n\n[1]: https://example.com/docs')).toBe(
+        'See [example.com](https://example.com).\n\n[1]: https://example.com/docs',
+      );
+    });
+  });
+
+  // While a turn streams, the text can end inside a link. Linkifying the
+  // half-written URL there wrapped it in a second link, so the reader saw
+  // `[label]([https://…](https://…)` — a raw `[label](` followed by a link to a
+  // truncated URL — until the closing paren arrived. The open link is left as
+  // written; Streamdown's remend closes it for display.
+  describe('a link still being written at the end of the text', () => {
+    test('leaves a half-written destination alone', () => {
+      const input = 'Here it is:\n\n[Connect Outlook](https://dev.example.com/connect/ksl_ab';
+      expect(autoLinkUrls(input)).toBe(input);
+    });
+
+    test('leaves a half-written label alone when the label is a url', () => {
+      expect(autoLinkUrls('see [https://example.com/pa')).toBe('see [https://example.com/pa');
+      expect(autoLinkUrls('see [https://example.com/path](https://example.com/pa')).toBe(
+        'see [https://example.com/path](https://example.com/pa',
+      );
+    });
+
+    test('still linkifies text before the open link', () => {
+      expect(autoLinkUrls('try example.com or [the docs](https://docs.example.com/gu')).toBe(
+        'try [example.com](https://example.com) or [the docs](https://docs.example.com/gu',
+      );
+    });
+
+    test('an unclosed bracket on an earlier line protects nothing after it', () => {
+      expect(autoLinkUrls('arr[0\nsee example.com')).toBe(
+        'arr[0\nsee [example.com](https://example.com)',
+      );
+    });
+
+    test('a finished link at the end is not an open one', () => {
+      expect(autoLinkUrls('[docs](https://docs.example.com) and example.com')).toBe(
+        '[docs](https://docs.example.com) and [example.com](https://example.com)',
+      );
+    });
+  });
+
   test('adversarial (ReDoS-shaped) input stays fast and correct', () => {
     // Before the quantifiers were bounded, these repetitive strings drove the
     // email / markdown-link / angle-link regexes into polynomial backtracking
@@ -131,6 +191,10 @@ describe('autoLinkUrls', () => {
       '['.repeat(50_000), // markdown-link opens that never reach ']('
       '[]('.repeat(15_000), // link prefixes that never close
       '<http://'.repeat(15_000), // angle links that never close '>'
+      `${'['.repeat(50_000)}\nx`, // unclosed labels, then a later line
+      `${'[a]('.repeat(12_000)}\n`, // destinations that never close, then a newline
+      `[${'a '.repeat(25_000)}`, // one label left open to the very end
+      `[${'a'.repeat(50_000)}\n`.repeat(2), // definition-shaped lines that never reach ']:'
     ];
     for (const input of cases) {
       const start = Date.now();
@@ -138,5 +202,35 @@ describe('autoLinkUrls', () => {
       expect(typeof out).toBe('string');
       expect(Date.now() - start).toBeLessThan(10_000);
     }
+  });
+});
+
+describe('openMarkdownLinkAtEnd', () => {
+  test('reports a destination that is still arriving', () => {
+    expect(openMarkdownLinkAtEnd('Here:\n[Connect Outlook](https://host/connect/ks')).toEqual({
+      start: 6,
+      label: 'Connect Outlook',
+      destination: 'https://host/connect/ks',
+    });
+  });
+
+  test('reports a label that is still arriving, with no destination yet', () => {
+    expect(openMarkdownLinkAtEnd('see [Connect Out')).toEqual({
+      start: 4,
+      label: 'Connect Out',
+      destination: null,
+    });
+  });
+
+  test('an empty destination is still an open one', () => {
+    expect(openMarkdownLinkAtEnd('[docs](')).toEqual({ start: 0, label: 'docs', destination: '' });
+  });
+
+  test('finished links, earlier lines, and plain text are not open', () => {
+    expect(openMarkdownLinkAtEnd('[docs](https://example.com)')).toBeNull();
+    expect(openMarkdownLinkAtEnd('[docs](https://example.com) and more')).toBeNull();
+    expect(openMarkdownLinkAtEnd('arr[0\nnext line')).toBeNull();
+    expect(openMarkdownLinkAtEnd('no brackets at all')).toBeNull();
+    expect(openMarkdownLinkAtEnd('')).toBeNull();
   });
 });

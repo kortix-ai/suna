@@ -63,7 +63,7 @@ export const DB_BUSY_TIMEOUT_MS = 2_000
  *
  * Duplicated, not imported: this daemon ships inside the sandbox image and
  * cannot import from the monorepo (same constraint `proxy.ts` documents for
- * `isBlockingTurnRequest`). `opencode-db.versions.test.ts` asserts the pin in
+ * `isBlockingTurnRequest`). `opencode-db.test.ts` asserts the pin in
  * `packages/shared/src/runtime-versions.json` is still covered here, so a bump
  * that outruns this list fails a test instead of a production read.
  */
@@ -104,14 +104,6 @@ export interface PartRow {
   session_id: string
   time_created: number
   time_updated: number
-  data: string
-}
-
-export interface EventRow {
-  id: string
-  aggregate_id: string
-  seq: number
-  type: string
   data: string
 }
 
@@ -178,11 +170,6 @@ export class OpencodeDb {
   private probed: OpencodeDbProbe | null = null
 
   constructor(private readonly path: string) {}
-
-  /** The file this reader is bound to. */
-  get dbPath(): string {
-    return this.path
-  }
 
   private connection(): Database {
     if (this.db) return this.db
@@ -275,19 +262,6 @@ export class OpencodeDb {
     )
   }
 
-  session(id: string): SessionRow | null {
-    const row = this.retry('session', (db) =>
-      db
-        .query<SessionRow, [string]>(
-          `SELECT id, title, directory, parent_id, time_created, time_updated,
-                  time_compacting, time_archived, revert, agent, model
-             FROM session WHERE id = ?`,
-        )
-        .get(id),
-    )
-    return row ?? null
-  }
-
   /**
    * The user message of the turn that is RUNNING on this session, or `null` when
    * none is, or the DB is unreadable.
@@ -350,21 +324,6 @@ export class OpencodeDb {
         .get(aggregateId),
     )
     return row?.seq ?? null
-  }
-
-  /** Durable events for one aggregate above `seq`, ascending. */
-  eventsAfter(aggregateId: string, seq: number, limit = 500): EventRow[] | null {
-    return this.retry('eventsAfter', (db) =>
-      db
-        .query<EventRow, [string, number, number]>(
-          `SELECT id, aggregate_id, seq, type, data
-             FROM event
-            WHERE aggregate_id = ? AND seq > ?
-            ORDER BY seq ASC
-            LIMIT ?`,
-        )
-        .all(aggregateId, seq, limit),
-    )
   }
 
   /**
@@ -513,14 +472,5 @@ export class OpencodeDb {
       })
       return read()
     })
-  }
-
-  close(): void {
-    try {
-      this.db?.close()
-    } catch {
-      // Nothing to do — the process is going away or the handle is already shut.
-    }
-    this.db = null
   }
 }

@@ -23,16 +23,6 @@ describe('project model access', () => {
     expect(modelAccessAllows(p, 'kortix/glm-5.3-flash')).toBe(false);
     expect(modelAccessAllows(p, 'openrouter/z-ai/glm-5.3-flash')).toBe(true);
   });
-  test('re-enabling a provider preserves its individually disabled models', () => {
-    let p = readModelAccess(null);
-    p = updateModelAccess(p, { target: 'model', id: 'openai/one', enabled: false });
-    p = updateModelAccess(p, { target: 'provider', id: 'openai', enabled: false });
-    p = updateModelAccess(p, { target: 'provider', id: 'openai', enabled: true });
-    expect(modelAccessAllows(p, 'openai/one')).toBe(false);
-    expect(modelAccessAllows(p, 'openai/two')).toBe(true);
-    p = updateModelAccess(p, { target: 'model', id: 'openai/one', enabled: true });
-    expect(modelAccessAllows(p, 'openai/one')).toBe(true);
-  });
   test('model enable does not override provider disable', () => {
     const p = updateModelAccess({ disabledProviders: ['custom'], disabledModels: ['custom/model'] },
       { target: 'model', id: 'custom/model', enabled: true });

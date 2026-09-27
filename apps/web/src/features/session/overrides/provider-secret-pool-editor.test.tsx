@@ -1,18 +1,26 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
+import { qk } from '@kortix/sdk/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import messages from '../../../../translations/en.json';
 import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provider-secret-pool-editor';
 
-function render(input: { resources?: unknown[]; failed?: boolean; selection?: Record<string, string[]>; canEdit?: boolean; saving?: boolean } = {}) {
+function render(input: {
+  resources?: unknown[]; failed?: boolean; selection?: Record<string, string[]>; canEdit?: boolean; saving?: boolean;
+  session?: { visibility: 'private' | 'project' | 'restricted'; created_by: string };
+  /** Seed no configured pool, so the provider shows its default. */
+  providerId?: string;
+} = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  if (input.session) client.setQueryData(qk.project.session('project', 'session'), { session_id: 'session', ...input.session });
   client.setQueryData(['provider-pool-project', 'project'], { project: { account_id: 'account' } });
   client.setQueryData(['account-secret-resources', 'account', 'project'], { secrets: input.resources ?? [] });
   const listKey = ['session-provider-secret-pools', 'project', 'session'];
   const singleKey = ['session-provider-secret-pool', 'project', 'session', 'anthropic'];
   const pool = { provider_id: 'anthropic', configured: true, secret_ids: [] };
-  client.setQueryData(listKey, { pools: [pool], can_edit: input.canEdit ?? true });
+  // The list holds configured pools only: a provider with no selection has no entry.
+  client.setQueryData(listKey, { pools: input.providerId ? [] : [pool], can_edit: input.canEdit ?? true });
   client.setQueryData(singleKey, pool);
   if (input.failed) {
     for (const key of [listKey, singleKey]) {
@@ -74,4 +82,32 @@ test('saving prevents navigation away from the pending selection', () => {
   const html = render({ resources: [key('Primary')], saving: true });
   expect(html).not.toContain('href="/projects/project/customize/models"');
   expect(html).toMatch(/<button[^>]*disabled[^>]*>Manage provider keys<\/button>/);
+});
+
+describe('a session offers only keys it can use when it runs', () => {
+  const team = { ...key('Team key'), access_mode: 'project', granted_user_ids: [] };
+  const mine = { ...key('My key'), access_mode: 'members', granted_user_ids: ['me'] };
+
+  test('a shared session hides keys granted to one member, and says why', () => {
+    const html = render({ resources: [team, mine], session: { visibility: 'project', created_by: 'me' } });
+    expect(html).toContain('Team key');
+    expect(html).not.toContain('My key');
+    expect(html).toContain('This session is shared with the project, so only keys shared with the whole project work here.');
+  });
+
+  test('a private session offers its creator`s own keys too, without the note', () => {
+    const html = render({ resources: [team, mine], session: { visibility: 'private', created_by: 'me' } });
+    expect(html).toContain('Team key');
+    expect(html).toContain('My key');
+    expect(html).not.toContain('This session is shared');
+  });
+
+  test('a shared session never promises the person`s own ChatGPT connection', () => {
+    const chatgpt = { ...team, provider_id: 'codex', label: 'Team ChatGPT' };
+    const shared = render({ resources: [chatgpt], session: { visibility: 'project', created_by: 'me' }, providerId: 'codex' });
+    expect(shared).toContain('Using the project default');
+    expect(shared).not.toContain('Using your default ChatGPT connection');
+    const own = render({ resources: [chatgpt], session: { visibility: 'private', created_by: 'me' }, providerId: 'codex' });
+    expect(own).toContain('Using your default ChatGPT connection');
+  });
 });

@@ -16,13 +16,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 mock.module('../billing/services/credits', () => ({
-  getCreditSummary: async () => creditSummary,
+  getCreditSummary: () => creditSummary,
   calculateTokenCost: () => 0,
-  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
-  deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
-  refreshDailyCredits: async () => null,
-  grantCredits: async () => undefined,
-  resetExpiringCredits: async () => undefined,
 }));
 
 mock.module('../billing/services/auto-topup', () => ({
@@ -64,7 +59,7 @@ describe('buildMinimalAccountState revenuecat', () => {
       revenuecatCancelAtPeriodEnd: null,
     };
 
-    creditSummary = { total: 25, daily: 0, monthly: 20, extra: 5, canRun: true };
+    creditSummary = { total: 25, daily: 0, monthly: 20, extra: 5 };
     autoTopup = { enabled: true, threshold: 1, amount: 5 };
     isAdmin = false;
   });

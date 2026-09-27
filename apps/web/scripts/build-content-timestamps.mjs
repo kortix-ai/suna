@@ -37,23 +37,23 @@ const MANIFEST_PATH = join(APPS_WEB, 'src', 'lib', 'seo', 'content-timestamps.js
 // MARKETING_RECORDS mapping in src/lib/seo/public-content.ts; both lists must
 // stay in sync. A slug without a backing page.tsx (none today) is skipped.
 const MARKETING_SOURCES = {
-  index: 'apps/web/src/app/(public)/(marketing)/(home)/page.tsx',
-  about: 'apps/web/src/app/(public)/(seo)/about/page.tsx',
-  contact: 'apps/web/src/app/(public)/(marketing)/contact/page.tsx',
-  developers: 'apps/web/src/app/(public)/(marketing)/developers/page.tsx',
-  enterprise: 'apps/web/src/app/(public)/(marketing)/enterprise/page.tsx',
-  pricing: 'apps/web/src/app/(public)/(marketing)/pricing/page.tsx',
-  marketplace: 'apps/web/src/app/(public)/(marketing)/marketplace/page.tsx',
-  support: 'apps/web/src/app/(public)/(marketing)/support/page.tsx',
-  legal: 'apps/web/src/app/(public)/(seo)/legal/page.tsx',
-  'agent-computer': 'apps/web/src/app/(public)/(marketing)/agent-computer/page.tsx',
-  'agents-and-skills': 'apps/web/src/app/(public)/(marketing)/agents-and-skills/page.tsx',
-  automations: 'apps/web/src/app/(public)/(marketing)/automations/page.tsx',
-  channels: 'apps/web/src/app/(public)/(marketing)/channels/page.tsx',
-  'company-as-code': 'apps/web/src/app/(public)/(marketing)/company-as-code/page.tsx',
-  connectors: 'apps/web/src/app/(public)/(marketing)/connectors/page.tsx',
-  security: 'apps/web/src/app/(public)/(marketing)/security/page.tsx',
-  'self-hosted': 'apps/web/src/app/(public)/(marketing)/self-hosted/page.tsx',
+  index: 'apps/web/src/app/[locale]/(public)/(marketing)/(home)/page.tsx',
+  about: 'apps/web/src/app/[locale]/(public)/(seo)/about/page.tsx',
+  contact: 'apps/web/src/app/[locale]/(public)/(marketing)/contact/page.tsx',
+  developers: 'apps/web/src/app/[locale]/(public)/(marketing)/developers/page.tsx',
+  enterprise: 'apps/web/src/app/[locale]/(public)/(marketing)/enterprise/page.tsx',
+  pricing: 'apps/web/src/app/[locale]/(public)/(marketing)/pricing/page.tsx',
+  marketplace: 'apps/web/src/app/[locale]/(public)/(marketing)/marketplace/page.tsx',
+  support: 'apps/web/src/app/[locale]/(public)/(marketing)/support/page.tsx',
+  legal: 'apps/web/src/app/[locale]/(public)/(seo)/legal/page.tsx',
+  'agent-computer': 'apps/web/src/app/[locale]/(public)/(marketing)/agent-computer/page.tsx',
+  'agents-and-skills': 'apps/web/src/app/[locale]/(public)/(marketing)/agents-and-skills/page.tsx',
+  automations: 'apps/web/src/app/[locale]/(public)/(marketing)/automations/page.tsx',
+  channels: 'apps/web/src/app/[locale]/(public)/(marketing)/channels/page.tsx',
+  'company-as-code': 'apps/web/src/app/[locale]/(public)/(marketing)/company-as-code/page.tsx',
+  connectors: 'apps/web/src/app/[locale]/(public)/(marketing)/connectors/page.tsx',
+  security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
+  'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
   // Solutions: the hub, then one entry per role. The eight role pages share a
   // single dynamic route, so the meaningful source of each one is its own
   // content file — that is the file whose last commit dates the page.
@@ -66,11 +66,11 @@ const MARKETING_SOURCES = {
   'solutions/people': 'apps/web/src/features/marketing/solutions/roles/people.ts',
   'solutions/it': 'apps/web/src/features/marketing/solutions/roles/it.ts',
   'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
-  careers: 'apps/web/src/app/(public)/(seo)/careers/page.tsx',
-  changelog: 'apps/web/src/app/(public)/(seo)/changelog/page.tsx',
-  blog: 'apps/web/src/app/(public)/(seo)/blog/page.tsx',
-  'use-cases': 'apps/web/src/app/(public)/(seo)/use-cases/page.tsx',
-  download: 'apps/web/src/app/(public)/download/page.tsx',
+  careers: 'apps/web/src/app/[locale]/(public)/(seo)/careers/page.tsx',
+  changelog: 'apps/web/src/app/[locale]/(public)/(seo)/changelog/page.tsx',
+  blog: 'apps/web/src/app/[locale]/(public)/(seo)/blog/page.tsx',
+  'use-cases': 'apps/web/src/app/[locale]/(public)/(seo)/use-cases/page.tsx',
+  download: 'apps/web/src/app/[locale]/(public)/download/page.tsx',
 };
 
 function gitAvailable() {

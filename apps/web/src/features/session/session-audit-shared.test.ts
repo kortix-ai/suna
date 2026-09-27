@@ -75,7 +75,7 @@ describe('session audit polling', () => {
 
   test('assigns polling to one mounted session surface', () => {
     const files = [
-      '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
       'session-layout.tsx',
       'session-chat.tsx',
       'session-audit-panel.tsx',
@@ -86,7 +86,7 @@ describe('session audit polling', () => {
       readFileSync(new URL(file, import.meta.url), 'utf8').includes('poll: true'),
     );
 
-    expect(owners).toEqual(['../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx']);
+    expect(owners).toEqual(['../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx']);
   });
 
   test('late cache readers do not refetch on mount', () => {

@@ -79,6 +79,8 @@ export function createPiDiagnosticsService(runtime: () => PiRuntime | null, star
         compiled_checkout: existsSync(`${cfg.projectTarget}/.git/kortix-compiled-checkout.json`),
         agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
         model: rt?.selectedModel() ? `${rt.selectedModel()!.providerID}/${rt.selectedModel()!.modelID}` : null,
+        // Which pi extensions loaded, and why any package did not (not installed, load error).
+        extensions: rt?.extensionStatus() ?? null,
         runtime: await runtimeConvergenceReport(),
         ...(probe ? { turn_in_flight: probe.inFlight, turn_end: probe.end, turn_orphaned_prompt: probe.orphanedPrompt } : {}),
         boot_error: bootState.repoMaterializationError ?? initialSessionError ?? startFailure,

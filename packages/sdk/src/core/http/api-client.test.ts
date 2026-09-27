@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
+  ANALYTICS_UNAVAILABLE_CODE,
   backendApi,
   isAdminBypassEnabled,
   PROVISION_IN_FLIGHT_CODE,
@@ -375,6 +376,150 @@ describe('makeRequest retries transient transport failures on idempotent reads',
   });
 });
 
+// Regression for incident-20260922T210537Z-kxhourly: `kortix sessions rm`
+// (a DELETE) hung >120s and left the child session running. A single stalled
+// DELETE got ZERO client retries (only GET/HEAD were retryable), so a transient
+// transport stall rode the CLI's long request deadline and blew past the
+// heartbeat runner's 120s wall; a fresh retry deleted the session in ~1.1s.
+//
+// A DELETE that fails at the TRANSPORT layer never received an HTTP response,
+// so the server may not have processed it — replaying it is safe. The session
+// delete is an idempotent soft-tombstone (session-lifecycle/actions.ts stamps
+// metadata.deletedAt and returns 404 for an already-absent row), so a replay
+// re-tombstones (a no-op) or 404s. DELETE therefore joins GET/HEAD as retryable
+// on a transport failure ONLY — never on a received response status, where the
+// server may already have applied the delete.
+describe('makeRequest retries a DELETE on transport failure (idempotent soft-delete)', () => {
+  test('a single DELETE transport failure is retried and succeeds', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      if (attempts === 1) throw new TypeError('Failed to fetch');
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual({ ok: true });
+      expect(attempts).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('persistent DELETE transport failures exhaust the same 3 attempts as a read', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toBe('Failed to fetch');
+      expect(attempts).toBe(3);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a DELETE that RECEIVES a 502 is NOT retried (server may have applied it)', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      return new Response('', {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1');
+      expect(response.success).toBe(false);
+      expect(response.error?.status).toBe(502);
+      expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a POST transport failure is still NOT retried (unchanged)', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/sessions', {});
+      expect(response.success).toBe(false);
+      expect(attempts).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // The incident's DELETE STALLED (no response) until the client deadline fired.
+  // A self-timeout on a retryable-transport method means the attempt never got a
+  // response, so it is safe to abort that attempt and retry — the exact recovery
+  // the manual retry performed. An EXTERNAL abort (tab close, caller signal) is
+  // still terminal (that path is tested elsewhere).
+  test('a DELETE whose first attempt STALLS past the deadline is retried and succeeds', async () => {
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+    });
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      attempts++;
+      if (attempts === 1) {
+        // First attempt hangs until ITS deadline aborts it.
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              const error = new Error('aborted');
+              error.name = 'AbortError';
+              reject(error);
+            },
+            { once: true },
+          );
+        });
+      }
+      return Promise.resolve(Response.json({ ok: true }));
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.delete('/projects/p1/sessions/s1', {
+        timeout: 10,
+      });
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual({ ok: true });
+      expect(attempts).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('makeRequest keeps request deadlines silent to the global host error handler', () => {
   test('a client request deadline returns TIMEOUT without invoking onError', async () => {
     const errors: Error[] = [];
@@ -659,7 +804,7 @@ describe('makeRequest classifies a typed feature_not_supported 501 as silent to 
 // account`, HTTP 409, `onunhandledrejection` `handled:false`) on the
 // co-worker session page: `PUT /v1/projects/:projectId/model-defaults`
 // returns a TYPED 409 with `code: 'model_not_servable'` (from
-// `isModelServableForAccount` in `apps/api/src/projects/routes/r4.ts` and
+// `isModelServableForAccount` in `apps/api/src/projects/routes/models.ts` and
 // `channel-bindings.ts`) when a user picks a model their account can't use
 // (free-tier managed model, disconnected BYOK provider). The
 // `useModelDefaults` `setMutation` had no `onError`, and every call site
@@ -818,6 +963,195 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
       });
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(409);
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// Regression for Better Stack frontend pattern `b4d05df2…`
+// (`ApiError: git mirror is temporarily unavailable`, HTTP 503) on session
+// starts: `POST /v1/projects/:id/sessions` cold-clones the project's private
+// git mirror, GitHub answers `fatal: repository '<url>' not found` (a transient
+// edge/credential blip), and the API's `isTransientGitMirrorError` classifier
+// correctly answers a clean 503 + `Retry-After` with
+// `code: 'git_mirror_unavailable'` WITHOUT paging the API's OWN Sentry. But the
+// 503 crossed into the FRONTEND Sentry: `makeRequest` fired `onError` →
+// `handleApiError`, which captures every 5xx. Classify the typed 503 as SILENT
+// (still returning the `ApiError`) so the expected, retryable degradation never
+// pages Better Stack. Mirrors the request-deadline 503 classification.
+describe('makeRequest classifies a typed git_mirror_unavailable 503 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 503 with code=git_mirror_unavailable does NOT fire onError but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(503, {
+      error: true,
+      code: 'git_mirror_unavailable',
+      message: 'git mirror is temporarily unavailable',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.post('/projects/p1/sessions', {});
+      expect(res.success).toBe(false);
+      // The ApiError is still returned so the caller can branch on `.code`.
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(503);
+      expect((res.error as ApiError).code).toBe('git_mirror_unavailable');
+      expect(res.error?.message).toBe('git mirror is temporarily unavailable');
+      // The expected, retryable degradation must NEVER page Sentry.
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('the legacy message-only 503 (pre-code API) is also silent to Sentry', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    // An API deployed before the typed code: message only.
+    const restore = stubFetchOnce(503, {
+      error: true,
+      message: 'git mirror is temporarily unavailable',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.post('/projects/p1/sessions', {});
+      expect(res.error?.status).toBe(503);
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 503 with a different message/code STILL fires onError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(503, {
+      error: true,
+      message: 'sandbox provider is temporarily unavailable',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.post('/projects/p1/sessions', {});
+      expect(res.success).toBe(false);
+      // A real 503 (no typed code) still reports — the classification gate
+      // must never swallow a genuine defect.
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// Regression for Better Stack frontend pattern `0e4ee10d…`
+// (`ApiError: Failed query: select … from "kortix"."credit_ledger" …`, HTTP
+// 500) on the admin analytics dashboard: `GET /v1/admin/analytics/usage` runs a
+// platform-wide credit-ledger aggregate that can exceed the 25s
+// `statement_timeout` (SQLSTATE 57014). The route returned a 500 whose body was
+// the raw Postgres `Failed query: select …` text, so `makeRequest` forwarded the
+// SQL to `onError` → Sentry as an opaque `ApiError`. The API now answers that
+// expected capacity state with a TYPED 503
+// (`code: 'analytics_unavailable'`, plain sentence, SQL logged server-side);
+// `makeRequest` classifies it as SILENT to `onError` (Sentry) but still returns
+// the `ApiError` so the dashboard renders its own unavailable state. A genuine
+// 503 with another code/message still reports. Mirrors the git-mirror 503
+// classification.
+describe('makeRequest classifies a typed analytics_unavailable 503 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 503 with code=analytics_unavailable does NOT fire onError but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(503, {
+      error: true,
+      code: 'analytics_unavailable',
+      message: 'Credit usage analytics is temporarily unavailable. Try again in a moment.',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.get('/admin/analytics/usage?days=30');
+      expect(res.success).toBe(false);
+      // The ApiError is still returned so the dashboard can show its own state.
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(503);
+      expect(res.error?.code).toBe(ANALYTICS_UNAVAILABLE_CODE);
+      // The message carries no SQL — the raw `Failed query` body must be gone.
+      expect(res.error?.message).not.toContain('Failed query');
+      expect(res.error?.message).not.toContain('credit_ledger');
+      // The expected capacity state must NEVER page Sentry.
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 503 without the typed code STILL fires onError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(503, {
+      error: true,
+      message: 'Failed query: select * from "kortix"."credit_ledger"',
+      status: 503,
+    });
+    try {
+      const res = await backendApi.get('/admin/analytics/usage?days=30');
+      expect(res.success).toBe(false);
+      expect(res.error?.status).toBe(503);
+      // A genuine defect (no typed code) still reports — the gate must never
+      // swallow it.
       expect(onErrorCalls).toBe(1);
     } finally {
       restore();

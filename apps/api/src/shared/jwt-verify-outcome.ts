@@ -24,6 +24,13 @@
  */
 export function isInconclusiveVerifyFailure(reason: string): boolean {
   return (
-    reason === 'no-keys' || reason === 'no-key-for-kid' || reason.startsWith('unsupported-alg')
+    reason === 'no-keys' ||
+    reason === 'no-key-for-kid' ||
+    reason.startsWith('unsupported-alg') ||
+    // HS256 with a configured secret that does not match GoTrue's: our
+    // misconfiguration, not the caller's bad token (see jwt-verify.ts).
+    reason === 'hs256-secret-mismatch' ||
+    // GoTrue could not be asked whether the session is still live.
+    reason === 'liveness-unavailable'
   );
 }

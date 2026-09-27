@@ -25,7 +25,7 @@ import type { ModelKey } from './use-model-store';
  * no sessionId, so every native project in one browser shares the slot
  * `native:`. One earlier session pinned `xai.grok-4.6` there and every future
  * workspace inherited it, above anything the catalog default could say.
- * Observed on Essentia 2026-08-26 with a bundle that already carried the
+ * Observed on SampleCo 2026-08-26 with a bundle that already carried the
  * catalog-default fix.
  *
  * On the GATEWAY path PR #6897 already re-prefixes a bare id after Bedrock's
@@ -41,7 +41,7 @@ import type { ModelKey } from './use-model-store';
  *     served through the gateway still ranks > 0. Without this step every
  *     gateway pick without a twin (an OpenRouter or Codex model, a bare Bedrock
  *     id) fell through to step 3 and "healed" to the newest Bedrock profile in
- *     the catalog: on Essentia (2026-08-27) the chip was pinned to Claude Opus 5
+ *     the catalog: on SampleCo (2026-08-27) the chip was pinned to Claude Opus 5
  *     (Global) whatever the user clicked, and every prompt was sent with it.
  *     The gateway re-prefixes a bare id itself after Bedrock's 400 (PR #6897);
  *     this guard is the native analogue and has no business on that path.

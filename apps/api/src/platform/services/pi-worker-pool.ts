@@ -24,6 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { config } from '../../config';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { ensurePiWorkerImage } from '../../snapshots/builder';
 import { getDaytona } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
@@ -266,7 +267,8 @@ async function verifyStillParked(externalId: string): Promise<boolean> {
 export function maintainPiWorkerPool(): Promise<void> {
   if (!piWorkerPoolEnabled()) return Promise.resolve();
   if (maintainInFlight) return maintainInFlight;
-  maintainInFlight = (async () => {
+  // Also kicked from session creation: pool upkeep never runs as that caller.
+  maintainInFlight = runWorkerTick('pi-worker-pool', async () => {
     const target = config.KORTIX_PI_WORKER_POOL_TARGET;
     const maxAgeMs = config.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES * 60_000;
     const image = await ensurePiWorkerImage({ provider: 'daytona' });
@@ -307,7 +309,7 @@ export function maintainPiWorkerPool(): Promise<void> {
         `[pi-pool] maintained: ${alive.length}/${target} parked, reaped ${reap.length}, created ${missing}`,
       );
     }
-  })()
+  })
     .catch((err) => console.warn('[pi-pool] maintain failed:', err))
     .finally(() => {
       maintainInFlight = null;

@@ -268,6 +268,8 @@ const baseSessionRow = {
 const joinedSessionRow = {
   ...baseSessionRow,
   llmCost: '1.25',
+  llmKortixCost: '1.25',
+  llmProviderCost: '9.50',
   requestCount: 3,
   errorCount: 1,
   inputTokens: 100,
@@ -334,6 +336,8 @@ describe('listSessionCosts service', () => {
         owner_type: 'user',
         owner_name: 'Owner One',
         llm_cost: 1.25,
+        llm_kortix_cost: 1.25,
+        llm_provider_cost: 9.5,
         compute_cost: 0.75,
         total_cost: 2,
         last_activity_at: '2026-07-01T11:31:00.000Z',

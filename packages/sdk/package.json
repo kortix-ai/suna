@@ -36,6 +36,8 @@
     "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
     "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
     "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
+    "./internal/diagnostics-store": "./src/internal/diagnostics-store.ts",
+    "./internal/managed-storage": "./src/internal/managed-storage.ts",
     "./opencode-client": "./src/deprecated/opencode-client.ts",
     "./config": "./src/deprecated/config.ts",
     "./auth": "./src/deprecated/auth.ts",
@@ -51,6 +53,7 @@
     "./session": "./src/deprecated/session.ts",
     "./session/url": "./src/deprecated/session-url.ts",
     "./message-queue": "./src/core/session/message-queue.ts",
+    "./wire-message-id": "./src/core/session/wire-message-id.ts",
     "./turns": "./src/deprecated/turns.ts",
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
@@ -85,6 +88,14 @@
       "./internal/idb-sync-cache": {
         "types": "./dist/internal/idb-sync-cache.d.ts",
         "import": "./dist/internal/idb-sync-cache.js"
+      },
+      "./internal/diagnostics-store": {
+        "types": "./dist/internal/diagnostics-store.d.ts",
+        "import": "./dist/internal/diagnostics-store.js"
+      },
+      "./internal/managed-storage": {
+        "types": "./dist/internal/managed-storage.d.ts",
+        "import": "./dist/internal/managed-storage.js"
       },
       "./opencode-client": {
         "types": "./dist/deprecated/opencode-client.d.ts",
@@ -133,6 +144,10 @@
       "./message-queue": {
         "types": "./dist/core/session/message-queue.d.ts",
         "import": "./dist/core/session/message-queue.js"
+      },
+      "./wire-message-id": {
+        "types": "./dist/core/session/wire-message-id.d.ts",
+        "import": "./dist/core/session/wire-message-id.js"
       },
       "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
       "./sync-store": {

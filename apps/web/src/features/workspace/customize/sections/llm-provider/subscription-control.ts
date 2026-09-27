@@ -1,3 +1,7 @@
+import { qk } from '@kortix/sdk/react';
+import type { QueryClient } from '@tanstack/react-query';
+
+import type { ProjectSecretsCache } from '../view/secret-optimistic-cache';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 
 /**
@@ -23,13 +27,40 @@ import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } fro
  */
 export type SubscriptionAction = 'connect' | 'reconnect' | 'disconnect';
 
+function isSubscriptionCredential(name: string): boolean {
+  return name === CODEX_AUTH_JSON_SECRET_NAME || name === LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME;
+}
+
 export function subscriptionIsConnected(secretNames: Iterable<string>): boolean {
   for (const name of secretNames) {
-    if (name === CODEX_AUTH_JSON_SECRET_NAME || name === LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME) {
-      return true;
-    }
+    if (isSubscriptionCredential(name)) return true;
   }
   return false;
+}
+
+/**
+ * Removes the subscription credential rows from the cached secrets list after
+ * `DELETE /projects/:id/oauth/openai` succeeded.
+ *
+ * The card must not wait for a refetch to show the result. `GET /secrets`
+ * loads the project manifest on every call, and the provider refresh that
+ * follows a disconnect starts several more reads. Until one of them returned,
+ * the card kept "ChatGPT subscription connected." and its Disconnect button.
+ *
+ * The cancel comes first: a read that started before the delete would
+ * otherwise land after this write and put the credential back.
+ */
+export async function forgetSubscriptionCredentials(
+  queryClient: QueryClient,
+  projectId: string,
+): Promise<void> {
+  const queryKey = qk.project.secrets(projectId);
+  await queryClient.cancelQueries({ queryKey });
+  queryClient.setQueryData<ProjectSecretsCache>(queryKey, (cache) => {
+    if (!cache) return cache;
+    if (Array.isArray(cache)) return cache.filter((item) => !isSubscriptionCredential(item.name));
+    return { ...cache, items: cache.items.filter((item) => !isSubscriptionCredential(item.name)) };
+  });
 }
 
 export function subscriptionPrimaryAction(input: {

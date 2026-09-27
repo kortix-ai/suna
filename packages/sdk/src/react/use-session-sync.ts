@@ -28,6 +28,7 @@ import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
+import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryOpenCodeSession } from './use-opencode-sessions';
 
 export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
@@ -93,6 +94,15 @@ interface UseSessionSyncOptions {
    * disagreement lasts; never touches the public `isBusy`.
    */
   serverHoldsTurn?: boolean;
+  /**
+   * Re-render the caller whenever the transcript changes. Default `true`.
+   *
+   * `false` keeps every network effect running but stops subscribing to the
+   * message rows, so a streamed delta does not re-render the caller. `messages`
+   * is then the transcript as of the caller's render, not a live value. Read
+   * the live transcript where it is drawn, with `useSessionMessages`.
+   */
+  subscribeMessages?: boolean;
 }
 
 /**
@@ -141,7 +151,14 @@ export function livenessBusy(input: {
 }
 
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
-  const { kortixSessionScope, networkEnabled = true, working, serverHoldsTurn, mirror } = options;
+  const {
+    kortixSessionScope,
+    networkEnabled = true,
+    working,
+    serverHoldsTurn,
+    mirror,
+    subscribeMessages = true,
+  } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -204,6 +221,15 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // Painted with `source: 'cache'`, so the store's existing settle rule owns
   // reconciliation: the first runtime read confirms every id it contains and
   // drops any it covers but lacks. Nothing here needs the settle rule changed.
+  //
+  // The read's answer is also REPORTED (`mirrorState` below), because a host
+  // decides from it what to show while the box wakes: placeholder rows while a
+  // saved copy is on its way, its boot screen when there is none. Only the
+  // negative answer is stored here; `painted` is read off the store itself.
+  const mirrorKey = `${kortixSessionScope ?? ''}|${sessionId}|${
+    mirror === undefined ? 'read' : mirror === null ? 'null' : 'envelope'
+  }`;
+  const [mirrorAbsentFor, setMirrorAbsentFor] = useState<string | null>(null);
   useEffect(() => {
     if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
@@ -214,7 +240,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       ? Promise.resolve(mirror)
       : loadSessionTranscriptMirror({ kortixSessionScope, signal: abort.signal });
     void read.then((envelope) => {
-      if (abort.signal.aborted || !envelope) return;
+      if (abort.signal.aborted) return;
+      if (!envelope) {
+        setMirrorAbsentFor(mirrorKey);
+        return;
+      }
       const state = useSyncStore.getState();
       if (
         !shouldHydrateFromMirror({
@@ -224,6 +254,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           hasLoadedTranscript: sessionId in state.messages,
         })
       ) {
+        setMirrorAbsentFor(mirrorKey);
         return;
       }
       state.hydrate(sessionId, mirrorMessagesForHydrate(envelope), { source: 'cache' });
@@ -232,7 +263,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       setMirrorCursor(mirrorCursorAfter(envelope));
     });
     return () => abort.abort();
-  }, [kortixSessionScope, sessionId, mirror]);
+  }, [kortixSessionScope, sessionId, mirror, mirrorKey]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -323,13 +354,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     });
   }, [controller, networkEnabled, sessionId]);
 
-  const messages = useSyncStore((state) =>
-    state.buildSessionMessages(
-      readableSessionId,
-      state.messages[readableSessionId],
-      state.parts,
-    ),
+  // `subscribeMessages: false` selects a constant, so the store never
+  // re-renders the caller for a row change; the rows are read once per render.
+  const liveMessages = useSyncStore((state) =>
+    subscribeMessages ? selectSessionRows(state, readableSessionId) : null,
   );
+  const messages = liveMessages ?? selectSessionRows(useSyncStore.getState(), readableSessionId);
 
   // The runtime's own status, unmodified.
   //
@@ -358,12 +388,23 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // poll's switch are the same rule instead of two.
   const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
+  // What the saved-copy paint came to. `painted` and "a read already landed"
+  // are read off the store; only a refused or empty answer needs its own slot.
+  const mirrorState: 'idle' | 'loading' | 'painted' | 'absent' =
+    !canQueryOpenCodeSession(sessionId) || !kortixSessionScope
+      ? 'idle'
+      : messages.length > 0
+        ? 'painted'
+        : !isLoading || mirrorAbsentFor === mirrorKey
+          ? 'absent'
+          : 'loading';
 
   useEffect(() => {
     controller.setBusy(
       livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+      networkEnabled && canQueryOpenCodeSession(sessionId) && runtimeScope !== 'none',
     );
-  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
+  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn, sessionId, runtimeScope]);
 
   /*
     PAGING THE DURABLE TRANSCRIPT.
@@ -449,6 +490,14 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     retryTranscript,
     isBusy,
     isLoading,
+    /**
+     * The server's saved copy of this transcript (the mirror): `idle` until a
+     * root and a Kortix scope are known, `loading` while its read is in
+     * flight, `painted` once the store holds messages, `absent` when the read
+     * answered with nothing it may paint. `useSession` folds it into
+     * `savedTranscript`.
+     */
+    mirrorState,
     hasOlder: sync.hasOlder || Boolean(mirrorCursor),
     isLoadingOlder: sync.isLoadingOlder || isLoadingOlderMirror,
     loadOlder,

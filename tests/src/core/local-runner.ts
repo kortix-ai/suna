@@ -26,6 +26,7 @@ export interface LocalTestPlan {
     | 'core'
     | 'flows'
     | 'sdk'
+    | 'db'
     | 'browser'
     | 'packages'
     | 'target'
@@ -89,6 +90,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const full = args.includes('--full');
   const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
   const sdkOnly = args.includes('--sdk-only');
+  const dbOnly = args.includes('--db-only');
   const browserOnly = args.includes('--browser-only');
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
@@ -105,6 +107,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     full,
     flowsOnly,
     sdkOnly,
+    dbOnly,
     browserOnly,
     packagesOnly,
     targetSmoke,
@@ -114,7 +117,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
+      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
     );
   }
   if (browserShardArgs.length > 1) {
@@ -143,6 +146,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--full' &&
       arg !== '--flows-only' &&
       arg !== '--sdk-only' &&
+      arg !== '--db-only' &&
       arg !== '--browser-only' &&
       arg !== '--packages-only' &&
       arg !== '--target-smoke' &&
@@ -159,6 +163,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const sdk: LocalTestLane = {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
+  };
+  // Every PostgreSQL-backed test file, one process and one fresh database per
+  // file (src/core/db-suites.ts). Needs local Supabase; the runner starts it
+  // before any stage that contains this lane. `--db-only` passes the remaining
+  // arguments through as file-path filters.
+  const dbSuites: LocalTestLane = {
+    name: 'db-suites',
+    command: ['bun', 'tests/bin/db-suites.ts', ...(dbOnly ? flowArgs : [])],
   };
   const runnerUnit: LocalTestLane = {
     name: 'flow-runner-unit',
@@ -243,6 +255,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
 
   if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
   if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
+  if (dbOnly) return { mode: 'db', lanes: [dbSuites], stages: [[dbSuites]] };
   if (browserOnly) return { mode: 'browser', lanes: [browser], stages: [[browser]] };
   if (packagesOnly) {
     return { mode: 'packages', lanes: [packageQuality], stages: [[packageQuality]] };
@@ -290,6 +303,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     const lanes = [
       fullFlows,
       sdk,
+      dbSuites,
       runnerUnit,
       routeCoverage,
       worktreeUnit,
@@ -303,13 +317,13 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
       stages: [
-        [fullFlows, sdk, runnerUnit, routeCoverage, worktreeUnit],
+        [fullFlows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit],
         [fullBrowser],
         [fullPackageQuality],
       ],
     };
   }
-  const lanes = [flows, sdk, runnerUnit, routeCoverage, worktreeUnit];
+  const lanes = [flows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
   return {
     mode: 'core',
     lanes,
@@ -475,6 +489,13 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       console.log(
         `[test] deployed-target api=${target.apiUrl} web=${target.webUrl} sha=${target.expectedSha}`,
       );
+    }
+    if (plan.lanes.some((lane) => lane.name === 'db-suites') && plan.mode !== 'full') {
+      // The flows lane would start Supabase on its own, but the DB lane needs it
+      // too and must not race a second `supabase start`. Start it once here;
+      // `ke2e local` then reuses it, and the `finally` below stops it.
+      localSupabase = await ensureLocalSupabase(resolveLocalTopology(root), { autoStart: true });
+      console.log(`[test] local-supabase ${localSupabase.started ? 'started' : 'reused'}`);
     }
     if (plan.mode === 'browser' || plan.mode === 'full') {
       const topology = resolveLocalTopology(root);

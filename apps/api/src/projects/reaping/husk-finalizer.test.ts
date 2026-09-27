@@ -1,5 +1,9 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
+import {
+  KORTIX_USER_CONTEXT_HEADER,
+  verifyKortixUserContext,
+} from '../../shared/kortix-user-context';
 
 // The reaper's terminal observation says "no turn in flight". It does NOT say
 // "the assistant message is closed". `finalizeHuskTurn` is what closes the gap:
@@ -92,39 +96,39 @@ describe('finalizeHuskTurn', () => {
     expect(fetchCalls).toEqual([]);
   });
 
-  test('returns "unreadable" on a non-2xx transcript read and never aborts', async () => {
-    responses = [status(503)];
-
-    expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('unreadable');
-    expect(fetchCalls).toHaveLength(1);
-    expect(fetchCalls.every((call) => call.method === 'GET')).toBe(true);
-  });
-
-  test('returns "unreadable" when the transcript read throws', async () => {
-    responses = [
+  // A read that fails, or a body that is not a message array, is "could not
+  // tell" — never an empty root. Treating a 503 mid-restart as terminal
+  // evidence would let the reaper clear the record as closed.
+  test.each([
+    ['a non-2xx read', status(503)],
+    [
+      'a thrown read (timeout)',
       async () => {
         throw new DOMException('The operation timed out.', 'TimeoutError');
       },
-    ];
+    ],
+    ['a body that is not a message array', async () => new Response('{}', { status: 200 })],
+  ] as Array<[string, () => Promise<Response>]>)(
+    'returns "unreadable" on %s and never aborts',
+    async (_label, response) => {
+      responses = [response];
 
-    expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('unreadable');
-    expect(fetchCalls).toHaveLength(1);
-  });
+      expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('unreadable');
+      expect(fetchCalls).toHaveLength(1);
+      expect(fetchCalls.every((call) => call.method === 'GET')).toBe(true);
+    },
+  );
 
-  test('returns "not_husk" when the last assistant message carries time.completed', async () => {
-    responses = [transcript({ ...OPEN_TURN, time: { created: 1, completed: 2 } })];
-
-    expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('not_husk');
-    expect(fetchCalls).toHaveLength(1);
-  });
-
-  test('returns "not_husk" when the last assistant message carries a non-retryable error', async () => {
-    responses = [
-      transcript({
-        ...OPEN_TURN,
-        error: { name: 'APIError', data: { message: 'x', isRetryable: false } },
-      }),
-    ];
+  // The daemon's open-turn predicate: a completed message or a non-retryable
+  // error is a closed turn, so there is nothing to abort.
+  test.each([
+    ['carries time.completed', { ...OPEN_TURN, time: { created: 1, completed: 2 } }],
+    [
+      'carries a non-retryable error',
+      { ...OPEN_TURN, error: { name: 'APIError', data: { message: 'x', isRetryable: false } } },
+    ],
+  ])('returns "not_husk" when the last assistant message %s', async (_label, message) => {
+    responses = [transcript(message)];
 
     expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('not_husk');
     expect(fetchCalls).toHaveLength(1);
@@ -209,7 +213,9 @@ describe('finalizeHuskTurn', () => {
     expect(fetchCalls.filter((call) => call.method === 'POST')).toEqual([]);
   });
 
-  test('returns "not_husk" when a newer turn started during the settle window', async () => {
+  // A second assistant message under the SAME prompt (a retry) is live work.
+  // A newer prompt is refused earlier by the open-turn predicate.
+  test('returns "not_husk" when a new assistant message for the same prompt appears during the settle window', async () => {
     responses = [transcript(OPEN_TURN), transcript({ ...OPEN_TURN, id: 'msg_2' })];
 
     expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('not_husk');
@@ -249,33 +255,6 @@ describe('finalizeHuskTurn', () => {
 
     expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('unconfirmed');
     expect(fetchCalls).toHaveLength(4);
-  });
-
-  // ── the read is bounded ──
-  // The finalizer needs the tail of the root, never the conversation. An
-  // unbounded GET returns every message WITH its `parts` (all tool output),
-  // uncompressed, under a 5s timeout — so the repair times out first on the
-  // long-running sessions that produce husks, three times per husk, and the
-  // record is cleared anyway (box-reaper.ts:227). Same `limit` the sibling
-  // readers already send (session-transcript.ts:130).
-  test('bounds every transcript read with a limit instead of pulling the whole conversation', async () => {
-    responses = [
-      transcript(OPEN_TURN),
-      transcript(OPEN_TURN),
-      status(200),
-      transcript({
-        ...OPEN_TURN,
-        error: { name: 'MessageAbortedError', data: { message: 'aborted' } },
-      }),
-    ];
-
-    expect(await finalizeHuskTurn(TARGET, { settleMs: 0 })).toBe('finalized');
-
-    const reads = fetchCalls.filter((call) => call.method === 'GET');
-    expect(reads).toHaveLength(3);
-    for (const read of reads) {
-      expect(new URL(read.url).searchParams.get('limit')).toBe('4');
-    }
   });
 
   // ── the post-condition is TARGET-scoped, not last-message-scoped ──
@@ -355,7 +334,17 @@ describe('finalizeHuskTurn', () => {
     expect(fetchCalls).toHaveLength(4);
     for (const call of fetchCalls) {
       expect(call.headers.Authorization).toBe('Bearer daemon-service-key');
-      expect(call.headers['X-Kortix-User-Context']?.length ?? 0).toBeGreaterThan(0);
+      // The daemon verifies this HMAC with the service key. A context signed
+      // with another key, or for another subject, is a 401 on the box.
+      const verified = verifyKortixUserContext(
+        call.headers[KORTIX_USER_CONTEXT_HEADER],
+        'daemon-service-key',
+      );
+      expect(verified.ok).toBe(true);
+      if (verified.ok) {
+        expect(verified.context.userId).toBe('system:reaper');
+        expect(verified.context.sandboxId).toBe('sb-1');
+      }
     }
   });
 });

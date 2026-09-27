@@ -63,7 +63,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
- * the first project (the exact failure mode `r1.ts`'s `idempotency_key` doc
+ * the first project (the exact failure mode `projects.ts`'s `idempotency_key` doc
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
@@ -277,7 +277,7 @@ export function messageFor(error: unknown): string {
     // `provision_in_flight` carries a typed `code`
     // (`PROVISION_IN_FLIGHT_CODE`); the GitHub sources' 409s do not — they are
     // "install the Kortix GitHub App first" (`create-repo` and
-    // `link-repository`, `apps/api/src/projects/routes/r2.ts`) and "no
+    // `link-repository`, `apps/api/src/projects/routes/project-from-repository.ts`) and "no
     // available repository name near X". Both of those already say exactly
     // what to do, so the server's own message is reused verbatim rather than
     // being overwritten with a wait-and-retry line that is simply false for
@@ -418,7 +418,7 @@ export function isTransportFailure(error: unknown): boolean {
  *
  * POSTs once. On a `409` `provision_in_flight` — another call carrying this
  * SAME `idempotency_key` is still mid-provision, per
- * `apps/api/src/projects/routes/r1.ts` — retries up to `RETRY_DELAY_MS.length`
+ * `apps/api/src/projects/routes/projects.ts` — retries up to `RETRY_DELAY_MS.length`
  * more times with the IDENTICAL payload. Never a re-minted key: the key
  * identifies the ATTEMPT, and the whole point of retrying is to land on that
  * same attempt's result. Any other error, or exhausting the retry budget,
@@ -635,7 +635,7 @@ async function runSourceAttempt(
  * project is the wizard finishing.
  *
  * The key is cleared FIRST among the success-path steps, before any of the
- * other four. The API's own contract (`r1.ts`) is that the key identifies the
+ * other four. The API's own contract (`projects.ts`) is that the key identifies the
  * ATTEMPT, not the payload — once the server has confirmed this attempt
  * succeeded, the key must never be replayed, or a LATER, genuinely different
  * create with the same name would silently return THIS project instead of

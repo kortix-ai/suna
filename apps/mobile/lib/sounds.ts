@@ -1,28 +1,26 @@
-import { Audio, type AVPlaybackSource } from 'expo-av';
-import { useSoundStore, type SoundEvent } from '@/stores/sound-store';
+import { createAudioPlayer, setAudioModeAsync, type AudioSource } from 'expo-audio';
+import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
+import { resolveSoundAsset } from '@/lib/sounds-resolve';
 
 // ---------------------------------------------------------------------------
-// Bundled assets — only files that actually exist on disk.
-// Missing events (error, notification) fall back to completion.mp3.
-// The opencode pack has no files yet, so it falls back to kortix.
+// Bundled assets — the Kortix sound palette. Every event has its own file,
+// no fallback needed.
 // ---------------------------------------------------------------------------
 
-const KORTIX_ASSETS: Partial<Record<SoundEvent, AVPlaybackSource>> = {
-  completion: require('@/assets/sounds/kortix/completion.mp3'),
-  send: require('@/assets/sounds/kortix/send.mp3'),
+const KORTIX_ASSETS: Record<SoundEvent, AudioSource> = {
+  completion: require('@/assets/sounds/kortix/kortix_complete.wav'),
+  notification: require('@/assets/sounds/kortix/kortix_attention.wav'),
+  error: require('@/assets/sounds/kortix/kortix_error.wav'),
+  send: require('@/assets/sounds/kortix/kortix_send.wav'),
 };
 
-function resolveAsset(pack: string, event: SoundEvent): AVPlaybackSource | null {
-  if (pack === 'kortix') {
-    return KORTIX_ASSETS[event] ?? KORTIX_ASSETS.completion ?? null;
-  }
-  // opencode pack has no files yet — returns null (no sound)
-  return null;
+function resolveAsset(pack: SoundPack, event: SoundEvent): AudioSource | null {
+  return resolveSoundAsset(KORTIX_ASSETS, pack, event);
 }
 
 // ---------------------------------------------------------------------------
 // Audio mode — call once before first playback so sounds work in silent mode
-// on iOS and mix with background audio instead of pausing it.
+// on iOS and duck background audio instead of pausing it.
 // ---------------------------------------------------------------------------
 
 let audioModeConfigured = false;
@@ -30,10 +28,10 @@ let audioModeConfigured = false;
 async function ensureAudioMode() {
   if (audioModeConfigured) return;
   try {
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'duckOthers',
     });
     audioModeConfigured = true;
   } catch {
@@ -41,24 +39,32 @@ async function ensureAudioMode() {
   }
 }
 
+/**
+ * Dictation takes over the iOS audio session (record category). Call when it
+ * ends so the next sound sets the playback mode again.
+ */
+export function resetAudioMode() {
+  audioModeConfigured = false;
+}
+
 // ---------------------------------------------------------------------------
-// Playback — each call creates a fresh Sound instance so rapid taps don't
-// conflict. Instances are unloaded after playback finishes to avoid leaks.
+// Playback — each call creates a fresh player so rapid taps don't conflict.
+// A player is not garbage-collected on its own: `remove()` releases it once
+// playback finishes to avoid leaking native players.
 // ---------------------------------------------------------------------------
 
-async function play(asset: AVPlaybackSource, volume: number) {
+async function play(asset: AudioSource, volume: number) {
   await ensureAudioMode();
 
-  const { sound } = await Audio.Sound.createAsync(asset, {
-    volume,
-    shouldPlay: true,
-  });
-
-  sound.setOnPlaybackStatusUpdate((status) => {
-    if (status.isLoaded && status.didJustFinish) {
-      sound.unloadAsync().catch(() => {});
+  const player = createAudioPlayer(asset);
+  player.volume = volume;
+  const subscription = player.addListener('playbackStatusUpdate', (status) => {
+    if (status.didJustFinish) {
+      subscription.remove();
+      player.remove();
     }
   });
+  player.play();
 }
 
 // ---------------------------------------------------------------------------

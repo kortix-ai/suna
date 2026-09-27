@@ -689,11 +689,10 @@ describe('getCostSummary', () => {
     // ordering alone leaves it to whatever order Postgres happens to scan
     // rows in, which can flip between refreshes.
     const [spend, provider, model] = renderOrderBy(modelsRecord());
-    // Ordered by TOTAL spend, matching the `cost` column it selects — ordering
-    // by final_cost alone would rank every BYOK model at 0 and hand the top-10
-    // cut to scan order. See shared/llm-spend.ts.
+    // Account Billing orders by the amount Kortix charged. Provider-side BYOK
+    // spend remains an observability metric and is excluded here.
     expect(spend).toContain('final_cost_precise');
-    expect(spend).toContain('upstream_cost_precise');
+    expect(spend).not.toContain('upstream_cost_precise');
     expect(spend?.endsWith(' desc')).toBe(true);
     expect(provider).toBe('"kortix"."gateway_request_logs"."provider" desc');
     expect(model).toBe('"kortix"."gateway_request_logs"."resolved_model" desc');

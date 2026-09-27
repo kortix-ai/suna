@@ -103,7 +103,7 @@ export function resolveSessionContentState(input: {
    * is the one that loses to a waking box. When it lost, the page rendered the
    * full shell — header, composer, empty thread — over a session with a long
    * history, and the user saw an EMPTY CONVERSATION rather than a wait
-   * (screenshot, essentia 2026-08-24: composer live, thread blank, runtime
+   * (screenshot, sampleco 2026-08-24: composer live, thread blank, runtime
    * terminal holding the whole session).
    *
    * Optional so existing callers keep their behaviour; `undefined` means the

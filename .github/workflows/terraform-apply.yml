@@ -164,10 +164,23 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Check out the aws-env action
+        if: inputs.cloudflare
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read the Cloudflare token from AWS Secrets Manager
+        if: inputs.cloudflare
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN
+
       - name: Export Cloudflare credentials
         if: inputs.cloudflare
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then

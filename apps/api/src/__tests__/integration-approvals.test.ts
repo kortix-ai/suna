@@ -21,6 +21,7 @@ import {
 import { eq, sql } from 'drizzle-orm';
 import { getCreditAccount } from '../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../billing/services/account-write-owner';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
 /** Test fixture: flip the enterprise-demo flag through the ownership chokepoint. */
 const setDemoEnterprise = (accountId: string, enabled: boolean) =>
@@ -86,7 +87,7 @@ beforeAll(async () => {
   const createdBody = (await created.json()) as { id?: string; user?: { id?: string } };
   humanUserId = createdBody.user?.id ?? createdBody.id ?? '';
   expect(humanUserId).not.toBe('');
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: humanUserId,
     accountRole: 'owner',
@@ -132,12 +133,12 @@ beforeAll(async () => {
   };
   readOnlyUserId = readOnlyCreatedBody.user?.id ?? readOnlyCreatedBody.id ?? '';
   expect(readOnlyUserId).not.toBe('');
-  await db.insert(accountMembers).values({
+  await insertIntoView(db, accountMembers, {
     accountId: ctx.accountId,
     userId: readOnlyUserId,
     accountRole: 'member',
   });
-  await db.insert(projectMembers).values({
+  await insertIntoView(db, projectMembers, {
     accountId: ctx.accountId,
     projectId: ctx.projectId,
     userId: readOnlyUserId,
@@ -177,11 +178,11 @@ afterAll(async () => {
   for (const id of minted)
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
   if (ctx && humanUserId) {
-    await db
-      .delete(accountMembers)
-      .where(
-        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
-      );
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${humanUserId}`,
+    );
     await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${humanUserId}`, {
       method: 'DELETE',
       headers: {
@@ -191,16 +192,16 @@ afterAll(async () => {
     });
   }
   if (ctx && readOnlyUserId) {
-    await db
-      .delete(projectMembers)
-      .where(
-        sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
-      );
-    await db
-      .delete(accountMembers)
-      .where(
-        sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
-      );
+    await deleteFromView(
+      db,
+      projectMembers,
+      sql`${projectMembers.projectId} = ${ctx.projectId} and ${projectMembers.userId} = ${readOnlyUserId}`,
+    );
+    await deleteFromView(
+      db,
+      accountMembers,
+      sql`${accountMembers.accountId} = ${ctx.accountId} and ${accountMembers.userId} = ${readOnlyUserId}`,
+    );
     await fetch(`${config.SUPABASE_URL}/auth/v1/admin/users/${readOnlyUserId}`, {
       method: 'DELETE',
       headers: {

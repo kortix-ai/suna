@@ -8,6 +8,7 @@ import { useStandaloneCapabilityNav } from '@/features/workspace/capabilities/sh
 import { ModelsTab } from '@/features/workspace/settings/tabs/models-tab';
 import { SettingsNavProvider } from '@/features/workspace/shared/settings-nav-context';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { AppReturnBar } from './app-return-bar';
 
 /**
  * The page body for /projects/[id]/models — Models graduated out of the
@@ -51,6 +52,8 @@ export function ModelsPage({ projectId }: { projectId: string }) {
   return (
     <SettingsNavProvider value={settingsNav}>
       <ModelsTab projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />
+      {/* Mobile's "connect a model provider" hand-off; nothing without ?return_to. */}
+      <AppReturnBar projectId={projectId} />
     </SettingsNavProvider>
   );
 }

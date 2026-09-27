@@ -10,6 +10,7 @@
 
 import { API_URL, getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
+import { mapConcurrent } from './map-concurrent';
 import {
   listProjectsForAccount,
   listProjectSessions as listProjectSessionsSdk,
@@ -214,9 +215,14 @@ async function listProjectSessionSandboxes(): Promise<
     sandbox: SandboxInfo;
   }> = [];
 
-  for (const project of projects) {
-    const sessions = await listProjectSessions(project.project_id).catch(() => []);
-    for (const session of sessions) {
+  // At most 4 session listings in flight; results keep the project order, so
+  // the ranking below is the same as a serial scan.
+  const sessionsByProject = await mapConcurrent(projects, 4, (project) =>
+    listProjectSessions(project.project_id).catch((): ProjectSessionSummary[] => [])
+  );
+
+  projects.forEach((project, index) => {
+    for (const session of sessionsByProject[index]) {
       // Derive from the session row — do NOT call /start while listing, or every
       // sandbox across every project would be woken. Single-session opens use it.
       const runtime = null;
@@ -227,7 +233,7 @@ async function listProjectSessionSandboxes(): Promise<
         sandbox: toSandboxInfo(project, session, runtime),
       });
     }
-  }
+  });
 
   return results.sort((a, b) => {
     const priority: Record<string, number> = { active: 0, provisioning: 1, stopped: 2, error: 3 };

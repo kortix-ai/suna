@@ -16,14 +16,7 @@
 
 import type { Context } from 'hono';
 import { recordAuditEvent } from './audit';
-
-function clientIp(c: Context): string | null {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    c.req.header('x-real-ip') ||
-    null
-  );
-}
+import { requestClientIp } from './client-ip';
 
 function userAgent(c: Context): string | null {
   return c.req.header('user-agent') || null;
@@ -54,7 +47,7 @@ export function auditLoginSuccess(args: {
       actorUserId: args.userId,
       action: 'auth.login.success',
       resourceType: 'session',
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
       metadata: {
         auth_type: args.authType,
@@ -84,7 +77,7 @@ export function auditLoginFail(args: {
       actorUserId: args.userId ?? null,
       action: 'auth.login.fail',
       resourceType: 'session',
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
       metadata: {
         reason: args.reason,
@@ -110,7 +103,7 @@ export function auditLogout(args: {
       action: 'auth.logout',
       resourceType: 'session',
       resourceId: args.sessionId ?? null,
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
       metadata: { reason: args.reason ?? 'user_action' },
     }),
@@ -133,7 +126,7 @@ export function auditSessionFirstSight(args: {
       action: 'auth.session.first_sight',
       resourceType: 'session',
       resourceId: args.sessionId,
-      ip: clientIp(args.c),
+      ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),
     }),
   );

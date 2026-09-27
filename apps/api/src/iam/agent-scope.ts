@@ -1,7 +1,7 @@
-import { DEPRECATED_KORTIX_CLI_ALIASES } from '@kortix/manifest-schema';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES } from '@kortix/manifest-schema';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
 /**
- * Agent-session scope enforcement — the `kortix_cli` half of per-agent
+ * Agent-session scope enforcement — the `kortix_permissions` half of per-agent
  * authorization.
  *
  * This runs BESIDE the role check (`assertAuthorized` / `loadProjectForUser`),
@@ -14,7 +14,7 @@ import { canonicalConnectorAlias } from '../shared/connector-alias';
  * A null grant (non-agent token: laptop CLI PAT, dashboard session, or a project
  * that hasn't adopted `[[agents]]`) imposes no restriction.
  */
-import { HTTPException } from 'hono/http-exception';
+import { buildDenialError } from './denial-message';
 import type { Context } from 'hono';
 import type { AgentGrant } from '@kortix/db';
 
@@ -40,7 +40,7 @@ export function isProjectSessionPrincipal(c: Context): boolean {
  * They are absent from `PROJECT_ACTIONS`, from the grantable catalog, from the
  * agent-grant editor and from `kortix validate --scopes`, so nothing offers
  * them as a live choice. They survive in exactly ONE place: a hand-written
- * `kortix_cli:` list in a kortix.yaml an author wrote before the collapse,
+ * `kortix_permissions:` (or legacy `kortix_cli:`) list in a kortix.yaml an author wrote before the collapse,
  * which both validators still ACCEPT (with a warning) precisely so that one
  * outdated string cannot fail a manifest and leave its agent with an empty
  * grant. This table rewrites such a
@@ -50,18 +50,18 @@ export function isProjectSessionPrincipal(c: Context): boolean {
  * runtime alias table, and NOT a second permission model: after normalization
  * `agentMayPerform` is a plain membership test against the catalog's spelling.
  */
-const MANIFEST_ACTION_ALIASES = DEPRECATED_KORTIX_CLI_ALIASES;
+const MANIFEST_ACTION_ALIASES = DEPRECATED_KORTIX_PERMISSION_ALIASES;
 
 /**
- * Rewrite a grant's `kortixCli` list to the catalog's spelling.
+ * Rewrite a grant's `permissions` list to the catalog's spelling.
  *
  * Call this exactly where `canonicalizeGrantConnectors` is called — once, on the
  * resolved grant — so every gate compares canonical to canonical.
  */
 export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant | null {
-  if (!grant || grant.kortixCli === 'all') return grant;
-  const canonical = grant.kortixCli.map((a) => MANIFEST_ACTION_ALIASES[a] ?? a);
-  return { ...grant, kortixCli: [...new Set(canonical)] };
+  if (!grant || grant.permissions === 'all') return grant;
+  const canonical = grant.permissions.map((a) => MANIFEST_ACTION_ALIASES[a] ?? a);
+  return { ...grant, permissions: [...new Set(canonical)] };
 }
 
 /**
@@ -72,8 +72,8 @@ export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant |
  */
 export function agentMayPerform(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true; // no grant = no restriction
-  if (grant.kortixCli === 'all') return true;
-  return grant.kortixCli.includes(action);
+  if (grant.permissions === 'all') return true;
+  return grant.permissions.includes(action);
 }
 
 /**
@@ -107,6 +107,24 @@ export function agentMayUseConnector(grant: AgentGrant | null, slug: string): bo
   return grant.connectors.includes(slug);
 }
 
+/**
+ * True if the agent-session grant lists the Kortix App `slug` in `apps`
+ * (spec 2026-09-22 §2.5). Unlike the other predicates, a missing `apps` key is
+ * NONE, not "all": the field is new, deny-by-default in both manifest
+ * versions, and the resolver omits it for an agent that declares no Apps.
+ * A null grant (ungoverned project) never reaches this — the App gate keeps
+ * the legacy human decision for it. Slugs compare lowercase (App slugs are).
+ */
+export function agentMayOpenApp(grant: AgentGrant, slug: string | null | undefined): boolean {
+  const apps = grant.apps;
+  if (apps === 'all') return true;
+  if (!Array.isArray(apps) || apps.length === 0) return false;
+  if (apps.includes('*')) return true;
+  if (!slug) return false;
+  const wanted = slug.toLowerCase();
+  return apps.some((entry) => entry.toLowerCase() === wanted);
+}
+
 /** True if the agent may receive/read the project secret with this
  *  IDENTIFIER (or no grant). `env` is the grant's `secrets` allowlist — a list
  *  of secret IDENTIFIERS (not raw env-var keys; see project_secrets.identifier
@@ -132,7 +150,9 @@ export function agentMayUseEnv(grant: AgentGrant | null, identifier: string): bo
 export function assertAgentScope(c: Context, action: string): void {
   const grant = getAgentGrant(c);
   if (agentMayPerform(grant, action)) return;
-  throw new HTTPException(403, {
-    message: `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_cli in kortix.yaml (CR-merged).`,
-  });
+  throw buildDenialError(
+    action,
+    'agent_scope_insufficient',
+    `Agent "${grant!.agent}" is not granted "${action}". Add it to this agent's kortix_permissions in kortix.yaml (CR-merged).`,
+  );
 }

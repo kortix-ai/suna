@@ -21,7 +21,7 @@ const META = {
   threadTs: '10.10',
   channelId: 'C1',
   messageTs: '11.11',
-  responseUrl: 'https://hooks.slack.test/x',
+  responseUrl: 'https://hooks.slack.com/x',
 };
 
 describe('the modal Slack opens', () => {

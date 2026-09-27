@@ -13,7 +13,7 @@ import {
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -214,7 +214,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
   });
 
@@ -844,7 +844,7 @@ export function ProjectSecretDialog({
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     ...contract('config'),
     enabled: open,
   });

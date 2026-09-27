@@ -17,7 +17,14 @@
  *
  * The parser is pure and framework-free so `channel-message.test.ts` can pin
  * each shape against the real prompt text.
+ *
+ * Channel text comes from anyone who can post in the channel, and every viewer
+ * of the session parses it, so no pattern here may re-read the text per
+ * attempt. The pre-2026 header regex and the `<at>` strip did: 240k characters
+ * took 22 s and 7 s.
  */
+
+import { readLegacyChannelHeader, replaceSpans, tagBlocks } from '@kortix/shared';
 
 export type ChannelPlatform = 'Slack' | 'Teams' | 'Telegram';
 
@@ -44,7 +51,17 @@ const TAIL_MARKERS = [
 
 /** Teams wraps a channel @-mention of the bot in `<at>…</at>`; a person never typed that. */
 function stripMentionMarkup(value: string): string {
-  return value.replace(/<at[^>]*>.*?<\/at>/gi, ' ').replace(/&nbsp;/gi, ' ').replace(/[ \t]+/g, ' ').trim();
+  return replaceMentions(value).replace(/&nbsp;/gi, ' ').replace(/[ \t]+/g, ' ').trim();
+}
+
+/**
+ * `value.replace(/<at[^>]*>.*?<\/at>/gi, ' ')` without re-reading the text for
+ * each `<at` — the regex re-read the rest of the text for an opener with no `>`,
+ * and the rest of the line for one with no `</at>`. `tagBlocks` pins it.
+ */
+function replaceMentions(value: string): string {
+  const mentions = tagBlocks(value, 'at', { attributes: 'any', ignoreCase: true, singleLine: true });
+  return replaceSpans(value, mentions, () => ' ');
 }
 
 function cutAtTail(text: string): string {
@@ -94,8 +111,6 @@ const FOLLOW_UP_HEADERS: Array<{ platform: ChannelPlatform; header: RegExp }> = 
   { platform: 'Slack', header: /^New message from (.+?) in the same Slack thread:$/m },
 ];
 
-const LEGACY_HEADER = /^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/;
-
 /** A header only counts when it opens the prompt (a revived-thread NOTE may precede it). */
 function opensPrompt(text: string, headerIndex: number): boolean {
   const before = text.slice(0, headerIndex).trim();
@@ -106,14 +121,15 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
   const text = (rawText ?? '').trim();
   if (!text) return undefined;
 
-  const legacy = LEGACY_HEADER.exec(text);
+  // `[Slack · #general · message from <user>]`, read by `@kortix/shared/channel-header`.
+  const legacy = readLegacyChannelHeader(text);
   if (legacy) {
-    const platform = legacy[1] === 'Teams' ? 'Teams' : legacy[1] === 'Telegram' ? 'Telegram' : 'Slack';
+    const platform = legacy.platform === 'Teams' ? 'Teams' : legacy.platform === 'Telegram' ? 'Telegram' : 'Slack';
     return {
       platform,
-      context: legacy[2].trim(),
-      userName: legacy[3].trim(),
-      messageText: cutAtTail(text.slice(legacy[0].length)),
+      context: legacy.context,
+      userName: legacy.userName,
+      messageText: cutAtTail(text.slice(legacy.length)),
       followUp: false,
     };
   }

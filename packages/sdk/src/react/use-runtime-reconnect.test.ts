@@ -398,7 +398,7 @@ describe('shouldCountProbeFailure — only failures that mean "the runtime is go
     expect(shouldCountProbeFailure({ hop: null, ...quiet })).toBe(true);
   });
 
-  // THE INCIDENT (2026-08-17, Essentia): a box saturated by a heavy turn streams
+  // THE INCIDENT (2026-08-17, SampleCo): a box saturated by a heavy turn streams
   // SSE frames fine and misses the 20s probe deadline. The abort carries NO hop,
   // and a proxy 502 raised from the same saturation carries `daemon` — both
   // "count" on hop alone, so two misses flip the session to `unreachable`, the

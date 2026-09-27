@@ -131,6 +131,19 @@ export interface ProjectSecretsResponse {
   manifest_path?: string;
   /** Error string when manifest_status === 'error'. */
   manifest_error?: string;
+  /**
+   * The calling agent's own secrets grant; `null` for a caller that is not an
+   * agent session (absent on older servers). `items` is filtered by it, so a
+   * declared name missing from `items` may be set but not granted.
+   */
+  agent_scope?: ProjectSecretsAgentScope | null;
+}
+
+/** An agent session's secrets grant, as `GET /projects/:id/secrets` reports it. */
+export interface ProjectSecretsAgentScope {
+  agent: string;
+  /** `'all'`, or the secret identifiers the agent may receive. */
+  secrets: 'all' | string[];
 }
 
 export async function listProjectSecrets(projectId: string) {
@@ -227,12 +240,19 @@ export type ProviderOAuthPoll =
 export async function startProjectProviderOAuth(
   projectId: string,
   provider: string,
-  input?: { sharing?: ConnectorSharing; resourceLabel?: string },
+  input?: {
+    sharing?: ConnectorSharing;
+    resourceLabel?: string;
+    /** Reconnect this existing account resource in place. Its label, access,
+     *  and session selections stay; send it without a label or sharing. */
+    resourceId?: string;
+  },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
     await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
       ...(input?.resourceLabel === undefined ? {} : { resource_label: input.resourceLabel }),
+      ...(input?.resourceId === undefined ? {} : { resource_id: input.resourceId }),
     }),
   );
 }

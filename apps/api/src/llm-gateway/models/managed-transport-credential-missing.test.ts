@@ -93,6 +93,6 @@ describe('an OpenRouter model without a credential is not offered', () => {
   test('refuses an explicit request for the uncredentialed model', async () => {
     await expect(
       resolveCandidates({ userId: 'u', accountId: 'a', projectId: 'p' }, 'deepseek-v4.1-flash'),
-    ).rejects.toMatchObject({ name: 'GatewayResolutionError' });
+    ).rejects.toMatchObject({ name: 'GatewayResolutionError', code: 'model_disabled_on_deployment' });
   });
 });

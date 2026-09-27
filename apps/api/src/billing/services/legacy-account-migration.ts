@@ -32,7 +32,7 @@ import { getCreditAccount, updateCreditAccount } from '../repositories/credit-ac
 import { listAccountStripeCustomerIds } from '../repositories/customers';
 import { resolveLiveStripeCustomerId } from './subscriptions';
 import { countActiveMembers } from './seat-management';
-import { grantCredits } from './credits';
+import { wallet } from '../wallet';
 import { resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT, PER_SEAT_PRICE_USD } from './tiers';
 
 const ADVISORY_LOCK_NS = 'lazy_migrate';
@@ -197,14 +197,17 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     if (walletCreditUsd > 0) {
       const description = `Legacy migration credit (cancelled ${cancelledSubIds.length} subscription${cancelledSubIds.length === 1 ? '' : 's'}; first seat period pre-paid)`;
       try {
-        const granted = await grantCredits(accountId, walletCreditUsd, 'legacy_migration', description, false);
-        if (granted && typeof granted === 'object' && 'success' in granted && (granted as any).success === false) {
-          console.error(`[lazy-migrate] grantCredits returned success=false for ${accountId}: ${JSON.stringify(granted)}`);
-          return defaultResult('failed', 'credit grant returned success=false');
-        }
+        await wallet.grant({
+          accountId,
+          amount: walletCreditUsd,
+          kind: 'legacy_migration',
+          description,
+          expiring: false,
+          key: null,
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[lazy-migrate] grantCredits threw for ${accountId}: ${msg}`);
+        console.error(`[lazy-migrate] credit grant threw for ${accountId}: ${msg}`);
         return defaultResult('failed', `credit grant: ${msg}`);
       }
     }

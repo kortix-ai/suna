@@ -15,7 +15,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { buildAuditQuery, exportBodyText, resolveInstant, truncate } from '../commands/audit.ts';
+import {
+  auditEventTitle,
+  buildAuditQuery,
+  exportBodyText,
+  resolveInstant,
+  truncate,
+} from '../commands/audit.ts';
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 
@@ -398,5 +404,95 @@ describe('truncate', () => {
     const out = truncate(long, 52);
     expect(out).toHaveLength(52);
     expect(out.endsWith('…')).toBe(true);
+  });
+});
+
+describe('auditEventTitle', () => {
+  test('a route label reads as its catalog title', () => {
+    expect(auditEventTitle('gateway.key.revoke')).toBe('Revoked LLM gateway key');
+  });
+
+  test('an event recorded outside a route reads as its title', () => {
+    expect(auditEventTitle('secret.consumer.used')).toBe('Used secret');
+  });
+
+  test('a row written before labels reads as its route title', () => {
+    expect(auditEventTitle('GET /v1/projects')).toBe('Listed projects');
+  });
+
+  test('an action the catalog does not know stays as it is', () => {
+    expect(auditEventTitle('custom.thing.happened')).toBe('custom.thing.happened');
+  });
+});
+
+describe('audit ls table', () => {
+  test('shows each row as a readable event next to its action', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-audit-table-'));
+    const cliEntry = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
+    const row = (id: string, action: string) => ({
+      event_id: id,
+      occurred_at: '2026-09-24T12:00:00.000Z',
+      actor_user_id: 'user-1',
+      actor_type: 'human',
+      outcome: 'success',
+      action,
+      resource_type: 'project',
+      resource_id: null,
+      metadata: {},
+    });
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        Response.json({
+          events: [row('a', 'gateway.key.revoke'), row('b', 'GET /v1/projects')],
+          next_cursor: null,
+        }),
+    });
+    const configFile = join(root, 'config.json');
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: `http://127.0.0.1:${server.port}`,
+            token: 'kortix_pat_audit_test',
+            user_id: 'user-1',
+            user_email: 'audit@example.test',
+            account_id: 'account-1',
+            logged_in_at: '2026-09-24T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    try {
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        KORTIX_CONFIG_FILE: configFile,
+        KORTIX_NO_UPDATE_CHECK: '1',
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        NO_COLOR: '1',
+        FORCE_COLOR: '0',
+      };
+      for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+        delete env[key];
+      }
+      const child = Bun.spawn({
+        cmd: [process.execPath, cliEntry, 'audit', 'ls'],
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+      expect(code).toBe(0);
+      expect(stdout).toContain('EVENT');
+      expect(stdout).toContain('Revoked LLM gateway key');
+      expect(stdout).toContain('gateway.key.revoke');
+      expect(stdout).toContain('Listed projects');
+    } finally {
+      server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

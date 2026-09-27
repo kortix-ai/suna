@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * output and the next. That contract only holds if they render the SAME
  * controls, not three copies that drift apart the first time any is touched.
  *
- * ─── Why one split button instead of a row of icons ────────────────────────
+ * ─── Why one split button plus one Download button ────────────────────────
  *
  * This bar used to be six flat icon peers — ask for changes, copy, open in a
  * new tab, copy link, download, full screen — plus close. Seven glyphs with no
@@ -17,30 +17,32 @@ import { useTranslations } from '@/i18n/use-translations';
  * *the* action, and three of them ("copy" vs "copy link" vs "open in a tab")
  * were mutually indistinguishable at 14px.
  *
- * Now there is one labelled control and one caret:
+ * Now there is one labelled control with a caret, and Download beside it:
  *
- *     [  Copy  |ᵛ]   [⤢]   [✕]
+ *     [  Copy  |ᵛ]   [⬇]   [⤢]   [✕]
  *
  * `Copy` says in words what it does, so it needs no tooltip, no icon, and
  * cannot be confused with its neighbours. The word alone also carries the
- * confirmation — it flips to `Copied`. Everything else that is a way of *taking this
- * output with you* lives behind the caret. Full screen and close stay outside —
- * they act on the panel, not on the output, and the panel's controls belong at
- * the panel's edge.
+ * confirmation — it flips to `Copied`. `Copy link` is its fallback, and when
+ * both exist it waits behind the caret.
  *
- * ─── The one rule that decides the primary label ───────────────────────────
+ * Download is never behind the caret. It is the action people reach for most
+ * after reading a file, so it is always a visible, single-click icon button —
+ * the same `ViewerDownloadButton` every file renderer's own toolbar uses, so
+ * there is exactly one Download control per viewer. Full screen and close stay
+ * outside too — they act on the panel, not on the output.
+ *
+ * ─── The one rule that decides the split button ────────────────────────────
  *
  * The primary is the first of these the surface can actually do:
  *
  *   1. `Copy`      — the output's own content (a file's text, an image's pixels)
  *   2. `Copy link` — a public, view-only link
- *   3. `Download`  — the bytes
  *
- * and the menu holds every one it did NOT take, always in that same order. So
- * the label always tells the truth about what a click does, the group never
- * moves, and no surface ever shows a control that would be a no-op. A PDF has
- * no content to put on a clipboard, so its primary is `Copy link`; a text file
- * has, so `Copy link` drops into its menu.
+ * and the menu holds the one it did NOT take, plus any extra menu items. A
+ * split button with no menu items drops its caret; a surface with neither
+ * action shows no split button at all. `planViewerActions` is that rule,
+ * written once and unit-tested.
  */
 
 import { Button } from '@/components/ui/button';
@@ -53,16 +55,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { downloadFile } from '@/features/files/api/runtime-files';
+import { PublicShareLinkConfirm } from '@/components/projects/public-share-link-confirm';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import {
+  ArrowClockwiseIcon,
   CaretDownIcon,
   DotsThreeIcon,
-  DownloadSimpleIcon,
   LinkSimpleIcon,
   ArrowsOutSimpleIcon as Maximize2,
   ArrowsInSimpleIcon as Minimize2,
@@ -87,7 +91,7 @@ export interface ViewerCopy {
   ariaLabel: string;
 }
 
-/** The bytes behind this output, for the `Download file` action. */
+/** The bytes behind this output, for the Download button. */
 export interface ViewerDownload {
   path: string;
   fileName: string;
@@ -97,9 +101,7 @@ export interface ViewerDownload {
  * Download fetches the file's real bytes before the browser's save dialog can
  * appear, so on anything bigger than a note there is a real wait. Without a
  * pending state the control looks broken and gets invoked again — which starts
- * a second fetch. Owned here rather than by the menu item because the menu
- * closes on select: the spinner has to land somewhere still on screen, which is
- * the caret.
+ * a second fetch. The spinner renders on the Download button itself.
  */
 function useDownload(download?: ViewerDownload) {
   const [pending, setPending] = useState(false);
@@ -139,12 +141,48 @@ export function fileShareInput(
   return path ? { mode: 'view', file: { label, path } } : null;
 }
 
+export type ViewerPrimaryKind = 'copy' | 'link';
+export type ViewerMenuItemKind = 'link' | 'extra';
+
+export interface ViewerActionsPlan {
+  /** The split button's labelled half, or null when there is no split button. */
+  primary: ViewerPrimaryKind | null;
+  /** What sits behind the caret, in order. Empty means no caret. */
+  menu: ViewerMenuItemKind[];
+  /** Download is its own visible button — never a menu item. */
+  download: boolean;
+}
+
 /**
- * `Copy` and everything else you can do with this output, as one split button.
+ * The layout rule from this file's header, as a pure function so it can be
+ * pinned by tests without rendering a menu (Radix only mounts menu content
+ * once it is open, so static markup cannot show what a menu holds).
+ */
+export function planViewerActions({
+  canCopy,
+  canCopyLink,
+  canDownload,
+  hasExtraMenuItems,
+}: {
+  canCopy: boolean;
+  canCopyLink: boolean;
+  canDownload: boolean;
+  hasExtraMenuItems: boolean;
+}): ViewerActionsPlan {
+  const primary: ViewerPrimaryKind | null = canCopy ? 'copy' : canCopyLink ? 'link' : null;
+  const menu: ViewerMenuItemKind[] = [];
+  if (canCopyLink && primary !== 'link') menu.push('link');
+  if (hasExtraMenuItems) menu.push('extra');
+  return { primary, menu, download: canDownload };
+}
+
+/**
+ * `Copy` / `Copy link` as one split button, and Download as a visible button
+ * beside it.
  *
  * Self-gating: hand it whatever the surface has and it works out the shape. A
- * surface with exactly one action renders a lone button and no caret — a menu
- * holding a single item is a click for nothing.
+ * split button with exactly one action renders a lone button and no caret — a
+ * menu holding a single item is a click for nothing.
  */
 export function ViewerActions({
   copy,
@@ -201,21 +239,16 @@ export function ViewerActions({
     copiedTimer.current = setTimeout(() => setCopied(false), 2000);
   }, [copy]);
 
-  const canCopyLink = share.canShare;
+  const plan = planViewerActions({
+    canCopy: Boolean(copy),
+    canCopyLink: share.canShare,
+    canDownload: Boolean(download),
+    hasExtraMenuItems: Boolean(extraMenuItems),
+  });
+  const { primary } = plan;
 
-  // The rule from this file's header, written once. `primary` takes the first
-  // available action; `menu` gets every one it left behind, in the same order.
-  const primary = copy
-    ? ({ kind: 'copy' } as const)
-    : canCopyLink
-      ? ({ kind: 'link' } as const)
-      : download
-        ? ({ kind: 'download' } as const)
-        : null;
-
-  const menu: React.ReactNode[] = [];
-  if (canCopyLink && primary?.kind !== 'link') {
-    menu.push(
+  const menu = plan.menu.map((item) =>
+    item === 'link' ? (
       <DropdownMenuItem
         key="link"
         disabled={share.isPending}
@@ -226,52 +259,55 @@ export function ViewerActions({
       >
         <LinkSimpleIcon />
         {tI18nComplete.raw('textdbf362d4f210')}
-      </DropdownMenuItem>,
-    );
-  }
-  if (download && primary?.kind !== 'download') {
-    menu.push(
-      <DropdownMenuItem key="download" disabled={dl.pending} onSelect={() => void dl.run()}>
-        <DownloadSimpleIcon />
-        {tI18nComplete.raw('text9de4149fb971')}
-      </DropdownMenuItem>,
-    );
-  }
-  if (extraMenuItems) menu.push(<Fragment key="extra">{extraMenuItems}</Fragment>);
+      </DropdownMenuItem>
+    ) : (
+      <Fragment key="extra">{extraMenuItems}</Fragment>
+    ),
+  );
 
-  // No primary is possible on exactly one surface: an app in a session that has
-  // no project context yet, so there is no link to copy and no file to save,
-  // but "Open in a new tab" still works. A lone menu keeps that reachable
-  // rather than blanking the toolbar.
+  // Download is always its own visible button, right of the split button.
+  // Never a menu item.
+  const downloadButton = plan.download ? (
+    <ViewerDownloadButton onDownload={() => void dl.run()} pending={dl.pending} />
+  ) : null;
+
+  // No split button on two kinds of surface: a file in a session with no
+  // project context (nothing to copy, no link to mint — Download alone), and
+  // an app in such a session, where "Open in a new tab" still works. A lone
+  // menu keeps that reachable rather than blanking the toolbar.
   if (!primary) {
-    if (menu.length === 0) return null;
+    if (menu.length === 0 && !downloadButton) return null;
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-            className={cn('shrink-0 active:scale-[0.96]', className)}
-          >
-            <DotsThreeIcon className="size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-40">
-          {menu}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <span className={cn('flex shrink-0 items-center gap-1', className)}>
+        {menu.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label={tI18nComplete.raw('textf8d46c2570e7')}
+                className="shrink-0 active:scale-[0.96]"
+              >
+                <DotsThreeIcon className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-40">
+              {menu}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {downloadButton}
+        <PublicShareLinkConfirm confirmation={share.confirmation} />
+      </span>
     );
   }
 
-  // Each async action reports in exactly one place: on the primary when it IS
-  // the primary, on the caret when it lives in the menu (by which point the
-  // menu has closed and the caret is the only thing left on screen). Without
-  // the second half of each clause a link mint spun both at once.
-  const primaryBusy =
-    (primary.kind === 'link' && share.isPending) || (primary.kind === 'download' && dl.pending);
-  const menuBusy =
-    (primary.kind !== 'link' && share.isPending) || (primary.kind !== 'download' && dl.pending);
+  // `Copy link` reports its mint in exactly one place: on the primary when it
+  // IS the primary, on the caret when it lives in the menu (by which point the
+  // menu has closed and the caret is the only thing left on screen).
+  // Download reports on its own button.
+  const primaryBusy = primary === 'link' && share.isPending;
+  const menuBusy = primary !== 'link' && share.isPending;
 
   // ─── The primary is a word, and only a word. ───────────────────────────
   // No icon: an icon beside a label that already says "Copy" is decoration,
@@ -281,24 +317,15 @@ export function ViewerActions({
   // reads to a screen reader without a live region.
   //
   // The group is right-anchored inside a `justify-between` row, so the extra
-  // two characters extend the button's LEFT edge; the caret, full screen and
-  // close do not move.
-  const justDone = primary.kind === 'copy' ? copied : primary.kind === 'link' && share.copied;
-  const primaryLabel = justDone
-    ? 'Copied'
-    : primary.kind === 'copy'
-      ? 'Copy'
-      : primary.kind === 'link'
-        ? 'Copy link'
-        : 'Download';
+  // two characters extend the button's LEFT edge; the caret, Download, full
+  // screen and close do not move.
+  const justDone = primary === 'copy' ? copied : share.copied;
+  const primaryLabel = justDone ? 'Copied' : primary === 'copy' ? 'Copy' : 'Copy link';
 
   const onPrimary = () => {
-    if (primary.kind === 'copy') return void runCopy();
-    if (primary.kind === 'link') {
-      track('deliverable_link_copied');
-      return share.copyLink();
-    }
-    return void dl.run();
+    if (primary === 'copy') return void runCopy();
+    track('deliverable_link_copied');
+    return share.copyLink();
   };
 
   const primaryButton = (
@@ -307,7 +334,7 @@ export function ViewerActions({
       size="toolbar"
       onClick={onPrimary}
       disabled={primaryBusy}
-      aria-label={justDone || primary.kind !== 'copy' ? primaryLabel : copy!.ariaLabel}
+      aria-label={justDone || primary !== 'copy' ? primaryLabel : copy!.ariaLabel}
       aria-busy={primaryBusy}
       className="active:scale-[0.96] disabled:opacity-100"
     >
@@ -322,35 +349,82 @@ export function ViewerActions({
   );
 
   // A lone action needs no caret — an empty menu is a click that leads nowhere.
-  if (menu.length === 0) {
-    return <span className={cn('flex shrink-0 items-center', className)}>{primaryButton}</span>;
-  }
+  const split =
+    menu.length === 0 ? (
+      primaryButton
+    ) : (
+      <ButtonGroup className="shrink-0">
+        {primaryButton}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label={tI18nComplete.raw('textf8d46c2570e7')}
+              className="active:scale-[0.96]"
+            >
+              {/* The caret carries the pending state for a link minted from
+                  the menu — by then the menu itself has closed. */}
+              {menuBusy ? (
+                <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
+              ) : (
+                <CaretDownIcon className="size-3.5" />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            {menu}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </ButtonGroup>
+    );
 
   return (
-    <ButtonGroup className={cn('shrink-0', className)}>
-      {primaryButton}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-            className="active:scale-[0.96]"
-          >
-            {/* The caret carries the pending state for anything started from
-                the menu — by then the menu itself has closed. */}
-            {menuBusy ? (
-              <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
-            ) : (
-              <CaretDownIcon className="size-3.5" />
-            )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-40">
-          {menu}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </ButtonGroup>
+    <span className={cn('flex shrink-0 items-center gap-1', className)}>
+      {split}
+      {downloadButton}
+      <PublicShareLinkConfirm confirmation={share.confirmation} />
+    </span>
+  );
+}
+
+/**
+ * Re-read the open file from the sandbox now.
+ *
+ * The safety net under the automatic refresh: the agent's turn end already
+ * refetches every open file, so this is for edits the turn end cannot see — a
+ * terminal, another tab, a stylesheet an HTML page loads. It acts on the file,
+ * not the panel, so it sits before Download with the file's other actions. The
+ * glyph gives way to the product's one spinner while the read is in flight.
+ */
+export function RefreshButton({
+  onRefresh,
+  refreshing,
+}: {
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const label = tI18nComplete.raw('text0e9161011702');
+
+  return (
+    <Hint label={label} side="bottom">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onRefresh}
+        disabled={refreshing}
+        aria-label={label}
+        aria-busy={refreshing}
+        className="size-7 shrink-0 active:scale-[0.96]"
+      >
+        {refreshing ? (
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
+        ) : (
+          <ArrowClockwiseIcon className="size-3.5" />
+        )}
+      </Button>
+    </Hint>
   );
 }
 

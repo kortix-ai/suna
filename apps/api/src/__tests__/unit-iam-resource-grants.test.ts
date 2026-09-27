@@ -60,6 +60,31 @@ describe('objectUsable — a scoped object gates by principal', () => {
   });
 });
 
+describe('objectUsable — a `project` grant is everyone in the project', () => {
+  // The grant map is loaded per project, so a `project` row reaching this
+  // function is always the caller's own project; the caller has already passed
+  // the project-role check (step 9 of `authorizeV2`).
+  test('project grant → every principal passes, at either tier', async () => {
+    const grants = [{ principalType: 'project', principalId: crypto.randomUUID() }];
+    expect(await objectUsable('agent', grants, USER, [], false)).toBe(true);
+    expect(await objectUsable('agent', grants, OTHER, ['eng'], false)).toBe(true);
+    expect(await objectUsable('agent', grants, OTHER, [], true)).toBe(true);
+  });
+
+  test('project grant beside a group grant → still everyone', async () => {
+    const grants = [
+      { principalType: 'group', principalId: 'marketing' },
+      { principalType: 'project', principalId: crypto.randomUUID() },
+    ];
+    expect(await objectUsable('connection', grants, USER, ['eng'], false)).toBe(true);
+  });
+
+  test('an unknown principal kind grants nothing', async () => {
+    const grants = [{ principalType: 'everyone', principalId: USER }];
+    expect(await objectUsable('agent', grants, USER, [], false)).toBe(false);
+  });
+});
+
 describe('objectUsable — an unscoped object at manager tier', () => {
   test('no grant rows → open, whatever the object type', async () => {
     expect(await objectUsable('agent', undefined, USER, [], true)).toBe(true);

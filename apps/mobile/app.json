@@ -2,22 +2,17 @@
   "expo": {
     "name": "Kortix",
     "slug": "kortix",
-    "version": "1.1.2",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
+      "requireFullScreen": true,
       "bundleIdentifier": "com.kortix.app",
       "usesAppleSignIn": true,
       "associatedDomains": [
@@ -28,15 +23,35 @@
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": false,
         "NSCameraUsageDescription": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
-        "NSPhotoLibraryUsageDescription": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.",
-        "NSMicrophoneUsageDescription": "Kortix needs microphone access to record videos with audio for conversation attachments.",
+        "NSPhotoLibraryUsageDescription": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review\u2014all stored in your personalized conversation history.",
+        "NSSpeechRecognitionUsageDescription": "Kortix turns your speech into text when you dictate a message.",
+        "NSMicrophoneUsageDescription": "Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation.",
         "NSUserTrackingUsageDescription": "Kortix uses analytics to improve your experience and understand how features are used. For example, we track which AI features are most helpful so we can make the app better for everyone."
       },
-      "appleTeamId": "T8G9J33433"
+      "appleTeamId": "T8G9J33433",
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1", "0A2A.1", "3B52.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": ["E174.1", "85F4.1"]
+          }
+        ]
+      }
     },
     "android": {
-      "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "pan",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#F0F0E9"
@@ -94,9 +109,11 @@
           ]
         }
       ],
-      "permissions": [
+      "allowBackup": false,
+      "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.SYSTEM_ALERT_WINDOW",
         "com.google.android.gms.permission.AD_ID"
       ]
     },
@@ -107,7 +124,23 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "sounds": [
+            "./assets/sounds/kortix/kortix_complete.wav",
+            "./assets/sounds/kortix/kortix_attention.wav",
+            "./assets/sounds/kortix/kortix_error.wav"
+          ]
+        }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "enforceContrast": false
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -121,8 +154,16 @@
         "expo-image-picker",
         {
           "cameraPermission": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
-          "photosPermission": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.",
-          "microphonePermission": "Kortix needs microphone access to record videos with audio. For example, you can record a video to share with the AI Worker for analysis and save it to your conversation history."
+          "photosPermission": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review\u2014all stored in your personalized conversation history.",
+          "microphonePermission": "Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Kortix uses the microphone when you dictate a message and when you record a video to attach to a conversation.",
+          "speechRecognitionPermission": "Kortix turns your speech into text when you dictate a message.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox", "com.google.android.as", "com.google.android.tts", "com.samsung.android.bixby.agent"]
         }
       ],
       [
@@ -149,7 +190,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.1.2",
+    "runtimeVersion": "1.4.1",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f",
       "checkAutomatically": "ON_LOAD",

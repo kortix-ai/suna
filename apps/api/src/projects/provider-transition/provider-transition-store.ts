@@ -17,6 +17,7 @@
 import { and, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { providerTransitions, projects, type Database } from '@kortix/db';
 import { metadataMerge } from '../lib/metadata-merge';
+import { auditProviderTransition, type ProviderTransitionAuditRow } from './provider-transition-audit';
 import {
   LIVE_TRANSITION_STATUSES,
   canActivateGeneration,
@@ -155,19 +156,6 @@ export async function findLiveTransitionByIdentity(
         inArray(providerTransitions.status, LIVE),
       ),
     )
-    .orderBy(desc(providerTransitions.requestedAt))
-    .limit(1);
-  return row ?? null;
-}
-
-export async function latestTransitionForProject(
-  db: Database,
-  projectId: string,
-): Promise<ProviderTransitionRow | null> {
-  const [row] = await db
-    .select()
-    .from(providerTransitions)
-    .where(eq(providerTransitions.projectId, projectId))
     .orderBy(desc(providerTransitions.requestedAt))
     .limit(1);
   return row ?? null;
@@ -498,6 +486,17 @@ export async function releaseForWaiting(
   return rows.length > 0;
 }
 
+/** The transition columns an outcome audit row needs. */
+const TRANSITION_AUDIT_COLUMNS = {
+  transitionId: providerTransitions.transitionId,
+  accountId: providerTransitions.accountId,
+  projectId: providerTransitions.projectId,
+  sourceProvider: providerTransitions.sourceProvider,
+  targetProvider: providerTransitions.targetProvider,
+  mode: providerTransitions.mode,
+  generation: providerTransitions.generation,
+};
+
 export async function failTransition(
   db: Database,
   transitionId: string,
@@ -516,7 +515,9 @@ export async function failTransition(
       updatedAt: new Date(),
     })
     .where(fencedWhere(transitionId, expectedEpoch))
-    .returning({ transitionId: providerTransitions.transitionId });
+    .returning(TRANSITION_AUDIT_COLUMNS);
+  const [row] = rows;
+  if (row) await auditProviderTransition(row, { outcome: 'failed', errorClass: patch.errorClass, attempts: patch.attempts });
   return rows.length > 0;
 }
 
@@ -600,7 +601,11 @@ export async function activateWithCas(
   activated: boolean;
   reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' | 'project_archived';
 }> {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<{
+    activated: boolean;
+    reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' | 'project_archived';
+    row?: ProviderTransitionAuditRow;
+  }> => {
     const [project] = await tx
       .select({
         metadata: projects.metadata,
@@ -667,10 +672,11 @@ export async function activateWithCas(
       .set({ metadata: metadataMerge(activationPatch), updatedAt: args.now })
       .where(eq(projects.projectId, args.projectId));
 
-    await tx
+    const [activatedRow] = await tx
       .update(providerTransitions)
       .set({ status: 'activated', activatedAt: args.now, heartbeatAt: null, lastError: null, errorClass: null, nextRetryAt: null, updatedAt: args.now })
-      .where(eq(providerTransitions.transitionId, args.transitionId));
+      .where(eq(providerTransitions.transitionId, args.transitionId))
+      .returning(TRANSITION_AUDIT_COLUMNS);
 
     // Any lower-generation live transition can never win now.
     await tx
@@ -684,8 +690,11 @@ export async function activateWithCas(
           ne(providerTransitions.transitionId, args.transitionId),
         ),
       );
-    return { activated: true, reason: 'won' as const };
+    return { activated: true, reason: 'won' as const, row: activatedRow };
   });
+  // Audited after COMMIT: a rolled-back activation never produces a row.
+  if (result.row) await auditProviderTransition(result.row, { outcome: 'activated' });
+  return { activated: result.activated, reason: result.reason };
 }
 
 /**

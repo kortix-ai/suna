@@ -63,7 +63,7 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       name: 'kortix',
       enabled: true,
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });
@@ -89,7 +89,7 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
-      kortixCli: 'all',
+      permissions: 'all',
       env: 'all',
     });
   });

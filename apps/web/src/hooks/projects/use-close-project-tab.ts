@@ -46,6 +46,16 @@ function tabHref(projectId: string, tabId: string): string {
     : `/projects/${projectId}/sessions/${tabId}`;
 }
 
+export function isActiveProjectTab(
+  pathname: string | null,
+  projectId: string,
+  tabId: string,
+): boolean {
+  if (!pathname) return false;
+  const tabPath = tabHref(projectId, tabId);
+  return pathname === tabPath || pathname.startsWith(`${tabPath}/`);
+}
+
 export function useCloseProjectTab(projectId: string) {
   const router = useRouter();
   const pathname = usePathname();
@@ -62,9 +72,9 @@ export function useCloseProjectTab(projectId: string) {
   useEffect(() => {
     const tabs = openTabs ?? [];
     if (tabs.length === 0) return;
-    const match = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (match?.[1] !== projectId) return;
-    const idx = tabs.indexOf(match[2]);
+    const activeTabId = tabs.find((tabId) => isActiveProjectTab(pathname, projectId, tabId));
+    if (!activeTabId) return;
+    const idx = tabs.indexOf(activeTabId);
     if (idx === -1) return;
     if (tabs.length === 1) {
       router.prefetch(`/projects/${projectId}`);
@@ -81,12 +91,16 @@ export function useCloseProjectTab(projectId: string) {
     (sessionId: string) => {
       const tabs = useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
       const idx = tabs.indexOf(sessionId);
+      const isActive = isActiveProjectTab(pathname, projectId, sessionId);
       // Already gone (duplicate event, stale snapshot from a previous close
       // whose `router.push` hasn't flushed yet). Bail before idx underflow.
-      if (idx === -1) return;
-
-      const isActive =
-        pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`) ?? false;
+      // Customize can also be reached by a direct URL or a full-document
+      // navigation. In that case no store action opened its sentinel, but the
+      // native Close Tab command must still leave the active surface.
+      if (idx === -1) {
+        if (isActive && sessionId === CUSTOMIZE_TAB_ID) router.push(`/projects/${projectId}`);
+        return;
+      }
 
       if (!isActive) {
         // Closing a background tab — no navigation, just drop it.

@@ -76,12 +76,8 @@ const SERIAL_BYTES = 16
  * that passes while the bug ships, so the rule is pinned directly.
  */
 export function serialFromBytes(bytes: Uint8Array): string {
-  // A zero-length INTEGER is not valid DER either, so an empty input still has
-  // to yield a byte. The only caller passes 16 bytes of randomness; this keeps
-  // the function total instead of leaving a second invalid encoding reachable.
-  const out = Buffer.from(bytes.length > 0 ? bytes : Uint8Array.of(0x01))
-  const first = out[0] ?? 0x01
-  out[0] = (first & 0x7f) || 0x01
+  const out = Buffer.from(bytes)
+  out[0] = (out[0]! & 0x7f) || 0x01
   return out.toString('hex')
 }
 

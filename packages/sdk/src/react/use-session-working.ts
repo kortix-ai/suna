@@ -21,6 +21,7 @@ import {
   workingExpiryAtMs,
 } from '../core/session/working';
 import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
+import { createTickSingleFlight } from '../core/session/single-flight';
 import type { SessionTurnOutcome } from '../core/session/turn-end-cause';
 import { TURN_END_SETTLE_MS } from '../core/session/turn-end-settle';
 import { qk } from './query-keys';
@@ -219,17 +220,27 @@ export async function readSessionTurnObservation(
       };
     }
   }
-  // Stamped BEFORE the request. An answer is only as fresh as the moment
-  // it was asked, and a slow proxy hop must not make a stale read look new.
-  const atMs = Date.now();
-  const status = await getSessionTurn(projectId, sessionId);
-  return {
-    turns: status.turns ?? [],
-    last_ended: status.last_ended,
-    recent_failures: status.recent_failures,
-    atMs,
-  };
+  // ONE request per session per tick. Three components mount the `/turn`
+  // query and each one's status-phase effect invalidates it in the same
+  // commit; TanStack's cancel-and-refire then issued three requests the wire
+  // never aborted (staging HAR 2026-09-23: identical triples, same ms). A
+  // trigger in a LATER tick still gets a read of its own — see
+  // `createTickSingleFlight`.
+  return turnReads(`${projectId}/${sessionId}`, async () => {
+    // Stamped BEFORE the request. An answer is only as fresh as the moment
+    // it was asked, and a slow proxy hop must not make a stale read look new.
+    const atMs = Date.now();
+    const status = await getSessionTurn(projectId, sessionId);
+    return {
+      turns: status.turns ?? [],
+      last_ended: status.last_ended,
+      recent_failures: status.recent_failures,
+      atMs,
+    };
+  });
 }
+
+const turnReads = createTickSingleFlight<SessionTurnObservation>();
 
 export function useSessionWorking(
   projectId: string,

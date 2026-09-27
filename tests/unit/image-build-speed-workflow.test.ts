@@ -146,7 +146,6 @@ describe('every Linux job keeps the Blacksmith runner kill switch', () => {
     'deploy-prod.yml:publish-llm-catalog',
     'deploy-prod.yml:publish-sdk',
     'deploy-prod.yml:publish-agent-tunnel',
-    'deploy-prod.yml:publish-executor-sdk',
   ]);
 
   it.each(workflows)('%s', (name) => {

@@ -10,6 +10,8 @@
  *
  * Safely skips content that is already inside:
  * - Markdown links: [text](url) — neither the text nor the url part
+ * - Link reference definitions: [label]: url
+ * - A link still being written at the end of streaming text: [text](url…
  * - Code blocks: ```...```
  * - Inline code: `...`
  * - LaTeX inline math: $...$ (currency like $4M is escaped before parsing)
@@ -92,13 +94,75 @@ function buildProtectedRanges(text: string): Array<[number, number]> {
     ranges.push([m.index, m.index + m[0].length - 1]);
   }
 
+  // ── Link reference definitions  [label]: https://… ──────────────────────
+  // The target of every `[text][label]`. Wrapping its URL corrupts the
+  // definition, and each reference then renders as `text [blocked]`. Up to
+  // three spaces of indent, as in CommonMark; four makes an indented code block.
+  const definitionRe = /^ {0,3}\[[^\]\n]{1,999}\]:[^\n]*/gm;
+  while ((m = definitionRe.exec(text)) !== null) {
+    ranges.push([m.index, m.index + m[0].length - 1]);
+  }
+
   // ── Bare markdown link references  <url> ────────────────────────────────
   const angleRe = /<(?:https?:\/\/|mailto:)[^>\n]{1,8192}>/g;
   while ((m = angleRe.exec(text)) !== null) {
     ranges.push([m.index, m.index + m[0].length - 1]);
   }
 
+  // ── A link still being written at the very end  [text](url… ─────────────
+  const openLink = openMarkdownLinkAtEnd(text);
+  if (openLink) ranges.push([openLink.start, text.length - 1]);
+
   return ranges;
+}
+
+/** A markdown link the text ends inside of. See `openMarkdownLinkAtEnd`. */
+export interface OpenMarkdownLink {
+  /** Index of the `[` that opens the link. */
+  start: number;
+  /** The label so far: up to `]`, or to the end while the label is still open. */
+  label: string;
+  /** The destination so far, or `null` while the label is still open. */
+  destination: string | null;
+}
+
+/**
+ * The markdown link left open at the very end of the text, or null.
+ *
+ * Only streaming text ends inside a link: `[label` with no `]` yet, or
+ * `[label](https://…` with no `)` yet. Linkifying the half-written URL there
+ * wraps it in a second link — `[label]([https://…](https://…)` — so the reader
+ * sees a raw `[label](` until the closing paren arrives. `autoLinkUrls` leaves
+ * it as written and Streamdown's remend closes it for display; the web renderer
+ * also reads it to show a setup link as a pending card while it arrives.
+ *
+ * Only the last line counts, so a stray `[` earlier in the text is never open.
+ * Plain index scans, not a `$`-anchored regex: that backtracks quadratically on
+ * a run of `[` followed by a newline.
+ */
+export function openMarkdownLinkAtEnd(text: string): OpenMarkdownLink | null {
+  const lineStart = text.lastIndexOf('\n') + 1;
+
+  // Destination still open: the last `](` on the line, with no `)` after it.
+  const destination = text.lastIndexOf('](');
+  if (destination >= lineStart && text.indexOf(')', destination + 2) === -1) {
+    const start = text.lastIndexOf('[', destination);
+    if (start >= lineStart) {
+      return {
+        start,
+        label: text.slice(start + 1, destination),
+        destination: text.slice(destination + 2),
+      };
+    }
+  }
+
+  // Label still open: the last `[` on the line, with no `]` after it.
+  const start = text.lastIndexOf('[');
+  if (start >= lineStart && text.indexOf(']', start + 1) === -1) {
+    return { start, label: text.slice(start + 1), destination: null };
+  }
+
+  return null;
 }
 
 function isInProtectedRange(

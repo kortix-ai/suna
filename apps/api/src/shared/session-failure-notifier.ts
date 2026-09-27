@@ -27,11 +27,6 @@ export function registerSessionFailureNotifier(fn: SessionFailureNotifier): void
   notifier = fn;
 }
 
-/** Reset hook for tests. */
-export function resetSessionFailureNotifier(): void {
-  notifier = null;
-}
-
 /**
  * Tell the registered channel a session failed to provision. Never throws and
  * never blocks the caller — provisioning cleanup must not depend on it.

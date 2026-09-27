@@ -14,7 +14,9 @@ import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
+import { normalizeString, requestAuditContext, serializeSession } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import { createProjectSession } from '../lib/sessions';
 import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
@@ -92,7 +94,7 @@ export async function findWarmProjectSession(scope: {
  * Drop `metadata.warm` and stamp `last_activity_at` for one session — one
  * UPDATE, one moment.
  *
- * Called from POST /start (routes/r8.ts), the earliest server signal a user
+ * Called from POST /start (routes/session-runtime.ts), the earliest server signal a user
  * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
  * the session-lifecycle engine's `startSession` (which this route drives) is
  * this route itself — nothing pool-side, no server warmer, no automation ever
@@ -216,7 +218,7 @@ projectsApp.openapi(
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
     if (gate) return gate;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const excludeSessionId = normalizeString(body.exclude_session_id);
 
     const view = {
@@ -311,9 +313,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const sessionId = normalizeString(body.session_id);
-    if (!sessionId || !UUID_V4_REGEX.test(sessionId)) {
+    if (!sessionId || !isUuid(sessionId)) {
       return c.json({ error: 'Invalid session id', code: 'INVALID_SESSION_ID' }, 400);
     }
 

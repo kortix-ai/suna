@@ -2,7 +2,10 @@ import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
-import { isServerDeadlineNoiseMessage } from '@/lib/browser-error-noise';
+import {
+  isGitMirrorUnavailableNoiseMessage,
+  isServerDeadlineNoiseMessage,
+} from '@/lib/browser-error-noise';
 import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
 import {
@@ -219,7 +222,22 @@ export const handleApiError = (
   // `RequestDeadlineHTTPException` emits is excluded.
   const errorMessage = typeof error?.message === 'string' ? error.message : '';
   const isServerDeadline503 = status === 503 && isServerDeadlineNoiseMessage(errorMessage);
-  if ((status >= 500 && !isServerDeadline503) || error?.code === 'NETWORK_ERROR') {
+  // The API's transient git-mirror 503 (`code: 'git_mirror_unavailable'`,
+  // message `git mirror is temporarily unavailable`) is the SAME expected,
+  // retryable degradation class as the server deadline above: the API already
+  // classifies the cause out of its OWN Sentry and answers a clean 503 +
+  // Retry-After; a session start that cold-clones the project mirror simply
+  // got a transient GitHub-edge/credential blip. Capturing it here pages the
+  // FRONTEND Sentry (app 2346967) for noise — Better Stack pattern `b4d05df2…`.
+  // The telemetry-side backstop for leak paths lives in browser-error-noise.ts
+  // (`isGitMirrorUnavailableNoiseMessage`); a genuine 503 with another
+  // message/code still reports.
+  const isGitMirrorUnavailable503 =
+    status === 503 && isGitMirrorUnavailableNoiseMessage(errorMessage);
+  if (
+    (status >= 500 && !isServerDeadline503 && !isGitMirrorUnavailable503) ||
+    error?.code === 'NETWORK_ERROR'
+  ) {
     Sentry.captureException(
       error instanceof Error ? error : new Error(error?.message || String(error)),
       {
@@ -307,9 +325,7 @@ export const handleApiError = (
         duration: 6000,
         button: (
           <Button size="sm" asChild>
-            <HubLink to={accountSettingsTarget({ tab: 'billing' })}>
-              {MANAGE_PLAN_LABEL}
-            </HubLink>
+            <HubLink to={accountSettingsTarget({ tab: 'billing' })}>{MANAGE_PLAN_LABEL}</HubLink>
           </Button>
         ),
       });

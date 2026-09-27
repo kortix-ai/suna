@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { authUsersRows } from './helpers/auth-users-execute';
 import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -400,6 +401,15 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 const projectDbMock = createProjectsContractDbMock(dbState);
+
+// Member identities are read from auth.users (see helpers/auth-users-execute):
+// the same rule as the auth admin mock above — the shadow principal has no user.
+{
+  const baseExecute = projectDbMock.execute;
+  projectDbMock.execute = (async (query: Parameters<typeof baseExecute>[0]) =>
+    authUsersRows(query, (id) => (id === ACCOUNT_ID ? null : { email: 'project@example.test' })) ??
+    baseExecute(query)) as typeof baseExecute;
+}
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,

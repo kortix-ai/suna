@@ -2,17 +2,11 @@ import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
 
-import {
-  checkCredits as checkCreditsDb,
-  deductCredits as deductCreditsDb,
-} from '../../repositories/credits';
+import { InsufficientCreditsError } from '../../errors';
+import { wallet, type LedgerDebitType } from '../../billing/wallet';
 import type { BillingCheckResult, BillingDeductResult } from '../../types';
 
-/**
- * Check if account has sufficient credits.
- *
- * Uses direct DB query via Drizzle. Requires DATABASE_URL to be configured.
- */
+/** Check if account has sufficient credits. */
 export async function checkCredits(
   accountId: string,
   minimumRequired: number = 0.01,
@@ -24,20 +18,44 @@ export async function checkCredits(
     return { hasCredits: true, balance: 0, message: 'Credits check skipped (billing disabled)' };
   }
 
-  const result = await checkCreditsDb(accountId, minimumRequired);
-
-  return {
-    hasCredits: result.hasCredits,
-    message: result.message,
-    balance: result.balance,
-  };
+  const current = await wallet.balance(accountId).catch((err) => {
+    console.error('checkCredits error:', err);
+    return null;
+  });
+  if (!current) {
+    return { hasCredits: false, balance: 0, message: 'No credit account found' };
+  }
+  if (current.balance < minimumRequired) {
+    return {
+      hasCredits: false,
+      balance: current.balance,
+      message: `Insufficient credits. Balance: $${current.balance.toFixed(4)}`,
+    };
+  }
+  return { hasCredits: true, balance: current.balance, message: 'OK' };
 }
 
 /**
- * Deduct credits for a Kortix tool call.
- *
- * Uses direct DB atomic deduction via Drizzle. Requires DATABASE_URL to be configured.
+ * Admission debit for a router call. A refusal is a result, not a throw: the
+ * routes turn `error` into their 402 message.
  */
+async function debitForRouter(
+  accountId: string,
+  amount: number,
+  description: string,
+  kind: LedgerDebitType,
+): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string }> {
+  try {
+    const result = await wallet.debit({ accountId, amount, description, kind, key: null });
+    return { ok: true, ...result };
+  } catch (err) {
+    if (err instanceof InsufficientCreditsError) return { ok: false, error: err.reason };
+    console.error('[BILLING] router debit failed:', err);
+    return { ok: false, error: 'Deduction error' };
+  }
+}
+
+/** Deduct credits for a Kortix tool call. */
 export async function deductToolCredits(
   accountId: string,
   toolName: string,
@@ -70,27 +88,23 @@ export async function deductToolCredits(
   // third bucket to put them in. This keeps their classification byte-identical
   // to what the pre-20260730012238065 overload produced; inventing a category
   // here would move customer-visible numbers as a side effect of a DDL fix.
-  const result = await deductCreditsDb(accountId, cost, deductDescription, 'usage');
+  const result = await debitForRouter(accountId, cost, deductDescription, 'usage');
 
-  if (!result.success) {
+  if (!result.ok) {
     return { success: false, cost: 0, newBalance: 0, error: result.error };
   }
 
-  console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.newBalance?.toFixed(2)}`);
+  console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.balance.toFixed(2)}`);
 
   return {
     success: true,
-    cost: result.amountDeducted || cost,
-    newBalance: result.newBalance || 0,
+    cost: result.amount || cost,
+    newBalance: result.balance || 0,
     transactionId: result.transactionId,
   };
 }
 
-/**
- * Deduct credits for LLM usage.
- *
- * Uses direct DB atomic deduction via Drizzle. Requires DATABASE_URL to be configured.
- */
+/** Deduct credits for LLM usage. */
 export async function deductLLMCredits(
   accountId: string,
   model: string,
@@ -117,18 +131,18 @@ export async function deductLLMCredits(
   // real LLM spend and was already charged; before migration 20260730012238065
   // it bound an overload that stamped no ledger_type, so the breakdown reported
   // $0 LLM for every router-path request.
-  const result = await deductCreditsDb(accountId, calculatedCost, description, 'llm_debit');
+  const result = await debitForRouter(accountId, calculatedCost, description, 'llm_debit');
 
-  if (!result.success) {
+  if (!result.ok) {
     return { success: false, cost: 0, newBalance: 0, error: result.error };
   }
 
-  console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.newBalance?.toFixed(2)}`);
+  console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.balance.toFixed(2)}`);
 
   return {
     success: true,
-    cost: result.amountDeducted || calculatedCost,
-    newBalance: result.newBalance || 0,
+    cost: result.amount || calculatedCost,
+    newBalance: result.balance || 0,
     transactionId: result.transactionId,
   };
 }

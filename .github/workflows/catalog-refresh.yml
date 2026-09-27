@@ -41,7 +41,7 @@ jobs:
       - name: Diff summary
         id: diff
         run: |
-          if git diff --quiet -- packages/llm-catalog/src/catalog.generated.json; then
+          if git diff --quiet -- packages/llm-catalog/src/catalog.generated.json packages/llm-catalog/src/provider-env.generated.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Catalog unchanged."
             exit 0
@@ -68,7 +68,7 @@ jobs:
           git config user.name "kortix-bot"
           git config user.email "bot@kortix.ai"
           git checkout -B "$BR"
-          git add packages/llm-catalog/src/catalog.generated.json
+          git add packages/llm-catalog/src/catalog.generated.json packages/llm-catalog/src/provider-env.generated.json
           git commit -m "chore(catalog): refresh catalog.generated.json from models.dev ($(date -u +%F))"
           git push --force origin "$BR"
           existing="$(gh pr list --base main --head "$BR" --state open --json number --jq '.[0].number' || true)"

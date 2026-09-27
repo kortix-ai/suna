@@ -11,7 +11,7 @@
  * floor was 6 × RTT even though no single statement is slow (the sessions
  * SELECT is index-served by `idx_project_sessions_tenant_identity` and runs in
  * 0.15 ms at 60 rows). On a contended deployment where an RTT is tens of
- * milliseconds — Essentia self-host, where the audit write path was saturating
+ * milliseconds — SampleCo self-host, where the audit write path was saturating
  * the pool — that serialization is the whole cost.
  *
  * Three observations collapse the chain to three serial steps:
@@ -41,7 +41,7 @@ import { db } from '../../shared/db';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
 import type { ProjectRole } from '../access';
 import {
@@ -95,17 +95,32 @@ export async function loadProjectSessionInventory(input: {
   scope: ProjectSessionListScope;
   /** `callerKortixSessionId(c)` — null for a Supabase browser JWT. */
   boundCredentialSessionId: string | null;
+  /** The caller is an agent session under the `agent_principal` model (spec §2). */
+  agentPrincipal?: boolean;
   probeManageCapability: () => Promise<boolean>;
   /** Max VISIBLE items to return. Clamped to `SESSION_PAGE_MAX_LIMIT`. */
   limit?: number;
   /** Opaque cursor from a previous page's `nextCursor`. */
   cursor?: string | null;
+  /** Use conversation activity for projects whose imported sessions retain historical dates. */
+  orderByActivity?: boolean;
 }): Promise<ProjectSessionInventory> {
   // A cursor is sealed to (project, viewer): it carries the scan position, which
   // can name a row this viewer may not see. See `encodeSessionCursor`.
   const cursorScope: SessionCursorScope = {
     projectId: input.projectId,
     viewerId: input.userId,
+    ordering: input.orderByActivity ? 'activity' : undefined,
+  };
+  const sortAt = input.orderByActivity
+    ? sql<Date>`date_trunc('milliseconds', coalesce((${projectSessions.metadata}->>'last_activity_at')::timestamptz, ${projectSessions.updatedAt}))`
+    : sql<Date>`${projectSessions.updatedAt}`;
+  const rowSortAt = (row: ProjectSessionRow): Date => {
+    if (!input.orderByActivity) return row.updatedAt;
+    const raw = row.metadata?.last_activity_at;
+    if (typeof raw !== 'string') return row.updatedAt;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? row.updatedAt : parsed;
   };
 
   const limit = Math.min(
@@ -181,21 +196,21 @@ export async function loadProjectSessionInventory(input: {
         and(
           eq(projectSessions.projectId, input.projectId),
           eq(projectSessions.accountId, input.accountId),
-          // Keyset: strictly after the cursor row in `(updated_at DESC,
-          // session_id DESC)`. Written as the expanded OR rather than a row
-          // constructor so the planner keeps using the composite index.
+          // Keyset: strictly after the cursor row in `(sort_at DESC,
+          // session_id DESC)`. Ordinary projects use the updated_at index;
+          // opted-in imports use their historical conversation activity.
           cursor
             ? or(
-                lt(projectSessions.updatedAt, cursor.updatedAt),
+                lt(sortAt, cursor.updatedAt.toISOString()),
                 and(
-                  eq(projectSessions.updatedAt, cursor.updatedAt),
+                  eq(sortAt, cursor.updatedAt.toISOString()),
                   lt(projectSessions.sessionId, cursor.sessionId),
                 ),
               )
             : undefined,
         ),
       )
-      .orderBy(desc(projectSessions.updatedAt), desc(projectSessions.sessionId))
+      .orderBy(desc(sortAt), desc(projectSessions.sessionId))
       .limit(chunkSize);
 
     if (chunk.length === 0) {
@@ -246,6 +261,7 @@ export async function loadProjectSessionInventory(input: {
       callerSessionId: input.boundCredentialSessionId,
       boundCredentialSessionId: input.boundCredentialSessionId,
       accountSessionOversight,
+      agentPrincipal: input.agentPrincipal === true,
     });
 
     for (const item of selected.items) {
@@ -254,7 +270,7 @@ export async function loadProjectSessionInventory(input: {
       if (items.length >= limit) break;
       items.push(item);
       scannedRows.push(item.row);
-      nextCursor = cursorForRow(item.row, cursorScope);
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(item.row), sessionId: item.row.sessionId }, cursorScope);
     }
 
     // Did the page fill before we reached the end of this chunk? Then the rows
@@ -265,8 +281,8 @@ export async function loadProjectSessionInventory(input: {
     // would drop its tail permanently.
     if (items.length < limit) {
       const lastChunkRow = chunk[chunk.length - 1]!;
-      nextCursor = cursorForRow(lastChunkRow, cursorScope);
-      cursor = { updatedAt: lastChunkRow.updatedAt, sessionId: lastChunkRow.sessionId };
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId }, cursorScope);
+      cursor = { updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId };
       if (chunk.length < chunkSize) {
         exhausted = true;
         break;

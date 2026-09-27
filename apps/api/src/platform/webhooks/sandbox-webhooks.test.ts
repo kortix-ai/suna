@@ -186,3 +186,41 @@ describe('handlePlatinumWebhook', () => {
     expect(removedCalls).toEqual([]);
   });
 });
+
+describe('a sandbox provider delivery names the provider in the request audit', () => {
+  // Provider webhooks are signed, public routes: no auth middleware names the
+  // caller. Only a delivery whose signature verified may be attributed to the
+  // provider; a forged one stays anonymous and is recorded as denied.
+  const { runWithContext } = require('../../lib/request-context');
+  const { attachInboundAuditScope } = require('../../shared/audit-scope');
+  const secret = 'whsec_plat';
+
+  async function principalAfter(sig: string) {
+    cfg.PLATINUM_WEBHOOK_SECRET = secret;
+    const body = JSON.stringify({ type: 'sandbox.deleted', data: { id: 'sbA' } });
+    return runWithContext('POST', '/v1/webhooks/sandbox/platinum', async () => {
+      const scope = attachInboundAuditScope({ owner: 'edge', method: 'POST' });
+      const header = sig === 'valid' ? createHmac('sha256', secret).update(body, 'utf8').digest('hex') : sig;
+      const result = await handlePlatinumWebhook(body, (h: string) =>
+        h.toLowerCase() === 'x-platinum-signature' ? header : undefined,
+      );
+      return { status: result.status, principal: scope.principal };
+    });
+  }
+
+  test('a verified delivery is the provider acting', async () => {
+    const { status, principal } = await principalAfter('valid');
+    expect(status).toBe(200);
+    expect(principal).toMatchObject({
+      actorType: 'system',
+      authoritativeSource: 'integration',
+      authMethod: { kind: 'webhook_signature', provider: 'platinum' },
+    });
+  });
+
+  test('a forged delivery is refused and names nobody', async () => {
+    const { status, principal } = await principalAfter('0'.repeat(64));
+    expect(status).toBe(401);
+    expect(principal).toEqual({});
+  });
+});

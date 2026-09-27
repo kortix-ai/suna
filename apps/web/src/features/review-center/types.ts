@@ -8,156 +8,62 @@
  * prototype they come from mock-data.ts. See docs/REVIEW_CENTER_DESIGN.md.
  */
 
-export type ReviewKind = 'change' | 'approval' | 'output' | 'decision' | 'batch';
+import {
+  reviewSegmentForStatus,
+  type ReviewApprovalAction,
+  type ReviewApprovalActionIcon,
+  type ReviewApprovalDetail,
+  type ReviewBatchChild,
+  type ReviewBatchDetail,
+  type ReviewChangeDetail,
+  type ReviewDecisionDetail,
+  type ReviewDecisionOption,
+  type ReviewItem as SdkReviewItem,
+  type ReviewItemKind,
+  type ReviewItemRisk,
+  type ReviewItemSource,
+  type ReviewItemStatus,
+  type ReviewOutputDetail,
+  type ReviewRequestedChange,
+  type ReviewSegment as SdkReviewSegment,
+} from '@kortix/sdk';
 
-export type ReviewRisk = 'none' | 'low' | 'medium' | 'high';
-
-export type ReviewStatus =
-  | 'needs_you' // pending a human
-  | 'waiting' // human acted; the agent is working / verifying
-  | 'approved'
-  | 'changes_requested'
-  | 'rejected'
-  | 'done'
-  | 'dismissed';
-
-export type ReviewSegment = 'needs_you' | 'waiting' | 'done';
-
-export type ReviewSource = 'web' | 'slack' | 'agent';
+// The model itself lives in `@kortix/sdk` (mobile renders the same items). These
+// are the feature's local names for it.
+export type ReviewKind = ReviewItemKind;
+export type ReviewRisk = ReviewItemRisk;
+export type ReviewStatus = ReviewItemStatus;
+export type ReviewSegment = SdkReviewSegment;
+export type ReviewSource = ReviewItemSource;
 
 export interface ReviewActor {
   name: string;
   initials: string;
 }
 
-interface ReviewItemBase {
-  id: string;
-  title: string; // plain language
-  summary: string; // one line
-  risk: ReviewRisk;
-  status: ReviewStatus;
-  source: ReviewSource;
+/** What the web inbox adds to the SDK's item: its own copy and avatar. */
+interface ReviewItemPresentation {
   project: string;
-  agent: string; // originating agent / session label
   actor: ReviewActor;
-  createdAt: string; // ISO
   primaryAction: string; // plain verb shown on the row + modal
   secondaryAction?: string;
-  /** The session this item came from, when known — lets "request changes"
-   *  deliver the feedback back to that agent's conversation. */
-  sessionId?: string;
 }
 
-/** One recorded "please change this" note, delivered back to the change's agent. */
-export interface RequestedChange {
-  text: string;
-  by?: string;
-  at?: string;
-}
+export type RequestedChange = ReviewRequestedChange;
+export type ChangeDetail = ReviewChangeDetail;
+export type ApprovalActionIcon = ReviewApprovalActionIcon;
+export type ApprovalAction = ReviewApprovalAction;
+export type ApprovalDetail = ReviewApprovalDetail;
+export type OutputDetail = ReviewOutputDetail;
+export type DecisionOption = ReviewDecisionOption;
+export type DecisionDetail = ReviewDecisionDetail;
+export type BatchChild = ReviewBatchChild;
+export type BatchDetail = ReviewBatchDetail;
 
-/** kind: 'change' — a Change Request, presented in plain language. */
-export interface ChangeDetail {
-  crId?: string; // the underlying Change Request id (connected mode) — enables the live diff
-  number?: number;
-  whatChanged: string[];
-  impact: string;
-  verification: { label: string; tone: 'success' | 'warning' | 'neutral' | 'info' }[];
-  previewUrl?: string;
-  conflicts?: string[]; // friendly areas, not raw paths
-  requestedChanges?: RequestedChange[]; // human feedback sent to the agent
-  advanced: {
-    headRef: string;
-    baseRef: string;
-    headSha: string;
-    baseSha: string;
-    additions: number;
-    deletions: number;
-    files: {
-      path: string;
-      status: 'added' | 'modified' | 'deleted';
-      additions: number;
-      deletions: number;
-    }[];
-    mergeMode: string;
-  };
-}
-
-/** kind: 'approval' — one or more actions needing go-ahead (enables bulk). */
-export type ApprovalActionIcon = 'email' | 'charge' | 'command' | 'data' | 'generic';
-
-export interface ApprovalAction {
-  id: string;
-  title: string; // "Send the launch email"
-  connector: string; // "Gmail"
-  action: string; // "messages.send"
-  consequence: string; // "Sends a real email to 214 recipients"
-  risk: ReviewRisk;
-  icon: ApprovalActionIcon;
-  argsPreview: { key: string; value: string }[];
-  /** Exact action path and redacted record used by the shared one-call approval UI. */
-  actionPath?: string;
-  rawArgsPreview?: Record<string, unknown>;
-  reviewComplete?: boolean;
-  /** False when this viewer may not see connector arguments at all. */
-  previewAuthorized?: boolean;
-  connectorRisk?: string | null;
-  policySource: string;
-  decided?: 'approved' | 'denied'; // prototype-local decision state
-}
-
-export interface ApprovalDetail {
-  actions: ApprovalAction[];
-}
-
-/** kind: 'output' — an artifact the agent submits for feedback. */
-export interface OutputDetail {
-  artifactKind: 'page' | 'document' | 'api_result' | 'image' | 'data';
-  artifactLabel: string; // "Landing page"
-  previewUrl?: string;
-  preview?: string; // text / snippet
-  files?: { path: string; note?: string }[];
-  note: string; // what the agent is asking
-}
-
-/** kind: 'decision' — the agent is blocked on a human choice. */
-export interface DecisionOption {
-  id: string;
-  label: string;
-  description?: string;
-  recommended?: boolean;
-}
-
-export interface DecisionDetail {
-  question: string;
-  context?: string;
-  options: DecisionOption[];
-}
-
-/** kind: 'batch' — a roll-up of finished work for one-shot sign-off. */
-export interface BatchChild {
-  id: string;
-  title: string;
-  status: 'done' | 'needs_review';
-}
-
-export interface BatchDetail {
-  note: string;
-  children: BatchChild[];
-}
-
-export type ReviewItem =
-  | (ReviewItemBase & { kind: 'change'; detail: ChangeDetail })
-  | (ReviewItemBase & { kind: 'approval'; detail: ApprovalDetail })
-  | (ReviewItemBase & { kind: 'output'; detail: OutputDetail })
-  | (ReviewItemBase & { kind: 'decision'; detail: DecisionDetail })
-  | (ReviewItemBase & { kind: 'batch'; detail: BatchDetail });
+export type ReviewItem = SdkReviewItem & ReviewItemPresentation;
 
 /** Which inbox segment a status belongs to. */
-export function segmentForStatus(status: ReviewStatus): ReviewSegment {
-  if (status === 'needs_you') return 'needs_you';
-  if (status === 'waiting') return 'waiting';
-  return 'done';
-}
+export const segmentForStatus = reviewSegmentForStatus;
 
 /** Prototype/native approval actions can use the safe-risk helper. Connector approvals cannot. */
 export function isSafeRisk(risk: ReviewRisk): boolean {

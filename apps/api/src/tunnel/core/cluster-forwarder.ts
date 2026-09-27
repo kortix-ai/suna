@@ -3,6 +3,7 @@ import { tunnelConnections, tunnelRpcForwards } from '@kortix/db';
 import { capabilityForMethod, TunnelErrorCode, TunnelRelayError } from 'agent-tunnel';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { runWorkerTick } from '../../shared/audit-scope';
 import { fingerprintTunnelCredentialHash } from '../../shared/crypto';
 import { API_INSTANCE, API_INSTANCE_ID, API_STARTED_AT } from '../../shared/instance';
 import { tunnelRelay } from './relay';
@@ -246,7 +247,7 @@ export function stopTunnelRpcForwarder(): void {
 function scheduleForwarder(delayMs: number): void {
   if (forwarderStopped) return;
   forwarderTimer = setTimeout(() => {
-    void runForwarderTick();
+    void runWorkerTick('tunnel-rpc-forwarder', runForwarderTick);
   }, delayMs);
   forwarderTimer.unref?.();
 }

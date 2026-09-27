@@ -9,10 +9,12 @@ import { join } from 'node:path';
  * (dotenv/config/ts-node/…) that bun's resolver rejects differently than node's.
  * The library `runner()` has none of that — it's the same battle-tested engine
  * the CLI wraps. ALL migration logic (advisory lock, the pgmigrations tracking
- * table, per-migration transactions, dry-run, fake) is node-pg-migrate's.
+ * table, per-migration transactions, fake) is node-pg-migrate's. `status` is
+ * the exception: it reads the ledger itself (migration-status.ts), because the
+ * runner's `dryRun` is not read-only.
  *
  *   bun scripts/migrate.ts up                 apply pending
- *   bun scripts/migrate.ts status             list pending (dry-run, no writes)
+ *   bun scripts/migrate.ts status             list pending; read-only (never the runner)
  *   bun scripts/migrate.ts down [--count=N]   roll back N (default 1)
  *   bun scripts/migrate.ts fake               mark pending as applied without running (baseline)
  *   bun scripts/migrate.ts bootstrap          fresh-DB: install non-kortix prereqs, then `up`
@@ -32,8 +34,9 @@ import {
   repairMigrationLedger,
 } from './migration-ledger-repair';
 import { repairLocalWarmSessionIndex } from './local-warm-session-index-repair';
-import { withMigrationDeadlockRetry } from './migration-retry';
+import { withMigrationRetry } from './migration-retry';
 import { materializeMigrationRuntimeDirectory } from './migration-runtime-overrides';
+import { readMigrationStatus } from './migration-status';
 import { migrationBootstrapsPrerequisites, migrationCheckOrder } from './migration-target';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
@@ -61,6 +64,13 @@ function resolveUrl(argv: string[]): string {
     const v = readEnvKey(DOTENV, key);
     if (!v) {
       console.error(`--target=${target}: ${key} not set in apps/api/.env`);
+      process.exit(1);
+    }
+    if (v.startsWith('encrypted:')) {
+      console.error(
+        `--target=${target}: ${key} in apps/api/.env is dotenvx-encrypted. ` +
+          'Pass the decrypted URL as $DATABASE_URL instead (packages/db/MIGRATIONS.md, "Commands").',
+      );
       process.exit(1);
     }
     return v;
@@ -249,11 +259,14 @@ async function main() {
     }
   };
 
-  const applyPendingMigrations = () => withMigrationDeadlockRetry(
+  const applyPendingMigrations = () => withMigrationRetry(
     () => runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY }),
     {
       onRetry: (attempt) => {
         console.warn(`[migrate] PostgreSQL deadlock rolled back the transaction; retrying pending migrations (${attempt}/2).`);
+      },
+      onLockRetry: (attempt) => {
+        console.warn(`[migrate] another migration holds the advisory lock; retrying pending migrations (${attempt}/12).`);
       },
     },
   );
@@ -310,16 +323,18 @@ async function main() {
         });
         return;
       case 'status': {
-        const pending = await runner({
-          ...base,
-          direction: 'up',
-          count: Number.POSITIVE_INFINITY,
-          dryRun: true,
+        // Never node-pg-migrate's runner here: its `dryRun` still calls each
+        // pending migration's up(), and statements up() runs through
+        // pgm.db.query() commit. See migration-status.ts.
+        const { pending } = await readMigrationStatus({
+          databaseUrl,
+          migrationsDir: runtimeMigrations.path,
+          checkOrder,
         });
         if (pending.length === 0) console.log('Up to date — no pending migrations.');
         else {
           console.log(`${pending.length} pending migration(s):`);
-          for (const m of pending) console.log(`  pending  ${m.name}`);
+          for (const name of pending) console.log(`  pending  ${name}`);
         }
         if (pending.length > 0) process.exitCode = 1;
         return;

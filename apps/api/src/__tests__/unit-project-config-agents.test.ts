@@ -38,7 +38,7 @@ describe('project config agent discovery', () => {
           path: 'kortix.yaml#agents.kortix',
           enabled: true,
           connectors: 'all',
-          kortixCli: 'all',
+          permissions: 'all',
           env: 'all',
           file: null,
           model: null,
@@ -48,7 +48,7 @@ describe('project config agent discovery', () => {
           path: 'kortix.yaml#agents.triage',
           enabled: true,
           connectors: [],
-          kortixCli: [],
+          permissions: [],
           env: 'all',
           file: '.kortix/opencode/agents/release-bot.md',
           model: null,
@@ -58,7 +58,7 @@ describe('project config agent discovery', () => {
           path: 'kortix.yaml#agents.disabled',
           enabled: false,
           connectors: [],
-          kortixCli: [],
+          permissions: [],
           env: 'all',
           file: null,
           model: null,
@@ -82,7 +82,7 @@ describe('project config agent discovery', () => {
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
-        scope: { env: 'all', connectors: 'all', kortix_cli: 'all' },
+        scope: { env: 'all', connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all', apps: [] },
       },
       {
         name: 'triage',
@@ -93,7 +93,7 @@ describe('project config agent discovery', () => {
         source: 'kortix.yaml',
         enabled: true,
         sandbox: null,
-        scope: { env: 'all', connectors: [], kortix_cli: [] },
+        scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [], apps: [] },
       },
     ]);
   });
@@ -107,7 +107,7 @@ describe('project config agent discovery', () => {
           path: 'kortix.yaml#agents.support_bot',
           enabled: true,
           connectors: ['stripe'],
-          kortixCli: ['project.read'],
+          permissions: ['project.read'],
           env: ['GITHUB_TOKEN', 'OPENAI_API_KEY'],
           file: null,
           model: null,
@@ -117,11 +117,14 @@ describe('project config agent discovery', () => {
 
     const [agent] = resolveConfigAgents(nativeAgents, loaded).agents;
     // The UI reads exactly this to render the per-agent scope panel — note the
-    // wire key is `kortix_cli` (snake_case), mapped from the spec's `kortixCli`.
+    // wire key is `kortix_permissions` (snake_case), mapped from the spec's
+    // `permissions`; `kortix_cli` is the deprecated wire alias, same value.
     expect(agent?.scope).toEqual({
       env: ['GITHUB_TOKEN', 'OPENAI_API_KEY'],
       connectors: ['stripe'],
+      kortix_permissions: ['project.read'],
       kortix_cli: ['project.read'],
+      apps: [],
     });
   });
 

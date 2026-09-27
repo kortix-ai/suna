@@ -24,7 +24,7 @@ import { describe, expect, test } from 'bun:test';
 import { TimeoutError, withTimeout } from '../shared/with-timeout';
 import { ttlMemo } from '../shared/ttl-memo';
 
-// Kept in sync with apps/api/src/projects/routes/r2.ts. Re-declared here rather
+// Kept in sync with apps/api/src/projects/routes/sandboxes.ts. Re-declared here rather
 // than imported because the route module validates server env (FRONTEND_URL,
 // DB, …) at load time; this unit test must stay hermetic. If the route's
 // values change, update these and the assertions will keep the contract honest.
@@ -123,7 +123,7 @@ describe('sandbox-health budget', () => {
  * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
  * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B /
  * Platinum — once per template, plus a git read to hash the template
- * directory. On the Essentia corpus that made this "cheap polling endpoint"
+ * directory. On the SampleCo corpus that made this "cheap polling endpoint"
  * the slowest non-proxy read on the box: 559 ms mean server-side over 169
  * calls, 1 488 ms median as the browser saw it.
  *

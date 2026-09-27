@@ -3,7 +3,7 @@ import { accessRequests } from '@kortix/db';
 import postgres from 'postgres';
 import { config } from '../config';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { getSsoProviderByDomain } from '../repositories/sso';
+import { ssoEnforcedForEmail } from '../repositories/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
 import { db } from '../shared/db';
 import { createCheckEmailRateLimitMiddleware } from '../shared/rate-limit';
@@ -43,7 +43,8 @@ accessControlApp.openapi(
 // `mode` drives the unified auth flow: 'signin' when the address already has
 // an account, 'signup' when it may register, 'closed' when signups are off and
 // the address isn't allowlisted, 'sso' when the domain's org enforces SSO-only
-// sign-in (the password/email-code paths must refuse). This is deliberately a
+// sign-in on a verified domain (the password/email-code paths must refuse; the
+// API's headless sign-in routes refuse too). This is deliberately a
 // flow directive, not a raw "exists" boolean — and the per-IP rate limit above
 // it is what keeps the endpoint useless for bulk account enumeration
 // (`allowed` already implied existence whenever signups were closed, so this
@@ -78,10 +79,9 @@ accessControlApp.openapi(
       return c.json({ error: true, message: 'Validation failed', status: 400 }, 400);
     }
     const email = body.email;
-    const domain = email.trim().toLowerCase().split('@')[1] || '';
-    if (domain) {
-      const ssoProvider = await getSsoProviderByDomain(domain).catch(() => null);
-      if (ssoProvider?.enforceSso) return c.json({ allowed: true, mode: 'sso' as const });
+    // SSO-only sign-in applies only to a domain the account proved it controls.
+    if (await ssoEnforcedForEmail(email).catch(() => null)) {
+      return c.json({ allowed: true, mode: 'sso' as const });
     }
     if (await userExistsInAuth(email)) return c.json({ allowed: true, mode: 'signin' as const });
     if (canSignUp(email)) return c.json({ allowed: true, mode: 'signup' as const });

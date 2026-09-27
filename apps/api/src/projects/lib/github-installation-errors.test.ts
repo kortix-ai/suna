@@ -65,7 +65,7 @@ describe('every route that mints an installation token maps it', () => {
   // A predicate nobody calls protects nobody. These are the three surfaces a
   // user reaches with a stale connection: browse repositories, browse
   // branches, and create or link a repository.
-  const routes = ['routes/github-repositories.ts', 'routes/r2.ts'];
+  const routes = ['routes/github-repositories.ts', 'routes/project-from-repository.ts'];
 
   for (const route of routes) {
     test(`${route} maps the unreachable installation`, () => {

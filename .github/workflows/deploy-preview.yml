@@ -325,6 +325,10 @@ jobs:
       contents: read
       pull-requests: write
       deployments: write
+      # OIDC -> AWS Secrets Manager. Safe here: this job runs default-branch
+      # code only. The build-* jobs check out the pull request and must never
+      # get id-token or an aws-env read.
+      id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -337,7 +341,7 @@ jobs:
       # deleted. See previewSandboxIdentity in tests/src/core.
       # The suite is the GATE, so it runs when the label goes on and on an
       # explicit dispatch. A redeploy from a push skips it: the environment is
-      # persistent now, so pushes are iteration, and paying ~10 min of
+      # persistent now, so pushes are iteration, and paying ~40 min of
       # --target-full on each one would make the label unusable for working in.
       # Re-run it any time from the Actions tab with 'Run workflow'.
       PREVIEW_RUN_TESTS: ${{ (github.event.action == 'labeled' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
@@ -349,29 +353,44 @@ jobs:
       PREVIEW_LOCKFILE_SHA256: ${{ needs.authorize.outputs.lockfile_sha256 }}
       PREVIEW_SANDBOX_PROVIDER: ${{ needs.authorize.outputs.provider }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
-      KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
-      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
-      KORTIX_GITHUB_APP_ID: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_ID }}
-      KORTIX_GITHUB_APP_PRIVATE_KEY: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_PRIVATE_KEY }}
-      KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
-      MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
-      MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
-      # Optional, and takes PRECEDENCE over the App when set. The App can only
-      # create repos if it is installed on the owner AND has administration:
-      # write; a PAT needs neither. Set this to unblock project creation
-      # without touching the App's permissions.
-      MANAGED_GIT_GITHUB_TOKEN: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_TOKEN }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      MORPH_API_KEY: ${{ secrets.MORPH_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      # Preview runtime credentials. The dedicated preview GitHub App and
+      # managed-Git values are CI-only (kortix-ci-env); the rest are read from
+      # the runtime blob that already holds them. DAYTONA_API_URL was never
+      # stored and stays unset (sandbox-preview.ts falls back to
+      # DAYTONA_SERVER_URL, then the public API). MANAGED_GIT_GITHUB_TOKEN is
+      # optional and takes PRECEDENCE over the App when set: the App can only
+      # create repos if it is installed on the owner AND has administration:
+      # write; a PAT needs neither.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
+            DAYTONA_API_URL?
+            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
+            KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
+            KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
+            KORTIX_GITHUB_APP_ID=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_ID
+            KORTIX_GITHUB_APP_PRIVATE_KEY=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_PRIVATE_KEY
+            KORTIX_GITHUB_APP_SLUG=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_SLUG
+            MANAGED_GIT_GITHUB_INSTALL_ID=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID
+            MANAGED_GIT_GITHUB_OWNER=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_OWNER
+            MANAGED_GIT_GITHUB_TOKEN=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_TOKEN?
+            OPENROUTER_API_KEY
+            MORPH_API_KEY=kortix-preview-env:MORPH_API_KEY
       - uses: oven-sh/setup-bun@v2
       - name: Revalidate exact preview approval
         run: |
@@ -403,10 +422,23 @@ jobs:
         with:
           name: preview-web-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-web
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            DOCKERHUB_USERNAME
+            DOCKERHUB_TOKEN
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Publish exact linux/amd64 images
         run: |
           set -euo pipefail
@@ -439,10 +471,27 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
           jq -n '{state:"in_progress",description:"Building the self-host preview"}' | \
             gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" --input - >/dev/null
-      - name: Deploy sandbox and run pnpm test -- --target-full
+      # The deploy returns once the stack serves this commit. The suite is its
+      # own step below, so the preview origin reaches the pull request
+      # (deployment status + sticky comment) ~40 min before the suite ends.
+      - name: Deploy the preview stack
         id: preview
         continue-on-error: true
         run: bun tests/bin/sandbox-preview.ts deploy
+      - name: Check out the aws-env action
+        if: always() && needs.authorize.outputs.public_worker != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read the Cloudflare token from AWS Secrets Manager
+        if: always() && needs.authorize.outputs.public_worker != ''
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
       - name: Point the stable hostname at this sandbox
         # A stable hostname is served by a Worker that proxies to the sandbox's
         # OWN origin, and that origin is derived from the sandbox id — so it
@@ -460,7 +509,6 @@ jobs:
         # and re-pointing at one is how the public name goes dark. See below.
         if: always() && needs.authorize.outputs.public_worker != ''
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
           WORKER: ${{ needs.authorize.outputs.public_worker }}
         run: |
           set -euo pipefail
@@ -501,28 +549,22 @@ jobs:
           echo "pointing ${{ needs.authorize.outputs.public_origin }} -> ${target}"
           (cd "$dir" && npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${target}")
       - name: Publish GitHub deployment result
+        # Describes the DEPLOY only, and is posted before the suite runs: the
+        # pull request shows "View deployment" as soon as the stack serves.
+        # The suite's result is the job's check and the sticky comment.
         if: always() && steps.deployment.outputs.id != ''
         env:
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
           PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
           PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
-          TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}
         run: |
           set -euo pipefail
-          # `TESTS_RAN` comes from the deploy itself, not from re-reading
-          # PREVIEW_RUN_TESTS here — see the output's comment in
-          # tests/bin/sandbox-preview.ts. A redeploy from a push skips the
-          # suite, and this line used to call that "tests passed".
           if [ "$PREVIEW_OUTCOME" = success ] && [ -n "$PREVIEW_URL" ]; then
             state=success
-            if [ "$TESTS_RAN" = 1 ]; then
-              description='Full self-host preview and target-full tests passed'
-            else
-              description='Full self-host preview deployed; target-full did not run'
-            fi
+            description='Full self-host preview deployed and serving this commit'
           else
             state=failure
-            description='Preview deployment or target-full tests failed'
+            description='Preview deployment failed'
           fi
           jq -n \
             --arg state "$state" \
@@ -531,54 +573,37 @@ jobs:
             --arg log_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             '{state:$state,description:$description,environment_url:$environment_url,log_url:$log_url}' | \
             gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" --input - >/dev/null
-      - name: Update sticky preview comment
+      - name: Publish the preview on the pull request
         if: always()
         env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
-          REPORT_URL: ${{ steps.preview.outputs.report_url }}
           PROVIDER: ${{ steps.preview.outputs.provider }}
           SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
-          PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
-          TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}
-        run: |
-          set -euo pipefail
-          marker='<!-- preview-status -->'
-          if [ "$PREVIEW_OUTCOME" = success ] && [ "$TESTS_RAN" = 1 ]; then
-            title='## Preview environment - live and tested'
-            # Markdown needs literal backticks.
-            # shellcheck disable=SC2016
-            result='`pnpm test -- --target-full` passed.'
-          elif [ "$PREVIEW_OUTCOME" = success ]; then
-            # The suite is the GATE, and a redeploy from a push deliberately
-            # skips it (see PREVIEW_RUN_TESTS). Saying so is the whole point:
-            # this comment used to read "live and tested / target-full passed"
-            # over a deploy that ran nothing, which is the most reassuring
-            # sentence on the pull request and was not true.
-            title='## Preview environment - live; NOT tested'
-            # shellcheck disable=SC2016
-            result='`pnpm test -- --target-full` did NOT run on this deploy — a redeploy from a push skips it. Re-run the workflow from the Actions tab, or re-apply the `preview` label, to test this commit.'
-          elif [ -n "$PREVIEW_URL" ]; then
-            title='## Preview environment - live; tests failed'
-            result='The sandbox remains available for diagnosis. Open the report and workflow log.'
-          else
-            title='## Preview environment - deployment failed'
-            result='No preview URL was published. Open the workflow log.'
-          fi
-          body="$(printf '%s\n' "$marker" "$title" '' \
-            "- **Preview:** ${PREVIEW_URL:-unavailable}" \
-            "- **Test report:** ${REPORT_URL:-not run for this commit}" \
-            "- **Provider:** ${PROVIDER:-$PREVIEW_SANDBOX_PROVIDER}" \
-            "- **Sandbox:** ${SANDBOX_ID:-unavailable}" \
-            "- **Commit:** \`${COMMIT}\`" '' \
-            "$result" '' \
-            '_The preview owns PostgreSQL, Supabase, API, gateway, frontend, and Mailpit. OAuth initiation is the only explicit preview exclusion._')"
-          id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${NUM}/comments" --paginate \
-            --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" >/dev/null
-          else
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${NUM}/comments" -f body="$body" >/dev/null
-          fi
+          DEPLOY_OUTCOME: ${{ steps.preview.outcome }}
+          SUITE: ${{ steps.preview.outputs.suite }}
+          SUITE_OUTCOME: ""
+        run: bash scripts/ci/preview-sticky-comment.sh
+      - name: Run pnpm test -- --target-full against the preview
+        id: suite
+        if: steps.preview.outcome == 'success' && steps.preview.outputs.suite == '1'
+        continue-on-error: true
+        env:
+          PREVIEW_SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+        run: bun tests/bin/sandbox-preview.ts suite
+      - name: Update the preview comment with the suite result
+        if: always() && steps.suite.outcome != 'skipped'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
+          REPORT_URL: ${{ steps.suite.outputs.report_url }}
+          PROVIDER: ${{ steps.preview.outputs.provider }}
+          SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
+          DEPLOY_OUTCOME: ${{ steps.preview.outcome }}
+          SUITE: ${{ steps.preview.outputs.suite }}
+          SUITE_OUTCOME: ${{ steps.suite.outcome || 'cancelled' }}
+        run: bash scripts/ci/preview-sticky-comment.sh
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -589,7 +614,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - name: Fail when deployment or tests failed
-        if: steps.preview.outcome != 'success'
+        if: steps.preview.outcome != 'success' || steps.suite.outcome == 'failure'
         run: exit 1
 
   teardown:
@@ -608,6 +633,7 @@ jobs:
       contents: read
       pull-requests: write
       deployments: write
+      id-token: write # OIDC -> AWS Secrets Manager; default-branch code only
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
@@ -617,15 +643,26 @@ jobs:
       # branch environment has no expiry to fall back on.
       PREVIEW_BRANCH_ENV: ${{ github.event.pull_request.head.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
+            DAYTONA_API_URL?
+            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
       - uses: oven-sh/setup-bun@v2
       - name: Delete the Platinum or Daytona preview sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
@@ -664,6 +701,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write # OIDC -> AWS Secrets Manager; default-branch code only
     env:
       GITHUB_REPOSITORY: ${{ github.repository }}
       # No PREVIEW_PR_NUMBER: a delete event carries no pull request, and it
@@ -677,12 +715,23 @@ jobs:
       # it as a string, and branchEnvSandboxName slugs it to [a-z0-9-] first.
       PREVIEW_BRANCH_ENV: ${{ github.event.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
       - uses: oven-sh/setup-bun@v2
       - name: Delete the branch environment's sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
@@ -698,18 +747,30 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write # OIDC -> AWS Secrets Manager; default-branch code only
     env:
       GITHUB_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
-      DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
-      DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
       DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
           persist-credentials: false
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
+            DAYTONA_API_URL?
+            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
       - uses: oven-sh/setup-bun@v2
       - run: bun tests/bin/sandbox-preview.ts reconcile

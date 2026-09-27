@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { MANAGED_MODELS } from '@kortix/llm-catalog';
 import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
   KORTIX_MANAGED_PROVIDER_ENABLED: true,
+  MORPH_MANAGED_MODELS: [],
   OPENROUTER_API_KEY: 'openrouter-test-key',
   OPENROUTER_API_URL: 'https://openrouter.ai/api/v1',
 };
@@ -41,6 +43,8 @@ const getModelPricing = mock(
 mock.module('../../router/config/model-pricing', () => ({ getModelPricing }));
 
 const {
+  bedrockByokBaseUrl,
+  isAwsRegion,
   livePricing,
   managedCandidates,
   stripBedrockInferenceProfilePrefix,
@@ -52,57 +56,27 @@ beforeEach(() => {
 });
 
 describe('stripBedrockInferenceProfilePrefix', () => {
-  test('strips the us. cross-region inference-profile prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('us.anthropic.claude-opus-4-8')).toBe(
-      'anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('strips the eu. prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('eu.amazon.nova-micro-v1:0')).toBe(
-      'amazon.nova-micro-v1:0',
-    );
-  });
-
-  test('strips the apac. prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('apac.anthropic.claude-sonnet-4-6')).toBe(
-      'anthropic.claude-sonnet-4-6',
-    );
-  });
-
-  test('strips the us-gov. prefix', () => {
-    expect(stripBedrockInferenceProfilePrefix('us-gov.anthropic.claude-opus-4-8')).toBe(
-      'anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('leaves a base id with no region prefix untouched', () => {
-    expect(stripBedrockInferenceProfilePrefix('anthropic.claude-opus-4-8')).toBe(
-      'anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('does not strip a look-alike id that merely starts with a prefix code but no matching dot boundary', () => {
-    // "use." / "usa." aren't in the known-prefix set and don't match "us."
-    // (the char after "us" isn't a dot), so they must pass through unchanged.
-    expect(stripBedrockInferenceProfilePrefix('use.something')).toBe('use.something');
-    expect(stripBedrockInferenceProfilePrefix('usa.something')).toBe('usa.something');
-  });
-
-  test('does not strip an unrelated region-like prefix outside the known AWS set', () => {
-    expect(stripBedrockInferenceProfilePrefix('us-west-2.anthropic.claude-opus-4-8')).toBe(
-      'us-west-2.anthropic.claude-opus-4-8',
-    );
-  });
-
-  test('a bare prefix with nothing after the dot is left untouched (no empty result)', () => {
-    expect(stripBedrockInferenceProfilePrefix('us.')).toBe('us.');
+  // The pricing lookup id: models.dev lists only the base Bedrock id.
+  test.each([
+    ['us.anthropic.claude-opus-4-8', 'anthropic.claude-opus-4-8'],
+    ['eu.amazon.nova-micro-v1:0', 'amazon.nova-micro-v1:0'],
+    ['apac.anthropic.claude-sonnet-4-6', 'anthropic.claude-sonnet-4-6'],
+    ['us-gov.anthropic.claude-opus-4-8', 'anthropic.claude-opus-4-8'],
+    // No prefix, a look-alike without the dot boundary, a region outside the
+    // known set, and a bare prefix all pass through unchanged.
+    ['anthropic.claude-opus-4-8', 'anthropic.claude-opus-4-8'],
+    ['use.something', 'use.something'],
+    ['usa.something', 'usa.something'],
+    ['us-west-2.anthropic.claude-opus-4-8', 'us-west-2.anthropic.claude-opus-4-8'],
+    ['us.', 'us.'],
+  ])('%s → %s', (input, expected) => {
+    expect(stripBedrockInferenceProfilePrefix(input)).toBe(expected);
   });
 });
 
 describe('normalizeBedrockInferenceProfileRegion', () => {
-  test('rewrites a wrong-geography profile to the endpoint region (the Essentia jp.→us. incident)', () => {
-    // 41 sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
+  test('rewrites a wrong-geography profile to the endpoint region (the jp.→us. incident)', () => {
+    // Sessions on a us-east-1 box were pinned to jp.anthropic.claude-opus-5,
     // which Bedrock 400s "The provided model identifier is invalid."
     expect(
       normalizeBedrockInferenceProfileRegion('jp.anthropic.claude-opus-5', 'us-east-1'),
@@ -159,14 +133,12 @@ describe('normalizeBedrockInferenceProfileRegion', () => {
   });
 });
 
-describe('livePricing + stripBedrockInferenceProfilePrefix — the actual $0 bug', () => {
-  test('a cross-region-prefixed id misses the catalog on its own (reproduces the bug)', () => {
-    expect(livePricing('amazon-bedrock', 'us.anthropic.claude-opus-4-8')).toBeUndefined();
-  });
-
-  test('stripping the prefix first resolves the same catalog price as the base id', () => {
-    const stripped = stripBedrockInferenceProfilePrefix('us.anthropic.claude-opus-4-8');
-    expect(livePricing('amazon-bedrock', stripped)).toEqual({
+// The $0 upstream-cost bug: a cross-region profile id missed the catalog, so
+// resolve-candidates strips the prefix before this lookup
+// (resolve-candidates.test.ts asserts the stripped id reaches it).
+describe('livePricing maps the catalog price onto the descriptor', () => {
+  test('a flat price maps field by field', () => {
+    expect(livePricing('amazon-bedrock', 'anthropic.claude-opus-4-8')).toEqual({
       inputPerMillion: 15,
       outputPerMillion: 75,
       cachedInputPerMillion: undefined,
@@ -174,16 +146,27 @@ describe('livePricing + stripBedrockInferenceProfilePrefix — the actual $0 bug
       tiers: undefined,
       contextOver200k: undefined,
     });
-    expect(livePricing('amazon-bedrock', stripped)).toEqual(
-      livePricing('amazon-bedrock', 'anthropic.claude-opus-4-8'),
-    );
   });
 
-  test('amazon.nova-micro cross-region id resolves via apac. prefix too', () => {
-    const stripped = stripBedrockInferenceProfilePrefix('apac.amazon.nova-micro-v1:0');
-    expect(livePricing('amazon-bedrock', stripped)).toEqual(
-      livePricing('amazon-bedrock', 'amazon.nova-micro-v1:0'),
-    );
+  test('a long-context price maps its own tier', () => {
+    expect(livePricing('openrouter', 'x-ai/grok-4.6')).toEqual({
+      inputPerMillion: 2,
+      outputPerMillion: 6,
+      cachedInputPerMillion: 0.5,
+      cacheWritePerMillion: undefined,
+      tiers: undefined,
+      contextOver200k: {
+        inputPerMillion: 4,
+        outputPerMillion: 12,
+        cachedInputPerMillion: 1,
+        cacheWritePerMillion: undefined,
+        contextThreshold: 200_000,
+      },
+    });
+  });
+
+  test('a model the catalog does not list has no price', () => {
+    expect(livePricing('amazon-bedrock', 'us.anthropic.claude-opus-4-8')).toBeUndefined();
   });
 });
 
@@ -199,7 +182,7 @@ describe('managed OpenRouter descriptor', () => {
       tier: 'balanced',
       vision: true,
       limit: { context: 1_048_576, output: 16_384 },
-      openrouterProvider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
+      openrouterProvider: { only: ['coreweave/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
     })).toEqual([expect.objectContaining({
       provider: 'openrouter',
       kind: 'openai-compat',
@@ -213,22 +196,151 @@ describe('managed OpenRouter descriptor', () => {
         cachedInputPerMillion: 0.006,
         outputPerMillion: 0.6,
       }),
-      bodyExtras: { provider: { only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
+      bodyExtras: { provider: { only: ['coreweave/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
     })]);
   });
 });
 
-test('managed GLM pins CoreWeave and enforces ZDR without fallback', () => {
-  expect(managedCandidates({
-    id: 'glm-5.3-flash', name: 'GLM-5.3-Flash',
-    upstreamModelId: 'z-ai/glm-5.3-flash', transport: 'openrouter',
+describe('managed OpenRouter pool', () => {
+  const glm = {
+    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash',
+    upstreamModelId: 'z-ai/glm-5.3-flash', transport: 'openrouter' as const,
+    morphModelId: 'morph-glm53flash',
+    morphPricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
-    tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
-    openrouterProvider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  })).toEqual([expect.objectContaining({
-    provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',
-    resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits',
-    bodyExtras: { provider: { only: ['coreweave/nvfp4'], allow_fallbacks: false, zdr: true, data_collection: 'deny' } },
-  })]);
+    pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
+    tier: 'fast' as const, vision: true, limit: { context: 1_048_576, output: 16_384 },
+    openrouterProvider: {
+      only: ['morph', 'decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+      max_price: { prompt: 0.15, completion: 0.5 },
+    },
+  };
+
+  beforeEach(() => {
+    config.MORPH_MANAGED_MODELS = ['deepseek-v4.1-flash', 'kimi-k3'];
+    config.MORPH_API_KEY = 'morph-test-key';
+    config.MORPH_API_URL = 'https://api.morphllm.com/v1';
+  });
+  afterEach(() => {
+    config.MORPH_MANAGED_MODELS = [];
+    config.MORPH_API_KEY = undefined;
+    config.MORPH_API_URL = undefined;
+  });
+
+  test('GLM excludes Morph by default, even when a Morph key exists', () => {
+    expect(managedCandidates(glm)).toEqual([
+      expect.objectContaining({
+        provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'openrouter-test-key',
+        resolvedModel: 'z-ai/glm-5.3-flash', billingMode: 'credits', publicProvider: 'kortix',
+        bodyExtras: { provider: {
+          only: ['decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+          max_price: { prompt: 0.15, completion: 0.5 },
+        } },
+      }),
+    ]);
+  });
+
+  test('the OpenRouter route always forces ZDR and no data collection', () => {
+    const [openrouter] = managedCandidates({
+      ...glm,
+      openrouterProvider: { only: ['decart/fp4'], allow_fallbacks: true, zdr: false, data_collection: 'allow' },
+    });
+    expect(openrouter.bodyExtras).toEqual({
+      provider: { only: ['decart/fp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny' },
+    });
+  });
+
+  test('without a Morph key the OpenRouter pool still serves', () => {
+    config.MORPH_API_KEY = undefined;
+    expect(managedCandidates(glm).map((c) => c.provider)).toEqual(['openrouter']);
+  });
+
+  test('without an OpenRouter key the model is unavailable', () => {
+    const saved = config.OPENROUTER_API_KEY;
+    config.OPENROUTER_API_KEY = undefined;
+    try {
+      expect(managedCandidates(glm)).toEqual([]);
+    } finally { config.OPENROUTER_API_KEY = saved; }
+  });
+
+  test('a Morph-only pool is unavailable', () => {
+    expect(managedCandidates({ ...glm, openrouterProvider: { ...glm.openrouterProvider, only: ['morph'] } })).toEqual([]);
+  });
+
+  test('the default list uses Morph for DeepSeek and Kimi only', () => {
+    for (const id of ['deepseek-v4.1-flash', 'kimi-k3']) {
+      const model = MANAGED_MODELS.find((entry) => entry.id === id)!;
+      const candidates = managedCandidates(model);
+      expect(candidates.map((candidate) => candidate.provider)).toEqual(['morph', 'openrouter']);
+      expect(candidates[0].resolvedModel).toBe(model.morphModelId!);
+      expect(candidates.map((candidate) => candidate.failover)).toEqual([true, true]);
+      expect(candidates[1].bodyExtras).toMatchObject({
+        provider: { only: model.openrouterProvider!.only, zdr: true, data_collection: 'deny' },
+      });
+    }
+  });
+
+  test('adding GLM to the list enables direct Morph for GLM only', () => {
+    config.MORPH_MANAGED_MODELS = ['glm-5.3-flash'];
+    const candidates = managedCandidates(glm);
+    expect(candidates.map((candidate) => candidate.provider)).toEqual(['morph', 'openrouter']);
+    expect(candidates[0]).toMatchObject({
+      resolvedModel: 'morph-glm53flash', pricing: glm.morphPricing, failover: true,
+    });
+    expect(candidates[1].bodyExtras).toMatchObject({
+      provider: { only: ['decart/fp4', 'coreweave/nvfp4'], zdr: true, data_collection: 'deny' },
+    });
+    expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+  });
+
+  test('an empty list disables direct Morph for every managed model', () => {
+    config.MORPH_MANAGED_MODELS = [];
+    for (const model of MANAGED_MODELS) {
+      expect(managedCandidates(model).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+    }
+  });
+
+  test('an omitted list in a minimal config disables direct Morph', () => {
+    config.MORPH_MANAGED_MODELS = undefined;
+    expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+  });
+
+  test('a selected model remains available through Morph when OpenRouter has no key', () => {
+    const saved = config.OPENROUTER_API_KEY;
+    config.OPENROUTER_API_KEY = undefined;
+    try {
+      expect(managedCandidates(MANAGED_MODELS[0]!).map((candidate) => candidate.provider)).toEqual(['morph']);
+      expect(managedCandidates(glm)).toEqual([]);
+    } finally { config.OPENROUTER_API_KEY = saved; }
+  });
+
+  test('operator endpoints outside the verified US pool fail closed', () => {
+    expect(managedCandidates({
+      ...glm,
+      openrouterProvider: { ...glm.openrouterProvider, only: ['z-ai/fp8'] },
+    })).toEqual([]);
+  });
+});
+
+describe('bedrockByokBaseUrl', () => {
+  test.each(['us-east-1', 'eu-central-2', 'ap-southeast-4', 'us-gov-west-1', 'il-central-1', 'ca-west-1'])(
+    'accepts the region %s',
+    (region) => {
+      expect(isAwsRegion(region)).toBe(true);
+      expect(bedrockByokBaseUrl(region)).toBe(`https://bedrock-runtime.${region}.amazonaws.com`);
+    },
+  );
+
+  test.each(['x@example.test/', 'example.test#', 'us-east-1.example.test', 'us-east-1/', 'US-EAST-1', 'us_east_1', '10.0.0.5:8443'])(
+    'refuses %s, which is not a region name',
+    (region) => {
+      expect(isAwsRegion(region)).toBe(false);
+      expect(() => bedrockByokBaseUrl(region)).toThrow('AWS_REGION is not a valid AWS region name');
+    },
+  );
+
+  test('an unset region uses us-east-1', () => {
+    expect(bedrockByokBaseUrl(null)).toBe('https://bedrock-runtime.us-east-1.amazonaws.com');
+    expect(bedrockByokBaseUrl('  ')).toBe('https://bedrock-runtime.us-east-1.amazonaws.com');
+  });
 });

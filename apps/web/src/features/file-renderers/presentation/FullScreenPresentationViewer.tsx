@@ -6,10 +6,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useTranslations } from '@/i18n/use-translations';
-import { PRESENTATION_WITH_MODALS_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
@@ -17,7 +17,6 @@ import {
   CaretRightIcon as ChevronRight,
   DownloadIcon as Download,
   PencilSimpleIcon as Edit,
-  ArrowSquareOutIcon as ExternalLink,
   FileTextIcon as FileText,
   PresentationIcon as Presentation,
   SkipBackIcon as SkipBack,
@@ -25,11 +24,7 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  DownloadFormat,
-  downloadPresentation,
-  handleGoogleSlidesUpload,
-} from './presentation-utils';
+import { DownloadFormat, downloadPresentation } from './presentation-utils';
 
 interface SlideMetadata {
   title: string;
@@ -77,7 +72,6 @@ export function FullScreenPresentationViewer({
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
-  const [isDownloadingGoogleSlides, setIsDownloadingGoogleSlides] = useState(false);
 
   // Track the previous isOpen state to detect when modal opens
   const wasOpenRef = useRef(false);
@@ -329,41 +323,17 @@ export function FullScreenPresentationViewer({
     const sanitizedName = sanitizeFilename(presentationName);
 
     const setDownloadState =
-      format === DownloadFormat.PDF
-        ? setIsDownloadingPDF
-        : format === DownloadFormat.PPTX
-          ? setIsDownloadingPPTX
-          : setIsDownloadingGoogleSlides;
+      format === DownloadFormat.PDF ? setIsDownloadingPDF : setIsDownloadingPPTX;
 
     setDownloadState(true);
     try {
-      if (format === DownloadFormat.GOOGLE_SLIDES) {
-        const result = await handleGoogleSlidesUpload(
-          sandboxUrl,
-          `/workspace/presentations/${sanitizedName}`,
-          {
-            authFailed: tHardcodedUi.raw('i18nComplete.textbb39b2467568'),
-            redirecting: tHardcodedUi.raw('i18nComplete.text1b65f45d0347'),
-            uploaded: tHardcodedUi.raw('i18nComplete.text438f7a2e19eb'),
-            openInSlides: tHardcodedUi.raw('i18nComplete.text59f65a8a6575'),
-            authenticateFirst: tHardcodedUi.raw('i18nComplete.text258060e32b20'),
-            uploadFailed: tHardcodedUi.raw('i18nComplete.textac1f3393cb4c'),
-          },
-          tI18nComplete,
-        );
-        // If redirected to auth, don't show error
-        if (result?.redirected_to_auth) {
-          return; // Don't set loading false, user is being redirected
-        }
-      } else {
-        await downloadPresentation(
-          format,
-          sandboxUrl,
-          `/workspace/presentations/${sanitizedName}`,
-          presentationName,
-          tI18nComplete,
-        );
-      }
+      await downloadPresentation(
+        format,
+        sandboxUrl,
+        `/workspace/presentations/${sanitizedName}`,
+        presentationName,
+        tI18nComplete,
+      );
     } catch (error) {
       console.error(`Error downloading ${format}:`, error);
     } finally {
@@ -431,6 +401,9 @@ export function FullScreenPresentationViewer({
         const slideUrl = constructHtmlPreviewUrl(slide.file_path, subdomainOpts);
         // Add cache-busting to iframe src to ensure fresh content
         const slideUrlWithCacheBust = `${slideUrl}?t=${refreshTimestamp}`;
+        const frameSrc = showEditor
+          ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
+          : slideUrlWithCacheBust;
 
         return (
           <div className="flex h-full w-full items-center justify-center bg-transparent">
@@ -448,17 +421,15 @@ export function FullScreenPresentationViewer({
             >
               <iframe
                 key={`slide-${slide.number}-${refreshTimestamp}-${showEditor}`} // Key with stable timestamp ensures iframe refreshes when metadata changes
-                src={
-                  showEditor
-                    ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
-                    : slideUrlWithCacheBust
-                }
+                src={frameSrc}
                 title={tI18nComplete('text871475cb411c', {
                   value0: slide.number,
                   value1: slide.title,
                 })}
                 className="rounded-xl border-0"
-                sandbox={PRESENTATION_WITH_MODALS_IFRAME_SANDBOX}
+                // Agent-written slides keep same-origin only on a preview origin
+                // of their own, never on this app's or the API's origin.
+                sandbox={framePolicy('slide', frameSrc).sandbox}
                 style={{
                   width: '1920px',
                   height: '1080px',
@@ -500,7 +471,10 @@ export function FullScreenPresentationViewer({
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
       {/* Top Controls Bar */}
       <div className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-center justify-between p-4">
+        <div
+          className="kx-titlebar-row flex items-center justify-between p-4"
+          data-sidebar-collapsed=""
+        >
           <div className="flex items-center gap-3">
             <div className="relative shrink-0 rounded-2xl border border-zinc-300 bg-zinc-200/60 p-2 dark:border-zinc-700 dark:bg-zinc-900">
               <Presentation className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
@@ -549,9 +523,9 @@ export function FullScreenPresentationViewer({
                   title={tHardcodedUi.raw(
                     'componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line485JsxAttrTitleExportPresentation',
                   )}
-                  disabled={isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides}
+                  disabled={isDownloadingPDF || isDownloadingPPTX}
                 >
-                  {isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides ? (
+                  {isDownloadingPDF || isDownloadingPPTX ? (
                     <KortixLoader customSize={14} />
                   ) : (
                     <Download className="h-3.5 w-3.5" />
@@ -574,16 +548,6 @@ export function FullScreenPresentationViewer({
                 >
                   <Presentation className="mr-2 h-4 w-4" />
                   PPTX
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)}
-                  disabled={isDownloadingGoogleSlides}
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  {tHardcodedUi.raw(
-                    'componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line518JsxTextGoogleSlides',
-                  )}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -308,8 +308,3 @@ export function scheduleLegacyRuntimeBootstrap(row: LegacyBootstrapRow, reason =
     .finally(() => inFlight.delete(row.sandboxId));
   return true;
 }
-
-/** Test seam. */
-export function legacyBootstrapInFlightCount(): number {
-  return inFlight.size;
-}

@@ -7,7 +7,7 @@ import type { ProjectSession } from '@kortix/sdk';
  * Root cause: a warm session is hidden from the `visible` list scope by
  * `metadata.warm` (`apps/api/src/projects/lib/session-inventory.ts`). The
  * server now drops that marker at adoption time — the first `POST .../start`
- * call, `apps/api/src/projects/routes/r8.ts` — instead of waiting for the
+ * call, `apps/api/src/projects/routes/session-runtime.ts` — instead of waiting for the
  * first accepted TURN, seconds later, behind the whole sandbox boot window.
  * That closes the gap for everyone ELSE reading the list, but the adopting
  * tab itself still has to wait for its own `invalidateQueries` refetch to

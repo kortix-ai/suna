@@ -19,6 +19,7 @@ import {
 } from '@/features/session/tool/shared/skill-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { skillDocumentBody } from '@kortix/shared/tool-output';
 import { FileDashedIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useMemo } from 'react';
@@ -46,14 +47,7 @@ export function SkillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const skillContent = useMemo(() => extractSkillContent(output), [output]);
   const skillFiles = useMemo(() => extractSkillFiles(output), [output]);
 
-  const documentContent = useMemo(() => {
-    return skillContent
-      .trimStart()
-      .replace(/<skill_files>[\s\S]*?<\/skill_files>/, '')
-      .replace(/Base directory:.*$/m, '')
-      .replace(/Note:.*relative to the base directory.*$/m, '')
-      .trim();
-  }, [skillContent]);
+  const documentContent = useMemo(() => skillDocumentBody(skillContent), [skillContent]);
 
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   const docPath = useMemo(

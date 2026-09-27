@@ -109,7 +109,7 @@ flow(
     // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
     // session whose only prompt was claimed by the daemon during boot
     // never crosses that proxy, so it "never crosses a titling hook again" —
-    // apps/api/src/projects/routes/r4.ts says exactly that in its own comment.
+    // apps/api/src/projects/routes/turn-stream.ts says exactly that in its own comment.
     // Waiting for the mirror straight after an initial_prompt boot is therefore
     // unsatisfiable by construction. Drive ONE real turn through the proxy, the
     // way every client does, and then assert the mirror the flow is about.
@@ -1053,6 +1053,40 @@ flow(
   },
 );
 
+/**
+ * `POST /start` reports `stage: 'ready'` the moment the sandbox is usable; the
+ * session's remote branch publishes separately, fully in the background (see
+ * apps/api/src/projects/lib/sessions.ts, "Origin branch creation is publishing
+ * work, not readiness work"). `GET /sessions/:id` mirrors that publish through
+ * `metadata.remote_branch.status` (`'ready'` | `'failed'`, absent while still
+ * in flight). A diff against `refs/heads/<sessionId>` needs the push to have
+ * landed — poll for it rather than racing the background job.
+ */
+async function waitForRemoteBranch(
+  ctx: FlowContext,
+  projectId: string,
+  sessionId: string,
+): Promise<void> {
+  const branch = await waitFor(
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/sessions/:sessionId', {
+        params: { projectId, sessionId },
+      });
+      r.status(200);
+      return (r.json<any>()?.metadata?.remote_branch ?? null) as { status?: string; error?: string } | null;
+    },
+    {
+      until: (rel) => rel?.status === 'ready' || rel?.status === 'failed',
+      timeoutMs: 120_000,
+      intervalMs: 3_000,
+      description: `session ${sessionId}'s remote branch to publish`,
+    },
+  );
+  if (branch?.status === 'failed') {
+    throw new Error(`remote branch publish failed for session ${sessionId}: ${branch.error ?? 'unknown error'}`);
+  }
+}
+
 // ─── FILE-8: version-diff between two refs (params from/head + into/base) ─────
 flow(
   'FILE-8',
@@ -1063,6 +1097,7 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/version-diff',
     ],
   },
@@ -1071,6 +1106,9 @@ flow(
     // exercises a REAL two-ref diff. (version-diff itself only needs `read`, but
     // we gate the whole flow so it runs where a session branch actually exists.)
     const { projectId, sessionId } = await bootSandbox(ctx);
+    await ctx.step('the session branch is published to origin before diffing it', async () => {
+      await waitForRemoteBranch(ctx, projectId, sessionId);
+    });
     await ctx.step('version-diff main → <sessionId> → 200 summary', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/version-diff', {
         params: { projectId },

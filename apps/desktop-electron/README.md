@@ -104,8 +104,10 @@ in `src/basic-auth.js`):
    drops the remembered copy and reopens the dialog with an error. Cancel leaves
    the bare 401 page, like Chrome; reload asks again.
 
-The credential is only ever sent to the configured app origin. Any other host
-(sandbox previews, iframes) that returns a Basic challenge is refused.
+Origin credentials are sent only to the configured app origin. Any other
+origin challenge from a sandbox preview or iframe is refused. Proxy challenges
+open the same dialog, but use a separate credential entry keyed by proxy host
+and port. The app-origin environment variables never answer a proxy challenge.
 **Kortix → Frontend URL → Forget Saved Environment Password** clears the
 remembered credential for the current host.
 
@@ -189,7 +191,7 @@ runs **unchanged** on either shell:
 | Deep links (`kortix://`) | deep-link plugin | `setAsDefaultProtocolClient` + `open-url`/`second-instance` |
 | Nav gate (in-app vs browser) | `on_navigation` (also fires for iframes) | `will-navigate` (top frame only) |
 | Window dragging | JS `startDragging` shim | native `-webkit-app-region` CSS |
-| Maximized persistence | window-state plugin (maximized only) | `userData/window_state.json` (maximized only) |
+| Window-state persistence | window-state plugin (maximized only) | `userData/window_state.json` (bounds and maximized state; off-screen bounds recenter) |
 | Launch size | ~85% display, clamped | identical |
 | Startup gap | blank window | branded splash window |
 | Auto-update | ✗ none (manual re-download) | ✓ electron-updater (GitHub releases) |

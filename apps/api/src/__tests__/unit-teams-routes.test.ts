@@ -22,13 +22,28 @@ mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: 
 mock.module('../channels/install-store', () => ({ loadTeamsAppIdForProject: async () => 'byo-app' }));
 mock.module('../channels/teams/jwt', () => ({ validateInboundActivityJwt: async () => true }));
 mock.module('../channels/teams/file-proxy', () => ({ handleFileConsentInvoke: async () => {} }));
+// The tenants the BYO project's install proved (chat_installs).
+let provenTenants: string[] = ['tenant-1'];
+const inbounds: unknown[] = [];
+mock.module('../channels/teams/inbound', () => ({
+  MANAGED_TEAMS_INBOUND: { kind: 'managed' },
+  scopeProjectTeamsActivity: async (projectId: string, activity: { conversation?: { tenantId?: string } }) => {
+    const tenantId = activity.conversation?.tenantId;
+    return tenantId && provenTenants.includes(tenantId) ? { kind: 'project', projectId, tenantId } : null;
+  },
+}));
+const cardInbounds: unknown[] = [];
 mock.module('../channels/teams/interactivity', () => ({
-  handleAdaptiveCardAction: async () => ({ statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value: {} }),
+  handleAdaptiveCardAction: async (_activity: unknown, inbound: unknown) => {
+    cardInbounds.push(inbound);
+    return { statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value: {} };
+  },
 }));
 mock.module('../channels/teams/dispatch', () => ({
-  handleTeamsActivity: (activity: { id: string }) =>
+  handleTeamsActivity: (activity: { id: string }, inbound: unknown) =>
     new Promise<void>((resolve) => {
       dispatched.push(activity.id);
+      inbounds.push(inbound);
       release = () => {
         dispatchDone = true;
         resolve();
@@ -42,11 +57,20 @@ const { teamsWebhookApp } = await import('../channels/teams/app');
 beforeEach(() => {
   dispatchDone = false;
   dispatched.length = 0;
+  inbounds.length = 0;
+  cardInbounds.length = 0;
+  provenTenants = ['tenant-1'];
 });
 
 afterAll(() => mock.restore());
 
-const message = { type: 'message', id: 'act-1', text: 'hi', serviceUrl: 'https://smba.trafficmanager.net/emea/', conversation: { id: 'a:1' } };
+const message = {
+  type: 'message',
+  id: 'act-1',
+  text: 'hi',
+  serviceUrl: 'https://smba.trafficmanager.net/emea/',
+  conversation: { id: 'a:1', tenantId: 'tenant-1' },
+};
 
 describe('POST /messages acks before the dispatch finishes', () => {
   test('shared endpoint: 200 while handleTeamsActivity is still pending', async () => {
@@ -84,5 +108,49 @@ describe('POST /messages acks before the dispatch finishes', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).type).toBe('application/vnd.microsoft.card.adaptive');
     expect(dispatched).toEqual([]);
+  });
+});
+
+describe('the bring-your-own endpoint reaches only its own project and proven tenant', () => {
+  test('an activity naming a tenant the install did not prove is refused and never dispatched', async () => {
+    const res = await teamsWebhookApp.request('/proj-1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ ...message, id: 'act-3', conversation: { id: 'a:1', tenantId: 'tenant-other' } }),
+    });
+    expect(res.status).toBe(403);
+    expect(dispatched).toEqual([]);
+  });
+
+  test('a card action naming another tenant is refused before any handler runs', async () => {
+    const res = await teamsWebhookApp.request('/proj-1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-2', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-other' } }),
+    });
+    expect(res.status).toBe(403);
+    expect(cardInbounds).toEqual([]);
+  });
+
+  test('a proven-tenant activity is dispatched with the project scope', async () => {
+    const res = await teamsWebhookApp.request('/proj-1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ ...message, id: 'act-4' }),
+    });
+    expect(res.status).toBe(200);
+    expect(inbounds).toEqual([{ kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' }]);
+    release();
+  });
+
+  test('the shared endpoint dispatches with the managed scope', async () => {
+    const res = await teamsWebhookApp.request('/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ ...message, id: 'act-5' }),
+    });
+    expect(res.status).toBe(200);
+    expect(inbounds).toEqual([{ kind: 'managed' }]);
+    release();
   });
 });

@@ -23,6 +23,7 @@ import {
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
+import type { ChatIdentityPreview } from '@kortix/sdk';
 
 interface BindResult {
   workspaceName?: string | null;
@@ -37,6 +38,7 @@ export function ChatIdentityConnect({
   token,
   loginPath,
   bind,
+  preview,
   missingLinkMessage,
   disconnectNote,
 }: {
@@ -46,17 +48,42 @@ export function ChatIdentityConnect({
   /** Path back to this page, used as the sign-in redirect target. */
   loginPath: string;
   bind: (token: string) => Promise<BindResult>;
+  /** Reads which chat account the token would link, before Connect. */
+  preview: (token: string) => Promise<ChatIdentityPreview>;
   missingLinkMessage: string;
   /** Small note under the actions ("disconnect anytime with …"). */
   disconnectNote: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BindResult | null>(null);
+  // The chat account this link would link. Connect stays disabled until it is
+  // known, so nobody links an account they were not shown.
+  const [identity, setIdentity] = useState<ChatIdentityPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isLoading || !user || !token) return;
+    let cancelled = false;
+    setIdentity(null);
+    setPreviewError(null);
+    preview(token).then(
+      (value) => {
+        if (!cancelled) setIdentity(value);
+      },
+      (err: unknown) => {
+        if (!cancelled) setPreviewError(err instanceof Error ? err.message : String(err));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, user, token, preview]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -106,7 +133,21 @@ export function ChatIdentityConnect({
     );
   }
 
+  if (previewError) {
+    return (
+      <AuthStatusScreen
+        title={tI18nComplete('text15b2fcddefb6', { value0: service })}
+        description={previewError}
+      />
+    );
+  }
+
   const busy = phase === 'binding';
+  const chatAccount = identity
+    ? identity.chatUserName
+      ? `${identity.chatUserName} (${identity.chatUserId})`
+      : identity.chatUserId
+    : tHardcodedUi.raw('chatIdentityConnect.checking');
 
   return (
     <AuthFrame>
@@ -121,10 +162,20 @@ export function ChatIdentityConnect({
         {phase === 'error' && error ? <ErrorStrip message={error} /> : null}
 
         <DetailPanel>
+          <DetailRow
+            label={tHardcodedUi('chatIdentityConnect.chatAccount', { service })}
+            value={chatAccount}
+          />
+          {identity?.workspaceName ? (
+            <DetailRow
+              label={tHardcodedUi('chatIdentityConnect.chatWorkspace', { service })}
+              value={identity.workspaceName}
+            />
+          ) : null}
           <DetailRow label={tI18nComplete.raw('text7e1b0d5641f2')} value={user.email ?? 'You'} />
         </DetailPanel>
 
-        <Button size="lg" className="mt-5 w-full" onClick={connect} disabled={busy}>
+        <Button size="lg" className="mt-5 w-full" onClick={connect} disabled={busy || !identity}>
           {busy ? <Loading className="size-4 shrink-0" /> : null}
           {tI18nComplete.raw('textf7d845186faa')}
         </Button>

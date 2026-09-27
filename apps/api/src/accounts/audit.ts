@@ -14,12 +14,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
+import { requestClientIp } from '../shared/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -33,11 +33,12 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
-import { AuditListSchema } from '../shared/audit-schema';
+import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/helpers';
+import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
@@ -92,7 +93,7 @@ export { buildFilters, type AuditFilterInput } from './audit-filters';
 // GET /v1/accounts/:accountId/audit
 //   ?action=connector.       — prefix match on action
 //   ?actor=<uuid>           — only events performed by this user
-//   ?actor_type=agent       — human, agent, service_account, or system
+//   ?actor_type=agent       — human, agent, service_account, system, or anonymous
 //   ?project_id=<uuid>      — one project
 //   ?session_id=<id>        — one session
 //   ?source=cli             — one client or execution source
@@ -118,7 +119,7 @@ auditRouter.openapi(
       query: z.object({
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
@@ -252,6 +253,7 @@ const CSV_HEADERS = [
   'agent_name',
   'initiator_actor_type',
   'initiator_actor_id',
+  'on_behalf_of_user_id',
   'parent_event_id',
   'delegation_depth',
   'source',
@@ -299,7 +301,7 @@ auditRouter.openapi(
         format: z.enum(['csv', 'jsonl']).optional(),
         action: z.string().optional(),
         actor: z.string().uuid().optional(),
-        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
@@ -482,14 +484,6 @@ auditRouter.openapi(
 // under account.write (same gate as other account-admin secrets). Secret
 // is shown ONCE at create — never returned in subsequent reads.
 
-async function readBody(c: Context): Promise<Record<string, unknown>> {
-  try {
-    return (await c.req.json()) ?? {};
-  } catch {
-    return {};
-  }
-}
-
 function serializeWebhook(w: typeof auditWebhooks.$inferSelect, includeSecret = false) {
   return {
     webhook_id: w.webhookId,
@@ -562,7 +556,7 @@ auditRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
 
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return c.json({ error: 'name is required' }, 400);
@@ -621,7 +615,7 @@ auditRouter.openapi(
       resourceId: row.webhookId,
       after: { name: row.name, url: row.url, action_prefix: row.actionPrefix },
       ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+        requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
 
@@ -669,7 +663,7 @@ auditRouter.openapi(
       .limit(1);
     if (!before) return c.json({ error: 'webhook not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const updates: Record<string, unknown> = { updatedAt: new Date() };
 
     if (typeof body.name === 'string') {
@@ -703,7 +697,7 @@ auditRouter.openapi(
       before: { name: before.name, enabled: before.enabled, action_prefix: before.actionPrefix },
       after: { name: updated.name, enabled: updated.enabled, action_prefix: updated.actionPrefix },
       ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+        requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
 
@@ -859,7 +853,7 @@ auditRouter.openapi(
       resourceId: webhookId,
       before: { name: rows[0]!.name, url: rows[0]!.url },
       ip:
-        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null,
+        requestClientIp(c),
       userAgent: c.req.header('user-agent') || null,
     });
 

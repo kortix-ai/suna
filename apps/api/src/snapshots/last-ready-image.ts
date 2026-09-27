@@ -3,7 +3,7 @@
  *
  * THE INCIDENT. Every `self-host update` bumps the runtime fingerprint, which
  * changes the template identity and starts a template + project-image rebuild
- * (Essentia 2026-08-26: 14 min 11 s for `kortix-tpl-49493874d105`). Session
+ * (SampleCo 2026-08-26: 14 min 11 s for `kortix-tpl-49493874d105`). Session
  * starts landing inside that window sat in `open-session:provisioning` for
  * 10–34 minutes: `ensureSandboxImage` either polled the in-flight build for up
  * to 12 minutes (`waitForProviderBuild`) or built the new identity inline.

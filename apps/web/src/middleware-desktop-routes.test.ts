@@ -37,7 +37,15 @@ describe('desktop route allowlist', () => {
     // an empty list fails with a message that hides where the list went.
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
-    expect(desktopNavRulesSource.slice(start, end)).toContain("'/new'");
+    const shellList = desktopNavRulesSource.slice(start, end);
+    expect(shellList).toContain("'/new'");
+    const webList = source.slice(
+      source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
+      source.indexOf('export async function middleware'),
+    );
+    const webRoutes = [...webList.matchAll(/'(\/[^']*)'/g)].map((m) => m[1]);
+    expect(webRoutes.length).toBeGreaterThan(10);
+    expect(webRoutes.filter((route) => !shellList.includes(`'${route}'`))).toEqual([]);
   });
 
   test('the desktop bounce lands on the door that resolves a real workspace', () => {

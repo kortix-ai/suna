@@ -4,6 +4,7 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { runWorkerTick } from '../shared/audit-scope';
 import { AppHostingProvider } from './hosting';
 
 let running = false;
@@ -76,7 +77,7 @@ export function startAppIdleReaper(): void {
   stopAppIdleReaper();
   const interval = Math.max(5_000, Number(process.env.KORTIX_APPS_IDLE_REAPER_INTERVAL_MS) || 30_000);
   state.__kortixAppsIdleTimer = setInterval(() => {
-    void runAppIdleReaper().catch((error) => logger.error('[apps] idle reaper failed', {
+    void runWorkerTick('app-idle-reaper', runAppIdleReaper).catch((error) => logger.error('[apps] idle reaper failed', {
       error: error instanceof Error ? error.message : String(error),
     }));
   }, interval);

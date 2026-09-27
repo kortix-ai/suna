@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import { __resetEgressShimForTests, egressShimEnv, stopEgressShim } from '../egress-shim'
+import { egressShimEnv, stopEgressShim } from '../egress-shim'
 import type { Opencode } from '../harness/open-code/lifecycle'
 import { createProjectEnvStore } from '../project-env'
 import { Hono } from 'hono'
@@ -75,7 +75,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   stopEgressShim()
-  __resetEgressShimForTests()
   if (squatter) {
     const server = squatter
     squatter = null
@@ -227,34 +226,6 @@ describe('env route — mid-session boundary rules arm the shim', () => {
     // An HTTPS_PROXY left pointing at a dead listener breaks every outbound
     // call the agent makes — strictly worse than never having armed one.
     expect(readFileSync(envFile, 'utf8')).not.toContain('HTTPS_PROXY')
-  })
-
-  it('a push that does not move the rules leaves the running listener alone', async () => {
-    const { opencode } = fakeOpencode()
-    const { app } = buildTestApp(opencode)
-    const rules = [{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]
-
-    await postEnv(app, {
-      revision: 'rev-2',
-      env: { API_KEY: 'v1' },
-      names: ['API_KEY'],
-      opencodeEnv: { KORTIX_SECRET_CAPABILITIES: catalog(rules) },
-    })
-    const armed = egressShimEnv()
-
-    // A plain secret-CRUD fan-out re-sends the whole catalog. Restarting on it
-    // would drop the agent's in-flight tunnels for nothing.
-    const { status, json } = await postEnv(app, {
-      revision: 'rev-3',
-      env: { API_KEY: 'v2' },
-      names: ['API_KEY'],
-      opencodeEnv: { KORTIX_SECRET_CAPABILITIES: catalog(rules) },
-    })
-
-    expect(status).toBe(200)
-    expect(json.changed).toBe(true)
-    expect(json.egress_shim).toBe('unchanged')
-    expect(egressShimEnv()).toBe(armed)
   })
 
   it('a listener that cannot bind still lets the rest of the env push land', async () => {

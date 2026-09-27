@@ -33,10 +33,13 @@ export const useUpdateMaintenanceConfig = () => {
 
       return res.json() as Promise<MaintenanceConfig>;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-maintenance-config'] });
+    onSuccess: (saved) => {
+      // Write the saved value straight into the cache. `GET /api/maintenance`
+      // is CDN-cached for ~10 s, so a refetch here could paint the previous
+      // state over the one the admin just saved.
+      queryClient.setQueryData(['admin-maintenance-config'], saved);
+      queryClient.setQueryData(systemStatusKeys.config, saved);
       queryClient.invalidateQueries({ queryKey: systemStatusKeys.all });
-      queryClient.invalidateQueries({ queryKey: systemStatusKeys.config });
     },
   });
 };

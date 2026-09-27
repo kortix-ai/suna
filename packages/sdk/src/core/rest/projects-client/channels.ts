@@ -28,6 +28,41 @@ export function bindTeamsIdentity(token: string): Promise<ChatIdentityBindResult
   return bindChatIdentity('teams', token);
 }
 
+/** Which chat account a Slack or Teams login link would link. Read-only. */
+export interface ChatIdentityPreview {
+  service: 'slack' | 'teams';
+  /** The Slack workspace or Teams team name, when known. */
+  workspaceName: string | null;
+  /** The Slack or Teams user id carried by the link. */
+  chatUserId: string;
+  /** That user's display name, when the platform returns one. */
+  chatUserName: string | null;
+}
+
+async function previewChatIdentity(
+  service: 'slack' | 'teams',
+  token: string,
+): Promise<ChatIdentityPreview> {
+  return unwrap(
+    await backendApi.post<ChatIdentityPreview>(
+      `/channels/${service}/identity/preview`,
+      { token },
+      { showErrors: false },
+    ),
+    'This link is invalid or has expired',
+  );
+}
+
+/** The Slack account a `/kortix login` link would link, before binding it. */
+export function previewSlackIdentity(token: string): Promise<ChatIdentityPreview> {
+  return previewChatIdentity('slack', token);
+}
+
+/** The Teams account a login link would link, before binding it. */
+export function previewTeamsIdentity(token: string): Promise<ChatIdentityPreview> {
+  return previewChatIdentity('teams', token);
+}
+
 export interface SlackInstallation {
   workspaceId: string;
   workspaceName: string | null;
@@ -77,6 +112,53 @@ export async function getSlackMode(projectId: string): Promise<SlackMode> {
   );
   if (!res.success || !res.data) return DEFAULT_SLACK_MODE;
   return res.data;
+}
+
+/** The provider's OAuth `code` and the signed `state` from the install redirect. */
+export interface ChannelInstallCompletionInput {
+  code: string;
+  state: string;
+}
+
+export interface ChannelInstallCompletion {
+  /** The dashboard page the install outcome lands on. */
+  redirect_url: string;
+}
+
+async function completeChannelInstall(
+  service: 'slack' | 'teams',
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return unwrap(
+    await backendApi.post<ChannelInstallCompletion>(
+      `/projects/${encodeURIComponent(projectId)}/channels/${service}/oauth/complete`,
+      { code: input.code, state: input.state },
+      { showErrors: false },
+    ),
+    'Failed to finish the install',
+  );
+}
+
+/**
+ * Finish a Slack "Add to Slack" install as the signed-in user. The API installs
+ * only when the signed state names this user and project; otherwise it rejects
+ * with `403` and code `CHANNEL_INSTALL_STATE_MISMATCH` (`400`
+ * `CHANNEL_INSTALL_STATE_INVALID` for an expired or malformed state).
+ */
+export function completeSlackInstall(
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return completeChannelInstall('slack', projectId, input);
+}
+
+/** Finish a Microsoft Teams org install as the signed-in user. Same contract as `completeSlackInstall`. */
+export function completeTeamsInstall(
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return completeChannelInstall('teams', projectId, input);
 }
 
 export async function getSlackManifest(projectId: string): Promise<Record<string, unknown>> {

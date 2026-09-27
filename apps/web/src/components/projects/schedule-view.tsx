@@ -152,7 +152,7 @@ export function TriggerPauseSwitch({
  * them.** `ScheduleView` below computes a `canWrite` from
  * `PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE` for its own create button. This
  * control is the project-wide kill switch, and the route behind it
- * (`PATCH /projects/:id/triggers/activation`, `r4.ts`) asserts
+ * (`PATCH /projects/:id/triggers/activation`, `routes/triggers.ts`) asserts
  * `project.trigger.update` — a DIFFERENT leaf, independently grantable. So this
  * component probes that leaf directly instead of re-deriving it from a role
  * label, which is what it used to do (`effective_project_role === 'manager'`).

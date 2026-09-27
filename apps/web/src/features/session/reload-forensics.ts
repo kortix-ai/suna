@@ -122,26 +122,70 @@ export function readReloadForensics(now = Date.now()): ReloadForensics {
   return { discarded, navigationType, recentChunkError, heapBeforeReload };
 }
 
-/** True when the load looks involuntary — worth reporting, unlike an ordinary
- *  navigation or a reload the user pressed themselves (which we cannot tell
- *  apart from an automatic one, so a bare 'reload' alone is NOT enough). */
-export function isInvoluntaryLoad(f: ReloadForensics): boolean {
-  if (f.discarded || f.recentChunkError !== null) return true;
+/**
+ * What ended the previous life of this tab.
+ *
+ * - `discarded`    — the browser itself unloaded a backgrounded tab and reloaded
+ *                    it on return. Expected, self-healing, and not something the
+ *                    app can prevent.
+ * - `chunk-error`  — a lazy chunk failed in the previous life, then the page
+ *                    loaded again. A deploy left this tab on stale chunks.
+ * - `renderer-oom` — a plain reload with a heap above `HEAP_PRESSURE_BYTES`:
+ *                    the renderer was killed for memory. The one cause with no
+ *                    other fingerprint.
+ */
+export type ReloadCause = 'discarded' | 'chunk-error' | 'renderer-oom';
+
+/** Name the involuntary load, or `null` when the load looks ordinary. */
+export function classifyReloadCause(f: ReloadForensics): ReloadCause | null {
+  // A chunk failure is the most specific signal — report it even if the tab was
+  // also discarded, because it is the one we can act on (a stale deployment).
+  if (f.recentChunkError !== null) return 'chunk-error';
+  if (f.discarded) return 'discarded';
   // The renderer-OOM signature: a plain reload, no chunk error, nothing
   // discarded — but the tab was holding more than a person's session should
   // just before it vanished. Without this the one hypothesis with no other
   // fingerprint stays invisible.
-  return f.navigationType === 'reload' && (f.heapBeforeReload ?? 0) >= HEAP_PRESSURE_BYTES;
+  if (f.navigationType === 'reload' && (f.heapBeforeReload ?? 0) >= HEAP_PRESSURE_BYTES) {
+    return 'renderer-oom';
+  }
+  return null;
+}
+
+/** True when the load looks involuntary — worth reporting, unlike an ordinary
+ *  navigation or a reload the user pressed themselves (which we cannot tell
+ *  apart from an automatic one, so a bare 'reload' alone is NOT enough). Boolean
+ *  summary of `classifyReloadCause`. */
+export function isInvoluntaryLoad(f: ReloadForensics): boolean {
+  return classifyReloadCause(f) !== null;
+}
+
+/**
+ * True when the cause deserves a standalone Sentry event.
+ *
+ * A `discarded` tab is routine background reclaim: Chrome unloads a backgrounded
+ * tab and reloads it when the user comes back. It is expected browser behavior,
+ * not an app defect — the page reloads from the URL and the session reconnects
+ * from its durable state. It must not page. The two causes we CAN act on keep
+ * reporting: a failed lazy chunk is a deploy that left a stale tab behind, and a
+ * renderer killed under heap pressure is the silent one with no other
+ * fingerprint.
+ */
+export function shouldReportReloadCause(cause: ReloadCause | null): boolean {
+  return cause === 'chunk-error' || cause === 'renderer-oom';
 }
 
 /**
  * Label this page load, and watch for the chunk failure that would explain the
  * NEXT one. Mount once per session page.
  *
- * Reports only an involuntary load (`isInvoluntaryLoad`), so an ordinary
- * navigation — or a reload someone pressed — stays silent. What lands in Sentry
- * is the distinction the screen recording could not make: discarded tab vs
- * chunk-404-after-deploy.
+ * Classifies the load once (`classifyReloadCause`); an ordinary navigation — or a
+ * reload someone pressed — has no cause and stays silent. Every involuntary load
+ * is logged locally. A Sentry event fires only for an actionable cause
+ * (`shouldReportReloadCause`): a chunk-404-after-deploy or a renderer killed
+ * under heap pressure. A browser tab discard, the overwhelming majority, leaves a
+ * breadcrumb instead so it still explains a later error without paging on its
+ * own.
  */
 export function useReloadForensics(sessionId: string | null | undefined): void {
   useEffect(() => {
@@ -161,11 +205,25 @@ export function useReloadForensics(sessionId: string | null | undefined): void {
     const heapTimer = window.setInterval(() => noteHeapSample(), 30_000);
 
     const forensics = readReloadForensics();
-    if (isInvoluntaryLoad(forensics)) {
-      console.warn('[session] involuntary page load', { sessionId, ...forensics });
+    const cause = classifyReloadCause(forensics);
+    if (cause !== null) {
+      console.warn('[session] involuntary page load', { sessionId, cause, ...forensics });
+    }
+    if (shouldReportReloadCause(cause)) {
       Sentry.captureMessage('session page reloaded involuntarily', {
         level: 'warning',
-        extra: { sessionId, ...forensics },
+        extra: { sessionId, cause, ...forensics },
+      });
+    } else if (cause === 'discarded') {
+      // Expected browser behavior, not an app fault: keep the cause as a
+      // breadcrumb so it still attaches to any later real error, but never page
+      // on the discard itself. No `message` field — a `message:` literal reads as
+      // UI copy to the i18n audit, and this is developer-facing telemetry; the
+      // category and `data.cause` carry the meaning.
+      Sentry.addBreadcrumb({
+        category: 'session.reload',
+        level: 'info',
+        data: { sessionId, cause, ...forensics },
       });
     }
 

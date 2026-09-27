@@ -2,7 +2,6 @@ import {
   chatChannelBindings,
   chatEventDedup,
   chatInstalls,
-  chatThreads,
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
@@ -17,6 +16,7 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { db } from '../../shared/db';
+import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
 import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
@@ -89,17 +89,8 @@ async function spawnEmailAgentTurn(
   const threadId = event.message.thread_id;
   if (!inboxId || !threadId) return;
 
-  const [existing] = await db
-    .select({ sessionId: chatThreads.sessionId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, 'email'),
-        eq(chatThreads.workspaceId, inboxId),
-        eq(chatThreads.threadId, threadId),
-      ),
-    )
-    .limit(1);
+  const thread = { platform: 'email', workspaceId: inboxId, threadId };
+  const existing = await findChatThread(thread);
 
   if (existing) {
     if (
@@ -123,26 +114,9 @@ async function spawnEmailAgentTurn(
       opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     });
     if (outcome === 'delivered') {
-      await db
-        .update(chatThreads)
-        .set({ lastMessageAt: new Date() })
-        .where(
-          and(
-            eq(chatThreads.platform, 'email'),
-            eq(chatThreads.workspaceId, inboxId),
-            eq(chatThreads.threadId, threadId),
-          ),
-        );
+      await touchChatThread(thread);
     } else if (outcome === 'no-session') {
-      await db
-        .delete(chatThreads)
-        .where(
-          and(
-            eq(chatThreads.platform, 'email'),
-            eq(chatThreads.workspaceId, inboxId),
-            eq(chatThreads.threadId, threadId),
-          ),
-        );
+      await dropChatThread(thread);
       await createThreadSession(projectId, event, true);
     }
     return;
@@ -239,7 +213,14 @@ async function createThreadSession(
     enforceAccountCap: false,
     mayManageSystemConnections: true,
     queuePolicy: 'on_backpressure',
-    idempotencyKey: claimKey,
+    // One key per message, never per thread: the lifecycle keeps a key
+    // forever, so under the thread's key a failed first start (dead-lettered)
+    // answered every later reply in the thread with the same failure, and a
+    // deleted session answered 409 IDEMPOTENCY_KEY_SESSION_DELETED. Racing
+    // messages are serialized by the thread-create claim above.
+    idempotencyKey: event.message.message_id
+      ? `email:create:${inboxId}:${threadId}:${event.message.message_id}`
+      : claimKey,
     postCreate: [
       {
         type: 'bind_chat_thread',
@@ -341,17 +322,7 @@ async function claimThreadCreate(key: string): Promise<boolean> {
 async function waitForThreadSession(inboxId: string, threadId: string): Promise<string | null> {
   const deadline = Date.now() + 8_000;
   for (;;) {
-    const [row] = await db
-      .select({ sessionId: chatThreads.sessionId })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.platform, 'email'),
-          eq(chatThreads.workspaceId, inboxId),
-          eq(chatThreads.threadId, threadId),
-        ),
-      )
-      .limit(1);
+    const row = await findChatThread({ platform: 'email', workspaceId: inboxId, threadId });
     if (row) return row.sessionId;
     if (Date.now() >= deadline) return null;
     await new Promise((r) => setTimeout(r, 250));

@@ -9,6 +9,7 @@ import {
   KeyIcon as KeyRound,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
@@ -34,9 +35,20 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
 import { SessionOverridesControl, type SessionOverrideRow } from './session-overrides-control';
-import { NewProviderSecretPoolEditor, ProviderSecretPoolEditor } from './provider-secret-pool-editor';
 import { useProviderPoolEditingState } from './provider-pool-draft-context';
 import { effectiveProviderPools, updateProviderPoolDraft } from './provider-pool-draft';
+
+// The pooled-key editors read the full LLM provider catalog (`lib/llm-providers`
+// → the bundled models.dev snapshot). They render only when the user opens the
+// "Provider keys" row, so they load then — not with every composer.
+const ProviderSecretPoolEditor = dynamic(
+  () => import('./provider-secret-pool-editor').then((mod) => mod.ProviderSecretPoolEditor),
+  { ssr: false },
+);
+const NewProviderSecretPoolEditor = dynamic(
+  () => import('./provider-secret-pool-editor').then((mod) => mod.NewProviderSecretPoolEditor),
+  { ssr: false },
+);
 
 const unavailableCatalog: SessionScopeSelectionCatalog = {
   secrets: { status: 'unavailable' },

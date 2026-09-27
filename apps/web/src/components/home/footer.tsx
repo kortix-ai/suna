@@ -5,7 +5,7 @@ import { FOOTER_TRANSLATION_KEYS } from '@/i18n/footer-translation-keys.generate
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
+import Link from '@/components/site-link';
 import { ThemeToggle } from './theme-toggle';
 
 type FooterLinkItem = {

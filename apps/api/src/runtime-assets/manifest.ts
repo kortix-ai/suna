@@ -177,10 +177,29 @@ export interface RuntimeComponents {
   /** Absent when the API image carries no CLI binary. Mirrors the v1 `cli_*` keys. */
   cli?: RuntimeBinaryComponent;
   /**
-   * The supervising sandbox entrypoint (apps/sandbox/entrypoint.sh). Served so a
-   * box whose daemon predates convergence can be given a supervisor from the
-   * control plane; a converged box never needs it. Absent when the API image
-   * carries no copy.
+   * The supervising sandbox entrypoint (apps/sandbox/entrypoint.sh).
+   *
+   * OUT-OF-BAND REPAIR ONLY — stated here because it was advertised and
+   * unconsumed, which reads as a fifth convergeable component and is not one.
+   * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+   * apps/kortix-sandbox-agent-server/src/harness` returns doc comments and
+   * nothing else: `reconcileRuntimeAssets` handles cli, skills, agent and the
+   * harness `opencode` component, and no box has ever fetched this.
+   *
+   * WHY IT IS NOT IMPLEMENTED, rather than merely not done yet. The supervisor
+   * IS the entrypoint: it is the running shell. Replacing the file under it does
+   * not replace the process — `bash` re-reads a script from its current offset,
+   * so an in-place rewrite corrupts the RUNNING supervisor rather than updating
+   * it. Doing it safely means writing beside it and having the supervisor `exec`
+   * the new copy at the top of its next loop iteration, which is a change to the
+   * supervisor's own control flow — the one component whose failure cannot be
+   * rolled back by anything else on the box. It is deliberately not part of the
+   * runtime-asset lane.
+   *
+   * It stays served so a human (or a repair job) can fetch the current
+   * supervisor for a box whose copy is broken. `runningAssetsVerdict` therefore
+   * EXCLUDES it from the comparison — a component no box converges must never
+   * make a box read as behind. Absent when the API image carries no copy.
    */
   entrypoint?: RuntimeBinaryComponent;
   /** Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane. */
@@ -353,4 +372,123 @@ export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
 export function _resetRuntimeAssetsCache(): void {
   manifestPromise = null;
   overlayCache = null;
+}
+
+// ---------------------------------------------------------------------------
+// "Is this box running what this deploy serves?"
+//
+// THE ASYMMETRY THAT DECIDES THIS WHOLE LANE, stated once where every later
+// reader will find it: CONFIG blocks the turn, because config changes what the
+// agent IS — `convergeBeforeTurnStart` awaits, and a stale box pays
+// 10,287-10,907 ms. BINARIES MUST NOT BLOCK. A box one turn behind on the CLI
+// is the state that already exists today; a box that makes the user wait for
+// ~100 MB is a regression. So everything below DETECTS and SCHEDULES. It never
+// applies and it is never awaited on the send path.
+// ---------------------------------------------------------------------------
+
+/** What a daemon says it is running, from the health `runtime.running` block. */
+export interface RunningAssetsReport {
+  cli_sha256: string | null;
+  managed_skills_hash: string | null;
+  agent_sha256: string | null;
+  staged_agent_sha256: string | null;
+  opencode_version: string | null;
+}
+
+export type RunningAssetsVerdict =
+  /** Every component this deploy can converge matches what the box runs. */
+  | 'current'
+  /** At least one component differs, and the box can be brought forward. */
+  | 'behind'
+  /** The box reported nothing comparable. Never treated as evidence of either. */
+  | 'unknown';
+
+/**
+ * A stable id for the manifest a verdict was computed against.
+ *
+ * LOAD-BEARING, not decorative. Both memos in this lane are per-process, so a
+ * new API process starts empty and a deploy is self-healing on its own. The
+ * fingerprint covers the case a fresh process does not: during a ROLLING deploy
+ * two API versions serve two manifests at once, and the box's epoch guard
+ * (`manifest build N is older than converged build M`) refuses to go backwards.
+ * Keying the memo by fingerprint stops process A from caching a `behind`
+ * verdict computed against B's manifest and re-scheduling, for the length of
+ * the rollout, a download the box will refuse. That is the same failure shape as
+ * the 2026-07-22 mutual-rebuild loop the epoch guard exists to close.
+ *
+ * BOTH env-only switches are in here, because both change what a verdict MEANS
+ * and neither waits on a deploy. `RUNTIME_ASSETS_BUILD` moves `build`.
+ * `RUNTIME_AGENT_SELF_UPDATE` is subtler: `runningAssetsVerdict` reads it live
+ * and SKIPS the agent comparison entirely while it is off, so `current` taken
+ * with the switch off is a claim about the CLI, the overlay and OpenCode only.
+ * Reading the switch live is therefore necessary but not sufficient — a live
+ * read cannot revisit a verdict already in the memo. Without the switch in the
+ * key, turning self-update back ON leaves those narrower verdicts valid for the
+ * whole `RUNNING_ASSETS_TTL_MS`, and a box genuinely behind on the daemon is not
+ * nudged for ten minutes after an operator asked for exactly that. In the key,
+ * the flip invalidates every entry at once and the next send re-measures.
+ */
+export async function manifestFingerprint(): Promise<string> {
+  const digests = await runtimeAssetsDigests();
+  const c = digests.components;
+  return [
+    digests.build,
+    c.agent?.sha256 ?? '',
+    c.cli?.sha256 ?? '',
+    c['managed-skills'].hash,
+    c.opencode.version,
+    c.entrypoint?.sha256 ?? '',
+    // Not a digest — the comparison's SHAPE. See above.
+    agentSelfUpdateEnabled() ? 'agent-update:on' : 'agent-update:off',
+  ].join('|');
+}
+
+/**
+ * Compare what a box reports it runs against what this deploy serves.
+ *
+ * SHA TO SHA wherever a sha exists, never version string to version string — a
+ * version string cannot prove which bytes are on disk. `opencode` is the one
+ * exception and it is forced: the manifest carries only a version for it,
+ * because the bytes come from npm and 167 MB has no business crossing our
+ * control plane.
+ *
+ * A component the manifest does not state is NOT a difference — a local
+ * checkout that never built the CLI states no cli digest, and a box cannot be
+ * behind something that was never described. A component the BOX does not state
+ * is `unknown`, which is deliberately not `behind`: an older daemon with no
+ * `running` block must not make every turn schedule a pass for ever.
+ *
+ * `entrypoint` is excluded on purpose. The manifest advertises it and no box
+ * consumes it — see the note on `components.entrypoint`.
+ *
+ * `agent` is skipped entirely when `RUNTIME_AGENT_SELF_UPDATE` is off, read
+ * LIVE here: a fleet frozen by the kill switch is not "behind", and telling the
+ * control plane it is would have every turn schedule a pass the daemon is
+ * guaranteed to refuse.
+ *
+ * A STAGED agent still reads as `behind`, and that is correct: the bytes are on
+ * disk but the box is not running them. The scheduled pass is then a manifest
+ * read and no download (`staged === expected` short-circuits in the daemon),
+ * and it is what asks for the swap at the next safe boundary.
+ */
+export async function runningAssetsVerdict(
+  running: RunningAssetsReport | null,
+): Promise<RunningAssetsVerdict> {
+  if (!running) return 'unknown';
+  const { components } = await runtimeAssetsDigests();
+  let compared = 0;
+  const differs = (want: string | null | undefined, have: string | null): boolean | null => {
+    if (!want) return null; // this deploy states nothing to converge on
+    if (!have) return null; // this box states nothing comparable
+    compared += 1;
+    return want !== have;
+  };
+  const checks = [
+    differs(components.cli?.sha256, running.cli_sha256),
+    differs(components['managed-skills'].hash, running.managed_skills_hash),
+    differs(components.opencode.version, running.opencode_version),
+    agentSelfUpdateEnabled() ? differs(components.agent?.sha256, running.agent_sha256) : null,
+  ];
+  if (checks.some((c) => c === true)) return 'behind';
+  return compared > 0 ? 'current' : 'unknown';
 }

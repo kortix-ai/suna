@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
+import { useRetiredQuery } from './retired-endpoint';
 
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
@@ -606,18 +607,9 @@ export function useAdminAccountProjects(accountId: string | null) {
   });
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminAccountSandboxes(accountId: string | null) {
-  return useQuery<{ sandboxes: AdminAccountSandbox[] }>({
-    queryKey: ['admin', 'accounts', accountId, 'sandboxes'],
-    enabled: !!accountId,
-    queryFn: async () => {
-      const response = await backendApi.get<{ sandboxes: AdminAccountSandbox[] }>(
-        `/admin/api/accounts/${accountId}/sandboxes`,
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-  });
+  return useRetiredQuery<{ sandboxes: AdminAccountSandbox[] }>('useAdminAccountSandboxes', ['admin', 'accounts', accountId, 'sandboxes'], !!accountId);
 }
 
 /**

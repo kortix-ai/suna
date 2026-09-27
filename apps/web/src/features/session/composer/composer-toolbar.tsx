@@ -173,6 +173,7 @@ export function ComposerToolbar({
             defaultControls={modelDefaultControls}
             triggerLabelClassName="max-w-[7rem]"
             projectId={projectId}
+            offerChatGptAccounts
             open={modelMenuOpen}
             onOpenChange={onModelMenuOpenChange}
           />

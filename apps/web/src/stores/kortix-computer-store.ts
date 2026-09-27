@@ -1,4 +1,6 @@
-import { useFilesStore } from '@/features/files';
+// Direct store import, not the `@/features/files` barrel: the barrel drags the
+// runtime file API (and its hooks) into every route that reads this store.
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';

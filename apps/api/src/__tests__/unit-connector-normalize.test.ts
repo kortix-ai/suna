@@ -60,6 +60,51 @@ describe('normalizeOpenApi', () => {
     expect(byPath.deletepet!.binding).toMatchObject({ method: 'DELETE', path: '/pets/{petId}' });
   });
 
+  test('binding records a non-JSON request media type; JSON stays implicit', () => {
+    const forms = normalizeOpenApi({
+      openapi: '3.0.0',
+      servers: [{ url: 'https://api.example.com' }],
+      paths: {
+        '/token': {
+          post: {
+            operationId: 'token',
+            requestBody: {
+              content: {
+                'application/x-www-form-urlencoded': {
+                  schema: { type: 'object', properties: { grant_type: { type: 'string' } } },
+                },
+              },
+            },
+          },
+        },
+        '/both': {
+          post: {
+            operationId: 'both',
+            requestBody: {
+              content: {
+                'application/xml': { schema: { type: 'string' } },
+                'application/json': { schema: { type: 'object', properties: { a: { type: 'string' } } } },
+              },
+            },
+          },
+        },
+        '/patch': {
+          patch: {
+            operationId: 'patch',
+            requestBody: {
+              content: { 'application/merge-patch+json': { schema: { type: 'object' } } },
+            },
+          },
+        },
+      },
+    });
+    const by = Object.fromEntries(forms.map((a) => [a.path, a]));
+    expect(by.token!.binding).toMatchObject({ bodyMediaType: 'application/x-www-form-urlencoded' });
+    expect(by.both!.binding).not.toHaveProperty('bodyMediaType');
+    expect((by.both!.inputSchema as any).properties.body.properties.a).toEqual({ type: 'string' });
+    expect(by.patch!.binding).toMatchObject({ bodyMediaType: 'application/merge-patch+json' });
+  });
+
   test('input merges params + body, $ref resolved inline', () => {
     const create = byPath.createpet!;
     expect((create.inputSchema as any).properties.body).toEqual({

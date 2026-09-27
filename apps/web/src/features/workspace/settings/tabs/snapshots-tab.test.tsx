@@ -30,8 +30,8 @@ import {
  */
 const build = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild => ({
   build_id: 'build-1',
-  slug: 'essentia',
-  template_slug: 'essentia',
+  slug: 'sampleco',
+  template_slug: 'sampleco',
   snapshot_name: 'kortix-tpl-abc123',
   content_hash: 'abc123',
   status: 'failed',
@@ -61,7 +61,7 @@ const runtimeStatus = (overrides: Partial<SandboxRuntimeStatus> = {}): SandboxRu
 describe('describeBuildOutcome', () => {
   test('says what each state means in a plain sentence', () => {
     expect(describeBuildOutcome(build({ status: 'ready' }))).toMatchObject({
-      title: 'essentia',
+      title: 'sampleco',
       summary: 'Ready for new sessions',
       stale: null,
     });
@@ -260,7 +260,7 @@ describe('SnapshotsTabView', () => {
         <SnapshotsTabView templateBuilds={[build()]} />
       </TooltipProvider>,
     );
-    expect(out).toContain('essentia');
+    expect(out).toContain('sampleco');
     expect(out).toContain('Build log');
   });
 
@@ -379,7 +379,7 @@ describe('SnapshotsTabView', () => {
 
   test('loading state shows a skeleton, not the build log', () => {
     const out = renderToStaticMarkup(<SnapshotsTabView isLoading templateBuilds={[build()]} />);
-    expect(out).not.toContain('essentia');
+    expect(out).not.toContain('sampleco');
   });
 
   test('error state shows a retry action', () => {

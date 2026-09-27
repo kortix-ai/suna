@@ -184,9 +184,9 @@ export function SessionApprovalNotice({
       className={cn(
         // `w-full`, or the composer's `items-center` strip shrinks this card to
         // its CONTENT width — so the notice was as wide as whatever tool name
-        // happened to be pending, and looked broken at random. Same reason the
-        // reply bar and `QuestionPrompt` carry it (see composer.tsx). Vertical
-        // spacing belongs to that strip's `gap-2`, not to a margin here.
+        // happened to be pending, and looked broken at random. Same reason
+        // `QuestionPrompt` carries it (see composer.tsx). Vertical spacing
+        // belongs to that strip's `gap-2`, not to a margin here.
         'bg-popover w-full overflow-hidden rounded-md border',
         pendingCount > 0 ? 'border-kortix-orange/25' : 'border-border',
       )}

@@ -20,6 +20,7 @@ import {
   resolveStoredOAuth2Credential,
   type OAuth2AccessToken,
 } from './oauth2';
+import { DEFAULT_MEMBER_LABEL, DEFAULT_SLOT_KEY } from './connection-identity';
 import { resolveStoredDelegatedCredential } from './oauth2-delegated';
 
 /* ─── credentials (split per user) ────────────────────────────────────────── */
@@ -437,13 +438,24 @@ export async function ensureMemberConnection(input: {
   userId: string;
   label?: string;
 }): Promise<string> {
-  const label = input.label ?? 'Private connection';
+  const label = input.label ?? DEFAULT_MEMBER_LABEL;
   const ownedByCaller = and(
     eq(connectorConnections.connectorId, input.connectorId),
     eq(connectorConnections.ownerType, 'member'),
     eq(connectorConnections.ownerId, input.userId),
   );
-  const ownedByCallerWithLabel = and(ownedByCaller, eq(connectorConnections.label, label));
+  // With no label named, the caller's default slot is the row this function
+  // created, even after finalize relabelled it to the authorized identity or
+  // the member renamed it.
+  const ownedByCallerWithLabel = input.label
+    ? and(ownedByCaller, eq(connectorConnections.label, label))
+    : and(
+        ownedByCaller,
+        or(
+          eq(connectorConnections.label, label),
+          sql`${connectorConnections.metadata}->>${DEFAULT_SLOT_KEY} = 'member'`,
+        ),
+      );
   const [existing] = await db
     .select({ connectionId: connectorConnections.connectionId })
     .from(connectorConnections)
@@ -476,7 +488,10 @@ export async function ensureMemberConnection(input: {
         label,
         status: 'active',
         isDefault: false,
-        metadata: { connector_slug: connector.slug },
+        metadata: {
+          connector_slug: connector.slug,
+          ...(input.label ? {} : { [DEFAULT_SLOT_KEY]: 'member' }),
+        },
         createdBy: input.userId,
       })
       .returning({ connectionId: connectorConnections.connectionId });
@@ -532,10 +547,15 @@ export async function ensureDefaultConnection(input: {
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
 
+  // Its own row: labelled `connector.name` on create, or marked as its slot
+  // once finalize relabelled it to the authorized identity or someone renamed it.
   const byLabel = and(
     eq(connectorConnections.connectorId, input.connectorId),
     eq(connectorConnections.ownerType, 'project'),
-    eq(connectorConnections.label, connector.name),
+    or(
+      eq(connectorConnections.label, connector.name),
+      sql`${connectorConnections.metadata}->>${DEFAULT_SLOT_KEY} = 'project'`,
+    ),
   );
   const [existingByLabel] = await db
     .select({ connectionId: connectorConnections.connectionId })
@@ -557,7 +577,11 @@ export async function ensureDefaultConnection(input: {
         label: connector.name,
         status: 'active',
         isDefault: false,
-        metadata: { migrated_from_legacy: false, connector_slug: connector.slug },
+        metadata: {
+          migrated_from_legacy: false,
+          connector_slug: connector.slug,
+          [DEFAULT_SLOT_KEY]: 'project',
+        },
         createdBy: input.createdBy ?? null,
       })
       .returning({ connectionId: connectorConnections.connectionId });

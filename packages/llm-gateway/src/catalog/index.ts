@@ -1,1 +1,1 @@
-export { OPENAI_COMPATIBLE_NPM, providerKindForNpm } from './compatibility';
+export { providerKindForNpm } from './compatibility';

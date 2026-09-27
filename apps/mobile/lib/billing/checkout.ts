@@ -9,7 +9,6 @@
  */
 
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import {
   type CreateCheckoutSessionRequest,
   type CreateCheckoutSessionResponse,
@@ -19,6 +18,9 @@ import {
 // Import the API functions we need
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { log } from '@/lib/logger';
+import { openLink } from '@/lib/utils/open-link';
+import { APP_SCHEME, buildSuccessUrl, buildCancelUrl } from './return-link';
+import { getWebBillingUrl } from './web-links';
 
 // ============================================================================
 // API Helper
@@ -84,25 +86,7 @@ const checkoutApi = {
   },
 };
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-// Deep link scheme for the app (for return URLs after checkout)
-const APP_SCHEME = 'agentpress://';
-const BILLING_PATH = 'billing';
-
-// ============================================================================
-// URL Builders
-// ============================================================================
-
-function buildSuccessUrl(context: string = 'checkout'): string {
-  return `${APP_SCHEME}${BILLING_PATH}/success?context=${context}`;
-}
-
-function buildCancelUrl(): string {
-  return `${APP_SCHEME}${BILLING_PATH}/cancel`;
-}
+// APP_SCHEME + buildSuccessUrl/buildCancelUrl now live in ./return-link (tested).
 
 // ============================================================================
 // Browser Functions
@@ -148,20 +132,14 @@ async function openCheckoutInBrowser(
 }
 
 /**
- * Open external URL in system browser
- * Used for web billing management, support links, etc.
+ * Open an external URL (web billing management, the Stripe portal, …) through
+ * the app's one link rule (`openLink`, COR-151): a kortix.com link opens in the
+ * in-app browser, a third-party one in the system browser. Rejects when the
+ * link cannot open.
  */
 export async function openExternalUrl(url: string): Promise<void> {
   log.log('🌐 Opening external URL:', url);
-
-  const supported = await Linking.canOpenURL(url);
-  
-  if (supported) {
-    await Linking.openURL(url);
-  } else {
-    log.error('❌ Cannot open URL:', url);
-    throw new Error('Cannot open URL');
-  }
+  await openLink(url);
 }
 
 // ============================================================================
@@ -280,12 +258,9 @@ export async function openBillingPortal(returnUrl?: string): Promise<void> {
   log.log('🌐 Opening web billing portal...');
 
   try {
-    // Direct users to the web app's billing management page
-    const webBillingUrl = process.env.EXPO_PUBLIC_WEB_APP_URL 
-      ? `${process.env.EXPO_PUBLIC_WEB_APP_URL}/subscription`
-      : 'https://www.kortix.com/subscription';
-
-    await openExternalUrl(webBillingUrl);
+    // Web billing on kortix.com. `/subscription` has no route in apps/web
+    // (it 404'd after sign-in); `/settings/billing` is the billing page.
+    await openExternalUrl(getWebBillingUrl());
   } catch (error) {
     log.error('❌ Error opening billing portal:', error);
     throw error;

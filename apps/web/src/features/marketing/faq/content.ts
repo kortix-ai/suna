@@ -61,7 +61,7 @@
  *    (`apps/api/src/projects/policies.ts:73`). Write "you set allow, ask or
  *    block", never "it asks first".
  *  - MERGE is default-deny for AGENTS, not human-only. `project.cr.merge` is a
- *    grantable capability (`apps/api/src/projects/routes/r9.ts:58`). Do not
+ *    grantable capability (`apps/api/src/projects/routes/change-request-actions.ts:63`). Do not
  *    write "only a human can merge".
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value in the session, readable by any

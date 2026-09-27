@@ -148,7 +148,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       return result.principal ?? null;
     },
     authorize: async (token) => {
-      return post<AuthorizeResult>('/internal/gateway/authorize', { token }, RETRY_SLOW);
+      return post<AuthorizeResult>('/internal/gateway/authorize', { token, deferBilling: true }, RETRY_SLOW);
     },
     resolveRoute: async (principal, input) => {
       const result = await post<{ route: ModelRoutePlan | null }>(
@@ -186,13 +186,15 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       await post<{ ok: boolean }>('/internal/gateway/pool-rate-limit', { principal, secretId, seconds });
     },
     assertBillingActive: async (accountId) => {
-      const result = await post<{ active: boolean; message?: string; holdUsd?: number }>(
+      const result = await post<{ active: boolean; reason?: string; message?: string; holdUsd?: number }>(
         '/internal/gateway/billing',
         { accountId },
         RETRY_SLOW,
       );
       if (!result.active) {
-        throw new Error(result.message ?? 'subscription required');
+        const error = new Error(result.message ?? 'subscription required') as Error & { reason?: string };
+        error.reason = result.reason ?? 'subscription_required';
+        throw error;
       }
       return result.holdUsd ? { holdUsd: result.holdUsd } : undefined;
     },

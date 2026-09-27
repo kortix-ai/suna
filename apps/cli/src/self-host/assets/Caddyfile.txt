@@ -18,7 +18,7 @@
 # few seconds after any failed proxy attempt (passive check) as a second line
 # of defense, e.g. mid-way through a container being stopped.
 #
-# In-request retry (Essentia "Bad Gateway" fix, 2026-08-21): every app upstream
+# In-request retry (SampleCo "Bad Gateway" fix, 2026-08-21): every app upstream
 # carries `lb_try_duration`/`lb_try_interval` so a single failed pick during a
 # container recreate window — `dial tcp: connection refused` (an old/not-ready
 # IP) or `no upstreams available` (both replicas momentarily failing the active

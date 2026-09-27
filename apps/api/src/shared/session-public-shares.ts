@@ -3,14 +3,26 @@ import {
   connectorConnections,
   projectSessionConnectorBindings,
   projectSessionPublicShares,
+  projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { config } from '../config';
 import { db } from './db';
 import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
 
-export type PublicShareResourceType = 'preview' | 'file';
+export { shareIdFromPublicRef } from './public-share-ref';
+
+/**
+ * What a public share names. `preview` is one app port, `file` is one
+ * workspace document, `transcript` is the session conversation (read through
+ * the sanitized `/v1/public/session-shares/:ref/messages` digest only).
+ */
+export type PublicShareResourceType = 'preview' | 'file' | 'transcript';
+
+/** Label a transcript share gets when the caller names none. */
+const TRANSCRIPT_SHARE_DEFAULT_LABEL = 'Conversation';
 
 export const STATIC_FILE_SHARE_PORT = 3211;
 // Both halves of the opencode port pair — a verified reload swaps which one is
@@ -30,8 +42,18 @@ export const PUBLIC_SHARE_VIEW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * fail open. A FILE share is always read-only — it names one document.
  */
 export function isViewOnlyShare(share: { mode?: string | null; resourceType?: string | null; filePath?: string | null }): boolean {
-  if (share.resourceType === 'file' || share.filePath) return true;
+  if (share.resourceType === 'file' || share.resourceType === 'transcript' || share.filePath) return true;
   return share.mode !== 'interactive';
+}
+
+/**
+ * True when this share names the session conversation itself. A share grants
+ * exactly the resource it names: a `file` share is one document and a
+ * `preview` share is one app port, so neither reads the transcript. Only a
+ * `transcript` share (minted with `{ transcript: true }`) does.
+ */
+export function shareUnlocksTranscript(share: { resourceType?: string | null }): boolean {
+  return share.resourceType === 'transcript';
 }
 
 export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([
@@ -51,6 +73,8 @@ export const DEFAULT_PREVIEW_CANDIDATES = [
 export type PublicShareRow = typeof projectSessionPublicShares.$inferSelect;
 
 export interface PublicShareInput {
+  /** `true` names the session conversation (a `transcript` share). */
+  transcript?: unknown;
   preview_id?: unknown;
   preview?: unknown;
   file?: unknown;
@@ -103,8 +127,15 @@ function basename(path: string): string {
   return path.split('/').filter(Boolean).at(-1) || 'Shared file';
 }
 
-function resourceProxyPath(token: string, row: Pick<PublicShareRow, 'resourceType' | 'port' | 'path'>): string {
+/** The web page a transcript share opens at. */
+export function transcriptShareViewerUrl(token: string): string {
+  return `${config.FRONTEND_URL.replace(/\/+$/, '')}/share/session/${token}`;
+}
+
+export function resourceProxyPath(token: string, row: Pick<PublicShareRow, 'resourceType' | 'port' | 'path'>): string {
   if (row.resourceType === 'file') return `/v1/p/public-share/${token}/file`;
+  // A transcript has no sandbox port: its API read is the sanitized digest.
+  if (row.resourceType === 'transcript') return `/v1/public/session-shares/${token}/messages`;
   return `/v1/p/public-share/${token}/${row.port}${row.path}`;
 }
 
@@ -123,6 +154,9 @@ function resourcePublicUrl(
   row: Pick<PublicShareRow, 'resourceType' | 'port' | 'path'>,
   externalId: string | null | undefined,
 ): string | null {
+  // A transcript is rendered by the web app, never by the sandbox, so it has
+  // a public URL whether or not a sandbox exists.
+  if (row.resourceType === 'transcript') return transcriptShareViewerUrl(token);
   if (!externalId) return null;
   if (row.resourceType === 'file') {
     const origin = previewOriginFor(externalId, STATIC_FILE_SHARE_PORT);
@@ -194,6 +228,27 @@ export function buildPublicShareInsert(input: PublicShareInput, ctx: {
   userId: string;
 }) {
   const file = typeof input.file === 'object' && input.file ? input.file as Record<string, unknown> : null;
+  if (input.transcript === true) {
+    if (file || input.preview || input.preview_id) {
+      return { ok: false as const, status: 400, error: 'A public share names one resource' };
+    }
+    const expiresAt = parseExpiresAt(input.expires_at);
+    if (expiresAt === false) return { ok: false as const, status: 400, error: 'expires_at must be an ISO timestamp' };
+    return {
+      ok: true as const,
+      values: {
+        resourceType: 'transcript',
+        label: cleanString(input.label) ?? TRANSCRIPT_SHARE_DEFAULT_LABEL,
+        port: null,
+        path: '/',
+        filePath: null,
+        mode: 'view',
+        allowWebsocket: false,
+        expiresAt,
+        ...ctx,
+      },
+    };
+  }
   if (file) {
     const filePath = normalizeWorkspaceFilePath(file.path ?? file.file_path);
     if (!filePath) return { ok: false as const, status: 400, error: 'File path cannot be shared' };
@@ -259,6 +314,10 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
   const built = buildPublicShareInsert(input, ctx);
   if (!built.ok) return built;
 
+  if (built.values.resourceType === 'transcript') {
+    return createOrReuseTranscriptShare(built.values);
+  }
+
   const shareId = randomUUID();
   const token = publicShareToken(shareId);
   const [row] = await db
@@ -283,8 +342,82 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
 
   return {
     ok: true as const,
+    created: true,
     share: serializePublicShare(row, token, await sessionSandboxExternalId(row.sessionId)),
   };
+}
+
+type BuiltShareValues = Extract<ReturnType<typeof buildPublicShareInsert>, { ok: true }>['values'];
+
+/**
+ * A session has at most one live transcript link. Minting again returns the
+ * live one (`created: false`) instead of a second URL to the same
+ * conversation, so "copy link" is idempotent and one revoke ends public
+ * access. A transaction-scoped advisory lock on the session id serializes two
+ * concurrent mints; a revoked or expired link does not count as live.
+ */
+async function createOrReuseTranscriptShare(values: BuiltShareValues) {
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`public-transcript-share:${values.sessionId}`}, 0))`,
+    );
+    const [live] = await tx
+      .select()
+      .from(projectSessionPublicShares)
+      .where(and(
+        eq(projectSessionPublicShares.sessionId, values.sessionId),
+        eq(projectSessionPublicShares.resourceType, 'transcript'),
+        isNull(projectSessionPublicShares.revokedAt),
+        or(
+          isNull(projectSessionPublicShares.expiresAt),
+          gt(projectSessionPublicShares.expiresAt, new Date()),
+        ),
+      ))
+      .orderBy(desc(projectSessionPublicShares.createdAt))
+      .limit(1);
+    if (live) return { row: live, created: false };
+
+    const shareId = randomUUID();
+    const [row] = await tx
+      .insert(projectSessionPublicShares)
+      .values({
+        shareId,
+        tokenHash: publicShareTokenHash(publicShareToken(shareId)),
+        sessionId: values.sessionId,
+        projectId: values.projectId,
+        accountId: values.accountId,
+        createdBy: values.userId,
+        resourceType: values.resourceType,
+        label: values.label,
+        port: values.port,
+        path: values.path,
+        filePath: values.filePath,
+        mode: values.mode,
+        allowWebsocket: values.allowWebsocket,
+        expiresAt: values.expiresAt,
+      })
+      .returning();
+    return { row, created: true };
+  });
+
+  return {
+    ok: true as const,
+    created: result.created,
+    share: serializePublicShare(result.row, undefined, await sessionSandboxExternalId(result.row.sessionId)),
+  };
+}
+
+/** Revoke every live public share of a session (the session delete path). */
+export async function revokeAllPublicSharesForSession(sessionId: string, at: Date = new Date()): Promise<number> {
+  const rows = await db
+    .update(projectSessionPublicShares)
+    .set({ revokedAt: at, updatedAt: at })
+    .where(and(
+      eq(projectSessionPublicShares.sessionId, sessionId),
+      isNull(projectSessionPublicShares.revokedAt),
+    ))
+    .returning({ shareId: projectSessionPublicShares.shareId });
+  return rows.length;
 }
 
 export async function revokePublicShare(sessionId: string, shareId: string) {
@@ -306,7 +439,15 @@ export async function touchPublicShare(shareId: string) {
     .where(eq(projectSessionPublicShares.shareId, shareId));
 }
 
-export async function resolvePublicShare(token: string) {
+export async function resolvePublicShare(
+  token: string,
+  opts: {
+    /** Refuse (404) a share that does not name the conversation, before any
+     *  sandbox-readiness answer: the transcript route must not report the
+     *  sandbox state of a share it will never serve. */
+    requireTranscript?: boolean;
+  } = {},
+) {
   // LEFT JOIN, not INNER: a session that was created but never started (or
   // whose sandbox hasn't been provisioned yet) has no `session_sandboxes` row
   // at all. An INNER JOIN made that case fall straight into `!row` → 404
@@ -332,9 +473,11 @@ export async function resolvePublicShare(token: string) {
       revokedAt: projectSessionPublicShares.revokedAt,
       externalId: sessionSandboxes.externalId,
       sandboxStatus: sessionSandboxes.status,
+      sessionMetadata: projectSessions.metadata,
     })
     .from(projectSessionPublicShares)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
+    .leftJoin(projectSessions, eq(projectSessions.sessionId, projectSessionPublicShares.sessionId))
     .where(eq(projectSessionPublicShares.tokenHash, publicShareTokenHash(token)))
     .limit(1);
 
@@ -342,6 +485,13 @@ export async function resolvePublicShare(token: string) {
   if (row.revokedAt) return { ok: false as const, status: 410, error: 'Share link revoked' };
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { ok: false as const, status: 410, error: 'Share link expired' };
+  }
+  // A deleted session keeps its row (soft delete stamps `metadata.deletedAt`,
+  // the predicate `sessionIsTombstoned` in projects/lib/access.ts reads) and
+  // its saved transcript. Its links must end with it, even one the delete path
+  // failed to revoke.
+  if (typeof (row.sessionMetadata as Record<string, unknown> | null)?.deletedAt === 'string') {
+    return { ok: false as const, status: 410, error: 'Share link revoked' };
   }
   // Fail closed for links created before personal-connection sharing was
   // prohibited. A public preview/file link delegates access to the same fixed
@@ -368,7 +518,14 @@ export async function resolvePublicShare(token: string) {
       error: 'Sessions using a personal connection cannot be shared publicly',
     };
   }
-  if (!row.externalId) return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
+  if (opts.requireTranscript && !shareUnlocksTranscript(row)) {
+    return { ok: false as const, status: 404, error: 'This share does not include the conversation' };
+  }
+  // A transcript share needs no sandbox: its reader falls back to the saved
+  // transcript when no box is up (public-session-share-view.ts).
+  if (!row.externalId && row.resourceType !== 'transcript') {
+    return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
+  }
   if (row.resourceType === 'preview' && (!row.port || PUBLIC_SHARE_BLOCKED_PORTS.has(row.port))) {
     return { ok: false as const, status: 403, error: 'This service cannot be shared publicly' };
   }

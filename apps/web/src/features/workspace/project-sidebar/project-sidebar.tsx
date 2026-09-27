@@ -27,17 +27,18 @@ import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard'
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useIsMobile } from '@/hooks/utils';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
-  SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 import { WorkspaceSwitcher } from './workspace-switcher';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -45,7 +46,7 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
-  const { state, setOpenMobile, toggleSidebar } = useSidebar();
+  const { state, setOpenMobile, toggleSidebar, peek } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -115,11 +116,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       className="[scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
       <SidebarHeader
-        className="space-y-2"
-        style={{
-          paddingTop:
-            'max(calc(var(--spacing) * 2), env(safe-area-inset-top, 0px), var(--kx-titlebar-inset, 0px))',
-        }}
+        className="kx-project-sidebar-header space-y-2"
+        data-peek={peek ? '' : undefined}
       >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
             single layout. Three controls on one 240px row, all 32px tall: the
@@ -137,7 +135,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             pointing at. The workspace directory is now a second VIEW of this
             menu, behind "Switch Workspace", which is why there is no footer
             control below any more. */}
-        <div className="flex w-full items-center gap-1">
+        <div
+          className={cn(
+            'flex w-full items-center gap-1',
+            !peek && 'kx-titlebar-row kx-titlebar-band-height kx-project-sidebar-titlebar',
+          )}
+        >
           <div className="min-w-0">
             <WorkspaceSwitcher projectId={projectId} />
           </div>
@@ -172,7 +175,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 state to collapse (`state` there still reads the desktop cookie),
                 and it already dismisses by backdrop/swipe. Clicking while the
                 panel is a hover flyout docks it open, hence the "Pin" label. */}
-            {!isMobile && (
+            {!isMobile && !peek && (
               <Hint
                 side="bottom"
 

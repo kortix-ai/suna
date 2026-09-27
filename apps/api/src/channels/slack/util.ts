@@ -81,9 +81,30 @@ export function escapeMrkdwn(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/**
+ * Slack issues every `response_url` on its own webhook host. The URL arrives in
+ * the request body, and a per-project app's body is only as trustworthy as the
+ * signing secret its admin chose, so nothing else is ever POSTed to.
+ */
+const SLACK_RESPONSE_URL_HOSTS = new Set(['hooks.slack.com', 'hooks.slack-gov.com']);
+
+export function isSlackResponseUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && SLACK_RESPONSE_URL_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /** POST a (possibly delayed) response to a Slack response_url. Best-effort. */
 export async function respondViaUrl(url: string | undefined, body: unknown): Promise<void> {
   if (!url) return;
+  if (!isSlackResponseUrl(url)) {
+    console.warn('[slack-webhook] refusing a response_url outside the Slack webhook host');
+    return;
+  }
   try {
     const res = await fetch(url, {
       method: 'POST',

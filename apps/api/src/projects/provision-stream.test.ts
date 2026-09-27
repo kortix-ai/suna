@@ -1,7 +1,7 @@
 /**
  * Source-level guards on `POST /v1/projects/provision-stream`
- * (`routes/r1.ts`) — the SSE sibling of `POST /provision`. Reads the file as
- * text, same shape as `routes/r1-provision-idempotency.test.ts` and
+ * (`routes/projects.ts`) — the SSE sibling of `POST /provision`. Reads the file as
+ * text, same shape as `routes/projects-provision-idempotency.test.ts` and
  * `provision-core.test.ts`. No database, no GitHub, no `mock.module` (which
  * is process-wide in this app and leaks into sibling suites).
  */
@@ -9,18 +9,17 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const routes = readFileSync(join(import.meta.dir, 'routes/r1.ts'), 'utf8');
+const routes = readFileSync(join(import.meta.dir, 'routes/projects.ts'), 'utf8');
 
-/** The stream route's own block, bounded by the next route after it in the
- * file (`/{projectId}/git-token`, unmodified by this task). Slicing keeps the
- * ordering assertions below from accidentally matching an unrelated route
- * elsewhere in this 900+ line file. */
+/** The stream route's own block, bounded by the next route registration
+ * after it in the file, or by the end of the file when it is the last route.
+ * Slicing keeps the ordering assertions below from accidentally matching an
+ * unrelated route elsewhere in the file. */
 function streamRouteSource(): string {
   const start = routes.indexOf("path: '/provision-stream'");
   expect(start).toBeGreaterThan(-1);
-  const end = routes.indexOf("path: '/{projectId}/git-token'", start);
-  expect(end).toBeGreaterThan(start);
-  return routes.slice(start, end);
+  const next = routes.indexOf('projectsApp.openapi(', start);
+  return routes.slice(start, next === -1 ? undefined : next);
 }
 
 /**
@@ -29,7 +28,7 @@ function streamRouteSource(): string {
  * `event:` framing (explaining what this route deliberately does NOT do),
  * so a raw substring check over the full text would fail on its own
  * documentation. Same helper shape as
- * `r1-provision-idempotency.test.ts`'s `codeOnly`.
+ * `projects-provision-idempotency.test.ts`'s `codeOnly`.
  */
 function codeOnly(source: string): string {
   return source

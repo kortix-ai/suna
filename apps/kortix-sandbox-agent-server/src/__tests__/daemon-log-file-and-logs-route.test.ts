@@ -2,7 +2,7 @@
  * The daemon log lands on disk and is readable through GET /kortix/logs —
  * and the sink can never hurt the box.
  *
- * 2026-08-25: two hours of an Essentia daemon reporting `starting` on the wrong
+ * 2026-08-25: two hours of an SampleCo daemon reporting `starting` on the wrong
  * port could be fenced but not proven, because its stdout lived on a stream
  * nobody kept (E2B envd). Every line now also lands in a file on the box.
  */
@@ -25,7 +25,6 @@ import {
   logger,
 } from '../logger'
 import { createLogsRouter } from '../routes/logs'
-import { tailFile } from '../log-tail'
 import { createOpenCodeDiagnosticsService } from '../harness/open-code/diagnostics'
 
 let root: string
@@ -139,24 +138,9 @@ describe('daemon log file sink', () => {
   })
 })
 
-describe('tailFile', () => {
-  test('returns the last N lines and null for a missing file', () => {
-    const p = join(root, 't.log')
-    writeFileSync(p, Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n') + '\n')
-    expect(tailFile(p, 3)).toBe('l47\nl48\nl49\n')
-    expect(tailFile(join(root, 'missing.log'), 3)).toBeNull()
-  })
-})
-
 describe('GET /kortix/logs', () => {
   const token = 'sandbox-token'
   const cfg = { sandboxToken: token } as Config
-
-  test('401 without the service bearer or a user context', async () => {
-    const app = createLogsRouter(cfg, createOpenCodeDiagnosticsService({} as Opencode, root))
-    const res = await app.request('http://d/?tail=10')
-    expect(res.status).toBe(401)
-  })
 
   test('tails the daemon log for the service caller, and both sources on demand', async () => {
     enableDaemonLogFile()

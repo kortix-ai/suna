@@ -33,7 +33,7 @@ agents:
     connectors: [github]
     secrets: [STRIPE_KEY]
     skills: [pdf-export]
-    kortix_cli: [project.session.start]
+    kortix_permissions: [project.session.start]
     workspace: runtime
 `;
 
@@ -61,7 +61,7 @@ describe('readAgentBlockV2', () => {
       connectors: ['github'],
       secrets: ['STRIPE_KEY'],
       skills: ['pdf-export'],
-      kortix_cli: ['project.session.start'],
+      kortix_permissions: ['project.session.start'],
       repository_access: false,
     });
     expect(read.block).not.toHaveProperty('opencode');
@@ -147,7 +147,7 @@ describe('applyAgentBlockV2', () => {
     const manifest = v2Manifest();
     const applied = applyAgentBlockV2(manifest, 'pr-bot', {
       connectors: ['github'],
-      kortix_cli: ['project.cr.open'],
+      kortix_permissions: ['project.cr.open'],
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
@@ -155,13 +155,13 @@ describe('applyAgentBlockV2', () => {
     expect(Object.keys(agents).sort()).toEqual(['pr-bot', 'support']);
   });
 
-  test('rejects an ungrantable kortix_cli action', () => {
+  test('rejects an ungrantable kortix_permissions action', () => {
     const applied = applyAgentBlockV2(v2Manifest(), 'support', {
-      kortix_cli: ['billing.read'],
+      kortix_permissions: ['billing.read'],
     });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.error).toContain('kortix_cli');
+    expect(applied.error).toContain('kortix_permissions');
   });
 
   test('rejects an unknown workspace value', () => {
@@ -285,7 +285,7 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
 
     const applied = applyAgentBlockV2(manifest, 'release-bot', {
       connectors: ['github'],
-      kortix_cli: ['project.cr.open'],
+      kortix_permissions: ['project.cr.open'],
     });
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;

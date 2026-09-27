@@ -1,11 +1,12 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useAccountState } from '@/hooks/billing';
+import { useOpenedOnce } from '@/hooks/utils/use-opened-once';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -24,6 +25,17 @@ import type { FlatModel } from './session-chat-input';
  * one `providers` surface, so both of those now resolve to it; only 'models'
  * still names a distinct tab.
  */
+// The provider modal pulls the whole Customize → Models surface (gateway tabs,
+// usage charts, the provider catalog). Every composer renders this gate — the
+// marketing home demo included — so the modal body loads on first open only.
+const ProjectProviderModal = dynamic(
+  () =>
+    import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
+      (mod) => mod.ProjectProviderModal,
+    ),
+  { ssr: false },
+);
+
 export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
   return tab === 'models' ? 'models' : 'providers';
 }
@@ -182,15 +194,17 @@ export function useModelConnectionGate(
     });
   }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
 
-  const modal = projectId ? (
-    <ProjectProviderModal
-      projectId={projectId}
-      open={projectModalOpen}
-      onOpenChange={setProjectModalOpen}
-      defaultTab={projectModalTab}
-      canWrite={canWriteProviders}
-    />
-  ) : null;
+  const providerModalOpened = useOpenedOnce(projectModalOpen);
+  const modal =
+    projectId && providerModalOpened ? (
+      <ProjectProviderModal
+        projectId={projectId}
+        open={projectModalOpen}
+        onOpenChange={setProjectModalOpen}
+        defaultTab={projectModalTab}
+        canWrite={canWriteProviders}
+      />
+    ) : null;
 
   // Billing off (self-host default): there's no Kortix plan to upgrade to and
   // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()

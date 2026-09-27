@@ -27,7 +27,7 @@ describe('providerAuthRequirement — Bedrock override', () => {
     ]);
   });
 
-  test('connects with just bearer token + region (the essentia case) — SigV4 keys are never required', () => {
+  test('connects with just bearer token + region (the sampleco case) — SigV4 keys are never required', () => {
     const requirement = providerAuthRequirement(bedrockProvider());
     const projectSecrets = new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']);
     expect(isProviderAuthSatisfied(requirement, (v) => projectSecrets.has(v))).toBe(true);

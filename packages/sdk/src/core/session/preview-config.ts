@@ -41,6 +41,14 @@ export function cachedPreviewUrlTemplate(backendUrl: string): string | null {
 }
 
 /**
+ * Every preview template a configured backend has advertised. The credential
+ * rule (`preview-origin-trust.ts`) trusts only origins these build.
+ */
+export function knownPreviewUrlTemplates(): string[] {
+  return [...templates.values()].filter((template): template is string => typeof template === 'string');
+}
+
+/**
  * Whether this backend has ANSWERED yet — as opposed to "answered null", which
  * is a real answer meaning "this deployment serves no preview domain".
  *

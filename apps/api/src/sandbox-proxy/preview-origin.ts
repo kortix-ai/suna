@@ -23,6 +23,7 @@
  */
 
 import { authenticatePreviewPrincipalDetailed, extractPreviewToken } from './preview-auth';
+import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { forwardToSandbox } from './routes/preview';
 import { resolveExternalIdFromHostLabel } from './backend';
 import { config } from '../config';
@@ -257,6 +258,9 @@ export async function establishPreviewSession(
     // would send the web app into a pointless re-auth loop.
     return { refusal: { status: 404, state: 'unknown', message: 'Unknown preview' } };
   }
+  // The sandbox is known: from here on, a refusal is an attempt on its owner's
+  // preview and is recorded in their audit log.
+  bindPreviewResource(sandboxId, target.port);
 
   const share = await authenticatePublicShare(shareToken, sandboxId, target.port);
   if (share) {
@@ -286,6 +290,7 @@ export async function establishPreviewSession(
       sandboxId,
       port: target.port,
       userId: principal.userId,
+      principalKind: principal.principalKind,
       // A non-null sessionId here means the credential is BOUND to a session —
       // i.e. it is the sandbox's own token (see PreviewPrincipal). Every other
       // branch returns null, and dropping it would let a sandbox-authored
@@ -397,6 +402,10 @@ export async function handlePreviewOriginRequest(
     session = established.session;
     setCookies = cookiesForSession(session, secure);
   }
+  // Every preview request after the first rides the cookie, so the cookie is
+  // what names the caller on this request's audit row.
+  bindPreviewSession(session);
+  bindPreviewResource(session.sandboxId, target.port);
 
   // Get the credential out of the URL on ANY navigation that still carries one,
   // not just the one that minted the cookie. The client appends `?token=` on

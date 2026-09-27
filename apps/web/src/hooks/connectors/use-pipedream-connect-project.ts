@@ -46,7 +46,7 @@ export const DEFAULT_PROJECT_CONNECTION_LABEL = 'Project connection';
  * Did the connection-scoped connect route refuse because this account is the
  * connector's EFFECTIVE project default?
  *
- * `apps/api/src/projects/routes/r4.ts` (INVARIANT, 2026-09-16 `account_required`
+ * `apps/api/src/projects/routes/connection-actions.ts` (INVARIANT, 2026-09-16 `account_required`
  * rule) blocks that route for the connector's sole active project-owned row
  * even when nothing is pinned, and names the route to use instead. That guard
  * is the ONLY 409 the handler returns, so the status alone identifies it — and
@@ -75,9 +75,14 @@ export function projectConnectSteps(
   slug: string,
   label: string | undefined,
   deps: ProjectConnectDeps,
+  /** Runs once the account row exists and before the authorization link opens:
+   *  where the Add account flow writes the grants that narrow it. */
+  beforeAuthorize?: (connectionId: string) => Promise<void>,
 ): {
   start: () => Promise<ConnectorConnectResult>;
   finalize: () => Promise<ConnectorFinalizeResult>;
+  /** The account `start` created, or `null` before it ran. */
+  connectionId: () => string | null;
 } {
   let connectionId: string | null = null;
   let route: ProjectConnectRoute = 'connection';
@@ -94,6 +99,7 @@ export function projectConnectSteps(
         label: label?.trim() || DEFAULT_PROJECT_CONNECTION_LABEL,
       });
       connectionId = connection.connection_id;
+      await beforeAuthorize?.(connection.connection_id);
       try {
         return await deps.connectConnection(projectId, connection.connection_id);
       } catch (error) {
@@ -119,6 +125,7 @@ export function projectConnectSteps(
       }
       return deps.finalizeConnection(projectId, connectionId);
     },
+    connectionId: () => connectionId,
   };
 }
 
@@ -140,9 +147,19 @@ export function usePipedreamConnectProject(
 ) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return useMutation({
-    mutationFn: async (input?: { label?: string }) => {
-      const steps = projectConnectSteps(projectId, slug, input?.label, sdkProjectConnectDeps);
-      return runConnectLinkFlow(steps.start, steps.finalize);
+    mutationFn: async (input?: {
+      label?: string;
+      beforeAuthorize?: (connectionId: string) => Promise<void>;
+    }) => {
+      const steps = projectConnectSteps(
+        projectId,
+        slug,
+        input?.label,
+        sdkProjectConnectDeps,
+        input?.beforeAuthorize,
+      );
+      const result = await runConnectLinkFlow(steps.start, steps.finalize);
+      return { ...result, connectionId: steps.connectionId() };
     },
     onSuccess: (result) => {
       if (!result.connected) return;

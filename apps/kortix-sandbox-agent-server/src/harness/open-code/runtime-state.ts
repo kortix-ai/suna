@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { logger } from '../../logger'
 import { resolveKortixRuntimeStateDirectory } from '../../runtime-state-dir'
 
 // The state directory is a host concern (every harness pins under it); the
@@ -15,15 +16,18 @@ export function resolveOpenCodeAuditSpoolPath(
   )
 }
 
-export const OPENCODE_SESSION_PIN_PATH = join(
-  resolveKortixRuntimeStateDirectory(),
-  'opencode-session-id',
-)
+/**
+ * The pin paths resolve on every call, never at import. `KORTIX_RUNTIME_STATE_DIR`
+ * has no production writer, so the answer is stable in a box; resolving per call
+ * keeps a module import from freezing whichever directory was current first.
+ */
+export function openCodeSessionPinPath(): string {
+  return join(resolveKortixRuntimeStateDirectory(), 'opencode-session-id')
+}
 
-export const OPENCODE_SEED_BAKED_PIN_PATH = join(
-  resolveKortixRuntimeStateDirectory(),
-  'opencode-seed-baked-id',
-)
+export function openCodeSeedBakedPinPath(): string {
+  return join(resolveKortixRuntimeStateDirectory(), 'opencode-seed-baked-id')
+}
 
 const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
 
@@ -39,7 +43,7 @@ const OPENCODE_SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
  * of the pin — the abort URL in control.ts, relay, turn-end — working on an id
  * that matches this pattern, instead of trusting whatever the file holds.
  */
-export function isValidOpenCodeSessionId(value: string): boolean {
+function isValidOpenCodeSessionId(value: string): boolean {
   return OPENCODE_SESSION_ID.test(value)
 }
 
@@ -56,14 +60,15 @@ function ensurePrivateRuntimeStateDirectory(path: string): void {
   chmodSync(directory, 0o700)
 }
 
-export function writeOpenCodeSessionPin(sessionId: string): void {
+function writePrivatePin(path: string, sessionId: string): void {
   const validatedSessionId = validatedOpenCodeSessionId(sessionId)
-  ensurePrivateRuntimeStateDirectory(OPENCODE_SESSION_PIN_PATH)
-  writeFileSync(OPENCODE_SESSION_PIN_PATH, validatedSessionId, {
-    encoding: 'utf8',
-    mode: 0o600,
-  })
-  chmodSync(OPENCODE_SESSION_PIN_PATH, 0o600)
+  ensurePrivateRuntimeStateDirectory(path)
+  writeFileSync(path, validatedSessionId, { encoding: 'utf8', mode: 0o600 })
+  chmodSync(path, 0o600)
+}
+
+export function writeOpenCodeSessionPin(sessionId: string): void {
+  writePrivatePin(openCodeSessionPinPath(), sessionId)
 }
 
 /**
@@ -74,20 +79,17 @@ export function writeOpenCodeSessionPin(sessionId: string): void {
  */
 export function readOpenCodeSessionPin(): string | null {
   try {
-    if (!existsSync(OPENCODE_SESSION_PIN_PATH)) return null
-    const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
-    return isValidOpenCodeSessionId(id) ? id : null
+    const path = openCodeSessionPinPath()
+    if (!existsSync(path)) return null
+    const id = readFileSync(path, 'utf8').trim()
+    if (isValidOpenCodeSessionId(id)) return id
+    if (id.length > 0) logger.warn('[runtime-state] ignoring a malformed pinned session id')
+    return null
   } catch {
     return null
   }
 }
 
 export function writeOpenCodeSeedBakedPin(sessionId: string): void {
-  const validatedSessionId = validatedOpenCodeSessionId(sessionId)
-  ensurePrivateRuntimeStateDirectory(OPENCODE_SEED_BAKED_PIN_PATH)
-  writeFileSync(OPENCODE_SEED_BAKED_PIN_PATH, validatedSessionId, {
-    encoding: 'utf8',
-    mode: 0o600,
-  })
-  chmodSync(OPENCODE_SEED_BAKED_PIN_PATH, 0o600)
+  writePrivatePin(openCodeSeedBakedPinPath(), sessionId)
 }

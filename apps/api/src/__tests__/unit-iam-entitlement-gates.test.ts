@@ -10,6 +10,7 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realSsoRepository from '../repositories/sso';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: { ACCOUNT_READ: 'account.read', ACCOUNT_WRITE: 'account.write' },
@@ -60,7 +61,10 @@ const ssoMappingRow = {
   createdBy: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
+// Spread the real module: `mock.module` replaces it wholesale, and the SSO
+// router also imports the pure domain-verification helpers from it.
 mock.module('../repositories/sso', () => ({
+  ...realSsoRepository,
   getSsoProvider: async () => ssoProviderRow,
   upsertSsoProvider: async () => ssoProviderRow,
   deleteSsoProvider: async () => true,

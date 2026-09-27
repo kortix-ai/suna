@@ -13,6 +13,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 interface SelectedProjectStore {
   projectId: string | null;
   setProjectId: (id: string | null) => void;
+  /** Sign-out: forget the project choice. */
+  reset: () => void;
 }
 
 export const useSelectedProjectStore = create<SelectedProjectStore>()(
@@ -20,6 +22,7 @@ export const useSelectedProjectStore = create<SelectedProjectStore>()(
     (set) => ({
       projectId: null,
       setProjectId: (id) => set({ projectId: id }),
+      reset: () => set({ projectId: null }),
     }),
     {
       name: 'selected-project-v1',

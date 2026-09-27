@@ -19,10 +19,12 @@ mock.module('../shared/supabase', () => ({
 }));
 
 const syncCalls: Array<{ userId: string; email: string; jwtPayload: unknown }> = [];
+let syncFailure: Error | null = null;
 mock.module('../iam/sso-sync', () => ({
   ...realSsoSync,
   syncSsoMembership: async (args: { userId: string; email: string; jwtPayload: unknown }) => {
     syncCalls.push(args);
+    if (syncFailure) throw syncFailure;
     return { skipped: false, memberCreated: true };
   },
 }));
@@ -37,7 +39,7 @@ mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }))
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 
-const { supabaseAuth, combinedAuth } = await import('./auth');
+const { supabaseAuth, combinedAuth, clearSsoSyncMemo } = await import('./auth');
 
 const SSO_PAYLOAD = { app_metadata: { provider: 'sso:prov-123', providers: ['sso:prov-123'] } };
 
@@ -62,8 +64,10 @@ const JWT = 'eyJhbGciOiJSUzI1NiJ9.body.sig';
 describe('auth middleware runs SAML JIT sync on every Supabase-JWT path', () => {
   beforeEach(() => {
     syncCalls.length = 0;
+    syncFailure = null;
     verifyResult = undefined;
     networkUser = undefined;
+    clearSsoSyncMemo();
   });
 
   test('supabaseAuth LOCAL path syncs', async () => {
@@ -100,5 +104,59 @@ describe('auth middleware runs SAML JIT sync on every Supabase-JWT path', () => 
     await combinedAuth(c, async () => {});
     expect(syncCalls).toHaveLength(1);
     expect(syncCalls[0].userId).toBe('u4');
+  });
+});
+
+describe('SAML JIT sync runs once per login session, not once per request', () => {
+  const session = (sessionId: string, groups: string[] = []) => ({
+    session_id: sessionId,
+    iat: 1_700_000_000,
+    app_metadata: { provider: 'sso:prov-123', providers: ['sso:prov-123'] },
+    user_metadata: { custom_claims: { groups } },
+  });
+  const request = async (userId: string, payload: unknown) => {
+    verifyResult = { ok: true, userId, email: `${userId}@corp.com`, payload };
+    const { ctx: c } = ctx(JWT);
+    await supabaseAuth(c, async () => {});
+  };
+
+  beforeEach(() => {
+    syncCalls.length = 0;
+    syncFailure = null;
+    verifyResult = undefined;
+    networkUser = undefined;
+    clearSsoSyncMemo();
+  });
+
+  test('repeated requests of one login session sync once', async () => {
+    for (let i = 0; i < 5; i++) await request('m1', session('s1'));
+    expect(syncCalls).toHaveLength(1);
+  });
+
+  test('a new login session syncs again', async () => {
+    await request('m2', session('s1'));
+    await request('m2', session('s2'));
+    expect(syncCalls).toHaveLength(2);
+  });
+
+  test('new IdP claims in the same session sync again', async () => {
+    await request('m3', session('s1', ['a']));
+    await request('m3', session('s1', ['a', 'b']));
+    expect(syncCalls).toHaveLength(2);
+  });
+
+  test('a failed sync is retried on the next request', async () => {
+    syncFailure = new Error('advisory lock timeout');
+    await request('m4', session('s1'));
+    syncFailure = null;
+    await request('m4', session('s1'));
+    await request('m4', session('s1'));
+    expect(syncCalls).toHaveLength(2);
+  });
+
+  test('a token without a login session is never remembered', async () => {
+    await request('m5', { app_metadata: { provider: 'sso:prov-123' } });
+    await request('m5', { app_metadata: { provider: 'sso:prov-123' } });
+    expect(syncCalls).toHaveLength(2);
   });
 });

@@ -8,7 +8,7 @@
  * the transcript re-ships every byte of every attachment that session ever
  * touched.
  *
- * Measured on a live self-host (essentia, 2026-08-24), an agent run with
+ * Measured on a live self-host (sampleco, 2026-08-24), an agent run with
  * hundreds of image reads, AFTER the first page was already cut from 50
  * messages to 20:
  *

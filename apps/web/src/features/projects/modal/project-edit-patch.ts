@@ -17,7 +17,7 @@ import type { ProjectIconValue } from './project-icon-field';
  * harder once a project could hold a GLYPH as well as an emoji. `PATCH
  * /v1/projects/:projectId` reads THREE states off EACH of `icon` and
  * `icon_glyph`, independently, and only the body can tell them apart
- * (`apps/api/src/projects/routes/r5.ts`):
+ * (`apps/api/src/projects/routes/project-detail.ts`):
  *
  *   - key absent  → the stored value is left alone
  *   - `null`      → the stored value is removed

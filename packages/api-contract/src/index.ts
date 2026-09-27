@@ -65,6 +65,8 @@ export const FeatureFlagMapSchema = z.object({
   session_transcript_history: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
+  config_releases: z.boolean(),
+  agent_principal: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -478,6 +480,21 @@ export const ConnectionMetadataSchema = z
       });
     }
   });
+/**
+ * One grant that names who may use a shared account. `project` = everyone with
+ * access to the project (`principal_id` is the project id).
+ */
+export const ConnectionShareSchema = z.object({
+  /** The `role_assignments` id; revoke it to take this audience away. */
+  grant_id: z.string().uuid(),
+  principal_type: z.enum(['member', 'group', 'project']),
+  principal_id: z.string(),
+  /** A member's email, a group's name, or the project's name. */
+  label: z.string(),
+  expires_at: z.string().nullable(),
+});
+export type ConnectionShare = z.infer<typeof ConnectionShareSchema>;
+
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
@@ -487,8 +504,36 @@ export const ConnectionSchema = z.object({
   status: ConnectionStatusSchema,
   is_default: z.boolean(),
   metadata: ConnectionMetadataSchema,
+  /**
+   * The identity the account was authorized as: an email, a login, or a
+   * display name, read from the provider at finalize. `null` when the
+   * provider exposes none or the connection holds no authorized account.
+   */
+  connected_as: z.string().nullable().optional(),
+  /**
+   * Who may use a shared (`owner_type: project`) account. Empty, or holding a
+   * `project` grant, means everyone in the project; otherwise only the named
+   * members and groups, in private sessions. Absent on every other owner type.
+   */
+  shared_with: z.array(ConnectionShareSchema).optional(),
+  /**
+   * `false` = the caller is outside this shared account's audience and sees it
+   * only because they manage the project's connections. It cannot be bound to
+   * a session. Absent on older servers: treat as `true`.
+   */
+  usable: z.boolean().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
+
+/**
+ * Rename a connection. Only the label changes. `me`, `project`, and
+ * UUID-shaped labels are refused at the route because `--account` resolves
+ * those before labels.
+ */
+export const RenameConnectionInputSchema = z
+  .object({ label: z.string().trim().min(1).max(255) })
+  .strict();
+export type RenameConnectionInput = z.infer<typeof RenameConnectionInputSchema>;
 
 export const ReconcileConnectionInputSchema = z
   .object({
@@ -1051,7 +1096,7 @@ export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
  *
  * A negative is a claim, and only a source that could have known may make it.
  * Before this, `/start` could answer `stage:"failed"` from a stamp written
- * hours earlier without touching a provider on the call (Essentia 2026-08-26,
+ * hours earlier without touching a provider on the call (SampleCo 2026-08-26,
  * session 9c8749ac: a 03:37Z `runtime_boot_failed` replayed for 10+ hours with
  * `lastInitError:null`). Every failure now carries its evidence.
  */

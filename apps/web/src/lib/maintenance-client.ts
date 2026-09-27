@@ -20,6 +20,16 @@ export function unknownMaintenanceConfig(): MaintenanceConfig {
   };
 }
 
+/**
+ * Cache policy for the public `GET /api/maintenance` poll. The CDN serves one
+ * answer per ~10 s and may serve a stale one for 30 s more while it
+ * revalidates; the browser never caches it. An admin change therefore reaches
+ * polling tabs within one poll interval plus ~10-40 s. The PUT response and
+ * the admin hook update the admin's own view immediately.
+ */
+export const MAINTENANCE_PUBLIC_CACHE_CONTROL =
+  'public, max-age=0, s-maxage=10, stale-while-revalidate=30';
+
 export function isMaintenanceProductRoute(pathname: string): boolean {
   // `/settings` earns its entry the same way `/accounts` did: the sign-in
   // redirect for an account with no app access lands there

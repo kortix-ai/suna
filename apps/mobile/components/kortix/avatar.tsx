@@ -1,0 +1,202 @@
+import { Avatar as AvatarRoot, AvatarFallback } from '@/components/ui/avatar';
+import { Icon } from '@/components/ui/icon';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
+import { getIconFromName } from '@/lib/utils/icon-mapping';
+import { entityChalk } from '@/lib/ui/entity-chalk';
+import { StackIcon as Layers, ChatIcon as MessageSquare, LightningIcon as Zap } from '@/lib/icons';
+import { type AppIcon } from '@/lib/icons';
+import { useColorScheme } from 'nativewind';
+import * as React from 'react';
+import { Text, type ViewProps } from 'react-native';
+
+type AvatarVariant = 'agent' | 'model' | 'thread' | 'trigger' | 'custom';
+
+interface AvatarProps extends ViewProps {
+  /** Type of avatar to display */
+  variant?: AvatarVariant;
+
+  /** Size of the avatar container (default: 48) */
+  size?: number;
+
+  /** Icon to display (icon component from `@/lib/icons` or icon name string) */
+  icon?: AppIcon | string;
+
+  /** Icon color (overrides defaults) */
+  iconColor?: string;
+
+  /** Background color (overrides defaults) */
+  backgroundColor?: string;
+
+  /** Border color (overrides defaults) */
+  borderColor?: string;
+
+  /** Show border (default: true) */
+  showBorder?: boolean;
+
+  /** Use Kortix symbol instead of icon (for SUNA agent) */
+  useKortixSymbol?: boolean;
+
+  /** Fallback text (first letter shown if no icon) */
+  fallbackText?: string;
+
+  /**
+   * Colour the tile from `fallbackText` with the shared `chalkColors` (via
+   * `entityChalk`): the project and account tile, the same colours web's
+   * `EntityAvatar` gives the same name. Draws a 1px border, like web.
+   */
+  chalk?: boolean;
+}
+
+/**
+ * Avatar Component - Unified avatar for all entity types
+ *
+ * A single, consistent avatar component used across the entire app for:
+ * - Agents (workers)
+ * - Models (AI models)
+ * - Threads (conversations)
+ * - Triggers (automation)
+ * - Custom use cases
+ *
+ * Built on the RNR `Avatar` / `AvatarFallback` primitives from
+ * `@/components/ui/avatar` (no `AvatarImage` — this component has no image
+ * source prop; it only ever renders an icon, the Kortix symbol, or a
+ * fallback letter).
+ *
+ * Design Specifications:
+ * - Default size: 48px × 48px
+ * - Border radius: 16px (33.3% of size) - matches Figma
+ * - Icon size: 40% of container (smaller than before for better spacing)
+ * - Kortix symbol: 50% of container (larger for brand recognition)
+ * - Border: 1.5px solid
+ * - Adapts to dark/light theme
+ *
+ * @example
+ * // Agent avatar
+ * <Avatar variant="agent" icon="Briefcase" backgroundColor="#161618" iconColor="#f8f8f8" /> // hex-allowlist: JSDoc example literal, not rendered code
+ *
+ * // Model avatar
+ * <Avatar variant="model" size={32} />
+ *
+ * // Thread avatar
+ * <Avatar variant="thread" fallbackText="AI Chat" />
+ *
+ * // Custom avatar
+ * <Avatar variant="custom" icon={CustomIcon} backgroundColor="#ff0000" /> // hex-allowlist: JSDoc example literal, not rendered code
+ */
+export function Avatar({
+  variant = 'custom',
+  size = 48,
+  icon,
+  iconColor,
+  backgroundColor,
+  borderColor,
+  showBorder = true,
+  useKortixSymbol = false,
+  fallbackText,
+  chalk = false,
+  style,
+  ...props
+}: AvatarProps) {
+  const { colorScheme } = useColorScheme();
+
+  // Calculate sizes - optimized for minimalist design
+  const iconSize = Math.round(size * 0.45); // 45% of container for better visibility
+  const symbolSize = Math.round(size * 0.55); // 55% for Kortix symbol (more prominent)
+  const borderRadius = Math.round(size * 0.32); // 32% for slightly softer corners
+
+  // Get default colors based on variant and theme
+  // hex-allowlist: bespoke Figma-spec avatar palette — deliberately distinct
+  // from the semantic --card/--border/--foreground tokens (close but not
+  // equal), no matching token exists.
+  const getDefaultColors = () => {
+    const isDark = colorScheme === 'dark';
+
+    // Kortix symbol always uses solid black bg with white icon
+    if (useKortixSymbol) {
+      return {
+        bg: '#000000', // hex-allowlist: Figma-spec avatar palette, deliberately distinct from theme
+        icon: '#FFFFFF', // hex-allowlist: Figma-spec avatar palette, deliberately distinct from theme
+        border: isDark ? '#2a2a2c' : '#d0d0d0', // hex-allowlist: Figma-spec avatar palette, deliberately distinct from theme
+      };
+    }
+
+    // Unified minimalist colors for all variants
+    return {
+      bg: isDark ? '#1a1a1c' : '#fafafa', // hex-allowlist: Figma-spec avatar palette, deliberately distinct from theme
+      icon: isDark ? '#f8f8f8' : '#121215', // hex-allowlist: Figma-spec avatar palette, deliberately distinct from theme
+      border: isDark ? '#2a2a2c' : '#e0e0e0', // hex-allowlist: Figma-spec avatar palette, deliberately distinct from theme
+    };
+  };
+
+  const defaults = chalk ? chalkDefaults(fallbackText) : getDefaultColors();
+  const finalBg = backgroundColor || defaults.bg;
+  const finalIconColor = iconColor || defaults.icon;
+  const finalBorderColor = borderColor || defaults.border;
+
+  // Get icon component
+  const getIconComponent = (): AppIcon | null => {
+    if (!icon) {
+      // Default icons based on variant
+      switch (variant) {
+        case 'model':
+          return Layers;
+        case 'thread':
+          return MessageSquare;
+        case 'trigger':
+          return Zap;
+        default:
+          return null;
+      }
+    }
+
+    if (typeof icon === 'string') {
+      return getIconFromName(icon);
+    }
+
+    return icon;
+  };
+
+  const IconComponent = getIconComponent();
+
+  return (
+    <AvatarRoot
+      alt={fallbackText ?? `${variant} avatar`}
+      className="items-center justify-center overflow-hidden"
+      style={[
+        {
+          width: size,
+          height: size,
+          backgroundColor: finalBg,
+          borderRadius: borderRadius,
+          borderWidth: useKortixSymbol ? 0 : showBorder ? (chalk ? 1 : 1.5) : 0,
+          borderColor: finalBorderColor,
+        },
+        style,
+      ]}
+      {...props}
+    >
+      <AvatarFallback className="bg-transparent">
+        {useKortixSymbol ? (
+          <KortixLogo size={symbolSize} variant="symbol" color="dark" />
+        ) : IconComponent ? (
+          <Icon as={IconComponent} size={iconSize} color={finalIconColor} />
+        ) : fallbackText ? (
+          <Text
+            style={{
+              color: finalIconColor,
+              fontSize: size * 0.4,
+              fontWeight: '600',
+            }}
+          >
+            {(fallbackText.trim().charAt(0) || '?').toUpperCase()}
+          </Text>
+        ) : null}
+      </AvatarFallback>
+    </AvatarRoot>
+  );
+}
+
+function chalkDefaults(name: string | undefined) {
+  const colors = entityChalk(name);
+  return { bg: colors.background, icon: colors.foreground, border: colors.border };
+}

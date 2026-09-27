@@ -12,6 +12,7 @@ import type { PreparedInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import type { ProjectRow } from './serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
+import { transitionSession } from '../session-lifecycle/status-transitions';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -112,19 +113,14 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       error: message,
     });
     try {
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'failed',
-          error: message,
-          // Merge, never re-write `input.sessionMetadata`: that snapshot was
-          // taken before allocation started, so writing it back drops anything
-          // committed since — the generated title, remote_branch,
-          // the start timeline. The session is terminal here, so nothing retries.
-          metadata: projectSessionMetadataMerge({ provisioning_error: message }),
-          updatedAt: new Date(),
-        })
-        .where(eq(projectSessions.sessionId, input.sessionId));
+      // Merge, never re-write `input.sessionMetadata`: that snapshot was
+      // taken before allocation started, so writing it back drops anything
+      // committed since — the generated title, remote_branch,
+      // the start timeline. The session is terminal here, so nothing retries.
+      await transitionSession('fail', input.sessionId, {
+        error: message,
+        metadata: { provisioning_error: message },
+      });
     } catch (markErr) {
       console.error(`[projects] Failed to mark session ${input.sessionId} failed:`, markErr);
     }

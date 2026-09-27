@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
-import { refreshMirror } from './mirror';
+import { refreshMirror, repoCachePath } from './mirror';
 import type { GitBackedProject } from './types';
 
 const exec = promisify(execFile);
@@ -93,6 +93,32 @@ describe('manifest refresh', () => {
 
     const refreshed = await loadProjectAgents(project, { forceRefresh: true });
     expect(requiredConnectorsForAgent('support', refreshed)).toEqual(['required-check']);
+  });
+
+  test('a forced manifest read skips the fetch when its branch has not moved', async () => {
+    // The per-prompt grant read forces a refresh purely to keep ONE branch
+    // current. When that branch is already at the remote's tip, the mirror
+    // proves it with a single `ls-remote` and does not transfer the repository
+    // — so a ref pushed in the meantime is deliberately NOT mirrored by this
+    // call. That absence is the observable difference between the cheap proof
+    // and the fetch it replaces.
+    await loadProjectAgents(project);
+    await git(['branch', 'unrelated'], repositoryPath);
+    await git(['push', 'origin', 'unrelated'], repositoryPath);
+
+    await loadProjectAgents(project, { forceRefresh: true });
+
+    const mirror = repoCachePath(project);
+    const unrelated = await exec('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/unrelated'], {
+      cwd: mirror,
+    }).then(
+      () => 'present',
+      () => 'absent',
+    );
+    expect(unrelated).toBe('absent');
+    // …and the manifest itself still reads, from the branch that did not move.
+    const agents = await loadProjectAgents(project, { forceRefresh: true });
+    expect(requiredConnectorsForAgent('support', agents)).toEqual([]);
   });
 
   test('a forced refresh remains forced when a cached refresh already holds the lock', async () => {

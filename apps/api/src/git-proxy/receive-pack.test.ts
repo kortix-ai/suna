@@ -29,6 +29,21 @@ const REAL_PUSH_PREFIX =
   ' report-status-v2 side-band-64k quiet object-format=sha1' +
   '0000';
 
+/**
+ * Real bytes: the command section git sent for `git push` out of a `--depth 2`
+ * clone (git/2.39.1, captured 2026-09-23). A shallow client prefixes the ref
+ * commands with a `shallow <sha>` pkt-line — no trailing newline — which the
+ * parser must skip instead of reading as a malformed ref command (the
+ * `HTTP 400` / `Everything up-to-date` shallow-push trap).
+ */
+const SHALLOW_SHA = '7e999ac28b652c99067df9cd5ac9af536d5c72d9';
+const REAL_SHALLOW_PUSH_PREFIX =
+  pktLineStr(`shallow ${SHALLOW_SHA}`) +
+  pktLineStr(
+    `${ZERO} ${NEW} refs/heads/controller\0 report-status-v2 side-band-64k quiet object-format=sha1\n`,
+  ) +
+  '0000';
+
 function bytes(s: string): Uint8Array {
   return Buffer.from(s, 'latin1');
 }
@@ -44,6 +59,34 @@ describe('parseReceivePackCommands', () => {
     // The whole decision is made inside the first ~160 bytes, ahead of the pack.
     expect(result.commandBytes).toBe(REAL_PUSH_PREFIX.length);
     expect(result.commandBytes).toBeLessThan(200);
+  });
+
+  test('parses a push from a shallow client (the shallow-push trap)', () => {
+    const result = parseReceivePackCommands(bytes(REAL_SHALLOW_PUSH_PREFIX));
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    // The `shallow <sha>` line is not a ref update; the ref command still parses.
+    expect(result.updates).toEqual([{ oldSha: ZERO, newSha: NEW, ref: 'refs/heads/controller' }]);
+    expect(result.capabilities).toContain('side-band-64k');
+    // The whole prefix (shallow line + command + flush) is replayed upstream.
+    expect(result.commandBytes).toBe(REAL_SHALLOW_PUSH_PREFIX.length);
+  });
+
+  test('a shallow line between commands is skipped too', () => {
+    const body =
+      pktLineStr(`${ZERO} ${NEW} refs/heads/controller\0 report-status-v2 side-band-64k\n`) +
+      pktLineStr(`shallow ${SHALLOW_SHA}`) +
+      '0000';
+    const result = parseReceivePackCommands(bytes(body));
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.updates).toHaveLength(1);
+    expect(result.updates[0]!.ref).toBe('refs/heads/controller');
+  });
+
+  test('a malformed shallow line is still rejected', () => {
+    const body = pktLineStr('shallow not-a-sha') + '0000';
+    expect(parseReceivePackCommands(bytes(body)).status).toBe('invalid');
   });
 
   test('PACK data after the flush-pkt is never consumed', () => {

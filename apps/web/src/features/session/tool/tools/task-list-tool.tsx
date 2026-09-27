@@ -9,9 +9,9 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import type { TriggerTitle } from '@/ui';
 import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 // Fully static, so it does not need rebuilding (object plus a fresh `args` array)
@@ -34,7 +34,7 @@ export function TaskListTool({ part, forceOpen }: ToolProps) {
       ) : output ? (
         <div data-scrollable className="max-h-48 overflow-auto px-3 py-2">
           <div className="text-muted-foreground text-xs whitespace-pre-wrap">
-            <UnifiedMarkdown content={output} isStreaming={false} />
+            <UnifiedMarkdown content={output} trust="agent" isStreaming={false} />
           </div>
         </div>
       ) : null}

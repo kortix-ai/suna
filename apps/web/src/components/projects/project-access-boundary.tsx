@@ -4,6 +4,7 @@ import { ShieldWarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,9 @@ import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
+import { prefetchSessionOpen } from '@kortix/sdk/react';
+import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
+import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
 
 const QUERY_KEY = 'project-access-boundary';
 
@@ -174,6 +178,12 @@ export function resolveGateState(
   return waiting ?? errorState ?? 'unavailable';
 }
 
+/** The `[sessionId]` route segment, when the current route has one. */
+export function routeSessionIdFromParams(params: Record<string, unknown> | null | undefined): string | null {
+  const value = params?.sessionId;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 // ─── Boundary ────────────────────────────────────────────────────────────────
 
 interface ProjectAccessBoundaryProps {
@@ -201,6 +211,34 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
     enabled: authReady && !!projectId,
     retry: false,
   });
+
+  // A session route's open read needs only the two route ids, so it starts
+  // HERE, beside `getProject`, instead of after this boundary renders the
+  // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
+  // `GET /projects/<id>` before it could start. Read-only — it never wakes a
+  // sandbox — and a project this user cannot read answers 403 to it as well.
+  //
+  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
+  // reads also only need the route ids, and were waiting on
+  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
+  // see `session-route-prefetch.ts`.
+  const queryClient = useQueryClient();
+  const routeSessionId = routeSessionIdFromParams(useParams());
+  useEffect(() => {
+    if (!authReady || !routeSessionId) return;
+    void prefetchSessionOpen(queryClient, projectId, routeSessionId);
+    prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
+  }, [authReady, projectId, routeSessionId, queryClient]);
+
+  // The project SHELL's own reads (detail, sessions list, sandbox health, and
+  // — once detail says the gateway is on — the model picker) need only
+  // `projectId`, exactly like `getProject` above, so they start here too
+  // instead of waiting for `getProject` to resolve AND `ProjectShell`'s own
+  // chunk to mount. See `project-shell-prefetch.ts`.
+  useEffect(() => {
+    if (!authReady || !projectId) return;
+    prefetchProjectShellReads(queryClient, projectId);
+  }, [authReady, projectId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.

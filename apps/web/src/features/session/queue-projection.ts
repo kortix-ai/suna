@@ -6,8 +6,8 @@ import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
   parseFileReferences,
-  parseReplyContext,
   parseSessionReferences,
+  stripReplyContexts,
 } from './message-parsing';
 
 /**
@@ -69,7 +69,7 @@ export interface QueueProjection {
 /** A prompt's visible words: the transport blocks the send path appends
  *  (reply context, upload refs, mention refs) stripped back out. */
 export function cleanPromptText(text: string): { text: string; fileCount: number } {
-  const withoutReply = parseReplyContext(text).cleanText;
+  const withoutReply = stripReplyContexts(text);
   const uploads = parseFileReferences(withoutReply);
   const withoutSessions = parseSessionReferences(uploads.cleanText).cleanText;
   const withoutFiles = parseFileMentionReferences(withoutSessions).cleanText;

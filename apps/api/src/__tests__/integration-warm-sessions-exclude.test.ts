@@ -75,36 +75,9 @@ beforeEach(async () => {
 });
 
 describe('findWarmProjectSession — exclusion', () => {
-  test('(b) with no exclusion, the live warm session is found — ordinary reuse still works', async () => {
-    const sessionId = await seedWarmSession();
-
-    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });
-
-    expect(found?.sessionId).toBe(sessionId);
-  });
-
-  test('(c) the excluded id is never returned even though its warm marker is still set', async () => {
-    const sessionId = await seedWarmSession();
-
-    const found = await findWarmProjectSession({
-      accountId: ACCOUNT,
-      projectId: PROJECT,
-      userId: USER,
-      excludeSessionId: sessionId,
-    });
-
-    expect(found).toBeNull();
-  });
-
-  test('(a) excluding the only warm candidate leaves none available — the route then creates fresh instead of reusing', async () => {
-    // The exact regression: a replenish that excludes the session it just
-    // handed out must find NOTHING to reuse, so `POST /sessions/warm` falls
-    // through to `createProjectSession` and returns a brand-new session with
-    // `reused: false` — never the excluded one. Asserted here at the DB
-    // layer: `existing === null` is precisely the condition the route
-    // branches on (`if (existing) { reuse } else { create }`), and that
-    // branch's wiring is covered separately by
-    // `../projects/routes/warm-sessions.test.ts`.
+  // Ordinary reuse with no exclusion is the owner lookup at the end of the
+  // caller-scope test below.
+  test('the excluded id is never returned even though its warm marker is still set', async () => {
     const sessionId = await seedWarmSession();
 
     const found = await findWarmProjectSession({
@@ -131,7 +104,7 @@ describe('findWarmProjectSession — exclusion', () => {
     expect(found?.sessionId).toBe(older);
   });
 
-  test('a stopped session is never returned as warm, excluded or not', async () => {
+  test('a stopped session is never returned as warm', async () => {
     await seedWarmSession({ status: 'stopped' });
 
     const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });

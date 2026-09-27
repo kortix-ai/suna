@@ -72,7 +72,8 @@ import {
 } from './lib/provision-idempotency';
 import { normalizeProjectGlyph } from './lib/project-glyph';
 import { normalizeProjectIcon } from './lib/project-icon';
-import { PROJECT_NAME_MAX_LENGTH, normalizeString, readBody, serializeProject } from './lib/serializers';
+import { PROJECT_NAME_MAX_LENGTH, normalizeString, serializeProject } from './lib/serializers';
+import { readJsonObject } from '../shared/http-body';
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
@@ -147,7 +148,7 @@ export interface ProvisionContext {
  * a caller (either route) can still 403 before any provisioning work starts.
  */
 export async function buildProvisionContext(c: any): Promise<ProvisionContext> {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   return { c, body, scope };
 }

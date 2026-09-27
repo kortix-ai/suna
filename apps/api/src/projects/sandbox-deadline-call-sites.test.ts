@@ -78,7 +78,7 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
 describe('the fire-and-forget deadline wirings are actually wired', () => {
   for (const [file, call] of [
     ['platform/services/session-sandbox.ts', 'grantWarmPoolLifetime('],
-    ['projects/routes/r4.ts', 'completeSandboxTurn('],
+    ['projects/routes/turn-stream.ts', 'completeSandboxTurn('],
   ] as const) {
     test(`${file} still calls ${call})`, async () => {
       const source = await Bun.file(join(API_SRC, file)).text();

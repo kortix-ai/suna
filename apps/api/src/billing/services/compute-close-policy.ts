@@ -22,8 +22,8 @@
  * remember anything:
  *
  *   1. SETTLEMENT IS EVIDENCE-BOUNDED. A window can never bill past the last
- *      control-plane observation of liveness plus the provider's own auto-stop
- *      ceiling, so a stranded row simply stops accruing on its own.
+ *      control-plane observation of liveness plus the billing grace
+ *      (compute-liveness.ts), so a stranded row simply stops accruing on its own.
  *   2. THE SWEEP (compute-invariant-sweep.ts) re-derives, from scratch every
  *      pass, whether each open row still has a provably-alive sandbox, and
  *      closes the ones that do not.

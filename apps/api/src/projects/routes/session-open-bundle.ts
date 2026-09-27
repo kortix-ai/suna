@@ -53,7 +53,8 @@ import {
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../lib/serializers';
-import { UUID_V4_REGEX, parseBoundedPositiveInt } from '../lib/serializers';
+import { parseBoundedPositiveInt } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -102,7 +103,7 @@ const sessionSnapshotRoute = (path: string, summary: string) =>
 const handleSessionSnapshot = async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const transcriptLimit = parseBoundedPositiveInt(
       c.req.query('transcript'),

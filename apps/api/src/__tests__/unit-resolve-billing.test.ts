@@ -5,18 +5,19 @@ import { describe, expect, test } from 'bun:test';
 // behaves as, where that came from, its effective entitlements after the
 // account-level overrides, and its concurrent-session cap.
 //
-// It replaces nothing yet. These tests pin the semantics it is required to
-// reproduce — the trial overlay and per-seat self-heal from
-// effective-tier.ts:93-100, the enterprise/demo/managed-models overrides from
-// entitlements.ts:107-140, and the session-limit override from
-// shared/account-limits.ts:151-160 — so the consumer flip in the next PR is a
-// mechanical swap and not a behavior change.
+// These tests pin its semantics: the trial overlay (with its lazy expiry and
+// seat allowance), the per-seat self-heal, the enterprise/demo/managed-models
+// overrides, and the session-limit override.
 //
 // No mocks: the module is pure by construction. If it ever needs one, it has
 // stopped being pure and that is the bug.
 
 import { PLAN_CATALOG } from '../billing/services/plan-catalog';
-import { type BillingRow, resolveBillingFromRow } from '../billing/services/resolve-billing';
+import {
+  type BillingRow,
+  activeTrialSeatLimit,
+  resolveBillingFromRow,
+} from '../billing/services/resolve-billing';
 
 const NOW = Date.UTC(2026, 0, 15, 12, 0, 0);
 const HOUR = 3_600_000;
@@ -58,7 +59,7 @@ describe('stored tier', () => {
     });
   }
 
-  test('null tier reads as none, not free (matches resolveEffectiveTier)', () => {
+  test('null tier reads as none, not free', () => {
     const r = resolveBillingFromRow({ tier: null }, NOW);
     expect(r.plan.key).toBe('none');
     expect(r.source).toBe('stored');
@@ -126,6 +127,18 @@ describe('trial overlay', () => {
       NOW,
     );
     expect(missing.plan.key).toBe('free');
+  });
+
+  test.each([
+    ['ends exactly now', iso(0)],
+    ['has an unparseable end date', 'garbage'],
+  ])('a trial that %s does not grant', (_name, trialEndsAt) => {
+    const r = resolveBillingFromRow(
+      { tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt },
+      NOW,
+    );
+    expect(r.plan.key).toBe('free');
+    expect(r.source).toBe('stored');
   });
 
   test('trial outranks the per-seat self-heal', () => {
@@ -530,5 +543,22 @@ describe('purity', () => {
     r.entitlements.managedModels = true;
     expect(PLAN_CATALOG.free?.entitlements.managedModels).toBe(false);
     expect(resolveBillingFromRow({ tier: 'free' }, NOW).entitlements.managedModels).toBe(false);
+  });
+});
+
+describe('activeTrialSeatLimit — the trial seat gate on member add and invite', () => {
+  const activeTrial = { trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: iso(24 * HOUR) };
+
+  test.each([
+    ['an active trial returns its seat allowance', { ...activeTrial, trialSeats: 5 }, 5],
+    ['fractional seats floor', { ...activeTrial, trialSeats: 5.9 }, 5],
+    ['an uncapped trial lifts no gate', { ...activeTrial, trialSeats: null }, null],
+    ['zero seats is uncapped', { ...activeTrial, trialSeats: 0 }, null],
+    ['negative seats is uncapped', { ...activeTrial, trialSeats: -3 }, null],
+    ['a lapsed trial lifts no gate', { ...activeTrial, trialSeats: 5, trialEndsAt: iso(-1) }, null],
+    ['a revoked trial lifts no gate', { ...activeTrial, trialSeats: 5, trialStatus: 'revoked' }, null],
+    ['no row lifts no gate', null, null],
+  ] as const)('%s', (_name, row, limit) => {
+    expect(activeTrialSeatLimit(row, NOW)).toBe(limit);
   });
 });

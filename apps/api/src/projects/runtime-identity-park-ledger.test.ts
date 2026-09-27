@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realSentry from '../lib/sentry';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
@@ -24,10 +25,14 @@ let inTransaction = false;
 let liveSession = true;
 let liveSandbox = true;
 let providerStops = 0;
+/** Whether a transaction was open when the provider stop ran. */
+let stopsInTransaction = 0;
 let computeEnds = 0;
 let savepoints = 0;
 /** When set, every `tx.execute` fails with this message. */
 let executeThrows: string | null = null;
+/** `runtime_lost` exceptions filed. */
+let lostReports = 0;
 
 function describeSql(expression: unknown): string {
   const chunks = (expression as { queryChunks?: unknown[] } | null)?.queryChunks ?? [];
@@ -99,11 +104,19 @@ mock.module('../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
 }));
 
+mock.module('../lib/sentry', () => ({
+  ...realSentry,
+  captureException: (error: unknown) => {
+    if (String(error).includes('runtime_lost')) lostReports += 1;
+  },
+}));
+
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     stop: async () => {
       providerStops += 1;
+      if (inTransaction) stopsInTransaction += 1;
     },
   }),
 }));
@@ -130,9 +143,11 @@ beforeEach(() => {
   liveSession = true;
   liveSandbox = true;
   providerStops = 0;
+  stopsInTransaction = 0;
   computeEnds = 0;
   savepoints = 0;
   executeThrows = null;
+  lostReports = 0;
 });
 
 describe('parks outside applyStoppedState settle the turn ledger', () => {
@@ -155,7 +170,12 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
       'runtime_boot_failed',
     );
 
-    expect(sandboxUpdates).toBe(1);
+    // The stop claim, then the park.
+    expect(sandboxUpdates).toBe(2);
+    // The provider stop runs between them, with no transaction open.
+    expect(providerStops).toBe(1);
+    expect(stopsInTransaction).toBe(0);
+    expect(computeEnds).toBe(1);
     expect(statements).toHaveLength(1);
     expect(statements[0]?.inTransaction).toBe(true);
     expect(statements[0]?.sql).toContain('UPDATE kortix.session_turns');
@@ -191,7 +211,7 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
 
   // The settle is savepoint-bounded so an observation-table failure cannot
   // abort the park transaction. parkEstablishedRuntime stops the provider only
-  // after this transaction's row CAS wins.
+  // after its stop claim wins, and parks the rows only after the stop.
   test('a ledger settle that throws leaves the park committed', async () => {
     executeThrows = 'canceling statement due to statement timeout';
     const error = console.error;
@@ -208,7 +228,7 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
       console.error = error;
     }
 
-    expect(sandboxUpdates).toBe(1);
+    expect(sandboxUpdates).toBe(2);
     expect(savepoints).toBe(1);
   });
 
@@ -216,5 +236,28 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
     await preserveEstablishedRuntime(ROW, 'provider_webhook_removed', 'provider_removed');
 
     expect(savepoints).toBe(1);
+  });
+});
+
+describe('a lost runtime is reported once', () => {
+  test('the first preserve reports it; a repeat for the same identity does not', async () => {
+    await preserveEstablishedRuntime(ROW, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+
+    // Every open of a lost session runs the removed path again.
+    const alreadyLost = {
+      ...ROW,
+      metadata: { runtimeIdentityState: 'unavailable', preservedExternalId: 'ext-1' },
+    };
+    await preserveEstablishedRuntime(alreadyLost, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+
+    // A DIFFERENT box lost by the same session is a new loss.
+    await preserveEstablishedRuntime(
+      { ...alreadyLost, externalId: 'ext-2' },
+      'runtime_removed',
+      'provider_removed',
+    );
+    expect(lostReports).toBe(2);
   });
 });

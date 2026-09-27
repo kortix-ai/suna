@@ -113,10 +113,13 @@ test('a box with no readable creation time reports createdAt null so the reaper 
   expect(listed).toEqual([{ externalId: 'sbx_undated', createdAt: null }]);
 });
 
-test('INSTANCE SCOPE: with KORTIX_INSTANCE_ID set, another instance’s box is skipped; own and unstamped boxes are listed', async () => {
-  // Shared Platinum org + shared local DB: instance A must never stop instance
-  // B's boxes (projects/instance-scope.ts). Boxes created before the stamp
-  // carry no `kortix.instance` and stay everyone's — the safe direction.
+test('INSTANCE SCOPE: with KORTIX_INSTANCE_ID set, only a box stamped with THIS id is listed', async () => {
+  // Shared Platinum org: instance A must never stop instance B's boxes
+  // (projects/instance-scope.ts). An UNSTAMPED box is not ours either: every
+  // PR preview shares one org and one `kortix.env=preview` tag, each with its
+  // own database, so a box another preview created before the stamp existed
+  // has no row here and would read as an orphan. The orphan reaper STOPS what
+  // this returns, so the strict direction is the safe one (2026-09-24).
   platinumConfig.KORTIX_INSTANCE_ID = 'wt-a';
   try {
     pages = [
@@ -133,7 +136,7 @@ test('INSTANCE SCOPE: with KORTIX_INSTANCE_ID set, another instance’s box is s
     const { PlatinumProvider } = await import('./platinum');
     const listed = await new PlatinumProvider().listManagedRunningSandboxes();
 
-    expect(listed.map((box) => box.externalId)).toEqual(['sbx_mine', 'sbx_unstamped']);
+    expect(listed.map((box) => box.externalId)).toEqual(['sbx_mine']);
   } finally {
     delete platinumConfig.KORTIX_INSTANCE_ID;
   }

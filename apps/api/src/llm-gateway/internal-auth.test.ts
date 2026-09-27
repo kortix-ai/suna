@@ -35,30 +35,16 @@ describe('matchesInternalToken', () => {
 });
 
 describe('weakInternalTokenWarnings', () => {
-  test('no warnings for unconfigured token', () => {
-    expect(weakInternalTokenWarnings(undefined)).toEqual([]);
-    expect(weakInternalTokenWarnings('')).toEqual([]);
-  });
-
-  test('warns on a short token', () => {
-    expect(weakInternalTokenWarnings('short')).toHaveLength(1);
-  });
-
-  test('warns on a known-weak value regardless of case', () => {
-    expect(weakInternalTokenWarnings('ChangeMe')).toHaveLength(1);
-    expect(weakInternalTokenWarnings('secret')).toHaveLength(1);
-  });
-
-  test('no warning for a sufficiently long random-looking token', () => {
-    expect(weakInternalTokenWarnings('a'.repeat(32))).toEqual([]);
-  });
-
-  test('checks every entry in a rotation list independently', () => {
-    const warnings = weakInternalTokenWarnings(`${'a'.repeat(32)}, short`);
-    expect(warnings).toHaveLength(1);
-  });
-
-  test('flags every weak entry when the whole list is weak', () => {
-    expect(weakInternalTokenWarnings('short1, short2')).toHaveLength(2);
+  test.each([
+    ['no token configured', undefined, []],
+    ['an empty list', '', []],
+    ['a 23-char token', 'a'.repeat(23), [23]],
+    ['a 24-char token', 'a'.repeat(24), []],
+    ['a rotation list with one short entry', `${'a'.repeat(32)}, short`, [5]],
+    ['a rotation list with two short entries', 'short1, short2', [6, 6]],
+  ] as const)('%s', (_name, csv, shortLengths) => {
+    expect(weakInternalTokenWarnings(csv)).toEqual(
+      shortLengths.map((length) => expect.stringContaining(`only ${length} chars (want >= 24)`)),
+    );
   });
 });

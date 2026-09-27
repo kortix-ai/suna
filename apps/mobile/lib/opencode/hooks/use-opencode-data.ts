@@ -57,6 +57,12 @@ export interface FlatModel {
   providerName: string;
   modelID: string;
   modelName: string;
+  /**
+   * The upstream provider that serves a gateway (`kortix`) model, e.g.
+   * 'anthropic' or 'codex'. The model sheet groups by it. Stamped from the
+   * project catalog (`lib/session/model-picker.ts`).
+   */
+  provider?: string;
   variants?: Record<string, Record<string, unknown>>;
   reasoning: boolean;
   contextWindow?: number;

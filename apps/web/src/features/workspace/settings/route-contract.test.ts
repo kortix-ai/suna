@@ -37,7 +37,7 @@ describe('settings route segments', () => {
  */
 describe('the project settings [tab] route resolves legacy segments', () => {
   const source = readFileSync(
-    resolve(import.meta.dir, '../../../app/(app)/projects/[id]/settings/[tab]/page.tsx'),
+    resolve(import.meta.dir, '../../../app/[locale]/(app)/projects/[id]/settings/[tab]/page.tsx'),
     'utf8',
   );
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');

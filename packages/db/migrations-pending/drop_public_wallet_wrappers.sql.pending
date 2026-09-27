@@ -1,0 +1,29 @@
+-- Migration: drop_public_wallet_wrappers
+--
+-- PARKED. Do not move this into packages/db/migrations/ until BOTH are true:
+--
+--   1. Every deployed API image (dev, staging, prod) was built from a commit
+--      that contains 20260925013304428_wallet_private_schema, so no running
+--      pod calls public.atomic_*. Check each environment's /v1/health SHA
+--      against `git merge-base --is-ancestor <that commit> <health sha>`.
+--   2. `git grep -n "atomic_\(add\|use\|settle\|reset_expiring\)_credits" -- apps packages`
+--      finds no caller outside tests and comments.
+--
+-- Then: `pnpm migrate:create drop_public_wallet_wrappers`, paste the body below
+-- under the generated header, delete this file, and update:
+--   - tests/migration/credit-rpc-overloads.test.ts (the public.* assertions,
+--     including the atomic_use_credits wrapper rows),
+--   - packages/db/scripts/atomic-use-credits-balance-guard.integration.test.ts
+--     (call kortix_wallet.debit_credits directly),
+--   - tests/src/flows/security-backlog.flow.ts SEC-K (a dropped name answers
+--     404 PGRST202, which the flow already accepts).
+--
+-- The wallet (apps/api/src/billing/wallet) calls kortix_wallet.* directly and
+-- does not depend on these wrappers.
+
+-- mixed-version-safe: every deployed API image calls kortix_wallet.* (precondition 1); the wrappers have no other caller (precondition 2).
+
+DROP FUNCTION IF EXISTS public.atomic_add_credits(uuid, numeric, boolean, text, timestamp with time zone, text, text, text);
+DROP FUNCTION IF EXISTS public.atomic_use_credits(uuid, numeric, text, text, text);
+DROP FUNCTION IF EXISTS public.atomic_settle_credits(uuid, numeric, text, text, text);
+DROP FUNCTION IF EXISTS public.atomic_reset_expiring_credits(uuid, numeric, text, text);

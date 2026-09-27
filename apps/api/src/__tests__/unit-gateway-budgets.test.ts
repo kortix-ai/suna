@@ -54,7 +54,9 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { checkBudget, __resetBudgetReservationsForTests } = await import('../llm-gateway/budgets');
+const { checkBudget, releaseBudgetReservation, __resetBudgetReservationsForTests } = await import(
+  '../llm-gateway/budgets'
+);
 
 function principal(overrides: Partial<AuthedPrincipal> = {}): AuthedPrincipal {
   return {
@@ -256,6 +258,38 @@ describe('checkBudget', () => {
       spendQueue = [0.9]; // a totally different project's spend — must not see project-1's reservation
       const other = await checkBudget(principal({ projectId: 'project-2' }));
       expect(other.exceeded).toBe(false);
+    });
+
+    test('settled requests release their reservation: sequential calls under a low budget keep running', async () => {
+      budgetRows = [
+        { scope: 'project', subjectUserId: null, limitUsd: '2', period: 'day', action: 'block' },
+      ];
+      // 30 sequential calls with real spend near $0: each one settles before
+      // the next is admitted. The held $0.50 per call used to deny the 5th.
+      for (let i = 0; i < 30; i++) {
+        spendQueue = [0.01 * i];
+        const result = await checkBudget(principal());
+        expect(result.exceeded).toBe(false);
+        releaseBudgetReservation('project-1', 'user-1');
+      }
+    });
+
+    test('a member budget reservation is released by that member\'s settlement', async () => {
+      budgetRows = [
+        { scope: 'member', subjectUserId: 'user-1', limitUsd: '1', period: 'day', action: 'block' },
+      ];
+      spendQueue = [0.4];
+      expect((await checkBudget(principal())).exceeded).toBe(false);
+      spendQueue = [0.4];
+      // In flight: 0.4 spent + 0.5 reserved + this admission's check → still 0.9 < 1.
+      expect((await checkBudget(principal())).exceeded).toBe(false);
+      spendQueue = [0.4];
+      // Two reservations held: 0.4 + 1.0 >= 1 → denied.
+      expect((await checkBudget(principal())).exceeded).toBe(true);
+      releaseBudgetReservation('project-1', 'user-1');
+      releaseBudgetReservation('project-1', 'user-1');
+      spendQueue = [0.4];
+      expect((await checkBudget(principal())).exceeded).toBe(false);
     });
 
     test('a warn-only budget never reserves — concurrent warn checks never affect each other', async () => {

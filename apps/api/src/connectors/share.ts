@@ -204,7 +204,7 @@ export function isSessionTargetVisibleToCaller(
   // equal a Kortix session id. Reading it here made all three conditions below
   // true for ANY human opening ANY backend-origin session, so the narrowing
   // returned false and `/start` answered 404 — a session listed in the sidebar
-  // that could never be opened. Measured on a live self-host (essentia,
+  // that could never be opened. Measured on a live self-host (sampleco,
   // 2026-08-24): 43 backend-origin sessions in one project, all unopenable,
   // while `user`- and `schedule`-origin sessions in the same project opened
   // fine.

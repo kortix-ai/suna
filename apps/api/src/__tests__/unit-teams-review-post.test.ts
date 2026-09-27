@@ -4,12 +4,15 @@ const SESSION_ID = 'sess-review';
 
 let turn: Record<string, unknown> | null = null;
 const finalized: Array<Record<string, unknown>> = [];
+let ownedRef: Record<string, unknown> | null = null;
 mock.module('../channels/teams/turn', () => ({
   loadTurn: async () => turn,
+  conversationRefForSession: async () => ownedRef,
   finalizeTurn: async (_h: unknown, opts: Record<string, unknown>) => {
     finalized.push(opts);
   },
   deleteTurn: async () => {},
+  markTurnReplied: async () => {},
 }));
 
 let cardOk = true;
@@ -97,13 +100,26 @@ describe('postTeamsReviewCard', () => {
     expect(texts[0]).not.toContain('Risk ·');
   });
 
-  test('no live turn is an error, and nothing is finalized', async () => {
+  test('no live turn and no conversation is an error, and nothing is finalized', async () => {
     turn = null;
+    ownedRef = null;
     const { postTeamsReviewCard } = await load();
 
     const res = await postTeamsReviewCard(SESSION_ID, ITEM as never);
 
     expect(res.ok).toBe(false);
     expect(finalized).toEqual([]);
+  });
+
+  test('a review filed by a prompt with no card still reaches its conversation', async () => {
+    turn = null;
+    ownedRef = { serviceUrl: 'https://smba.trafficmanager.net/emea/', conversationId: 'a:synthetic-chat', tenantId: 'tenant-1', projectId: 'proj-1' };
+    const { postTeamsReviewCard } = await load();
+
+    const res = await postTeamsReviewCard(SESSION_ID, ITEM as never);
+
+    expect(res.ok).toBe(true);
+    expect(finalized).toEqual([]);
+    ownedRef = null;
   });
 });

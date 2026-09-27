@@ -15,9 +15,10 @@ import { describe, expect, test } from 'bun:test';
 // 2026-08-17) held channel C0AASKRLRBR, where `Kortix Company` had run 71
 // sessions through 2026-08-14 and then went silent for 14 days.
 //
-// Re-assignment is a deliberate act with its own paths — the channel picker and
-// `/kortix use` / switch_project, both in interactivity.ts — which is exactly
-// why the per-event path must only ever CLAIM AN UNOWNED channel.
+// Re-assignment is a deliberate act with its own paths — the channel picker in
+// interactivity.ts and `/kortix use` / switch_project through
+// core/settings.ts — which is exactly why the per-event path must only ever
+// CLAIM AN UNOWNED channel.
 
 const read = (rel: string): Promise<string> =>
   Bun.file(new URL(rel, import.meta.url)).text();
@@ -39,9 +40,11 @@ describe('ensureProjectChannelBinding claims, never steals', () => {
 
   test('the deliberate re-assignment paths still exist and still overwrite', async () => {
     const interactivity = await read('./interactivity.ts');
+    const settings = await read('../core/settings.ts');
     // The picker pick and the /kortix use switch are how a channel legitimately
     // moves between projects. If these stop writing projectId, a user can no
     // longer re-point a channel at all — the opposite failure.
-    expect(interactivity).toContain('set: { projectId');
+    expect(interactivity).toContain('.set({ projectId, pickerTs: null })');
+    expect(settings).toContain('set: { projectId');
   });
 });

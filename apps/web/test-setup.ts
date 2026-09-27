@@ -11,3 +11,15 @@ process.env.NEXT_PUBLIC_BACKEND_URL ||= 'http://localhost:8008/v1';
 process.env.NEXT_PUBLIC_APP_URL ||= 'http://localhost:3000';
 process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL ||= 'http://localhost:8008';
 process.env.NEXT_PUBLIC_BILLING_ENABLED ||= 'false';
+
+// English catalog for `useTranslations` outside a provider (isolated component
+// tests). Defined lazily so tests that never render copy do not parse 1.4 MB of
+// JSON. See src/i18n/use-translations.ts.
+let testEnglishMessages: Record<string, unknown> | undefined;
+Object.defineProperty(globalThis, '__KORTIX_TEST_EN_MESSAGES__', {
+  configurable: true,
+  get() {
+    testEnglishMessages ??= require('./translations/en.json') as Record<string, unknown>;
+    return testEnglishMessages;
+  },
+});

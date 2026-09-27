@@ -253,12 +253,12 @@ function ReviewGate({
                     aria-hidden
                     initial={{
                       opacity: 0,
-                      transform: tI18nComplete.raw('textd1ec3c181d68'),
+                      transform: 'translate(-104px, -52px) scale(0.9)',
                     }}
                     animate={
                       cursorActive
-                        ? { opacity: 1, transform: tI18nComplete.raw('text8b85bfda7d7c') }
-                        : { opacity: 0, transform: tI18nComplete.raw('textd1ec3c181d68') }
+                        ? { opacity: 1, transform: 'translate(-8px, 9px) scale(1)' }
+                        : { opacity: 0, transform: 'translate(-104px, -52px) scale(0.9)' }
                     }
                     transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
                     onAnimationComplete={() => {
