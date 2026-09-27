@@ -36,8 +36,7 @@ describe('secretExposure / secretExposureTarget', () => {
   });
 
   test('the picker writes exactly the three pairs the model names', () => {
-    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §3. A fourth pair
-    // here would be a delivery mode the read side cannot name back.
+    // A fourth pair here would be a delivery mode the read side cannot name back.
     expect(secretExposureTarget('enforced')).toEqual({ strategy: 'egress', consumer: 'network' });
     expect(secretExposureTarget('environment')).toEqual({
       strategy: 'runtime',

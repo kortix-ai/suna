@@ -198,8 +198,7 @@ describe('sessionIsTombstoned — a deleted session refuses every runtime verb',
   });
 });
 
-// Spec docs/specs/2026-09-22-agents-as-principals.md §2.1: under the
-// agent-principal model the launcher's role is not an input. The
+// Under the agent-principal model the launcher's role is not an input. The
 // `effectiveRole` label every manage-tier branch reads is derived from the
 // agent's own effective permissions.
 describe('deriveEffectiveRole', () => {

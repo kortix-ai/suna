@@ -7,7 +7,7 @@
  * **account id** as a `scope='connector'` project secret (the binding) — so it's
  * shareable like any connector credential and never injected into the sandbox.
  * The catalog (app actions) is fetched from Pipedream and normalized. Execution
- * goes through the Connect `actions/run` API. See docs/specs/connector.md §5.
+ * goes through the Connect `actions/run` API.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';

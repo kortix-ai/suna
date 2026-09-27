@@ -64,8 +64,8 @@
  *     (`apps/api/src/marketplace/index.ts` is read-only + admin source
  *     registration). This section makes neither claim.
  *  9. Do NOT write that secrets are invisible to the model. A granted runtime
- *     secret is a real env value any command in the session can read
- *     (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). This section claims nothing
+ *     secret is a real env value any command in the session can read.
+ *     This section claims nothing
  *     about secrets.
  * 10. "The open AGI platform" is aspiration, and `/about` is allowed to say it
  *     because that page is explicitly a vision page. It must never be dressed

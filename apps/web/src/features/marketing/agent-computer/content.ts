@@ -20,7 +20,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    rule `features/marketing/security-page/content.ts` follows.
  *  - NEVER write that a secret is "never shown to the model". A granted runtime
  *    secret is a real env value in the session, readable by any command the
- *    agent runs (docs/ENV_SECRET_EXPOSURE_BASELINE.md). CONNECTOR credentials
+ *    agent runs. CONNECTOR credentials
  *    are the ones that never enter the machine.
  *  - Never claim a certification. Never name a licence — "open source" and stop.
  *  - Nothing merges itself: work reaches `main` through a change request a

@@ -624,8 +624,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
   actingPrincipalIsServiceAccount?: boolean;
   /**
    * Present when the caller is an agent session under the agent-principal
-   * model (spec docs/specs/2026-09-22-agents-as-principals.md §2.3). A
-   * member-owned account then keys on `onBehalfOfUserId` AND a private
+   * model. A member-owned account then keys on `onBehalfOfUserId` AND a private
    * session — never on the session creator or the token user.
    */
   agentPrincipal?: AgentPrincipalPersonalScope | null;

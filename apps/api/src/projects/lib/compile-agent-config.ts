@@ -1,6 +1,5 @@
 /**
- * The runtime compiler (spec docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.3, redirected 2026-07-05 — "one home per concern"): turns a
+ * The runtime compiler (redirected 2026-07-05 — "one home per concern"): turns a
  * `kortix_version: 2` manifest's `agents:` map (pure governance) plus each
  * agent's own native `.kortix/opencode/agents/<name>.md` (frontmatter +
  * body — the OpenCode behavior source of truth) into OpenCode-native config.

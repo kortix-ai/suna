@@ -14,7 +14,7 @@
  *  1. A single-character binding (`?`) must stand down while a text input has
  *     focus, or it is a character the user cannot type.
  *  2. While the terminal panel has focus the app keeps exactly
- *     `TERMINAL_RESERVED_CHORDS` — Tab, Shift+Tab, Alt+T, Ctrl+Q — and nothing
+ *     `TERMINAL_RESERVED_CHORDS` — Tab, Shift+Tab, Alt+T, Alt+P, Alt+L, Ctrl+Q — and nothing
  *     else. `Ctrl+C` is the shell's; a shell without `Ctrl+C` is not a shell.
  *  3. An open overlay owns the keyboard, except for quit: `?` must not be a
  *     room with no door. A suspended renderer (attach mode) owns it outright,
@@ -34,7 +34,7 @@ export type Route = 'session' | 'files' | 'review' | 'apps' | 'customize' | 'acc
 export type Focus = 'sidebar' | 'transcript' | 'composer' | 'terminal' | 'screen';
 
 /** The one overlay slot's contents. */
-export type Overlay = 'help' | 'switcher' | null;
+export type Overlay = 'help' | 'switcher' | 'ports' | 'links' | null;
 
 /** Route chords, in the order the handler tests them. */
 export const SCREEN_BINDINGS: readonly (readonly [string, Route])[] = [
@@ -51,6 +51,7 @@ export type AppKeyAction =
   | { kind: 'arm-quit' }
   | { kind: 'focus'; step: 1 | -1 }
   | { kind: 'toggle-terminal' }
+  | { kind: 'toggle-sidebar' }
   | { kind: 'overlay'; overlay: Exclude<Overlay, null> }
   | { kind: 'new-session' }
   | { kind: 'attach' }
@@ -108,8 +109,15 @@ export function globalKeyAction(key: KeyEvent, state: AppKeyState): AppKeyAction
   if (matchesBinding(key, 'focus.next')) return { kind: 'focus', step: 1 };
   if (matchesBinding(key, 'focus.prev')) return { kind: 'focus', step: -1 };
   if (matchesBinding(key, 'panel.terminal')) return { kind: 'toggle-terminal' };
+  // Ports (Alt+P) is reserved while the terminal is focused too — see
+  // `TERMINAL_RESERVED_CHORDS` — so it is tested here, before the terminal
+  // keeps the rest.
+  if (matchesBinding(key, 'ports')) return { kind: 'overlay', overlay: 'ports' };
+  if (matchesBinding(key, 'links')) return { kind: 'overlay', overlay: 'links' };
   // Nothing below this line is reserved, so the terminal keeps the rest.
   if (terminalFocused) return null;
+
+  if (matchesBinding(key, 'panel.sidebar')) return { kind: 'toggle-sidebar' };
 
   if (matchesBinding(key, 'help')) {
     return globalKeyBlocked(state.focus) ? null : { kind: 'overlay', overlay: 'help' };

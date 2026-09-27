@@ -7,7 +7,7 @@ export interface AuthedPrincipal {
   agentGrant?: { env?: string[] | 'all' } | null;
   /**
    * Whose PERSONAL provider keys / personal secret overrides this principal may
-   * use (spec docs/specs/2026-09-22-agents-as-principals.md §2.3). Absent =
+   * use. Absent =
    * `userId` (legacy). `null` = none: an agent-principal session with no
    * on-behalf-of human, a shared session, or a session another human prompted.
    */

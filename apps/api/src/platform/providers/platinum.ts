@@ -76,6 +76,18 @@ import { sandboxOwnershipMarker } from '../sandbox-ownership';
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
 const START_CONFLICT_POLL_MS = 250;
+/**
+ * How long `stop()` waits for Platinum to confirm the VM actually powered
+ * off, and the poll interval. Read per-call (not a module-load constant) so
+ * tests can shrink both without an env var set before this module is first
+ * imported.
+ */
+function stopConfirmDeadlineMs(): number {
+  return Number(process.env.PLATINUM_STOP_CONFIRM_DEADLINE_MS) || 10_000;
+}
+function stopConfirmPollMs(): number {
+  return Number(process.env.PLATINUM_STOP_CONFIRM_POLL_MS) || 500;
+}
 // Platinum holds /start on an archived box for up to 45 s while it restores the
 // disk (UNARCHIVE_INLINE_WAIT_MS). The client's 20 s default abandoned that
 // call before its 202 could arrive; give it the server's wait plus margin, as
@@ -706,8 +718,47 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  /**
+   * Stop AND CONFIRM. Platinum acknowledges the stop request before the VM
+   * always reaches `stopped` — the same fact `start()`'s comment names for the
+   * reopen race. Returning right after the ACK let the control plane mark the
+   * session/sandbox row stopped (which kills the token — see
+   * `account-tokens.ts`'s `isValid` check) while the VM was still up and
+   * still calling `turn-stream`/`audit/events`/`runtime-assets/manifest` with
+   * that now-dead token. PROD 76h window: 404,982 `401 Session token is not
+   * active` rejections across 95 projects, one box for a full 12h
+   * (`autoStopMinutes: 720`) — exactly its own idle timeout, because nothing
+   * had confirmed the stop and nothing was watching that box again.
+   *
+   * Poll bounded to `stopConfirmDeadlineMs()`: long enough for an ordinary
+   * power-off, short enough not to serialize a reaper batch pass (stops run
+   * with bounded concurrency — see `REAP_CONCURRENCY` in box-reaper.ts). A
+   * timeout throws instead of returning silently, so the caller
+   * (`stopExpiredBox`/`stopSession`) treats it as a real failure: it releases
+   * its claim and leaves the DB row `active`, so the token stays valid and the
+   * NEXT pass retries the same box — never a false "stopped" for a VM that is
+   * still on.
+   */
   async stop(externalId: string): Promise<void> {
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
+    const deadlineMs = stopConfirmDeadlineMs();
+    const pollMs = stopConfirmPollMs();
+    const deadline = Date.now() + deadlineMs;
+    for (;;) {
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(
+        // A box that vanished mid-poll (archived, deleted) is stopped for our
+        // purposes — nothing left to confirm against.
+        () => null,
+      );
+      const state = String(sandbox?.state ?? '').toLowerCase();
+      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') return;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Platinum stop for ${externalId} did not reach stopped within ${deadlineMs}ms (last state: ${state || 'unknown'})`,
+        );
+      }
+      await Bun.sleep(pollMs);
+    }
   }
 
   /**
@@ -760,8 +811,8 @@ export class PlatinumProvider implements SandboxProvider {
 
   async remove(externalId: string): Promise<void> {
     // No credential replicas to erase first: Kortix stopped registering secrets
-    // at the Platinum edge when one mechanism took over every provider
-    // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). The value is
+    // at the Platinum edge when one mechanism took over every provider.
+    // The value is
     // substituted server-side per request and never leaves the API.
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }

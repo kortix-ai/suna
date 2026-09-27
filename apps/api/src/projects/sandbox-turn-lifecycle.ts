@@ -341,6 +341,24 @@ export const REAPER_TURN_CAUSES = {
     name: 'RuntimeTurnFailed',
     message: 'The sandbox reported that this turn failed, but the error did not reach Kortix.',
   },
+  /**
+   * The provider reported the box `stopped` while a turn was open and nothing
+   * Kortix did asked for that (`sandbox-state-sync.ts` `providerOriginated`).
+   * The provider names no cause of its own (Platinum's own stop reason is not
+   * yet readable by the control plane — see the memory-guard/runtime-gone-
+   * recovery learning), so this is deliberately generic rather than false.
+   */
+  boxStoppedMidTurn: {
+    name: 'SandboxStoppedMidTurn',
+    message: 'The sandbox stopped unexpectedly while this turn was running.',
+  },
+  /** Same box-gone event, but an unattended session's turn is being resumed
+   *  automatically — see `session-lifecycle/unattended-runtime-recovery.ts`. */
+  boxStoppedMidTurnRecovering: {
+    name: 'SandboxStoppedMidTurnRecovering',
+    message:
+      'The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn.',
+  },
 } as const satisfies Record<string, SessionTurnEndErrorRecord>;
 
 /** How long after a bare abort a cause with no turn identity may still claim it. */
@@ -521,10 +539,25 @@ function openableTurnOwner(sandboxId: string, token: string): SQL {
  * that the stop just deleted. This query is keyed by sandbox instead, and runs
  * in the SAME transaction as that erasure. `session_turns_open_idx` is the
  * partial index on exactly this predicate.
+ *
+ * `cause` is what the STOP WRITER already knows about why the box went away
+ * (see `REAPER_TURN_CAUSES.boxStoppedMidTurn*`) — never the sandbox's own
+ * report, so it fills an empty `end_error` only and never replaces a real one,
+ * same rule as `recordUnidentifiedTurnCause`.
  */
-export function settleOpenSandboxTurnsQuery(sandboxId: string, reason: SessionTurnEndReason): SQL {
+export function settleOpenSandboxTurnsQuery(
+  sandboxId: string,
+  reason: SessionTurnEndReason,
+  cause: SessionTurnEndErrorRecord | null = null,
+): SQL {
+  const causeJson = cause ? JSON.stringify(cause) : null;
   return sql`UPDATE kortix.session_turns
                 SET state = 'ended', end_reason = ${reason}, ended_at = now(), updated_at = now()
+                    ${
+                      causeJson
+                        ? sql`, end_error = CASE WHEN NOT ${protectedEndErrorPredicate(sql`end_error`)} THEN ${causeJson}::jsonb ELSE end_error END`
+                        : sql``
+                    }
               WHERE sandbox_id = ${sandboxId}::uuid
                 AND state <> 'ended'`;
 }
@@ -560,11 +593,12 @@ export async function settleOpenSandboxTurns(
   tx: SandboxTurnLedgerTransaction,
   sandboxId: string,
   reason: SessionTurnEndReason,
+  cause: SessionTurnEndErrorRecord | null = null,
 ): Promise<void> {
   try {
     // A nested drizzle transaction IS `savepoint` / `rollback to savepoint`.
     await tx.transaction(async (savepoint) => {
-      await savepoint.execute(settleOpenSandboxTurnsQuery(sandboxId, reason));
+      await savepoint.execute(settleOpenSandboxTurnsQuery(sandboxId, reason, cause));
     });
   } catch (error) {
     console.error(
@@ -1180,6 +1214,47 @@ function refineEndedTurnError(
        AND NOT ${protectedEndErrorPredicate(sql`t.end_error`)}`;
 }
 
+/**
+ * A later genuine completion for a message the ledger already closed as
+ * `abandoned` proves the abandon was premature: delivery DID reach OpenCode
+ * and the turn ran, but whatever declared it abandoned (the daemon's own
+ * boot-time delivery check, or a reaper reconciliation) observed that too
+ * early and reported a false negative. `abandonSandboxTurn` DELETES the
+ * `activeTurns` record it closes, so nothing short of this rewrite can ever
+ * correct the row once that happens — the real completion arrives with
+ * `turns.length === 0` (no metadata entry left to close) and, without this,
+ * `already_closed` returns silently and the ledger keeps the wrong verdict
+ * forever (PROD 2026-09-26: 73 sessions, 15/19 checked had actually
+ * completed).
+ *
+ * Exact identity match only, like `refineEndedTurnError` — never a fallback
+ * — so unrelated evidence can never repaint a genuinely abandoned turn (one
+ * that really never reached OpenCode) as completed. Scoped to
+ * `end_reason = 'abandoned'` rows only: a `failed`/`completed`/`runtime_gone`
+ * row already carries a real verdict from evidence that observed the turn in
+ * progress, which this must never overwrite.
+ */
+function reviveAbandonedTurnOnCompletion(
+  sessionId: string,
+  identity: Partial<SandboxTurnIdentity>,
+  endReason: 'completed' | 'failed',
+  endError: SessionTurnEndErrorRecord | null,
+): SQL {
+  const endErrorJson = endError ? JSON.stringify(endError) : null;
+  return sql`
+    UPDATE kortix.session_turns t
+       SET end_reason = ${endReason},
+           end_error = ${endErrorJson}::jsonb,
+           updated_at = now()
+     WHERE t.session_id = ${sessionId}
+       AND t.message_id = ${identity.messageId ?? null}
+       AND t.state = 'ended'
+       AND t.end_reason = 'abandoned'
+       AND (${identity.opencodeSessionId ?? null}::text IS NULL
+         OR t.opencode_session_id IS NULL
+         OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})`;
+}
+
 async function wasSandboxTurnAlreadyClosed(
   sessionId: string,
   identity?: Partial<SandboxTurnIdentity> | null,
@@ -1366,6 +1441,19 @@ export async function completeSandboxTurn(
         await recordTurnLedger(
           refineEndedTurnError(sessionId, identity, endError),
           `refine end error ${identity.messageId} (${endError.name})`,
+        );
+      }
+      // Same abort guard as the refine above: an abort names the EFFECT
+      // (something asked this turn to stop), never the cause, so it must not
+      // overwrite a reason the ledger already recorded — including a false
+      // `abandoned` one. Only a genuine idle/error verdict revives the row.
+      if (identity && (!endError?.name || !ABORT_END_ERROR_NAMES.includes(endError.name))) {
+        // `wasSandboxTurnAlreadyClosed` only returns true with a messageId, so
+        // `identity.messageId` is guaranteed here.
+        const revivedReason: 'completed' | 'failed' = status === 'error' ? 'failed' : 'completed';
+        await recordTurnLedger(
+          reviveAbandonedTurnOnCompletion(sessionId, identity, revivedReason, endError),
+          `revive abandoned ${identity.messageId} (${revivedReason})`,
         );
       }
       return {

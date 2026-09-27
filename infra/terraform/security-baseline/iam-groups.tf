@@ -83,14 +83,12 @@ resource "aws_iam_policy" "mfa_self_manage" {
 # `Effect: "Allow"` statements (a broad allow); this `Effect: "Deny"` is the
 # opposite and is NOT flagged — verified on PR #6289 (scan
 # 0c4a4878-9b23-4751-a7d0-84d68c6b0050: critical count unchanged from main).
-# The wildcard use is recorded in docs/compliance/IAC-SCANNER-EXCEPTIONS.md
-# under "Not-flagged wildcard policies" so a future scanner change is caught
-# against an explicit baseline. The checkov skip is defensive — checkov runs
+# The checkov skip is defensive — checkov runs
 # soft_fail: true in CI so it does not gate, but the comment documents intent.
 resource "aws_iam_policy" "mfa_required" {
   # checkov:skip=CKV_AWS_111: MFA enforcement requires a deny-all-except-
   # enrollment statement; Resource must be "*" because the policy denies
-  # across every resource. See docs/compliance/IAC-SCANNER-EXCEPTIONS.md.
+  # across every resource.
   # checkov:skip=CKV_AWS_290: Deny-only policy; it grants no writes.
   name = "kortix-mfa-required"
   policy = jsonencode({

@@ -31,6 +31,25 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
+import { computeDesiredRuntime } from '../../runtime-convergence/desired';
+import { diffRuntime } from '../../runtime-convergence/diff';
+import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
+import type { SandboxConfigState } from '../lib/session-reload';
+
+/**
+ * The `runtime` block (spec §3, the runtime-convergence contract (PR #7785)): desired vs
+ * actual for every Rule-1 component, independent of whether this project runs
+ * config releases at all — a project with the flag off still runs a daemon
+ * build, a CLI, a managed-skill overlay and a model catalog, and a box stuck on
+ * a stale one is exactly the failure this closes. `releaseId` is null when
+ * config releases are off for this project (the existing chokepoint above
+ * never builds one in that case) or when resolution failed; every OTHER
+ * component is still compared.
+ */
+async function runtimeBlockFor(releaseId: string | null, running: SandboxConfigState): Promise<RuntimeBlockWire> {
+  const desired = await computeDesiredRuntime({ releaseId });
+  return toRuntimeBlockWire(diffRuntime(desired, running.runtimeTruth));
+}
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -70,8 +89,7 @@ projectsApp.openapi(
       manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
-    // CHOKEPOINT — the `config_releases` flag for this read
-    // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ no `release`
+    // CHOKEPOINT — the `config_releases` flag for this read. Off ⇒ no `release`
     // block, no desired release is built (so no archive is stored and no
     // ledger row is written), and `stale` is the pre-release etag compare
     // alone. The CLI formatter and the web header both render their
@@ -86,6 +104,18 @@ projectsApp.openapi(
         baseRef,
       }),
     ]);
+    // The managed-model catalog's freshness, in the SAME place a config
+    // fallback is already visible — not gated on `releasesEnabled`, for the
+    // identical reason `runtime.pinned` is not: a box that could not confirm
+    // its managed lineup needs this fact regardless of which config path the
+    // project is on. `ids: null` means UNCONFIRMED (no live fetch has ever
+    // succeeded on this box — it is running the baked/bundled managed set),
+    // never "no managed models exist". See `managed-assets/manifest.ts`'s
+    // `runningAssetsVerdict` doc for why that box reads `behind`, not `current`.
+    const managedCatalog = {
+      ids: running.runtime?.running?.managed_model_ids ?? null,
+      fallback_reason: running.runtime?.running?.managed_catalog_fallback_reason ?? null,
+    };
 
     // ── A daemon with config releases (spec, "`GET /config`, extended") ──
     if (releasesEnabled && running.configReleases && running.release) {
@@ -121,10 +151,12 @@ projectsApp.openapi(
         stale: isReleaseStale(release, desired !== null),
         sandbox_reachable: running.reachable,
         release,
+        managed_catalog: managedCatalog,
         // Surfaced so the web header and `kortix sessions reload --status` can
         // say why a session lost its agent, instead of showing a healthy box
         // that answers nothing.
         ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
+        runtime: await runtimeBlockFor(desired?.descriptor.release_id ?? null, running),
       });
     }
 
@@ -154,6 +186,8 @@ projectsApp.openapi(
       // the truth is "did not ask".
       stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
+      runtime: await runtimeBlockFor(null, running),
+      managed_catalog: managedCatalog,
     });
   },
 );

@@ -62,6 +62,7 @@ import {
 import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
+import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
 
 const SANDBOX_SERVICE_PORT = 8000;
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
@@ -477,6 +478,15 @@ export interface SandboxConfigState {
    * regardless of which config path the project is on.
    */
   runtime: DaemonRuntimeReport | null;
+  /**
+   * The health `runtime_truth` block (Rule 1, the runtime-convergence contract (PR #7785))
+   * — the box's ACTUAL runtime document. Tolerant of a daemon that predates it
+   * entirely: {@link UNREPORTED_ACTUAL_RUNTIME}, never null and never a crash,
+   * because "this box reports nothing" is itself a diff (`unknown`), not the
+   * absence of one. Independent of `configReleases`/`runtime` above for the
+   * same reason those two are independent of each other.
+   */
+  runtimeTruth: ActualRuntimeDocument;
 }
 
 const UNREACHABLE_STATE: SandboxConfigState = {
@@ -488,6 +498,7 @@ const UNREACHABLE_STATE: SandboxConfigState = {
   configReleases: false,
   release: null,
   runtime: null,
+  runtimeTruth: UNREPORTED_ACTUAL_RUNTIME,
 };
 
 /** What the sandbox says it is running right now. */
@@ -515,6 +526,7 @@ export async function readSandboxConfigState(
       capabilities?: unknown;
       config?: unknown;
       runtime?: unknown;
+      runtime_truth?: unknown;
     };
     const configReleases = hasConfigReleaseCapability(body.capabilities);
     return {
@@ -529,6 +541,7 @@ export async function readSandboxConfigState(
       configReleases,
       release: configReleases ? parseDaemonConfigReport(body.config) : null,
       runtime: parseDaemonRuntimeReport(body.runtime),
+      runtimeTruth: parseActualRuntime(body.runtime_truth),
     };
   } catch {
     return UNREACHABLE_STATE;
@@ -711,8 +724,7 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  // CHOKEPOINT — the `config_releases` flag for the reload path
-  // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ the daemon's own
+  // CHOKEPOINT — the `config_releases` flag for the reload path. Off ⇒ the daemon's own
   // capability is ignored and this reload takes the pre-release path: the
   // plain refresh plus the compiled-governance push, an etag-based result,
   // and no `release` block for the CLI or the web to render. Nothing is

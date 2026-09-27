@@ -34,21 +34,26 @@ export function getDefaultSandboxUrl(): string {
 }
 
 /**
- * Derive the proxy URL for a cloud sandbox by its provider sandbox id.
- * Always computed fresh — never persisted — so route renames can't go stale.
+ * Derive the proxy URL for a cloud sandbox by its provider sandbox id, for a
+ * given sandbox port. Defaults to 8000 (the OpenCode server). Always computed
+ * fresh — never persisted — so route renames can't go stale.
  */
-export function getSandboxServerUrl(sandboxId: string): string {
-  return `${getBackendUrl()}/p/${sandboxId}/8000`;
+export function getSandboxServerUrl(sandboxId: string, port = 8000): string {
+  return `${getBackendUrl()}/p/${sandboxId}/${port}`;
 }
 
 /**
- * Derive the OpenCode proxy URL for a sandbox by its provider sandbox id
- * (a project session's `external_id`). Pure function of the id — no dependency
- * on the active server — so we can connect to several session sandboxes in
- * parallel (e.g. background SSE streams for every open session tab).
+ * Derive the authenticated proxy URL for a sandbox port by its provider
+ * sandbox id (a project session's `external_id`). Defaults to 8000 (the
+ * OpenCode server); pass any other sandbox port (e.g. a dev server the agent
+ * started) to get the same authenticated `/p/{externalId}/{port}` proxy for
+ * it — this is what session-scoped port forwarding (`SessionHandle.sandboxPortUrl`)
+ * builds on. Pure function of the id — no dependency on the active server —
+ * so we can connect to several session sandboxes in parallel (e.g. background
+ * SSE streams for every open session tab).
  */
-export function getSandboxUrlForExternalId(externalId: string): string {
-  return getSandboxServerUrl(externalId);
+export function getSandboxUrlForExternalId(externalId: string, port = 8000): string {
+  return getSandboxServerUrl(externalId, port);
 }
 
 /**

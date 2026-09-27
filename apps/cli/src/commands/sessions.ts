@@ -24,6 +24,7 @@ import {
 } from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
+import { runSessionsForward } from './sessions-forward.ts';
 import type { Auth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
@@ -117,6 +118,11 @@ Subcommands:
                                     starts fresh. Add \`ls\` to list the
                                     session's terminals, or \`kill <pty-id>\`
                                     to end one.
+  forward <session-id>              Forward sandbox ports to your machine,
+    --port <sandbox>[:<local>]      VS Code-style, so \`http://localhost:3000\`
+                                    an agent printed works in your own
+                                    browser. Repeatable; stays in the
+                                    foreground until Ctrl+C.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything. A
@@ -230,6 +236,11 @@ export async function runSessions(argv: string[]): Promise<number> {
   // `shell` owns its own flag parsing (incl. --new + a positional session id).
   if (sub === 'shell' || sub === 'terminal' || sub === 'ssh') {
     return runSessionsShell(argv.slice(1));
+  }
+  // `forward` owns its own flag parsing (repeatable --port + a positional
+  // session id) and blocks in the foreground until Ctrl+C.
+  if (sub === 'forward' || sub === 'ports') {
+    return runSessionsForward(argv.slice(1));
   }
   // `log` owns its own flag parsing (incl. --limit + a positional session id),
   // so route it before we consume flags below.
