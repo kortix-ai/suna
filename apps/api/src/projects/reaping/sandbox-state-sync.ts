@@ -18,6 +18,7 @@ import { preserveEstablishedRuntime } from '../runtime-identity';
 import { REAPER_TURN_CAUSES, settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import { enqueueContinueSessionCommand } from '../session-lifecycle/store';
 import {
   STOPPED_SANDBOX_CLEARED_KEYS,
   transitionSandbox,
@@ -255,9 +256,15 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // resume a turn a human or the idle policy chose to end. Bounded and
   // idempotent claim: see `unattended-runtime-recovery.ts`.
   let unattendedRecoveryClaimed = false;
+  let recoverySessionRow: { accountId: string; projectId: string } | null = null;
   if (providerOriginated && abandonedDeliveries.length > 0) {
     const [sessionRow] = await db
-      .select({ origin: projectSessions.origin, metadata: projectSessions.metadata })
+      .select({
+        origin: projectSessions.origin,
+        metadata: projectSessions.metadata,
+        accountId: projectSessions.accountId,
+        projectId: projectSessions.projectId,
+      })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, write.sessionId))
       .limit(1);
@@ -269,6 +276,9 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
       },
     });
     unattendedRecoveryClaimed = outcome === 'claimed';
+    if (unattendedRecoveryClaimed && sessionRow) {
+      recoverySessionRow = { accountId: sessionRow.accountId, projectId: sessionRow.projectId };
+    }
   }
   await pauseComputeSession(write.sandboxId).catch((err) =>
     console.warn(
@@ -346,24 +356,56 @@ export async function applyStoppedState(write: StoppedStateWrite): Promise<void>
   // composer, so nothing would ever release it. `requeueAbandonedPrompt` still
   // forces `held: true` when the row is stop-paused regardless of what this
   // passes — a genuine user Stop always wins.
+  // `requeueAbandonedPrompt` only ever finds a `continue_session` inbox row —
+  // the abandoned turn's OWN message. A session's very FIRST turn is
+  // delivered by a `create_session` command instead (no such row exists), so
+  // for that shape — the common one for a trigger firing into a brand-new
+  // session — every requeue below answers `no_prompt` and nothing is ever
+  // released. Track that so recovery can fall back to a synthetic prompt.
+  let anyPromptReleased = false;
   for (const turn of abandonedDeliveries) {
-    await requeueAbandonedPrompt({
+    const outcome = await requeueAbandonedPrompt({
       sessionId: write.sessionId,
       wireMessageId: turn.messageId,
       turnToken: turn.token,
       endReason: 'runtime_gone',
       hold: !unattendedRecoveryClaimed,
-    }).catch((err) =>
+    }).catch((err) => {
       console.warn(
         `[reaper] prompt redelivery failed after stopping ${write.sandboxId}:`,
         err instanceof Error ? err.message : err,
-      ),
-    );
+      );
+      return 'error' as const;
+    });
+    if (outcome === 'requeued' && unattendedRecoveryClaimed) anyPromptReleased = true;
   }
   if (unattendedRecoveryClaimed) {
+    // No `continue_session` row existed to release (the initial-prompt
+    // shape above): synthesize one, due now, so the drain's ordinary
+    // wake-and-deliver path (`continue-session.ts`) has something to act on.
+    // A session whose original prompt WAS released does not need this — that
+    // released row already carries a real user message.
+    if (!anyPromptReleased && recoverySessionRow) {
+      await enqueueContinueSessionCommand({
+        source: 'system:auto-recovery',
+        projectId: recoverySessionRow.projectId,
+        accountId: recoverySessionRow.accountId,
+        sessionId: write.sessionId,
+        actorUserId: null,
+        text:
+          '[auto-recovery] The sandbox stopped unexpectedly and has been restarted. ' +
+          'Please continue the previous task from where you left off.',
+      }).catch((err) =>
+        console.warn(
+          `[reaper] synthetic continue-prompt enqueue failed after stopping ${write.sandboxId}:`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
+    }
     console.log('[reaper] unattended session recovering after runtime_gone; released the prompt', {
       sandboxId: write.sandboxId,
       sessionId: write.sessionId,
+      syntheticContinue: !anyPromptReleased,
     });
     // Fire-and-forget, same posture as `runtime-restart-recovery.ts`'s
     // `kickDrain`: the drain re-checks every claim itself, so a lost race or a
