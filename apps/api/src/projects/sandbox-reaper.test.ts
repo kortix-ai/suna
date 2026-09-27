@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
@@ -17,8 +17,9 @@ let statusByExternal: Record<
 let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
 let stopsByProvider: Array<{ provider: string; externalId: string }> = [];
-let managedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
-let e2bManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
+type ManagedBox = { externalId: string; createdAt: Date | null; instance?: string | null };
+let managedBoxes: ManagedBox[] = [];
+let e2bManagedBoxes: ManagedBox[] = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
@@ -2831,6 +2832,57 @@ describe('reapOrphanProviderBoxes', () => {
       { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
     expect(r).toEqual({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
+  });
+
+  // 2026-09-27: the primary local stack shared deployed dev's provider keys and
+  // `kortix.env=dev` tag. Deployed-dev boxes have no row in the local database,
+  // so each 5-minute pass stopped every one older than an hour, and a live turn
+  // ended "The sandbox stopped unexpectedly". The stamp on the box decides.
+  describe('ownership: a box is stopped only by the instance that stamped it', () => {
+    const ORIGINAL_DB = reaperConfig.DATABASE_URL;
+    afterEach(() => {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+      reaperConfig.DATABASE_URL = ORIGINAL_DB;
+    });
+
+    test('a local instance never stops an unstamped (deployed) box or another instance\'s box', async () => {
+      reaperConfig.KORTIX_INSTANCE_ID = 'primary';
+      reaperConfig.DATABASE_URL = 'postgresql://postgres:pw@127.0.0.1:54322/postgres';
+      managedBoxes = [
+        { externalId: 'deployed-dev-box', createdAt: hoursAgo(10), instance: null },
+        { externalId: 'worktree-box', createdAt: hoursAgo(10), instance: 'wt-a' },
+        { externalId: 'my-orphan', createdAt: hoursAgo(10), instance: 'primary' },
+      ];
+      e2bManagedBoxes = [{ externalId: 'deployed-e2b-box', createdAt: hoursAgo(10), instance: null }];
+
+      const r = await reapOrphanProviderBoxes(NOW2);
+
+      expect(stops).toEqual(['my-orphan']);
+      expect(r).toEqual({ listed: 4, orphans: 1, stopped: 1, errors: 0 });
+    });
+
+    test('a deployed control plane never stops a box a local or preview instance stamped', async () => {
+      reaperConfig.DATABASE_URL = 'postgres://postgres:pw@db.example.supabase.co:5432/postgres';
+      managedBoxes = [
+        { externalId: 'deployed-orphan', createdAt: hoursAgo(10), instance: null },
+        { externalId: 'laptop-box', createdAt: hoursAgo(10), instance: 'primary' },
+      ];
+
+      const r = await reapOrphanProviderBoxes(NOW2);
+
+      expect(stops).toEqual(['deployed-orphan']);
+      expect(r).toEqual({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
+    });
+
+    test('no instance id on a loopback database: lists nothing and stops nothing', async () => {
+      reaperConfig.DATABASE_URL = 'postgresql://postgres:pw@127.0.0.1:54322/postgres';
+      managedBoxes = [{ externalId: 'deployed-dev-box', createdAt: hoursAgo(10), instance: null }];
+
+      const r = await reapOrphanProviderBoxes(NOW2);
+
+      expect(stops).toEqual([]);
+      expect(r).toEqual({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
+    });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {

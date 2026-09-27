@@ -17,7 +17,8 @@
  *
  * Deployed environments never set `KORTIX_INSTANCE_ID` (one `KORTIX_URL`), so
  * the helper is a strict no-op there. Rows that predate the stamp belong to
- * everyone — the safe direction: never strand a legacy sandbox.
+ * everyone — the safe direction: never strand a legacy sandbox. Provider BOXES
+ * follow a stricter rule: see `providerBoxOwnedByThisInstance`.
  *
  * HTTP-path work (the proxy, `/start`, `prompt_async` through the proxy) is
  * deliberately NOT scoped: the user's browser talks to one stack on purpose.
@@ -56,4 +57,56 @@ export function sandboxInstanceId(metadata: unknown): string | null {
 export function instanceStampMetadata(): Record<string, string> {
   const mine = currentInstanceId();
   return mine ? { [SANDBOX_INSTANCE_METADATA_KEY]: mine } : {};
+}
+
+/**
+ * The orphan reaper's ownership rule for a PROVIDER box, which is stricter than
+ * `sandboxBelongsToThisInstance`.
+ *
+ * A row lives in this instance's own database, so a legacy row is safe to
+ * share. A provider box is not. The orphan reaper stops a listed box that has
+ * no row in THIS database, and one provider org and one `kortix.env` tag are
+ * shared by deployed dev, every local stack and every PR preview, each with its
+ * own database. So a box is this instance's only when its stamp (the provider
+ * label `kortix.instance`, or `kortix_instance` on E2B) equals this instance's
+ * id, and no id equals no stamp:
+ *  - a deployed control plane (no id) owns only unstamped boxes;
+ *  - a local or preview stack owns only boxes stamped with its own id.
+ *
+ * 2026-09-27: a local stack treated unstamped boxes as its own and stopped
+ * deployed-dev boxes on every 5-minute pass for at least two days. A turn
+ * ended with "The sandbox stopped unexpectedly".
+ */
+export function providerBoxOwnedByThisInstance(stamp: string | null | undefined): boolean {
+  const theirs = typeof stamp === 'string' && stamp !== '' ? stamp : null;
+  return theirs === (currentInstanceId() ?? null);
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Why the orphan reaper must not run here at all, or null when it may.
+ *
+ * An instance with no id claims the unstamped boxes. Only a deployed control
+ * plane may claim them. A process on a loopback database is a local stack,
+ * started without `scripts/dev-local.sh` or a worktree, so it has no id. It
+ * shares dev's provider keys and `kortix.env=dev` tag, and its database holds
+ * no row for any deployed box.
+ */
+export function orphanReapRefusal(): string | null {
+  if (currentInstanceId()) return null;
+  const raw = (config as { DATABASE_URL?: string }).DATABASE_URL;
+  if (!raw) return null;
+  let host: string;
+  try {
+    host = new URL(raw).hostname;
+  } catch {
+    return null;
+  }
+  if (!LOOPBACK_HOSTS.has(host) && !host.startsWith('127.')) return null;
+  return (
+    'no KORTIX_INSTANCE_ID on a loopback database: this local stack cannot prove it owns an ' +
+    'unstamped provider box, so the orphan reaper stops nothing. Start it with scripts/dev-local.sh ' +
+    'or `pnpm worktree`, which set KORTIX_INSTANCE_ID.'
+  );
 }

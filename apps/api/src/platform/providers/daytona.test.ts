@@ -9,14 +9,15 @@
 // a hung upstream call within the configured bound instead of hanging.
 import { beforeEach, expect, mock, test } from 'bun:test';
 
+const daytonaConfig: Record<string, unknown> = {
+  DAYTONA_API_KEY: 'test-key',
+  DAYTONA_SERVER_URL: '',
+  DAYTONA_TARGET: '',
+  INTERNAL_KORTIX_ENV: 'test',
+  KORTIX_URL: 'https://api.example.com',
+};
 mock.module('../../config', () => ({
-  config: {
-    DAYTONA_API_KEY: 'test-key',
-    DAYTONA_SERVER_URL: '',
-    DAYTONA_TARGET: '',
-    INTERNAL_KORTIX_ENV: 'test',
-    KORTIX_URL: 'https://api.example.com',
-  },
+  config: daytonaConfig,
   SANDBOX_VERSION: 'test-version',
 }));
 
@@ -24,10 +25,16 @@ mock.module('../../shared/db', () => ({ db: {} }));
 
 let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
 let activityRefreshes: string[];
+let listedBoxes: Array<Record<string, unknown>> = [];
+let listFilter: Record<string, unknown> | undefined;
 
 mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
     get: (externalId: string) => getDaytonaSandbox(externalId),
+    list: async function* (filter: Record<string, unknown>) {
+      listFilter = filter;
+      yield* listedBoxes;
+    },
   }),
   // Disk-quota-guard deps (fix(sandbox) #4072) — only referenced by
   // create()/start(), not by getStatus() under test here, but imported at
@@ -160,4 +167,37 @@ test('native auto-stop is a backstop that clears the longest measured turn', asy
   expect(daytonaLifecycle().autoStopInterval).toBe(720);
   expect(daytonaLifecycle(5).autoStopInterval).toBe(5);
   expect(daytonaLifecycle(0).autoStopInterval).toBe(1);
+});
+
+test("the orphan list scopes by env and reports each box's kortix.instance label", async () => {
+  listedBoxes = [
+    { id: 'dt-local', createdAt: '2026-09-27T10:00:00Z', labels: { 'kortix.instance': 'primary' } },
+    { id: 'dt-deployed', createdAt: '2026-09-27T10:00:00Z', labels: {} },
+  ];
+  const { DaytonaProvider } = await import('./daytona');
+
+  const listed = await new DaytonaProvider().listManagedRunningSandboxes();
+
+  expect(listed.map((box) => [box.externalId, box.instance])).toEqual([
+    ['dt-local', 'primary'],
+    ['dt-deployed', null],
+  ]);
+  // Scoped by env only: filtering on the instance label here would hide
+  // another instance's box from a deployed reaper that must refuse it by rule.
+  expect(listFilter?.labels).toEqual({ 'kortix.managed': 'true', 'kortix.env': 'test' });
+});
+
+test('a session box is labelled with KORTIX_INSTANCE_ID, and a deployed one is not', async () => {
+  const { sessionSandboxLabels } = await import('./daytona');
+  daytonaConfig.KORTIX_INSTANCE_ID = 'primary';
+  try {
+    expect(sessionSandboxLabels()).toEqual({
+      'kortix.managed': 'true',
+      'kortix.env': 'test',
+      'kortix.instance': 'primary',
+    });
+  } finally {
+    delete daytonaConfig.KORTIX_INSTANCE_ID;
+  }
+  expect(sessionSandboxLabels()).toEqual({ 'kortix.managed': 'true', 'kortix.env': 'test' });
 });
