@@ -154,6 +154,12 @@ export interface RenderScriptOptions {
   pnpmVersion?: string;
   /** A freshly minted session PAT to install as the box's KORTIX_TOKEN; empty = keep. */
   kortixToken?: string;
+  /**
+   * The credential THIS repair authenticates with — minted by the control
+   * plane for this run and revoked when it returns. Empty falls the script
+   * back to the box's own token, which a wrong row can have already killed.
+   */
+  repairToken?: string;
 }
 
 /**
@@ -172,7 +178,9 @@ export function renderLegacyBootstrapScript(opts: RenderScriptOptions): string {
   if (!/^[0-9A-Za-z.-]*$/.test(pnpmVersion)) throw new Error('unsafe pnpmVersion');
   const kortixToken = opts.kortixToken ?? '';
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(kortixToken)) throw new Error('unsafe kortixToken');
-  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__']) {
+  const repairToken = opts.repairToken ?? '';
+  if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(repairToken)) throw new Error('unsafe repairToken');
+  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
     if (!template.includes(placeholder)) throw new Error(`bootstrap script template lacks ${placeholder}`);
   }
   return template
@@ -181,7 +189,8 @@ export function renderLegacyBootstrapScript(opts: RenderScriptOptions): string {
     .replace('__HEALTH_WAIT_S__', String(healthWaitS))
     .replace('__ENTRYPOINT_B64__', embedded)
     .replace('__PNPM_VERSION__', pnpmVersion)
-    .replace('__KORTIX_TOKEN__', kortixToken);
+    .replace('__KORTIX_TOKEN__', kortixToken)
+    .replace('__KORTIX_REPAIR_TOKEN__', repairToken);
 }
 
 /** The provider `exec` argv: the script travels base64 so no quoting layer can touch it. */
@@ -277,6 +286,12 @@ export interface LegacyBootstrapDeps {
   fetchHealth: () => Promise<unknown>;
   /** OpenCode /session/status JSON (empty object = idle), or null when unreachable. */
   fetchOpencodeStatus: () => Promise<Record<string, unknown> | null>;
+  /**
+   * Does the PROVIDER say this box is running right now? Asked only when the
+   * daemon answers nothing, which is the one case where the two can disagree
+   * about whether anything is there to repair.
+   */
+  providerRunning?: () => Promise<boolean>;
   exec: (command: string[], timeoutMs: number) => Promise<SandboxExecResult>;
   /** Entrypoint text to embed for an API that predates the asset; null when unavailable. */
   entrypointSource?: () => string | null;
@@ -294,6 +309,17 @@ export interface LegacyBootstrapDeps {
    * only once the box provably holds it, or verifies by probing.
    */
   commitKortixToken?: (secret: string, rotatedOnBox: boolean | null) => Promise<void>;
+  /**
+   * Mint the credential this repair runs on, and the call that revokes it.
+   *
+   * The script used to authenticate its manifest fetch and every asset
+   * download with the box's OWN token — which a wrong `stopped` row has
+   * already killed (repositories/account-tokens.ts refuses a session
+   * credential whose sandbox row is not `provisioning`/`active`). So the cure
+   * needed the very credential the disease destroys. Null = no credential
+   * could be minted; the script falls back to the box's own token.
+   */
+  mintRepairToken?: () => Promise<{ secret: string; release: () => Promise<void> } | null>;
   patchMetadata: (patch: Record<string, unknown>) => Promise<void>;
   audit: (event: {
     outcome: 'success' | 'failure';
@@ -371,8 +397,33 @@ export async function bootstrapLegacyRuntime(
 
   const health = await deps.fetchHealth();
   const classification = classifyDaemonHealth(health);
-  if (classification.klass === 'unreachable' || classification.klass === 'not-ok') {
-    return { outcome: 'unreachable', classification };
+  if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
+  // A DEAD DAEMON ON A RUNNING BOX. Silence alone means nothing — a stopped box
+  // answers exactly the same way, and there is nothing there to repair. The
+  // provider's own state is what tells the two apart, and it is asked only
+  // here, on the rare path.
+  //
+  // Measured on dev 2026-09-27: the row was parked, the daemon's dead-token
+  // breaker tripped 69 s later and shut it down with exit 0, and Platinum's
+  // pt-init — which launches the chain once and never again — left the VM up
+  // with nothing serving on it. The provider reported `running`, our row
+  // reported `active`, every ingress port answered 502, and the control plane
+  // still accepted a prompt against it. This module's own relaunch fixed it in
+  // 11 s by hand; it had refused to try because `unreachable` returned here.
+  //
+  // Uncertainty stays a skip: a provider that cannot answer is not evidence.
+  let deadDaemonOnRunningBox = false;
+  if (classification.klass === 'unreachable') {
+    const running = deps.providerRunning
+      ? await deps.providerRunning().catch(() => false)
+      : false;
+    if (!running) return { outcome: 'unreachable', classification };
+    deadDaemonOnRunningBox = true;
+    deps.log('daemon gone on a running box; relaunching the runtime chain', {
+      sandboxId: input.sandboxId,
+      externalId: input.externalId,
+      provider: input.provider,
+    });
   }
   if (classification.klass === 'current' && classification.runtimeBuild === null) {
     // A current daemon that has not finished (or has failed) its first
@@ -420,15 +471,19 @@ export async function bootstrapLegacyRuntime(
       return { outcome: 'skipped-cooldown', classification };
     }
   }
-  if (record && sameBuild && record.state === 'staged') {
+  if (record && sameBuild && record.state === 'staged' && !deadDaemonOnRunningBox) {
     // Daytona/E2B: staged and waiting for the provider's next start. Nothing
-    // to redo until a current daemon proves it or the build moves on.
+    // to redo until a current daemon proves it or the build moves on. A box
+    // with no daemon is the exception: nothing will start it again, so
+    // "converges at next start" is a promise that can never be kept.
     return { outcome: 'staged', detail: 'already staged; converges at next start', classification };
   }
 
   // Never under a running turn. OpenCode's own busy state is the authority —
   // the ledger can hold a zombie turn on exactly the boxes this exists for.
-  const status = await deps.fetchOpencodeStatus();
+  // OpenCode is proxied BY the daemon, so a dead daemon is also why OpenCode
+  // says nothing. That is one fact, not two, and it cannot gate its own repair.
+  const status = deadDaemonOnRunningBox ? {} : await deps.fetchOpencodeStatus();
   if (!opencodeIdle(status)) {
     return { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification };
   }
@@ -491,6 +546,27 @@ export async function bootstrapLegacyRuntime(
   };
 
   let execResult: SandboxExecResult;
+  // Never let the box's own credential decide whether its repair can run.
+  const repair = await deps.mintRepairToken?.().catch((error) => {
+    deps.log('repair credential mint failed; falling back to the box token', {
+      sandboxId: input.sandboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  let repairReleased = false;
+  const releaseRepair = async () => {
+    if (!repair || repairReleased) return;
+    repairReleased = true;
+    // A repair credential that outlives its repair is a credential nobody
+    // revokes. Releasing never fails the pass.
+    await repair.release().catch((error) =>
+      deps.log('repair credential release failed', {
+        sandboxId: input.sandboxId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+  };
   // Token rotation only where the box's own environment is what the daemon
   // boots from (Platinum: /etc/environment via pt-init). Daytona and E2B hand
   // the daemon its env from the provider on every start, so a rotated secret
@@ -509,6 +585,7 @@ export async function bootstrapLegacyRuntime(
           entrypointSource: deps.entrypointSource?.() ?? undefined,
           pnpmVersion: deps.pnpmVersion?.() ?? undefined,
           kortixToken,
+          repairToken: repair?.secret,
         }),
       ),
       LEGACY_BOOTSTRAP_EXEC_TIMEOUT_MS,
@@ -516,8 +593,10 @@ export async function bootstrapLegacyRuntime(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await commitToken(null);
+    await releaseRepair();
     return finish('failed', { error: `exec: ${message}`.slice(0, 500) }, 'failed', 'provider exec failed');
   }
+  await releaseRepair();
   const report = parseScriptReport(execResult);
   await commitToken(report ? report.token_rotated === true : null);
   if (!report) {

@@ -34,6 +34,13 @@ PNPM_PINNED='__PNPM_VERSION__'
 # only PATs). Empty when the box is already on the current token model.
 NEW_KORTIX_TOKEN='__KORTIX_TOKEN__'
 TOKEN_ROTATED=false
+# Credential the CONTROL PLANE vouches for, minted for this repair and revoked
+# when it returns. The box's own session token is refused whenever its sandbox
+# row is not `provisioning`/`active` (apps/api/src/repositories/account-tokens.ts),
+# so a repair that authenticates with it cannot run on the boxes that need it
+# most — a wrong row kills the token, the dead token stops convergence, and the
+# cure needs the same dead token. Empty = fall back to the box's own token.
+REPAIR_TOKEN='__KORTIX_REPAIR_TOKEN__'
 LOG=/var/log/kortix-legacy-bootstrap.log
 log() { printf '[legacy-bootstrap] %s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$LOG" >&2; }
 emit() { printf '%s\n' "$1"; }
@@ -67,11 +74,14 @@ done
 mkdir -p "$STATE_DIR" 2>/dev/null || fail preflight "cannot create $STATE_DIR"
 API=$(readenv KORTIX_API_URL); API="${API%/}"; API="${API%/v1}"
 TOKEN=$(readenv KORTIX_SANDBOX_TOKEN); [ -n "$TOKEN" ] || TOKEN=$(readenv KORTIX_TOKEN)
+# What this run authenticates its own downloads with. Never the box's token
+# when the control plane issued one.
+FETCH_TOKEN="$REPAIR_TOKEN"; [ -n "$FETCH_TOKEN" ] || FETCH_TOKEN="$TOKEN"
 [ -n "$API" ] || fail preflight "KORTIX_API_URL is not set on this box"
-[ -n "$TOKEN" ] || fail preflight "no sandbox token on this box"
+[ -n "$FETCH_TOKEN" ] || fail preflight "no credential for the manifest fetch"
 free_mb=$(df -Pm "$STATE_DIR" 2>/dev/null | awk 'NR==2{print $4}')
 [ "${free_mb:-0}" -ge 400 ] || fail preflight "only ${free_mb:-0} MB free under $STATE_DIR"
-MAN=$(curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" "$API/v1/runtime-assets/manifest") \
+MAN=$(curl -fsS --max-time 30 -H "Authorization: Bearer $FETCH_TOKEN" "$API/v1/runtime-assets/manifest") \
   || fail manifest "manifest fetch from $API failed"
 field() {
   if command -v python3 >/dev/null 2>&1; then
@@ -93,7 +103,7 @@ if [ -z "$EP_SHA" ] || [ -z "$EP_PATH" ]; then
 fi
 download() {
   local tmp="$3.tmp.$$"; rm -f "$tmp"
-  curl -fsSL --max-time 240 --retry 2 -H "Authorization: Bearer $TOKEN" -o "$tmp" "$API$1" \
+  curl -fsSL --max-time 240 --retry 2 -H "Authorization: Bearer $FETCH_TOKEN" -o "$tmp" "$API$1" \
     || { rm -f "$tmp"; log "download of $1 failed"; return 1; }
   local got; got=$(sha256sum "$tmp" | cut -d' ' -f1)
   if [ "$got" != "$2" ]; then rm -f "$tmp"; log "digest mismatch for $1: want $2 got $got"; return 1; fi

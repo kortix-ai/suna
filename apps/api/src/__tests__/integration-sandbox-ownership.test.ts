@@ -86,7 +86,7 @@ test('two databases sharing one environment and provider cannot orphan-stop each
   // This database has no row for either foreign box, reproducing the bad keep-set.
   expect(await hasProviderBoxReference('platinum', 'sbx_synthetic_foreign')).toBe(false);
   const result = await reapOrphanProviderBoxes(new Date('2026-09-27T12:00:00Z'));
-  expect(result).toEqual({ listed: 1, orphans: 1, stopped: 1, errors: 0 });
+  expect(result).toMatchObject({ listed: 1, orphans: 1, stopped: 1, errors: 0 });
   expect(stops).toEqual(['sbx_synthetic_orphan']);
   // The old client's exact filter cannot select boxes protected by the new marker.
   expect(fleet.filter((box: any) => box.metadata['kortix.managed'] === 'true').map((box) => box.id))
@@ -112,8 +112,17 @@ test('stale stopped status and live turns remain referenced; worker environments
     metadata: { 'kortix.managed': marker, 'kortix.env': config.INTERNAL_KORTIX_ENV },
   }));
   stops.length = 0;
-  expect((await reapOrphanProviderBoxes()).stopped).toBe(0);
-  expect(stops).toEqual([]);
+  const result = await reapOrphanProviderBoxes();
+  // Referenced, so the ORPHAN path never touches either box.
+  expect(result.stopped).toBe(0);
+  // But the session row says `stopped` while the provider lists its box
+  // running: a row/VM divergence, and the reconciler closes it by stopping the
+  // VM. The row's stale `activeTurns` does not protect it — a parked row holds
+  // no turn authority by the platform's own predicate
+  // (session-lifecycle/inbox-admission.ts, `sessionHoldsTurnAuthority`).
+  expect(result.divergence).toEqual({ diverged: 1, closed: 1, errors: 0 });
+  // The session_environments row is not a session sandbox: out of scope here.
+  expect(stops).toEqual([externalId]);
 });
 
 test('corrupt ownership fails closed before provider listing', async () => {
