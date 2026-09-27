@@ -1,4 +1,4 @@
-// R2 (docs/specs/turn-latency.md §3) — the turn-start pre-flight gates that
+// R2 (the turn-latency spec (PR #7840) §3) — the turn-start pre-flight gates that
 // have no data dependency on each other must run CONCURRENTLY, not queue
 // behind each other. `forwardToSandbox`'s config-converge
 // (`convergeBeforeTurnStart`), model-catalog-converge

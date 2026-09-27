@@ -300,7 +300,7 @@ export interface TurnStartConvergenceDeps {
 }
 
 /**
- * R4 (docs/specs/turn-latency.md §3) — "a health probe made once by the
+ * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
  * config gate then again by the catalog gate" is the shape this forbids.
  * `convergeBeforeTurnStart` and `convergeModelCatalogForTurnStart` now run
  * CONCURRENTLY (R2, `forwardToSandbox`), and both call `probeRunningRelease`

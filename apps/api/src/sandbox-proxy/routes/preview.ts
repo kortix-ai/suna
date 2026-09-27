@@ -1017,7 +1017,7 @@ export async function forwardToSandbox(
   // ingress resolve may be started early. See the comment on that stream's
   // stall recovery at the retry loop for why it is excluded.
   const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
-  // R2 (docs/specs/turn-latency.md §3): the first attempt's provider-ingress
+  // R2 (the turn-latency spec (PR #7840) §3): the first attempt's provider-ingress
   // resolve — this box's network address — has no data dependency on the
   // config/catalog convergence gates below, so it starts alongside them
   // instead of queuing behind both. Populated just below, inside the

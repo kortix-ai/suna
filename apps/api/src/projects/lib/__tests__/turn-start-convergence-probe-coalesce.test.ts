@@ -1,5 +1,5 @@
 /**
- * R4 (docs/specs/turn-latency.md §3) — "a health probe made once by the
+ * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
  * config gate then again by the catalog gate" is named explicitly as the
  * shape R4 forbids. Parallelising `convergeBeforeTurnStart` and
  * `convergeModelCatalogForTurnStart` (R2) makes that race REAL: both gates

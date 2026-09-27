@@ -1,7 +1,7 @@
 /**
  * `runPrePromptEnvSync` — two things this file pins down.
  *
- * 1. R3 (docs/specs/turn-latency.md §3): session-title generation and the
+ * 1. R3 (the turn-latency spec (PR #7840) §3): session-title generation and the
  *    opencode_sessions snapshot refresh are schedule-and-return, never
  *    awaited on the send path — this asserts that directly, not just that
  *    the response is unchanged (a response-only assertion proves nothing
