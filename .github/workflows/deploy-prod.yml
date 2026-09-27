@@ -1047,7 +1047,7 @@ jobs:
       # must still opt a project in through
       # `PATCH /v1/projects/:projectId/features {feature:"config_releases",
       # enabled:true}`. Prerequisites verified before adding this (bucket,
-      # IAM grant, retention, migrations): docs/runbooks/config-releases-rollout.md.
+      # IAM grant, retention, migrations): apps/api/src/config-releases/ROLLOUT.md.
       KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","CONFIG_RELEASES_ENABLED":"true","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7

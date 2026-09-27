@@ -71,8 +71,7 @@ Four flags read it from configuration; every other flag is always available:
 | `config_releases` | `CONFIG_RELEASES_ENABLED` is on (default: off) |
 
 `CONFIG_RELEASES_ENABLED` defaults to `false`. It is an operator switch, off
-until an environment's prerequisites are met
-(`docs/runbooks/config-releases-rollout.md`). While it is off, the flag is
+until an environment's prerequisites are met. While it is off, the flag is
 unavailable platform-wide: the Settings row disappears, whatever a project
 chose. Once an operator sets it to `true`, the flag becomes *available* — each
 project still defaults to `enabled: false` (`platformDefault: () => false`),

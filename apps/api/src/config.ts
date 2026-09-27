@@ -608,7 +608,7 @@ const envSchema = z.object({
   // answer 403 `feature_disabled` for every project, no convergence is
   // scheduled, and every session falls back to reading its workspace config
   // dir. Set to true only once an environment's prerequisites are met
-  // (docs/runbooks/config-releases-rollout.md); every project still defaults
+  // (apps/api/src/config-releases/ROLLOUT.md); every project still defaults
   // OFF at that point, so flipping this switch alone changes no session's
   // behavior until an operator opts a project in.
   CONFIG_RELEASES_ENABLED: optBoolFalse,
