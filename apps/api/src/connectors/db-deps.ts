@@ -54,6 +54,7 @@ import { getProjectSecretValueForConsumer } from '../projects/secrets';
 import {
   canonicalConnectorAlias,
   listEntitledConnectorConnections,
+  listEntitledConnectorConnectionsBatch,
   publicConnectorAlias,
   resolveSessionConnectorConnection,
   resolveSessionConnectorConnectionOutcome,
@@ -140,6 +141,7 @@ import type {
   CatalogConnector,
   ConnectorPrincipal,
   ConnectorRouterDeps,
+  ListCatalogOptions,
 } from './router';
 import { resolveShareSubject } from './share';
 import {
@@ -838,6 +840,31 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
   }));
 }
 
+/** `loadConnectorPoliciesFor`, batched over many connectors in one query
+ *  instead of one `eq(connectorId, ...)` select per connector. */
+async function loadConnectorPoliciesForMany(
+  connectorIds: readonly string[],
+): Promise<Map<string, Policy[]>> {
+  const map = new Map<string, Policy[]>();
+  if (connectorIds.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(connectorPolicies)
+    .where(inArray(connectorPolicies.connectorId, connectorIds));
+  for (const r of rows) {
+    const policy: Policy = {
+      match: r.match,
+      action: r.action,
+      position: r.position,
+      ...parseStoredConditions(r.conditions),
+    };
+    const list = map.get(r.connectorId);
+    if (list) list.push(policy);
+    else map.set(r.connectorId, [policy]);
+  }
+  return map;
+}
+
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
   const rows = await db
     .select()
@@ -1241,23 +1268,49 @@ async function catalogAccountsFor(
 }
 
 /** The catalog a principal can actually use (agent grant + credential present + not blocked). */
-async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
-  const conns = hideSupersededSlack(
+async function listCatalog(
+  p: ConnectorPrincipal,
+  options: ListCatalogOptions = {},
+): Promise<CatalogConnector[]> {
+  const wantedSlug = options.slug ? canonicalConnectorAlias(options.slug) : null;
+  const allConns = hideSupersededSlack(
     await db
       .select()
       .from(connectors)
       .where(and(eq(connectors.projectId, p.projectId), eq(connectors.enabled, true))),
   );
+  const conns = wantedSlug
+    ? allConns.filter((row) => canonicalConnectorAlias(row.slug) === wantedSlug)
+    : allConns;
+  if (conns.length === 0) return [];
 
   // Project-scoped layer is the same for every connector in this list — load once.
-  const [projectPolicies, defaultMode, accountVisibility] = await Promise.all([
-    loadProjectPoliciesFor(p.projectId),
-    loadDefaultModeFor(p.projectId),
-    // Same rule `listConnectorAccounts` uses: a private session can also see
-    // the caller's own member-owned accounts, anything else stays project-only.
-    // An agent-principal credential with no session is never `private`.
-    p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
-  ]);
+  const connectorIds = conns.map((row) => row.connectorId);
+  const [projectPolicies, defaultMode, accountVisibility, actionsByConnector, policiesByConnector] =
+    await Promise.all([
+      loadProjectPoliciesFor(p.projectId),
+      loadDefaultModeFor(p.projectId),
+      // Same rule `listConnectorAccounts` uses: a private session can also see
+      // the caller's own member-owned accounts, anything else stays project-only.
+      // An agent-principal credential with no session is never `private`.
+      p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
+      // Batched: was one `connectorActions` select PER connector inside the
+      // loop below. One `inArray` query for the whole catalog instead.
+      db
+        .select()
+        .from(connectorActions)
+        .where(inArray(connectorActions.connectorId, connectorIds))
+        .then((rows) => {
+          const map = new Map<string, typeof rows>();
+          for (const row of rows) {
+            const list = map.get(row.connectorId);
+            if (list) list.push(row);
+            else map.set(row.connectorId, [row]);
+          }
+          return map;
+        }),
+      loadConnectorPoliciesForMany(connectorIds),
+    ]);
 
   const out: CatalogConnector[] = [];
   for (const row of conns) {
@@ -1304,11 +1357,8 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
       // Always the shared credential — `per_user` was removed 2026-07-05.
       if (!(await connectorConnected(row, null, connection))) continue;
     }
-    const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
-    const actions = await db
-      .select()
-      .from(connectorActions)
-      .where(eq(connectorActions.connectorId, row.connectorId));
+    const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
+    const actions = actionsByConnector.get(row.connectorId) ?? [];
     out.push({
       slug: row.slug,
       name: row.name,
@@ -1332,7 +1382,7 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
           name: a.name,
           description: a.description ?? '',
           risk: a.risk,
-          inputSchema: a.inputSchema ?? null,
+          inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
         })),
       accounts,
       // What an UNNAMED call runs as: the one pinned account, or the only
@@ -1448,6 +1498,7 @@ async function resolveSecretReader(
 async function listConnectors(
   projectId: string,
   actingUserId?: string | null,
+  options: { includeSchemas?: boolean } = {},
 ): Promise<AdminConnectorView[]> {
   const conns = hideSupersededSlack(
     await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
@@ -1482,9 +1533,8 @@ async function listConnectors(
     credentialConnectorIds,
     memberCredentialedConnectorIds,
     connectedChannelSlugs,
-    authorizedComposioSlugs,
+    entitledByConnector,
     validBoundSecrets,
-    accountsByConnectorEntries,
   ] =
     await Promise.all([
       db
@@ -1508,38 +1558,29 @@ async function listConnectors(
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
-      // The SAME predicate the gateway applies at call time: resolve a
-      // connection FOR THIS CALLER (which checks `connected_account_id`) and
-      // treat "resolves" as authorized. `connectorConnected(row, null)` with no
-      // connection argument answered `false` for every Composio row, so a
-      // fully connected app was listed as `needs_auth` while its calls
-      // succeeded (INC-2026-09-08-CONNECTOR-GATEWAY, E6).
+      // The accounts THIS caller may run each connector as, default first —
+      // same computation as `listConnectorAccounts` (the `.../accounts` route
+      // and the MCP `accounts` tool read it), reused here so `kortix connectors
+      // ls`/`show` carry it without a client round trip per connector, AND —
+      // for Composio below — the SAME predicate the gateway applies at call
+      // time to decide "is it connected at all" (resolves an entitled account
+      // for THIS caller; `connectorConnected(row, null)` with no connection
+      // argument always answered `false` for Composio, INC-2026-09-08-
+      // CONNECTOR-GATEWAY E6). Dashboard-wide, not session-scoped, so
+      // visibility is always `private`.
       //
-      // Resolved as the acting user, in a private-session view: Composio
-      // accounts are authorized per connection row (no credential row is ever
-      // written), so a connector whose only accounts are the caller's own
-      // member-owned ones read `needs_auth` to the very person whose calls
-      // through them succeed — two connected Gmail accounts, "Needs setup".
-      //
-      // Deliberately `listEntitledConnectorConnections` (ANY usable account),
-      // not the call-time resolver: this is a dashboard "is it connected at
-      // all" summary, not an authorization decision. Two connected-but-unpinned
-      // accounts are genuinely connected even though an unnamed CALL would now
-      // be denied `account_required` — this row must not read "needs setup".
-      Promise.all(
-        composioRows.map(async (row) => {
-          const entitled = await listEntitledConnectorConnections({
-            accountId: row.accountId,
-            projectId: row.projectId,
-            alias: row.slug,
-            actingUserId: actingUserId ?? undefined,
-            visibility: 'private',
-          }).catch(() => []);
-          return [row.slug, entitled.length > 0] as const;
-        }),
-      ).then(
-        (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
-      ),
+      // ONE batched call for every connector in the project instead of one
+      // `listEntitledConnectorConnections` call PER connector (was n=64 on a
+      // ~20-connector project — see `listEntitledConnectorConnectionsBatch`'s
+      // doc comment). Composio's authorization check below reads from this
+      // SAME map instead of re-running the identical lookup a second time.
+      listEntitledConnectorConnectionsBatch({
+        accountId: conns[0]!.accountId,
+        projectId,
+        connectors: conns,
+        actingUserId: actingUserId ?? undefined,
+        visibility: 'private',
+      }),
       boundSecretIdentifiers.length === 0
         ? Promise.resolve([])
         : db
@@ -1555,32 +1596,23 @@ async function listConnectors(
                 eq(projectSecrets.consumer, 'connector'),
               ),
             ),
-      // The accounts THIS caller may run each connector as, default first —
-      // same computation as `listConnectorAccounts` (the `.../accounts` route
-      // and the MCP `accounts` tool read it), reused here so `kortix connectors
-      // ls`/`show` carry it without a client round trip per connector.
-      // Dashboard-wide, not session-scoped, so visibility is always `private` —
-      // the same rule an admin listing has always applied to "connected for me".
-      Promise.all(
-        conns.map(async (row) => {
-          const entitled = await listEntitledConnectorConnections({
-            accountId: row.accountId,
-            projectId: row.projectId,
-            alias: canonicalConnectorAlias(row.slug),
-            actingUserId: actingUserId ?? undefined,
-            visibility: 'private',
-          }).catch(() => []);
-          const accounts: CatalogAccount[] = entitled.map((connection) => ({
-            connection_id: connection.connectionId,
-            label: connection.label,
-            owner_type: connection.ownerType,
-            is_default: connection.isDefault,
-          }));
-          return [row.connectorId, accounts] as const;
-        }),
-      ),
     ]);
-  const accountsByConnector = new Map(accountsByConnectorEntries);
+  const accountsByConnector = new Map<string, CatalogAccount[]>(
+    conns.map((row) => [
+      row.connectorId,
+      (entitledByConnector.get(row.connectorId) ?? []).map((connection) => ({
+        connection_id: connection.connectionId,
+        label: connection.label,
+        owner_type: connection.ownerType,
+        is_default: connection.isDefault,
+      })),
+    ]),
+  );
+  const authorizedComposioSlugs = new Set(
+    composioRows
+      .filter((row) => (entitledByConnector.get(row.connectorId) ?? []).length > 0)
+      .map((row) => row.slug),
+  );
   // `authorization_strategy` is a DERIVED SUMMARY now, not a setting. The
   // column is retired (see migration 20260917160000000) and the PUT route is an
   // inert no-op, but the field stays on the wire so an older client keeps
@@ -1684,7 +1716,11 @@ async function listConnectors(
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
-        inputSchema: a.inputSchema ?? null,
+        // The full per-action JSON Schema is the bulk of this route's payload
+        // (1.6 MB on prod). It is included unless the caller passes
+        // `includeSchemas: false` (`?include_schemas=false`): baked sandbox
+        // CLIs read it and cannot be updated in place.
+        inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
       })),
       requestAuthType: auth.type,
       requiresAuth: hasAuth,

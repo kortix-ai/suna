@@ -59,4 +59,24 @@ describe('project Files sidebar entry', () => {
     expect(SOURCE).not.toContain('useFilesActivate');
     expect(SOURCE).not.toContain('ProjectFilesRailItem');
   });
+
+  test('arms a data prefetch on the same intent signal as the route prefetch', () => {
+    // `ProjectFilesView` cannot resolve a git ref (and therefore cannot start
+    // ANY of its reads — branches, the file list, change requests, file
+    // content) until `qk.project.summary(id)` answers, unless a version is
+    // already persisted. Without this, a cold Files open pays that request
+    // AFTER the page mounts instead of during the hover/focus/touch window
+    // `HoverPrefetchLink` already uses for the route prefetch. This test pins
+    // the wiring, not the timing (that needs a real network trace).
+    const navItem = filesNavItemSource();
+
+    expect(navItem).toContain('onMouseEnter={prefetchSummary}');
+    expect(navItem).toContain('onFocus={prefetchSummary}');
+    expect(navItem).toContain('onTouchStart={prefetchSummary}');
+    expect(SOURCE).toContain('qk.project.summary(projectId)');
+    // Same fetcher + options as `ProjectFilesView`'s own query — a mismatched
+    // `queryFn`/staleTime would make this a second fetch, not an accelerator.
+    expect(SOURCE).toContain("queryFn: () => getProject(projectId)");
+    expect(SOURCE).toContain("...contract('config')");
+  });
 });
