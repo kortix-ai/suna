@@ -138,7 +138,10 @@ export default function ProjectsPage() {
   }, [projectsQuery.data, query]);
 
   const total = projectsQuery.data?.length ?? 0;
-  const loading = accountsQuery.isLoading || projectsQuery.isLoading;
+  // Not loaded yet — in flight, or paused offline (`isPending`, not
+  // `isLoading`) — is never the empty state. The project query is disabled
+  // while no account is picked, and pending then too.
+  const loading = accountsQuery.isPending || (!!activeAccountId && projectsQuery.isPending);
   const showEmpty = !!activeAccountId && !loading && !projectsQuery.isError && total === 0;
   const showNoResults =
     !!activeAccountId && !loading && !projectsQuery.isError && total > 0 && filtered.length === 0;

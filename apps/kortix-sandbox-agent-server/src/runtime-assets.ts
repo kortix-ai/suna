@@ -10,6 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import type { Config } from './config'
 import { resolveHarness, type HarnessAssetsCompatibilityResult } from './harness/harness'
 import type {
@@ -32,6 +33,18 @@ export function runtimeAssetsActivity(): string | null {
 }
 function setRuntimeAssetsActivity(label: string | null): void {
   runtimeAssetsActivityLabel = label
+}
+
+/**
+ * DEF-C: "the CLI cannot be updated on this box" is logged at `error` once per
+ * process instead of on every reconcile — the whole point is to stop an
+ * unwatchable failure from hiding behind its own repetition.
+ */
+let cliUpdateBlockedLogged = false
+
+/** Test seam: one bun process runs every daemon test file. */
+export function resetCliUpdateBlockedNoticeForTests(): void {
+  cliUpdateBlockedLogged = false
 }
 
 /**
@@ -59,6 +72,32 @@ function setRuntimeAssetsActivity(label: string | null): void {
 
 /** The binary every in-sandbox agent invokes as `kortix`. */
 const DEFAULT_CLI_PATH = '/usr/local/bin/kortix'
+
+/**
+ * DEF-C 2026-09-26 — the writable PATH fallback for a box whose
+ * `/usr/local/bin` is not, and never will be, writable by `kortix`.
+ *
+ * The shipped image now bakes `/usr/local/bin` kortix-owned
+ * (`SANDBOX_CLI_OWNERSHIP_COMMAND`, packages/shared/src/sandbox/
+ * platform-binaries.ts) and `replaceCli`'s own `sudo -n chown` escalation
+ * heals an older snapshot in place — but a box already running an image from
+ * before either of those existed, and that a Platinum suspend/resume never
+ * reboots from a fresh image, gets neither: measured on a real box created
+ * 2026-08-25, `CLI replace failed {"err":"...EACCES..."}` on every single
+ * reconcile, forever, escalation included.
+ *
+ * `$HOME/.local/bin` needs no escalation at all: it is the daemon's OWN home
+ * directory (`useradd --create-home`, every image, always), and
+ * `apps/sandbox/entrypoint.sh`'s `KORTIX_PATH` already puts it FIRST on PATH,
+ * ahead of `/usr/local/bin` — so a binary installed here immediately shadows
+ * the baked one for every later `kortix` invocation, on old boxes and new
+ * ones alike. `apps/cli`'s own self-update already relies on this exact path
+ * for a non-sandbox install (apps/cli/src/commands/update.ts).
+ */
+function cliPathFallback(): string {
+  return join(process.env.HOME || homedir() || '/home/kortix', '.local', 'bin', 'kortix')
+}
+
 /** Image-baked managed-skill overlay root; created here when the image had none. */
 const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
 /** Digest bookkeeping, so a converged box never re-hashes a 100 MB binary. */
@@ -196,6 +235,14 @@ export interface RuntimeAssetsOptions {
   assets?: HarnessAssetsService
   /** Runs a candidate binary before it replaces a working one. See {@link ExecProbe}. */
   execProbe?: ExecProbe
+  /**
+   * DEF-C: the writable PATH fallback tried when `cliPath`'s directory is not
+   * writable (and the daemon's own escalation cannot fix that). Defaults to
+   * {@link cliPathFallback}; injectable for tests.
+   */
+  cliFallbackPath?: string
+  /** Test seam for `replaceCli`'s directory-unlock escalation. See `ReplaceCliDeps.unlockDir`. */
+  unlockCliDir?: (dir: string) => Promise<boolean>
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */
@@ -229,6 +276,14 @@ interface RuntimeAssetsState {
   cli_sha256?: string
   cli_size?: number
   cli_mtime_ms?: number
+  /**
+   * DEF-C: which path the digest cache above describes. Absent means the
+   * primary `cliPath` (`/usr/local/bin/kortix`), as it always did before this
+   * field existed. Once a box has ever installed to the PATH fallback, PATH
+   * resolves there first — the RUNNING CLI is the fallback file — so the next
+   * reconcile must hash and replace that one, not a stale or absent primary.
+   */
+  cli_path?: string
   managed_skills_hash?: string
   /** Highest manifest epoch this box has converged to. See the epoch guard. */
   build?: number
@@ -831,12 +886,20 @@ export async function reconcileRuntimeAssets(
   // ── CLI ────────────────────────────────────────────────────────────────────
   if (cliSha) {
     try {
-      const local = await localCliSha(cliPath, state)
+      // DEF-C: once this box has ever fallen back, PATH already resolves
+      // `kortix` to the fallback file (it precedes the primary path on PATH)
+      // — so that is the running CLI, and the one this pass must hash and
+      // replace. A box that has never fallen back reads the primary, exactly
+      // as before this field existed.
+      const effectiveCliPath =
+        state.cli_path && state.cli_path !== cliPath ? state.cli_path : cliPath
+      const local = await localCliSha(effectiveCliPath, state)
       if (local && local.sha === cliSha) {
         cli = 'current'
         nextState.cli_sha256 = local.sha
         nextState.cli_size = local.size
         nextState.cli_mtime_ms = local.mtimeMs
+        nextState.cli_path = effectiveCliPath
       } else {
         const res = await fetchImpl(resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`), {
           headers: { Authorization: `Bearer ${token}` },
@@ -846,24 +909,75 @@ export async function reconcileRuntimeAssets(
           logger.warn('[runtime-assets] CLI download non-ok', { status: res.status })
           cli = 'failed'
         } else {
-          const replaced = await replaceCli(cliPath, cliSha, await res.arrayBuffer(), {
-            execProbe,
-          })
-          if (replaced === 'unrunnable') {
-            cli = 'failed'
-            reasons.cli = 'the downloaded CLI did not run on this box'
-          } else {
-            cli = replaced
-          }
-          if (cli === 'updated') {
-            const stats = await stat(cliPath).catch(() => null)
-            nextState.cli_sha256 = cliSha
-            nextState.cli_size = stats?.size
-            nextState.cli_mtime_ms = stats ? Math.trunc(stats.mtimeMs) : undefined
-            logger.info('[runtime-assets] kortix CLI updated from the API', {
-              version: cliVersion,
-              sha256: cliSha.slice(0, 12),
+          const body = await res.arrayBuffer()
+          // Verify ONCE, before any location is even chosen: a digest that
+          // does not match the manifest is wrong everywhere, and retrying the
+          // identical bytes at a second path would not just waste a hash of a
+          // ~100 MB buffer — DEF-C's own tests found it reaching this box's
+          // REAL `$HOME/.local/bin` in a case that has nothing to do with a
+          // permission problem at all.
+          if (!verifyArtifact(Buffer.from(body), cliSha)) {
+            logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
+              expected: cliSha,
             })
+            cli = 'failed'
+          } else {
+            let replaced = await replaceCli(cliPath, cliSha, body, {
+              execProbe,
+              unlockDir: options.unlockCliDir,
+            })
+            let installedPath = cliPath
+            // The artifact is verified-good, so a `failed` here is
+            // specifically "nowhere on the primary path is writable" — the
+            // daemon's own escalation (sudoOwnDir) already tried and lost. A
+            // box already on the fallback (`effectiveCliPath !== cliPath`)
+            // has no reason to retry the primary at all.
+            if (replaced === 'failed' && effectiveCliPath === cliPath) {
+              const fallbackPath = options.cliFallbackPath ?? cliPathFallback()
+              await mkdir(dirname(fallbackPath), { recursive: true }).catch(() => {})
+              const fallbackReplaced = await replaceCli(fallbackPath, cliSha, body, { execProbe })
+              if (fallbackReplaced === 'updated') {
+                logger.warn(
+                  '[runtime-assets] /usr/local/bin is not writable on this box; installed the CLI to its PATH fallback instead',
+                  { path: fallbackPath },
+                )
+                replaced = fallbackReplaced
+                installedPath = fallbackPath
+              } else if (fallbackReplaced === 'unrunnable') {
+                replaced = fallbackReplaced
+              } else {
+                // Neither location works. This box can never update its CLI
+                // by itself — say so LOUDLY, once per process, instead of the
+                // defect this fixes: the identical warn line, forever, that
+                // nobody is watching for.
+                if (!cliUpdateBlockedLogged) {
+                  cliUpdateBlockedLogged = true
+                  logger.error(
+                    '[runtime-assets] kortix CLI cannot be updated on this box: neither /usr/local/bin nor its PATH fallback is writable',
+                    { primary: cliPath, fallback: fallbackPath },
+                  )
+                }
+                reasons.cli = 'cannot be updated: neither /usr/local/bin nor its PATH fallback is writable'
+              }
+            }
+            if (replaced === 'unrunnable') {
+              cli = 'failed'
+              reasons.cli = 'the downloaded CLI did not run on this box'
+            } else {
+              cli = replaced
+            }
+            if (cli === 'updated') {
+              const stats = await stat(installedPath).catch(() => null)
+              nextState.cli_sha256 = cliSha
+              nextState.cli_size = stats?.size
+              nextState.cli_mtime_ms = stats ? Math.trunc(stats.mtimeMs) : undefined
+              nextState.cli_path = installedPath
+              logger.info('[runtime-assets] kortix CLI updated from the API', {
+                version: cliVersion,
+                sha256: cliSha.slice(0, 12),
+                path: installedPath,
+              })
+            }
           }
         }
       }

@@ -102,11 +102,29 @@ export interface ChangeRequestMergeResponse {
   };
 }
 
+export interface ListChangeRequestsOptions {
+  /**
+   * Scope to one session's change requests. The "outcome" cards used to fetch
+   * every change request in the project, every 60s, per open session thread,
+   * just to filter down to the ones that session opened — this does the
+   * filtering at the source instead.
+   */
+  originSessionId?: string;
+  /** Capped server-side at 500. Omitted keeps the historical unbounded
+   *  response every existing caller depends on. */
+  limit?: number;
+}
+
 export async function listChangeRequests(
   projectId: string,
   status?: ChangeRequestStatus | 'all',
+  options?: ListChangeRequestsOptions,
 ) {
-  const query = status ? `?status=${status}` : '';
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (options?.originSessionId) params.set('origin_session_id', options.originSessionId);
+  if (options?.limit != null) params.set('limit', String(options.limit));
+  const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<{ change_requests: ChangeRequest[] }>(
       `/projects/${projectId}/change-requests${query}`,

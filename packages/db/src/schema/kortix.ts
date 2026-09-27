@@ -153,7 +153,9 @@ export const apiKeyTypeEnum = kortixSchema.enum('api_key_type', ['user', 'sandbo
 
 export const accountRoleEnum = kortixSchema.enum('account_role', ['owner', 'admin', 'member']);
 
-export const accounts = kortixSchema.table('accounts', {
+export const accounts = kortixSchema.table(
+  'accounts',
+  {
   accountId: uuid('account_id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
@@ -196,7 +198,31 @@ export const accounts = kortixSchema.table('accounts', {
   branding: jsonb('branding').default({}).notNull().$type<AccountBrandingRecord>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+  },
+  (table) => [
+    // Serves GET /v1/admin/api/accounts (the admin console's default,
+    // unfiltered accounts list): `ORDER BY created_at DESC LIMIT $page_size`.
+    // Without this index `accounts` had only its primary key, so Postgres
+    // could not drive the sort from an index — it Hash-Joined a full
+    // Seq Scan of `accounts` (45.5k rows) against a full Seq Scan of
+    // `credit_accounts` (234.5k rows, most of them orphaned — no FK ties
+    // `credit_accounts.account_id` back to `accounts`) and sorted the whole
+    // ~44k-row result BEFORE applying LIMIT. On prod that query hit the 25s
+    // request-path statement_timeout (57014): API logs show
+    // `GET /v1/admin/api/accounts` at 25013/25019/25056 ms
+    // (2026-09-27T01:21-01:22Z), and the unguarded catch echoed the raw
+    // `Failed query: select … "kortix"."credit_accounts"."balance_precise" …`
+    // text to the browser. This index lets the planner drive the sort with
+    // an Index Scan Backward + LIMIT, then do one Nested Loop lookup per row
+    // into `credit_accounts` via its existing primary key — verified by
+    // `EXPLAIN` against prod (read-only): the Hash Right Join + top-level
+    // Sort disappear once this index exists in a same-shape local
+    // reproduction. See the accompanying `.concurrent.ts` migration for the
+    // CONCURRENTLY build; the release pre-builds this index out of band on
+    // the ~45.5k-row prod table before the migration runs.
+    index('idx_accounts_created_at').on(table.createdAt),
+  ],
+);
 
 /** Shape of `accounts.branding`. Every key optional; absent == default Kortix. */
 export interface AccountBrandingRecord {
@@ -3391,6 +3417,16 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
     index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
     index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
+    // Partial index for GET /:projectId/gateway/errors (only-failed-rows
+    // lookup by project+time window). Built CONCURRENTLY in
+    // 20260926234956893_gateway_logs_project_ok_time.concurrent.ts, which also
+    // adds `INCLUDE (error_code)` — drizzle-orm 0.45's index builder cannot
+    // express INCLUDE, and the schema contract only checks relation +
+    // uniqueness, so the declaration here (without INCLUDE) is enough to keep
+    // it in sync; see that migration for the real built definition.
+    index('idx_gateway_logs_project_failed_time')
+      .on(table.projectId, table.createdAt)
+      .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
   ],
 );

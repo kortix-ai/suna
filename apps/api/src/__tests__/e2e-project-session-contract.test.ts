@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { authUsersRows } from './helpers/auth-users-execute';
 import {
   accountMembers,
   projectGitConnections,
@@ -675,7 +676,10 @@ mock.module('../shared/db', () => ({
     transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
       return fn(this);
     },
-    execute: async () => [],
+    // Owner identities come from auth.users; every id is the contract user,
+    // matching the auth admin mock above.
+    execute: async (query: unknown) =>
+      authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (predicate?: unknown) => ({

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   isSettingsTabAllowed,
-} from '@/features/workspace/settings/settings-panel';
+} from '@/features/workspace/settings/settings-panel-body';
 import {
   DEFAULT_SETTINGS_TAB,
   SETTINGS_TABS,

@@ -15,7 +15,11 @@
     "selectInstallation": "选择安装",
     "manifestRequirement": "新仓库的默认分支需要包含 {manifest}。请先停止活动会话并关闭未完成的变更请求。",
     "cancel": "取消",
-    "changing": "正在更改…"
+    "changing": "正在更改…",
+    "searchBranches": "搜索分支…",
+    "loadingBranches": "正在加载分支…",
+    "noBranches": "没有匹配的分支。",
+    "moreBranches": "还有 {count} 个。输入以筛选。"
   },
   "pooledSecrets": {
     "saveChanges": "保存更改",

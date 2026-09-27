@@ -50,6 +50,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { agentHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { prefetchAgentConfig } from '@/hooks/projects/use-agent-config';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
@@ -93,6 +94,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { accountId }).allowed ===
     true;
   const configure = useConfigureThread(projectId);
+  const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
 
@@ -241,6 +243,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
           <CatalogCard
             key={agent.path}
             href={agentHref(projectId, agent.name)}
+            onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
             title={capitalizeWords(agent.name)}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}

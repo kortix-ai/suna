@@ -9,7 +9,7 @@
  * both panels provided their own adapter over their own store, so the shared
  * `customize/sections/**` views never had to import either store directly.
  * The legacy overlay and its adapter (`buildCustomizeSettingsNav`) are gone;
- * `settings-panel.tsx`'s `buildSettingsPanelSettingsNav` is the only
+ * `settings-panel-body.tsx`'s `buildSettingsPanelSettingsNav` is the only
  * provider left, but this context stays panel-agnostic on purpose — a future
  * second host is exactly as easy to add as the first one was.
  *
@@ -86,7 +86,7 @@ export function useSettingsNav(): SettingsNav {
   if (!ctx) {
     throw new Error(
       'useSettingsNav() was called outside a SettingsNavProvider. Render this view under ' +
-        'SettingsPanel (settings/settings-panel.tsx), which provides it — or wrap it in a ' +
+        'SettingsPanelBody (settings/settings-panel-body.tsx), which provides it — or wrap it in a ' +
         '<SettingsNavProvider value={...}> in a test.',
     );
   }

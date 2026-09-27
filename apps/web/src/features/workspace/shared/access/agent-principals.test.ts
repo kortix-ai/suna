@@ -6,9 +6,11 @@ import {
   GRANTABLE_PROJECT_PERMISSIONS,
   HUMAN_ONLY_PERMISSIONS,
   agentIdentityFor,
+  agentRolesQueryKey,
   ceilingAssignments,
   computeAgentAuthority,
   expandPermissionGrant,
+  projectAgentAssignmentsQueryKey,
   rolePermissionsId,
 } from './agent-principals';
 
@@ -129,5 +131,35 @@ describe('rolePermissionsId — system roles go by wire id, custom roles by id',
         roles,
       ),
     ).toBeNull();
+  });
+});
+
+describe('agentRolesQueryKey / projectAgentAssignmentsQueryKey — shared cache slots', () => {
+  // `access-projects-tab.tsx` prefetches these two keys as soon as
+  // `canManageRoles`/`accountId`/`projectId` are known, well before
+  // `ProjectAgentAccessList` mounts (it waits on `accessQuery` to settle
+  // first). The prefetch is only an accelerator if it lands in the EXACT
+  // slot `useAgentIdentities`/`useProjectAgentAssignments`/the inline
+  // `rolesQuery` in `project-agent-access-list.tsx` read — these tests pin
+  // that shape so a future edit to either side cannot drift silently.
+  test('agentRolesQueryKey is a stable, account-scoped tuple', () => {
+    expect(agentRolesQueryKey('acc-1')).toEqual(['iam-roles', 'acc-1']);
+    expect(agentRolesQueryKey('acc-1')).toEqual(agentRolesQueryKey('acc-1'));
+    expect(agentRolesQueryKey('acc-1')).not.toEqual(agentRolesQueryKey('acc-2'));
+  });
+
+  test('projectAgentAssignmentsQueryKey is scoped by account AND project', () => {
+    expect(projectAgentAssignmentsQueryKey('acc-1', 'proj-1')).toEqual([
+      'iam-assignments',
+      'acc-1',
+      'service_account',
+      'proj-1',
+    ]);
+    expect(projectAgentAssignmentsQueryKey('acc-1', 'proj-1')).not.toEqual(
+      projectAgentAssignmentsQueryKey('acc-1', 'proj-2'),
+    );
+    expect(projectAgentAssignmentsQueryKey('acc-1', 'proj-1')).not.toEqual(
+      projectAgentAssignmentsQueryKey('acc-2', 'proj-1'),
+    );
   });
 });
