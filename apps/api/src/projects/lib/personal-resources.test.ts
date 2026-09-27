@@ -1,6 +1,5 @@
 /**
- * Spec docs/specs/2026-09-22-agents-as-principals.md §2.3: a personal resource
- * is reachable by an agent session only when owner == on_behalf_of AND the
+ * A personal resource is reachable by an agent session only when owner == on_behalf_of AND the
  * session is private. Flag OFF keeps each caller's legacy user.
  */
 import { describe, expect, test } from 'bun:test';

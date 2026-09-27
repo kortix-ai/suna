@@ -209,7 +209,6 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // session IS the agent: grant ∩ ceiling − HUMAN_ONLY. The launcher's role and
   // super-admin bit never reach this point — the principal is the agent's
   // service account (actingPrincipal), so step 5 above cannot fire for it.
-  // Spec docs/specs/2026-09-22-agents-as-principals.md §2.1.
   if (actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal && binding?.agentGrant) {
     const grant = binding.agentGrant;
     const target = obj.type === 'project' ? obj.id : null;

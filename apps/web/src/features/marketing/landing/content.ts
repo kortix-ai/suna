@@ -70,7 +70,7 @@ export const trust = {
   /**
    * ACCURACY: do NOT restore "the model never sees them". A granted runtime
    * secret is a real env value inside the session and is readable by any
-   * command the agent runs — see docs/ENV_SECRET_EXPOSURE_BASELINE.md. The
+   * command the agent runs. The
    * true, narrower claim is the one below: CONNECTOR credentials are brokered
    * server-side and never enter the machine.
    * Do NOT restore "scoped per person and group" either — retired by migration

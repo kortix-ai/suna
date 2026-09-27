@@ -20,7 +20,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
  * Production wiring for the connector router — DB-backed ConnectorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
- * is the glue to Postgres + the credential store + Pipedream. See docs/specs/connector.md.
+ * is the glue to Postgres + the credential store + Pipedream.
  */
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';

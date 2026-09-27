@@ -161,7 +161,7 @@ export const definition = {
       title: 'Neither file holds a secret',
       // ACCURACY: never add "the model" back to this list. A granted runtime
       // secret is a real env value inside the session and any command the agent
-      // runs can read it — docs/ENV_SECRET_EXPOSURE_BASELINE.md.
+      // runs can read it.
       body: 'The manifest names secrets and grants them per agent. The values are encrypted in the platform, injected into the machine at runtime, and never written to the repo or the logs.',
     },
   ],

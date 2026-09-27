@@ -1025,9 +1025,8 @@ export function isAdminBypassEligible(input: {
  * 'manage')`: share management, `can_manage`, the serialized
  * `effective_project_role`).
  *
- * Legacy callers keep the caller's own role. An agent-principal session (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.1) never inherits its
- * launcher's role: it is `manager` only when the AGENT's effective permissions
+ * Legacy callers keep the caller's own role. An agent-principal session
+ * never inherits its launcher's role: it is `manager` only when the AGENT's effective permissions
  * hold `project.write` (the IAM action behind the `manage` tier,
  * `iamActionForProjectAccess('manage')`), else `member`. Pure; exported for
  * unit tests.

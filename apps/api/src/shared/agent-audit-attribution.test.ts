@@ -1,6 +1,5 @@
 /**
- * Audit attribution for an agent-session credential — spec
- * docs/specs/2026-09-22-agents-as-principals.md §2: every row names the agent,
+ * Audit attribution for an agent-session credential: every row names the agent,
  * the human it acted on behalf of, and the initiator (human | trigger |
  * channel | system).
  */

@@ -7,7 +7,7 @@
  *
  * This module is the pure rendering + id (de)serialization half — unit-tested.
  * The handler wiring (handleReviewAction) is a thin follow-up that reuses the
- * existing question→resume dispatch. See docs/REVIEW_CENTER_DESIGN.md.
+ * existing question→resume dispatch.
  */
 
 export type ReviewVerb = 'approve' | 'deny' | 'changes' | 'view';

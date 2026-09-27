@@ -763,7 +763,7 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
       'kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance ' +
       'OVERLAY (connectors/kortix_permissions/env grants); absence means an unrestricted default agent ' +
       '(adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at ' +
-      'runtime — see docs/specs/2026-07-05-agent-first-config-unification.md §1.5).',
+      'runtime).',
     type: 'object',
     required: ['kortix_version'],
     properties: {
@@ -788,8 +788,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
       'prompt itself) lives entirely in that agent’s own native ' +
       '`.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields ' +
-      'here is a hard error. `[[channels]]` is removed outright. See ' +
-      'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
+      'here is a hard error. `[[channels]]` is removed outright.',
     type: 'object',
     required: ['kortix_version', 'default_agent'],
     // `agents` is required in the file itself unless `imports` can supply it:

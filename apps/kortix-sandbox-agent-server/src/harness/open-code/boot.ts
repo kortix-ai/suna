@@ -632,9 +632,8 @@ export async function reconcileManagedModels(
 }
 
 /**
- * One convergence once OpenCode is ready (docs/specs/config-releases.md,
- * "Boot" step 3). It proves a release spawned at boot and moves the box onto
- * the desired release. Detached: it never delays readiness. A swap waits while
+ * One convergence once OpenCode is ready. It proves a release spawned at
+ * boot and moves the box onto the desired release. Detached: it never delays readiness. A swap waits while
  * a turn runs; the API converges again at turn end. The seed-adoption path
  * reaches this through `startSessionRuntime`, so it converges once after
  * adoption.
