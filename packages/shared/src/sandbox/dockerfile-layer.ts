@@ -33,12 +33,15 @@ import {
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PI_SUPPLIED_PACKAGES,
+  PI_SYSTEM_PACKAGES,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
+  assertPiSystemPackage,
 } from '../runtime-versions';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
@@ -367,6 +370,45 @@ function buildOpencodeInstanceWarmupLines(opts: {
   ];
 }
 
+/** pi's global agent dir in the image; the daemon's KORTIX_PI_AGENT_DIR default. */
+export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
+
+/**
+ * Install the pi system packages the way `pi install` installs a global one:
+ * the packages under `<agentDir>/npm`, the sources in `<agentDir>/settings.json`.
+ * npm installs required peers, as pi's own install does; the packages pi
+ * supplies itself resolve to an empty stub. Install scripts do not run. An
+ * empty list adds no layer.
+ */
+export function piSystemPackageLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  for (const source of packages) assertPiSystemPackage(source);
+  const dependencies: Record<string, string> = Object.fromEntries(PI_SUPPLIED_PACKAGES.map((name) => [name, 'file:./pi-supplied']));
+  for (const source of packages) {
+    const spec = source.slice('npm:'.length);
+    const at = spec.lastIndexOf('@');
+    dependencies[spec.slice(0, at)] = spec.slice(at + 1);
+  }
+  return [
+    `RUN mkdir -p ${PI_AGENT_DIR}/npm/pi-supplied \\`,
+    `    && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > ${PI_AGENT_DIR}/npm/pi-supplied/package.json \\`,
+    `    && printf '%s' '${JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies })}' > ${PI_AGENT_DIR}/npm/package.json \\`,
+    `    && npm install --prefix ${PI_AGENT_DIR}/npm --omit=dev --ignore-scripts --no-audit --no-fund \\`,
+    `    && printf '%s' '${JSON.stringify({ packages })}' > ${PI_AGENT_DIR}/settings.json`,
+    '',
+  ];
+}
+
+/**
+ * Warm jiti's cache for the system packages with the daemon itself (it lands in
+ * `<agentDir>/cache/jiti`; each boot copies it in). A package that fails to
+ * load fails the image build here, not in a session.
+ */
+export function piSystemPackageWarmLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  return ['RUN /usr/local/bin/kortix-agent warm-pi-packages', ''];
+}
+
 export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
   const {
     opencodeVersion,
@@ -679,6 +721,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
+    ...piSystemPackageLines(PI_SYSTEM_PACKAGES),
     // Placed AFTER the agent-browser/Chromium layer above — see that block's
     // comment for why the order matters (this step's RUN text is never
     // cache-stable, so nothing cache-sensitive may sit downstream of it).
@@ -750,6 +793,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     // empty here; the daemon's materializeRepo path fills it.
     'ENV KORTIX_WORKSPACE=/workspace',
     'USER kortix',
+    ...piSystemPackageWarmLines(PI_SYSTEM_PACKAGES),
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',

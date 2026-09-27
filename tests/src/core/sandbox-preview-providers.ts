@@ -35,8 +35,10 @@ import {
   PreviewInfrastructureError,
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
+  buildPreviewSuiteScript,
   previewLockfileHash,
   previewDeploymentStatusPath,
+  previewSuiteStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
   selectStalePreviewSandboxIds,
@@ -61,16 +63,16 @@ const LOG_CHUNK_BYTES = 1024 * 1024;
 
 /** Stop a detached bootstrap that survived cancellation of its Actions job. */
 export function stopPreviousPreviewWorkerCommand(): string {
-  return `for pid in $(pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' || true); do
+  return `for pid in $(pgrep -f '^bash /workspace/run-kortix-preview(-suite)?\\.sh$' || true); do
   pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
   case "$pgid" in ''|*[!0-9]*) continue ;; esac
   kill -TERM -- "-$pgid" 2>/dev/null || true
 done
 for _ in $(seq 1 10); do
-  pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' >/dev/null || exit 0
+  pgrep -f '^bash /workspace/run-kortix-preview(-suite)?\\.sh$' >/dev/null || exit 0
   sleep 1
 done
-for pid in $(pgrep -f '^bash /workspace/run-kortix-preview\\.sh$' || true); do
+for pid in $(pgrep -f '^bash /workspace/run-kortix-preview(-suite)?\\.sh$' || true); do
   pgid="$(ps -o pgid= -p "$pid" | tr -d ' ')"
   case "$pgid" in ''|*[!0-9]*) continue ;; esac
   kill -KILL -- "-$pgid" 2>/dev/null || true
@@ -98,8 +100,6 @@ export interface SandboxPreviewDeploymentInput {
    * Postgres volume (and your signed-in session) across pushes.
    */
   branchEnv?: string;
-  /** Run the full suite inside the environment after it comes up. Default true. */
-  runTests?: boolean;
   /**
    * The stable origin the environment is reached at, when an operator fronts it
    * with a proxy. The stack is configured with this rather than with the
@@ -490,12 +490,6 @@ export async function deployPlatinumPreview(
           1,
         ),
     });
-    // An ephemeral PR preview's suite creates real session boxes, and a gate
-    // run has nobody left to use them. Stop them now rather than after an idle
-    // timeout: their disks stay for inspection and a session resumes on open.
-    // A persistent branch environment is a place people work: a redeploy must
-    // not interrupt its sessions, so they are left to its deadline reaper.
-    if (!identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
     const result: SandboxPreviewResult = {
       provider: 'platinum',
       exitCode,
@@ -509,10 +503,7 @@ export async function deployPlatinumPreview(
     await writeDeploymentResult(input.root, result, input);
     return result;
   } catch (error) {
-    if (launched) {
-      if (!identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
-      throw error;
-    }
+    if (launched) throw error;
     // Clean up only a sandbox THIS run created. Deleting a reused branch
     // environment would throw away the stable origin it exists to hold — and a
     // failed deploy is a reason to look at it, not to destroy it.
@@ -528,6 +519,87 @@ export async function deployPlatinumPreview(
  * sandbox is named after the BRANCH, so looking only for the PR-named one would
  * leave it running forever — a branch environment has no expiry to fall back on.
  */
+export interface SandboxPreviewSuiteInput {
+  repository: string;
+  sha: string;
+  prNumber: number;
+  runId: string;
+  runAttempt: string;
+  root: string;
+  /** The sandbox this run's deploy step returned (`sandbox_id` output). */
+  sandboxId: string;
+  platinum: { apiUrl: string; apiKey: string };
+  branchEnv?: string;
+}
+
+/**
+ * Run `pnpm test -- --target-full` inside the preview sandbox the deploy step
+ * of this workflow run just proved healthy. Returns the suite's exit code;
+ * throws PreviewInfrastructureError when Platinum itself fails.
+ */
+export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): Promise<number> {
+  if (!input.platinum.apiKey) throw new PreviewInfrastructureError('PLATINUM_API_KEY is required');
+  if (!/^[a-z0-9_-]+$/i.test(input.sandboxId)) {
+    throw new PreviewInfrastructureError(`invalid preview sandbox id: ${input.sandboxId}`);
+  }
+  const api = new PlatinumApi(input.platinum.apiUrl, input.platinum.apiKey);
+  const identity = previewSandboxIdentity(input);
+  const statusPath = previewSuiteStatusPath(input.runId, input.runAttempt);
+  const logPath = '/workspace/kortix-preview/kortix-preview.log';
+  let launched = false;
+  try {
+    // Stream only what the suite appends, not the deploy's lines above it.
+    // Measured before the launch, so no suite line can precede the offset.
+    const logStart = Number((await statPlatinum(api, input.sandboxId, logPath, 1))?.size ?? 0);
+    await api.write(
+      `${input.sandboxId}:/workspace/run-kortix-preview-suite.sh`,
+      buildPreviewSuiteScript({ prNumber: input.prNumber, sha: input.sha, statusPath }),
+      '0755',
+    );
+    const launch = await execPlatinum(api, input.sandboxId, [
+      'bash',
+      '-lc',
+      'setsid -f /workspace/run-kortix-preview-suite.sh >/workspace/kortix-preview/suite.log 2>&1 </dev/null',
+    ]);
+    if ((launch.exit_code ?? 0) !== 0) {
+      throw new Error(`Platinum preview suite launch failed: ${launch.stderr ?? ''}`);
+    }
+    launched = true;
+    const exitCode = await observePlatinumWorker({
+      startedAt: Date.now(),
+      timeoutMs: PREVIEW_TIMEOUT_MS,
+      checkExitCode: async () => {
+        const status = await statPlatinum(api, input.sandboxId, statusPath, 1);
+        if (!status) return null;
+        const bytes = await api.read(input.sandboxId, statusPath, undefined, undefined, 1);
+        const value = Number(new TextDecoder().decode(bytes).trim());
+        if (!Number.isInteger(value)) throw new Error('Platinum preview suite wrote an invalid exit code');
+        return value;
+      },
+      statLog: async () => {
+        const stat = await statPlatinum(api, input.sandboxId, logPath, 1);
+        return stat ? { ...stat, size: Math.max(0, Number(stat.size ?? 0) - logStart) } : stat;
+      },
+      readLog: (offset, limit) =>
+        api.read(input.sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
+    });
+    await downloadPlatinumArtifacts(api, input.sandboxId, input.root).catch((error) => {
+      console.warn(`[sandbox-preview] Platinum result download failed: ${String(error)}`);
+    });
+    return exitCode;
+  } catch (error) {
+    if (launched) throw error;
+    throw new PreviewInfrastructureError('Platinum preview suite infrastructure failed', error);
+  } finally {
+    // An ephemeral PR preview's suite creates real session boxes, and a gate
+    // run has nobody left to use them. Stop them now rather than after an idle
+    // timeout: their disks stay for inspection and a session resumes on open.
+    // A persistent branch environment is a place people work, so its sessions
+    // are left to its deadline reaper.
+    if (launched && !identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
+  }
+}
+
 export async function teardownPlatinumPreview(input: {
   apiUrl: string;
   apiKey: string;

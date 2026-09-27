@@ -5,8 +5,10 @@
  * the one funnel every turn passes through: the HTTP proxy calls it, and so
  * does the server-side prompt queue (`session-lifecycle/engine.ts`). The gate
  * is `isTurnStartRequest`, so the OpenCode ports 4096/4097 are covered too —
- * `shouldSyncProjectEnvBeforeProxy` is port-8000-only and would have left a
- * hole exactly where a verified reload had swapped which half is live.
+ * the env-sync gate beside it (`isTurnStartEnvSync`) is now the SAME predicate
+ * minus `/summarize`, so the two can no longer disagree about one request. Its
+ * predecessor was port-8000-only and left a hole exactly where a verified
+ * reload had swapped which half is live.
  *
  * WHAT IT COSTS A CURRENT BOX. Nothing, in the common case. Two memos:
  *
@@ -65,6 +67,13 @@ import {
   lastKnownRunningRelease,
   noteRunningRelease,
 } from '../../config-releases/running-release';
+import {
+  __clearRunningAssetsForTests,
+  forgetRunningAssets,
+  lastKnownAssetVerdict,
+  noteRunningAssets,
+  shouldReportPinned,
+} from '../../runtime-assets/running-assets';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { ttlMemo } from '../../shared/ttl-memo';
@@ -103,6 +112,7 @@ export function invalidateDesiredRelease(projectId: string): void {
 
 export function __resetTurnStartConvergenceForTests(): void {
   __clearRunningReleasesForTests();
+  __clearRunningAssetsForTests();
   desiredReleases.clear();
   sessionMemo.clear();
 }
@@ -292,9 +302,52 @@ export interface TurnStartConvergenceDeps {
 async function probeRunningRelease(sessionId: string): Promise<string | null | undefined> {
   const { readSandboxConfigState } = await import('./session-reload');
   const state = await readSandboxConfigState({ sessionId }).catch(() => null);
+  // The SAME health read answers both questions. Learning the runtime-asset
+  // verdict here is what makes the asset lane cost the turn path ZERO network
+  // calls: it never asks a box anything the config gate was not already asking.
+  if (state?.reachable) await noteAssetsFromHealth(sessionId, state.runtime);
   if (!state?.reachable || !state.configReleases || !state.release) return undefined;
   noteRunningRelease(sessionId, state.release.release_id);
   return state.release.release_id;
+}
+
+/**
+ * Record what a health read said about this box's runtime assets, and shout once
+ * if the box has latched updates off.
+ *
+ * Never throws and never blocks anything: it is called from inside a probe that
+ * is itself optional.
+ */
+async function noteAssetsFromHealth(
+  sessionId: string,
+  runtime: import('../../runtime-assets/daemon-runtime-report').DaemonRuntimeReport | null,
+): Promise<void> {
+  try {
+    if (!runtime) return;
+    if (runtime.pinned && shouldReportPinned(sessionId)) {
+      // The supervisor rolled a daemon update back and latched updates OFF. This
+      // box will not self-heal; every later pass answers `updates pinned after a
+      // rollback` and stages nothing. It needs a human.
+      logger.error('[runtime-assets] box has latched runtime updates off after a rollback', {
+        session_id: sessionId,
+        build: runtime.build,
+        at: runtime.at,
+      });
+    }
+    const { manifestFingerprint, runningAssetsVerdict } = await import(
+      '../../runtime-assets/manifest'
+    );
+    const verdict = await runningAssetsVerdict(runtime.running);
+    // 'unknown' is never remembered: an older daemon with no `running` block
+    // must not make every turn schedule a pass for ever.
+    if (verdict === 'unknown') return;
+    noteRunningAssets(sessionId, await manifestFingerprint(), verdict);
+  } catch (error) {
+    logger.warn('[runtime-assets] could not record a box\'s asset verdict', {
+      session_id: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 const defaultDeps: TurnStartConvergenceDeps = {
@@ -374,4 +427,121 @@ export async function convergeBeforeTurnStart(
     });
     return done('skipped', null);
   }
+}
+
+// ── The runtime-asset lane ──────────────────────────────────────────────────
+//
+// THE ONE SENTENCE EVERY LATER REVIEWER NEEDS, and the reason this file has two
+// halves that look alike and behave differently:
+//
+//   CONFIG BLOCKS THE TURN. BINARIES MUST NOT.
+//
+// Config changes what the agent IS, so `convergeBeforeTurnStart` above AWAITS,
+// and a stale box pays a measured 10,287-10,907 ms. The daemon, the CLI, the
+// managed-skill overlay and OpenCode are ~96 MB, ~104 MB, ~373 KB and ~167 MB.
+// A box one turn behind on the CLI is the state that already exists today; a box
+// that makes the user wait for those bytes is a regression. So everything below
+// DETECTS and SCHEDULES. It never applies, and it is never awaited on the send
+// path. Do not "just await it".
+//
+// WHY IT COSTS A CURRENT BOX NOTHING. Two in-process map reads and no network
+// call at all. The one and only network call in the whole lane is the health GET
+// the config gate above ALREADY makes — `probeRunningRelease` records the asset
+// verdict from the same response. When the config gate takes its memo-hit path
+// and never probes, the asset memo may be cold; a cold memo fires a probe
+// DETACHED and lets the verdict land for the NEXT send, rather than making this
+// one pay ~200 ms for it.
+
+export type AssetConvergenceDecision =
+  /** The API last saw this box current for THIS manifest. Nothing ran. */
+  | 'current'
+  /** It was behind: one `POST /kortix/refresh`, fire-and-forget. */
+  | 'scheduled'
+  /** Nothing is known: one detached health read, so the NEXT send knows. */
+  | 'probe-scheduled'
+  /** Could not even ask. A turn is never affected by this. */
+  | 'skipped';
+
+export interface AssetConvergenceDeps {
+  fingerprint: () => Promise<string>;
+  lastVerdict: (sessionId: string, fingerprint: string) => 'current' | 'behind' | undefined;
+  /** `POST /kortix/refresh?restart=0`. Returns immediately; never awaited. */
+  refresh: (sessionId: string, context: string) => void;
+  /** One health read, detached. Fills the memo for the next send. */
+  probe: (sessionId: string) => Promise<unknown>;
+  /** Drop what we knew, so the next send re-measures instead of re-sending. */
+  forget: (sessionId: string) => void;
+}
+
+function defaultAssetDeps(): AssetConvergenceDeps {
+  return {
+    // DYNAMIC imports, same reason as `converge` above: this gate runs on every
+    // turn start from `sandbox-proxy/routes/preview.ts`, and a static edge would
+    // pull the manifest graph (which hashes ~200 MB of binary on first use) and
+    // the whole reload graph into the proxy's module graph. A box that is
+    // already current never reaches either.
+    fingerprint: async () => (await import('../../runtime-assets/manifest')).manifestFingerprint(),
+    lastVerdict: lastKnownAssetVerdict,
+    forget: forgetRunningAssets,
+    refresh: (sessionId, context) => {
+      void import('./sandbox-runtime-refresh').then(({ scheduleSandboxRuntimeRefresh }) =>
+        scheduleSandboxRuntimeRefresh(sessionId, context),
+      );
+    },
+    probe: (sessionId) => probeRunningRelease(sessionId),
+  };
+}
+
+/**
+ * Awaitable core — exported so the decision is asserted without timers.
+ * Production call sites use {@link scheduleAssetConvergence}.
+ *
+ * NEVER throws.
+ */
+export async function convergeAssetsInBackground(
+  sessionId: string,
+  deps: AssetConvergenceDeps = defaultAssetDeps(),
+): Promise<AssetConvergenceDecision> {
+  try {
+    const fingerprint = await deps.fingerprint();
+    const verdict = deps.lastVerdict(sessionId, fingerprint);
+    // A verdict taken against ANOTHER manifest reads as `undefined` here, which
+    // is the rolling-deploy guard: two API versions serve two manifests, the
+    // box's epoch guard refuses to go backwards, and a stale `behind` would
+    // otherwise re-schedule a pass the box will refuse for the whole rollout.
+    if (verdict === 'current') return 'current';
+    if (verdict === 'behind') {
+      // The existing route, the existing single-flight, no new probe: the
+      // daemon's `/kortix/refresh` already schedules `ensureLatestKortixAssets`,
+      // which is `inFlight`-guarded, and the pass itself downloads nothing when
+      // the artifact is already staged.
+      deps.refresh(sessionId, 'turn-start');
+      // REFRESH ONCE, THEN RE-MEASURE. Leaving the `behind` entry in place would
+      // have every turn inside the 10-minute TTL POST another refresh and stack
+      // `scheduleSandboxRuntimeRefresh` retry ladders on one box. Forgetting it
+      // makes the next send a cold memo, which probes and records what the box
+      // actually did with this one.
+      deps.forget(sessionId);
+      return 'scheduled';
+    }
+    // Detached AND swallowed: a probe that rejects must not surface as an
+    // unhandled rejection on a path whose whole contract is that a turn never
+    // notices it.
+    void deps.probe(sessionId).catch(() => undefined);
+    return 'probe-scheduled';
+  } catch {
+    // A turn is never affected by this lane, including by its own failures.
+    return 'skipped';
+  }
+}
+
+/**
+ * Fire-and-forget form for the turn path. Returns SYNCHRONOUSLY, never throws,
+ * and is never awaited — that is the contract, not an implementation detail.
+ */
+export function scheduleAssetConvergence(
+  sessionId: string,
+  deps: AssetConvergenceDeps = defaultAssetDeps(),
+): void {
+  void convergeAssetsInBackground(sessionId, deps).catch(() => 'skipped');
 }

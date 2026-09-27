@@ -47,7 +47,8 @@ export function planReviewVerdict(
 }
 
 const VERDICTS_BY_KIND: Record<ReviewItemKind, ReviewVerdict[]> = {
-  // No Close on a change (Jay, 2026-09-21): merge it or send it back.
+  // The footer's verdicts. A change's Close (`dismiss`) is not among them: it
+  // is the sheet's last row, apart from Merge (Jay, 2026-09-21 / 2026-09-27).
   change: ['approve', 'changes'],
   approval: ['approve', 'reject'],
   output: ['approve', 'changes', 'dismiss'],

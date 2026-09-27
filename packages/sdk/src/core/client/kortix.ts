@@ -505,6 +505,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.setDefaultConnection(projectId, ...a),
       rename: (...a: DropFirst<Parameters<typeof P.renameConnection>>) =>
         P.renameConnection(projectId, ...a),
+      share: (...a: DropFirst<Parameters<typeof P.shareConnection>>) =>
+        P.shareConnection(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>

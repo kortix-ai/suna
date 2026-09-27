@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   PICKER_SEARCH_THRESHOLD,
   agentDisplayName,
-  composerPillLabel,
+  composerChip,
   pickerSections,
   homeAgentName,
   pickableAgents,
@@ -48,17 +48,49 @@ describe('picker sheet sections', () => {
   });
 });
 
-describe('composer pill label', () => {
-  test('model name alone, or with the thinking level', () => {
-    expect(composerPillLabel('Sonnet 5', null)).toBe('Sonnet 5');
-    expect(composerPillLabel('Sonnet 5', 'high')).toBe('Sonnet 5 · High');
+describe('composer chip (KRTX-247)', () => {
+  test('the agent name, capitalised, not the model, as a low-key ghost chip', () => {
+    expect(composerChip({ connectModel: false, agentName: 'kortix', modelName: 'Sonnet 5' })).toEqual({
+      label: 'Kortix',
+      variant: 'ghost',
+    });
+    expect(composerChip({ connectModel: false, agentName: 'plan', modelName: undefined })).toEqual({
+      label: 'Plan',
+      variant: 'ghost',
+    });
   });
 
-  test('no model resolved yet', () => {
-    expect(composerPillLabel(undefined, null)).toBe('Model');
-    expect(composerPillLabel('', 'high')).toBe('Model');
+  test('no model connected reads "Connect model" as a louder secondary chip, whatever the agent', () => {
+    const connect = { label: 'Connect model', variant: 'secondary' } as const;
+    expect(composerChip({ connectModel: true, agentName: 'kortix', modelName: 'Sonnet 5' })).toEqual(connect);
+    expect(composerChip({ connectModel: true, agentName: null, modelName: null })).toEqual(connect);
   });
 
+  test('no agent resolves: the model name as a ghost chip, else no chip', () => {
+    expect(composerChip({ connectModel: false, agentName: null, modelName: 'Sonnet 5' })).toEqual({
+      label: 'Sonnet 5',
+      variant: 'ghost',
+    });
+    expect(composerChip({ connectModel: false, agentName: undefined, modelName: undefined })).toBeNull();
+    expect(composerChip({ connectModel: false, agentName: '', modelName: '' })).toBeNull();
+  });
+
+  test('agents still loading: the agent the send was made with, never the model name', () => {
+    // A new thread: its sandbox has not listed its agents yet.
+    expect(
+      composerChip({ connectModel: false, agentName: null, pendingAgentName: 'kortix', agentsLoading: true, modelName: 'Sonnet 5' }),
+    ).toEqual({ label: 'Kortix', variant: 'ghost' });
+    expect(
+      composerChip({ connectModel: false, agentName: null, pendingAgentName: null, agentsLoading: true, modelName: 'Sonnet 5' }),
+    ).toBeNull();
+    // Once they load, the resolved agent wins over the pending name.
+    expect(
+      composerChip({ connectModel: false, agentName: 'plan', pendingAgentName: 'kortix', agentsLoading: false, modelName: 'Sonnet 5' }),
+    ).toEqual({ label: 'Plan', variant: 'ghost' });
+  });
+});
+
+describe('thinking level names', () => {
   test('thinking level names', () => {
     expect(variantDisplayName(null)).toBe('Default');
     expect(variantDisplayName('xhigh')).toBe('Xhigh');

@@ -2242,6 +2242,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               ownerId: connection.ownerId,
               actingUserId: connection.ownerId ?? '',
               actingPrincipalIsServiceAccount: false,
+              // Finishing this row's own authorization is not a use of it.
+              audience: 'open',
             })
           ) {
             // Propagate `connected` — a finalize that found no account is NOT

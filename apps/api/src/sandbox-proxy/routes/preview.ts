@@ -64,11 +64,11 @@ import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
   errorMessage,
+  isTurnStartEnvSync,
   jsonProxyError,
   requestedPromptAgent,
   runPrePromptEnvSync,
   secretGrantErrorResponse,
-  shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
 import {
   EFFECTIVE_MESSAGE_ID_HEADER,
@@ -179,12 +179,15 @@ export function forwardsClientEncoding(port: number, remainingPath: string): boo
 // suites that already read these names off `./preview`, keep working.
 export {
   bodyWithoutPromptAgent,
+  isTurnStartEnvSync,
   requestedPromptAgent,
   runPrePromptEnvSync,
   secretGrantErrorResponse,
-  shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
-import { convergeBeforeTurnStart } from '../../projects/lib/turn-start-convergence';
+import {
+  convergeBeforeTurnStart,
+  scheduleAssetConvergence,
+} from '../../projects/lib/turn-start-convergence';
 export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // One deadline write per minute per box for HUMAN preview traffic. Mirrors
@@ -466,23 +469,6 @@ function isConnectionRefusedError(err: unknown): boolean {
   if (codes.some((c) => c === 'ECONNREFUSED')) return true;
   const message = typeof e.message === 'string' ? e.message : '';
   return /econnrefused|connection refused|failed to connect|unable to connect/i.test(message);
-}
-
-/**
- * Does this request START A USER TURN that a missing connector should block?
- *
- * The same shape as `isTurnStartRequest` MINUS `/summarize`. Summarize is
- * compaction, not a user turn: refusing to compact a conversation because Gmail
- * is disconnected would wedge the session instead of protecting it.
- *
- * Built on `isTurnStartRequest` rather than the env-sync predicate
- * (`shouldSyncProjectEnvBeforeProxy`) because that one keys on the
- * client-addressed port, so a request sent straight to :4096 slips past it, and
- * it does not strip the in-box `/proxy/{port}` prefix.
- */
-function isConnectorGatedTurn(port: number, method: string, path: string): boolean {
-  if (!isTurnStartRequest(port, method, path)) return false;
-  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(path.replace(/^\/proxy\/\d+(?=\/)/, ''));
 }
 
 /**
@@ -810,11 +796,19 @@ export async function forwardToSandbox(
   // The AUTH/CONTROL guards below (session-visibility gate + /kortix/env block)
   // key on THIS via carriesSessionData(), which covers BOTH 8000 and opencode's
   // 4096 — Platinum reroutes 4096→8000, Daytona does not, and gating on 8000
-  // alone left the direct-:4096 Daytona path ungated. NOTE:
-  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
-  // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
-  // client actually used (/4096), and env-sync-before-prompt must behave identically
-  // to Daytona, which likewise skips it on the direct 4096 opencode path.
+  // alone left the direct-:4096 Daytona path ungated.
+  //
+  // EVERY TURN-START PREPARATION KEYS ON `upstreamPort` + `remainingPath`, and
+  // there is now ONE predicate for all of them (`isTurnStartEnvSync`, built on
+  // `isTurnStartRequest`). The previous rule — "env-sync stays on the
+  // client-addressed `port` ON PURPOSE, to behave identically to Daytona" — was
+  // wrong, and it made one request get different preparations on different
+  // providers: Platinum rewrote 4096→8000 so the sync ran, Daytona passed 4096
+  // through so it did not, and a prompt at :4096 got the config convergence and
+  // the undeclared-agent drop but no secret refresh and no grant re-mint.
+  // `redirectPrefix`/`X-Forwarded-Prefix` DO still key on the client-addressed
+  // `port`, and that one is genuinely on purpose: the prefix must reflect the
+  // URL the client actually used (/4096).
   const ingressRequest = {
     port,
     path: remainingPath,
@@ -827,7 +821,7 @@ export async function forwardToSandbox(
   // the self-renewing lease this design deletes is rebuilt through the proxy.
   const sandboxAuthored = access.kind === 'principal' && access.sandboxAuthored;
   // "May the proxy send this body twice?" — its OWN predicate, no longer
-  // borrowed from `shouldSyncProjectEnvBeforeProxy`. The two questions look
+  // borrowed from `isTurnStartEnvSync`. The two questions look
   // alike and are not: env sync is about `/message` + `/prompt_async` carrying
   // a user prompt, non-idempotency is about ANY call that creates a turn — and
   // `/command` does that while needing neither the agent-lock rewrite nor
@@ -938,7 +932,7 @@ export async function forwardToSandbox(
     });
   }
 
-  if (shouldSyncProjectEnvBeforeProxy(upstreamPort, method, remainingPath)) {
+  if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
     const guardProjectId = record.projectId;
     const checked = await dropUndeclaredPromptAgent({
       body: requestBody,
@@ -957,7 +951,10 @@ export async function forwardToSandbox(
     });
     requestBody = checked.body;
   }
-  if (!sandboxAuthored && isConnectorGatedTurn(upstreamPort, method, remainingPath)) {
+  // Was `isConnectorGatedTurn`, a byte-identical second copy of the predicate
+  // below. One definition: "a USER turn", i.e. `isTurnStartRequest` minus
+  // `/summarize`.
+  if (!sandboxAuthored && isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
     const promptAgent = requestedPromptAgent(requestBody, incomingHeaders);
     // Authorization FIRST. The connector gate below reads this agent's manifest,
     // and its refusal names the connectors that agent requires — not something a
@@ -1015,8 +1012,8 @@ export async function forwardToSandbox(
   // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
   // THE one funnel: the HTTP proxy and the server-side prompt queue both
   // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
-  // 4097) as well as 8000 — `shouldSyncProjectEnvBeforeProxy` below is
-  // port-8000-only and would leave a hole.
+  // 4097) as well as 8000. The env-sync gate below is now the same predicate
+  // minus `/summarize`, so the two can no longer disagree about one request.
   //
   // The position is load-bearing. This runs BEFORE `claimPromptDelivery` and
   // before the first upstream fetch, so an OpenCode swap here cannot lose a
@@ -1029,6 +1026,14 @@ export async function forwardToSandbox(
   if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
     const converged = await convergeBeforeTurnStart(record.sessionId);
     ptl.mark('config-converge');
+    // …and the BINARIES, which must not block. `convergeBeforeTurnStart` above
+    // awaits because config changes what the agent IS; the daemon, the CLI, the
+    // overlay and OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB and a box
+    // one turn behind on them is the state that exists today. This call returns
+    // synchronously, never throws, and adds no network call at all to a box the
+    // API last saw current — it reads two in-process maps, and its only probe is
+    // the health GET the gate above already made. Do not await it.
+    scheduleAssetConvergence(record.sessionId);
     if (converged.decision !== 'current' && converged.decision !== 'skipped') {
       console.log('[PREVIEW] turn-start config convergence', {
         session_id: record.sessionId,
@@ -1223,7 +1228,7 @@ export async function forwardToSandbox(
       const previewUrl = ingress.url;
       const targetUrl = ingressTargetUrl(ingress, remainingPath + queryString);
 
-      if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+      if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
         // The agent-lock 409 and the project.agent.read 403 used to live here.
         // They now run in `agentSwitchRefusal`, above the dedupe claim and above

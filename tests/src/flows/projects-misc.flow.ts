@@ -7,6 +7,8 @@
  * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from '../core/flow';
+import { withDb } from '../fixtures/chat';
+import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixtures/database-project';
 
 // PROJ-2 — BYO repo create. A non-GitHub repo_url is rejected at the
 // normalizeRepoUrl boundary (400) before any GitHub round-trip; MEMBER /
@@ -306,6 +308,117 @@ flow(
         );
       r.status([400, 403, 404]);
     });
+  },
+);
+
+// PROJ-38 — turn-permission relay. The daemon reports OpenCode
+// `permission.asked`; the route pushes "needs your approval" once per request
+// id and never answers the permission. Only the session's own sandbox
+// credential may call it: a user token would let any member push another
+// member's devices. The sandbox credential is a project PAT bound to a
+// synthetic live session (bindDatabaseSessionCredential).
+flow(
+  'PROJ-38',
+  { domain: 'projects', routes: ['POST /v1/projects/:projectId/turn-permission'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const base = { projectId: p.id };
+    const target = '/v1/projects/:projectId/turn-permission';
+    const accountId = await withDb(ctx, async (db) =>
+      (await db.query('SELECT account_id FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]
+        .account_id as string,
+    );
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: p.id,
+      accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    const otherSessionId = await createDatabaseSession(ctx.env, {
+      projectId: p.id,
+      accountId,
+      userId: ctx.P.OWNER.userId!,
+    });
+    let tokenId: string | null = null;
+    try {
+      await ctx.step('ANON → 401', async () => {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+        r.status(401);
+      });
+      await ctx.step('OWNER user token on its own session → 403 (sandbox credential only)', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+        r.status(403);
+      });
+      await ctx.step('NONMEMBER → 403/404', async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post(target, { session_id: sessionId, request_id: 'per_1' }, { params: base });
+        r.status([403, 404]);
+      });
+
+      const minted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('proj37') }, { params: base });
+      minted.status(201);
+      const token = minted.json<{ token_id: string; secret_key: string }>();
+      tokenId = token.token_id;
+      await bindDatabaseSessionCredential(ctx.env, {
+        tokenId: token.token_id,
+        commandId: crypto.randomUUID(),
+        sessionId,
+        accountId,
+        projectId: p.id,
+      });
+      const sandbox = () => ctx.client.withBearer(token.secret_key, 'session sandbox credential');
+      const relay = (body: Record<string, unknown>) => sandbox().post(target, body, { params: base });
+
+      await ctx.step('sandbox credential without session_id → 400', async () => {
+        (await relay({ request_id: 'per_1' })).status(400);
+      });
+      await ctx.step('sandbox credential naming another session of the project → 403', async () => {
+        (await relay({ session_id: otherSessionId, request_id: 'per_1' })).status(403);
+      });
+      await ctx.step('sandbox credential without request_id → 400', async () => {
+        (await relay({ session_id: sessionId })).status(400);
+      });
+      await ctx.step('request_id longer than 256 characters → 400', async () => {
+        (await relay({ session_id: sessionId, request_id: 'p'.repeat(257) })).status(400);
+      });
+      await ctx.step('first relay of a request id with the daemon body → 200 notified:true', async () => {
+        const r = await relay({
+          session_id: sessionId,
+          request_id: 'per_1',
+          opencode_session_id: 'ses_synthetic',
+          permission: 'bash',
+          patterns: ['git push *'],
+        });
+        r.status(200).body().has('$.ok', true).has('$.notified', true);
+      });
+      await ctx.step('a repeat of the same request id → 200 notified:false (one push per request)', async () => {
+        (await relay({ session_id: sessionId, request_id: 'per_1' }))
+          .status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.notified', false);
+      });
+      await ctx.step('a new request id in the same session → 200 notified:true', async () => {
+        (await relay({ session_id: sessionId, request_id: 'per_2' })).status(200).body().has('$.notified', true);
+      });
+    } finally {
+      if (tokenId) {
+        await ctx.client
+          .as(ctx.P.OWNER)
+          .del('/v1/projects/:projectId/cli-token/:tokenId', { params: { ...base, tokenId } })
+          .catch(() => {});
+      }
+      await withDb(ctx, async (db) => {
+        await db.query('DELETE FROM kortix.session_sandboxes WHERE sandbox_id = $1::uuid', [sessionId]);
+        await db.query('DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)', [[sessionId, otherSessionId]]);
+      }).catch(() => {});
+    }
   },
 );
 

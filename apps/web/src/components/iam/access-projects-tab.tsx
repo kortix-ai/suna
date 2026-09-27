@@ -173,7 +173,8 @@ interface ResourceGrantEntry {
   resource_type: 'agent' | 'skill';
   resource_id: string;
   expires_at: string | null;
-  source?: 'direct' | 'group';
+  /** `project` = granted to everyone in the project, not to this row. */
+  source?: 'direct' | 'group' | 'project';
   group_id?: string | null;
   group_name?: string | null;
 }
@@ -227,15 +228,21 @@ function agentGrantsOf(grants: ResourceGrantEntry[] | undefined): ResourceGrantE
  * instead of agents renders "Agents: 2 of 3" for a person who reaches one.
  * Direct rows win, so `directAgentIds` below still filters correctly.
  */
-function distinctAgentGrants(grants: ResourceGrantEntry[]): ResourceGrantEntry[] {
+export function distinctAgentGrants(grants: ResourceGrantEntry[]): ResourceGrantEntry[] {
   const byResource = new Map<string, ResourceGrantEntry>();
   for (const grant of grants) {
     const existing = byResource.get(grant.resource_id);
-    if (!existing || (existing.source === 'group' && grant.source !== 'group')) {
+    if (!existing || (!isDirectGrant(existing) && isDirectGrant(grant))) {
       byResource.set(grant.resource_id, grant);
     }
   }
   return [...byResource.values()];
+}
+
+/** A grant that names this row itself — not one inherited through a group or
+ *  given to everyone in the project. Only these are this row's to edit. */
+export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolean {
+  return grant.source !== 'group' && grant.source !== 'project';
 }
 
 /** "via account admin" / "via Engineering +1 more" / "no access". `null` for
@@ -1130,7 +1137,7 @@ function MemberAccessRow({
     : roleValueLabel('project', displayRole, undefined, tI18nComplete);
 
   const agentGrants = distinctAgentGrants(agentGrantsOf(member.resource_grants));
-  const directAgentIds = agentGrants.filter((g) => g.source !== 'group').map((g) => g.resource_id);
+  const directAgentIds = agentGrants.filter(isDirectGrant).map((g) => g.resource_id);
   const expiresAt = policy ? policy.expires_at : (member.expires_at ?? null);
   const via = accessVia(member);
   const inheritedFrom = (member.group_sources ?? []).map((g) => g.group_name);

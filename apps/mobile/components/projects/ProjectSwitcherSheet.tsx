@@ -23,14 +23,18 @@
  * (a root-stack replace; see the prop). The last-project store follows from
  * `ProjectScreen` as it always has.
  *
- * `+` and the empty state's "Create project" open `NewProjectSheet` preset to
- * the picked account; the chip row's last "New account" chip opens the
- * existing `NewAccountSheet`. Both are a real second `BottomSheetModal`, so
- * this sheet dismisses itself first (`go`) — a `dismiss()` inside `go` must not fire `onClose` (the caller
- * would think the whole switcher closed), so `handleDismiss` swallows one
- * dismiss per `go` call via `suppressCloseRef`. New account returns to this
- * sheet, on the fresh account's (empty) project list; New project finishes
- * the flow like a project row tap.
+ * Creating happens on the web (KRTX-246). `+` and the empty state's
+ * "Create project" open the "Create a project on the web" hand-off
+ * (`WebHandoffSheet`), the Account tab's "New account" row the "Create an
+ * account on the web" one. This sheet dismisses itself first and
+ * `handleDismiss` opens the hand-off once it is gone (never two overlays);
+ * that dismiss does not fire `onClose`, so the parent's `open` stays true.
+ * Not now (or a swipe) presents this sheet again (`onCancel`). Continue
+ * closes the switcher for real (`onClose`), then opens web
+ * `/new?account=<picked account>` or the web account list in an in-app auth
+ * session (`useWebCreateHandoff`); on return a project that did not exist
+ * before opens like a project row tap, and a new account with no project is
+ * handed to `onAccountSelect`.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -43,21 +47,25 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
-import { KortixBottomSheetModal, useSheetBackground } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useSheetBackground, type SheetRef } from '@/components/kortix/sheet';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { FloatingTabCapsule, type FloatingTabItem } from '@/components/navigation/FloatingTabBar';
 import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
-import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
-import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
+import { useWebCreateHandoff } from '@/components/projects/useWebCreateHandoff';
+import { WebHandoffSheet } from '@/components/session/WebHandoffSheet';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { haptics } from '@/lib/haptics';
 import { useProjects } from '@/lib/projects/hooks';
 import { filterProjectsByQuery, projectHref, shouldShowProjectSearch } from '@/lib/projects/switcher';
+import { newAccountWebUrl, newProjectWebUrl } from '@/lib/projects/web-project-links';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { sheetOpenMove } from '@/lib/ui/sheet-open';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
+
+type Handoff = 'project' | 'account';
 
 /** The bottom tabs: the old root tab bar's items and icons, Account left, Projects right (Jay, 2026-09-23). */
 const SWITCHER_TABS: FloatingTabItem[] = [
@@ -131,13 +139,11 @@ export function ProjectSwitcherSheet({
   const [query, setQuery] = useState('');
   // The header's tab list: Account (pick whose projects) or Projects (pick one).
   const [tab, setTab] = useState<'account' | 'projects'>('projects');
-  const [showNewAccount, setShowNewAccount] = useState(false);
-  const [showNewProject, setShowNewProject] = useState(false);
 
-  // `go()` dismisses this sheet to open a real second BottomSheetModal
-  // (New account / New project). That dismiss must not read as the user
-  // closing the whole switcher — `handleDismiss` swallows the next one.
-  const suppressCloseRef = useRef(false);
+  const newProjectHandoffRef = useRef<SheetRef>(null);
+  const newAccountHandoffRef = useRef<SheetRef>(null);
+  // The hand-off to open once this sheet has closed (`handleDismiss`).
+  const pendingHandoffRef = useRef<Handoff | null>(null);
   // True while this sheet is on screen: set on present, cleared by gorhom's
   // onDismiss. See `sheetOpenMove`.
   const presentedRef = useRef(false);
@@ -145,23 +151,15 @@ export function ProjectSwitcherSheet({
     presentedRef.current = true;
     sheetRef.current?.present();
   }, []);
-  // Set when a child sheet (New account / New project) finishes by creating
-  // something. That child's own onDismiss still fires afterwards, and it must
-  // not read as a cancel. Cleared each time `go` opens a child.
-  const childFinishedRef = useRef(false);
-  const go = useCallback((fn: () => void) => {
-    suppressCloseRef.current = true;
-    childFinishedRef.current = false;
-    sheetRef.current?.dismiss();
-    setTimeout(fn, 160);
-  }, []);
   const handleDismiss = useCallback(() => {
     presentedRef.current = false;
-    if (suppressCloseRef.current) {
-      suppressCloseRef.current = false;
-      return;
-    }
-    onClose();
+    const handoff = pendingHandoffRef.current;
+    pendingHandoffRef.current = null;
+    // Closed to show a hand-off: not a close of the switcher (`open` stays
+    // true until the hand-off continues or is cancelled).
+    if (handoff === 'project') newProjectHandoffRef.current?.open();
+    else if (handoff === 'account') newAccountHandoffRef.current?.open();
+    else onClose();
   }, [onClose]);
 
   const selectedAccountIdRef = useRef(selectedAccountId);
@@ -230,57 +228,49 @@ export function ProjectSwitcherSheet({
     [currentProjectId, setSelectedAccountId, onProjectOpen, goToProject]
   );
 
-  const openNewProject = useCallback(() => {
-    haptics.tap();
-    go(() => setShowNewProject(true));
-  }, [go]);
+  // The account web `/new` preselects: the chip the user was on, captured at
+  // the tap — closing this sheet resets `chipAccountId` to null.
+  const handoffAccountIdRef = useRef<string | null>(null);
+  // Close this sheet; `handleDismiss` opens the hand-off once it is gone.
+  const openHandoff = useCallback(
+    (handoff: Handoff) => {
+      haptics.tap();
+      handoffAccountIdRef.current = chipAccountId;
+      pendingHandoffRef.current = handoff;
+      sheetRef.current?.dismiss();
+    },
+    [chipAccountId]
+  );
+  const openNewProject = useCallback(() => openHandoff('project'), [openHandoff]);
+  const openNewAccount = useCallback(() => openHandoff('account'), [openHandoff]);
 
-  const openNewAccount = useCallback(() => {
-    haptics.tap();
-    go(() => setShowNewAccount(true));
-  }, [go]);
-
-  // A child sheet was cancelled (X or pan down): `go` swallowed this sheet's
-  // dismiss, so the parent's `open` is still true. Present this sheet again,
-  // so the user lands back where they were and `open` matches what is on
-  // screen. Re-presenting (not calling `onClose`) keeps the two paths the
-  // same: a created account also returns here. A finished child (created
-  // something) has already moved on, so its late onDismiss does nothing.
-  const handleChildClosed = useCallback(() => {
-    if (childFinishedRef.current) {
-      childFinishedRef.current = false;
-      return;
-    }
+  // Not now / swipe on a hand-off: back to this sheet, as it was.
+  const handleHandoffCancel = useCallback(() => {
     if (!presentedRef.current) present();
   }, [present]);
-  const handleNewAccountClosed = useCallback(() => {
-    setShowNewAccount(false);
-    handleChildClosed();
-  }, [handleChildClosed]);
-  const handleNewProjectClosed = useCallback(() => {
-    setShowNewProject(false);
-    handleChildClosed();
-  }, [handleChildClosed]);
 
-  const handleAccountCreated = useCallback((account: KortixAccount) => {
-    childFinishedRef.current = true;
-    setShowNewAccount(false);
-    setChipAccountId(account.account_id);
-    haptics.selection();
-    setTimeout(present, 160);
-  }, [present]);
-
-  const handleProjectCreated = useCallback(
-    (project: KortixProject) => {
-      childFinishedRef.current = true;
-      setShowNewProject(false);
-      setSelectedAccountId(project.account_id);
-      onProjectOpen?.();
+  // Continue: the switcher is done (`onClose`); create on the web, then
+  // follow what was created.
+  const webCreate = useWebCreateHandoff();
+  const runWebCreate = useCallback(
+    async (url: string) => {
       onClose();
-      goToProject(project.project_id);
+      const { project, account } = await webCreate.open(url);
+      if (project) {
+        setSelectedAccountId(project.account_id);
+        onProjectOpen?.();
+        goToProject(project.project_id);
+      } else if (account) {
+        onAccountSelect?.(account.account_id);
+      }
     },
-    [setSelectedAccountId, onProjectOpen, onClose, goToProject]
+    [onClose, webCreate, setSelectedAccountId, onProjectOpen, goToProject, onAccountSelect]
   );
+  const runNewProjectHandoff = useCallback(
+    () => runWebCreate(newProjectWebUrl(KORTIX_WEB_URL, handoffAccountIdRef.current)),
+    [runWebCreate]
+  );
+  const runNewAccountHandoff = useCallback(() => runWebCreate(newAccountWebUrl(KORTIX_WEB_URL)), [runWebCreate]);
 
   return (
     <>
@@ -294,6 +284,7 @@ export function ProjectSwitcherSheet({
             size="icon"
             className="rounded-full"
             onPress={openNewProject}
+            disabled={webCreate.pending}
             accessibilityLabel="New project"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Icon as={PlusIcon} size={20} className="text-foreground" />
@@ -338,7 +329,12 @@ export function ProjectSwitcherSheet({
                   ))}
                 </SettingsGroup>
                 <SettingsGroup>
-                  <SettingsRow icon={PlusIcon} label="New account" right={null} onPress={openNewAccount} />
+                  <SettingsRow
+                    icon={PlusIcon}
+                    label="New account"
+                    right={null}
+                    onPress={webCreate.pending ? undefined : openNewAccount}
+                  />
                 </SettingsGroup>
               </View>
             ) : chipAccountId === null || projectsQuery.isLoading ? (
@@ -358,7 +354,7 @@ export function ProjectSwitcherSheet({
             ) : projects.length === 0 ? (
               <View className="items-center gap-4 py-10">
                 <Text variant="muted">No projects yet</Text>
-                <Button size="lg" className="rounded-full" onPress={openNewProject}>
+                <Button size="lg" className="rounded-full" disabled={webCreate.pending} onPress={openNewProject}>
                   <Text>Create project</Text>
                 </Button>
               </View>
@@ -398,14 +394,19 @@ export function ProjectSwitcherSheet({
         </View>
       </KortixBottomSheetModal>
 
-      <NewAccountSheet open={showNewAccount} onClose={handleNewAccountClosed} onCreated={handleAccountCreated} />
-
-      <NewProjectSheet
-        open={showNewProject}
-        accountId={chipAccountId}
-        accounts={accounts}
-        onClose={handleNewProjectClosed}
-        onCreated={handleProjectCreated}
+      <WebHandoffSheet
+        ref={newProjectHandoffRef}
+        title="Create a project on the web"
+        line="Projects are created on kortix.com."
+        run={runNewProjectHandoff}
+        onCancel={handleHandoffCancel}
+      />
+      <WebHandoffSheet
+        ref={newAccountHandoffRef}
+        title="Create an account on the web"
+        line="Accounts are created on kortix.com."
+        run={runNewAccountHandoff}
+        onCancel={handleHandoffCancel}
       />
     </>
   );

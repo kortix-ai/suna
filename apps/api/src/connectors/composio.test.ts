@@ -9,6 +9,7 @@ import {
   composioUserId,
   executeComposio,
   finalizeComposioConnection,
+  invalidToolkitSlugsFromError,
   probeComposioIdentity,
   type ComposioRuntime,
   type ComposioSessionLike,
@@ -283,6 +284,60 @@ test('composioConnectUrl surfaces any other Composio refusal as a 502, not an op
   await expect(attempt).rejects.toMatchObject({
     status: 502,
     message: expect.stringContaining('Composio refused the authorization'),
+  });
+});
+
+test('invalidToolkitSlugsFromError names the slugs Composio rejected', () => {
+  expect(
+    invalidToolkitSlugsFromError(
+      new Error(
+        '400 {"error":{"message":"Invalid toolkit slugs: anthropic, openai. Please provide valid toolkit slugs.","code":4305,"slug":"ToolRouterV2_InvalidToolkitSlugs","status":400}}',
+      ),
+    ),
+  ).toEqual(['anthropic', 'openai']);
+  expect(invalidToolkitSlugsFromError(new Error('boom'))).toBeNull();
+});
+
+test('composioConnectUrl answers 422, not an unhandled 500, when the toolkit slug is invalid', async () => {
+  // A connector can hold an app slug Composio does not know (typed by hand
+  // through the CLI, or left behind when the catalogue dropped it). The
+  // connector sync already rejects it; the connect attempt must too, as a
+  // controlled 4xx. Before this it threw the raw @composio/client error, which
+  // reached Sentry as a handled 500 (Better Stack pattern b9632119).
+  const runtime = fakeRuntime();
+  runtime.sessions.create = async () => {
+    throw new Error(
+      '400 {"error":{"message":"Invalid toolkit slugs: anthropic. Please provide valid toolkit slugs.",' +
+        '"code":4305,"slug":"ToolRouterV2_InvalidToolkitSlugs","status":400,"request_id":"req-1"}}',
+    );
+  };
+
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'anthropic',
+    app: 'anthropic',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime,
+  });
+  await expect(attempt).rejects.toMatchObject({
+    status: 422,
+    message: expect.stringContaining('anthropic'),
+  });
+});
+
+test('composioConnectUrl answers 422 for an app Composio no longer lists', async () => {
+  const attempt = composioConnectUrl({
+    projectId: 'project-1',
+    slug: 'anthropic',
+    app: 'anthropic',
+    connectionId: 'connection-1',
+    stableUserId: 'kortix-connection:connection-1',
+    runtime: fakeRuntime({ created: session({ toolkit: undefined }) }),
+  });
+  await expect(attempt).rejects.toMatchObject({
+    status: 422,
+    message: expect.stringContaining('anthropic'),
   });
 });
 
@@ -1111,7 +1166,7 @@ test('composioCatalogTools answers a typed 422 when the toolkit has no auth conf
   expect(calls.filter((call) => call.type === 'create')).toHaveLength(1);
 });
 
-test('composioCatalogTools leaves every other Composio refusal untouched', async () => {
+test('composioCatalogTools maps an invalid toolkit refusal to 422', async () => {
   const calls: Array<Record<string, unknown>> = [];
   const runtime = fakeRuntime({ calls });
   runtime.sessions.create = async () => {
@@ -1125,7 +1180,7 @@ test('composioCatalogTools leaves every other Composio refusal untouched', async
       runtime,
       catalogClient: authConfigClient([], calls),
     }),
-  ).rejects.toThrow('Invalid toolkit slugs: anthropic.');
+  ).rejects.toMatchObject({ status: 422, message: expect.stringContaining('anthropic') });
   expect(calls.some((call) => call.type === 'auth-config-list')).toBe(false);
 });
 
@@ -1209,4 +1264,58 @@ test('composioCatalogPage hides a toolkit Composio cannot connect in browse and 
   if (!('toolkits' in category)) throw new Error('expected the category shape');
   expect(category.toolkits.map((item) => item.slug)).toEqual(['gmail']);
   expect(category.total).toBe(1);
+});
+
+test('composioCatalogPage answers a repeated search from the deployment-wide cache', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    calls.push({ type: 'toolkits', options });
+    return { items: [{ slug: 'slack', name: 'Slack', isNoAuth: false }], cursor: undefined, totalPages: 1 };
+  };
+  const runtime = fakeRuntime({ created, calls });
+
+  const first = await composioCatalogPage({ projectId: 'project-1', q: 'Slack', runtime });
+  // Another project, other casing and whitespace: the catalogue is the same.
+  const second = await composioCatalogPage({ projectId: 'project-2', q: ' slack ', runtime });
+  await composioCatalogPage({ projectId: 'project-1', q: 'slack', cursor: 'page-2', runtime });
+
+  expect(second).toEqual(first);
+  expect(calls.filter((call) => call.type === 'toolkits')).toHaveLength(2);
+  expect(calls.filter((call) => call.type === 'create')).toHaveLength(2);
+});
+
+test('composioCatalogPage answers a repeated category from the cache and never caches a failure', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  let fail = true;
+  const runtime: ComposioRuntime = {
+    sessions: fakeRuntime().sessions,
+    toolkits: {
+      async get(query) {
+        calls.push({ type: 'catalog', query });
+        if (fail) {
+          fail = false;
+          throw new Error('Composio 503');
+        }
+        return [
+          {
+            slug: 'gmail',
+            name: 'Gmail',
+            meta: { categories: [{ slug: 'productivity', name: 'Productivity' }] },
+          },
+        ];
+      },
+    },
+  };
+
+  await expect(
+    composioCatalogPage({ projectId: 'project-1', category: 'productivity', runtime }),
+  ).rejects.toThrow('Composio 503');
+  const first = await composioCatalogPage({ projectId: 'project-1', category: 'productivity', runtime });
+  const second = await composioCatalogPage({ projectId: 'project-2', category: 'productivity', q: 'gm', runtime });
+
+  const slugs = (page: typeof first) => ('toolkits' in page ? page.toolkits.map((toolkit) => toolkit.slug) : []);
+  expect(calls).toHaveLength(2);
+  expect(slugs(first)).toEqual(['gmail']);
+  expect(slugs(second)).toEqual(['gmail']);
 });

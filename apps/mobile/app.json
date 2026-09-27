@@ -2,7 +2,7 @@
   "expo": {
     "name": "Kortix",
     "slug": "kortix",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
@@ -124,7 +124,17 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "sounds": [
+            "./assets/sounds/kortix/kortix_complete.wav",
+            "./assets/sounds/kortix/kortix_attention.wav",
+            "./assets/sounds/kortix/kortix_error.wav"
+          ]
+        }
+      ],
       [
         "expo-navigation-bar",
         {
@@ -180,7 +190,7 @@
       }
     },
     "owner": "kortix",
-    "runtimeVersion": "1.4.0",
+    "runtimeVersion": "1.4.1",
     "updates": {
       "url": "https://u.expo.dev/9fca3cff-a291-41c9-88b9-feb8053b990f",
       "checkAutomatically": "ON_LOAD",

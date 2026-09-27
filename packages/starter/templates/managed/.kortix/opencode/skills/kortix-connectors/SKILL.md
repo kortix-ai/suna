@@ -79,12 +79,12 @@ two accounts:
 ```sh
 $ kortix connectors accounts gmail-ffiod0
 
-  LABEL                        OWNER    DEFAULT  CONNECTION ID
-  markokraemer.mail@gmail.com  private  no       11111111-…
-  marko@kortix.ai              private  no       22222222-…
+  LABEL                 OWNER    DEFAULT  CONNECTION ID
+  personal@example.com  private  no       11111111-…
+  work@example.com      private  no       22222222-…
 
-  kortix connectors call gmail-ffiod0 <action> --account "markokraemer.mail@gmail.com"
-  kortix connectors call gmail-ffiod0 <action> --account "marko@kortix.ai"
+  kortix connectors call gmail-ffiod0 <action> --account "personal@example.com"
+  kortix connectors call gmail-ffiod0 <action> --account "work@example.com"
   kortix connectors call gmail-ffiod0 <action> --account me
   kortix connectors call gmail-ffiod0 <action> --account project
 
@@ -96,8 +96,15 @@ $ kortix connectors accounts gmail-ffiod0
 Neither account is pinned, so — asked "check my gmail" with no account named —
 the right move is to ASK which mailbox, not to call `get_profile` on whichever
 account resolves first and report "one account connected". If the human says
-"the kortix one", call with `--account "marko@kortix.ai"` and report: "Checked
-marko@kortix.ai — …".
+"the work one", call with `--account "work@example.com"` and report: "Checked
+work@example.com — …".
+
+**Adding another account.** When the human wants a new one ("connect my other
+Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
+apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
+where the human names the account and chooses who can use it; you are then told
+its name. Call it with `--account "<name>"` from then on. `kortix connectors
+connect` from a shell cannot name a new account.
 </choosing-the-account>
 
 <cli-first-loop>

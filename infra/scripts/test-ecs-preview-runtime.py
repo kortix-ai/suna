@@ -220,15 +220,26 @@ class PreviewBuildIsolation(unittest.TestCase):
     def test_the_preview_pipeline_holds_no_cloud_or_delivery_identity(self):
         # OLD: the deploy and teardown jobs assumed
         # arn:aws:iam::…:role/kortix-gha-preview-deploy through OIDC. The
-        # sandbox runtime needs no AWS identity, so the workflow must not
-        # request one, and the disconnected ECS path must stay disconnected.
-        self.assertNotIn("aws-actions/configure-aws-credentials", WORKFLOW)
-        self.assertNotIn("id-token: write", WORKFLOW)
+        # sandbox runtime needs no AWS identity, so the OLD ECS delivery path
+        # must stay disconnected, and it never used Vercel or Argo CD.
         self.assertNotIn("ecs-preview.sh", WORKFLOW)
         self.assertNotIn("Vercel", WORKFLOW)
         self.assertNotIn("VERCEL_", WORKFLOW)
         self.assertNotIn("Argo CD", WORKFLOW)
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
+        # NEW (2026-09, aws-env migration): the default-branch-only jobs below
+        # (never the PR-code build-* jobs) hold an OIDC token to read
+        # DAYTONA_API_KEY/MORPH_API_KEY from kortix-preview-env through
+        # .github/actions/aws-env — never a direct role assumption. The
+        # invariant this test guards is narrower than "no identity anywhere":
+        # a job that checks out or compiles pull request code must never hold
+        # one. tests/unit/aws-env-action.test.ts pins the same rule for every
+        # job whose checkout ref is the PR head SHA.
+        for name in BUILD_JOBS:
+            section = job(name)
+            self.assertNotIn("aws-actions/configure-aws-credentials", section)
+            self.assertNotIn("id-token", section)
+            self.assertNotIn("aws-env", section)
 
 
 class PreviewRuntimeIsolation(unittest.TestCase):
@@ -613,7 +624,8 @@ class PreviewHealthGate(unittest.TestCase):
         # OLD: the workflow polled https://pr-<n>.preview-api.kortix.com/v1/health
         # for `.environment == "preview"` and `.commit == $COMMIT`, and the
         # frontend for `.commit`. NEW: the bootstrap script runs the same
-        # assertion against the sandbox origin, then runs the deployed suite.
+        # assertion against the sandbox origin; the deployed suite runs as its
+        # own step afterwards, against the commit that assertion proved.
         self.assertIn(
             '\'.status == "ok" and .environment == "preview" and .commit == $sha\'',
             PREVIEW_CORE,
@@ -622,7 +634,9 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertIn("up -d --wait --wait-timeout 300", PREVIEW_CORE)
         self.assertIn("condition: service_healthy", PREVIEW_STACK)
         self.assertIn("pnpm test -- --target-full", PREVIEW_CORE)
-        self.assertIn("Deploy sandbox and run pnpm test -- --target-full", WORKFLOW)
+        self.assertIn("'.status == \"ok\" and .commit == $sha'", PREVIEW_CORE)
+        self.assertIn("- name: Deploy the preview stack", WORKFLOW)
+        self.assertIn("- name: Run pnpm test -- --target-full against the preview", WORKFLOW)
 
     def test_provider_fallback_hides_no_product_failure(self):
         # A failing test run or a controller bug must surface, not trigger a

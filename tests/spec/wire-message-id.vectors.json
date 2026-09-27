@@ -1,5 +1,5 @@
 {
-  "note": "Frozen contract for the OpenCode wire message-id clock, asserted by apps/api (src/projects/wire-message-id.test.ts), packages/sdk (src/core/session/wire-message-id.test.ts) and the sandbox daemon's pi harness (apps/kortix-sandbox-agent-server/src/__tests__/pi-wire-id.test.ts). Three implementations exist on purpose: apps/api has no @kortix/sdk dependency, the SDK's minter reads the browser sync store, and the daemon ships inside the sandbox image. A divergence between them silently drops turns — OpenCode decides 'has this prompt already been answered?' by id order — so it must fail a suite, not zero.",
+  "note": "Frozen contract for the OpenCode wire message-id clock. The implementation is packages/sdk/src/core/session/wire-message-id.ts (the `@kortix/sdk/wire-message-id` subpath). apps/api (src/projects/wire-message-id.ts) and apps/mobile (lib/session/wire-message-id.ts) re-export it and run these vectors through their own names; apps/api compares clocks only through wireIdClockDelta and maxWireIdClock. The one remaining copy is the pi harness in kortixd (apps/kortix-sandbox-agent-server/src/harness/pi/wire-id.ts), a standalone binary with no workspace dependencies; its test asserts its ids match this module's regex and runs `vectors` (dated backdateMs earlier, since pi mints with no backdate) and `delta` against its own ring compare. packages/sdk/src/core/session/wire-id-unwrap.ts (internal) unwraps the clock for display ordering from this module's constants. `vectors` pins the mint; `newest` pins the ordering of transcript ids, including the prefix rule (an id counts by its 12 lowercase-hex prefix, whatever its tail); `delta` pins the signed ring distance between two clocks. The 48-bit clock wraps every 2^36 ms; the last wrap was 2026-08-14T11:19:55.136Z (nowMs 1786706395136 + offsets below).",
   "format": "msg_ + the low 48 bits of (clockMs * 0x1000) as 12 lowercase hex chars + 14 random base62 chars",
   "timeScaleHex": "1000",
   "timeMaskHex": "ffffffffffff",
@@ -35,6 +35,160 @@
       "nowMs": 1755500000000,
       "newestKnownTime": "8bc621000000",
       "expectedTime": "8bbf25e40000"
+    },
+    {
+      "name": "tolerance edge: history exactly 1h above the backdated clock still lifts",
+      "nowMs": 1755500000000,
+      "newestKnownTime": "8bc294cc0000",
+      "expectedTime": "8bc294cc0001"
+    },
+    {
+      "name": "tolerance edge: history 1h + 1 tick above the backdated clock is ignored",
+      "nowMs": 1755500000000,
+      "newestKnownTime": "8bc294cc0001",
+      "expectedTime": "8bbf25e40000"
+    },
+    {
+      "name": "wrap: clock just below the wrap, history above it and still below the wrap: lift",
+      "nowMs": 1786706455136,
+      "newestKnownTime": "fffff8ad0000",
+      "expectedTime": "fffff8ad0001"
+    },
+    {
+      "name": "wrap: history is the last clock value before the wrap: the lift wraps to zero",
+      "nowMs": 1786706455136,
+      "newestKnownTime": "ffffffffffff",
+      "expectedTime": "000000000000"
+    },
+    {
+      "name": "wrap: clock just below the wrap, history just after it: the lift crosses the wrap",
+      "nowMs": 1786706455136,
+      "newestKnownTime": "000007530000",
+      "expectedTime": "000007530001"
+    },
+    {
+      "name": "wrap: tolerance edge across the wrap, history exactly 1h above: lift",
+      "nowMs": 1786706455136,
+      "newestKnownTime": "000360420000",
+      "expectedTime": "000360420001"
+    },
+    {
+      "name": "wrap: tolerance edge across the wrap, history 1h + 1 tick above: ignored",
+      "nowMs": 1786706455136,
+      "newestKnownTime": "000360420001",
+      "expectedTime": "fffff15a0000"
+    },
+    {
+      "name": "wrap: clock just after the wrap, history just before it: history is behind, no lift",
+      "nowMs": 1786706575136,
+      "newestKnownTime": "fffff8ad0000",
+      "expectedTime": "00000ea60000"
+    },
+    {
+      "name": "wrap: backdated clock exactly at the wrap, no history: zero",
+      "nowMs": 1786706515136,
+      "newestKnownTime": null,
+      "expectedTime": "000000000000"
+    }
+  ],
+  "newest": [
+    {
+      "name": "no id in the wire format: null",
+      "nowMs": null,
+      "ids": [
+        "optimistic-1",
+        "prt_x",
+        ""
+      ],
+      "expected": null
+    },
+    {
+      "name": "no wrap: the highest clock",
+      "nowMs": null,
+      "ids": [
+        "msg_8bbf25e40000AAAAAAAAAAAAAA",
+        "msg_8bbf43300000AAAAAAAAAAAAAA",
+        "msg_8b5fe5200000AAAAAAAAAAAAAA"
+      ],
+      "expected": "8bbf43300000"
+    },
+    {
+      "name": "wrap: ids on both sides of the wrap: the post-wrap id is newest",
+      "nowMs": null,
+      "ids": [
+        "msg_fffff8ad0000AAAAAAAAAAAAAA",
+        "msg_000007530000AAAAAAAAAAAAAA"
+      ],
+      "expected": "000007530000"
+    },
+    {
+      "name": "with now: an id more than 1h ahead of now is skipped",
+      "nowMs": 1790267400000,
+      "ids": [
+        "msg_0d43ff670001AAAAAAAAAAAAAA",
+        "msg_1a0d42f86f80AAAAAAAAAAAAAA"
+      ],
+      "expected": "0d43ff670001"
+    },
+    {
+      "name": "wrap: with now just before the wrap, an id seconds past the wrap is newest",
+      "nowMs": 1786706385136,
+      "ids": [
+        "msg_fffff15a0000AAAAAAAAAAAAAA",
+        "msg_000004e20000AAAAAAAAAAAAAA"
+      ],
+      "expected": "000004e20000"
+    },
+    {
+      "name": "prefix rule: an id with a hex clock prefix but a non-wire tail still counts by its clock",
+      "nowMs": null,
+      "ids": [
+        "msg_8bbf25e40000AAAAAAAAAAAAAA",
+        "msg_8bbf43300000_legacy"
+      ],
+      "expected": "8bbf43300000"
+    },
+    {
+      "name": "format rule: an uppercase-hex or non-hex prefix is not a clock",
+      "nowMs": null,
+      "ids": [
+        "msg_8BBF43300000AAAAAAAAAAAAAA",
+        "msg_zzzzzzzzzzzz_legacy",
+        "msg_8bbf25e40000AAAAAAAAAAAAAA"
+      ],
+      "expected": "8bbf25e40000"
+    }
+  ],
+  "delta": [
+    {
+      "name": "no wrap: clock ahead of reference",
+      "clock": "8bbf43300000",
+      "reference": "8bbf25e40000",
+      "expected": "491520000"
+    },
+    {
+      "name": "no wrap: clock behind reference",
+      "clock": "8bbf25e40000",
+      "reference": "8bbf43300000",
+      "expected": "-491520000"
+    },
+    {
+      "name": "equal clocks",
+      "clock": "8bbf25e40000",
+      "reference": "8bbf25e40000",
+      "expected": "0"
+    },
+    {
+      "name": "wrap: a post-wrap clock is ahead of a pre-wrap reference",
+      "clock": "000007530000",
+      "reference": "fffff8ad0000",
+      "expected": "245760000"
+    },
+    {
+      "name": "wrap: a pre-wrap clock is behind a post-wrap reference",
+      "clock": "fffff15a0000",
+      "reference": "000007530000",
+      "expected": "-368640000"
     }
   ]
 }

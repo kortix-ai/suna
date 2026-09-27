@@ -1,12 +1,7 @@
 import { SANDBOX_FS_ROOTS } from '@/features/files/api/runtime-files';
+import { sandboxMediaPath, withoutEdgeQuotes } from '@kortix/shared/tool-output';
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
-
-// Absolute image paths under any daemon-served root (/workspace, /tmp, /home, /opt)
-const SANDBOX_IMAGE_PATH_RE = new RegExp(
-  `(?:${SANDBOX_FS_ROOTS.join('|')})/[^\\s"']+\\.(?:png|jpe?g|gif|webp|svg|bmp|ico)`,
-  'i',
-);
 
 function normalizeWorkspacePath(path: string): string {
   const trimmed = path.trim();
@@ -44,12 +39,12 @@ export function parseImageOutput(output: string | null | undefined): ParsedImage
   }
 
   // 2. Output itself is a (possibly quoted) file path
-  const cleaned = trimmed.replace(/^["']+|["']+$/g, '').trim();
+  const cleaned = withoutEdgeQuotes(trimmed).trim();
   if (IMAGE_EXT_RE.test(cleaned)) {
     return { imagePath: normalizeWorkspacePath(cleaned), directUrl: null };
   }
 
-  // 3. Extract a sandbox path from surrounding text
-  const extractedPath = trimmed.match(SANDBOX_IMAGE_PATH_RE);
-  return { imagePath: extractedPath?.[0] ?? null, directUrl: null };
+  // 3. Extract an absolute image path under any daemon-served root
+  // (/workspace, /tmp, /home, /opt) from surrounding text
+  return { imagePath: sandboxMediaPath(trimmed, SANDBOX_FS_ROOTS, 'image'), directUrl: null };
 }

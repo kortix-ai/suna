@@ -56,6 +56,10 @@ import {
   type SessionConfigRelease,
 } from './session-config-release';
 import {
+  parseDaemonRuntimeReport,
+  type DaemonRuntimeReport,
+} from '../../runtime-assets/daemon-runtime-report';
+import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 
@@ -463,6 +467,16 @@ export interface SandboxConfigState {
   configReleases: boolean;
   /** The health `config` block. Null for a daemon without config releases. */
   release: DaemonConfigReport | null;
+  /**
+   * The health `runtime` block — which runtime-asset bytes this box has on disk,
+   * and whether the supervisor latched updates off after a rollback.
+   *
+   * NOT gated on `configReleases`: the two are independent. A daemon can serve
+   * `runtime` without `config.release.v1`, and `pinned: true` — a box that
+   * crash-looped an update and will not self-heal — must reach the control plane
+   * regardless of which config path the project is on.
+   */
+  runtime: DaemonRuntimeReport | null;
 }
 
 const UNREACHABLE_STATE: SandboxConfigState = {
@@ -473,6 +487,7 @@ const UNREACHABLE_STATE: SandboxConfigState = {
   turnInFlight: null,
   configReleases: false,
   release: null,
+  runtime: null,
 };
 
 /** What the sandbox says it is running right now. */
@@ -499,6 +514,7 @@ export async function readSandboxConfigState(
       turn_in_flight?: unknown;
       capabilities?: unknown;
       config?: unknown;
+      runtime?: unknown;
     };
     const configReleases = hasConfigReleaseCapability(body.capabilities);
     return {
@@ -512,6 +528,7 @@ export async function readSandboxConfigState(
         body.turn_in_flight === true ? true : body.turn_in_flight === false ? false : null,
       configReleases,
       release: configReleases ? parseDaemonConfigReport(body.config) : null,
+      runtime: parseDaemonRuntimeReport(body.runtime),
     };
   } catch {
     return UNREACHABLE_STATE;

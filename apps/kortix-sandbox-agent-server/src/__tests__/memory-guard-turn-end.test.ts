@@ -200,12 +200,10 @@ describe('memory guard turn end', () => {
     expect(end.error_retryable).toBe(false)
   })
 
-  test('with no turn in flight the relay stays unnamed, so it can never close a later turn', async () => {
+  test('with no turn in flight the guard sends no end frame', async () => {
     await runGuardAtPressure({ turnRunning: false })
 
     expect(aborts).toEqual([])
-    expect(turnStreamBodies).toHaveLength(1)
-    expect(turnStreamBodies[0]).toMatchObject({ kind: 'end', status: 'error', error_name: 'SandboxMemoryGuard' })
-    expect(turnStreamBodies[0]).not.toHaveProperty('turn_message_id')
+    expect(turnStreamBodies).toHaveLength(0)
   })
 })

@@ -174,7 +174,9 @@ describe('deriveTurnErrorPresentation — words for each kind of notice', () => 
     });
     expect(row.isAbort).toBe(false);
     expect(row.text).toBe('This turn was stopped because the sandbox was almost out of memory (97% used).');
-    expect(row.suggestion).toContain('Ask the agent to continue');
+    expect(row.suggestion).toContain('ask the agent to continue');
+    expect(row.suggestion).toContain('Stop or reduce heavy background work');
+    expect(row.suggestion).not.toContain('The last command');
     expect(row.suggestion).toContain('sandbox memory at 97% (opencode 513 MB RSS of 3915 MB)');
   });
 

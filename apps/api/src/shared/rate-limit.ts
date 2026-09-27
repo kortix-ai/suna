@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
-import { isUuid } from './validate';
+import { shareIdFromPublicRef } from './public-share-ref';
 import { recordAuditEvent } from './audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from './rate-limit-audit';
 
@@ -287,14 +287,15 @@ export function createSandboxProxyRateLimitMiddleware() {
  */
 export function createPublicSessionShareRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    // Key on the share id when it's a well-formed uuid (every visitor to one
+    // Key on the share id when the ref names one (every visitor to one
     // shared link shares that bucket); otherwise fall back to client IP. This
     // MUST run before the raw param can key the bucket Map — an attacker
     // looping unique garbage ids would otherwise allocate an unbounded number
     // of buckets (the id is never a real share, so it never reaches the
     // handler's own validation) and OOM the process.
-    const rawShareId = c.req.param('shareId');
-    const shareId = isUuid(rawShareId) ? rawShareId : `ip:${requestClientKey(c)}`;
+    // A `kps_` token and its share id name the same share, so both key the
+    // same bucket.
+    const shareId = shareIdFromPublicRef(c.req.param('shareId') ?? '') ?? `ip:${requestClientKey(c)}`;
     const denied = await enforceRateLimit(
       c,
       publicSessionShareLimiter,

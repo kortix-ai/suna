@@ -1,23 +1,30 @@
-Everything from v0.13.32, plus steadier sessions and grouped outputs
+Share connector accounts, mobile push notifications, and pi.dev packages
 
-This release restores everything from v0.13.32, which was rolled back, and adds fixes for live transcripts, sleeping sessions, the file viewer and connectors.
+Share connector accounts with groups and people, mobile push notifications, and pi.dev packages for pi sessions.
 
 ## New
 
-- **Grouped outputs.** When the agent shows several results in a row, such as two screenshots, the session renders one tabbed card instead of a card per result.
-- **Managed model routes.** Each Kortix-managed model routes through its own provider route, and the model picker shows the price for each route.
-- **Wake failures are explained.** When a sandbox fails to wake, the session page shows the failure and when it retries.
+- **Share connector accounts** with specific groups, specific people, or everyone in the project. Anything can also be granted to everyone in a project.
+- **Mobile push notifications** when a turn completes, fails, asks a question, or needs a permission, even while the app is closed. Transcripts can also be shared as a public link from mobile.
+- **pi.dev packages.** pi sessions can load any extension from pi.dev, per project, per agent, or for every session.
+- **Claude Code on the gateway.** Claude Code works fully against `/v1/messages`, and ChatGPT models work from a gateway key.
 
 ## Fixed
 
-- A live session's transcript recovers when a turn ends even if the working signal was missed.
-- A session idle for more than a day wakes again, and a failed start is recovered instead of reported lost.
-- A config update never interrupts the turn it finds running.
-- Kortix owns the `kortix` and `opencode` binaries inside a managed sandbox, so a box cannot end up on a version Kortix cannot heal.
-- The file viewer reloads when the explorer switches between the live workspace and the saved copy.
-- X and other Composio toolkits with their own OAuth connect again, and the Connected tab stays current.
-- Git pushes on branch commits retry a transient failure.
-- Audit writes for one session no longer queue behind each other.
-- A requested Stop keeps its reason in the turn history.
-- Several browser errors from extensions, GPU drivers, closed parent windows and tab discards no longer surface as app errors.
+- A long run whose first prompt has not loaded yet still reads in order.
+- A sandbox's binaries update at a turn boundary instead of waiting for a restart.
+- A restart failure is no longer reported as a lost computer before the provider is asked, and a removed parked box is recovered first.
+- A parked session stays stopped under passive traffic, and the app stops polling a parked or unreachable sandbox.
+- Unconfigured sessions use the project's shared ChatGPT accounts.
+- Bring-your-own Anthropic-compatible providers respect their configured base URL.
+- A session name set at creation is kept.
+- The session audit view loads without 25-second timeouts.
+- Interleaved text in streamed Anthropic responses opens its own content block.
+- An invalid Composio toolkit returns a clear error instead of a server error.
+- Tool output is parsed in linear time on web, mobile and the SDK.
+- Several browser errors no longer surface as app errors.
+- Project routes always run authentication before the route handler.
+- Mobile Review merges work and feel instant, with change-request cards in sessions.
+- Historical session dates and activity ordering are restored for migrated sessions.
+- The web app no longer hits React error #467 while loading translations.
 

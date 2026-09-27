@@ -42,6 +42,81 @@
         "pi"
       ]
     },
+    "harnesses": {
+      "type": "object",
+      "properties": {
+        "pi": {
+          "type": "object",
+          "properties": {
+            "packages": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "anyOf": [
+                      {
+                        "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                      },
+                      {
+                        "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "source"
+                    ],
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "anyOf": [
+                          {
+                            "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                          },
+                          {
+                            "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                          }
+                        ]
+                      },
+                      "extensions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "skills": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "prompts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "themes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "agents": {
       "type": "object",
       "minProperties": 1,
@@ -300,6 +375,95 @@
               "branch"
             ],
             "deprecated": true
+          },
+          "harnesses": {
+            "type": "object",
+            "properties": {
+              "pi": {
+                "type": "object",
+                "properties": {
+                  "packages": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "anyOf": [
+                            {
+                              "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                            },
+                            {
+                              "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "source"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "anyOf": [
+                                {
+                                  "pattern": "^npm:(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+                                },
+                                {
+                                  "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                                }
+                              ]
+                            },
+                            "extensions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "skills": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "prompts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "themes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "anyOf": [
+                        {
+                          "pattern": "^(@[a-z0-9][a-z0-9._-]*\\/)?[a-z0-9][a-z0-9._-]*$"
+                        },
+                        {
+                          "pattern": "^\\.\\/(?!.*(^|\\/)\\.\\.(\\/|$))[^\\s:]+$"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,

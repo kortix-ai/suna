@@ -416,7 +416,22 @@ export function isDocumentStateNotFoundNoise(input: {
   return true;
 }
 
+const EXPECTED_NEXT_RECOVERY_DIGEST = /^(?:NEXT_HTTP_ERROR_FALLBACK;404$|NEXT_REDIRECT;)/;
+const REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES = [
+  'Minified React error #419',
+  'The server could not finish this Suspense boundary',
+] as const;
+
+export function isExpectedNextRecoveryBailoutNoise(input: {
+  message?: unknown;
+  digest?: unknown;
+}): boolean {
+  return EXPECTED_NEXT_RECOVERY_DIGEST.test(normalizeString(input.digest)) &&
+    containsKnownPattern(stripErrorWrappers(normalizeString(input.message)), REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES);
+}
+
 export const REACT_RULES: readonly NoiseRule[] = [
+  { id: 'next-recovery-bailout', appliesTo: 'both', match: isExpectedNextRecoveryBailoutNoise },
   {
     // Recoverable hydration noise (React #418 / "Hydration failed because the
     // server rendered ...") is virtually always the browser mutating the DOM

@@ -11,8 +11,8 @@ import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
-function isBrowserNoiseEvent(event: Sentry.ErrorEvent): boolean {
-  return shouldIgnoreSentryNoiseEvent(event);
+function isBrowserNoiseEvent(event: Sentry.ErrorEvent, hint?: Sentry.EventHint): boolean {
+  return shouldIgnoreSentryNoiseEvent(event, hint);
 }
 
 if (SENTRY_DSN) {
@@ -141,8 +141,8 @@ if (SENTRY_DSN) {
     ],
 
     // Filter out internal/low-value errors before sending
-    beforeSend(event) {
-      if (isBrowserNoiseEvent(event)) {
+    beforeSend(event, hint) {
+      if (isBrowserNoiseEvent(event, hint)) {
         return null;
       }
       return event;

@@ -17,6 +17,7 @@
  */
 
 import type { ToolPart } from '@kortix/sdk';
+import { stripBashMetadata } from '@kortix/shared/tool-output';
 import { isHighlightLang, normalizeLanguage } from '@/lib/code-theme';
 
 export {
@@ -142,8 +143,7 @@ export function partOutput(part: ToolPart): string {
   const cached = OUTPUT_CACHE.get(part);
   if (cached && cached.state === part.state) return cached.output;
 
-  const output = (state.output ?? '')
-    .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
+  const output = stripBashMetadata(state.output ?? '')
     .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
     .trim();
 
@@ -187,19 +187,8 @@ export function isLocalSandboxFilePath(value: string): boolean {
 
 // ─── Markdown detection (web lib/markdown-detect.ts) ─────────────────────────
 
-const MD_SIGNALS: RegExp[] = [
-  /^#{1,6}\s+\S/m,
-  /```/,
-  /\*\*[^*\n]+\*\*/,
-  /(^|[^`])`[^`\n]+`([^`]|$)/,
-  /\[[^\]\n]+\]\([^)\n]+\)/,
-  /^\s*\d+\.\s+\S/m,
-];
-
 /** Conservative: only unambiguous markdown syntax counts. */
-export function looksLikeMarkdown(text: string): boolean {
-  return MD_SIGNALS.some((re) => re.test(text));
-}
+export { looksLikeMarkdown } from '@kortix/shared/tool-output';
 
 // ─── Frontmatter (web components/markdown/markdown-frontmatter.tsx) ──────────
 
@@ -221,7 +210,9 @@ export function parseFrontmatter(content: string): ParsedMarkdown {
   let currentParent: string | null = null;
 
   for (const rawLine of yaml.split(/\r?\n/)) {
-    const line = rawLine.replace(/\s+$/, '');
+    // `trimEnd` drops what `/\s+$/` did; the regex retried a whitespace run
+    // inside the line from every position in it (quadratic on V8).
+    const line = rawLine.trimEnd();
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
     const nested = line.match(/^\s+(?:"([^"]+)"|'([^']+)'|([\w.*/-]+))\s*:\s*(.*)$/);

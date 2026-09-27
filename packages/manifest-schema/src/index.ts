@@ -54,6 +54,7 @@ import {
   rejectChannelsV2,
   validateAgentsV2,
   validateDefaultAgentV2,
+  validateHarnessesV2,
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
@@ -123,6 +124,8 @@ export {
   ENV_NAME_RE,
   GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
@@ -170,6 +173,8 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
+  type HarnessesV2,
+  type PiPackageEntryV2,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -327,6 +332,7 @@ function validateManifestBodyV2(
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
+  validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);

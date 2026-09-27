@@ -139,6 +139,11 @@ export function SessionSiteHeader({
   // who did not create the session.
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
+  // The Share button's accessible name. A member who cannot change access
+  // opens the same dialog read-only, so the name says what they get there.
+  const shareLabel = canManageSharing
+    ? tI18nHardcoded.raw('i18nComplete.text29887a5ff984')
+    : tI18nHardcoded.raw('i18nComplete.textadc01d813da0');
 
   /**
    * The name shown in the header, matched to the sidebar row.
@@ -215,15 +220,6 @@ export function SessionSiteHeader({
             <PencilSimpleIcon />
             {tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53')}
           </DropdownMenuItem>
-          {/* Shown to everyone in the session: the owner changes access here,
-              everyone else reads who has it. */}
-          <DropdownMenuItem className="cursor-pointer" onClick={() => setShareOpen(true)}>
-            <Share />
-            {canManageSharing
-              ? tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f')
-              : tI18nHardcoded.raw('i18nComplete.textadc01d813da0')}
-          </DropdownMenuItem>
-
           <DropdownMenuSeparator />
 
           <DropdownMenuItem
@@ -478,6 +474,35 @@ export function SessionSiteHeader({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* The one Share entry point (it left the session menu). Shown to
+                everyone in the session: the owner changes access and creates
+                the public link here, everyone else reads who has it. `xs` is
+                h-7, the row's 28px control size. Below `md` (the same 768px as
+                `isMobileViewport`) the label hides, the button goes square
+                like its size-7 siblings, and only then the Hint names it. */}
+            {isProjectSession && projectSession && (
+              <Hint
+                side="bottom"
+                sideOffset={4}
+                delayDuration={300}
+                label={shareLabel}
+                open={isMobileViewport ? undefined : false}
+              >
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label={shareLabel}
+                  onClick={() => setShareOpen(true)}
+                  className="cursor-pointer rounded-md active:scale-[0.96] max-md:w-7 max-md:has-[>svg]:px-0"
+                >
+                  <Share />
+                  <span className="hidden md:inline">
+                    {tI18nHardcoded.raw('i18nComplete.text29887a5ff984')}
+                  </span>
+                </Button>
+              </Hint>
+            )}
 
             {/* The DETAIL panel's toggle used to sit here and is gone on
                 purpose: that panel opens with content (a terminal, a browser, a

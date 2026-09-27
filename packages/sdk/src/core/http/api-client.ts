@@ -119,6 +119,22 @@ export const MODEL_NOT_SERVABLE_CODE = 'model_not_servable';
  */
 export const PROVISION_IN_FLIGHT_CODE = 'provision_in_flight';
 
+/**
+ * Stable error code the platform API returns (HTTP 503) when the admin
+ * analytics credit-ledger aggregate cannot complete inside the database
+ * statement budget — in practice a `statement_timeout` (SQLSTATE 57014) on the
+ * `kortix.credit_ledger` platform-wide scan behind
+ * `GET /v1/admin/analytics/usage`. This is an EXPECTED capacity state for a
+ * large ledger, not a server defect, so it must NEVER page Better Stack — the
+ * raw `Failed query: select …` message previously leaked into the 500 body and
+ * reached Sentry as an opaque `ApiError` (pattern `0e4ee10d…`). `makeRequest`
+ * classifies a 503 carrying this code as SILENT to `onError` (Sentry) but still
+ * returns the `ApiError`, so the dashboard can render its own unavailable
+ * state. A genuine 503 (no typed code) still reports. Must stay in sync with
+ * `ANALYTICS_UNAVAILABLE_CODE` in apps/api/src/admin/analytics.ts.
+ */
+export const ANALYTICS_UNAVAILABLE_CODE = 'analytics_unavailable';
+
 const REQUEST_DEADLINE_CODE = 'request_deadline';
 const LEGACY_REQUEST_DEADLINE_MESSAGE = /^Request exceeded the \d+s server processing deadline$/;
 
@@ -133,6 +149,45 @@ const isRequestDeadlineResponse = (
       ? (errorData as { code?: unknown }).code
       : undefined;
   return code === REQUEST_DEADLINE_CODE || LEGACY_REQUEST_DEADLINE_MESSAGE.test(message);
+};
+
+/**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (GitHub edge blip, a momentarily unusable private-mirror credential, a
+ * mid-transfer timeout). The API already classifies the cause out of its OWN
+ * Sentry (`apps/api/src/projects/git/mirror.ts`'s `isTransientGitMirrorError`)
+ * and answers a clean 503 + `Retry-After`; this is the frontend mirror.
+ *
+ * The 503 RESPONSE crosses the boundary: `makeRequest` extracts the message
+ * and calls `onError` → the web host's `handleApiError`, which captures every
+ * 5xx to the FRONTEND Sentry (app 2346967 — a SEPARATE app from the API's
+ * 2346961). That is exactly how Better Stack frontend pattern `b4d05df2…`
+ * (`ApiError: git mirror is temporarily unavailable`, on a session start that
+ * cold-clones the project mirror) reached the frontend telemetry. Treat it as
+ * SILENT here — skip the global `onError` (Sentry) capture — but still return
+ * the `ApiError` so callers can branch on `.code`. A genuine 503 with another
+ * message/code still reports.
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `apps/api/src/projects/git/mirror.ts`. `LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE`
+ * covers a response from an API deployed before the typed code (the same
+ * rollout shim as `LEGACY_REQUEST_DEADLINE_MESSAGE`).
+ */
+const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+const LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE = /^git mirror is temporarily unavailable$/;
+
+const isGitMirrorUnavailableResponse = (
+  status: number,
+  errorData: unknown,
+  message: string,
+): boolean => {
+  if (status !== 503) return false;
+  const code =
+    typeof errorData === 'object' && errorData !== null && 'code' in errorData
+      ? (errorData as { code?: unknown }).code
+      : undefined;
+  return code === GIT_MIRROR_UNAVAILABLE_CODE || LEGACY_GIT_MIRROR_UNAVAILABLE_MESSAGE.test(message);
 };
 
 /**
@@ -345,6 +400,13 @@ async function makeRequest<T = any>(
 
       if (activeController.signal.aborted) throw createAbortError();
       const isRequestDeadline = isRequestDeadlineResponse(response.status, errorData, errorMessage);
+      // Expected, retryable transient git-mirror 503 — classified silent like
+      // the request deadline above (see `isGitMirrorUnavailableResponse`).
+      const isGitMirrorUnavailable = isGitMirrorUnavailableResponse(
+        response.status,
+        errorData,
+        errorMessage,
+      );
       let error: ApiError | Error = new ApiError(errorMessage, {
         status: response.status,
         response: response,
@@ -433,11 +495,23 @@ async function makeRequest<T = any>(
       const isProvisionInFlight =
         response.status === 409 && errorData?.code === PROVISION_IN_FLIGHT_CODE;
 
+      // Expected "the analytics aggregate couldn't finish in its DB budget"
+      // state — same shape as `isProvisionInFlight`, see
+      // `ANALYTICS_UNAVAILABLE_CODE`. A typed 503 must never page Sentry: the
+      // route was previously returning a 500 whose body was the raw Postgres
+      // `Failed query: select …` text, which surfaced as an opaque `ApiError`
+      // (pattern `0e4ee10d…`). The `ApiError` is still returned so the dashboard
+      // renders its own unavailable state.
+      const isAnalyticsUnavailable =
+        response.status === 503 && errorData?.code === ANALYTICS_UNAVAILABLE_CODE;
+
       if (
         showErrors &&
         !isFeatureNotSupported &&
         !isModelNotServable &&
         !isProvisionInFlight &&
+        !isAnalyticsUnavailable &&
+        !isGitMirrorUnavailable &&
         !isRequestDeadline
       ) {
         platformConfig().onError?.(error, errorContext);

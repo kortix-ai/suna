@@ -2,15 +2,12 @@
  * Anonymous, read-only "view this session's conversation" surface for a
  * public share token, read through the SDK's `getPublicSessionShare*`.
  *
- * Every public share created via the SESS-13 CRUD (`preview` or `file`
- * resource type) already proves that the session's owner chose to hand this
- * token to someone outside the account. This module reuses that same proof
- * to unlock a SEPARATE, sanitized capability: read the session's title and a
- * compacted, text-only transcript — entirely server-to-sandbox, no new
- * client-side sandbox access, no dependency on which port/file the share
- * happens to also expose. `resolvePublicShare` (session-public-shares.ts)
- * remains the single 404/410/503 gate; this module only adds what happens
- * AFTER a token resolves.
+ * Only a `transcript` share (minted with `{ transcript: true }`) reaches the
+ * transcript read: `resolvePublicShare(..., { requireTranscript: true })`
+ * refuses `preview` and `file` shares with 404 before this module runs. The
+ * session title is DB-only; the transcript is read server-to-sandbox when the
+ * box is running and from the saved transcript mirror otherwise, so no client
+ * ever gets sandbox access.
  *
  * Sanitization mirrors `projects/lib/session-transcript.ts` (the
  * authenticated per-session transcript digest used by
@@ -35,6 +32,10 @@ import {
   listSandboxOpencodeSessions,
   resolveRootSessionId,
 } from '../projects/opencode-mapping';
+import {
+  type MirrorSnapshot,
+  readSessionTranscriptMirror,
+} from '../projects/lib/session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
 const WORKSPACE_DIRECTORY = '/workspace';
@@ -111,12 +112,35 @@ export interface CompactPublicMessage {
   reasoning_omitted: boolean;
 }
 
+/** Which source answered: the running sandbox, the saved transcript mirror,
+ *  or nothing. `none` is the only value that accompanies `available: false`. */
+export type PublicSessionTranscriptSource = 'live' | 'mirror' | 'none';
+
 export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
+  source: PublicSessionTranscriptSource;
+  /** When the saved transcript was last written. Null for a live read. */
+  captured_at: string | null;
   opencode_session_id: string | null;
   message_count: number;
   messages: CompactPublicMessage[];
+}
+
+/** Seam for tests: production reads the mirror from PostgreSQL. */
+export interface PublicSessionMessagesDeps {
+  readMirror?: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
+}
+
+/** A mirror read that fails reads as "nothing saved": this is a best-effort
+ *  fallback on an anonymous route, and it must never 500 it. */
+async function readMirrorSafely(sessionId: string, limit: number): Promise<MirrorSnapshot | null> {
+  try {
+    return await readSessionTranscriptMirror({ sessionId, limit });
+  } catch (err) {
+    console.warn('[public-session-share-view] saved transcript read failed:', err);
+    return null;
+  }
 }
 
 export type PublicSessionMessagesResult =
@@ -191,28 +215,69 @@ function unavailable(
   return {
     available: false,
     reason,
+    source: 'none',
+    captured_at: null,
     opencode_session_id: opencodeSessionId,
     message_count: 0,
     messages: [],
   };
 }
 
+/** The saved transcript, through the same sanitizer as a live read. The
+ *  mirror already drops tool inputs/outputs; `compactMessage` keeps only role,
+ *  text, tool name + status, file name + mime, and the reasoning flag. */
+function fromMirror(
+  mirror: MirrorSnapshot,
+  reason: string,
+  opencodeSessionId: string | null,
+): PublicSessionTranscript {
+  const messages = mirror.messages.map((m) => compactMessage({ info: m.info, parts: m.parts } as RawMessage));
+  return {
+    available: true,
+    reason,
+    source: 'mirror',
+    captured_at: mirror.captured_at,
+    opencode_session_id: mirror.opencode_session_id ?? opencodeSessionId,
+    message_count: messages.length,
+    messages,
+  };
+}
+
 /**
- * Fetch + sanitize a session's transcript, server-to-sandbox, for a resolved
- * public share row. `row` must already have passed `resolvePublicShare`
- * (404/410/503 handled by the caller) — this only covers what happens once a
- * token is known-good. Degrades to `{available: false, reason}` (still a 200)
- * for transient/expected sandbox states (booting, opencode not ready) so a
- * polling frontend can retry — mirrors `buildSessionTranscriptDigest`'s
- * behavior for the authenticated equivalent. Returns a hard error status only
- * for conditions the caller can't usefully retry past (sandbox not running).
+ * Fetch + sanitize a session's transcript for a resolved public share row.
+ * `row` must already have passed `resolvePublicShare` (404/410 handled by the
+ * caller) — this only covers what happens once a token is known-good.
+ *
+ * A running sandbox answers live, server-to-sandbox. When it cannot — no
+ * sandbox, a stopped one, or a daemon that is not ready — the saved
+ * transcript mirror answers instead (`source: 'mirror'`), the same fallback
+ * `buildSessionTranscriptDigest` uses for the authenticated equivalent. A
+ * stopped or missing sandbox with nothing saved is a 503; a running one with
+ * nothing saved degrades to `{available: false, source: 'none'}` (still 200)
+ * so a polling frontend can retry.
  */
 export async function getPublicSessionMessages(
-  row: Pick<PublicShareRow, 'sessionId'> & { externalId: string; sandboxStatus: string | null },
+  row: Pick<PublicShareRow, 'sessionId'> & { externalId: string | null; sandboxStatus: string | null },
+  deps: PublicSessionMessagesDeps = {},
 ): Promise<PublicSessionMessagesResult> {
-  if (row.sandboxStatus !== 'active') {
-    return { ok: false, status: 503, error: 'Sandbox is not running' };
+  const readMirror = deps.readMirror ?? readMirrorSafely;
+  const degrade = async (
+    reason: string,
+    opencodeSessionId: string | null = null,
+  ): Promise<PublicSessionMessagesResult> => {
+    const mirror = await readMirror(row.sessionId, MAX_MESSAGES);
+    return {
+      ok: true,
+      transcript: mirror ? fromMirror(mirror, reason, opencodeSessionId) : unavailable(reason, opencodeSessionId),
+    };
+  };
+
+  if (!row.externalId || row.sandboxStatus !== 'active') {
+    const mirror = await readMirror(row.sessionId, MAX_MESSAGES);
+    if (!mirror) return { ok: false, status: 503, error: 'Sandbox is not running' };
+    return { ok: true, transcript: fromMirror(mirror, 'Sandbox is not running', null) };
   }
+  const externalId = row.externalId;
 
   const [sessionRow] = await db
     .select({ opencodeSessionId: projectSessions.opencodeSessionId })
@@ -221,23 +286,20 @@ export async function getPublicSessionMessages(
     .limit(1);
   const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
 
-  const listed = await listSandboxOpencodeSessions(row.externalId, undefined);
+  const listed = await listSandboxOpencodeSessions(externalId, undefined);
   if (!listed.ok) {
-    return {
-      ok: true,
-      transcript: unavailable(
-        listed.reason === 'not_ready'
-          ? 'OpenCode is not ready in the sandbox yet'
-          : listed.reason === 'no_key'
-            ? 'Sandbox credentials unavailable'
-            : 'OpenCode session list unreachable in the sandbox',
-      ),
-    };
+    return degrade(
+      listed.reason === 'not_ready'
+        ? 'OpenCode is not ready in the sandbox yet'
+        : listed.reason === 'no_key'
+          ? 'Sandbox credentials unavailable'
+          : 'OpenCode session list unreachable in the sandbox',
+    );
   }
 
   const opencodeSessionId = resolveRootSessionId({ pinnedRootId, sessions: listed.sessions });
   if (!opencodeSessionId) {
-    return { ok: true, transcript: unavailable('No OpenCode session found in the sandbox yet') };
+    return degrade('No OpenCode session found in the sandbox yet');
   }
 
   // Endpoint resolution touches the sandbox provider (Daytona preview-link /
@@ -249,19 +311,13 @@ export async function getPublicSessionMessages(
   // different post-#3567 call site). Degrade to an unavailable digest.
   let endpoint: { url: string; headers: Record<string, string> } | null;
   try {
-    endpoint = await sandboxOpencodeEndpoint(row.externalId, undefined);
+    endpoint = await sandboxOpencodeEndpoint(externalId, undefined);
   } catch (err) {
     console.warn('[public-session-share-view] sandbox endpoint resolution failed:', err);
-    return {
-      ok: true,
-      transcript: unavailable('Could not read the shared session right now.', opencodeSessionId),
-    };
+    return degrade('Could not read the shared session right now.', opencodeSessionId);
   }
   if (!endpoint) {
-    return {
-      ok: true,
-      transcript: unavailable('Sandbox credentials unavailable', opencodeSessionId),
-    };
+    return degrade('Sandbox credentials unavailable', opencodeSessionId);
   }
 
   try {
@@ -274,19 +330,10 @@ export async function getPublicSessionMessages(
       signal: AbortSignal.timeout(8_000),
     });
     if (res.status === 503) {
-      return {
-        ok: true,
-        transcript: unavailable('OpenCode is not ready in the sandbox yet', opencodeSessionId),
-      };
+      return degrade('OpenCode is not ready in the sandbox yet', opencodeSessionId);
     }
     if (!res.ok) {
-      return {
-        ok: true,
-        transcript: unavailable(
-          `OpenCode messages unavailable: HTTP ${res.status}`,
-          opencodeSessionId,
-        ),
-      };
+      return degrade(`OpenCode messages unavailable: HTTP ${res.status}`, opencodeSessionId);
     }
     const payload = (await res.json().catch(() => null)) as unknown;
     const rawMessages = normalizeMessageList(payload).slice(-MAX_MESSAGES);
@@ -295,6 +342,8 @@ export async function getPublicSessionMessages(
       transcript: {
         available: true,
         reason: null,
+        source: 'live',
+        captured_at: null,
         opencode_session_id: opencodeSessionId,
         message_count: rawMessages.length,
         messages: rawMessages.map(compactMessage),
@@ -304,9 +353,6 @@ export async function getPublicSessionMessages(
     // Anonymous audience — surface a generic reason, never the raw fetch/daemon
     // error text (host shapes, internal paths). Log the detail server-side.
     console.warn('[public-session-share-view] transcript read failed:', err);
-    return {
-      ok: true,
-      transcript: unavailable('Could not read the shared session right now.', opencodeSessionId),
-    };
+    return degrade('Could not read the shared session right now.', opencodeSessionId);
   }
 }

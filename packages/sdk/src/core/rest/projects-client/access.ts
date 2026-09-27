@@ -312,9 +312,11 @@ export interface ProjectResourceGrant {
   grant_id: string;
   resource_type: ResourceGrantType;
   resource_id: string;
-  principal_type: 'member' | 'group';
+  /** `project` = everyone with access to the project (`principal_id` is the
+   *  project id). */
+  principal_type: 'member' | 'group' | 'project';
   principal_id: string;
-  /** Resolved label — member email or group name. */
+  /** Resolved label — member email, group name, or the project's name. */
   principal_label: string;
   granted_by: string | null;
   created_at: string;

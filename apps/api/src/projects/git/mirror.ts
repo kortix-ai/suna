@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
 import type { GitBackedProject } from './types';
+import { getRequestContext } from '../../lib/request-context';
 import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
@@ -286,6 +287,62 @@ export function isTransientGitMirrorError(err: unknown): err is GitOperationErro
   if (err.kind === 'timeout') return true;
   const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
+}
+
+/**
+ * Stable error code the platform API returns (HTTP 503) when a project's git
+ * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
+ * (see `isTransientGitMirrorError`). The global `app.onError` in
+ * `apps/api/src/index.ts` attaches this code to the 503 body so the frontend
+ * can classify the response as an EXPECTED degradation instead of an opaque
+ * `ApiError` that pages Sentry (Better Stack frontend pattern `b4d05df2…`).
+ *
+ * Must stay in sync with `GIT_MIRROR_UNAVAILABLE_CODE` in
+ * `packages/sdk/src/core/http/api-client.ts` (the SDK cannot import from the
+ * API, so the string is declared on both sides, exactly like
+ * `FEATURE_NOT_SUPPORTED_CODE`).
+ */
+export const GIT_MIRROR_UNAVAILABLE_CODE = 'git_mirror_unavailable';
+
+/**
+ * GitHub rejects a push that a repository rule, branch protection or a
+ * server-side hook forbids rather than a stale tip. The prod Better Stack
+ * pattern `5e505349…` is the canonical case:
+ *
+ *   ! [remote rejected] <sha> -> main (push declined due to repository rule violations)
+ *   error: failed to push some refs to 'https://github.com/<org>/<repo>.git'
+ *
+ * This is a PERMANENT, user-actionable REMOTE POLICY outcome: the same commit
+ * is rejected again on every retry. It is NOT a revision race
+ * (`isExpectedFileRevisionRace` — "our tip was stale, refetch and retry") and
+ * NOT transient (`isTransientGitMirrorError` — retry cannot help). It must
+ * surface as a typed 4xx the dashboard renders as a message, never as a 5xx
+ * that pages Better Stack.
+ *
+ * Anchored on the push subcommand so an identical phrase in a fetch/clone error
+ * is not misclassified, and on the explicit protection phrases so a
+ * non-fast-forward `[rejected]` still belongs to the race classifier.
+ */
+const REMOTE_PUSH_POLICY_REJECTION_PATTERN =
+  /push declined due to repository rule violations|protected branch hook declined|protected branch update failed|pre-receive hook declined|refusing to allow|GH006|GH013/i;
+
+export function isRemotePushPolicyRejection(err: unknown): err is GitOperationError {
+  if (!isGitOperationError(err)) return false;
+  if (err.gitArgs[0] !== 'push') return false;
+  const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  return REMOTE_PUSH_POLICY_REJECTION_PATTERN.test(text);
+}
+
+/** Build the policy warning without Git output, repository URLs, or refs. */
+export function pushPolicyWarning(method: string, err: GitOperationError) {
+  return {
+    message: `${method} -> 409 [GitOperationError:push-policy]`,
+    fields: {
+      method,
+      errorType: 'GitOperationError',
+      gitKind: err.kind,
+    },
+  };
 }
 
 /**
@@ -607,6 +664,54 @@ async function doRefreshMirror(
   return repoPath;
 }
 
+/**
+ * Page views read the warm mirror and refresh it behind the response.
+ *
+ * Why (2026-09-26): Customize pages (`/detail`, `/agents/:name/config`) paid a
+ * `git fetch` of 120–865 ms whenever a request landed after the 60 s refresh
+ * interval (dev-api `Server-Timing`), so a tab that had been open a minute
+ * felt slow on every click. A request that calls {@link allowStaleMirrorReads}
+ * is answered from the existing mirror when it is safe to:
+ *
+ *  - no base-branch move reached this process since the last fetch. Every move
+ *    Kortix makes or proxies (manifest write, API write, git-proxy push,
+ *    change-request merge) calls `notifyBaseBranchMoved`, which drops the
+ *    marker here in EVERY api process (`invalidateProjectMirror`, wired at
+ *    boot), so the next view read fetches first;
+ *  - the last fetch is younger than {@link viewMaxStaleMs} (default 5 min).
+ *    This bounds a push that bypassed Kortix (straight to GitHub).
+ *
+ * Otherwise the read blocks on the fetch exactly as before. Session boot,
+ * triggers, sweeps and every read-modify-write never opt in.
+ */
+const STALE_MIRROR_READS = Symbol.for('kortix.git-mirror-stale-reads');
+
+export function allowStaleMirrorReads(): void {
+  const ctx = getRequestContext() as ({ [STALE_MIRROR_READS]?: boolean } & object) | undefined;
+  if (ctx) ctx[STALE_MIRROR_READS] = true;
+}
+
+function staleMirrorReadsAllowed(): boolean {
+  const ctx = getRequestContext() as ({ [STALE_MIRROR_READS]?: boolean } & object) | undefined;
+  return ctx?.[STALE_MIRROR_READS] === true;
+}
+
+function viewMaxStaleMs(): number {
+  const value = Number(process.env.KORTIX_GIT_VIEW_MAX_STALE_MS || 5 * 60_000);
+  return Number.isFinite(value) && value >= 0 ? value : 5 * 60_000;
+}
+
+/** The warm mirror path when a view may read it without fetching, else null. */
+function viewableWarmMirror(project: GitBackedProject): string | null {
+  const lastRefresh = lastRefreshAt.get(project.projectId);
+  if (lastRefresh === undefined) return null;
+  if (Date.now() - lastRefresh >= viewMaxStaleMs()) return null;
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath) || existsSync(join(repoPath, 'shallow'))) return null;
+  if (!looksLikeBareMirror(repoPath)) return null;
+  return repoPath;
+}
+
 export async function refreshMirror(
   project: GitBackedProject,
   force = false,
@@ -617,6 +722,28 @@ export async function refreshMirror(
     freshRef?: string;
   },
 ) {
+  if (!force && staleMirrorReadsAllowed()) {
+    const warm = viewableWarmMirror(project);
+    if (warm) {
+      const lastRefresh = lastRefreshAt.get(project.projectId) ?? 0;
+      if (Date.now() - lastRefresh >= refreshIntervalMs()) {
+        // Behind the response. The lock makes concurrent views share one fetch.
+        void lockedRefreshMirror(project, false).catch(() => {});
+      } else {
+        const now = new Date();
+        void utimes(warm, now, now).catch(() => {});
+      }
+      return warm;
+    }
+  }
+  return lockedRefreshMirror(project, force, opts);
+}
+
+async function lockedRefreshMirror(
+  project: GitBackedProject,
+  force: boolean,
+  opts?: { freshRef?: string },
+): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
   // that forced a full one: it registers as unforced, and such a caller waits
   // for it and then runs its own real fetch.

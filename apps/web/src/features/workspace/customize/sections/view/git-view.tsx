@@ -2,6 +2,17 @@
 
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import {
+  CommandEmpty,
+  CommandFooter,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
+} from '@/components/ui/command';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
@@ -16,6 +27,7 @@ import {
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE, triggerVariants } from '@/components/ui/trigger-variants';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Github as GithubIcon } from '@/features/icon/icons/github';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -43,6 +55,7 @@ import {
 import { contract, qk } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
+  CheckIcon,
   ArrowSquareOutIcon as ExternalLink,
   GitForkIcon as GitFork,
   GithubLogoIcon as Github,
@@ -51,10 +64,11 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from '@/components/site-link';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
+  filterBranchNames,
   connectionStatusLabel,
   providerLabel,
   providerSentence,
@@ -279,6 +293,91 @@ function SaveStatus() {
 }
 
 /**
+ * The default-branch picker: a searchable list, not a `<Select>`.
+ *
+ * A long-lived project's remote holds one branch per session, thousands of
+ * refs. A Radix `<Select>` mounts every option, so opening this pane on such
+ * a project froze the tab and then crashed it. This list renders at most
+ * `BRANCH_PICKER_LIMIT` rows (`filterBranchNames`) and filters as the person
+ * types. The current value always renders, also before `/branches` answers.
+ */
+function BranchPicker({
+  value,
+  branches,
+  loading,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: string;
+  branches: readonly string[];
+  loading: boolean;
+  onChange: (branch: string) => void;
+  disabled: boolean;
+  label: string;
+}) {
+  const t = useI18nTranslations('repositoryChange');
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const { visible, hidden } = useMemo(
+    () => filterBranchNames(branches, value, search),
+    [branches, value, search],
+  );
+
+  return (
+    <CommandPopover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSearch('');
+      }}
+    >
+      <CommandPopoverTrigger disabled={disabled}>
+        <button
+          type="button"
+          aria-label={label}
+          className={cn(triggerVariants(), 'h-8 w-44 font-mono text-xs')}
+        >
+          <span className="min-w-0 truncate">{value}</span>
+          <CaretDownIcon className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)} />
+        </button>
+      </CommandPopoverTrigger>
+      <CommandPopoverContent side="bottom" align="end" className="w-72">
+        <CommandInput
+          compact
+          placeholder={t('searchBranches')}
+          value={search}
+          onValueChange={setSearch}
+        />
+        <CommandList>
+          <CommandEmpty>{loading ? t('loadingBranches') : t('noBranches')}</CommandEmpty>
+          <CommandGroup>
+            {visible.map((branch) => (
+              <CommandItem
+                key={branch}
+                value={branch}
+                onSelect={() => {
+                  onChange(branch);
+                  setOpen(false);
+                  setSearch('');
+                }}
+                className="font-mono text-xs"
+              >
+                <span className="min-w-0 flex-1 truncate">{branch}</span>
+                {branch === value ? <CheckIcon className="size-3.5 shrink-0" /> : null}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+        {hidden > 0 ? (
+          <CommandFooter>{t('moreBranches', { count: hidden })}</CommandFooter>
+        ) : null}
+      </CommandPopoverContent>
+    </CommandPopover>
+  );
+}
+
+/**
  * The repository group: what it is connected to, whether that connection works,
  * and the two settings that change how Kortix uses it.
  *
@@ -311,12 +410,7 @@ function RepositoryGroup({
     queryFn: () => listProjectBranches(project.project_id),
     ...contract('config'),
   });
-  const branchNames = Array.from(
-    new Set([
-      project.default_branch,
-      ...(branchesQuery.data?.branches.map((branch) => branch.name) ?? []),
-    ]),
-  );
+  const branchNames = branchesQuery.data?.branches.map((branch) => branch.name) ?? [];
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
@@ -457,25 +551,14 @@ function RepositoryGroup({
           description={tI18nComplete.raw('text4ea9e9ad1d10')}
         >
           {saving ? <SaveStatus /> : null}
-          <Select
+          <BranchPicker
             value={defaultBranch}
-            onValueChange={setDefaultBranch}
+            branches={branchNames}
+            loading={branchesQuery.isLoading}
+            onChange={setDefaultBranch}
             disabled={!canManage || isPending}
-          >
-            <SelectTrigger
-              aria-label={tI18nComplete.raw('text9acbb9ebea63')}
-              className="h-8 w-44 font-mono text-xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              {branchNames.map((branch) => (
-                <SelectItem key={branch} value={branch} className="font-mono text-xs">
-                  {branch}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            label={tI18nComplete.raw('text9acbb9ebea63')}
+          />
         </SettingsRow>
 
         <SettingsRow

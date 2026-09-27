@@ -810,6 +810,17 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Mobile push notifications through the Expo Push API
+  // (notifications/expo-push.ts). The access token is optional: Expo accepts
+  // unauthenticated sends unless the project enables enhanced push security.
+  EXPO_ACCESS_TOKEN: optStr,
+  // Kill switch for session push notifications. On by default; `0` or `false`
+  // stops every send. Device-token registration keeps working.
+  PUSH_NOTIFICATIONS_ENABLED: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -1463,6 +1474,8 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,

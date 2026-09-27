@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  FILTER_AUTO_FETCH_MIN_MATCHES,
   flattenSessionPages,
+  shouldAutoFetchForFilter,
   sessionListState,
   sessionsNextCursor,
   shouldLoadMoreSessions,
@@ -54,5 +56,42 @@ describe('sessionListState (COR-146: a failure must never look like an empty lis
 
   test('rows once at least one session loaded and the query is not erroring', () => {
     expect(sessionListState({ isLoading: false, isError: false, hasSessions: true })).toBe('rows');
+  });
+});
+
+describe('shouldAutoFetchForFilter (KRTX-250)', () => {
+  const base = {
+    filterActive: true,
+    matchCount: 0,
+    hasNextPage: true,
+    isFetchingNextPage: false,
+    isRefreshing: false,
+    fetchNextPageFailed: false,
+  };
+
+  test('an active filter with too few matches over loaded pages fetches the next page', () => {
+    expect(shouldAutoFetchForFilter(base)).toBe(true);
+    expect(shouldAutoFetchForFilter({ ...base, matchCount: FILTER_AUTO_FETCH_MIN_MATCHES - 1 })).toBe(true);
+  });
+
+  test('a screen of matches is enough: scrolling loads the rest', () => {
+    expect(shouldAutoFetchForFilter({ ...base, matchCount: FILTER_AUTO_FETCH_MIN_MATCHES })).toBe(false);
+  });
+
+  test('no filter: the list pages by scrolling only', () => {
+    expect(shouldAutoFetchForFilter({ ...base, filterActive: false })).toBe(false);
+  });
+
+  test('stops when the pages run out', () => {
+    expect(shouldAutoFetchForFilter({ ...base, hasNextPage: false })).toBe(false);
+  });
+
+  test('one page at a time, never during a pull to refresh', () => {
+    expect(shouldAutoFetchForFilter({ ...base, isFetchingNextPage: true })).toBe(false);
+    expect(shouldAutoFetchForFilter({ ...base, isRefreshing: true })).toBe(false);
+  });
+
+  test('a failed page fetch stops the loop (no retry storm); scroll or pull retries', () => {
+    expect(shouldAutoFetchForFilter({ ...base, fetchNextPageFailed: true })).toBe(false);
   });
 });

@@ -95,6 +95,10 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
     fetchImpl: stub.impl,
+    // The fixtures are text files, not executables. A downloaded CLI is now
+    // EXECUTED before it replaces a working one, so every case that is not about
+    // that check says "it ran". See `ExecProbe` in ../runtime-assets.ts.
+    execProbe: async () => 0,
     ...extra,
   })
 }

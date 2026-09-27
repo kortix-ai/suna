@@ -73,11 +73,6 @@ export type { KortixAccount } from '@kortix/sdk';
 
 export { listAccounts } from '@kortix/sdk';
 
-/** Mobile calls this with a bare `name` string; the SDK takes `{ name }`. */
-export function createAccount(name: string) {
-  return sdk.createAccount({ name });
-}
-
 // ── Projects ───────────────────────────────────────────────────────────────
 
 export type {
@@ -85,7 +80,6 @@ export type {
   ExperimentalFeatureKey,
   ExperimentalFeatureView,
   ProjectInput,
-  ProvisionProjectInput,
   RepoCollaboratorInvite,
 } from '@kortix/sdk';
 
@@ -97,7 +91,6 @@ export {
   archiveProject,
   updateProject,
   updateExperimentalFeature,
-  provisionProject,
 } from '@kortix/sdk';
 
 // ── Dev (web parity: customize/sections/dev-view) ─────────────────────────────
@@ -121,6 +114,17 @@ export {
   deleteProjectSession,
   setProjectSessionSharing,
   stopProjectSession,
+} from '@kortix/sdk';
+
+// ── Session public shares (KRTX-248: the public transcript link) ────────────
+// `createSessionPublicShare(pid, sid, { transcript: true })` returns the live
+// transcript share when one exists (200) or mints one (201).
+export type { SessionPublicShare } from '@kortix/sdk';
+export {
+  createSessionPublicShare,
+  findActiveTranscriptShare,
+  listSessionPublicShares,
+  revokeSessionPublicShare,
 } from '@kortix/sdk';
 
 export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
@@ -270,24 +274,6 @@ export type {
 } from '@kortix/sdk';
 
 export { listProjectPolicies, setProjectPolicies } from '@kortix/sdk';
-
-// ── GitHub import ──────────────────────────────────────────────────────────
-
-export type {
-  GitHubRepository,
-  GitHubRepositoriesResponse,
-  GitHubInstallationStatus,
-  GitHubInstallationsResponse,
-  LinkRepositoryInput,
-  LinkRepositoryResponse,
-} from '@kortix/sdk';
-
-export {
-  listGitHubInstallations,
-  listGitHubRepositories,
-  deleteGitHubInstallation,
-  linkRepository,
-} from '@kortix/sdk';
 
 // ── Project secrets (web parity: customize/sections/secrets-view) ─────────────
 

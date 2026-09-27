@@ -11,6 +11,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from '../config'
@@ -19,13 +20,16 @@ import { buildDaemonApp } from '../proxy'
 import { requirePiConfig } from '../harness/pi/config'
 import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
 import type { PiBootState } from '../harness/pi/boot-state'
+import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '../harness/pi/extensions/host'
+import { ensureProjectPackageBundle } from '../harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
 
 const TOKEN = 'pi-test-token'
 const MODEL_ID = 'test-model'
 
-/** One scripted model reply: text, a tool call, or text ending on `finish`. */
-type Step = { text: string; finish?: 'stop' | 'length' } | { tool: string; args: Record<string, unknown> }
+type ToolCall = { tool: string; args: Record<string, unknown> }
+/** One scripted model reply: text, a tool call, several tool calls, or text ending on `finish`. */
+type Step = { text: string; finish?: 'stop' | 'length' } | ToolCall | { tools: ToolCall[] }
 
 /**
  * An OpenAI-compatible `/chat/completions` that answers each request with the
@@ -35,6 +39,8 @@ function startFakeGateway() {
   let script: Step[] = []
   let calls = 0
   const requests: Array<{ path: string; auth: string | null }> = []
+  /** The chat messages of each request, so a test reads what the model was sent. */
+  const sent: Array<Array<{ role: string; content: unknown }>> = []
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -42,17 +48,19 @@ function startFakeGateway() {
     async fetch(req) {
       const url = new URL(req.url)
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      await req.text()
+      sent.push(((await req.json()) as { messages: Array<{ role: string; content: unknown }> }).messages)
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
       let body = chunk({ role: 'assistant', content: '' })
-      if ('tool' in step) {
-        const id = `call_${calls}`
-        const args = JSON.stringify(step.args)
-        body += chunk({ tool_calls: [{ index: 0, id, type: 'function', function: { name: step.tool, arguments: '' } }] })
-        body += chunk({ tool_calls: [{ index: 0, function: { arguments: args.slice(0, 5) } }] })
-        body += chunk({ tool_calls: [{ index: 0, function: { arguments: args.slice(5) } }] })
+      if ('tool' in step || 'tools' in step) {
+        const toolCalls = 'tools' in step ? step.tools : [step]
+        toolCalls.forEach((call, index) => {
+          const args = JSON.stringify(call.args)
+          body += chunk({ tool_calls: [{ index, id: `call_${calls}_${index}`, type: 'function', function: { name: call.tool, arguments: '' } }] })
+          body += chunk({ tool_calls: [{ index, function: { arguments: args.slice(0, 5) } }] })
+          body += chunk({ tool_calls: [{ index, function: { arguments: args.slice(5) } }] })
+        })
         body += chunk({}, 'tool_calls')
       } else {
         // Two deltas, so the stream carries more than one `message.part.delta`.
@@ -69,6 +77,7 @@ function startFakeGateway() {
   return {
     baseUrl: `http://127.0.0.1:${server.port}/v1/llm`,
     requests,
+    sent,
     script: (steps: Step[]) => {
       script = [...steps]
     },
@@ -106,6 +115,9 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
     KORTIX_LLM_BASE_URL: gateway.baseUrl,
     KORTIX_LLM_CATALOG_FILE: join(catalogDir, 'catalog.json'),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
+    // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
+    KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
+    KORTIX_PI_PACKAGES_DIR: join(workspace, '.pi-packages'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
     KORTIX_PROJECT_TARGET: workspace,
@@ -121,8 +133,11 @@ async function boot(input: {
   env?: Record<string, string>
   start?: boolean
   workspace?: string
+  /** Runs on the fresh workspace before the runtime starts. */
+  prepare?: (workspace: string) => void
 }): Promise<Rig> {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
+  input.prepare?.(workspace)
   gateway.script(input.script)
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
@@ -391,7 +406,7 @@ describe('pi harness', () => {
     const agents = (await r.user('/agent').then((res) => res.json())) as Array<Record<string, unknown>>
     expect(agents[0]).toMatchObject({ name: 'coder', description: 'Writes code', mode: 'primary', prompt: 'You code.', permission })
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
-    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question'])
+    expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
     const providers = (await r.user('/provider').then((res) => res.json())) as { all: Array<{ id: string }>; default: Record<string, string> }
     expect(providers.all[0]!.id).toBe('kortix')
     expect(providers.default).toEqual({ kortix: MODEL_ID })
@@ -624,5 +639,639 @@ describe('pi harness', () => {
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_in_flight).toBe(false)
     expect(probe.turn_end).toBe('failed')
+  })
+})
+
+type WirePage = { messages: Array<{ info: Record<string, any>; parts: Array<Record<string, any>> }> }
+
+async function promptAndSettle(r: Rig, text: string): Promise<void> {
+  const root = r.service.runtime()!.rootId
+  const accepted = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text }] }) })
+  expect(accepted.status).toBe(204)
+  await waitFor(() => !r.service.runtime()!.busy())
+}
+
+function toolParts(page: WirePage, tool: string): Array<Record<string, any>> {
+  return page.messages.flatMap((m) => m.parts.filter((p) => p.type === 'tool' && p.tool === tool))
+}
+
+/** An npm package as pi installs it: `<root>/node_modules/<name>` with a `pi` manifest. */
+function fakePackage(npmRoot: string, name: string, version: string, source: string): void {
+  const dir = join(npmRoot, 'node_modules', name)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version, keywords: ['pi-package'], pi: { extensions: ['./index.ts'] } }))
+  writeFileSync(join(dir, 'index.ts'), source)
+}
+
+const DIGEST = 'a'.repeat(64)
+
+type FakePrebuilt = { name: string; version: string; code?: string; fallback?: string; files?: Record<string, string>; pi?: object }
+
+/** Write the pre-built layout (apps/api prebuild.ts) into `root`: manifest.json + packages/<name>/. */
+function writePrebuilt(root: string, packages: FakePrebuilt[]): void {
+  const manifest = {
+    format: 'pi-packages-v2',
+    packages: packages.map((p) =>
+      p.fallback ? { name: p.name, version: p.version, fallback: p.fallback } : { name: p.name, version: p.version, dir: `packages/${p.name}`, extensions: [`packages/${p.name}/index.js.kortix.js`] },
+    ),
+  }
+  for (const p of packages.filter((p) => !p.fallback)) {
+    const dir = join(root, 'packages', p.name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: p.name, version: p.version, ...(p.pi ? { pi: p.pi } : {}) }))
+    writeFileSync(join(dir, 'index.js.kortix.js'), p.code ?? '')
+    for (const [rel, contents] of Object.entries(p.files ?? {})) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true })
+      writeFileSync(join(dir, rel), contents)
+    }
+  }
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest))
+}
+
+/** A pre-built bundle as bundle.ts leaves it: `<dir>/<digest>`, marked complete. */
+function fakePrebuilt(workspace: string, packages: FakePrebuilt[]): void {
+  const root = join(workspace, '.pi-packages', DIGEST)
+  writePrebuilt(root, packages)
+  writeFileSync(join(root, '.complete'), DIGEST)
+}
+
+/** A pre-built extension as prebuild.ts emits it: plain ESM, pi's modules read from the host registry. */
+function prebuiltTool(tool: string, prefix: string): string {
+  return `const { Type } = globalThis.__kortixPiHost['typebox']
+export default function (pi) {
+  pi.registerTool({
+    name: '${tool}',
+    label: '${tool}',
+    description: 'Echo the text back.',
+    parameters: Type.Object({ text: Type.String() }),
+    async execute(_id, params) { return { content: [{ type: 'text', text: '${prefix}:' + params.text }], details: {} } },
+  })
+}
+`
+}
+
+/** An extension source that registers one tool answering `<prefix>:<text>`. */
+function echoTool(tool: string, prefix: string): string {
+  return `export default function (pi) {
+  pi.registerTool({
+    name: '${tool}',
+    label: '${tool}',
+    description: 'Echo the text back.',
+    parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    async execute(_id, params) { return { content: [{ type: 'text', text: '${prefix}:' + params.text }], details: {} } },
+  })
+}
+`
+}
+
+/** A repo extension as a project commits it: `.pi/extensions/<name>.ts`, loaded by pi's own loader. */
+function repoExtension(workspace: string, name: string, source: string): string {
+  const path = join(workspace, '.pi', 'extensions', `${name}.ts`)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, source)
+  return path
+}
+
+/** The system prompt of one model request. */
+function systemSent(messages: Array<{ role: string; content: unknown }>): string {
+  return messages
+    .filter((m) => m.role === 'system' || m.role === 'developer')
+    .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+    .join('\n')
+}
+
+describe('pi extensions', () => {
+  test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
+    const r = await boot({
+      script: [{ tool: 'write', args: { path: 'blocked.txt', content: 'x' } }, { tool: 'bash', args: { command: 'echo real' } }, { text: 'done' }],
+      prepare: (workspace) =>
+        void repoExtension(
+          workspace,
+          'guard',
+          `export default function (pi) {
+  pi.on('tool_call', (event) => (event.toolName === 'write' ? { block: true, reason: 'writes are blocked by guard' } : undefined))
+  pi.on('tool_result', (event) => (event.toolName === 'bash' ? { content: [{ type: 'text', text: 'patched output' }] } : undefined))
+  pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n\\nGUARD ACTIVE' }))
+}
+`,
+        ),
+    })
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'try')
+    expect(existsSync(join(r.workspace, 'blocked.txt'))).toBe(false)
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'write')[0]!.state.status).toBe('error')
+    expect(String(toolParts(page, 'write')[0]!.state.error)).toContain('writes are blocked by guard')
+    expect(toolParts(page, 'bash')[0]!.state.status).toBe('completed')
+    expect(toolParts(page, 'bash')[0]!.state.output).toBe('patched output')
+    expect(gateway.sent.slice(sentBefore).map(systemSent).every((system) => system.includes('GUARD ACTIVE'))).toBe(true)
+    const status = r.service.runtime()!.extensionStatus()
+    expect(status.loaded.some((name) => name.endsWith('/.pi/extensions/guard.ts'))).toBe(true)
+    expect(status.failed).toEqual([])
+  })
+
+  test('the prompt system field reaches the model for its turn only, on top of extension edits', async () => {
+    const r = await boot({
+      script: [{ text: 'a' }, { text: 'b' }],
+      prepare: (workspace) =>
+        void repoExtension(workspace, 'rule', `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n\\nEXTENSION RULE' }))\n`),
+    })
+    const root = r.service.runtime()!.rootId
+    const sentBefore = gateway.sent.length
+    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'one' }], system: 'TURN RULE' }) })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    await promptAndSettle(r, 'two')
+    const [one, two] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain('TURN RULE')
+    expect(one).toContain('EXTENSION RULE')
+    expect(two).not.toContain('TURN RULE')
+    expect(two).toContain('EXTENSION RULE')
+  })
+
+  test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
+    let log = ''
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare(workspace) {
+        log = join(workspace, 'events.log')
+        repoExtension(workspace, 'broken', `export default function () {\n  throw new Error('boom')\n}\n`)
+        repoExtension(
+          workspace,
+          'lifecycle',
+          `import { appendFileSync } from 'node:fs'
+const record = (line) => appendFileSync(${JSON.stringify(log)}, line + '\\n')
+export default function (pi) {
+  pi.on('session_start', (event) => record('start:' + event.reason))
+  pi.on('session_shutdown', () => record('shutdown'))
+  pi.on('turn_end', () => record('turn_end'))
+}
+`,
+        )
+      },
+    })
+    const status = r.service.runtime()!.extensionStatus()
+    expect(status.loaded.some((name) => name.endsWith('/.pi/extensions/lifecycle.ts'))).toBe(true)
+    expect(status.loaded.some((name) => name.endsWith('/.pi/extensions/broken.ts'))).toBe(false)
+    expect(status.failed).toHaveLength(1)
+    expect(status.failed[0]!.name).toEndWith('/.pi/extensions/broken.ts')
+    expect(status.failed[0]!.error).toContain('boom')
+    await promptAndSettle(r, 'hi')
+    await r.service.lifecycle.stop()
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['start:startup', 'turn_end', 'shutdown'])
+  })
+
+  test('a context handler rewrites what the model receives', async () => {
+    const r = await boot({
+      script: [{ text: 'first' }, { text: 'second' }],
+      prepare: (workspace) => void repoExtension(workspace, 'trim', `export default (pi) => pi.on('context', (event) => ({ messages: event.messages.slice(-1) }))\n`),
+    })
+    await promptAndSettle(r, 'one')
+    await promptAndSettle(r, 'two')
+    // Turn two holds user, assistant, user; the model gets only the last one.
+    const conversation = gateway.sent.at(-1)!.filter((m) => m.role !== 'system' && m.role !== 'developer')
+    expect(conversation).toHaveLength(1)
+    expect(JSON.stringify(conversation[0]!.content)).toContain('two')
+  })
+
+  test('the provider hooks route through the current runner, and pass through without one', async () => {
+    const ref: { current?: any } = {}
+    const hooks = extensionAgentHooks(ref)
+    expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm' })
+    ref.current = { hasHandlers: (type: string) => type === 'before_provider_request', emitBeforeProviderRequest: async (p: object) => ({ ...p, temperature: 0 }) }
+    expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm', temperature: 0 })
+  })
+})
+
+describe('pi packages', () => {
+  test('npm sources parse with scopes and pins', () => {
+    expect(parseNpmSource('npm:pi-web-access@0.30.0')).toEqual({ name: 'pi-web-access', version: '0.30.0' })
+    expect(parseNpmSource('npm:@juicesharp/rpiv-todo@1.2.0')).toEqual({ name: '@juicesharp/rpiv-todo', version: '1.2.0' })
+    expect(parseNpmSource('npm:@juicesharp/rpiv-todo')).toEqual({ name: '@juicesharp/rpiv-todo' })
+    expect(parseNpmSource('./local.ts')).toBeNull()
+  })
+
+  test('only installed sources at the pinned version are kept; git is refused', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-npm-'))
+    try {
+      fakePackage(root, 'have', '1.0.0', 'export default () => {}')
+      const { kept, failed } = installedPackages(
+        ['npm:have@1.0.0', { source: 'npm:have', extensions: [] }, 'npm:have@2.0.0', 'npm:missing@1.0.0', 'git:github.com/a/b@v1', '/abs/local.ts'],
+        root,
+      )
+      expect(kept).toEqual(['npm:have@1.0.0', { source: 'npm:have', extensions: [] }, '/abs/local.ts'])
+      expect(failed).toEqual([
+        { name: 'npm:have@2.0.0', error: 'installed version 1.0.0 does not match 2.0.0' },
+        { name: 'npm:missing@1.0.0', error: 'package is not installed' },
+        { name: 'git:github.com/a/b@v1', error: 'git packages are not supported; use an npm package' },
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('system and project packages load from disk and their tools run; nothing is installed at boot', async () => {
+    const r = await boot({
+      script: [{ tool: 'system_echo', args: { text: 'hi' } }, { tool: 'project_echo', args: { text: 'yo' } }, { tool: 'local_echo', args: { text: 'l' } }, { text: 'done' }],
+      env: {
+        KORTIX_PI_PACKAGES: JSON.stringify(['npm:project-ext@2.0.0', 'npm:project-missing@1.0.0', './.kortix/pi/local.ts']),
+        KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
+      },
+      prepare(workspace) {
+        const agentDir = join(workspace, '.pi-agent')
+        mkdirSync(agentDir, { recursive: true })
+        writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:system-ext@1.0.0', 'npm:system-missing@1.0.0'] }))
+        fakePackage(join(agentDir, 'npm'), 'system-ext', '1.0.0', echoTool('system_echo', 'system'))
+        fakePrebuilt(workspace, [
+          {
+            name: 'project-ext',
+            version: '2.0.0',
+            code: prebuiltTool('project_echo', 'project'),
+            pi: { skills: ['./skills'] },
+            files: { 'skills/package-skill/SKILL.md': '---\nname: package-skill\ndescription: Shipped by a package\n---\nDo it.\n' },
+          },
+        ])
+        mkdirSync(join(workspace, '.kortix', 'pi'), { recursive: true })
+        writeFileSync(join(workspace, '.kortix', 'pi', 'local.ts'), echoTool('local_echo', 'local'))
+        mkdirSync(join(workspace, '.pi', 'extensions'), { recursive: true })
+        writeFileSync(join(workspace, '.pi', 'extensions', 'repo.ts'), echoTool('repo_echo', 'repo'))
+      },
+    })
+    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(tools).toEqual(expect.arrayContaining(['system_echo', 'project_echo', 'local_echo', 'repo_echo', 'task', 'bash']))
+    const status = r.service.runtime()!.extensionStatus()
+    expect(status.loaded).toEqual(expect.arrayContaining(['subagents', 'npm:system-ext@1.0.0', 'npm:project-ext@2.0.0']))
+    // A pre-built package still brings its skills: pi reads them from its folder.
+    expect(((await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>).map((s) => s.name)).toContain('package-skill')
+    expect(status.failed).toEqual([
+      { name: 'npm:system-missing@1.0.0', error: 'package is not installed' },
+      { name: 'npm:project-missing@1.0.0', error: 'package is not installed' },
+    ])
+    // The same report, where support reads it: the daemon's health.
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { extensions: typeof status }
+    expect(health.extensions).toEqual(status)
+    await promptAndSettle(r, 'use them')
+    const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'system_echo')[0]!.state.output).toBe('system:hi')
+    expect(toolParts(page, 'project_echo')[0]!.state.output).toBe('project:yo')
+    expect(toolParts(page, 'local_echo')[0]!.state.output).toBe('local:l')
+    expect(existsSync(join(r.workspace, '.pi-agent', 'npm', 'node_modules', 'system-missing'))).toBe(false)
+    expect(existsSync(join(r.workspace, '.pi-packages', `${DIGEST}.node_modules`))).toBe(false)
+  })
+
+  test('a project package overrides the system package of the same name', async () => {
+    const r = await boot({
+      script: [{ tool: 'shared_echo', args: { text: 'x' } }, { text: 'done' }],
+      env: { KORTIX_PI_PACKAGES: JSON.stringify(['npm:shared-ext@2.0.0']), KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST },
+      prepare(workspace) {
+        const agentDir = join(workspace, '.pi-agent')
+        mkdirSync(agentDir, { recursive: true })
+        writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:shared-ext@1.0.0'] }))
+        fakePackage(join(agentDir, 'npm'), 'shared-ext', '1.0.0', echoTool('shared_echo', 'system'))
+        fakePrebuilt(workspace, [{ name: 'shared-ext', version: '2.0.0', code: prebuiltTool('shared_echo', 'project') }])
+      },
+    })
+    await promptAndSettle(r, 'go')
+    const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'shared_echo').map((p) => p.state.output)).toEqual(['project:x'])
+  })
+
+  test('the project bundle downloads once, unpacks outside the repo, and its tool runs', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'pi-bundle-src-'))
+    writePrebuilt(join(source, 'tree'), [{ name: 'bundled-ext', version: '3.0.0', code: prebuiltTool('bundled_echo', 'bundled') }])
+    const archive = join(source, 'bundle.tar.gz')
+    await require('tar').c({ gzip: true, cwd: join(source, 'tree'), file: archive }, ['.'])
+    let downloads = 0
+    let fallbackDownloads = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => (new URL(req.url).pathname === '/fallback' ? (fallbackDownloads++, new Response('no', { status: 404 })) : (downloads++, new Response(Bun.file(archive)))),
+    })
+    try {
+      const url = `http://127.0.0.1:${server.port}/bundle.tar.gz`
+      const r = await boot({
+        script: [{ tool: 'bundled_echo', args: { text: 'b' } }, { text: 'done' }],
+        env: {
+          KORTIX_PI_PACKAGES: JSON.stringify(['npm:bundled-ext@3.0.0']),
+          KORTIX_PI_PACKAGES_BUNDLE_URL: url,
+          KORTIX_PI_PACKAGES_FALLBACK_URL: `http://127.0.0.1:${server.port}/fallback`,
+          KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
+        },
+        start: false,
+      })
+      // The download starts with the service, beside the repo clone, not at runtime start.
+      await waitFor(() => downloads === 1)
+      await r.service.lifecycle.start()
+      expect(downloads).toBe(1)
+      expect(r.service.runtime()!.extensionStatus().loaded).toContain('npm:bundled-ext@3.0.0')
+      await promptAndSettle(r, 'go')
+      const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      expect(toolParts(page, 'bundled_echo')[0]!.state.output).toBe('bundled:b')
+      // Nothing lands in the repo; a restart reuses the unpacked bundle.
+      expect(existsSync(join(r.workspace, 'node_modules'))).toBe(false)
+      await r.service.lifecycle.stop()
+      await r.service.lifecycle.start()
+      expect(downloads).toBe(1)
+      // Everything pre-built loaded natively: the installed tree was never fetched.
+      expect(fallbackDownloads).toBe(0)
+    } finally {
+      server.stop(true)
+      rmSync(source, { recursive: true, force: true })
+    }
+  })
+
+  test('a package with no pre-built form, one whose file throws, and one with its own filter load from node_modules', async () => {
+    const source = mkdtempSync(join(tmpdir(), 'pi-fallback-src-'))
+    fakePackage(source, 'fb-ext', '1.0.0', echoTool('fb_echo', 'fb'))
+    fakePackage(source, 'throws-ext', '1.0.0', echoTool('thr_echo', 'thr'))
+    fakePackage(source, 'filtered-ext', '1.0.0', echoTool('fil_echo', 'fil'))
+    const archive = join(source, 'node_modules.tar.gz')
+    await require('tar').c({ gzip: true, cwd: source, file: archive }, ['node_modules'])
+    let fallbackDownloads = 0
+    const server = Bun.serve({ port: 0, fetch: () => (fallbackDownloads++, new Response(Bun.file(archive))) })
+    try {
+      const r = await boot({
+        script: [{ tool: 'fb_echo', args: { text: '1' } }, { tool: 'thr_echo', args: { text: '2' } }, { tool: 'fil_echo', args: { text: '3' } }, { text: 'done' }],
+        env: {
+          KORTIX_PI_PACKAGES: JSON.stringify(['npm:fb-ext@1.0.0', 'npm:throws-ext@1.0.0', { source: 'npm:filtered-ext@1.0.0', extensions: ['index.ts'] }]),
+          KORTIX_PI_PACKAGES_FALLBACK_URL: `http://127.0.0.1:${server.port}/node_modules.tar.gz`,
+          KORTIX_PI_PACKAGES_BUNDLE_DIGEST: DIGEST,
+        },
+        prepare(workspace) {
+          fakePrebuilt(workspace, [
+            { name: 'fb-ext', version: '1.0.0', fallback: 'extension paths use globs or overrides' },
+            { name: 'throws-ext', version: '1.0.0', code: "throw new Error('boom at import')\nexport default () => {}\n" },
+            { name: 'filtered-ext', version: '1.0.0', code: prebuiltTool('fil_echo', 'prebuilt') },
+          ])
+        },
+      })
+      expect(fallbackDownloads).toBe(1)
+      const status = r.service.runtime()!.extensionStatus()
+      expect(status.loaded).toEqual(expect.arrayContaining(['npm:fb-ext@1.0.0', 'npm:throws-ext@1.0.0', 'npm:filtered-ext@1.0.0']))
+      expect(status.failed).toEqual([])
+      await promptAndSettle(r, 'go')
+      const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      expect([toolParts(page, 'fb_echo'), toolParts(page, 'thr_echo'), toolParts(page, 'fil_echo')].map((parts) => parts[0]!.state.output)).toEqual(['fb:1', 'thr:2', 'fil:3'])
+    } finally {
+      server.stop(true)
+      rmSync(source, { recursive: true, force: true })
+    }
+  })
+
+  test('the image-build warm step fills the extension cache a boot copies in, and names a broken package', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      start: false,
+      prepare(workspace) {
+        const agentDir = join(workspace, '.pi-agent')
+        mkdirSync(agentDir, { recursive: true })
+        writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:warm-ext@1.0.0'] }))
+        fakePackage(join(agentDir, 'npm'), 'warm-ext', '1.0.0', echoTool('warm_echo', 'warm'))
+      },
+    })
+    const agentDir = join(r.workspace, '.pi-agent')
+    const warm = async () => {
+      const saved = process.env.TMPDIR
+      try {
+        return await warmSystemPackageCache(agentDir)
+      } finally {
+        if (saved === undefined) delete process.env.TMPDIR
+        else process.env.TMPDIR = saved
+      }
+    }
+    expect(await warm()).toEqual({ loaded: ['npm:warm-ext@1.0.0'], failed: [] })
+    // Under `bun test` jiti imports TypeScript natively and caches nothing; the
+    // compiled daemon transpiles and writes here. A boot copies whatever is there.
+    const cached = `warm-ext-index.${Date.now()}.mjs`
+    mkdirSync(systemPackageCacheDir(agentDir), { recursive: true })
+    writeFileSync(join(systemPackageCacheDir(agentDir), cached), '/* warmed */')
+    await r.service.lifecycle.start()
+    expect(readFileSync(join(tmpdir(), 'jiti', cached), 'utf8')).toBe('/* warmed */')
+    rmSync(join(tmpdir(), 'jiti', cached), { force: true })
+    expect(r.service.runtime()!.extensionStatus().loaded).toContain('npm:warm-ext@1.0.0')
+
+    writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:warm-ext@1.0.0', 'npm:gone@1.0.0'] }))
+    expect((await warm()).failed).toEqual([{ name: 'npm:gone@1.0.0', error: 'package is not installed' }])
+  })
+
+  test('a failed or absent bundle leaves the project packages out, never the session', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-bundle-dir-'))
+    const server = Bun.serve({ port: 0, fetch: () => new Response('gone', { status: 404 }) })
+    try {
+      expect(await ensureProjectPackageBundle({ dir, digest: DIGEST, url: `http://127.0.0.1:${server.port}/x` })).toBeNull()
+      expect(await ensureProjectPackageBundle({ dir, digest: DIGEST })).toBeNull()
+      expect(await ensureProjectPackageBundle({ dir, digest: '../escape', url: 'http://127.0.0.1:1/' })).toBeNull()
+      expect(await ensureProjectPackageBundle({ dir })).toBeNull()
+      expect(require('node:fs').readdirSync(dir)).toEqual([])
+    } finally {
+      server.stop(true)
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('pi subagents extension', () => {
+  const TASK = (args: Record<string, unknown>) => ({ tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general', ...args } })
+
+  test('task runs a child session whose transcript the product can read', async () => {
+    const r = await boot({
+      script: [TASK({}), { tool: 'bash', args: { command: 'printf from-subagent > sub.txt && cat sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' }],
+    })
+    const root = r.service.runtime()!.rootId
+    const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(tools).toContain('task')
+
+    await promptAndSettle(r, 'delegate it')
+    expect(readFileSync(join(r.workspace, 'sub.txt'), 'utf8')).toBe('from-subagent')
+
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const task = toolParts(page, 'task')[0]!
+    const childId = task.state.metadata.sessionId as string
+    expect(childId).toMatch(/^ses_pi[0-9a-f]{24}$/)
+    expect(childId).not.toBe(root)
+    expect(task.state.status).toBe('completed')
+    expect(task.state.output).toContain(`task_id: ${childId}`)
+    expect(task.state.output).toContain('<task_result>\nchild wrote sub.txt\n</task_result>')
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'parent done' })
+
+    // The child session, through every read the web client uses.
+    const child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'assistant'])
+    expect(child.messages.every((m) => m.info.sessionID === childId)).toBe(true)
+    expect(child.messages[0]!.parts[0]).toMatchObject({ type: 'text', text: 'write sub.txt' })
+    expect(child.messages[1]!.info).toMatchObject({ parentID: child.messages[0]!.info.id, agent: 'general' })
+    expect(toolParts(child, 'bash')[0]!.state).toMatchObject({ status: 'completed', output: expect.stringContaining('from-subagent') })
+    const raw = (await r.user(`/session/${childId}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    expect(raw.map((m) => m.info.id)).toEqual(child.messages.map((m) => String(m.info.id)))
+    // A child transcript pages like the root's: `x-next-cursor` while older messages remain.
+    const newestPage = await r.user(`/session/${childId}/message?limit=1`)
+    const newest = (await newestPage.json()) as Array<{ info: { id: string } }>
+    expect(newestPage.headers.get('x-next-cursor')).toBe(newest[0]!.info.id)
+    const olderPage = await r.user(`/session/${childId}/message?limit=10&cursor=${newest[0]!.info.id}`)
+    expect(((await olderPage.json()) as unknown[]).length).toBe(2)
+    expect(olderPage.headers.get('x-next-cursor')).toBeNull()
+    expect(await r.user(`/session/${childId}`).then((res) => res.json())).toMatchObject({ id: childId, parentID: root, title: expect.stringContaining('Write the note') })
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([childId])
+    expect(((await r.user('/session').then((res) => res.json())) as Array<{ id: string }>).map((s) => s.id)).toEqual([root, childId])
+    // The root transcript holds no child message.
+    expect(page.messages.every((m) => m.info.sessionID === root)).toBe(true)
+
+    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    expect(state.sessions.value.map((s: { id: string; parent_id: string | null }) => [s.id, s.parent_id])).toEqual([[root, null], [childId, root]])
+    expect(state.statuses.value).toEqual({ [root]: { type: 'idle' }, [childId]: { type: 'idle' } })
+
+    // The stream carried the child id on the RUNNING task part, so the UI links the child while it works.
+    const text = await readSse(await r.bearer('/kortix/opencode/events?since=0'), (t) => t.includes(`"sessionID":"${childId}"`) && t.includes('parent done'))
+    const running = text
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+      .find((e) => e.type === 'message.part.updated' && e.payload.part.tool === 'task' && e.payload.part.state.status === 'running' && e.payload.part.state.metadata?.sessionId)
+    expect(running?.payload.part.state.metadata.sessionId).toBe(childId)
+  })
+
+  test('explore is read-only, children cannot nest tasks, and an unknown type is an error', async () => {
+    const r = await boot({
+      script: [
+        TASK({ subagent_type: 'explore', prompt: 'look around' }),
+        { tool: 'write', args: { path: 'nope.txt', content: 'x' } },
+        { tool: 'task', args: { description: 'nested', prompt: 'x', subagent_type: 'general' } },
+        { text: 'explored' },
+        TASK({ subagent_type: 'wizard' }),
+        { text: 'parent done' },
+      ],
+    })
+    await promptAndSettle(r, 'explore')
+    expect(require('node:fs').existsSync(join(r.workspace, 'nope.txt'))).toBe(false)
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const [explore, wizard] = toolParts(page, 'task')
+    expect(explore!.state.status).toBe('completed')
+    expect(wizard!.state.status).toBe('error')
+    expect(wizard!.state.error).toBe('Unknown subagent_type "wizard". Available: general, explore.')
+    const child = (await r.bearer(`/kortix/opencode/messages/${explore!.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+    expect(toolParts(child, 'write')[0]!.state.status).toBe('error')
+    expect(toolParts(child, 'task')[0]!.state.status).toBe('error')
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+  })
+
+  test('a compiled subagent is offered and used; task_id resumes the same child after a restart', async () => {
+    const compiled = {
+      agent: {
+        build: { mode: 'primary', prompt: 'You build.' },
+        reviewer: { mode: 'subagent', description: 'Reviews one change', prompt: 'You review.' },
+        hidden: { mode: 'subagent', description: 'Disabled', disable: true },
+      },
+    }
+    const r = await boot({
+      script: [TASK({ subagent_type: 'reviewer', prompt: 'review it' }), { text: 'looks good' }, { text: 'first done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled) },
+    })
+    const described = ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!
+    expect(described.description).toContain('reviewer: Reviews one change')
+    expect(described.description).not.toContain('hidden')
+    await promptAndSettle(r, 'review')
+    const root = r.service.runtime()!.rootId
+    let page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const childId = toolParts(page, 'task')[0]!.state.metadata.sessionId as string
+    let child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages[1]!.info.agent).toBe('reviewer')
+
+    gateway.script([TASK({ subagent_type: 'reviewer', prompt: 'check again', task_id: childId }), { text: 'still good' }, { text: 'second done' }])
+    await r.service.lifecycle.stop()
+    await r.service.lifecycle.start()
+    expect((await r.user(`/session/${childId}/message`)).status).toBe(200)
+    await promptAndSettle(r, 'again')
+    child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(toolParts(page, 'task')[1]!.state.output).toContain('<task_result>\nstill good\n</task_result>')
+    expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
+  })
+
+  test('a subagent cannot run a call the session denies, even when its own rules allow it', async () => {
+    const compiled = {
+      agent: {
+        build: { mode: 'primary', permission: { bash: { 'rm -rf *': 'deny', '*': 'allow' } } },
+        cleaner: { mode: 'subagent', description: 'Cleans up', prompt: 'You clean.', permission: { '*': 'allow' } },
+      },
+    }
+    const r = await boot({
+      script: [
+        TASK({ subagent_type: 'cleaner', prompt: 'delete keep' }),
+        { tool: 'bash', args: { command: 'rm -rf keep' } },
+        { text: 'tried as cleaner' },
+        TASK({ subagent_type: 'general', prompt: 'delete keep' }),
+        { tool: 'bash', args: { command: 'rm -rf keep' } },
+        { text: 'tried as general' },
+        { text: 'parent done' },
+      ],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled) },
+    })
+    require('node:fs').mkdirSync(join(r.workspace, 'keep'))
+    writeFileSync(join(r.workspace, 'keep', 'file'), 'x')
+    await promptAndSettle(r, 'clean up')
+    expect(readFileSync(join(r.workspace, 'keep', 'file'), 'utf8')).toBe('x')
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const tasks = toolParts(page, 'task')
+    expect(tasks.map((t) => t.state.status)).toEqual(['completed', 'completed'])
+    for (const task of tasks) {
+      const child = (await r.bearer(`/kortix/opencode/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+      const bash = toolParts(child, 'bash')[0]!
+      expect(bash.state.status).toBe('error')
+      expect(String(bash.state.error)).toContain('denies')
+    }
+  })
+
+  test('a live agent-config change re-lists the subagent types in the task tool', async () => {
+    const r = await boot({ script: [{ text: 'ok' }] })
+    const describe = async () =>
+      ((await r.user('/tool').then((res) => res.json())) as Array<{ id: string; description: string }>).find((t) => t.id === 'task')!.description
+    expect(await describe()).not.toContain('reviewer')
+    const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
+    runtime.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ agent: { build: { mode: 'primary' }, reviewer: { mode: 'subagent', description: 'Reviews one change' } } })
+    await runtime.reconfigure()
+    expect(await describe()).toContain('reviewer: Reviews one change')
+    expect(((await r.user('/tool/ids').then((res) => res.json())) as string[]).filter((id) => id === 'task')).toHaveLength(1)
+  })
+
+  test('several task calls in one message run their subagents concurrently', async () => {
+    const r = await boot({
+      script: [
+        { tools: [TASK({ description: 'A', prompt: 'a' }), TASK({ description: 'B', prompt: 'b' })] },
+        // Both children take their first step from the shared queue at once: each sleeps 1 s.
+        { tool: 'bash', args: { command: 'sleep 1 && printf x >> ran.txt' } },
+        { tool: 'bash', args: { command: 'sleep 1 && printf x >> ran.txt' } },
+        { text: 'child done' },
+        { text: 'child done' },
+        { text: 'parent done' },
+      ],
+    })
+    const started = Date.now()
+    await promptAndSettle(r, 'fan out')
+    const elapsed = Date.now() - started
+    expect(readFileSync(join(r.workspace, 'ran.txt'), 'utf8')).toBe('xx')
+    expect(elapsed).toBeLessThan(1_900)
+    const root = r.service.runtime()!.rootId
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const tasks = toolParts(page, 'task')
+    expect(tasks.map((t) => t.state.status)).toEqual(['completed', 'completed'])
+    expect(new Set(tasks.map((t) => t.state.metadata.sessionId)).size).toBe(2)
+  })
+
+  test('aborting the parent turn aborts the running subagent', async () => {
+    const r = await boot({ script: [TASK({}), { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'never' }, { text: 'never' }] })
+    const root = r.service.runtime()!.rootId
+    expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
+    await waitFor(() => (r.service.runtime()!.stateDoc().sessions as { value: unknown[] }).value.length === 2)
+    await Bun.sleep(200)
+    const started = Date.now()
+    expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(r.service.runtime()!.busy()).toBe(false)
+    const state = r.service.runtime()!.stateDoc() as Record<string, any>
+    expect(Object.values(state.statuses.value)).toEqual([{ type: 'idle' }, { type: 'idle' }])
   })
 })

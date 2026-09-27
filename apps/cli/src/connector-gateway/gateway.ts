@@ -155,6 +155,12 @@ export async function mintConnectLink(opts: {
    * would 400 every connect against an API that predates the field.
    */
   owner?: 'me' | 'project';
+  /**
+   * The name to suggest for the NEW account ("Dad's Gmail"). The human sees it
+   * prefilled in the connect dialog and may change it. Sent only when named,
+   * for the same old-API reason as `owner`.
+   */
+  label?: string;
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
@@ -165,6 +171,7 @@ export async function mintConnectLink(opts: {
         slug: opts.slug,
         ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
         ...(opts.owner ? { owner: opts.owner } : {}),
+        ...(opts.label ? { label: opts.label } : {}),
       },
     );
     if (link?.url) {

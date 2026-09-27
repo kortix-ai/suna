@@ -189,6 +189,41 @@ describe('SessionSyncController', () => {
     }
   });
 
+  // A loader may throw SYNCHRONOUSLY. The registry's page loader calls
+  // `resolveClient(key)` as an argument, and that throws `RuntimeNotReadyError`
+  // while the runtime is not bound — a normal state during a sandbox boot or a
+  // runtime switch. The throw must not escape `boundedRead` before
+  // `Promise.race` subscribes to the deadline: the already-armed read-timeout
+  // timer then rejects an unobserved promise, and the browser reports it as an
+  // unhandled `SessionSyncReadTimeoutError` 120 s after the read already failed.
+  test('a synchronous loader failure never leaves the read timeout unobserved', async () => {
+    const clock = createScheduler();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      readTimeoutMs: 15_000,
+      loadPage: () => {
+        throw new Error('RuntimeNotReadyError: session synchronization controller not bound');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+    try {
+      await controller.reconcile('initial');
+      expect(controller.getSnapshot().freshness).toBe('error');
+      // Run every timer the retry and the (must-be-cancelled) deadline armed.
+      clock.advance(60_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      controller.destroy();
+    }
+  });
+
   for (const status of [404, 410]) {
     test(`does not automatically retry a missing conversation (${status}) but permits explicit recovery`, async () => {
       const clock = createScheduler();

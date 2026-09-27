@@ -9,7 +9,7 @@
  * the end frame that follows is the same "Aborted" either way.
  *
  * Pure + exported so it is unit-tested without provisioning a box, like
- * `shouldSyncProjectEnvBeforeProxy`.
+ * `isTurnStartEnvSync`.
  */
 export function clientAbortTarget(port: number, method: string, path: string): string | null {
   if (port !== 8000) return null;

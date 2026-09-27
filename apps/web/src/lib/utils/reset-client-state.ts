@@ -1,12 +1,11 @@
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { withTimeBudget } from '@/lib/utils/time-budget';
-// The one sanctioned reach into an SDK internal module. Sign-out must purge
+// A sanctioned reach into an SDK internal module. Sign-out must purge
 // the per-user session transcripts the SDK cached in IndexedDB, and that
 // cache is browser-only: it cannot be re-exported from `@kortix/sdk`, whose
 // isomorphic-core tier has to load in React Native, a worker, and a CLI.
-// The internal subpath is its canonical address; the four zustand stores
-// beside it stay forbidden. See CANONICAL_SDK_ENTRIES in
+// The internal subpath is its canonical address. See CANONICAL_SDK_ENTRIES in
 // scripts/sdk-boundary.mjs.
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { resetAllRegisteredPersistedStores } from '@/stores/persisted-store-registry';

@@ -30,9 +30,10 @@ import {
 } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
+import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
-import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -274,6 +275,7 @@ projectsApp.openapi(
     userId: loaded.userId,
     effectiveRole: loaded.effectiveRole,
     scope,
+    orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
     boundCredentialSessionId: callerKortixSessionId(c),
@@ -441,7 +443,7 @@ projectsApp.openapi(
 
   if (
     intent.mode !== 'private' &&
-    (await sessionHasMemberConnectorBinding({
+    (await sessionHasPersonalConnectorBinding({
       accountId: loaded.row.accountId,
       projectId,
       sessionId,
@@ -556,7 +558,6 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
-  const existing = visible.row;
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
@@ -569,15 +570,17 @@ projectsApp.openapi(
   const name = normalizeString(body.name);
 
   if (hasNameField || metadata) {
-    const nextMetadata: Record<string, unknown> = {
-      ...(existing.metadata ?? {}),
-      ...(metadata ?? {}),
-    };
-    if (hasNameField) {
-      if (name) nextMetadata.custom_name = name;
-      else delete nextMetadata.custom_name;
-    }
-    updates.metadata = nextMetadata;
+    // Merge in SQL, never write back the whole object read above: the read and
+    // this UPDATE are not atomic, and the first-prompt title generator commits
+    // `metadata.name` between them. A read-modify-write here would drop that
+    // committed title (or another writer's keys) for a session with no later
+    // prompt to re-trigger titling. `||` evaluates after the row lock.
+    const patch: Record<string, unknown> = { ...(metadata ?? {}) };
+    // null (not a deleted key) is the clear signal every reader already treats
+    // as absent: `serializeSession` reads it as no override, `needsTitle` and
+    // the CAS read `metadata->>'custom_name'` as NULL.
+    if (hasNameField) patch.custom_name = name || null;
+    updates.metadata = projectSessionMetadataMerge(patch) as unknown as typeof updates.metadata;
   }
 
   const [row] = await db

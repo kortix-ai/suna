@@ -52,6 +52,9 @@ import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NAME_RE,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -622,12 +625,55 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       kortix_cli: deprecatedKortixCliGrantSetSchema(2),
       repository_access: { type: 'boolean', description: 'Allow new sessions to access the project repository. Defaults to true.' },
       workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2], deprecated: true },
+      // This agent's pi packages, on top of the top-level list; `exclude` drops top-level ones.
+      harnesses: harnessesSchema('agent'),
     },
     additionalProperties: false,
     allOf: [
       { if: { required: ['workspace'], properties: { workspace: { const: 'branch' } } }, then: { properties: { repository_access: { const: true } } } },
       { if: { required: ['workspace'], properties: { workspace: { enum: ['runtime', 'read'] } } }, then: { properties: { repository_access: { const: false } } } },
     ],
+  };
+}
+
+/** `harnesses:` — top level (every agent) or on one agent (adds `exclude`). */
+function harnessesSchema(scope: 'project' | 'agent'): JsonSchemaFragment {
+  const source = { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NPM_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] };
+  return {
+    type: 'object',
+    properties: {
+      pi: {
+        type: 'object',
+        properties: {
+          packages: {
+            type: 'array',
+            maxItems: 20,
+            items: {
+              oneOf: [
+                source,
+                {
+                  type: 'object',
+                  required: ['source'],
+                  properties: {
+                    source,
+                    extensions: { type: 'array', items: { type: 'string' } },
+                    skills: { type: 'array', items: { type: 'string' } },
+                    prompts: { type: 'array', items: { type: 'string' } },
+                    themes: { type: 'array', items: { type: 'string' } },
+                  },
+                  additionalProperties: false,
+                },
+              ],
+            },
+          },
+          ...(scope === 'agent'
+            ? { exclude: { type: 'array', items: { type: 'string', anyOf: [{ pattern: PI_PACKAGE_NAME_RE.source }, { pattern: PI_PACKAGE_PATH_RE.source }] } } }
+            : {}),
+        },
+        additionalProperties: false,
+      },
+    },
+    additionalProperties: false,
   };
 }
 
@@ -763,6 +809,9 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       // left to the imperative validator.
       default_agent: NON_EMPTY_STRING,
       runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      // Per-harness native settings. `pi.packages`: pi packages
+      // (https://pi.dev/packages) in pi's own settings format, for every agent.
+      harnesses: harnessesSchema('project'),
       agents: {
         type: 'object',
         minProperties: 1,

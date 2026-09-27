@@ -130,6 +130,29 @@ describe('gateway.messages (Anthropic Messages ingress)', () => {
   });
 });
 
+describe('gateway.messages — upstream error reasons reach the client', () => {
+  // The provider's own rejection ("Unsupported parameter: …") used to collapse
+  // into "Upstream request failed", so Claude Code users saw no cause.
+  for (const stream of [false, true]) {
+    test(`stream:${stream} carries the provider's error message`, async () => {
+      const fetchImpl: FetchImpl = async () =>
+        new Response(
+          JSON.stringify({ error: { message: 'Unsupported parameter: metadata', type: 'invalid_request_error' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      const res = await createGateway(makeHooks(), { fetchImpl }).messages({
+        authorization: 'Bearer good',
+        rawBody: JSON.stringify({ model: 'm', max_tokens: 5, stream, messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { type: string; error: { type: string; message: string } };
+      expect(body.type).toBe('error');
+      expect(body.error.type).toBe('invalid_request_error');
+      expect(body.error.message).toContain('Unsupported parameter: metadata');
+    });
+  }
+});
+
 describe('gateway.listModels — scope plumbing', () => {
   function gatewayWithSpy() {
     const seen: Array<{ managedOnly?: boolean } | undefined> = [];

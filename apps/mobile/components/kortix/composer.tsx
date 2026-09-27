@@ -1,7 +1,7 @@
 /**
  * Composer — the chat input of the project home and of a thread
  * (`SessionChatInput` wraps it). One card: the text field on top, one control
- * row underneath (add · model · send).
+ * row underneath (add · agent chip · send).
  *
  * The card is the page colour, `bg-background`, in both themes (Jay,
  * 2026-09-21: never `bg-card` — a second shade under the text reads as a
@@ -9,10 +9,10 @@
  * both themes. No shadow (Jay, 2026-09-21): the floating tab bar's soft shadow
  * put a grey halo around the card, so the input read darker than the page.
  * No animation, a plain placeholder. Every control is a design-system
- * `Button`: secondary `rounded-full` for add and model, and a round send
- * button that fills with `primary` once there is text or a file to send. The
- * control row is 36pt (Jay, 2026-09-21: 40pt read oversized): `icon-md` icon
- * buttons with 18pt glyphs, a `sm` model pill. Text is 16pt Roobert Regular
+ * `Button`: secondary `rounded-full` for add, a `sm` chip with the agent name
+ * (ghost; secondary for "Connect model", KRTX-247), and a round send button that fills with `primary` once
+ * there is text or a file to send. The control row is 36pt (Jay, 2026-09-21:
+ * 40pt read oversized): `icon-md` icon buttons with 18pt glyphs. Text is 16pt Roobert Regular
  * (design.md §3 Inputs).
  *
  * Dictation: a ghost mic button before Send. While listening the
@@ -42,6 +42,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import type { AttachedFile } from '@/lib/session/attachments';
+import type { ComposerChip } from '@/lib/session/composer-config';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
@@ -90,7 +91,7 @@ interface ComposerProps {
   onSelectionChange?: (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => void;
   /** Inside the card, above the files and the text: the thread's queue and staged command. */
   header?: React.ReactNode;
-  /** In the control row after the model pill: the thread's AutoContinue state. */
+  /** In the control row after the chip: the thread's AutoContinue state. */
   accessory?: React.ReactNode;
   attachments?: AttachedFile[];
   /** Shows the add button. */
@@ -102,9 +103,12 @@ interface ComposerProps {
   onRemoveAttachment?: (index: number) => void;
   /** Per-file upload progress ring / failure scrim, keyed by index in `attachments`. */
   attachmentUploads?: Readonly<Record<number, ComposerAttachmentUpload>>;
-  /** Shows the model pill with this text. */
-  modelLabel?: string | null;
-  onModelPress?: () => void;
+  /**
+   * Shows the chip: the agent name, or "Connect model" (`composerChip`). It
+   * opens the agent and model sheet.
+   */
+  chip?: ComposerChip | null;
+  onChipPress?: () => void;
   className?: string;
   /** A send is in flight: the send slot shows `KortixLoader` instead of the arrow, and stays disabled. */
   sending?: boolean;
@@ -132,8 +136,8 @@ export function Composer({
   allowEmptySend = false,
   onRemoveAttachment,
   attachmentUploads,
-  modelLabel,
-  onModelPress,
+  chip,
+  onChipPress,
   className,
   sending = false,
   dictation: dictationEnabled = true,
@@ -249,20 +253,20 @@ export function Composer({
                   <Icon as={Plus} size={18} />
                 </Button>
               ) : null}
-              {modelLabel ? (
+              {chip ? (
                 <Button
-                  variant="secondary"
+                  variant={chip.variant}
                   size="sm"
                   className="shrink rounded-full"
                   hitSlop={COMPOSER_CONTROL_HIT_SLOP}
-                  onPress={onModelPress}
+                  onPress={onChipPress}
                   disabled={disabled}
-                  accessibilityLabel={`Model, ${modelLabel}`}>
+                  accessibilityLabel={`Agent and model, ${chip.label}`}>
                   <Text
                     numberOfLines={1}
                     maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}
                     className="shrink">
-                    {modelLabel}
+                    {chip.label}
                   </Text>
                   <Icon as={CaretDown} size={14} className="text-muted-foreground" />
                 </Button>

@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PREVIEW_SUITE_REFUSED,
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
+  buildPreviewSuiteScript,
   previewLockfileHash,
   previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
+  previewSuiteStatusPath,
   runSandboxPreview,
   selectStalePreviewSandboxIds,
   selectTeardownSandboxIds,
@@ -62,7 +65,8 @@ describe('provider-neutral preview lifecycle', () => {
 
   it('terminates a cancelled detached worker before host reuse', () => {
     const command = stopPreviousPreviewWorkerCommand();
-    expect(command).toContain("pgrep -f '^bash /workspace/run-kortix-preview\\.sh$'");
+    // The deploy bootstrap and the separately launched suite.
+    expect(command).toContain("pgrep -f '^bash /workspace/run-kortix-preview(-suite)?\\.sh$'");
     expect(command).toContain('kill -TERM -- "-$pgid"');
     expect(command).toContain('kill -KILL -- "-$pgid"');
     expect(command).not.toContain('pkill');
@@ -118,7 +122,7 @@ describe('provider-neutral preview lifecycle', () => {
     );
   });
 
-  it('runs the suite in a pull request preview and skips it in a branch environment', () => {
+  it('deploys without the suite, and runs the suite only from its own script', () => {
     const base = {
       repository: 'kortix-ai/suna',
       ref: 'pi-worker',
@@ -126,20 +130,34 @@ describe('provider-neutral preview lifecycle', () => {
       prNumber: 6998,
       origin: 'https://x.example.test',
     };
-    // Match the executed LINE: the skip branch names the command in a hint, so
-    // a substring check would report it as running.
+    // Match the executed LINE: a hint that names the command must not count.
     const executesSuite = (script: string) =>
       script.split('\n').some((line) => line.trim() === 'pnpm test -- --target-full');
 
-    expect(executesSuite(buildPreviewBootstrapScript(base))).toBe(true);
-    expect(executesSuite(buildPreviewBootstrapScript({ ...base, runTests: true }))).toBe(true);
-    expect(executesSuite(buildPreviewBootstrapScript({ ...base, runTests: false }))).toBe(false);
+    // The deploy ends once the stack proves it serves this commit, so the
+    // workflow can publish the preview before the ~40 min suite starts.
+    const deploy = buildPreviewBootstrapScript(base);
+    expect(executesSuite(deploy)).toBe(false);
+    expect(deploy).toContain('/v1/health');
 
-    // Skipping the suite must not skip the proof that the stack came up on
-    // this commit — that check is what the deploy is actually gated on.
-    for (const runTests of [true, false]) {
-      expect(buildPreviewBootstrapScript({ ...base, runTests })).toContain('/v1/health');
-    }
+    const statusPath = previewSuiteStatusPath('1234', '1');
+    const suite = buildPreviewSuiteScript({ prNumber: 6998, sha: base.sha, statusPath });
+    expect(executesSuite(suite)).toBe(true);
+    // Same lock as the deploy: a redeploy cannot replace the API mid-suite.
+    expect(suite.indexOf('flock -x 9')).toBeGreaterThan(-1);
+    expect(suite.indexOf('flock -x 9')).toBeLessThan(suite.indexOf('pnpm test -- --target-full'));
+    // The suite tests exactly the commit the deploy proved, or refuses.
+    const guard = suite.indexOf('.commit == $sha');
+    expect(guard).toBeGreaterThan(-1);
+    // A refusal has its own exit code, so the workflow links no stale report.
+    expect(suite).toContain(`exit ${PREVIEW_SUITE_REFUSED}`);
+    expect(PREVIEW_SUITE_REFUSED).not.toBe(1);
+    expect(guard).toBeLessThan(suite.indexOf('pnpm test -- --target-full'));
+    expect(suite).toContain("source '/workspace/kortix-preview/self-host/pr-6998/.env.test'");
+    expect(suite).toContain(`STATUS='${statusPath}'`);
+    expect(suite).toContain('/workspace/kortix-test-results.tar.gz');
+    expect(statusPath).not.toBe(previewDeploymentStatusPath('1234', '1'));
+    expect(() => buildPreviewSuiteScript({ prNumber: 6998, sha: 'nope', statusPath })).toThrow('invalid Git SHA');
   });
 
   it('keeps a branch environment serving through the three ways it went dark', () => {
@@ -155,7 +173,6 @@ describe('provider-neutral preview lifecycle', () => {
       sha: 'a'.repeat(40),
       prNumber: 6998,
       origin: 'https://pi.example.test',
-      runTests: false,
     });
     // 1. The offline install is the fast path, not the only path.
     expect(script).toContain('pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile');
@@ -219,7 +236,6 @@ describe('provider-neutral preview lifecycle', () => {
       sha: 'a'.repeat(40),
       prNumber: 6998,
       origin: 'https://pi.example.test',
-      runTests: false,
     });
     expect(script).toContain('HEALTH=http://127.0.0.1:8080/v1/health');
     // The Caddyfile is a bind mount: `compose up -d` will not recreate the edge
@@ -391,7 +407,6 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain('for stack_attempt in 1 2; do');
     expect(script).toMatch(/if docker compose .* up -d --wait --wait-timeout 300; then/);
     expect(script).toContain('test "$stack_attempt" -lt 2');
-    expect(script).toContain('pnpm test -- --target-full');
     expect(script).toContain('/workspace/kortix-test-results.tar.gz');
     expect(script).toContain('kortix-preview.exit');
     expect(script).not.toContain('ecs-preview');

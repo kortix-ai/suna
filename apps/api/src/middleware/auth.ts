@@ -393,6 +393,9 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
   const sandboxTokenPathAllowed =
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
+    // The daemon relays OpenCode `permission.asked` so apps/api can push the
+    // session creator. The handler re-checks sandbox, project, and session.
+    /^\/v1\/projects\/[^/]+\/turn-permission$/.test(path) ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
     // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
     // full picker. Catalog is the non-secret model list — safe for a sandbox token.

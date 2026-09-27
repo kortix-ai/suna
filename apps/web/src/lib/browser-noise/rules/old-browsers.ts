@@ -308,6 +308,159 @@ export function isUnresolvableStackOverflowNoise(input: {
   return true;
 }
 
+// A Next.js-internal source: a compiled bundle (`app:///_next/static/chunks/…`)
+// or one of Next's own loaded runtime files (`app:///_next-live/…`, the live
+// feedback module), on either the `app:///` WebView origin or an `https://`
+// origin. These are real scripts with an actionable stack, never an inline
+// script executed in the page document.
+function isNextAssetSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return normalized.startsWith('app:///_next') || /^https?:\/\/[^/]+\/_next\//.test(normalized);
+}
+
+// The iOS WebView's in-page document/inline-script source: the `app:///`
+// origin with a DOCUMENT/route path (e.g. `app:///projects/<project_id>/
+// sessions/<session_id>`) and NO file extension — NOT a `_next/…` bundle path
+// and NOT a loaded `.js` asset. iOS WebViews (WKWebView/JSC — Safari,
+// Chrome-on-iOS, and every in-app browser, including the Google Search App) set
+// the DOCUMENT url as the `filename` of a script that runs inline in the page:
+// the WebView's own injected instrumentation, Google Translate's injected
+// translator, and Tag Manager / analytics snippets all execute this way. Our
+// compiled code never runs from this source — every first-party chunk is
+// `app:///_next/static/chunks/…` — and a loaded script asset carries its own
+// `.js` url as its filename, not the document url.
+const IOS_WEBVIEW_INLINE_SCRIPT_SOURCE_PATTERN = /^app:\/\/\/[^/]/;
+
+// A loaded asset path ends with a file extension; a route/document path does
+// not. Keeps an `app:///assets/index-abc.js` / `app:///sw.js` asset frame out
+// of the in-document inline-script anchor.
+const ASSET_FILE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
+
+function isIosWebViewInlineScriptSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  if (!IOS_WEBVIEW_INLINE_SCRIPT_SOURCE_PATTERN.test(normalized)) {
+    return false;
+  }
+  // Exclude every Next.js asset frame under `app:///_next` (both
+  // `app:///_next/static/chunks/…` bundles and Next's own `app:///_next-live/…`
+  // runtime files), which share the `app:///` prefix but are compiled/loaded
+  // scripts with an actionable stack. An inline script frame is not.
+  if (normalized.startsWith('app:///_next')) {
+    return false;
+  }
+  // Exclude any other loaded asset (`app:///assets/index-abc.js`, `app:///sw.js`):
+  // a script file has its own url as filename, not the document url. Only a
+  // route/document url (no file extension) can be an inline-script source.
+  return !ASSET_FILE_EXTENSION_PATTERN.test(normalized.split('?')[0]);
+}
+
+// The path of an `app:///<path>` WebView source, query string removed.
+function iosWebViewSourcePath(filename: unknown): string {
+  const normalized = normalizeString(filename);
+  if (!normalized.startsWith('app:///')) {
+    return '';
+  }
+  return normalized.slice('app:///'.length).split('?')[0];
+}
+
+// The path of an `https://host/<path>` request url, query string removed.
+function requestUrlPath(requestUrl: unknown): string {
+  const normalized = normalizeString(requestUrl);
+  if (normalized === '') {
+    return '';
+  }
+  try {
+    return new URL(normalized).pathname.replace(/^\//, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the iOS-WebView in-document
+ * inline-script stack-overflow noise class: a `RangeError: Maximum call stack
+ * size exceeded.` whose stack frames are ALL the iOS WebView's in-page
+ * document/inline-script source (`app:///<route>`, e.g.
+ * `app:///projects/<project_id>/sessions/<session_id>`) rather than a compiled
+ * `app:///_next/static/chunks/…` bundle frame. This is the SIBLING of
+ * `isUnresolvableStackOverflowNoise`: the frameless class drops the capture
+ * where iOS WebKit truncated the stack to a synthetic
+ * `{ filename: 'undefined' }` frame; THIS class drops the capture where the
+ * engine DID keep a stack, but every frame belongs to an inline script that
+ * runs in the document. iOS WebViews (WKWebView/JSC — the Google Search App is
+ * one) inject scripts inline, and one of them (the WebView's own
+ * instrumentation, Google Translate's injected translator, or a Tag Manager
+ * snippet) recurses until the engine's lower-than-desktop call stack
+ * overflows. Sentry captures the throw through `window.onerror` (mechanism
+ * `auto.browser.global_handlers.onerror`) and the truncated stack is a tight
+ * mutual recursion of the injected script's Closure-minified functions (e.g.
+ * `Ok`/`Qk` at one line) with the document url as every frame's filename.
+ * Better Stack patterns `101e1671…` and `d8429456…` (Kortix Frontend prod,
+ * application_id 2346967): `RangeError`, 1 occurrence each / 0 identified
+ * users, last 2026-09-25 20:01:22 UTC / 20:00:30 UTC, release `a9378b74…`, one
+ * anonymous Google Search App 436 session on iOS (iPhone) 27.0.0 with Google
+ * Translate active (`html…translated-ltr` breadcrumb) — the 44 innermost frames
+ * are the repeated `Ok`/`Qk` pair, all with filename the in-page document
+ * source, and NO `_next` chunk frame and NO resolved `apps/web/src/…` frame.
+ *
+ * Anchored on BOTH the canonical stack-overflow message AND the presence of an
+ * `app:///<route>` in-document frame, with three negative guards: a resolved
+ * first-party `apps/web/src/…` frame keeps reporting (our own code is the
+ * recursion), any Next.js-internal source frame (`_next` chunk / `_next-live`
+ * runtime file) keeps reporting, and any loaded `.js` asset frame keeps
+ * reporting (a loaded script has its own url as filename, not the document
+ * url). When the page url is known (the Sentry gate), the inline frame's
+ * `app:///` path must additionally EQUAL the page path, so an inline frame from
+ * a different document context is preserved.
+ *
+ * Residual trade-off, accepted and bounded: a script the app itself emits
+ * INLINE into the document (the Electron desktop bootstrap, the analytics-init
+ * snippets) shares this source, so an overflow in one of those snippets would
+ * be dropped. Those are small, non-recursive bootstraps, and the sibling
+ * `isUnresolvableStackOverflowNoise` makes the same trade for the iOS-truncated
+ * (frameless) shape of the same engine bug. Deliberately NOT added to
+ * `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+ * context, so a bare-string match there would swallow a real RangeError
+ * recursion; the frame-aware `beforeSend` hook (which calls
+ * `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+ */
+export function isIosWebViewInjectedStackOverflowNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+  requestUrl?: unknown;
+}): boolean {
+  if (!STACK_OVERFLOW_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = sourcesOf(input);
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame → our own
+  // code is recursing; keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any Next.js-internal source frame (compiled chunk or
+  // Next runtime file) → a real (first-party or bundled third-party) recursion
+  // with an actionable stack; keep reporting.
+  if (sources.some(isNextAssetSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame is the iOS WebView's in-document
+  // inline-script source (a route/document url, not a loaded asset).
+  const documentSources = sources.filter(isIosWebViewInlineScriptSource);
+  if (documentSources.length === 0) {
+    return false;
+  }
+  // Strong anchor when the page url is known: the inline frame's `app:///` path
+  // must be THIS page's path. A different `app:///` path is another document
+  // context, not this page's injected script; keep reporting.
+  const pagePath = requestUrlPath(input.requestUrl);
+  if (pagePath !== '') {
+    return documentSources.some((source) => iosWebViewSourcePath(source) === pagePath);
+  }
+  return true;
+}
+
 // Safari third-party-script "undefined variable" ReferenceError noise — the
 // `Can't find variable: <Name>` wording is Safari/JavaScriptCore's canonical
 // ReferenceError for a variable reference that resolved to an undeclared
@@ -432,6 +585,11 @@ export const OLD_BROWSER_RULES: readonly NoiseRule[] = [
   { id: 'old-browser-syntax', appliesTo: 'both', match: isOldBrowserSyntaxParseError },
   { id: 'old-browser-dom-null-deref', appliesTo: 'both', match: isOldBrowserDomNullDerefNoise },
   { id: 'frameless-stack-overflow', appliesTo: 'both', match: isUnresolvableStackOverflowNoise },
+  {
+    id: 'ios-webview-inline-stack-overflow',
+    appliesTo: 'both',
+    match: isIosWebViewInjectedStackOverflowNoise,
+  },
   {
     id: 'frameless-undefined-variable',
     appliesTo: 'both',

@@ -630,8 +630,8 @@ export function deriveTurnErrorPresentation(input: {
           notice.usedPct === null ? '' : ` (${notice.usedPct}% used)`
         }.`,
         suggestion:
-          'The last command used almost all of the sandbox memory. Ask the agent to continue with a ' +
-          'lighter command, for example fewer parallel workers.' +
+          'A running process or RAM-backed file may still be using memory. Stop or reduce heavy background work, ' +
+          'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
     case 'cause':
@@ -1306,6 +1306,9 @@ function SessionTurnImpl({
   const hasVisibleUserContent = useMemo(() => {
     // Session reports render as their own card — don't show as user bubble
     if (sessionReport) return false;
+    // The prompt is not loaded (a long run's tail): its stand-in has no parts
+    // and must not render as the empty bubble a loading prompt would.
+    if (turn.partial) return false;
     const parts = turn.userMessage.parts;
     // Parts not loaded yet (bridging / transient state) — assume visible
     // to prevent a flash where the bubble disappears momentarily.
@@ -1324,7 +1327,7 @@ function SessionTurnImpl({
     // Has any agent part?
     if (parts.some(isAgentPart)) return true;
     return false;
-  }, [turn.userMessage.parts, sessionReport]);
+  }, [turn.partial, turn.userMessage.parts, sessionReport]);
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {

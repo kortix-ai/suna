@@ -1,7 +1,11 @@
 /**
- * SessionShareForm — the share view of the session options sheet
- * (`ProjectSessionsPage`): the sheet pushes it in place of the options
+ * SessionShareForm — the share view of the session actions sheet
+ * (`SessionActionsSheet`): the sheet pushes it in place of the options
  * (`sheet-push`), with `SheetBackButton` in the title row to go back.
+ *
+ * On top, `SessionPublicShareRows` (KRTX-248): Share link · Share transcript ·
+ * Stop sharing link, through the system share sheet. Below them, the in-team
+ * visibility form ("In your team").
  *
  * Ported from web's ShareSessionModal + SharingPicker:
  * PUT /projects/:id/sessions/:sid/sharing with
@@ -19,6 +23,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Avatar } from '@/components/kortix/avatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import {
+  SessionPublicShareRows,
+  type PublicShareConfirmKind,
+} from '@/components/session/SessionPublicShareRows';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
@@ -46,9 +54,11 @@ export interface SessionShareFormProps {
   session: ProjectSession;
   /** The sharing was saved. */
   onDone: () => void;
+  /** Push the public link's confirm view in place of this one. */
+  onConfirmPublicLink: (kind: PublicShareConfirmKind) => void;
 }
 
-export function SessionShareForm({ projectId, session, onDone }: SessionShareFormProps) {
+export function SessionShareForm({ projectId, session, onDone, onConfirmPublicLink }: SessionShareFormProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -113,8 +123,8 @@ export function SessionShareForm({ projectId, session, onDone }: SessionShareFor
 
   return (
     <View className="gap-4 px-4">
-      {/* `bg-secondary`: in dark mode `card` equals the sheet's `popover`. */}
-      <SettingsGroup>
+      <SessionPublicShareRows projectId={projectId} session={session} onConfirm={onConfirmPublicLink} />
+      <SettingsGroup title="In your team">
         {MODE_OPTIONS.map((option) => (
           <SettingsRow
             key={option.mode}

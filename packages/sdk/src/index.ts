@@ -139,11 +139,32 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
 
 /**
- * Mint the OpenCode wire `messageId` for `session.prompts.create()`. The id is
- * the prompt's position in the transcript; a hand-rolled encoding sorts wrong.
+ * The OpenCode wire message-id clock. `mintWireMessageId` mints the `messageId`
+ * for `session.prompts.create()`: the id is the prompt's position in the
+ * transcript, and a hand-rolled encoding sorts wrong. The rest decode, order,
+ * and place ids on the wrapping 48-bit clock. Also at `@kortix/sdk/wire-message-id`,
+ * which loads this one module alone.
  */
-export { mintWireMessageId } from './core/session/wire-message-id';
-export type { MintWireMessageIdOptions } from './core/session/wire-message-id';
+export {
+  WIRE_ID_BACKDATE_MS,
+  WIRE_ID_CLOCK_TOLERANCE,
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  WIRE_MESSAGE_ID,
+  isWireIdAheadOf,
+  maxWireIdClock,
+  mintWireMessageId,
+  mintWireMessageIdAbove,
+  newestWireIdClock,
+  wireIdClock,
+  wireIdClockAt,
+  wireIdClockDelta,
+} from './core/session/wire-message-id';
+export type {
+  MintWireMessageIdAboveInput,
+  MintWireMessageIdOptions,
+  MintedWireMessageId,
+} from './core/session/wire-message-id';
 
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,

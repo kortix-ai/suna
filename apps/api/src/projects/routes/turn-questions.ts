@@ -22,6 +22,7 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
+import { notifySessionEvent } from '../../notifications/session-push';
 
 // POST /v1/projects/:projectId/turn-question
 // Sandbox-to-apps/api relay for opencode's `question.asked` event. The
@@ -175,7 +176,7 @@ projectsApp.openapi(
     // deleted.
     const resolvedAccountId = (c as any).get('accountId') as string | undefined;
     if (resolvedAccountId) {
-      await recordPendingQuestion({
+      const recorded = await recordPendingQuestion({
         accountId: resolvedAccountId,
         projectId,
         sessionId,
@@ -188,6 +189,18 @@ projectsApp.openapi(
         console.warn('[turn-question] could not persist pending question:', err);
         return null;
       });
+      // Push once per request id: a daemon retry of the same request updates
+      // the stored row (`inserted` false) and sends nothing. Fire-and-forget.
+      if (recorded?.inserted) {
+        void notifySessionEvent({
+          type: 'question',
+          sessionId,
+          projectId,
+          question: questions[0]?.question,
+        }).catch((err) =>
+          console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
+        );
+      }
     }
 
     // Non-blocking: post the question(s) into the thread and return immediately
