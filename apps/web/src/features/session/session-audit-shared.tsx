@@ -124,7 +124,7 @@ export function useSessionAudit(
   const key = sessionAuditKey(projectId, sessionId);
   return useQuery<SessionAudit>({
     queryKey: key,
-    // The session-open bundle (`docs/specs/turn-latency.md` R4) answers this
+    // The session-open bundle (the turn-latency spec (PR #7840) R4) answers this
     // session's FIRST audit read — the same "one round trip to paint" the
     // turn and prompts legs already ride. `readSessionAudit` claims it only
     // when this tab holds no cached rows yet; every read after that (a poll)

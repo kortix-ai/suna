@@ -129,7 +129,7 @@ describe('loadSessionScopeCatalog', () => {
     // already warms `qk.project.connectors(projectId)` on session-view mount.
     // Before this fix, `listConnectors` bypassed the cache entirely and asked
     // the network again — two identical `GET /connectors/...` calls for one
-    // paint (`docs/specs/turn-latency.md` R4, the census's `connectors x2`).
+    // paint (the turn-latency spec (PR #7840) R4, the census's `connectors x2`).
     const queryClient = new QueryClient();
     let calls = 0;
     const response = { connectors: [connector('mail')] };

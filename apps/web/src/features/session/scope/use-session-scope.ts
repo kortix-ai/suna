@@ -100,7 +100,7 @@ export function createSessionScopeCatalogSources(
     // project shell's Customize prefetch (`use-customize-prefetch.ts`) warms
     // on every session-view mount. Reading it straight (as this used to)
     // ignored that warm entry and issued a second, identical
-    // `GET /connectors/...` for one paint (`docs/specs/turn-latency.md` R4).
+    // `GET /connectors/...` for one paint (the turn-latency spec (PR #7840) R4).
     listConnectors: async (projectId) =>
       (
         await queryClient.fetchQuery({
@@ -243,7 +243,7 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
     // view at once (the composer, the permission prompt, the overrides
     // toolbar, the scope control) — `staleTime: 0` meant every one of them
     // past the first re-issued the SAME `GET .../scope` request the instant
-    // it mounted (`docs/specs/turn-latency.md` R4, the census's `scope x2`).
+    // it mounted (the turn-latency spec (PR #7840) R4, the census's `scope x2`).
     // 3s absorbs one paint's mount burst; `saveScope`'s `setQueryData` below
     // still lands a fresh answer on the SAME tick a save resolves, so this
     // never delays a scope EDIT — only a redundant re-read of an unedited one.

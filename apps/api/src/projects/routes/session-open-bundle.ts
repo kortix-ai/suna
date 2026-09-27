@@ -34,7 +34,7 @@
  * queue, never "no models". A default rendered as an answer is the defect class
  * this bundle exists to remove, so it must not re-introduce it under a new name.
  *
- * THE `audit` LEG (added 2026-09-27, `docs/specs/turn-latency.md` R4) answers
+ * THE `audit` LEG (added 2026-09-27, the turn-latency spec (PR #7840) R4) answers
  * the pending-approvals projection every open session tab polls every 5-15s
  * (`GET .../audit?include_events=false`), through the SAME function that
  * route calls (`readSessionAuditActions`). It deliberately excludes the
