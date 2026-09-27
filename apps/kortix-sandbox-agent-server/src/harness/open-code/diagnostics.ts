@@ -260,7 +260,7 @@ async function readOpenCodeHealth(
     // crash-looped and the supervisor latched it off: that box will not
     // self-heal and needs a human.
     runtime: await runtimeConvergenceReport(),
-    // docs/specs/runtime-convergence.md, Rule 1: the ONE actual-runtime
+    // the runtime-convergence contract (PR #7785), Rule 1: the ONE actual-runtime
     // document (release, catalog, daemon, cli, managed skills), each with its
     // own convergence state. The API computes the desired document and diffs
     // the two; this is only the box's own answer. A pure read — never

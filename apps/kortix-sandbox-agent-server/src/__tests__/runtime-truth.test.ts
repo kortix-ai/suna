@@ -1,5 +1,5 @@
 /**
- * docs/specs/runtime-convergence.md — the BOX side.
+ * the runtime-convergence contract (PR #7785) — the BOX side.
  *
  * Rule 1: one actual-runtime document, reported on `GET /kortix/health` as
  * `runtime_truth`. Rule 3: convergence keeps running for as long as the box
@@ -7,7 +7,7 @@
  * `blocked` escalation: a component that can never succeed says so once and
  * stops pretending to retry, instead of logging the same cause forever.
  *
- * The five failures this spec answers (docs/specs/runtime-convergence.md §1):
+ * The five failures this spec answers (the runtime-convergence contract (PR #7785) §1):
  *   1. a box whose one boot-time catalog fetch failed kept the BUNDLED lineup
  *      for 30 days — nothing ever re-fetched it.
  *   2. a release candidate killed by the asset-swap's own SIGTERM was recorded

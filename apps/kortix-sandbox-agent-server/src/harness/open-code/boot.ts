@@ -675,7 +675,7 @@ function runtimeReadyTail(
   scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
   scheduleConvergenceAfterReady(opencode, cfg, bootMark)
-  // docs/specs/runtime-convergence.md, Rule 3: convergence must keep running
+  // the runtime-convergence contract (PR #7785), Rule 3: convergence must keep running
   // for as long as this box is alive, not only once at boot. Both readiness
   // exits call `runtimeReadyTail` (this function's own doc, above), including
   // warm-fork adoption, so this always wires the CURRENT opencode/cfg;

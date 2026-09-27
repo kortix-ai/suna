@@ -4,7 +4,7 @@ import { logger } from './logger'
 import { runtimeConvergenceReport } from './runtime-assets'
 
 /**
- * docs/specs/runtime-convergence.md — the BOX side.
+ * the runtime-convergence contract (PR #7785) — the BOX side.
  *
  * Rule 1: one actual-runtime document, reported on `GET /kortix/health` as
  * `runtime_truth`. The API computes a matching DESIRED document and diffs the

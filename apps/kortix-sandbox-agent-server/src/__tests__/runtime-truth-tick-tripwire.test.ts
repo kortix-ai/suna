@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
- * docs/specs/runtime-convergence.md, Rule 3: "any call that materializes
+ * the runtime-convergence contract (PR #7785), Rule 3: "any call that materializes
  * runtime state must be reachable from the tick, not only from boot." A box
  * that only ever ran that call at boot is exactly the shape of failure #1
- * (docs/specs/runtime-convergence.md §1) and failure #5 (a resumed box never
+ * (the runtime-convergence contract (PR #7785) §1) and failure #5 (a resumed box never
  * re-runs boot at all).
  *
  * `src/runtime-truth.ts` is host code and must not import a concrete adapter

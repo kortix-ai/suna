@@ -1144,7 +1144,7 @@ export function missingManagedModelIds(live: Record<string, KortixGatewayModel> 
 /**
  * The `kortix` provider ids THIS box's OpenCode actually registered at its
  * last config build — read-only. This is `catalog_fingerprint`'s source of
- * truth (docs/specs/runtime-convergence.md, Rule 1.2): the provider map a
+ * truth (the runtime-convergence contract (PR #7785), Rule 1.2): the provider map a
  * running box really serves, never a second opinion re-derived from a file it
  * only hoped to load. Null before OpenCode has built a config at all.
  */
