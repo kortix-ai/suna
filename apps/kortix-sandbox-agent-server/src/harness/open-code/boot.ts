@@ -45,6 +45,7 @@ import {
   convergeRuntimeAssetsAtTurnEnd,
   scheduleRuntimeAssetsReconcile,
 } from '../../runtime-assets'
+import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import {
   flattenOpencodeError,
@@ -679,6 +680,13 @@ function runtimeReadyTail(
   scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
   scheduleConvergenceAfterReady(opencode, cfg, bootMark)
+  // the runtime-convergence contract (PR #7785), Rule 3: convergence must keep running
+  // for as long as this box is alive, not only once at boot. Both readiness
+  // exits call `runtimeReadyTail` (this function's own doc, above), including
+  // warm-fork adoption, so this always wires the CURRENT opencode/cfg;
+  // `wireRuntimeTruth`'s ticker is idempotent (a second call here — a second
+  // adoption on the same process — does not stack a second interval).
+  wireRuntimeTruth(cfg, opencode)
 }
 
 async function startSessionRuntime(

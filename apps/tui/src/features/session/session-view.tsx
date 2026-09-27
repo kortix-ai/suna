@@ -23,16 +23,39 @@
  * ordinary typing is exact and only the overlay case is an estimate.
  */
 
+import { type MessageWithParts, classifyTurn } from '@kortix/sdk';
 import { useSession } from '@kortix/sdk/react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { ResolvedHost } from '../../auth/hosts.ts';
 import { hintFor } from '../../keymap.ts';
+import { extractUrls, extractUrlsFromScreen } from '../../lib/links.ts';
 import { glyph, theme } from '../../theme.ts';
 import { Panel, type ToastKind } from '../../ui/index.ts';
+import { type LinkRow, sameLinks, withLinks } from '../links/index.ts';
+import { type UsePortsResult, detectForwardablePorts, usePorts } from '../ports/index.ts';
 import { TerminalPanel } from '../terminal/terminal-panel.tsx';
 import { Composer } from './composer/composer.tsx';
 import type { AppCommandId } from './composer/slash-commands.ts';
 import { SessionPrompts, Transcript } from './transcript/index.ts';
+
+/** Every assistant text part and tool output in the transcript, joined by newlines. */
+export function transcriptText(messages: readonly MessageWithParts[]): string {
+  const texts: string[] = [];
+  for (const message of messages) {
+    if (message.info.role !== 'assistant') continue;
+    for (const part of classifyTurn(message).parts) {
+      if (part.kind === 'text') texts.push(part.text);
+      else if (part.kind === 'tool' && part.tool.outputText) texts.push(part.tool.outputText);
+    }
+  }
+  return texts.join('\n');
+}
+
+/** Every port-forwardable string in an assistant turn's text + tool output. */
+export function portsInTranscript(messages: readonly MessageWithParts[]): number[] {
+  return detectForwardablePorts(transcriptText(messages));
+}
 
 /** Which region inside the session area owns the keyboard. */
 export type SessionFocus = 'transcript' | 'composer' | 'terminal';
@@ -90,6 +113,7 @@ export function focusHints(focus: SessionFocus | 'sidebar' | 'screen'): string {
 }
 
 export interface SessionViewProps {
+  host: ResolvedHost;
   projectId: string;
   sessionId: string;
   /** Display name, resolved from the project's session list. */
@@ -107,6 +131,11 @@ export interface SessionViewProps {
   onCloseTerminal(): void;
   onCommand(command: AppCommandId): void;
   onToast(message: string, kind?: ToastKind): void;
+  /** Ports panel (`Alt+P`) state, hoisted so `app.tsx` can render its overlay
+   *  at the root — same reason `onMetrics` hoists composer metrics. */
+  onPortsApi?: (api: UsePortsResult) => void;
+  /** Links panel (`Alt+L`) rows, hoisted for the same reason. Newest first. */
+  onLinks?: (rows: LinkRow[]) => void;
   /**
    * Test seam. Production passes nothing and the real `useSession` runs; a test
    * passes a fake so the focus and layout contract can be asserted without an
@@ -117,6 +146,7 @@ export interface SessionViewProps {
 }
 
 export function SessionView({
+  host,
   projectId,
   sessionId,
   title,
@@ -129,11 +159,49 @@ export function SessionView({
   onCloseTerminal,
   onCommand,
   onToast,
+  onPortsApi,
+  onLinks,
   useSessionImpl = useSession,
 }: SessionViewProps) {
   // The one call. Every child reads this object; none of them calls a hook.
   const session = useSessionImpl(projectId, sessionId);
   const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, overlayOpen: false });
+
+  const ports = usePorts({ host, projectId, sessionId, onToast });
+  useEffect(() => {
+    onPortsApi?.(ports);
+  }, [ports, onPortsApi]);
+
+  // Assistant text + tool output can name a sandbox port worth forwarding
+  // (SPEC: "VS Code-style port forwarding"). Re-scans the whole transcript on
+  // every message-shape change; `ports.notice` is a no-op for a port already
+  // known, so this is cheap in practice and never double-forwards.
+  // biome-ignore lint/correctness/useExhaustiveDependencies(ports.notice): stable (see `usePorts`'s memoized return); only a transcript change should retrigger this scan.
+  useEffect(() => {
+    const found = portsInTranscript(session.messages as unknown as MessageWithParts[]);
+    if (found.length) ports.notice(found, 'transcript');
+  }, [session.messages]);
+
+  // Links panel rows. A ref, not state: nothing in this column renders them,
+  // and a state update per terminal repaint would re-render the transcript.
+  const linksRef = useRef<LinkRow[]>([]);
+  const noticeLinks = useCallback(
+    (urls: string[], source: LinkRow['source']) => {
+      if (urls.length === 0) return;
+      const next = withLinks(linksRef.current, urls, source);
+      if (sameLinks(linksRef.current, next)) return;
+      linksRef.current = next;
+      onLinks?.(next);
+    },
+    [onLinks],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies(noticeLinks): only a transcript change should retrigger this scan.
+  useEffect(() => {
+    noticeLinks(
+      extractUrls(transcriptText(session.messages as unknown as MessageWithParts[])),
+      'transcript',
+    );
+  }, [session.messages]);
 
   const onMetrics = useCallback((next: ComposerMetrics) => {
     setMetrics((current) =>
@@ -233,6 +301,10 @@ export function SessionView({
           height={height}
           onClose={onCloseTerminal}
           onToast={onToast}
+          onOutput={(text) => ports.notice(detectForwardablePorts(text), 'terminal')}
+          onScreen={(screen) =>
+            noticeLinks(extractUrlsFromScreen(screen.lines, screen.columns), 'terminal')
+          }
         />
       ) : null}
     </>

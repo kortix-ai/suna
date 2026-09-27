@@ -7,13 +7,13 @@
  * keeps running on the provider forever, invisible to the DB sweep, burning
  * compute (the leak observed 2026-06-21: ~85 running boxes the DB didn't track).
  * This pass closes the gap from the OTHER side: it lists the boxes THIS
- * environment owns on the provider and stops any with no live DB row.
+ * database and instance own on the provider and stops boxes with no DB reference.
  *
  * Safety:
- *  - Scoped to this env via provider labels (the org is shared across
- *    prod/dev/local) — each provider adapter owns that filter.
- *  - keepSet = every box the DB considers live (active/provisioning) OR touched
- *    within ORPHAN_KEEP_RECENT_MS, so an in-flight session is never stopped.
+ *  - Versioned provider markers isolate databases and instances, including
+ *    older clients that still use environment-wide cleanup.
+ *  - Any DB reference excludes cleanup, regardless of status or age. Re-read
+ *    immediately before stop; DB-driven lifecycle paths own referenced boxes.
  *  - Age grace: a box younger than ORPHAN_BOX_GRACE_MS (or whose createdAt we
  *    can't read) is skipped — covers the window between provider-create and the
  *    DB row landing.
@@ -21,15 +21,14 @@
  *    sweep continues.
  */
 
-import { and, gt, inArray, isNotNull, or } from 'drizzle-orm';
-import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
+import { isNotNull } from 'drizzle-orm';
+import { appRuntimes, projectMonitorBoxes, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { REAP_CONCURRENCY } from '../reaper-constants';
-import { reconcileSandboxStoppedByExternalId } from './sandbox-state-sync';
+import { hasProviderBoxReference } from './orphan-box-references';
 
-const ORPHAN_KEEP_RECENT_MS = 15 * 60_000; // don't stop a just-touched box
 const ORPHAN_BOX_GRACE_MS = 60 * 60_000; // a box must be this old to qualify
 const ORPHAN_REAP_MAX_PER_PASS = 50; // bound provider stop() calls per pass
 
@@ -65,50 +64,28 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   }
   if (boxes.length === 0) return zero;
 
-  // keepSet: never stop a Session, App, or MONITOR box the DB considers live or
-  // touched recently. All three share the provider fleet and labels.
-  //
-  // The monitor half is load-bearing, not defensive: a monitor box is
-  // PERSISTENT by design (autoStop 0) and has no session_sandboxes row, so
-  // without it this sweep would read every healthy monitor box as an orphan and
-  // stop it about an hour after it was created — every hour, forever.
-  const recentCutoff = new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS);
-  const [sessionKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
+  const [sessionKeepRows, environmentKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
     db
       .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
       .from(sessionSandboxes)
-      .where(
-        and(
-          isNotNull(sessionSandboxes.externalId),
-          or(
-            inArray(sessionSandboxes.status, ['active', 'provisioning']),
-            gt(sessionSandboxes.updatedAt, recentCutoff),
-          ),
-        ),
-      ),
+      .where(isNotNull(sessionSandboxes.externalId)),
+    db
+      .select({ provider: sessionEnvironments.provider, externalId: sessionEnvironments.externalId })
+      .from(sessionEnvironments)
+      .where(isNotNull(sessionEnvironments.externalId)),
     db
       .select({ provider: appRuntimes.provider, externalId: appRuntimes.externalId })
       .from(appRuntimes)
-      .where(
-        or(
-          inArray(appRuntimes.status, ['provisioning', 'starting', 'running', 'stopping']),
-          gt(appRuntimes.updatedAt, recentCutoff),
-        ),
-      ),
+      .where(isNotNull(appRuntimes.externalId)),
     db
       .select({
         provider: projectMonitorBoxes.provider,
         externalId: projectMonitorBoxes.externalId,
       })
       .from(projectMonitorBoxes)
-      .where(
-        or(
-          inArray(projectMonitorBoxes.status, ['provisioning', 'starting', 'running', 'stopping']),
-          gt(projectMonitorBoxes.updatedAt, recentCutoff),
-        ),
-      ),
+      .where(isNotNull(projectMonitorBoxes.externalId)),
   ]);
-  const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows];
+  const keepRows = [...sessionKeepRows, ...environmentKeepRows, ...appKeepRows, ...monitorKeepRows];
   const keep = new Set(
     keepRows
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)
@@ -125,14 +102,17 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
 
   let stopped = 0;
   let errors = 0;
+  let attempted = 0;
   let cursor = 0;
   const worker = async () => {
-    while (cursor < orphans.length && stopped + errors < ORPHAN_REAP_MAX_PER_PASS) {
+    while (cursor < orphans.length && attempted < ORPHAN_REAP_MAX_PER_PASS) {
       const box = orphans[cursor++];
       try {
+        if (await hasProviderBoxReference(box.provider, box.externalId)) continue;
+        if (attempted >= ORPHAN_REAP_MAX_PER_PASS) break;
+        attempted += 1;
+        console.log('[reaper] stopping owned unreferenced box', { provider: box.provider, externalId: box.externalId });
         await getProvider(box.provider).stop(box.externalId);
-        // Reconcile any DB row (state drift) + close billing; no-op when there's none.
-        await reconcileSandboxStoppedByExternalId(box.externalId, now).catch(() => {});
         stopped += 1;
       } catch (err) {
         errors += 1;

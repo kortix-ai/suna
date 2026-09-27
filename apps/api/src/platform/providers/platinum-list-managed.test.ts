@@ -31,7 +31,10 @@ mock.module('../sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.test',
 }));
 
-const MANAGED = { 'kortix.managed': 'true', 'kortix.env': 'dev' };
+mock.module('../sandbox-ownership', () => ({
+  sandboxOwnershipMarker: async () => 'v2-owner-a',
+}));
+const MANAGED = { 'kortix.managed': 'v2-owner-a', 'kortix.env': 'dev' };
 
 let pages: Array<Record<string, unknown>> = [];
 let requested: string[] = [];
@@ -142,11 +145,13 @@ test('INSTANCE SCOPE: with KORTIX_INSTANCE_ID set, only a box stamped with THIS 
   }
 });
 
-test('INSTANCE SCOPE off (unset): a stamped box from any instance is listed as before', async () => {
+test('unset instance ID never grants ownership of another instance or database', async () => {
   pages = [
     {
       rows: [
         { id: 'sbx_other', state: 'running', metadata: { ...MANAGED, 'kortix.instance': 'primary' }, created_at: '2026-08-12T00:00:00Z' },
+        { id: 'sbx_foreign_db', state: 'running', metadata: { ...MANAGED, 'kortix.managed': 'v2-owner-b' }, created_at: '2026-08-12T00:00:00Z' },
+        { id: 'sbx_old_client', state: 'running', metadata: { ...MANAGED, 'kortix.managed': 'true' }, created_at: '2026-08-12T00:00:00Z' },
       ],
       has_more: false,
     },
@@ -155,5 +160,5 @@ test('INSTANCE SCOPE off (unset): a stamped box from any instance is listed as b
   const { PlatinumProvider } = await import('./platinum');
   const listed = await new PlatinumProvider().listManagedRunningSandboxes();
 
-  expect(listed.map((box) => box.externalId)).toEqual(['sbx_other']);
+  expect(listed).toEqual([]);
 });

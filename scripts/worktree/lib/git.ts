@@ -25,7 +25,20 @@ export function worktreeAddArgs(root: string, wtPath: string, branch: string, fr
   if (branchExists(root, branch)) return { args: ['git', '-C', root, 'worktree', 'add', wtPath, branch], mode: 'local' };
   if (remoteBranchExists(root, branch))
     return { args: ['git', '-C', root, 'worktree', 'add', '--track', '-b', branch, wtPath, `origin/${branch}`], mode: 'remote' };
-  return { args: ['git', '-C', root, 'worktree', 'add', '-b', branch, wtPath, from], mode: 'new' };
+  return { args: ['git', '-C', root, 'worktree', 'add', '--no-track', '-b', branch, wtPath, from], mode: 'new' };
+}
+
+/**
+ * The ref a new branch forks from. `main` means the tip of `origin/main`,
+ * fetched now: the primary checkout's local `main` is rarely pulled, and a
+ * branch cut from it starts hundreds of commits behind and carries files
+ * `main` has deleted. Any other base is kept as given. Offline, the fetch
+ * fails and the last fetched `origin/main` is used.
+ */
+export function freshBase(root: string, from: string): string {
+  if (from !== 'main') return from;
+  sh(['git', '-C', root, 'fetch', '--quiet', 'origin', 'main']);
+  return remoteBranchExists(root, 'main') ? 'origin/main' : 'main';
 }
 
 /**
