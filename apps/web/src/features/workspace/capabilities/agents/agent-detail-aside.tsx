@@ -208,7 +208,7 @@ function AgentScopeCard({
   });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
-    queryFn: () => listConnectors(projectId),
+    queryFn: () => listConnectors(projectId, { includeSchemas: false }),
     enabled: canManage,
     ...contract('config'),
   });

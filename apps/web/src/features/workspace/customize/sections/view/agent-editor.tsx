@@ -210,7 +210,7 @@ export function agentEditorOptionQueries(projectId: string) {
     },
     connectors: {
       queryKey: qk.project.connectors(projectId),
-      queryFn: () => listConnectors(projectId),
+      queryFn: () => listConnectors(projectId, { includeSchemas: false }),
       ...contract('config'),
     },
     sandboxes: {
