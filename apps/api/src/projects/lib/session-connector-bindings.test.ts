@@ -3,10 +3,12 @@ import {
   projectSessionIdForProjectPrincipal,
   resolveTokenBoundSessionId,
 } from '../../connectors/db-deps';
+import { requestMemo, runWithContext } from '../../lib/request-context';
 import {
   type ValidatedSessionConnectorBinding,
   canonicalConnectorAlias,
   connectorBindingPayloadConflicts,
+  invalidateSessionConnectorLookup,
   mayUseLegacyDefaultConnection,
   parseSessionConnectorBindings,
   selectEntitledConnectorConnection,
@@ -170,5 +172,64 @@ describe('selectEntitledConnectorConnection', () => {
         connections: [sharedA, sharedB],
       });
     });
+  });
+});
+
+/**
+ * `resolveSessionConnectorConnectionOutcome` used to re-run the identical
+ * (session, account, project) → visibility/connectorBindingsConfigured lookup
+ * once per requested alias — an N+1 measured on `GET /sessions/:id/scope`
+ * (49 DB queries / 255ms server time, 2026-09-27, several granted
+ * connectors). It is now request-memoized (`loadSessionConnectorLookup`,
+ * keyed by session+account+project). `PUT /sessions/:id/scope` reads the
+ * effective bindings BEFORE its transaction and again AFTER it commits, so a
+ * memo that outlives the write would serve the pre-write row to the
+ * post-write read — the exact hazard `requestMemo`'s own contract warns
+ * about. `invalidateSessionConnectorLookup` is what the route calls between
+ * the two to prevent that. These tests pin the memo KEY format directly
+ * (without a real DB), so a refactor that changes the key without updating
+ * the invalidator fails loudly instead of silently reintroducing stale reads.
+ */
+describe('invalidateSessionConnectorLookup', () => {
+  const KEY = (accountId: string, projectId: string, sessionId: string) =>
+    `session-connector-lookup:${accountId}:${projectId}:${sessionId}`;
+
+  test('clears exactly the entry loadSessionConnectorLookup would have used', async () => {
+    const sessionId = 's1';
+    const accountId = 'a1';
+    const projectId = 'p1';
+    let calls = 0;
+    await runWithContext('PUT', '/x', async () => {
+      const load = () => requestMemo(KEY(accountId, projectId, sessionId), async () => ++calls);
+
+      expect(await load()).toBe(1);
+      expect(await load()).toBe(1); // cached — this is the bug this fix prevents from persisting past a write
+
+      invalidateSessionConnectorLookup(sessionId, accountId, projectId);
+
+      expect(await load()).toBe(2); // a read AFTER the write sees fresh data
+    });
+    expect(calls).toBe(2);
+  });
+
+  test('never clears a different session, account, or project', async () => {
+    await runWithContext('PUT', '/x', async () => {
+      let calls = 0;
+      const load = (sessionId: string, accountId: string, projectId: string) =>
+        requestMemo(KEY(accountId, projectId, sessionId), async () => ++calls);
+
+      expect(await load('s1', 'a1', 'p1')).toBe(1);
+
+      // Invalidating a DIFFERENT session/account/project must not touch s1's entry.
+      invalidateSessionConnectorLookup('s2', 'a1', 'p1');
+      invalidateSessionConnectorLookup('s1', 'a2', 'p1');
+      invalidateSessionConnectorLookup('s1', 'a1', 'p2');
+
+      expect(await load('s1', 'a1', 'p1')).toBe(1); // still cached — none of the above matched its key
+    });
+  });
+
+  test('invalidating an entry that was never cached is a no-op, not an error', () => {
+    expect(() => invalidateSessionConnectorLookup('never-read', 'a', 'p')).not.toThrow();
   });
 });

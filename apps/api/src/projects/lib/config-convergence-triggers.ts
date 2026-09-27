@@ -33,6 +33,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
 import { invalidateDesiredRelease } from './turn-start-convergence';
+import { invalidateProjectMirror } from '../git/mirror';
 import { isUuid } from '../../shared/validate';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;
@@ -216,6 +217,10 @@ export function notifyBaseBranchMoved(projectId: string, ref: string, context: s
     // from a desired release resolved before this move. The fan-out below is
     // capped and debounced; this is neither, and it is a Map delete.
     invalidateDesiredRelease(projectId);
+    // Page views serve the warm mirror (`allowStaleMirrorReads`); a moved base
+    // must make the next one fetch. Other api processes drop theirs through the
+    // base-move broadcast (`startReplicaServices`).
+    invalidateProjectMirror(projectId);
     productionTriggers().baseMoved(projectId, ref, context);
   } catch {
     // A trigger must never fail the write that moved the branch.

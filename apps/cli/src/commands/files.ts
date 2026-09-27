@@ -224,8 +224,14 @@ export async function runFiles(argv: string[]): Promise<number> {
         return 0;
       }
       case 'branches': {
+        // The server excludes auto-created session branches (named after the
+        // session's own UUID) and caps the result by default (see
+        // apps/api/src/projects/git/branches.ts). This command is the one
+        // real "give me everything" listing — a human reading a table, run
+        // once per invocation, not polled — so it opts back into the full
+        // remote to keep its output unchanged.
         const resp = await ctx.client.get<{ default_branch: string; branches: BranchInfo[] }>(
-          `${base}/branches`,
+          `${base}/branches?include_session_branches=true&limit=2000`,
         );
         if (json) {
           emitJson(resp);

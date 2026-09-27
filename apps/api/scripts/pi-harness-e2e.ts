@@ -18,6 +18,7 @@ import { createHmac } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mintWireMessageId } from '../src/projects/wire-message-id';
 
 function arg(name: string, def?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -171,12 +172,9 @@ async function setupDb(): Promise<void> {
   console.log(JSON.stringify({ project_id: projectId, name, repo_url: repoUrl, account_id: accountId, get_status: project.status, git_origin_url: project.body?.git_origin_url ?? null }));
 }
 
+/** A wire id at this instant, un-backdated: the harness transcript is empty. */
 function mintMessageId(): string {
-  const time = (BigInt(Date.now()) * BigInt(0x1000)) & BigInt(0xffffffffffff);
-  const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  let tail = '';
-  for (let i = 0; i < 14; i++) tail += B62[Math.floor(Math.random() * 62)];
-  return `msg_${time.toString(16).padStart(12, '0')}${tail}`;
+  return mintWireMessageId({ nowMs: Date.now(), backdateMs: 0 }).id;
 }
 
 async function run(): Promise<void> {

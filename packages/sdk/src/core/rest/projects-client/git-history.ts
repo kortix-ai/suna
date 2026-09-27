@@ -78,10 +78,33 @@ export interface ProjectFileHistoryResponse {
   hasMore: boolean;
 }
 
-export async function listProjectBranches(projectId: string) {
+export interface ListProjectBranchesOptions {
+  /** Case-insensitive substring match on branch name. */
+  q?: string;
+  /** Server default 500, hard cap 2000. */
+  limit?: number;
+  /**
+   * Auto-created session branches (named by the session's UUID) are listed
+   * unless this is `false`. A default-branch picker passes `false`; the
+   * Files version selector and the change-request head picker leave it unset.
+   */
+  includeSessionBranches?: boolean;
+}
+
+export async function listProjectBranches(
+  projectId: string,
+  options?: ListProjectBranchesOptions,
+) {
+  const params = new URLSearchParams();
+  if (options?.q) params.set('q', options.q);
+  if (options?.limit != null) params.set('limit', String(options.limit));
+  if (options?.includeSessionBranches !== undefined) {
+    params.set('include_session_branches', String(options.includeSessionBranches));
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectBranchesResponse>(
-      `/projects/${projectId}/branches`,
+      `/projects/${projectId}/branches${query}`,
     ),
   );
 }
