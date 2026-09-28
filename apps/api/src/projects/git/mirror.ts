@@ -752,7 +752,12 @@ async function lockedRefreshMirror(
   const current = refreshLocks.get(project.projectId);
   if (current) {
     if (!force || current.forced) return current.promise;
-    await current.promise;
+    // The in-flight refresh belongs to another caller, often with another
+    // credential: create-repo's template prebuild clones with the token it
+    // held. Its failure is not this caller's. Wait for it to settle, then run
+    // this caller's own forced refresh — rethrowing it failed the first
+    // session on a new project with 503 git_mirror_unavailable.
+    await current.promise.catch(() => {});
     return refreshMirror(project, true);
   }
   const next = doRefreshMirror(project, force, opts?.freshRef)

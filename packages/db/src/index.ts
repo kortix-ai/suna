@@ -24,6 +24,7 @@ export {
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,
+  accountGithubUserTokens,
   accountRoleEnum,
   accountsRelations,
   accountGithubInstallationsRelations,

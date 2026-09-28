@@ -20,7 +20,7 @@ import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
@@ -379,15 +379,19 @@ projectsApp.openapi(
   // hides the row). `scope=project` on the LIST deliberately keeps tombstones
   // for managers; that path is untouched.
   if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-  const ownerEmail = visible.row.createdBy && !visible.isOwner
-    ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
-    : null;
+  // The same owner resolution the list uses: without it a read-by-id reported
+  // owner_type 'unknown' and no owner name for the very session the list named.
+  const owner = visible.row.createdBy
+    ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
+    : undefined;
   return c.json(serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
-    ownerEmail,
+    ownerEmail: owner?.email ?? null,
+    ownerName: owner?.name ?? null,
+    ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
   }));
 },
 );

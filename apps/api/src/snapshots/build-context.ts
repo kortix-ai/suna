@@ -469,6 +469,7 @@ export async function stageRuntimeBuildContext(input: {
   runtimeProfile?: RuntimeBuildProfile;
   appContext?: { sourceDir?: string; runtimeSpec: Record<string, unknown> };
   isShared?: boolean;
+  containerRuntime?: boolean;
 }): Promise<StagedContext> {
   switch (input.runtimeProfile) {
     case 'app':
@@ -483,6 +484,7 @@ export async function stageRuntimeBuildContext(input: {
         input.snapshotName,
         input.userDockerfile,
         input.isShared,
+        input.containerRuntime,
       );
   }
 }
@@ -501,6 +503,7 @@ export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
   isSharedDefault?: boolean,
+  containerRuntime?: boolean,
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
@@ -606,6 +609,7 @@ export async function stageBuildContext(
       catalogPath: 'kortix-llm-catalog.json',
       managedSkillsPath: 'managed-skills',
       isSharedDefault,
+      containerRuntime,
     });
 
     await guardBuildahPortable(composed);

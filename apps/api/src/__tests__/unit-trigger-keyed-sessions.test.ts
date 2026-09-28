@@ -126,7 +126,7 @@ describe('trigger filter', () => {
 
 describe('keyed lookups never bind to an unusable session', () => {
   const SOURCE = readFileSync(
-    join(import.meta.dir, '..', 'projects', 'lib', 'triggers.ts'),
+    join(import.meta.dir, '..', 'projects', 'lib', 'trigger-fire.ts'),
     'utf8',
   );
 

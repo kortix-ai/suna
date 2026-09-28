@@ -364,6 +364,38 @@ describe('ai-sdk request conversion', () => {
     );
   });
 
+  it('repairs replayed mixed tool pairs without losing text or the matched result', () => {
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'run tools' },
+      {
+        role: 'assistant',
+        content: 'starting',
+        tool_calls: [
+          { id: 'complete', function: { name: 'lookup', arguments: '{"q":"a"}' } },
+          { id: 'cancelled', function: { name: 'lookup', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'complete', name: 'lookup', content: 'found' },
+      { role: 'tool', tool_call_id: 'unknown', name: 'lookup', content: 'stray' },
+      { role: 'user', content: 'continue' },
+    ]);
+    expect(messages).toEqual([
+      { role: 'user', content: 'run tools' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'starting' },
+          { type: 'tool-call', toolCallId: 'complete', toolName: 'lookup', input: { q: 'a' } },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [{ type: 'tool-result', toolCallId: 'complete', toolName: 'lookup', output: { type: 'text', value: 'found' } }],
+      },
+      { role: 'user', content: 'continue' },
+    ]);
+  });
+
   it('translates a data: image_url into a file part that carries the base64 untouched', () => {
     const { messages } = toModelMessages([
       {
@@ -518,6 +550,29 @@ describe('ai-sdk per-request capability gating (reuses @kortix/llm-catalog clamp
 // ported implementation and the exact @ai-sdk/anthropic +
 // @ai-sdk/amazon-bedrock field names it's built against.
 describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () => {
+  it('anthropic: nested reasoning effort drives adaptive thinking and preserves an explicit output cap', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'user', content: 'explain' }], reasoning: { effort: 'xhigh' }, max_tokens: 2048 },
+      'anthropic',
+    );
+    expect(args.providerOptions).toEqual({
+      anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'xhigh' },
+    });
+    expect(args.maxOutputTokens).toBe(2048);
+  });
+
+  it('bedrock Claude: a raw thinking budget becomes adaptive reasoning, not a legacy token budget', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'user', content: 'explain' }], thinking: { type: 'enabled', budget_tokens: 16000 } },
+      'bedrock',
+      { resolvedModel: BEDROCK_CLAUDE },
+    );
+    expect(args.providerOptions).toEqual({
+      bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'high', display: 'summarized' } },
+    });
+    expect(args.maxOutputTokens).toBe(32000);
+  });
+
   it('anthropic: reasoning_effort maps to adaptive thinking + effort (never enabled/budgetTokens) and bumps maxOutputTokens', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
     expect(args.providerOptions).toMatchObject({

@@ -531,9 +531,21 @@ test.describe('30 — pooled provider secrets', () => {
           ON CONFLICT DO NOTHING`, [accountSecretId, accountId, projectId, label, member.id], databaseUrl);
         await runDatabaseSql(`INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by)
           VALUES ($1, $2, $3, $3) ON CONFLICT DO NOTHING`, [accountSecretId, accountId, member.id], databaseUrl);
+        if (route.request().postDataJSON().flow_id === 'byos-flow-2') holdAccountList();
         await route.fulfill({ status: 200, json: { status: 'success', credential: {
           provider_id: 'codex', secret_id: accountSecretId, label, expires_in_ms: null, updated_at: new Date().toISOString(),
         } } });
+      });
+      // After ChatGPT confirms, the dialog waits for the account list. Holding
+      // that read shows what the dialog offers in between.
+      let accountListHeld: Promise<void> | null = null;
+      let releaseAccountList = () => {};
+      const holdAccountList = () => {
+        accountListHeld = new Promise((resolve) => { releaseAccountList = () => { accountListHeld = null; resolve(); }; });
+      };
+      await page.route((url) => url.pathname.endsWith(`/v1/accounts/${accountId}/secret-resources`), async (route) => {
+        if (accountListHeld && route.request().method() === 'GET') await accountListHeld;
+        await route.fallback();
       });
 
       await installBrowserSessionDirect(page, memberSession, `/projects/${projectId}`, authOptions);
@@ -605,6 +617,11 @@ test.describe('30 — pooled provider secrets', () => {
       await dialog.getByRole('button', { name: 'Connect account' }).click();
       await expect(dialog.getByRole('alert')).toHaveText('ChatGPT denied the authorization');
       await dialog.getByRole('button', { name: 'Try again', exact: true }).click();
+      await expect(dialog.getByRole('status')).toHaveText('Signed in. Saving your account…', { timeout: 15_000 });
+      await expect(dialog.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+      await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+      await expect(dialog.getByRole('radio')).toHaveCount(0);
+      releaseAccountList();
       await expect(dialog).toHaveCount(0);
       expect(starts).toEqual([1, 2].map(() => ({
         resource_label: expect.stringMatching(/^ChatGPT · e2e-byos-member-/),
@@ -686,12 +703,21 @@ test.describe('30 — pooled provider secrets', () => {
           user_code: 'MARK-1', expires_at: Date.now() + 60_000, interval_ms: 1000,
         } });
       });
+      // After ChatGPT confirms, the dialog waits for the account list. Holding
+      // that read shows what the dialog offers in between.
+      let releaseAccountList = () => {};
+      let accountListHeld: Promise<void> | null = null;
       await page.route(`**/v1/projects/${projectId}/oauth/openai/poll`, async (route) => {
         await runDatabaseSql('UPDATE kortix.account_secret_resources SET needs_reauth_at = null, updated_at = now() WHERE secret_id = $1',
           [stale], databaseUrl);
+        accountListHeld = new Promise((resolve) => { releaseAccountList = () => { accountListHeld = null; resolve(); }; });
         await route.fulfill({ status: 200, json: { status: 'success', credential: {
           provider_id: 'codex', secret_id: stale, label: 'ChatGPT · Work', expires_in_ms: null, updated_at: new Date().toISOString(),
         } } });
+      });
+      await page.route((url) => url.pathname.endsWith(`/v1/accounts/${accountId}/secret-resources`), async (route) => {
+        if (accountListHeld && route.request().method() === 'GET') await accountListHeld;
+        await route.fallback();
       });
 
       await installBrowserSessionDirect(page, memberSession, `/projects/${projectId}`, authOptions);
@@ -733,7 +759,36 @@ test.describe('30 — pooled provider secrets', () => {
       await page.evaluate(() => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add('light'); });
 
       await reconnect.click();
-      await expect(page.getByRole('dialog', { name: 'Reconnect ChatGPT · Work' })).toHaveCount(0, { timeout: 15_000 });
+      // Signed in, list not refreshed yet: the dialog says so and offers
+      // nothing to click. It used to show an idle, enabled Reconnect button.
+      const reconnectDialog = page.getByRole('dialog', { name: 'Reconnect ChatGPT · Work' });
+      await expect(reconnectDialog.getByRole('status')).toHaveText('Signed in. Saving your account…', { timeout: 15_000 });
+      await expect(reconnectDialog.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+      await expect(reconnectDialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+      await expect(reconnectDialog.getByRole('button', { name: 'Reconnect', exact: true })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(reconnectDialog).toBeVisible();
+      await reconnectDialog.screenshot({ path: testInfo.outputPath('chatgpt-reconnect-finishing.png'), animations: 'disabled' });
+      // Record every frame until the dialog is gone: its exit animation used to
+      // replay the idle state, an unnamed title and a Reconnect button.
+      await page.evaluate(() => {
+        const dialog = [...document.querySelectorAll('[role="dialog"]')].find((node) =>
+          document.getElementById(node.getAttribute('aria-labelledby') ?? '')?.textContent === 'Reconnect ChatGPT · Work')!;
+        const frames: Array<{ title: string; buttons: string[] }> = [];
+        const record = () => frames.push({
+          title: document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')?.textContent ?? '',
+          buttons: [...dialog.querySelectorAll('button')].map((button) => button.textContent?.trim() ?? ''),
+        });
+        record();
+        new MutationObserver(record).observe(dialog, { subtree: true, childList: true, characterData: true, attributes: true });
+        (window as unknown as { reconnectFrames: typeof frames }).reconnectFrames = frames;
+      });
+      releaseAccountList();
+      await expect(reconnectDialog).toHaveCount(0, { timeout: 15_000 });
+      const frames = await page.evaluate(() => (window as unknown as { reconnectFrames: Array<{ title: string; buttons: string[] }> }).reconnectFrames);
+      expect(frames.length).toBeGreaterThan(1);
+      expect([...new Set(frames.map((frame) => frame.title))]).toEqual(['Reconnect ChatGPT · Work']);
+      expect(frames.flatMap((frame) => frame.buttons).filter((name) => name === 'Reconnect')).toEqual([]);
       expect(starts).toEqual([{ resource_id: stale }]);
       await expect(staleRow.getByText('Needs reconnection', { exact: true })).toHaveCount(0, { timeout: 15_000 });
       await expect(staleRow.getByRole('button', { name: 'Reconnect ChatGPT · Work' })).toHaveCount(0);
