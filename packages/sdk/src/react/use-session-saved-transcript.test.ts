@@ -282,9 +282,11 @@ describe('an empty conversation', () => {
     expect(current().conversationEmpty).toBe(false);
   });
 
-  test('an unanswered turn record is an unknown, never an empty', async () => {
+  test('an unanswered turn record is an unknown, never an empty, and never the boot screen', async () => {
     serve({ snapshot: async () => Response.json(bundle(ROOT, false)), history: async () => provenEmpty(), historyFlag: true });
     await mount({ enabled: true });
     expect(current().conversationEmpty).toBe(false);
+    // The composer may be one read away: placeholder rows, not a boot screen.
+    expect(current().savedTranscript).toBe('loading');
   });
 });

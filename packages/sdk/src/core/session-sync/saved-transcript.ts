@@ -46,11 +46,18 @@ export interface SavedTranscriptInput {
    * none is left (only the runtime can name it now).
    */
   root: 'known' | 'pending' | 'unknown';
+  /**
+   * The saved copy proves this root's conversation empty, and the turn record
+   * has not answered yet. The host's next surface is then the composer or the
+   * boot screen, and it cannot tell which: see {@link isEmptyConversation}.
+   */
+  emptyAwaitingTurnRead?: boolean;
 }
 
 export function resolveSavedTranscript(input: SavedTranscriptInput): SavedTranscript {
   if (input.hasMessages) return 'shown';
   if (!input.enabled) return 'loading';
+  if (input.emptyAwaitingTurnRead) return 'loading';
   if (input.history === 'absent') return 'none';
   if (input.history === 'loading') return 'loading';
   if (input.root === 'unknown') return 'none';

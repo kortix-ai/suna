@@ -1171,6 +1171,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     () => messagesBeforeRewind(sync.messages, restRewind),
     [sync.messages, restRewind],
   );
+  // The server's turn record (shared `/turn` cache entry, no extra request) and
+  // the saved copy's proof of an empty conversation. Read before 5a: while the
+  // proof waits for the turn record, the host must not paint its boot screen.
+  const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
+  const turnRead = typeof turnOutcome.atMs === 'number';
+  const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
+  const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
   // wakes? A host paints placeholder rows while the answer is `loading` and
   // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
@@ -1188,17 +1195,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
           : 'absent',
     mirror: sync.mirrorState,
     root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
+    emptyAwaitingTurnRead: emptyProvenForRoot && !turnRead,
   });
   // 5a'. And is there anything to wait for at all? The saved copy can prove
   // the conversation empty (a complete read of the runtime found nothing); the
-  // server's turn record (shared `/turn` cache entry, no extra request) says
-  // whether a turn ended since, and the projection whether one is open or
-  // queued. A proven-empty session opens on its composer.
-  const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
+  // turn record says whether a turn ended since, and the projection whether
+  // one is open or queued. A proven-empty session opens on its composer.
   const conversationEmpty = isEmptyConversation({
-    savedEmptyRoot: transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null,
+    savedEmptyRoot,
     rootSessionId: ocSessionId,
-    turnRead: typeof turnOutcome.atMs === 'number',
+    turnRead,
     hasEndedTurn: turnOutcome.last_ended != null,
     hasOpenOrQueuedTurn:
       working.state === 'working' ||

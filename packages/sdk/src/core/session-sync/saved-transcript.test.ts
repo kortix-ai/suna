@@ -47,6 +47,14 @@ describe('resolveSavedTranscript', () => {
     );
   });
 
+  test('a copy that proves the conversation empty waits for the turn record: the next surface is the composer or the boot screen', () => {
+    // The two reads answer independently. Declaring `none` first would paint
+    // the boot screen for the moment until the turn record lands.
+    expect(resolveSavedTranscript({ ...base, history: 'absent', emptyAwaitingTurnRead: true })).toBe('loading');
+    expect(resolveSavedTranscript({ ...base, history: 'absent', emptyAwaitingTurnRead: false })).toBe('none');
+    expect(resolveSavedTranscript({ ...base, hasMessages: true, emptyAwaitingTurnRead: true })).toBe('shown');
+  });
+
   test('invariants hold for every input', () => {
     const histories = ['off', 'loading', 'present', 'absent'] as const;
     const mirrors = ['idle', 'loading', 'painted', 'absent'] as const;
