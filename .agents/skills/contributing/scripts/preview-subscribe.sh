@@ -64,8 +64,20 @@ fi
 # (KE2E_STRIPE_SECRET_KEY / KE2E_STRIPE_WEBHOOK_SECRET —
 # tests/src/core/preview-stack.ts). Not a new secret: apps/api/.env.staging is
 # the repo's own dotenvx-encrypted mirror of the same value.
-stripe_secret_key="$(dotenvx get STRIPE_SECRET_KEY -f "$repo/apps/api/.env.staging")"
-stripe_webhook_secret="$(dotenvx get STRIPE_WEBHOOK_SECRET -f "$repo/apps/api/.env.staging")"
+# PREVIEW_STRIPE_TEST_* win: a Kortix session sandbox without the staging
+# dotenvx key sets them as project secrets. Otherwise read the file with
+# --overload — plain `dotenvx get` returns an already-set STRIPE_SECRET_KEY
+# from the environment, which in a company sandbox is a LIVE key.
+stripe_secret_key="${PREVIEW_STRIPE_TEST_SECRET_KEY:-$(dotenvx get STRIPE_SECRET_KEY --overload -f "$repo/apps/api/.env.staging" 2>/dev/null || true)}"
+stripe_webhook_secret="${PREVIEW_STRIPE_TEST_WEBHOOK_SECRET:-$(dotenvx get STRIPE_WEBHOOK_SECRET --overload -f "$repo/apps/api/.env.staging" 2>/dev/null || true)}"
+case "$stripe_secret_key" in
+  sk_test_*|rk_test_*) ;;
+  *) echo "refusing: the Stripe key is not a test-mode key (set PREVIEW_STRIPE_TEST_SECRET_KEY=sk_test_…)" >&2; exit 3 ;;
+esac
+case "$stripe_webhook_secret" in
+  whsec_*) ;;
+  *) echo "refusing: no Stripe webhook secret (set PREVIEW_STRIPE_TEST_WEBHOOK_SECRET=whsec_…)" >&2; exit 3 ;;
+esac
 
 if ! STRIPE_SECRET_KEY="$stripe_secret_key" STRIPE_WEBHOOK_SECRET="$stripe_webhook_secret" \
   bun run "$here/preview-subscribe.ts" "$origin" "$access_token" "$account_id" "$tier"; then
