@@ -976,6 +976,10 @@
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
+        },
+        "mcp": {
+          "name": "MCP server",
+          "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
         }
       }
     },
@@ -19197,6 +19201,9 @@
       "text273c48dbf3b9": "Registered push notification device",
       "textbb666ddf7a57": "Removed push notification device",
       "text397ab5aecbbf": "Relayed session permission request",
+      "text3ec6c235548a": "Read MCP server metadata",
+      "text7740934de920": "Registered an OAuth client",
+      "textcd36423ea12a": "Called the MCP server",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks"
     },
@@ -20306,16 +20313,22 @@
   },
   "connectMcp": {
     "title": "Connect Kortix over MCP",
-    "description": "Give Claude Code, Codex, Cursor or any MCP client the whole Kortix CLI as tools: projects, sessions, secrets, connectors, triggers and more.",
-    "install": "Install the CLI",
-    "signIn": "Sign in",
-    "signInHint": "The MCP server acts as this login. On a headless machine, set KORTIX_TOKEN in the server env instead.",
+    "description": "Add this URL to Claude, ChatGPT, Cursor, Codex or any MCP client. The client asks you to sign in to Kortix the first time. Nothing to install.",
+    "urlLabel": "MCP URL",
     "addToClient": "Add it to your client",
     "other": "Other",
-    "otherHint": "Claude Desktop, VS Code, Windsurf and other clients take this JSON in their MCP settings.",
+    "claudeSteps": "In Claude (web or desktop), open Settings → Connectors → Add custom connector, paste the URL, and sign in.",
+    "claudeCodeHint": "Then run /mcp in Claude Code and sign in.",
+    "otherHint": "ChatGPT (developer mode), VS Code, Windsurf and other clients: add a remote MCP server with the URL above, or this JSON.",
     "addToCursor": "Add to Cursor",
+    "signInOnFirstUse": "Cursor asks you to sign in to Kortix on first use.",
     "docs": "Docs",
     "done": "Done",
     "copy": "Copy"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Unverified app",
+    "unverifiedBody": "{client} registered itself with Kortix. Kortix has not verified who runs it. Allow it only if you are connecting it yourself right now.",
+    "redirectsTo": "Sends you back to"
   }
 }

@@ -27,6 +27,7 @@ import type { AuditRouteLabel } from './audit-labels';
 // biome-ignore format: one route per line, so a diff names exactly the route that changed
 export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | string>> = {
   'GET /.well-known/oauth-authorization-server': { action: 'oauth.server_metadata.read', title: 'Read OAuth server metadata' },
+  'GET /.well-known/oauth-protected-resource/v1/projects/:projectId/mcp': { action: 'mcp.resource_metadata.read', title: 'Read MCP server metadata' },
   'GET /health': { action: 'system.health.read', title: 'Checked API health' },
   'GET /health/live': { action: 'system.health.liveness.read', title: 'Checked API liveness' },
   'GET /health/ready': { action: 'system.health.readiness.read', title: 'Checked API readiness' },
@@ -338,6 +339,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/oauth/authorize': { action: 'oauth.authorization.start', title: 'Started OAuth authorization' },
   'POST /v1/oauth/authorize/consent': { action: 'oauth.consent.answer', title: 'Submitted OAuth consent' },
   'GET /v1/oauth/authorize/consent/:requestId': { action: 'oauth.consent_request.read', title: 'Viewed OAuth consent request' },
+  'POST /v1/oauth/register': { action: 'oauth.client.register', title: 'Registered an OAuth client' },
   'POST /v1/oauth/revoke': { action: 'oauth.token.revoke', title: 'Revoked an OAuth token' },
   'POST /v1/oauth/token': { action: 'oauth.token.create', title: 'Issued an OAuth token' },
   'GET /v1/oauth/userinfo': { action: 'oauth.userinfo.read', title: 'Viewed OAuth user information' },
@@ -526,6 +528,9 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/marketplace/install-session': { action: 'marketplace.install.start', title: 'Started marketplace install' },
   'GET /v1/projects/:projectId/model-access': { action: 'model.access.read', title: 'Viewed model access' },
   'PUT /v1/projects/:projectId/model-access': { action: 'model.access.update', title: 'Updated model access' },
+  'DELETE /v1/projects/:projectId/mcp': 'POST /v1/projects/:projectId/mcp',
+  'GET /v1/projects/:projectId/mcp': 'POST /v1/projects/:projectId/mcp',
+  'POST /v1/projects/:projectId/mcp': { action: 'mcp.request', title: 'Called the MCP server' },
   'DELETE /v1/projects/:projectId/model-defaults': { action: 'model.default.delete', title: 'Deleted model defaults' },
   'GET /v1/projects/:projectId/model-defaults': { action: 'model.default.read', title: 'Viewed model defaults' },
   'PUT /v1/projects/:projectId/model-defaults': { action: 'model.default.update', title: 'Updated model defaults' },

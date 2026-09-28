@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 685 route actions and 64 other events.
+This page lists 688 route actions and 64 other events.
 
 ## `account.`
 
@@ -493,6 +493,13 @@ This page lists 685 route actions and 64 other events.
 | `marketplace.source.delete` | Removed marketplace source | `DELETE /v1/marketplace/sources/:id` |
 | `marketplace.source.list` | Listed marketplace sources | `GET /v1/marketplace/sources` |
 
+## `mcp.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `mcp.request` | Called the MCP server | `POST /v1/projects/:projectId/mcp` (also `DELETE /v1/projects/:projectId/mcp`, `GET /v1/projects/:projectId/mcp`) |
+| `mcp.resource_metadata.read` | Read MCP server metadata | `GET /.well-known/oauth-protected-resource/v1/projects/:projectId/mcp` |
+
 ## `member.`
 
 | Action | Title | Route |
@@ -529,6 +536,7 @@ This page lists 685 route actions and 64 other events.
 | Action | Title | Route |
 | --- | --- | --- |
 | `oauth.authorization.start` | Started OAuth authorization | `GET /v1/oauth/authorize` |
+| `oauth.client.register` | Registered an OAuth client | `POST /v1/oauth/register` |
 | `oauth.consent.answer` | Submitted OAuth consent | `POST /v1/oauth/authorize/consent` |
 | `oauth.consent_request.read` | Viewed OAuth consent request | `GET /v1/oauth/authorize/consent/:requestId` |
 | `oauth.server_metadata.read` | Read OAuth server metadata | `GET /.well-known/oauth-authorization-server` (also `GET /v1/oauth/.well-known/oauth-authorization-server`) |

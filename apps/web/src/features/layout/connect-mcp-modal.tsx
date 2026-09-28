@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * "Connect MCP": how to hand the Kortix CLI to an MCP client. `kortix mcp`
- * (apps/cli/src/mcp.ts) serves every CLI command as a stdio tool, so the whole
- * setup is install → sign in → register one command with the client.
+ * "Connect MCP": the project's hosted MCP URL and how to add it to a client.
+ * The client signs in with OAuth on first use (apps/api/src/mcp), so there is
+ * nothing to install. Shown only when the project's `mcp` feature flag is on.
  */
 
 import { Button } from '@/components/ui/button';
@@ -20,42 +20,42 @@ import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@/compon
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
-import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { ArrowSquareOutIcon, CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
 
-const SERVER = { command: 'kortix', args: ['mcp'] };
-const SERVER_JSON = JSON.stringify({ mcpServers: { kortix: SERVER } }, null, 2);
-// Client names and shell commands are product identifiers, not UI copy.
-const CLIENTS: { id: string; name: string; command?: string }[] = [
-  {
-    id: 'claude',
-    name: 'Claude Code',
-    command: 'claude mcp add --scope user kortix -- kortix mcp',
-  },
-  { id: 'codex', name: 'Codex', command: 'codex mcp add kortix -- kortix mcp' },
-  { id: 'cursor', name: 'Cursor' },
-];
-const CURSOR_INSTALL_URL = `cursor://anysphere.cursor-deeplink/mcp/install?name=kortix&config=${btoa(JSON.stringify(SERVER))}`;
-
-/** Kortix Cloud signs in with the CLI default; any other deployment names its API. */
-export function loginCommand(backendUrl: string | undefined): string {
-  if (!backendUrl) return 'kortix login';
-  const api = new URL(backendUrl);
-  if (api.hostname === 'api.kortix.com') return 'kortix login';
-  return `kortix login --host ${api.hostname} --api ${api.origin}`;
+/** The project's MCP endpoint: `<api origin>/v1/projects/<id>/mcp`. */
+export function mcpUrl(backendUrl: string | undefined, projectId: string): string {
+  const base = (backendUrl || 'https://api.kortix.com/v1').replace(/\/+$/, '');
+  return `${base.endsWith('/v1') ? base : `${base}/v1`}/projects/${projectId}/mcp`;
 }
 
+export function cursorInstallUrl(url: string): string {
+  return `cursor://anysphere.cursor-deeplink/mcp/install?name=kortix&config=${btoa(JSON.stringify({ url }))}`;
+}
+
+const claudeCodeCommand = (url: string) => `claude mcp add --transport http kortix ${url}`;
+const codexCommands = (url: string) => `codex mcp add kortix --url ${url}\ncodex mcp login kortix`;
+
+// Client and product names are identifiers, not UI copy.
+const TABS = [
+  { id: 'claude', name: 'Claude' },
+  { id: 'claude-code', name: 'Claude Code' },
+  { id: 'cursor', name: 'Cursor' },
+  { id: 'codex', name: 'Codex' },
+] as const;
+
 export function ConnectMcpModal({
+  projectId,
   open,
   onOpenChange,
 }: {
+  projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('connectMcp');
-  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
+  const url = mcpUrl(getEnv().BACKEND_URL, projectId);
+  const json = JSON.stringify({ mcpServers: { kortix: { url } } }, null, 2);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -65,46 +65,50 @@ export function ConnectMcpModal({
           <ModalDescription>{t('description')}</ModalDescription>
         </ModalHeader>
         <ModalBody className="max-h-[70vh] space-y-5 overflow-y-auto">
-          <Step n={1} title={t('install')}>
-            <CommandBlock text={installCommand} />
-          </Step>
-          <Step n={2} title={t('signIn')} hint={t('signInHint')}>
-            <CommandBlock text={loginCommand(getEnv().BACKEND_URL)} />
-          </Step>
-          <Step n={3} title={t('addToClient')}>
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">{t('urlLabel')}</h3>
+            <CommandBlock text={url} />
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">{t('addToClient')}</h3>
             <Tabs defaultValue="claude" className="space-y-3">
               <TabsListCompact>
-                {CLIENTS.map((client) => (
-                  <TabsTriggerCompact key={client.id} value={client.id}>
-                    {client.name}
+                {TABS.map((tab) => (
+                  <TabsTriggerCompact key={tab.id} value={tab.id}>
+                    {tab.name}
                   </TabsTriggerCompact>
                 ))}
                 <TabsTriggerCompact value="other">{t('other')}</TabsTriggerCompact>
               </TabsListCompact>
-              {CLIENTS.filter((client) => client.command).map((client) => (
-                <TabsContent key={client.id} value={client.id}>
-                  <CommandBlock text={client.command!} />
-                </TabsContent>
-              ))}
+              <TabsContent value="claude">
+                <p className="text-muted-foreground text-xs">{t('claudeSteps')}</p>
+              </TabsContent>
+              <TabsContent value="claude-code" className="space-y-2">
+                <CommandBlock text={claudeCodeCommand(url)} />
+                <p className="text-muted-foreground text-xs">{t('claudeCodeHint')}</p>
+              </TabsContent>
               <TabsContent value="cursor" className="space-y-3">
                 <Button asChild size="sm" variant="secondary" className="gap-1.5">
-                  <a href={CURSOR_INSTALL_URL}>
+                  <a href={cursorInstallUrl(url)}>
                     <ArrowSquareOutIcon className="size-3.5 shrink-0" />
                     {t('addToCursor')}
                   </a>
                 </Button>
-                <CommandBlock text={SERVER_JSON} />
+                <p className="text-muted-foreground text-xs">{t('signInOnFirstUse')}</p>
               </TabsContent>
-              <TabsContent value="other" className="space-y-3">
+              <TabsContent value="codex" className="space-y-2">
+                <CommandBlock text={codexCommands(url)} />
+              </TabsContent>
+              <TabsContent value="other" className="space-y-2">
                 <p className="text-muted-foreground text-xs">{t('otherHint')}</p>
-                <CommandBlock text={SERVER_JSON} />
+                <CommandBlock text={json} />
               </TabsContent>
             </Tabs>
-          </Step>
+          </section>
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <Link href="/docs/mcp" target="_blank">
+            <Link href="/docs/connect/mcp" target="_blank">
               {t('docs')}
               <ArrowSquareOutIcon className="size-3.5 shrink-0" />
             </Link>
@@ -115,30 +119,6 @@ export function ConnectMcpModal({
         </ModalFooter>
       </ModalContent>
     </Modal>
-  );
-}
-
-function Step({
-  n,
-  title,
-  hint,
-  children,
-}: {
-  n: number;
-  title: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-2">
-      <div className="space-y-0.5">
-        <h3 className="text-sm font-medium">
-          <span className="text-muted-foreground tabular-nums">{n}.</span> {title}
-        </h3>
-        {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
-      </div>
-      {children}
-    </section>
   );
 }
 

@@ -1,10 +1,14 @@
 {
   "generatedAt": "static",
-  "count": 683,
+  "count": 688,
   "routes": [
     {
       "method": "GET",
       "path": "/.well-known/oauth-authorization-server"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp"
     },
     {
       "method": "GET",
@@ -1244,6 +1248,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/oauth/register"
+    },
+    {
+      "method": "POST",
       "path": "/v1/oauth/revoke"
     },
     {
@@ -1965,6 +1973,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/mcp"
     },
     {
       "method": "GET",
