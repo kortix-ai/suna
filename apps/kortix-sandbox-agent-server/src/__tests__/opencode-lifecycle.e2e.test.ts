@@ -38,6 +38,7 @@ import {
 import { createOpenCodeHarnessService } from '@/harness/open-code/service'
 import { bootLinkPath } from '@/services/config-release/boot-config'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
+import { reserveOpenCodePortPair } from './helpers/open-code-harness'
 import { createProjectEnvStore, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 let root: string
@@ -219,8 +220,7 @@ function rig(
   mkdirSync(workspace, { recursive: true })
   const binary = options.binary ?? join(root, 'opencode')
   if (!options.binary && !options.binaryPathResolverOverride) writeFakeOpencode(binary)
-  const primary = reservePort()
-  const standby = reservePort()
+  const [primary, standby] = reserveOpenCodePortPair()
   const cfg = {
     workspace,
     projectTarget: workspace,
@@ -496,8 +496,7 @@ describe('verified reload', () => {
     const binary = join(root, 'opencode')
     mkdirSync(workspace)
     writeFakeOpencode(binary)
-    const primary = reservePort()
-    const standby = reservePort()
+    const [primary, standby] = reserveOpenCodePortPair()
     const cfg = {
       workspace,
       projectTarget: workspace,
@@ -657,9 +656,12 @@ describe('verified reload', () => {
     expect(r.lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${r.standby}`)
     expect(await sessionAnswers(r.lifecycle.getInternalUrl())).toBe(true)
     // reconfigure() marks `starting` until the next probe; the probe asks the
-    // process's real port, so it comes back `ok` on its own.
-    await waitFor(() => r.lifecycle.getState() === 'ok', 5_000)
-  }, 20_000)
+    // process's real port, so it comes back `ok` on its own. That probe is the
+    // liveness timer armed at promotion: up to READY_LIVENESS_MS (5 s) away,
+    // plus its 2 s timeout. A 5 s wait raced that timer and lost under load, so
+    // this takes the file's default budget.
+    await waitFor(() => r.lifecycle.getState() === 'ok')
+  }, 40_000)
 
   test('stop and reload retire the whole process group, grandchildren included', async () => {
     // OpenCode forks its own `bun install` for the config dir. A grandchild

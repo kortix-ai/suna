@@ -95,3 +95,16 @@ export function signTestUserContext(
   const sig = base64url(createHmac('sha256', secret).update(payloadB64).digest())
   return `${payloadB64}.${sig}`
 }
+
+/**
+ * Two distinct free ports for the OpenCode primary/standby pair. Both stay
+ * bound until both are chosen: two sequential port-0 binds returned the same
+ * port 2 times in 20,000 on Linux, and a pair with one port makes every
+ * verified reload refuse as "port pair is desynced".
+ */
+export function reserveOpenCodePortPair(): [primary: number, standby: number] {
+  const servers = [0, 1].map(() => Bun.serve({ port: 0, fetch: () => new Response('reserved') }))
+  const [primary, standby] = servers.map((server) => server.port as number)
+  for (const server of servers) server.stop(true)
+  return [primary!, standby!]
+}
