@@ -1348,6 +1348,32 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       return { json: (await response.json()) as any, sentBodies };
     };
 
+    // Seen on dev 2026-09-28: a ChatGPT login ChatGPT refuses failed this path
+    // as a status-less NetworkError, because the settled result rejects with a
+    // generic no-output error while only the stream carried the 401. A chain
+    // retrying on service errors then moved past a refused login on a
+    // non-streaming request, and not on a streaming one.
+    it.each([false, true])('a refused login fails with its HTTP status and body (client stream: %p)', async (stream) => {
+      const refusal = JSON.stringify({
+        error: {
+          message: 'Could not parse your authentication token. Please try signing in again.',
+          type: null,
+          code: 'unauthorized_unknown',
+          param: null,
+        },
+        status: 401,
+      });
+      const failure = await callUpstreamViaAiSdk({ stream, messages: [{ role: 'user', content: 'hi' }] }, codex, {
+        fetch: async () => new Response(refusal, { status: 401, headers: { 'content-type': 'application/json' } }),
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(UpstreamHttpError);
+      expect(failure).toMatchObject({ status: 401 });
+      expect((failure as UpstreamHttpError).body).toContain('unauthorized_unknown');
+    });
+
     it('collapses a streamed tool call into the same JSON shape generateText would produce', async () => {
       const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather' };
       const { json, sentBodies } = await collapse(

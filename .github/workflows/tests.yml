@@ -5,26 +5,19 @@ name: Tests
 #
 # It runs when ANY of these holds:
 #   1. a push to `main`                    — post-merge trunk signal
-#   2. a `workflow_dispatch`               — manual
-#   3. a pull request into `staging`       — the release candidate, always
-#   4. a pull request carrying `test` or `preview`
+#   2. a pull request into `staging`       — the release candidate
+#   3. a `workflow_dispatch`               — manual
 #
-# A plain pull request into `main` does not run it. The old per-pull-request
-# gate cost ~11 min median and 68 min worst case, and it gated nothing: neither
-# `main` nor `staging` has a required status check, so a red suite never
-# blocked a merge. `main` is the dev trunk.
+# A pull request into `main` runs nothing, with or without a label. The
+# developer runs `pnpm test` in their own box before the merge. The push run
+# blocks nothing: `main` has no required status check.
 #
 # `trunk-report` comments on the offending commit when a push to `main` is red.
 # A superseded (cancelled) run reports nothing. A green run runs no extra job.
-# Any label change on a labelled pull request restarts its in-flight suite:
-# `types` cannot filter by label name.
 
 on:
   pull_request:
-    branches: [main, staging]
-    # `labeled` / `unlabeled` make the opt-in work: adding `test` to an open
-    # pull request re-triggers this workflow with no push.
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+    branches: [staging]
   push:
     # No `paths-ignore`: the suite parses markdown (`tests/spec/end-to-end.md`
     # feeds route coverage), so a docs-only push can break it.
@@ -46,13 +39,6 @@ permissions:
 jobs:
   lane:
     name: ${{ matrix.lane }} lane
-    # `contains(<array>, 'test')` compares whole elements, so a label named
-    # `no-tests-needed` or `latest` can never match `test`.
-    if: >-
-      github.event_name != 'pull_request'
-      || github.base_ref == 'staging'
-      || contains(github.event.pull_request.labels.*.name, 'test')
-      || contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
     # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a

@@ -5,6 +5,7 @@
  * MCP endpoint accepts. Maps to spec MCP-*.
  */
 import { flow } from "../core/flow";
+import { waitFor } from "../core/poll";
 
 const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 async function pkcePair() {
@@ -110,22 +111,42 @@ flow(
       "GET /v1/projects/:projectId/mcp",
       "DELETE /v1/projects/:projectId/mcp",
       "GET /v1/accounts/me",
+      "GET /v1/accounts/:accountId/audit",
+      "GET /v1/skills",
+      "GET /v1/skills/:name",
+      "GET /v1/projects/:projectId/files",
+      "GET /v1/projects/:projectId/files/content",
+      "GET /v1/projects/:projectId/sessions",
+      "GET /v1/projects/:projectId/sessions/:sessionId",
+      "GET /v1/projects/:projectId/sessions/:sessionId/turn",
+      "GET /v1/projects/:projectId/sessions/:sessionId/prompts",
+      "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
     ],
   },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    // Seeded: a real git repository, so list_files / read_file have a tree to read.
+    // Enterprise: reading the audit trail back needs the auditAccess entitlement.
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const p = await team.project({ seed: true });
     const redirectUri = "http://127.0.0.1:33419/callback";
     const { verifier, challenge } = await pkcePair();
     const issuer = (await ctx.client.as(ctx.P.ANON).get("/.well-known/oauth-authorization-server")).json<any>().issuer;
     const resource = `${issuer}/v1/projects/${p.id}/mcp`;
     let clientId = "";
     let token = "";
-    const mcp = (body: unknown) =>
+    const mcp = (body: unknown, headers: Record<string, string> = {}) =>
       ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/mcp", body, {
         params: { projectId: p.id },
         // Real MCP clients ask for compression; tool calls must still read plain bodies.
-        headers: { Authorization: `Bearer ${token}`, "Accept-Encoding": "gzip, deflate, br" },
+        headers: { Authorization: `Bearer ${token}`, "Accept-Encoding": "gzip, deflate, br", ...headers },
       });
+    const toolText = async (id: number, name: string, args: Record<string, unknown>) => {
+      const r = await mcp(rpc(id, "tools/call", { name, arguments: args }));
+      r.status(200);
+      const result = r.json<any>().result;
+      if (result.isError) throw new Error(`${name} → isError: ${result.content[0].text.slice(0, 300)}`);
+      return result.content[0].text as string;
+    };
 
     await ctx.step("register, authorize for the MCP resource with no scope, and see a self-registered consent for kortix", async () => {
       const reg = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { client_name: "Flow MCP", redirect_uris: [redirectUri] });
@@ -178,11 +199,14 @@ flow(
       const d = await ctx.client.as(ctx.P.ANON).del("/v1/projects/:projectId/mcp", { params: { projectId: p.id }, headers: { Authorization: `Bearer ${token}` } });
       d.status(405);
     });
-    await ctx.step("tools/list → the six tools", async () => {
+    await ctx.step("tools/list → the twelve tools", async () => {
       const r = await mcp(rpc(2, "tools/list"));
       r.status(200);
       const names = r.json<any>().result.tools.map((t: { name: string }) => t.name).sort();
-      const want = ["call_api", "describe_api", "read_session", "search_api", "send_message", "start_session"];
+      const want = [
+        "call_api", "describe_api", "list_files", "list_sessions", "read_file", "read_session",
+        "read_skill", "run_command", "search_api", "send_message", "start_session", "write_file",
+      ];
       if (JSON.stringify(names) !== JSON.stringify(want)) throw new Error(`tools: ${names}`);
     });
     await ctx.step("search_api finds the secrets routes; describe_api reads one", async () => {
@@ -209,6 +233,75 @@ flow(
       loop.status(200).body().has("$.result.isError", true);
       const missing = await mcp(rpc(9, "tools/call", { name: "read_session", arguments: { session_id: "00000000-0000-4000-a000-000000000000" } }));
       missing.status(200).body().has("$.result.isError", true);
+    });
+    await ctx.step("read_skill lists the platform guides and reads kortix-system in full", async () => {
+      const list = await toolText(11, "read_skill", {});
+      if (!list.includes("kortix-system — ")) throw new Error(`skills: ${list.slice(0, 300)}`);
+      const guide = await toolText(12, "read_skill", { name: "kortix-system" });
+      if (!guide.includes("kortix.yaml") || guide.startsWith("{")) throw new Error(`guide: ${guide.slice(0, 300)}`);
+    });
+    await ctx.step("list_files and read_file without a session read the project repository", async () => {
+      const files = (await toolText(13, "list_files", {})).split("\n");
+      if (!files.includes("kortix.yaml")) throw new Error(`repo files: ${files.slice(0, 20)}`);
+      const manifest = await toolText(14, "read_file", { path: "kortix.yaml" });
+      if (!manifest.includes("\n")) throw new Error(`kortix.yaml: ${JSON.stringify(manifest.slice(0, 200))}`);
+      const missing = await mcp(rpc(15, "tools/call", { name: "read_file", arguments: { path: "no/such/file.txt" } }));
+      missing.status(200).body().has("$.result.isError", true);
+    });
+    await ctx.step("list_sessions → a JSON array; sandbox tools on a missing session → isError 404", async () => {
+      if (!Array.isArray(JSON.parse(await toolText(16, "list_sessions", {})))) throw new Error("list_sessions is not an array");
+      for (const [id, name, args] of [
+        [17, "run_command", { command: "true" }],
+        [18, "list_files", {}],
+        [19, "write_file", { path: "x.txt", content: "x" }],
+      ] as const) {
+        const r = await mcp(rpc(id, "tools/call", { name, arguments: { session_id: "00000000-0000-4000-a000-000000000000", ...args } }));
+        const result = r.json<any>().result;
+        if (!result.isError || !result.content[0].text.startsWith("HTTP 404")) throw new Error(`${name}: ${JSON.stringify(result)}`);
+      }
+    });
+    await ctx.step("a session read by id names its owner exactly as the list does; list_sessions and read_session show it", async () => {
+      const session = await ctx.fixtures.session(p);
+      const params = { projectId: p.id, sessionId: session.id };
+      const one = (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/sessions/:sessionId", { params })).json<any>();
+      const row = (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/sessions", { params: { projectId: p.id } }))
+        .json<any[]>()
+        .find((s) => s.session_id === session.id);
+      if (one.owner_type !== "user" || !one.owner_email || one.owner_email !== row?.owner_email || one.owner_name !== row?.owner_name) {
+        throw new Error(`owner by id ${JSON.stringify([one.owner_type, one.owner_email, one.owner_name])} vs list ${JSON.stringify([row?.owner_type, row?.owner_email, row?.owner_name])}`);
+      }
+      const listed = JSON.parse(await toolText(21, "list_sessions", {})) as Array<{ session_id: string; owner: string | null }>;
+      if (!listed.some((s) => s.session_id === session.id && s.owner)) throw new Error(`list_sessions: ${JSON.stringify(listed)}`);
+      const read = JSON.parse(await toolText(22, "read_session", { session_id: session.id }));
+      if (read.session_id !== session.id || !["idle", "running", "booting"].includes(read.turn) || !Array.isArray(read.messages)) {
+        throw new Error(`read_session: ${JSON.stringify(read).slice(0, 400)}`);
+      }
+    });
+    await ctx.step("tool calls are audited as the mcp client (client_reported_source = mcp)", async () => {
+      const correlationId = ctx.fixtures.name("mcp-audit");
+      const r = await mcp(rpc(20, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects/{projectId}" } }), {
+        "x-correlation-id": correlationId,
+      });
+      r.status(200);
+      const audit = await waitFor(
+        () =>
+          ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/audit", {
+            params: { accountId: team.id },
+            query: { project_id: p.id, correlation_id: correlationId },
+          }),
+        {
+          until: (res) =>
+            res.statusCode === 200 &&
+            (res.json<{ events?: Array<{ action?: string }> }>().events ?? []).some((e) => e.action === "project.read"),
+          timeoutMs: 15_000,
+          intervalMs: 500,
+          description: `the audit event for ${correlationId}`,
+        },
+      );
+      const events = audit.json<{ events: Array<Record<string, unknown>> }>().events;
+      // The tool's own API call carries the client; the outer row is `mcp.request`.
+      const read = events.find((e) => e.action === "project.read");
+      if (read?.client_reported_source !== "mcp") throw new Error(`audit: ${JSON.stringify(read)}`);
     });
     await ctx.step("an unknown JSON-RPC method → -32601", async () => {
       const r = await mcp(rpc(10, "resources/list"));
