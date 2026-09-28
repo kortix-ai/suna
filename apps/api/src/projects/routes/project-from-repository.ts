@@ -443,7 +443,11 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-    managed: true,
+    // The repository is the account's, reached through the account's own
+    // installation — not the Kortix managed-git backend. `managed: true` made
+    // the mirror clone it with the managed-org PAT (503 git_mirror_unavailable)
+    // and made project deletion delete the user's repository.
+    managed: false,
     // The starter just committed above (buildStarterFiles) ships kortix.yaml
     // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',

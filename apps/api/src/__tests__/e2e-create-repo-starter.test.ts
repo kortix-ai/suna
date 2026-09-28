@@ -1139,7 +1139,12 @@ describe('create-repo starter scaffold contract', () => {
         externalRepoId: '7',
         authMethod: 'github_app',
         installationId: '42',
-        managed: true,
+        // The repository lives in the ACCOUNT's GitHub, reached through the
+        // account's own installation. `managed: true` means "lives in the
+        // Kortix managed-git backend": with it, the mirror cloned this repo
+        // with the managed-org PAT, which cannot see it (503
+        // git_mirror_unavailable on the first session).
+        managed: false,
         visibility: 'private',
         status: 'connected',
       }),
@@ -1178,7 +1183,7 @@ describe('create-repo starter scaffold contract', () => {
       expect.objectContaining({
         projectId: PROJECT_ID,
         provider: 'github',
-        managed: true,
+        managed: false,
       }),
     );
   });

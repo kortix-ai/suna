@@ -5,7 +5,7 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { mintInstallationTokenHealing } from './installation-healing';
-import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { getBackend, managedGithubInstallId, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import {
   decryptProjectSecret,
@@ -544,6 +544,31 @@ export function emptyGitRemote(): ProjectGitRemote {
 }
 
 
+/**
+ * `managed` means the repository lives in the Kortix managed-git backend. A row
+ * that says so while it points at ANOTHER installation under ANOTHER owner is a
+ * repository in the account's own GitHub: `POST /projects/create-repo` wrote
+ * `managed: true` for those until 2026-09-28. Read as managed, the managed-org
+ * PAT authenticated them, GitHub answered `Repository not found`, and the first
+ * session failed with `503 git_mirror_unavailable`.
+ *
+ * Both signals are required, so a managed repo survives a backend switch: a
+ * PAT-backend repo has no installation id, and an App-backend repo keeps the
+ * managed owner after the backend moves to a PAT.
+ */
+function livesInManagedBackend(
+  stored: boolean,
+  provider: string,
+  installationId: string | null,
+  repoOwner: string | null,
+): boolean {
+  if (!stored || provider !== 'github' || !installationId) return stored;
+  const owner = managedGithubOwner();
+  if (!owner || !repoOwner) return stored;
+  if (installationId === managedGithubInstallId()) return true;
+  return owner.toLowerCase() === repoOwner.toLowerCase();
+}
+
 export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnectionRow | null): ProjectGitRemote {
   if (connection) {
     return {
@@ -556,7 +581,12 @@ export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGit
       repoName: connection.repoName,
       externalRepoId: connection.externalRepoId,
       upstreamUrl: connection.upstreamUrl ?? null,
-      managed: connection.managed ?? false,
+      managed: livesInManagedBackend(
+        connection.managed ?? false,
+        connection.provider,
+        connection.installationId,
+        connection.repoOwner,
+      ),
     };
   }
 
@@ -564,17 +594,25 @@ export function getProjectGitRemote(project: ProjectRow, connection?: ProjectGit
   const git = meta.git;
   if (git && typeof git === 'object') {
     const method = String(git.auth?.method ?? 'none');
+    const provider = String(git.provider ?? 'generic');
+    const installationId = git.auth?.installation_id ?? git.installation_id ?? null;
+    const repoOwner = git.owner ?? null;
     return {
-      provider: String(git.provider ?? 'generic'),
+      provider,
       authMethod: method,
       repoId: git.repo_id ?? null,
       ref: git.auth?.ref ?? null,
-      installationId: git.auth?.installation_id ?? git.installation_id ?? null,
-      repoOwner: git.owner ?? null,
+      installationId,
+      repoOwner,
       repoName: git.name ?? null,
       externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
       upstreamUrl: typeof git.upstream_url === 'string' ? git.upstream_url : null,
-      managed: git.managed === true || method === 'managed',
+      managed: livesInManagedBackend(
+        git.managed === true || method === 'managed',
+        provider,
+        installationId == null ? null : String(installationId),
+        repoOwner,
+      ),
     };
   }
   if (meta.github) {
