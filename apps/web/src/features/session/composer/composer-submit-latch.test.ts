@@ -40,6 +40,7 @@ import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile } from './types';
 
 const source = readFileSync(fileURLToPath(new URL('./composer.tsx', import.meta.url)), 'utf8');
+const cardSource = readFileSync(fileURLToPath(new URL('./ComposerCard.tsx', import.meta.url)), 'utf8');
 
 /** The file with comments removed, for assertions about what CODE references. */
 function code(): string {
@@ -405,7 +406,7 @@ describe('the composer submits through the latch', () => {
     // Exactly three: the definition, the `useRef(dispatchSubmission)` seed, and
     // the ref-mirror assignment. A fourth means something calls it unlatched.
     expect(refs).toHaveLength(3);
-    expect(source).toContain('onSubmit={handleSubmit}');
+    expect(cardSource).toContain('onSubmit={handleSubmit}');
   });
 
   test('Send captures, resets, clears the stored draft, then runs one runComposerSend', () => {
@@ -448,7 +449,7 @@ describe('the composer submits through the latch', () => {
   });
 
   test('the button and Enter refuse only a failed attachment', () => {
-    const normalized = source.replace(/\s+/g, ' ');
+    const normalized = (source + cardSource).replace(/\s+/g, ' ');
     expect(normalized).toContain('const attachmentFailed = attachmentsBlockSend(promptAttachmentItems);');
     expect(normalized).toContain('submitDisabled || attachmentFailed ||');
     expect(normalized).toContain('attachmentFailed={attachmentFailed}');
