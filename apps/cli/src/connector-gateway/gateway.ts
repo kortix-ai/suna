@@ -78,17 +78,18 @@ export async function callWithApprovalHandoff<T = unknown>(
   connector: string,
   action: string,
   args: Record<string, unknown>,
-  options: { account?: string | null } = {},
+  options: { account?: string | null; approvalContext?: string | null } = {},
 ): Promise<ConnectorCallResult<T>> {
   // Only forward a real name. `parseExecArgs` turns a bare `--account` into the
   // string 'true', which is a flag typo, not an account — sending it would deny
   // the call with a confusing "no account named true".
   const account = options.account?.trim();
-  return client.call<T>(
-    `${connector}.${action}`,
-    args,
-    account && account !== 'true' ? { account } : {},
-  );
+  // Same flag-typo guard: a bare `--reason` is 'true', not a description.
+  const approvalContext = options.approvalContext?.trim();
+  return client.call<T>(`${connector}.${action}`, args, {
+    ...(account && account !== 'true' ? { account } : {}),
+    ...(approvalContext && approvalContext !== 'true' ? { approvalContext } : {}),
+  });
 }
 
 export interface ConnectLinkResult {

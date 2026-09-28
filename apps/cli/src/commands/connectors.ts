@@ -176,6 +176,10 @@ Subcommands:
                                     several accounts and none named or pinned,
                                     the call is denied (reason account_required)
                                     instead of guessing.
+       [--reason <text>]            What the call does, shown to the human if a
+                                    policy holds it for approval. Pass it when
+                                    the args are only ids (send_draft: say who
+                                    it goes to and what it says).
        [--attach <file>]...         Attach a file from /workspace/{output,
                                     artifacts,reports,deliverables}: stages the
                                     bytes and appends a reference to the

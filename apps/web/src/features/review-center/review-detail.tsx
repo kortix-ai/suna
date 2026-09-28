@@ -330,6 +330,7 @@ function ApprovalBody({
           argsPreview: adaptedAction.rawArgsPreview ?? null,
           reviewComplete: adaptedAction.reviewComplete === true,
           previewAuthorized: adaptedAction.previewAuthorized !== false,
+          approvalContext: adaptedAction.approvalContext ?? null,
           pending: item.status === 'needs_you',
           resolution:
             item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,
@@ -340,11 +341,12 @@ function ApprovalBody({
                 ? 'denied'
                 : 'pending_approval',
         }}
-        onDecision={(decision) =>
+        onDecision={(decision, note) =>
           actions.resolve(
             item.id,
             decision === 'approve' ? 'approved' : 'rejected',
             decision === 'approve' ? tI18nComplete.raw('text24234d557d8d') : 'Denied',
+            note,
           )
         }
         busyDecision={busyDecision}

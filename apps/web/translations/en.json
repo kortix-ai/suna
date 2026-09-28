@@ -19244,7 +19244,14 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Listed connected apps",
       "text37698a37f9d2": "Revoked a connected app",
-      "text8c8fb214b592": "Authorized GitHub as a user"
+      "text8c8fb214b592": "Authorized GitHub as a user",
+      "text4192bb1e9ee5": "Listed session reminders",
+      "texteee2410ea3db": "Created session reminder",
+      "text33954223cc7e": "Turned session reminder on or off",
+      "textb7ece0360b75": "Deleted session reminder",
+      "text9dcde51d9ff2": "Agent's description",
+      "textfa0db737cb09": "Written by the agent and not verified. The parameters below are what the connector receives.",
+      "text2edf70730233": "Message to the agent (optional)"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

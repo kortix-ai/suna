@@ -96,10 +96,12 @@ export async function claimDueScheduleSlots(input: {
     // This prevents a restart from producing an unbounded execution storm.
     // Same jitter key the catalog used — the offset MUST match or the sweep
     // would disagree with the stored slot and double-fire or skip.
+    // A session reminder is one person's schedule, not a fleet-wide cron, so it
+    // fires on time instead of taking the fleet jitter.
     const nextFireAt = spec.runAt
       ? null
       : nextTriggerScheduleSlot(spec, input.now, {
-          jitterKey: `${candidate.projectId}:${candidate.slug}`,
+          jitterKey: spec.reminder ? undefined : `${candidate.projectId}:${candidate.slug}`,
         });
     return db.transaction(async (tx) => {
       // Advance first. If the manifest was reconciled or another scheduler

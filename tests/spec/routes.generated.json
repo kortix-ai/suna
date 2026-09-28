@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 692,
+  "count": 696,
   "routes": [
     {
       "method": "GET",
@@ -2301,6 +2301,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
     },
     {
       "method": "POST",
