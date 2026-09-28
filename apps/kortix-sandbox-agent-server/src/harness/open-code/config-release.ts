@@ -16,65 +16,35 @@ import {
   verifyReleaseDetail,
   writeReleaseManifest,
   type ReleaseManifest,
-} from '../../boot-config'
+} from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '../../config-release/api-client'
-import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
-import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config-release/notice'
-import { MAX_SWAP_DELAY_MS } from '../control'
-import { logger } from '../../logger'
-import { ensureInjectedManagedSkills } from '../../managed-skills'
+} from '@/services/config-release/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { MAX_SWAP_DELAY_MS } from '../contract/control'
+import { logger } from '@/lib/log/logger'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
+import { isDaemonShuttingDown } from '@/lib/shutdown-state'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check'
+import type { ConfigReleaseReport, ConfigSource } from '@/types/config-release'
 
 /**
  * Convergence: the daemon applies the release the API assigns.
- * Spec: docs/specs/config-releases.md, "Apply sequence", "Fallback chain",
- * "Health".
  *
  * The API decides. The daemon fetches the descriptor itself (a request body
  * never supplies it), verifies the archive against the descriptor's blob IDs,
  * starts a replacement OpenCode on the standby port, and promotes it only
  * after the proven check. Every failure keeps the running process.
  */
-
-/**
- * Where OpenCode reads its config from, as this box reports it.
- *
- * Under config releases the chain is: the desired release, then the last
- * release this box proved, then the platform's image default. `/workspace` is
- * NOT a step in it — OpenCode never boots from the session's checkout while
- * the feature is on.
- *
- * `workspace` is reachable only when config releases are OFF for the project
- * (docs/specs/config-releases.md, "Feature flag"), which is the pre-release
- * behaviour: OpenCode reads `<workspace>/<config dir>`. The API emits no
- * release block for such a session, so `workspace` never reaches a client.
- */
-export type ConfigSource = 'release' | 'workspace' | 'image-default'
-/** The health `config` block. The converge response carries the same object. */
-export interface ConfigReleaseReport {
-  release_id: string | null
-  desired_release_id: string | null
-  source: ConfigSource
-  /**
-   * Always `follow-base`: a box runs the base branch's CURRENT config release.
-   * `/workspace` stays the editable clone; an edit there reaches the box only
-   * once it is pushed to the base branch. Null before the boot path ran.
-   */
-  mode: 'follow-base' | null
-  proven: boolean
-  fallback_reason: string | null
-  failed_release_id: string | null
-}
 
 export type ConvergeOutcome = 'applied' | 'unchanged' | 'declined' | 'quarantined' | 'failed'
 
@@ -126,6 +96,21 @@ const INITIAL: RunningConfig = {
 
 let running: RunningConfig = { ...INITIAL }
 let inFlight: Promise<ConvergeResponse> | null = null
+
+/**
+ * DEF-B 2026-09-26: is a config convergence — fetch, download, candidate
+ * spawn, proven check, promotion — in flight RIGHT NOW?
+ *
+ * This module is the one thing that actually knows: `inFlight` spans the
+ * whole `applyDesiredRelease` call, from before the descriptor fetch to after
+ * promotion or decline. `runtime-assets.ts` must not guess this from a proxy
+ * signal — it registers this predicate as a swap blocker instead (proxy.ts),
+ * so a staged daemon update never exits mid-verify and kills the candidate
+ * `reloadVerified` is proving. See DEF-A above for what happens when it does.
+ */
+export function isConvergenceInFlight(): boolean {
+  return inFlight !== null
+}
 
 export function configReleaseReport(): ConfigReleaseReport {
   const { source_commit: _sourceCommit, ...report } = running
@@ -424,8 +409,7 @@ export function noteRunningConfig(
 
 /**
  * `config_releases` is OFF for this project — per project, or platform-wide
- * through the operator kill switch (docs/specs/config-releases.md, "Feature
- * flag"). The API answered `403 feature_disabled`.
+ * through the operator kill switch. The API answered `403 feature_disabled`.
  *
  * This is the transition, and it must not strand a box that already runs a
  * release:
@@ -713,6 +697,24 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     // A turn that started while the release was being built is not a release
     // failure: nothing is quarantined and nothing is recorded against it.
     if (result.promotionCalledOff) return respond('failed', null, result.reason)
+    // DEF-A 2026-09-26: a candidate this daemon's OWN shutdown killed reports
+    // `kept-old`/`candidateFailed: true` exactly like a release that never
+    // starts — `reloadVerified` sees `cause: null` either way. Quarantining
+    // here would blame the release for something the release never did:
+    // measured on a real box, the candidate had 815 ms before `harness.stop()`
+    // SIGTERMed it, well inside the ~1.7-5 s a healthy OpenCode needs to
+    // announce listening. `isDaemonShuttingDown()` is the one place that
+    // actually knows this is self-inflicted, so treat it as a transient
+    // `failed` — nothing quarantined, nothing recorded — and let the next
+    // pass (on the daemon the supervisor just started) retry the same
+    // release with a full window.
+    if (isDaemonShuttingDown()) {
+      logger.warn(
+        '[config-release] the candidate died because this daemon is exiting, not because the release failed; not quarantining',
+        { releaseId, reason: result.reason },
+      )
+      return respond('failed', null, result.reason)
+    }
     // 10. Keep the old process. Quarantine only a release whose candidate failed.
     if (result.candidateFailed) await quarantineRelease(root, releaseId, result.reason)
     recordKeptConfigFailure(releaseId, result.reason)

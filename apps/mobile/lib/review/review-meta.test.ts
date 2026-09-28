@@ -5,7 +5,6 @@ import {
   formatReviewAge,
   reviewItemTone,
   reviewKindLabel,
-  reviewRiskLabel,
   reviewVerdictLabel,
   reviewVerdictToast,
   verdictNeedsConfirm,
@@ -40,13 +39,6 @@ describe('labels', () => {
     expect(reviewVerdictLabel('output', 'approve')).toBe('Approve');
     expect(reviewVerdictLabel('decision', 'dismiss')).toBe('Dismiss');
     expect(reviewVerdictLabel('batch', 'approve')).toBe('Approve all');
-  });
-
-  test('only medium and high risk carry a label', () => {
-    expect(reviewRiskLabel('none')).toBeNull();
-    expect(reviewRiskLabel('low')).toBeNull();
-    expect(reviewRiskLabel('medium')).toBe('Medium risk');
-    expect(reviewRiskLabel('high')).toBe('High risk');
   });
 });
 

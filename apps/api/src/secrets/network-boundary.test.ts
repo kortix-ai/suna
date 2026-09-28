@@ -35,8 +35,7 @@ describe('networkBoundaryPolicyError', () => {
     expect(networkBoundaryPolicyError(secret().egressPolicy!)).toBeNull();
   });
 
-  // The default shape since docs/specs/2026-08-19-secrets-exposure-usage-model.md
-  // §6: the policy is a HOST LIST and the credential is substituted for a handle
+  // The default shape: the policy is a HOST LIST and the credential is substituted for a handle
   // wherever the agent's own client put it. There is no slot to have an opinion
   // about, so the header/template/method/path prohibitions do not apply.
   test('accepts a substitution-only policy that names no injection slot', () => {

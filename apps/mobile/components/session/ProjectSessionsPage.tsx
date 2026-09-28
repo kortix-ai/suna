@@ -49,7 +49,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ArrowElbowDownRightIcon, FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
+import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -65,6 +65,7 @@ import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectRoutes';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import {
+  CONNECTOR_STROKE,
   SubsessionCountBadge,
   SubsessionTree,
   subsessionCountLabel,
@@ -86,7 +87,7 @@ import {
   filterSessionsBySearch,
   filterSessionsByStatus,
   groupSessionsByActivity,
-  groupSessionsByCoordinator,
+  groupSectionsByCoordinator,
   isSessionFilterActive,
   sessionDisplayStatus,
   sessionDisplayTitle,
@@ -96,6 +97,7 @@ import {
   shortRelative,
   spokenRelative,
   type SessionStatusFilter,
+  type SessionGroup,
 } from '@/lib/session/session-list';
 import { THEME } from '@/lib/utils/theme';
 import { EMPTY_SESSION_FILTER, useSessionFilterStore } from '@/stores/session-filter-store';
@@ -116,7 +118,7 @@ interface SessionRowProps {
   session: ProjectSession;
   now: number;
   /** A sub-agent session (spawned by another session in this group, COR-162):
-   *  a small branch mark joins the status mark, indenting the label past the
+   *  a short connector elbow joins the status mark, indenting the label past the
    *  usual leading slot — the row's own tile stays full width. */
   nested?: boolean;
   /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
@@ -131,7 +133,7 @@ interface SessionRowProps {
  * the centre of the row's status mark: `SettingsRow` `px-4` (16) + half the
  * 20pt slot (10). Each sub-session title starts on the row's label edge:
  * `px-4` + the 20pt leading slot + its `mr-3` (12). A nested row's leading
- * adds the 12pt branch mark and its `gap-1.5` (6) before the mark to both.
+ * adds the 12pt elbow and its `gap-1.5` (6) before the mark to both.
  */
 const NESTED_LEAD = 12 + 6;
 const TRUNK_X_TOP_LEVEL = 16 + 10;
@@ -174,7 +176,19 @@ const SessionRow = React.memo(function SessionRow({
       leading={
         nested ? (
           <View className="flex-row items-center gap-1.5">
-            <Icon as={ArrowElbowDownRightIcon} size={12} className="text-muted-foreground/60" />
+            {/* Each row is its own tile, so no trunk can join the tiles: a
+                short elbow in the connector stroke (`SubsessionTree`) marks
+                the sub-agent instead of an icon. */}
+            <View
+              className="rounded-bl-md border-border"
+              style={{
+                width: 12,
+                height: 10,
+                marginTop: -10,
+                borderLeftWidth: CONNECTOR_STROKE,
+                borderBottomWidth: CONNECTOR_STROKE,
+              }}
+            />
             <SessionStatusMark status={status} />
           </View>
         ) : (
@@ -221,6 +235,7 @@ interface SessionSection {
   key: string;
   title: string;
   data: ProjectSession[];
+  groups: SessionGroup[];
 }
 
 export interface ProjectSessionsPageProps {
@@ -306,10 +321,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
   const sections = React.useMemo<SessionSection[]>(
     () =>
-      grouped.sections.map((section) => ({
+      groupSectionsByCoordinator(grouped.sections).map((section) => ({
         key: section.id,
         title: section.label,
         data: section.sessions,
+        groups: section.groups,
       })),
     [grouped]
   );
@@ -356,13 +372,9 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // One list item per group: a `SettingsGroup` of `SettingsRow`s, the settings
   // screens' layout. The title shows only when more than one group has sessions.
   //
-  // Within each activity-day section, a sub-agent session (spawned by
-  // another session in that SAME section, COR-162) nests as an indented row
-  // right after its coordinator (`groupSessionsByCoordinator`) — mirroring
-  // web, which composes the same two groupings (activity day, then
-  // coordinator) in that order. A coordinator whose activity bucket differs
-  // from its child's (rare — spawning is normally near-simultaneous) leaves
-  // the child top-level in its own section instead of disappearing.
+  // A sub-agent session (COR-162) nests as an indented row right after its
+  // coordinator, even when the two fall in different activity-day sections
+  // (`groupSectionsByCoordinator`, the same composition web uses).
   const showHeaders = grouped.showHeaders;
   const renderSection = React.useCallback<ListRenderItem<SessionSection>>(
     ({ item: section }) => (
@@ -373,7 +385,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             coordinator and its sub-agent children must each be a top-level
             element here — a `Fragment` would fuse a whole group into one
             shared tile instead of one tile per row. */}
-        {groupSessionsByCoordinator(section.data).flatMap((group) => [
+        {section.groups.flatMap((group) => [
           <SessionRow
             key={group.session.session_id}
             session={group.session}
@@ -409,12 +421,12 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   }, [newSession]);
 
   // loading / error / empty / rows — shared with the project drawer
-  // (lib/session/session-pages) so a failed fetch never reads as "No
-  // sessions yet" (COR-146). "No matching sessions" (a search/filter with no
-  // hits over rows that did load) is this page's own case, not part of the
-  // shared decision.
+  // (lib/session/session-pages) so a failed fetch, or a first load paused
+  // offline, never reads as "No sessions yet" (COR-146). "No matching
+  // sessions" (a search/filter with no hits over rows that did load) is this
+  // page's own case, not part of the shared decision.
   const rawListState = sessionListState({
-    isLoading: sessionsQuery.isLoading,
+    isPending: sessionsQuery.isPending,
     isError: sessionsQuery.isError,
     hasSessions,
   });
@@ -427,7 +439,8 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
       : 'No matching sessions';
 
   // A project with no sessions shows no search field or chip: leave no hidden
-  // filter behind. Only a loaded, empty list counts — never the first load.
+  // filter behind. Only a loaded, empty list counts — never a first load,
+  // running or paused offline (`isPending`), which would clear a saved filter.
   const listEmpty = rawListState === 'empty';
   React.useEffect(() => {
     if (listEmpty && filterActive) useSessionFilterStore.getState().resetProject(projectId);

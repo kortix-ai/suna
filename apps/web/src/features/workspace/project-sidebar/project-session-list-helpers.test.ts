@@ -4,6 +4,7 @@ import type { ChangeRequest, ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
   groupChangeRequestsBySession,
+  groupSectionsByCoordinator,
   groupSessionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
@@ -373,19 +374,21 @@ describe('shortRelative', () => {
 });
 
 describe('resolveSessionListViewState', () => {
-  test('loading wins regardless of error or counts', () => {
+  test('a list with no data and no error is loading, never "empty"', () => {
+    // The first load running, paused offline (TanStack `fetchStatus: 'paused'`,
+    // `isLoading` false), or not enabled yet: none of them means "no sessions".
     const state = resolveSessionListViewState({
-      isLoading: true,
-      isError: true,
-      totalCount: 5,
-      visibleCount: 5,
+      hasData: false,
+      isError: false,
+      totalCount: 0,
+      visibleCount: 0,
     });
     expect(state).toBe('loading');
   });
 
-  test('error wins over empty/no-matches once loading has settled', () => {
+  test('a first load that failed is "error"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: false,
       isError: true,
       totalCount: 0,
       visibleCount: 0,
@@ -393,9 +396,30 @@ describe('resolveSessionListViewState', () => {
     expect(state).toBe('error');
   });
 
+  test('rows win over a failed refetch or "Load more"', () => {
+    // TanStack v5 keeps the loaded pages and sets `status: 'error'`.
+    const state = resolveSessionListViewState({
+      hasData: true,
+      isError: true,
+      totalCount: 5,
+      visibleCount: 5,
+    });
+    expect(state).toBe('content');
+  });
+
+  test('an empty list stays "empty" when its refetch fails', () => {
+    const state = resolveSessionListViewState({
+      hasData: true,
+      isError: true,
+      totalCount: 0,
+      visibleCount: 0,
+    });
+    expect(state).toBe('empty');
+  });
+
   test('no sessions at all is "empty"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 0,
       visibleCount: 0,
@@ -405,7 +429,7 @@ describe('resolveSessionListViewState', () => {
 
   test('sessions exist but the active filter matches none: "no-matches"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 3,
       visibleCount: 0,
@@ -415,7 +439,7 @@ describe('resolveSessionListViewState', () => {
 
   test('sessions exist and the filter matches some: "content"', () => {
     const state = resolveSessionListViewState({
-      isLoading: false,
+      hasData: true,
       isError: false,
       totalCount: 3,
       visibleCount: 2,
@@ -451,6 +475,31 @@ describe('groupSessionsByCoordinator', () => {
     const groups = groupSessionsByCoordinator([orphan, solo]);
     expect(groups.map((g) => g.session.session_id)).toEqual(['orphan-1', 'solo-1']);
   });
+
+  test('a quiet coordinator takes the position of its newest child', () => {
+    // Newest-first list: the child is working, the coordinator went quiet.
+    const groups = groupSessionsByCoordinator([childA, solo, meta]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
+    expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a']);
+  });
+
+  test('a grandchild nests under the root coordinator instead of vanishing', () => {
+    const grandchild = makeSession({
+      session_id: 'grand-1',
+      metadata: { spawned_by_session: 'child-a' },
+    } as never);
+    const groups = groupSessionsByCoordinator([grandchild, meta, childA]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1']);
+    expect(groups[0].children.map((c) => c.session_id)).toEqual(['grand-1', 'child-a']);
+  });
+
+  test('a parent cycle renders each session once, top-level', () => {
+    const a = makeSession({ session_id: 'a', metadata: { spawned_by_session: 'b' } } as never);
+    const b = makeSession({ session_id: 'b', metadata: { spawned_by_session: 'a' } } as never);
+    const groups = groupSessionsByCoordinator([a, b]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['a', 'b']);
+    expect(groups.every((g) => g.children.length === 0)).toBe(true);
+  });
 });
 
 describe('getSessionDisplayTitle — Teams mention markup', () => {
@@ -460,5 +509,31 @@ describe('getSessionDisplayTitle — Teams mention markup', () => {
       name: '<at>Kortix Dev</at>summarize the README in two sentences',
     } as never);
     expect(title).toBe('summarize the README in two sentences');
+  });
+});
+
+describe('groupSectionsByCoordinator', () => {
+  const coord = makeSession({ session_id: 'coord' });
+  const child = makeSession({ session_id: 'child', metadata: { spawned_by_session: 'coord' } } as never);
+  const solo = makeSession({ session_id: 'solo' });
+
+  test('a child in an earlier section pulls its coordinator group there', () => {
+    // e.g. child is "Running"/"Today", coordinator is "Completed"/"Last week".
+    const out = groupSectionsByCoordinator([
+      { id: 'running', sessions: [child] },
+      { id: 'done', sessions: [solo, coord] },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(['running', 'done']);
+    expect(out[0]!.groups.map((g) => g.session.session_id)).toEqual(['coord']);
+    expect(out[0]!.groups[0]!.children.map((c) => c.session_id)).toEqual(['child']);
+    expect(out[1]!.groups.map((g) => g.session.session_id)).toEqual(['solo']);
+  });
+
+  test('a section left with no group is dropped', () => {
+    const out = groupSectionsByCoordinator([
+      { id: 'running', sessions: [child] },
+      { id: 'done', sessions: [coord] },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(['running']);
   });
 });

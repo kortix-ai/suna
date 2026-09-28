@@ -106,6 +106,7 @@ import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  listCreatedSession,
   projectKeys,
   useAccounts,
   useProject,
@@ -115,7 +116,8 @@ import {
 import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { countReviewItemsBySegment, getProjectSession } from '@kortix/sdk';
+import { countReviewItemsBySegment, getProjectSession, sessionConnectionLabel } from '@kortix/sdk';
+import { loadSavedCopy } from '@/lib/session/saved-copy';
 import * as Crypto from 'expo-crypto';
 import {
   deleteProjectSession,
@@ -863,7 +865,13 @@ export function ProjectScreen() {
           return createSessionCommitted(
             {
               create: (body) => createProjectSession.mutateAsync(body),
-              read: (id) => getProjectSession(projectId, id, { showErrors: false }),
+              read: async (id) => {
+                const row = await getProjectSession(projectId, id, { showErrors: false });
+                // A create that timed out but committed: listed now, like
+                // one that answered (`useCreateProjectSession`).
+                listCreatedSession(queryClient, projectId, row);
+                return row;
+              },
             },
             { ...input, session_id: sessionId },
           );
@@ -900,7 +908,7 @@ export function ProjectScreen() {
         setIsDashboardSending(false);
       }
     },
-    [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
+    [projectId, isDashboardSending, createProjectSession, queryClient, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
   );
 
   // The model sheet's Agent tab `+` (thread and home alike): a new session on
@@ -1269,6 +1277,29 @@ export function ProjectScreen() {
     }
   }, [renderedOpenedThread, keptOpenedThread]);
 
+  // While the computer wakes, the connecting view shows the session's saved
+  // copy (lib/session/saved-copy.ts): the one this device kept, then the
+  // server's, painted into the sync store under the session's OpenCode root.
+  // `SessionPage` then opens on the same messages and its first runtime read
+  // settles them. Only while the connecting view is on screen.
+  const showingConnecting = !activePageId && ((!!activeSessionId && !threadReady) || !!connectingProjectSessionId);
+  const savedCopyTarget = !showingConnecting
+    ? null
+    : connectingProjectSessionId
+      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null }
+      : activeProjectSession && activeSessionId
+        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId }
+        : null;
+  const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
+  const savedCopyRootId = savedCopyTarget?.rootId ?? null;
+  useEffect(() => {
+    if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
+    void loadSavedCopy({ projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId });
+  }, [projectId, savedCopySessionId, savedCopyRootId]);
+  const savedCopyMessages = useSyncStore((state) =>
+    savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  );
+
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
@@ -1350,6 +1381,9 @@ export function ProjectScreen() {
               onRestart={handleRestartSession}
               restarting={restartingSession}
               showLoader={!drawerOpen}
+              messages={savedCopyMessages}
+              statusLabel={sessionConnectionLabel('waking')?.label ?? null}
+              sessionId={savedCopyRootId ?? undefined}
             />
           </View>
         ) : null}

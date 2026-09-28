@@ -6,7 +6,7 @@ name: drata-compliance-as-code
 # compliance left so misconfigs are caught in CI before they reach AWS.
 #
 # The pipeline FAILS on critical findings. Lower-severity findings remain
-# visible in Drata and are reviewed against docs/compliance/IAC-SCANNER-EXCEPTIONS.md.
+# visible in Drata for review.
 # Auth: the pipeline key is DRATA_IAC_PIPELINE_KEY in the AWS Secrets Manager
 # blob kortix-ci-env, read through .github/actions/aws-env (GitHub OIDC). Fork
 # and Dependabot pull requests get no OIDC token, so the read is skipped there
@@ -18,8 +18,9 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
+  # A pull request into `main` runs no CI. The push above is the post-merge check.
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"

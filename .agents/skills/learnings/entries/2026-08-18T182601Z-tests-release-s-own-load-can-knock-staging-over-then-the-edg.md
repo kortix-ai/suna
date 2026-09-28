@@ -63,8 +63,7 @@ Three facts, none of them visible from the symptom:
   Supabase (`ujzsbwvurfyeuerxxeaz`), injected as `STAGING_DATABASE_URL`; a
   repo-wide grep for RDS/ElastiCache returns zero hits. The `ci_micro` →
   `ci_medium` resize therefore survives every apply AND is recorded by nothing.
-  **A resource no plan can show is a resource only a runbook can hold** —
-  `docs/runbooks/staging-sizing.md` now does.
+  **A resource no plan can show is a resource only this entry records.**
 
 **The Terraform trap this exposed, which generalises past staging:** the ecs-api
 service carries `ignore_changes = [task_definition, desired_count]` and the

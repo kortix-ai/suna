@@ -1143,6 +1143,33 @@ test('previewUrl()/proxyUrl()/runtime throw SessionNotReadyError before ensureRe
   expect(() => s.runtime).toThrow(SessionNotReadyError);
 });
 
+// sandboxPortUrl() is the AUTHENTICATED backend proxy for an arbitrary sandbox
+// port — `${backendUrl}/p/{externalId}/{port}` — with no browser preview-origin
+// rewriting. It is what a local port-forward proxy (CLI `sessions forward`, the
+// TUI Ports panel) dials with the caller's own bearer token, as opposed to
+// previewUrl()/proxyUrl() which target a browser tab and may rewrite onto a
+// per-preview origin.
+test("sandboxPortUrl uses the handle's own sandbox id, not whichever session resolved last", async () => {
+  globalThis.fetch = mockTwoSessionSandboxes();
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+
+  const a = k.session('PROJ', 'SESS-A');
+  const b = k.session('PROJ', 'SESS-B');
+
+  await a.ensureReady();
+  await b.ensureReady();
+
+  expect(a.sandboxPortUrl(3000)).toBe('http://test.local/p/sb-A/3000');
+  expect(b.sandboxPortUrl(5173)).toBe('http://test.local/p/sb-B/5173');
+});
+
+test('sandboxPortUrl() throws SessionNotReadyError before ensureReady()', () => {
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const s = k.session('PROJ', 'SESS-NEW');
+
+  expect(() => s.sandboxPortUrl(3000)).toThrow(SessionNotReadyError);
+});
+
 // health() is a liveness POLL, not an action gated on the runtime being up —
 // pollers (e.g. a header dot ticking every 15s on a fresh inline
 // `kortix.session(...)` handle, see apps/whitelabel-demo/session-header.tsx)

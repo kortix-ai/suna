@@ -4,6 +4,25 @@ variable "aws_region" {
   default     = "eu-west-2"
 }
 
+variable "database_region" {
+  description = <<-EOT
+    AWS region of the prod DATABASE_URL secret. Declared explicitly,
+    independent of aws_region, so
+    infra/terraform/scripts/test_region_colocation.py can assert the two
+    agree with no AWS credentials — it reads both variables' literal
+    defaults out of this file's source text. Prod is already colocated
+    (both eu-west-2); this variable exists so the enforcer has a same-shaped
+    check to run here too, not because prod needed a fix.
+  EOT
+  type        = string
+  default     = "eu-west-2"
+
+  validation {
+    condition     = var.database_region == var.aws_region
+    error_message = "prod's API and database must stay colocated. database_region must equal aws_region."
+  }
+}
+
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string

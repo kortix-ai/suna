@@ -19,8 +19,7 @@ name: Deploy Prod
 #        gateway. It does not change production routing or enable writers.
 #        OFF by default — it runs only when the repository variable
 #        ENABLE_US_SHADOW_DEPLOY is `true`. Its data plane has been broken
-#        since 2026-08-07; see the job comment and
-#        docs/runbooks/prod-us-east-2-supabase-migration.md.
+#        since 2026-08-07; see the job comment.
 #   3. verify-live-version curls the PUBLIC endpoints (router + each origin) and
 #      asserts the live reported version == X.Y.Z. Nothing that announces
 #      success — the GitHub Release, the Slack announce, the banner-lower — runs
@@ -455,7 +454,8 @@ jobs:
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
   # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
-  # one-shot publish-and-deprecate job was removed with the NPM_TOKEN secret.
+  # one-shot publish-and-deprecate job was removed with the NPM_TOKEN secret,
+  # and its source was removed on 2026-09-28.
   #
   # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest
@@ -903,12 +903,12 @@ jobs:
   # ── Apply DB migrations to prod BEFORE the API rolls ────────────────────────
   # Closes the gap that caused the 2026-06-21 /triggers 500: migrations used to be
   # applied by a manual step at promote that got missed, so new code shipped
-  # against a DB missing its columns. This job applies supabase/migrations
-  # (tracked in kortix.schema_migrations, idempotent, halts on real failure) and
+  # against a DB missing its columns. This job applies packages/db/migrations
+  # (node-pg-migrate, idempotent, halts on real failure) and
   # deploy-ecs `needs:` it — so the schema is ALWAYS current before new code
   # serves. Migrations are additive + reviewed; the runner never runs the
   # dangerous `drizzle-kit push --force` (which is why prod's ensureSchema stays a
-  # no-op). See scripts/apply-migrations.sh.
+  # no-op). See packages/db/MIGRATIONS.md.
   migrate-db:
     name: Apply DB migrations to prod
     needs: version
@@ -1076,7 +1076,6 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      # docs/specs/config-releases.md#store
       KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
@@ -1120,8 +1119,7 @@ jobs:
   #
   # Set the repository variable ENABLE_US_SHADOW_DEPLOY=true to turn the lane
   # back on. Do that only after the revival checklist in
-  # docs/runbooks/prod-us-east-2-supabase-migration.md ("Reviving the shadow
-  # deploy lane") passes end to end. The reusable workflow keeps its
+  # deploy-prod-us-east-2-shadow.yml passes end to end. The reusable workflow keeps its
   # `workflow_dispatch` trigger, so an operator can always drive the shadow by
   # hand while the lane is off.
   #

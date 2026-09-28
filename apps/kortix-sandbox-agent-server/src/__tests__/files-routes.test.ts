@@ -5,10 +5,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
 
@@ -140,8 +140,7 @@ describe('daemon file write routes', () => {
       opencode: 'ok',
       capabilities: ['file.import', 'file.append', 'config.release.v1'],
     })
-    // docs/specs/config-releases.md, "Health": the config block and the
-    // legacy config_dir_sha field.
+    // The config block and the legacy config_dir_sha field.
     expect(Object.keys(body.config as object).sort()).toEqual([
       'desired_release_id',
       'failed_release_id',

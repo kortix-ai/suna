@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { runtimeContextConflicts } from './idempotency-conflicts';
+import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
+
+test.each([
+  [undefined, null, false],
+  [['first'], ['first'], false],
+  [['first'], ['second'], true],
+  [{ a: 1, b: 2 }, { b: 2, a: 1 }, true],
+] as const)('provider pool comparison preserves JSON serialization (%j, %j)', (existing, requested, conflicts) => {
+  expect(providerPoolConflicts(existing, requested)).toBe(conflicts);
+});
 
 describe('runtimeContextConflicts', () => {
   test('same context (order-independent) → no conflict', () => {
@@ -16,4 +25,3 @@ describe('runtimeContextConflicts', () => {
     expect(runtimeContextConflicts(undefined, null)).toBe(false);
   });
 });
-

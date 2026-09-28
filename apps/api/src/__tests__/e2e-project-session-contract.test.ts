@@ -417,7 +417,14 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
+// Spread the real module (see the comment on the next mock — the same rule
+// applies here): a bare stub deleted `mintSessionToken`, which the
+// session-open runtime guarantee's dynamic import
+// (legacy-runtime-bootstrap-wiring.ts) now reaches on every `/start`,
+// surfacing as an unrelated 500 attributed to no test.
+const realSessionSandbox = await import('../platform/services/session-sandbox');
 mock.module('../platform/services/session-sandbox', () => ({
+  ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
     sandboxProvisionCalls += 1;
     lastProvisionInput = input;
@@ -2778,7 +2785,7 @@ describe('project session API contract', () => {
   // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
   // provider lost the box — the provider just answered `stopped`, which proves
   // the box exists. The row parks retriable instead of being preserved as
-  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  // "computer was lost".
   test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {

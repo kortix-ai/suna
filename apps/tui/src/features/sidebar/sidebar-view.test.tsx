@@ -298,6 +298,32 @@ describe('<SidebarView/> through the OpenTUI test renderer', () => {
     renderer.destroy();
   });
 
+  test('Enter on a filter lands on the first matching session, so the next Enter opens it — never creates one', async () => {
+    const opened: string[] = [];
+    let created = 0;
+    const { flush, mockInput, renderer } = await testRender(
+      <SidebarView
+        {...props({
+          onOpenSession: (id) => opened.push(id),
+          onNewSession: () => {
+            created += 1;
+          },
+        })}
+      />,
+      SIZE,
+    );
+    await flush();
+    await act(async () => mockInput.pressKey('/'));
+    await act(async () => mockInput.typeText('a'));
+    await act(async () => mockInput.pressEnter());
+    await flush();
+    await act(async () => mockInput.pressEnter());
+    await flush();
+    expect(created).toBe(0);
+    expect(opened).toHaveLength(1);
+    renderer.destroy();
+  });
+
   test('/ opens the filter input and Esc clears it', async () => {
     const queries: string[] = [];
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(

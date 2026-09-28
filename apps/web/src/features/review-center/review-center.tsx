@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * Built for speed: keyboard-driven (j/k, Enter, a, e, d, 1-3, /, ?), every
  * action is undoable, and live search. Multi-select left the UI on 2026-09-03;
  * the bulk plumbing (`onBulkAct`, `resolveBulkOutcome`) stays for `d`.
- * Prototype: mock data, optimistic local actions. See docs/REVIEW_CENTER_DESIGN.md.
+ * Prototype: mock data, optimistic local actions.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -68,9 +68,7 @@ import {
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
   KIND_META,
-  RISK_META,
   reviewKindLabel,
-  reviewRiskLabel,
   reviewStatusLabel,
 } from './review-meta';
 import {
@@ -189,7 +187,6 @@ function ItemRow({
   const kind = KIND_META[item.kind];
   const segment = segmentForStatus(item.status);
   const pending = segment === 'needs_you';
-  const risky = item.risk === 'medium' || item.risk === 'high';
   const busy = !!pendingDecision;
   const number = item.kind === 'change' ? item.detail.number : undefined;
   const diff = item.kind === 'change' ? item.detail.advanced : undefined;
@@ -258,11 +255,6 @@ function ItemRow({
             deletions={diff.deletions}
             className="hidden text-xs sm:inline-flex"
           />
-        )}
-        {pending && risky && (
-          <Badge variant={RISK_META[item.risk].badge} size="sm" className="hidden sm:inline-flex">
-            {reviewRiskLabel(item.risk, tI18nComplete)}
-          </Badge>
         )}
         {pending &&
           (quickDecidable ? (

@@ -20,7 +20,7 @@ name: Build Staging Artifacts
 # job alone was 22-26 min and 97-98% of this workflow's wallclock.
 #
 # Each arch now builds NATIVELY on its own runner (Blacksmith x64 for amd64,
-# Blacksmith arm64 for arm64 — see docs/runbooks/ci-runners.md; buildx
+# Blacksmith arm64 for arm64; buildx
 # `Platforms: linux/arm64` with no QEMU), in parallel, and a merge job stitches
 # the two digests into the same multi-arch manifest under the same three tags
 # as before. Tag semantics are unchanged: `staging-<full-sha>`,
@@ -124,8 +124,7 @@ jobs:
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45 (see
-        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        # reused 0 layers while the registry cache reused 34-45.
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/api/Dockerfile:${{ matrix.platform }}
@@ -248,8 +247,7 @@ jobs:
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45 (see
-        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        # reused 0 layers while the registry cache reused 34-45.
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/llm-gateway/Dockerfile:${{ matrix.platform }}
@@ -394,8 +392,7 @@ jobs:
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45 (see
-        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        # reused 0 layers while the registry cache reused 34-45.
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/web/Dockerfile:${{ matrix.platform }}

@@ -27,7 +27,7 @@ describe('pi system packages', () => {
     const lines = piSystemPackageWarmLines(['npm:pi-web-access@0.30.0']);
     expect(lines.join('\n')).toContain('RUN /usr/local/bin/kortix-agent warm-pi-packages');
     const layer = kortixArtifactLayer({
-      agentBinaryPath: 'a.gz', cliBinaryPath: 'c.gz', entrypointScriptPath: 'e', machineDocPath: 'm', slackCliPath: 's',
+      agentBinaryPath: 'a.gz', cliBinaryPath: 'c.gz', entrypointScriptPath: 'e', machineDocPath: 'm', slackCliPath: 's', managedSkillsPath: 'ms',
     } as never);
     const warm = piSystemPackageWarmLines(PI_SYSTEM_PACKAGES);
     for (const line of warm) expect(layer).toContain(line);

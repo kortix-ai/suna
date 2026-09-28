@@ -15,8 +15,17 @@ name: i18n-catalogs
 # by the `i18n-reorder` label; the canonical check still runs.
 
 on:
+  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
+  # their box. The push to `main` is the non-blocking post-merge check; release
+  # pull requests (`staging`, `prod`) are the gate.
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/translations/**'
+      - 'apps/web/scripts/i18n-catalogs.mjs'
+      - '.github/workflows/i18n-catalogs.yml'
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'apps/web/translations/**'

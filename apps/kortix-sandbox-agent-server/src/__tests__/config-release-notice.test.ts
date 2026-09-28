@@ -1,5 +1,5 @@
 /**
- * The session notice (docs/specs/config-releases.md, "Telling the session").
+ * The session notice.
  *
  * The agent must be told, in words, which commit's config it runs and that
  * `/workspace` is a separate checkout. It must be told exactly once per
@@ -14,7 +14,7 @@ import {
   configReleaseNoticePath,
   renderConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '../config-release/notice'
+} from '@/services/config-release/notice'
 
 const COMMIT = '1234567890abcdef1234567890abcdef12345678'
 let dir: string

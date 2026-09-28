@@ -1,7 +1,26 @@
 variable "aws_region" {
-  description = "AWS region for the dev resources."
+  description = "AWS region for the staging resources."
   type        = string
   default     = "us-west-2"
+}
+
+variable "database_region" {
+  description = <<-EOT
+    AWS region of the staging DATABASE_URL secret. Declared explicitly,
+    independent of aws_region, so
+    infra/terraform/scripts/test_region_colocation.py can assert the two
+    agree with no AWS credentials.
+
+    Documentation only — this root is not modified by the 2026-09-27 region
+    colocation change. It intentionally DISAGREES with aws_region today
+    (us-west-2 API vs eu-west-2 database): that is the cross-continent hop
+    ../staging-eu-west-2 exists to remove. This root stays live, unmigrated,
+    until the apply runbook in PR #7844's cutover +
+    decommission steps run; the enforcer is expected to keep failing on this
+    root until then.
+  EOT
+  type        = string
+  default     = "eu-west-2"
 }
 
 variable "cloudflare_zone_id" {

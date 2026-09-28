@@ -1,8 +1,7 @@
 /**
  * The desired release for one session: one definition, shared by the
  * descriptor route (the daemon's request) and `GET /config` (the web, CLI,
- * and SDK read). Spec: docs/specs/config-releases.md, "Release builder" and
- * "Quarantine across the project".
+ * and SDK read).
  *
  * The desired release is ALWAYS the base branch's current tip. There is no
  * per-session mode: a session that edited its config dir under `/workspace`

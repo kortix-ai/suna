@@ -1,10 +1,10 @@
-import { createHmac } from 'crypto'
+import { createHmac } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { INLINE_ATTACHMENT_MAX_BYTES } from '../inline-attachments'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { INLINE_ATTACHMENT_MAX_BYTES } from '@/harness/shared/inline-attachments'
 
 /**
  * End to end through the daemon: a transcript list leaves WITHOUT its
@@ -122,7 +122,9 @@ describe('attachment bytes leave the daemon on demand, never in the list', () =>
   })
 
   it('the part endpoint serves the exact bytes with the part mime, cacheable forever', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`)
+    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`, {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx(SECRET) },
+    })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('image/png')
     expect(res.headers.get('cache-control')).toContain('immutable')
@@ -133,14 +135,21 @@ describe('attachment bytes leave the daemon on demand, never in the list', () =>
 
   it('a revalidation with the etag costs nothing', async () => {
     const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`, {
-      headers: { 'if-none-match': '"prt_img"' },
+      headers: { 'if-none-match': '"prt_img"', [KORTIX_USER_CONTEXT_HEADER]: signCtx(SECRET) },
     })
     expect(res.status).toBe(304)
   })
 
   it('an unknown message is a 404, not a crash', async () => {
-    const res = await app().request(`/kortix/part/${SESSION}/msg_nope/prt_img`)
+    const res = await app().request(`/kortix/part/${SESSION}/msg_nope/prt_img`, {
+      headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx(SECRET) },
+    })
     expect(res.status).toBe(404)
+  })
+
+  it('the part endpoint rejects a request with no credential', async () => {
+    const res = await app().request(`/kortix/part/${SESSION}/${MESSAGE}/prt_img`)
+    expect(res.status).toBe(401)
   })
 
   it('a single-message read is NOT stripped — that is where the part endpoint reads the bytes from', async () => {

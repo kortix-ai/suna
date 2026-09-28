@@ -351,8 +351,8 @@ describe('buildSecretCapabilities describes egress-enforced delivery', () => {
  * working request: the Platinum edge CUT an echoing response (an empty reply
  * meant success) while the relay REDACTS it (a 200 containing `[REDACTED]`
  * means success). Telling an agent the wrong story made it read a dead host as
- * a working boundary, or read success as failure. The edge is gone
- * (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so the catalog
+ * a working boundary, or read success as failure. The edge is gone,
+ * so the catalog
  * must state exactly one of them, unconditionally — no caller-supplied mode, no
  * default, nothing to get wrong.
  */

@@ -184,6 +184,11 @@ Subcommands:
                                     builds the provider's attachment item.
        [--attach-path <a.b.c>]      Name that array when auto-detection fails.
        [json] as @file.json or -    Read large JSON args from a file or stdin.
+       [--out <file>]               Write the full JSON result to <file>
+                                    (parent dirs created) and print only a
+                                    summary: saved_to, bytes, and the shape of
+                                    \`data\` (keys, array lengths, pageInfo).
+                                    Use it for results too large to read.
   upload <file> --connector <slug>  Stage one file for a call. Prints \`ref\`,
                                     {"$kortix_attachment":"<id>"}: as an
                                     attachments[] element it becomes the
@@ -982,8 +987,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
       case 'mode': {
-        // `per_user` (each member brings their own) was removed 2026-07-05
-        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) —
+        // `per_user` (each member brings their own) was removed 2026-07-05 —
         // `shared` is the only mode; the route stays as a restricted no-op.
         const slug = positional[0];
         if (!slug) return missing('a connector slug');

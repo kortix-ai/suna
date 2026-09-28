@@ -33,12 +33,12 @@ if [ "${DEPLOY_OUTCOME:-}" != success ]; then
   fi
   report="${report:-not run for this commit}"
 elif [ "${SUITE:-0}" != 1 ]; then
-  # The suite is the GATE, and a redeploy from a push deliberately skips it
+  # The label deploys and does not test; the suite runs only on a dispatch
   # (PREVIEW_RUN_TESTS). This comment once read "live and tested" over a
   # deploy that ran nothing; saying so is the point of this branch.
   title='## Preview environment - live; NOT tested'
   # shellcheck disable=SC2016 # literal backticks are Markdown
-  result='`pnpm test -- --target-full` did NOT run on this deploy — a redeploy from a push skips it. Re-run the workflow from the Actions tab, or re-apply the `preview` label, to test this commit.'
+  result="\`pnpm test -- --target-full\` did NOT run on this deploy. It runs only on demand: \`gh workflow run deploy-preview.yml -f pr_number=${num}\`."
   report='not run for this commit'
 else
   case "${SUITE_OUTCOME:-}" in
@@ -52,6 +52,12 @@ else
       title='## Preview environment - live and tested'
       # shellcheck disable=SC2016
       result='`pnpm test -- --target-full` passed.'
+      ;;
+    superseded)
+      title='## Preview environment - live; suite superseded'
+      # shellcheck disable=SC2016 # literal backticks are Markdown
+      result='A newer commit (or removing the `preview` label) superseded this commit, so the suite stopped and released the preview for the redeploy.'
+      report='stopped before it finished'
       ;;
     failure)
       title='## Preview environment - live; tests failed'

@@ -11,7 +11,7 @@
  *     `/experimental/tool/ids` answers 500 `{"name":"UnknownError",...}`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
-import { describeOpencodeError, provenCheck } from '../harness/open-code/proven-check'
+import { describeOpencodeError, provenCheck } from '@/harness/open-code/proven-check'
 
 // `describeOpencodeError` strips a leading `bootLinkPath()`, and that reads
 // `KORTIX_BOOT_CONFIG_ROOT` on every call. The expectations below hold for ONE
@@ -188,5 +188,52 @@ describe('provenCheck fails fast with the cause', () => {
     const reason = result.ok ? '' : result.reason
     expect(reason.startsWith('tools failed to load: HTTP 500 UnknownError: Unexpected server error.')).toBe(true)
     expect(reason).toContain('(tool files: tools/broken_tool.ts, tools/scrape.ts)')
+  })
+})
+
+// A tool file that answers 200 but registers no id for its own name is
+// INDISTINGUISHABLE, from `/experimental/tool/ids`, from a genuinely missing
+// tool file — the same class of failure the CFG-11/CFG-12 release-gate
+// fixture hit (a `tools/hello.ts` shipping a bare `export default {}`; #7767).
+// Measured on a real Platinum box 2026-09-26: a config-releases session with
+// that shape gets `GET /experimental/tool/ids` 200 with every OTHER fixture
+// tool's id but never `hello`; `running_release_id === desired_release_id`
+// only once the file exports `{ description, args, execute }` (or a named
+// export, registered as `<name>_<export>`). These two cases pin that
+// contract at the unit level so a regression never again needs a live box to
+// surface.
+describe('provenCheck: a tool file that answers 200 but never registers', () => {
+  test('is reported exactly like a missing tool, not silently accepted', async () => {
+    const url = fakeOpencode({
+      '/config': () => Response.json({ default_agent: 'kortix' }),
+      '/agent': () => Response.json([{ name: 'kortix', mode: 'primary' }]),
+      // Every OTHER fixture tool loaded; `hello` (a bare `export default {}`,
+      // no execute) silently dropped — the exact shape of the real box result.
+      '/experimental/tool/ids': () => Response.json(['scrape', 'memory', 'show']),
+    })
+    // A missing tool is not `fatal` (item 3's own comment: a missing
+    // dependency does not stop OpenCode, so this keeps polling in case the
+    // tool registers late) — a short deadline exits the retry loop instead
+    // of waiting out the full budget.
+    const result = await provenCheck(url, Date.now() + 200, {
+      directory: '/workspace',
+      toolNames: ['hello', 'scrape'],
+      pollMs: 50,
+    })
+    expect(result).toEqual({ ok: false, reason: 'tools not loaded: hello' })
+  })
+
+  test('a default export registers under its own name; a named export registers <name>_<export>', async () => {
+    const url = fakeOpencode({
+      '/config': () => Response.json({ default_agent: 'kortix' }),
+      '/agent': () => Response.json([{ name: 'kortix', mode: 'primary' }]),
+      '/experimental/tool/ids': () => Response.json(['hello', 'multi_run', 'multi_check']),
+    })
+    const result = await provenCheck(url, Date.now() + 30_000, {
+      directory: '/workspace',
+      toolNames: ['hello', 'multi'],
+      pollMs: 100,
+    })
+    expect(result).toEqual({ ok: true })
   })
 })

@@ -189,8 +189,7 @@ export {
  * variant/color/hidden/permission/prompt) lives entirely in the agent's own
  * native `.kortix/opencode/agents/<name>.md` frontmatter + body, never in
  * this manifest. YAML-only, `[[channels]]` removed, deny-by-default grant
- * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
+ * sets. (decision 2026-07-05: "one home per concern").
  */
 const KNOWN_SCHEMA_VERSION = 2;
 
@@ -1044,7 +1043,7 @@ function validateMonitorDuration(
 }
 
 /**
- * `type: monitor` — the third trigger type (docs/specs/2026-08-12-monitors.md).
+ * `type: monitor` — the third trigger type.
  * A monitor names a repo command (`run`) that the platform supervises 24/7 in
  * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
  * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
@@ -1465,8 +1464,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if (entry.credential !== undefined) {
       const cm = typeof entry.credential === 'string' ? entry.credential.trim().toLowerCase() : '';
       if (cm === 'per_user') {
-        // `per_user` (each member brings their own) was removed 2026-07-05
-        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5).
+        // `per_user` (each member brings their own) was removed 2026-07-05.
         // v1 tolerates it as a legacy value — it always resolves to `shared`
         // at runtime and is never round-tripped back into git. v2 is a clean
         // break: reject it outright, same as the removed CLI actions.
@@ -1512,8 +1510,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     }
     if (entry.agent_scope !== undefined) {
       // The connector-side agent gate was removed 2026-07 (wave-2 of the
-      // agent-first cut, docs/specs/2026-07-05-agent-first-config-unification.md
-      // §2.5): connector access is now purely the agent's own `connectors`
+      // agent-first cut): connector access is now purely the agent's own `connectors`
       // grant (`[[agents]].connectors` in v1, `agents.<name>.connectors` in
       // v2). The runtime (apps/api's connectors.ts `parseConnectorEntry`) no
       // longer reads `agent_scope` at all — it parses fine and is simply

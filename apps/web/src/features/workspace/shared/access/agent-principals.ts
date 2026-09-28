@@ -1,6 +1,6 @@
 'use client';
 
-// Agents as principals (spec `docs/specs/2026-09-22-agents-as-principals.md`).
+// Agents as principals.
 //
 // An agent session authorizes as the AGENT (its service account), not as the
 // person who launched it:

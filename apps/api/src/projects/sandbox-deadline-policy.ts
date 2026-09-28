@@ -123,6 +123,35 @@ export function turnUnconfirmedDripMs(): number {
 }
 
 /**
+ * Granted when the control plane PARKS a queued prompt whose delivery found
+ * the runtime unreachable and commits to a bounded backoff before the next
+ * attempt (`parkPromptForUnreachableRuntime` in session-lifecycle/store.ts).
+ *
+ * A queued prompt holds no turn record of its own — a `delivering` entry is
+ * only ever created once a prompt actually reaches the daemon — so nothing
+ * else in this file keeps its box alive while it waits out that backoff. The
+ * box's own deadline can be as short as the 15-minute resume floor, and
+ * MAX_RUNTIME_UNREACHABLE_RETRIES's 30 s / 120 s / 480 s ladder plus one
+ * failed attempt is enough real time for the reaper to stop the box mid-ladder
+ * — the very next retry then finds a box the platform itself just stopped and
+ * burns a retry proving it.
+ *
+ * The park write is CONTROL-PLANE-authored (the API decided to retry, never
+ * the sandbox), so it satisfies the invariant stated at the top of this file.
+ * It is bounded exactly like every other non-turn grant: monotone and capped
+ * at NON_TURN_DEADLINE_CAP_MS through extendSandboxDeadline. It is bounded a
+ * second way too — MAX_RUNTIME_UNREACHABLE_RETRIES caps how many times a park
+ * can ever re-issue it, so a poisoned prompt still dead-letters instead of
+ * holding its box alive forever.
+ *
+ * 15 minutes comfortably covers the ladder's longest single backoff step
+ * (8 minutes) with margin for the retry's own processing time.
+ */
+export function promptRetryGraceMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_PROMPT_RETRY_GRACE_MINUTES', 15) * 60_000;
+}
+
+/**
  * Maximum time an idle-stop claim may block prompt delivery.
  *
  * Provider stop calls are bounded below this value. If an API process exits

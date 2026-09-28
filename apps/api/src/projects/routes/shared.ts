@@ -3,7 +3,7 @@ import type {
   SessionStartFailure,
   SessionStartResult,
 } from '@kortix/api-contract';
-import { changeRequests, sessionSandboxes } from '@kortix/db';
+import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
@@ -16,6 +16,9 @@ import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
+import { configReleasesEnabled } from '../../config-releases/enabled';
+import { admitRunningSandbox } from '../../runtime-convergence/admit-running-sandbox';
+import { runtimeAdmissionEnforced } from '../../runtime-convergence/admission';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
@@ -37,10 +40,12 @@ import {
   markInPlaceRuntimeRecoveryAccepted,
   parkEstablishedRuntime,
   preserveEstablishedRuntime,
+  retireRefusedRuntime,
   retireUnmaterializedRuntime,
   runtimeLossVerdict,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import { sessionHoldsTurnAuthority } from '../session-lifecycle/inbox-admission';
 import {
   type StartCallLog,
   createStartCallLog,
@@ -51,11 +56,13 @@ import type { StopReason } from '../stop-reason';
 import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
 import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 import { transitionRuntime, transitionSession } from '../session-lifecycle/status-transitions';
+import { pinnedRuntimeMayServe } from '../lib/pinned-runtime';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
   opencodeReadyWaitPatch,
+  repairInFlight,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import {
@@ -574,7 +581,7 @@ function sandboxMetadata(row: typeof sessionSandboxes.$inferSelect): Record<stri
     : {};
 }
 
-function staleRuntimeWakeReason(
+export function staleRuntimeWakeReason(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
   nowMs = Date.now(),
@@ -582,6 +589,23 @@ function staleRuntimeWakeReason(
   if (row.status !== 'active' || !row.externalId) return null;
   if (providerStatus === 'running' || providerStatus === 'removed') return null;
   const metadata = sandboxMetadata(row);
+  // An active repair is progress: never park a session the platform is fixing.
+  //
+  // This is the same rule `staleOpencodeReadyReason` carries (#7954), and this
+  // is its SECOND call site — a session open has two clocks that park, and
+  // guarding one of them fixed one of the two failure shapes. The budgets are
+  // structurally incompatible without this line: the wake fence is
+  // RUNTIME_WAKE_GRACE_MS (90s), a legacy-runtime repair is
+  // LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS (8 min), so the fence parked EVERY
+  // repair that needed more than 90 seconds and the platform then spent the
+  // remaining ~6.5 minutes fixing a box it had already reported as `failed`.
+  // Measured on dev session 8e3d6a63, 2026-09-28: repair started 08:17:58.513,
+  // park stamped 08:20:15.322 (`runtime_status_unknown_timeout`), repair ran on
+  // until 08:26:08.293.
+  //
+  // `repairInFlight` is bounded by the repair's own budget, so a repair that
+  // never reports a terminal state cannot hold the session open forever.
+  if (repairInFlight(metadata, nowMs)) return null;
   const wakeStartedAtMs = parseTimestampMs(metadata.runtimeWakeStartedAt);
   if (wakeStartedAtMs && nowMs - wakeStartedAtMs > STALE_RUNTIME_WAKE_MS) {
     return providerStatus === 'stopped' ? 'runtime_wake_timeout' : 'runtime_status_unknown_timeout';
@@ -910,7 +934,11 @@ export function sessionStartFailureFromSandbox(
   };
 }
 
-async function preserveEstablishedRuntimeOnOpen(
+// Exported ONLY for `preserve-established-runtime-on-open.test.ts`, which pins
+// the four (five) existing populations this helper still serves untouched —
+// admission refusal is deliberately NOT among them any more; see
+// `replaceRefusedRuntimeOnOpen` below.
+export async function preserveEstablishedRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
   visible: {
     row: {
@@ -987,6 +1015,162 @@ async function preserveEstablishedRuntimeOnOpen(
   };
 }
 
+/** How many times ONE session's box may be replaced for a failed Rule 4
+ *  admission check inside {@link ADMISSION_REPLACE_WINDOW_MS}. 3 per 15
+ *  minutes: enough for a transient admission miss — a slow catalog probe, a
+ *  momentary git-mirror hiccup — to self-heal on a fresh box; too few to spin
+ *  forever on a systemic failure (a broken image, a missing boot-time
+ *  credential) that a fresh box cannot fix either. */
+export const ADMISSION_REPLACE_MAX_PER_WINDOW = 3;
+export const ADMISSION_REPLACE_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Bounds admission-triggered replacement so it cannot loop forever on one
+ * session (Rule 4's replacement must terminate, even against a box that will
+ * never pass admission).
+ *
+ * The counter lives on `project_sessions.metadata`, never on the sandbox row:
+ * {@link retireRefusedRuntime} DELETES the sandbox row, so the session — the
+ * durable identity that survives every replacement — is the only place that
+ * can count them across replacements.
+ *
+ * Computed entirely in SQL against the row's value at write time, never a
+ * value this process read earlier and would write back — see the learning
+ * "never write back a JSONB column you read earlier: merge in SQL".
+ */
+export async function claimAdmissionReplacementBudget(
+  sessionId: string,
+  now: Date = new Date(),
+): Promise<{ allowed: boolean; count: number }> {
+  const cutoffIso = new Date(now.getTime() - ADMISSION_REPLACE_WINDOW_MS).toISOString();
+  const nowIso = now.toISOString();
+  const [updated] = await db
+    .update(projectSessions)
+    .set({
+      metadata: sql`jsonb_set(
+        jsonb_set(
+          coalesce(${projectSessions.metadata}, '{}'::jsonb),
+          '{runtimeAdmissionReplaceCount}',
+          to_jsonb((
+            CASE
+              WHEN ${projectSessions.metadata}->>'runtimeAdmissionReplacedAt' IS NULL
+                OR (${projectSessions.metadata}->>'runtimeAdmissionReplacedAt')::timestamptz < ${cutoffIso}::timestamptz
+              THEN 1
+              ELSE coalesce((${projectSessions.metadata}->>'runtimeAdmissionReplaceCount')::int, 0) + 1
+            END
+          )::int)
+        ),
+        '{runtimeAdmissionReplacedAt}',
+        to_jsonb(${nowIso}::text)
+      )`,
+      updatedAt: now,
+    })
+    .where(eq(projectSessions.sessionId, sessionId))
+    .returning({ metadata: projectSessions.metadata });
+  const count = Number(
+    (updated?.metadata as Record<string, unknown> | undefined)?.runtimeAdmissionReplaceCount ?? 0,
+  );
+  return { allowed: count > 0 && count <= ADMISSION_REPLACE_MAX_PER_WINDOW, count };
+}
+
+/**
+ * Rule 4's actual replacement: "before a box is handed to a session, it must
+ * prove its runtime identity… A box that fails admission is replaced, not
+ * used." An admission refusal is a FIFTH, different population from the four
+ * `preserveEstablishedRuntimeOnOpen` already serves (a stalled provision, a
+ * failed wake, a failed boot, a real provider removal) — none of those boxes
+ * are known-bad-but-servable the way a refused-admission box is — so it gets
+ * its own path instead of a flag on that helper.
+ *
+ * The box is retired (`retireRefusedRuntime`) and a fresh one is allocated on
+ * the SAME session (`allocateRuntimeOnOpen`), bounded by
+ * `claimAdmissionReplacementBudget` so a session whose fresh box also fails
+ * admission cannot replace forever. Never returns `stage:'failed'` with
+ * `RUNTIME_IDENTITY_UNAVAILABLE` — that constant is what the web renders as
+ * "This session's computer was lost", and a deliberate platform replacement is
+ * not a loss.
+ *
+ * Collaborators are injected (same shape as `admitRunningSandbox`'s and
+ * `guaranteeCurrentRuntimeOnOpen`'s `deps` parameter) purely for testability;
+ * every real call site uses the defaults.
+ */
+export async function replaceRefusedRuntimeOnOpen(
+  loaded: { row: ProjectRow; userId: string },
+  visible: {
+    row: {
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      metadata?: Record<string, unknown> | null;
+    };
+  },
+  projectId: string,
+  sessionId: string,
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+  deps: {
+    claimBudget?: typeof claimAdmissionReplacementBudget;
+    retire?: typeof retireRefusedRuntime;
+    allocate?: typeof allocateRuntimeOnOpen;
+  } = {},
+): Promise<SessionStartResult> {
+  const claimBudget = deps.claimBudget ?? claimAdmissionReplacementBudget;
+  const retire = deps.retire ?? retireRefusedRuntime;
+  const allocate = deps.allocate ?? allocateRuntimeOnOpen;
+
+  const budget = await claimBudget(sessionId);
+  if (!budget.allowed) {
+    return {
+      stage: 'failed',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      runtime_url: row.externalId ? sessionRuntimeUrlPath(row.externalId) : undefined,
+      reason: 'runtime_admission_replace_exhausted',
+      failure: {
+        category: 'sandbox-provider',
+        message: `This session's runtime failed admission and was replaced ${budget.count} times in ${Math.round(ADMISSION_REPLACE_WINDOW_MS / 60_000)} minutes. An operator must inspect it before it opens again.`,
+        retryable: false,
+        evidence: {
+          check: reason,
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: budget.count,
+          next_retry_at: null,
+        },
+      },
+    };
+  }
+
+  const retired = await retire(row, reason);
+  if (!retired) {
+    // A live turn, a lost claim race, or a provider stop that genuinely
+    // failed — transient by construction. The client polls /start again and
+    // admission (and this replacement) is re-evaluated from scratch, exactly
+    // like every other retriable stage in this file.
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      runtime_url: row.externalId ? sessionRuntimeUrlPath(row.externalId) : undefined,
+      reason,
+    };
+  }
+
+  await allocate(loaded, visible.row, projectId, sessionId);
+  return {
+    stage: 'provisioning',
+    agent_name: visible.row.agentName ?? 'default',
+    retriable: true,
+    sandbox: null,
+    opencode_session_id: null,
+    reason,
+  };
+}
+
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
@@ -1014,6 +1198,43 @@ export async function openSession(args: {
   // payload that claims a negative without a live check is not expressible.
   const log = createStartCallLog();
   const result = await runOpenSession(args, log);
+  // A RETIRED model pin is repaired here, at the open — not only when the box
+  // is provisioned. A resumed box never rebuilds its env, so the model baked
+  // into OpenCode's config at its ORIGINAL provision outlives every later
+  // lineup rotation and every turn on it dies. See
+  // `lib/session-model-repair.ts` for the measurement.
+  //
+  // DYNAMIC import, and the reason is not style: a static edge from this module
+  // pulls `sandbox-env-sync` -> `sandbox-proxy` into this file's module-init
+  // graph, and closing that cycle is exactly what broke the API boot in #7859
+  // (`ReferenceError: Cannot access 'preview' before initialization`) with a
+  // clean typecheck. Only a healthy session's FAST PATH runs, and it does no
+  // import at all.
+  if (result.stage === 'ready') {
+    try {
+      const { pinNeedsRepair, repairRetiredSessionModelOnOpen } = await import(
+        '../lib/session-model-repair'
+      );
+      const metadata = (args.visible.row.metadata ?? null) as Record<string, unknown> | null;
+      if (pinNeedsRepair(metadata)) {
+        await repairRetiredSessionModelOnOpen({
+          projectId: args.projectId,
+          sessionId: args.sessionId,
+          accountId: args.visible.row.accountId,
+          userId: args.loaded.userId,
+          agentName: args.visible.row.agentName,
+          metadata,
+        });
+      }
+    } catch (error) {
+      // Never fails an open. The turn's own `model_retired` error remains the
+      // fallback explanation, exactly as before this ran.
+      console.warn(
+        '[start] retired model repair skipped:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
   return withStartEnvelope(
     result,
     log,
@@ -1322,8 +1543,7 @@ async function runOpenSession(args: {
     const staleWake = staleRuntimeWakeReason(row, providerStatus);
     if (staleWake) {
       log.did('reconciled');
-      log.did('reconciled');
-    return preserveEstablishedRuntimeOnOpen(
+      return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,
@@ -1476,6 +1696,55 @@ async function runOpenSession(args: {
     ensured.reason === 'unreachable' ? 'unreachable' : booting ? 'booting' : 'ready',
     ensured.bootPhase ?? null,
   );
+  if (ensured.reason === 'unreachable') {
+    // `unreachable` is five different failures wearing one word (see
+    // `opencode-mapping.ts`'s `UnreachableCause`). A session that cycles on it
+    // — measured 2026-09-28: 1447s of `starting/unreachable` ->
+    // `failed/runtime_unreachable_timeout` on a box whose daemon answered
+    // `200 {"daemon":"ok","opencode":"ok"}` — is undiagnosable without this.
+    console.warn('[start] opencode session list unreachable', {
+      sandbox_id: row.sandboxId,
+      session_id: row.sessionId,
+      external_id: runningExternalId,
+      cause: ensured.cause ?? 'unspecified',
+      responder: ensured.responder ?? 'unnamed',
+      detail: ensured.detail ?? '',
+    });
+    // …and DURABLY, on the row. A log line is only reachable by someone with
+    // log access at the moment it scrolls past; the row is queryable later, by
+    // anyone, for a box that has been cycling for an hour. #7962 made the cause
+    // observable and stopped there, which left it unreadable from outside the
+    // process — a diagnostic nobody can reach does not diagnose anything.
+    //
+    // Written only when it CHANGES: these sessions poll every ~10s, and this
+    // must not become a write per poll.
+    const previousCause = sandboxMetadata(row).opencodeUnreachableCause;
+    const nextCause = ensured.cause ?? 'unspecified';
+    if (previousCause !== nextCause) {
+      // Merge in SQL, never a read-modify-write of the JSONB column (learnings
+      // 2026-09-22): a concurrent wake claim on this row would be clobbered.
+      await db
+        .update(sessionSandboxes)
+        .set({
+          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            opencodeUnreachableCause: nextCause,
+            opencodeUnreachableCauseAt: new Date().toISOString(),
+            // WHO answered, and what it said. Without these the cause names a
+            // status code and nothing else, which is what left five competing
+            // explanations alive for one 401.
+            ...(ensured.responder ? { opencodeUnreachableResponder: ensured.responder } : {}),
+            ...(ensured.detail ? { opencodeUnreachableDetail: ensured.detail } : {}),
+          })}::jsonb`,
+        })
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+        .catch((err) =>
+          console.warn(
+            '[start] could not stamp the unreachable cause:',
+            err instanceof Error ? err.message : err,
+          ),
+        );
+    }
+  }
   if (booting) {
     // A daemon that reports a NEW boot phase since the last poll has made
     // progress: its reason clock is restarted below before the next poll
@@ -1516,6 +1785,217 @@ async function runOpenSession(args: {
   } else {
     await clearRuntimeReadinessClocks(row);
   }
+
+  // ── Session-open runtime guarantee ──────────────────────────────────────
+  // "Open any session and it works, or it says precisely why not." Same
+  // chokepoint as Rule 4 below (`!booting`, box confirmed provider-running,
+  // OpenCode answered) — but UNCONDITIONAL, not scoped to
+  // `configReleasesEnabled`: a project with config releases off still runs a
+  // daemon, a CLI and a model catalog, and a box stuck `components.agent:
+  // 'staged'` for 31 days with `cli: 'failed'` every pass is exactly the
+  // failure this closes regardless of that flag. Gated only by the reaper's
+  // own kill switch (`LEGACY_RUNTIME_BOOTSTRAP`), so an operator can turn
+  // BOTH the background and the open-time repair off with one switch.
+  //
+  // Shares the exact classification and the exact repair the reaper already
+  // schedules in the background (`guaranteeCurrentRuntimeOnOpen` →
+  // `classifyDaemonHealth` + `scheduleLegacyRuntimeBootstrap`) — never a
+  // second implementation. Bounded to a health probe (+ one OpenCode status
+  // probe only for an actually-stale box): a few seconds, not the 8-minute
+  // converge budget the reaper tolerates. The repair itself is fired and NOT
+  // awaited here — a relaunch kills PTYs, so this must never block on it, and
+  // it never fires under a live turn (the same idle gate `bootstrapLegacyRuntime`
+  // uses). Client sees `stage:'starting', reason:'runtime_updating'` and
+  // polls again; the SAME check on the next poll reads the now-repaired box.
+  //
+  // KNOWN GAP, shared with Rule 4 below: `continue-session.ts`'s FAST PATH for
+  // an already-warm session (see its own comment — a deliberate perf
+  // optimization) reads the DB row directly and does not call
+  // `runOpenSession` at all, so it does not run this check either. That
+  // population is covered only by the reaper's background pass, not
+  // synchronously at message time.
+  if (!booting) {
+    // DYNAMIC import on purpose — breaks a module-init cycle. The wiring
+    // module imports `sandbox-proxy/backend`, and `sandbox-proxy/index.ts`
+    // imports (transitively) this file's route registration, so a static
+    // top-level import here closed a cycle that threw
+    // `ReferenceError: Cannot access 'preview' before initialization` at
+    // server boot (CI run 36351579974: the whole stack never came up). Same
+    // pattern as `session-lifecycle/stop.ts`'s `captureSessionTranscriptMirror`
+    // dynamic import — this call site is already inside an async function,
+    // so the dynamic import costs nothing extra on the hot path.
+    const { guaranteeCurrentRuntimeOnOpen } = await import('../lib/legacy-runtime-bootstrap-wiring');
+    const guarantee = await guaranteeCurrentRuntimeOnOpen({
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      accountId: row.accountId,
+      projectId,
+      provider: row.provider,
+      externalId: runningExternalId,
+      metadata: row.metadata as Record<string, unknown> | null,
+    }).catch((err) => {
+      console.warn(`[start] runtime guarantee probe failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err);
+      return { action: 'proceed' as const, classification: null };
+    });
+
+    if (guarantee.action === 'repairing') {
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: 'runtime_updating',
+      };
+    }
+    if (guarantee.action === 'blocked') {
+      // The daemon's OWN supervisor already tried an update and rolled it
+      // back, latching updates off (`pinned: true`). Never looped — this is
+      // Rule 2's `blocked`: a human must look at this box, not another
+      // automatic attempt.
+      //
+      // "Do not REPAIR it automatically" is right. "Refuse the SESSION" does
+      // not follow, and it was the same statement. A pinned box is very often
+      // still serving: measured on dev 2026-09-28, a box pinned after a
+      // rollback reported `daemon: ok`, `opencode: ok`, `runtimeReady: true`,
+      // uptime 14917s, and `cli`/`skills`/`opencode` all `current` — only
+      // `agent` was `skipped` ("updates pinned after a rollback"). The open
+      // answered `stage: 'failed', retriable: false` anyway, so a session on a
+      // working box could never be used again by anyone, ever, and no amount
+      // of retrying could change it.
+      //
+      // That is a boot-time one-shot decision hardening forever, which is the
+      // failure shape the learnings ledger already names. Trading a GUARANTEED
+      // total outage for a POSSIBLE degradation is the wrong side of that
+      // trade. So: when the daemon says it can serve, serve. The operator
+      // signal is not lost — the `blocked` classification is still stamped in
+      // the sandbox's own metadata by `bootstrapLegacyRuntime`, the reaper
+      // still sees it, and the line below keeps it in the log.
+      const pinnedButServing = pinnedRuntimeMayServe(guarantee.classification);
+      if (pinnedButServing) {
+        console.warn('[start] opening a session on a PINNED runtime — it serves, but it is stale', {
+          sandbox_id: row.sandboxId,
+          session_id: row.sessionId,
+          detail: guarantee.classification?.detail.join('; ') ?? 'pinned',
+        });
+      }
+      if (!pinnedButServing) return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: false,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: 'runtime_update_blocked',
+        failure: {
+          category: 'sandbox-provider',
+          message:
+            "This session's runtime updated itself, failed, and rolled back — it needs an operator, not another automatic retry.",
+          retryable: false,
+          evidence: {
+            check: guarantee.classification?.detail.join('; ') || 'pinned',
+            observed_at: new Date().toISOString(),
+            error: null,
+            attempts: 0,
+            next_retry_at: null,
+          },
+        },
+      };
+    }
+    if (guarantee.action === 'exhausted') {
+      const retry = guarantee.retry;
+      const detail = guarantee.classification?.detail ?? [];
+      return {
+        stage: 'failed',
+        agent_name: visible.row.agentName ?? 'default',
+        // Named failure, `retry: true`: the reaper keeps this box's cooldown
+        // moving in the background and an operator can `--force` it; this
+        // call itself made no progress, so the client must poll again rather
+        // than treat this as a dead end.
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: null,
+        runtime_url: sessionRuntimeUrlPath(runningExternalId),
+        reason: 'runtime_update_exhausted',
+        failure: {
+          category: 'sandbox-provider',
+          message:
+            "This session's runtime is out of date and the automatic update has not succeeded after repeated attempts. Try again shortly, or ask an operator to check it.",
+          retryable: true,
+          evidence: {
+            check: detail.length > 0 ? detail.join('; ') : 'runtime_stale',
+            observed_at: new Date().toISOString(),
+            error: retry?.lastError ?? null,
+            attempts: retry?.attempts ?? 0,
+            next_retry_at: null,
+          },
+        },
+      };
+    }
+    // 'proceed' (current, or the guarantee's own probe failed/disabled — fail
+    // open) and 'defer_turn_running' (a live turn owns the box; the reaper's
+    // idle gate applies) both fall through unchanged — the box is handed
+    // over exactly as it was before this check existed.
+  }
+
+  // ── Rule 4 admission control (the runtime-convergence contract (PR #7785)) ─────────
+  // "Before a box is handed to a session, it must prove its runtime identity…
+  // A box that fails admission is replaced, not used." This is the ONE
+  // chokepoint every session-open path shares — `runOpenSession` is what
+  // `/start`, warm-session adoption, restart, and resume-from-stopped all
+  // funnel through (see the flows into `openSession` above) — so gating here
+  // covers all of them without touching each caller.
+  //
+  // Scoped to `configReleasesEnabled`: the whole contract this spec describes
+  // is conditioned on that flag ("With config_releases on, a session runs…
+  // the platform's current runtime" — spec §1). A project with the flag off
+  // never resolves a desired release anywhere else in this file either (see
+  // the CHOKEPOINT comment on `GET /config`), and admission's release-id
+  // resolution would otherwise pay a git-mirror round trip for a promise this
+  // deployment never made.
+  //
+  // Only checked once the box is CONFIRMED provider-running and OpenCode has
+  // answered (`!booting`) — never while still booting, where a health 503 is
+  // completely normal and must not read as an admission failure.
+  if (!booting && configReleasesEnabled(loaded.row.metadata)) {
+    const admission = await admitRunningSandbox({
+      externalId: runningExternalId,
+      userId: loaded.userId,
+      project: {
+        projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
+        gitAuthToken: null,
+      },
+      baseRef: visible.row.baseRef ?? loaded.row.defaultBranch,
+      sessionAgent: visible.row.agentName ?? null,
+      repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
+      sessionId,
+    }).catch(() => ({ admitted: true as const }));
+    // `admitRunningSandbox` already logged the refusal (observable from the
+    // moment this ships). ENFORCEMENT — actually replacing the box — is a
+    // separate, deliberate opt-in: see `runtimeAdmissionEnforced`.
+    if (!admission.admitted && runtimeAdmissionEnforced()) {
+      // Rule 5: never pull a box out from under a live turn. Exactly like
+      // `guaranteeCurrentRuntimeOnOpen`'s own `defer_turn_running` above — fall
+      // through unchanged and let the next open re-check admission once the
+      // turn ends, instead of replacing (or parking) a serving box.
+      if (!sessionHoldsTurnAuthority(row)) {
+        log.did('provisioned');
+        return replaceRefusedRuntimeOnOpen(
+          loaded,
+          visible,
+          projectId,
+          sessionId,
+          row,
+          `runtime_admission_refused:${admission.failedCheck}`,
+        );
+      }
+    }
+  }
+
   return {
     stage: booting ? 'starting' : 'ready',
     agent_name: visible.row.agentName ?? 'default',

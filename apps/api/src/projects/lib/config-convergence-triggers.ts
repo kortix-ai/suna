@@ -1,6 +1,5 @@
 /**
- * Convergence triggers (docs/specs/config-releases.md, "Convergence
- * triggers"): a base branch moved by an API write, and a push to the base
+ * Convergence triggers: a base branch moved by an API write, and a push to the base
  * branch through the git proxy. Each one only schedules
  * `convergeSessionConfig`; neither ends or delays a turn.
  *

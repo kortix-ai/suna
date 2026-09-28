@@ -23,10 +23,6 @@ const agentsPage = readFileSync(join(capabilities, 'agents-page.tsx'), 'utf8');
 // The agent's skills picker moved from the detail aside to the routed agent
 // page (Customize is agent-centric, 2026-09-01); the guard moved with it.
 const agentPage = readFileSync(join(capabilities, 'agent-page.tsx'), 'utf8');
-const configEntityView = readFileSync(
-  join(import.meta.dir, '..', 'sections', 'component', 'config-entity-view.tsx'),
-  'utf8',
-);
 
 describe('chunk-22256 .filter/.map guard regression', () => {
   test('the agent page does not call config.skills.map unguarded', () => {
@@ -40,12 +36,5 @@ describe('chunk-22256 .filter/.map guard regression', () => {
     expect(agentsPage).not.toContain('config.agents.filter(');
     expect(agentsPage).toContain('toArray(config.agents).filter(');
     expect(agentsPage).toContain('toArray(config?.agents)');
-  });
-
-  test('config-entity-view guards select(config) before any .filter consumer', () => {
-    // The `entities` array (consumed by `entities.filter`) comes from
-    // `select(config)` = one of config.agents/skills/commands; must be coerced.
-    expect(configEntityView).not.toMatch(/\(config \? select\(config\) : \[\]\)/);
-    expect(configEntityView).toContain('toArray(select(config))');
   });
 });

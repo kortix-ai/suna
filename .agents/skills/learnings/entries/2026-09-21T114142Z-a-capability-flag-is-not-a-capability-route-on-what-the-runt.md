@@ -24,5 +24,4 @@ could not use and the turn died `Run failed`. Dev-only; no customer impact.
 **Enforcer.** `apps/api/src/channels/vision-model.ts` selects on
 `modalities.input`, probes every candidate, and fails closed when the agent
 grant cannot be resolved; 24 tests pin the exact shapes, including a model that
-is in the catalog and refused upstream. Full trace:
-`docs/runbooks/teams-channel-testing.md`.
+is in the catalog and refused upstream.

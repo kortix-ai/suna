@@ -6,8 +6,6 @@
 // These run the real reconcile loop against an in-memory store — no DB mock,
 // because ./monitor-box-core.ts keeps every decision pure and the DB half is a
 // thin executor of what these return.
-//
-// Spec: docs/specs/2026-08-12-monitors.md.
 
 import { describe, expect, test } from 'bun:test';
 import {

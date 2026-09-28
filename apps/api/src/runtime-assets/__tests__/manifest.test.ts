@@ -235,7 +235,7 @@ describe('runtime assets manifest', () => {
 
 /**
  * THE COMPATIBILITY GUARD. Deployed daemons read the v1 keys off this document
- * (apps/kortix-sandbox-agent-server/src/runtime-assets.ts). Dropping or renaming
+ * (apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts). Dropping or renaming
  * one is invisible in a typecheck of the API alone and breaks every box already
  * in the field — the accept-encoding two-list divergence, again. This test is
  * what stops a future refactor from doing it quietly.
@@ -353,6 +353,16 @@ describe('manifest v2 components', () => {
     expect(opencode.source).toBe('npm');
     // No `path`: 167 MB per stale box must not cross our control plane.
     expect(Object.hasOwn(opencode, 'path')).toBe(false);
+  });
+
+  test('managed-catalog states the current managed lineup, config-derived and stable per process', async () => {
+    _resetRuntimeAssetsCache();
+    const managedCatalog = (await runtimeAssetsManifest()).components['managed-catalog'];
+    expect(Array.isArray(managedCatalog.ids)).toBe(true);
+    // Not stat'd or hashed from a file — a second read within the same
+    // process is byte-identical without needing `_resetRuntimeAssetsCache()`.
+    const again = (await runtimeAssetsManifest()).components['managed-catalog'];
+    expect(again.ids).toEqual(managedCatalog.ids);
   });
 });
 

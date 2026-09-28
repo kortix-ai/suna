@@ -117,8 +117,7 @@ cd /
 #
 # A process cannot safely overwrite its own running binary, so the daemon never
 # replaces itself. It STAGES ${AGENT_NEXT} (+ .sha256) and exits ${SWAP_CODE}
-# to ask for the swap. This loop performs it. See
-# docs/specs/2026-08-20-convergent-runtime.md.
+# to ask for the swap. This loop performs it.
 #
 # Everything here is failure-biased toward "keep running the binary that
 # worked": a bad artifact, a bad digest, or a new binary that will not stay up
@@ -239,7 +238,7 @@ mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 # and exits ${SWAP_CODE} for this loop to install, instead of self-swapping its
 # own running binary — which is unsafe and which warm-fork/resume/restart would
 # not re-run anyway. Export the resolved state dir so it stages into the exact
-# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/cli.ts.
+# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/app/cli.ts.
 export KORTIX_SUPERVISED=1
 export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
 

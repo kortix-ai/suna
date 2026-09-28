@@ -43,20 +43,33 @@ export async function listTeamsPostTargets(
   }));
 }
 
-export async function postToTeamsConversation(
-  projectId: string,
-  args: { conversationId: string; text?: string; card?: Record<string, unknown> },
-): Promise<TeamsPostResult | TeamsPostError> {
-  const conversationId = args.conversationId?.trim();
-  if (!conversationId) return { ok: false, error: 'conversation_id is required', status: 400 };
-  const text = args.text?.trim();
-  if (!text && !args.card) return { ok: false, error: 'text or card is required', status: 400 };
+/** A conversation this project may send into, addressed as the server knows it. */
+export interface TeamsProjectConversation {
+  ok: true;
+  ref: TeamsConversationRef;
+  /** `channel` | `groupChat` | `personal`, as the binding recorded it; null when unknown. */
+  conversationType: string | null;
+}
 
+/**
+ * The conversation `conversationId` names, as THIS project may address it.
+ *
+ * Every send into a conversation goes through here: proactive posts and file
+ * uploads. The binding row proves the project already talks there; the tenant
+ * comes from that row, and the service URL is the one inbound activities
+ * stored. Nothing about the address comes from the caller except the id, so a
+ * caller can neither reach another project's conversation nor point the bot
+ * token at a host of their own.
+ */
+export async function resolveTeamsProjectConversation(
+  projectId: string,
+  conversationId: string,
+): Promise<TeamsProjectConversation | TeamsPostError> {
   // THE AUTHORIZATION. A binding row exists only for a conversation this
   // project was already talking in; the tenant is read from the row rather
   // than from the caller.
   const [binding] = await db
-    .select({ workspaceId: chatChannelBindings.workspaceId })
+    .select({ workspaceId: chatChannelBindings.workspaceId, channelType: chatChannelBindings.channelType })
     .from(chatChannelBindings)
     .where(
       and(
@@ -67,11 +80,11 @@ export async function postToTeamsConversation(
     )
     .limit(1);
   if (!binding) {
-    // 404, not 403. A 403 on this route means the CALLER may not post at all
-    // (the `project.connector.write` gate above, matching the Slack upload
-    // twin and flow CHN-20). "This project has no such conversation" is an
-    // addressing answer, and keeping the two apart is what makes a test of
-    // either one meaningful.
+    // 404, not 403. A 403 on these routes means the CALLER may not send at all
+    // (the `project.connector.write` gate, matching the Slack upload twin and
+    // flow CHN-20). "This project has no such conversation" is an addressing
+    // answer, and keeping the two apart is what makes a test of either one
+    // meaningful.
     return {
       ok: false,
       error:
@@ -85,12 +98,25 @@ export async function postToTeamsConversation(
     return { ok: false, error: 'No Teams service URL is known yet for this project', status: 409 };
   }
 
-  const ref: TeamsConversationRef = {
-    serviceUrl,
-    conversationId,
-    tenantId: binding.workspaceId,
-    projectId,
+  return {
+    ok: true,
+    ref: { serviceUrl, conversationId, tenantId: binding.workspaceId, projectId },
+    conversationType: binding.channelType ?? null,
   };
+}
+
+export async function postToTeamsConversation(
+  projectId: string,
+  args: { conversationId: string; text?: string; card?: Record<string, unknown> },
+): Promise<TeamsPostResult | TeamsPostError> {
+  const conversationId = args.conversationId?.trim();
+  if (!conversationId) return { ok: false, error: 'conversation_id is required', status: 400 };
+  const text = args.text?.trim();
+  if (!text && !args.card) return { ok: false, error: 'text or card is required', status: 400 };
+
+  const conversation = await resolveTeamsProjectConversation(projectId, conversationId);
+  if (!conversation.ok) return conversation;
+  const { ref } = conversation;
 
   if (args.card) {
     const posted = await sendCard(ref, args.card);

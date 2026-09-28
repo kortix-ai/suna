@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
@@ -8,6 +8,12 @@ import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
 let appRuntimeKeepRows: any[] = [];
+let environmentKeepRows: any[] = [];
+let monitorKeepRows: any[] = [];
+let freshReference = async (_provider: string, _externalId: string): Promise<boolean> => false;
+mock.module('./reaping/orphan-box-references', () => ({
+  hasProviderBoxReference: (provider: string, externalId: string) => freshReference(provider, externalId),
+}));
 // `terminal` is a real provider answer (Daytona `error`, Platinum `failed`), so
 // the fixture has to be able to express it — see decideReconcile.
 let statusByExternal: Record<
@@ -262,6 +268,10 @@ mock.module('../shared/db', () => ({
                 ? selectedSandboxRows
                 : table === appRuntimes
                   ? appRuntimeKeepRows
+                  : table === sessionEnvironments
+                    ? environmentKeepRows
+                    : table === projectMonitorBoxes
+                      ? monitorKeepRows
                   : table === sandboxComputeSessions
                     ? computeRows
                     : table === projectSessions
@@ -477,6 +487,9 @@ const HOUR = 3_600_000;
 beforeEach(() => {
   candidates = [];
   appRuntimeKeepRows = [];
+  environmentKeepRows = [];
+  monitorKeepRows = [];
+  freshReference = async () => false;
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
@@ -609,7 +622,7 @@ describe('provider-neutral turn observation', () => {
   // The reaper's drip may keep a box alive on the first and must never keep one
   // alive on the second, so the reading has to tell them apart. A build that
   // predates the turn fields answers 200 without them
-  // (apps/kortix-sandbox-agent-server/src/routes/health.ts adds them only when
+  // (apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts adds them only when
   // it can observe the turn) — the runtime is UP and only its account of the
   // turn is missing. Nothing coming back is the opposite fact.
   test('a 200 without the turn fields is unknown, but the daemon ANSWERED', async () => {
@@ -1934,6 +1947,24 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(turnObservationCalls).toHaveLength(5);
   });
 
+  test('an unreadable turn warns once per episode, not on every renewal tick', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => { warnings.push(message); };
+    try {
+      await reapAndReconcileSandboxes(NOW);
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+      expect(unconfirmedTurnDrips).toEqual(['sb-1', 'sb-1', 'sb-1']);
+      expect(warnings.filter((message) => message.includes('turn observation unknown; drip-extending'))).toHaveLength(1);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══
   // A daemon that answers NOTHING — an unreachable box, a wedged opencode, a
   // sandbox whose daemon never bound its port — is not evidence of live work.
@@ -2770,6 +2801,34 @@ describe('reapOrphanProviderBoxes', () => {
   const NOW2 = new Date('2026-06-21T12:00:00Z');
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
 
+  test('keeps worker environments and monitor boxes', async () => {
+    environmentKeepRows = [{ provider: 'daytona', externalId: 'worker-env' }];
+    monitorKeepRows = [{ provider: 'daytona', externalId: 'monitor' }];
+    managedBoxes = ['worker-env', 'monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
+    expect(stops).toEqual([]);
+  });
+
+  test('a reference that appears after listing vetoes the stop', async () => {
+    managedBoxes = [{ externalId: 'adopted', createdAt: hoursAgo(48) }];
+    freshReference = async () => true;
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
+    expect(stops).toEqual([]);
+  });
+
+  test('an unreadable database never authorizes a stop', async () => {
+    managedBoxes = [{ externalId: 'unknown', createdAt: hoursAgo(48) }];
+    freshReference = async () => { throw new Error('database unavailable'); };
+    expect((await reapOrphanProviderBoxes(NOW2)).errors).toBe(1);
+    expect(stops).toEqual([]);
+  });
+
+  test('the concurrent workers never exceed 50 provider stops', async () => {
+    managedBoxes = Array.from({ length: 70 }, (_, i) => ({ externalId: `orphan-${i}`, createdAt: hoursAgo(48) }));
+    expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(50);
+    expect(stops).toHaveLength(50);
+  });
+
   test('stops boxes with no live DB row; keeps live, too-young, and unknown-age boxes', async () => {
     // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.
     candidates = [{ provider: 'daytona', externalId: 'keep-1' }];
@@ -2817,7 +2876,7 @@ describe('reapOrphanProviderBoxes', () => {
     const r = await reapOrphanProviderBoxes(NOW2);
 
     expect(stops).toEqual(['real-orphan']);
-    expect(r).toEqual({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
   });
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {
@@ -2830,7 +2889,7 @@ describe('reapOrphanProviderBoxes', () => {
       { provider: 'daytona', externalId: 'daytona-orphan' },
       { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
-    expect(r).toEqual({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {
@@ -2840,7 +2899,7 @@ describe('reapOrphanProviderBoxes', () => {
       managedBoxes = [{ externalId: 'orphan-x', createdAt: hoursAgo(48) }];
       const r = await reapOrphanProviderBoxes(NOW2);
       expect(stops).toEqual([]);
-      expect(r).toEqual({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
+      expect(r).toMatchObject({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
     } finally {
       if (prev === undefined) delete process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
       else process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = prev;

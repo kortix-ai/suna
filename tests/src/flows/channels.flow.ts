@@ -885,6 +885,7 @@ flow(
     routes: [
       "GET /v1/projects/:projectId/channels/teams/conversations",
       "POST /v1/projects/:projectId/channels/teams/message",
+      "POST /v1/projects/:projectId/channels/teams/file/upload",
     ],
   },
   async (ctx) => {
@@ -922,6 +923,29 @@ flow(
     });
     await ctx.step("EDITOR passes the floor, but the conversation is not this project's → 404", async () => {
       const r = await ctx.client.as(editor).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    // The file upload sends into a conversation the same way. It used to take
+    // `service_url` from the body, and the allowlist accepted
+    // `*.azurewebsites.net`, a host any Azure customer can register — so the
+    // bot token could be sent to a server of the caller's choosing. The
+    // address is now the server's: the binding and the stored service URL.
+    const upload = {
+      conversation_id: body.conversation_id,
+      service_url: "https://attacker.azurewebsites.net/",
+      filename: "note.png",
+      content_base64: Buffer.from("png-bytes").toString("base64"),
+    };
+    await ctx.step("MEMBER without connector.write cannot upload a file → 403 at the floor", async () => {
+      const r = await ctx.client
+        .as(memberOnly)
+        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
+      r.status(403);
+    });
+    await ctx.step("EDITOR uploading into a conversation that is not this project's → 404, whatever service_url it sends", async () => {
+      const r = await ctx.client
+        .as(editor)
+        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
       r.status(404);
     });
     await ctx.step("EDITOR with nothing to say → 400", async () => {
@@ -1336,6 +1360,7 @@ flow(
     const p = await ctx.fixtures.project();
     const own = randomUUID();
     const sibling = randomUUID();
+    const foreign = randomUUID();
     const ownerUserId = ctx.P.OWNER.userId!;
     const team = `TKE2E${randomUUID().slice(0, 8).toUpperCase()}`;
     let tokenId: string | null = null;
@@ -1350,12 +1375,16 @@ flow(
       await withDb(ctx, async (db) => {
         const accountId = (await db.query("SELECT account_id FROM kortix.projects WHERE project_id = $1", [p.id])).rows[0]
           .account_id as string;
-        for (const sessionId of [own, sibling]) {
+        for (const [sessionId, createdBy] of [
+          [own, ownerUserId],
+          [sibling, ownerUserId],
+          [foreign, ctx.P.NONMEMBER.userId!],
+        ]) {
           await db.query(
             `INSERT INTO kortix.project_sessions
                (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata)
              VALUES ($1, $2, $3, $1, 'kortix', 'running', $4, 'project'::kortix.project_session_visibility, '{}'::jsonb)`,
-            [sessionId, accountId, p.id, ownerUserId],
+            [sessionId, accountId, p.id, createdBy],
           );
         }
         await db.query(
@@ -1403,12 +1432,89 @@ flow(
         );
         if (sessionId !== own) throw new Error(`CHN-30: expected the thread bound to the token's session, got ${sessionId}`);
       });
+
+      await ctx.step("the session token binds the same thread again → 200, bound to the same session (idempotent)", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000300", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true).has("$.session_id", own);
+      });
+
+      await ctx.step("a thread already owned by the sibling session → 409 THREAD_BOUND_TO_ANOTHER_SESSION, owner unchanged", async () => {
+        await withDb(ctx, async (db) => {
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'slack', $2, '1700000000.000400', $3)`,
+            [p.id, team, sibling],
+          );
+        });
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000400", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(409).body().has("$.code", "THREAD_BOUND_TO_ANOTHER_SESSION").has("$.bound", false);
+        const owner = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000400"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (owner !== sibling) throw new Error(`CHN-30: a bound thread changed owner to ${owner}`);
+      });
+
+      await ctx.step("force moves the sibling's thread (same creator) → 200 with rebound_from, and the mapping names this session", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000400", workspace_id: team, force: true },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true).has("$.session_id", own).has("$.rebound_from", sibling);
+        const owner = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000400"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (owner !== own) throw new Error(`CHN-30: force did not move the thread, owner is ${owner}`);
+      });
+
+      await ctx.step("force on a thread of another user's session → 403 THREAD_OWNED_BY_ANOTHER_USER, owner unchanged", async () => {
+        await withDb(ctx, async (db) => {
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'slack', $2, '1700000000.000500', $3)`,
+            [p.id, team, foreign],
+          );
+        });
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000500", workspace_id: team, force: true },
+          { params: { projectId: p.id } },
+        );
+        r.status(403).body().has("$.code", "THREAD_OWNED_BY_ANOTHER_USER");
+        const owner = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000500"],
+            )
+          ).rows[0]?.session_id,
+        );
+        if (owner !== foreign) throw new Error(`CHN-30: force moved another user's thread to ${owner}`);
+      });
     } finally {
       await withDb(ctx, async (db) => {
         await db.query("DELETE FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [team]);
         if (tokenId) await db.query("DELETE FROM kortix.account_tokens WHERE token_id = $1", [tokenId]);
-        await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = ANY($1)", [[own, sibling]]);
-        await db.query("DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)", [[own, sibling]]);
+        await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = ANY($1)", [[own, sibling, foreign]]);
+        await db.query("DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)", [[own, sibling, foreign]]);
       }).catch(() => {});
     }
   },

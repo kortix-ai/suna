@@ -2,6 +2,7 @@ import { upstreamFetch } from '../upstream-fetch';
 import type {
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayHooks,
   GatewayLogger,
   ModelRoutePlan,
@@ -9,8 +10,8 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UpstreamHttpError } from '../errors';
-import type { FetchImpl } from '../http';
+import { GatewayResolutionError, type NoUpstreamReasonCode, UpstreamHttpError } from '../errors';
+import { type FetchImpl, callUpstream } from '../http';
 import {
   type ExtractedUsage,
   type SseErrorFrame,
@@ -19,7 +20,16 @@ import {
   extractUsageFromJson,
 } from '../usage';
 import { calculateCost } from '../usage/pricing';
-import { UPSTREAM_HEADERS_TIMEOUT_MS, dispatch, rawProviderError } from './dispatch';
+import {
+  UPSTREAM_HEADERS_TIMEOUT_MS,
+  dispatch,
+  fallbackCandidates,
+  fallbackModelsOf,
+  fallbackTakesOver,
+  rawProviderError,
+  upstreamHeadersTimeoutMs,
+  withUpstreamHeadersTimeout,
+} from './dispatch';
 import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import {
@@ -77,6 +87,19 @@ function streamErrorTraceStatus(error: SseErrorFrame): number {
   }
   return 502;
 }
+
+/**
+ * Resolution failures a project's own fallback chain takes over, as the HTTP
+ * status the same failure has from a provider: every own key or ChatGPT account
+ * paused after a rate limit is a 429, a login that needs reconnection is a 401.
+ * The chain's retry setting then decides exactly as for a failed attempt. Every
+ * other resolution failure (not connected, disabled, excluded by the agent's
+ * grant) is a setup or policy answer and stays the request's error.
+ */
+const CHAIN_TAKES_OVER: Partial<Record<NoUpstreamReasonCode, number>> = {
+  provider_pool_rate_limited: 429,
+  provider_reauth_required: 401,
+};
 
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
@@ -270,12 +293,37 @@ export async function handleChatCompletions(
     });
   }
   let principal = admission.principal;
+  emit.mark('admitted');
+
+  // One wallet admission per request: before dispatch when the routed model is
+  // Kortix-billed, or before the first Kortix-billed fallback of a failed own
+  // key or ChatGPT request. A hold it takes is settled or refunded as usual.
+  let chargeAdmission: Promise<{ ok: true } | { ok: false; error: unknown }> | null = null;
+  const admitCharge = () => {
+    chargeAdmission ??= (async () => {
+      if (principal.billingHold) return { ok: true as const };
+      try {
+        const billing = await hooks.assertBillingActive(principal.accountId);
+        if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
+        return { ok: true as const };
+      } catch (error) {
+        return { ok: false as const, error };
+      }
+    })();
+    return chargeAdmission;
+  };
+  const chargeAdmitted = async () => (await admitCharge()).ok;
 
   // `body` is the ONLY reference to the parsed request graph from here on.
   // It is nulled the moment dispatch has taken it (below), so a slow
   // time-to-first-byte upstream does not pin one extra copy of a multi-MB
   // multimodal request for the whole prefill.
   let body: Record<string, unknown> | null;
+  // Rough (UTF-16 code units, not bytes — close enough for a size gate)
+  // request size, captured before `rawBody` is cleared below. Used only to
+  // decide whether a stream-cut transparent retry may afford ANOTHER
+  // `structuredClone` of the body — see `streamRedispatchBody` below.
+  const approxRequestSize = req.rawBody?.length ?? 0;
   try {
     body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
     req.parsedBody = undefined;
@@ -303,14 +351,18 @@ export async function handleChatCompletions(
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
   let routedModel = requestedModel;
+  // Reused below to decide whether a stream-cut transparent retry may afford
+  // ANOTHER `structuredClone` of the body — see `streamRedispatchBody`.
+  const requestHasImage = hasImage(body);
   let route: ModelRoutePlan | null;
   try {
     route =
       (await hooks.resolveRoute?.(principal, {
         requestedModel,
-        requires: { imageInput: hasImage(body) },
+        requires: { imageInput: requestHasImage },
       })) ?? null;
     routedModel = route?.primaryModel || requestedModel;
+    emit.mark('routed');
   } catch (error) {
     refundHold(hooks, principal, logger);
     emit({
@@ -333,24 +385,75 @@ export async function handleChatCompletions(
     });
   }
 
+  // The model the route named. A rescued request starts at one of its fallbacks.
+  const routeModel = routedModel;
+  /**
+   * Starts the project's own chain when the routed model has no usable
+   * upstream: every own key or ChatGPT account is paused or needs reconnection
+   * (see CHAIN_TAKES_OVER). The routed model is an own key or ChatGPT plan, so
+   * a Kortix-billed fallback needs the wallet admission first.
+   */
+  const startChainWithout = async (resolution: GatewayResolutionError) => {
+    const status = CHAIN_TAKES_OVER[resolution.code];
+    if (!status || !route?.policyId.startsWith('project:')) return null;
+    if (!fallbackTakesOver(route.fallbackOn ?? 'transient', { status })) return null;
+    const models = fallbackModelsOf({ model: routeModel, fallbackModels: route.fallbackModels });
+    for (const [index, model] of models.entries()) {
+      const candidates = await fallbackCandidates(model, {
+        byok: true,
+        chosenByProject: true,
+        resolveCandidates: (next) => hooks.resolveUpstream(principal, next),
+        admitCharge: chargeAdmitted,
+        logger,
+        requestId: id,
+      });
+      if (!candidates.length) continue;
+      logger.warn(`[gateway] ${id}: ${routeModel} is unavailable (${resolution.code}); the project's chain starts at ${model}`);
+      const failure: GatewayAttemptFailure = {
+        attempt: 1,
+        provider: routeModel.split('/')[0] || routeModel,
+        routeModel,
+        resolvedModel: routeModel,
+        stage: 'resolve',
+        status,
+        code: resolution.code,
+        message: resolution.message,
+      };
+      return { model, candidates, remaining: models.slice(index + 1), unavailable: { model: routeModel, failure } };
+    }
+    return null;
+  };
+
   let descriptor: UpstreamDescriptor | undefined;
   let resolvedCandidates: UpstreamDescriptor[] = [];
+  let chain = route?.fallbackModels;
+  let unavailable: { model: string; failure: GatewayAttemptFailure } | undefined;
   try {
     resolvedCandidates = await hooks.resolveUpstream(principal, routedModel);
     descriptor = resolvedCandidates[0];
+    emit.mark('resolved');
   } catch (error) {
-    refundHold(hooks, principal, logger);
     const resolution = error instanceof GatewayResolutionError ? error : null;
-    return gatewayErrorResponse(resolution?.code === 'provider_pool_rate_limited' ? 429 : 400, {
-      message: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
-      code: resolution?.code ?? 'model_unavailable',
-      provider: '',
-      requestedModel,
-      resolvedModel: routedModel,
-      requestId: id,
-      suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
-      retryAfterSeconds: resolution?.retryAfterSeconds,
-    });
+    const started = resolution ? await startChainWithout(resolution) : null;
+    if (!started) {
+      refundHold(hooks, principal, logger);
+      return gatewayErrorResponse(resolution?.code === 'provider_pool_rate_limited' ? 429 : 400, {
+        message: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
+        code: resolution?.code ?? 'model_unavailable',
+        provider: '',
+        requestedModel,
+        resolvedModel: routedModel,
+        requestId: id,
+        suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
+        retryAfterSeconds: resolution?.retryAfterSeconds,
+      });
+    }
+    resolvedCandidates = started.candidates;
+    descriptor = started.candidates[0];
+    routedModel = started.model;
+    chain = started.remaining;
+    unavailable = started.unavailable;
+    emit.mark('resolved');
   }
   if (!descriptor) {
     refundHold(hooks, principal, logger);
@@ -367,11 +470,10 @@ export async function handleChatCompletions(
 
   // Resolve the payee before touching the wallet. BYOK descriptors use the
   // customer's provider account and must never create a Kortix hold or debit.
-  if (descriptor.billingMode !== 'none' && !principal.billingHold) {
-    try {
-      const billing = await hooks.assertBillingActive(principal.accountId);
-      if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
-    } catch (error) {
+  if (descriptor.billingMode !== 'none') {
+    const admitted = await admitCharge();
+    if (!admitted.ok) {
+      const { error } = admitted;
       const reason = (error as { reason?: unknown })?.reason;
       return gatewayErrorResponse(402, {
         message: error instanceof Error ? error.message : 'Billing inactive',
@@ -383,26 +485,53 @@ export async function handleChatCompletions(
         suggestion: 'Check your subscription or add credits, then retry.',
       });
     }
+    emit.mark('billed');
   }
 
   const streaming = body.stream === true;
   if (streaming) body.stream_options = { include_usage: true };
+  // A BYOK request is billable too when the project's chain can move it to a
+  // Kortix-billed model.
+  const fallbackChosenByProject = route?.policyId.startsWith('project:') ?? false;
+  const billable = descriptor.billingMode !== 'none' || (fallbackChosenByProject && Boolean(chain?.length));
   // Measured now, while the parsed body still exists: a billable stream that
   // ends before its usage frame is settled from this (see usage/estimate.ts).
-  const promptTokenEstimate =
-    streaming && descriptor.billingMode !== 'none' ? estimatePromptTokens(body) : 0;
-  const primaryModel = routedModel;
+  const promptTokenEstimate = streaming && billable ? estimatePromptTokens(body) : 0;
+  // Kept only so a STREAMING body that gets cut before a single byte reaches
+  // the client can be transparently retried (see relayStream's `redispatch`
+  // option / streaming.ts's `handleIncompleteTermination`). dispatch() owns
+  // the parsed graph from here on (nulled below) and never retries once its
+  // OWN attempt has produced output, so this covers the one case it
+  // deliberately leaves alone: a cut AFTER a successful dispatch.
+  //
+  // A held clone for the whole streaming response lifetime is exactly the
+  // "unbounded per-request memory" class this codebase has paid for
+  // repeatedly (see memory-envelope.test.ts, 2026-08-22). Clone fresh only
+  // for a body small enough that doing so is cheap; an inline-image-bearing
+  // or otherwise large multimodal request gets no transparent retry — it
+  // still gets the other two halves of this fix (never forward a partial
+  // line, explicit terminal error frame) and falls straight to the error
+  // frame on a cut instead of retrying first.
+  const STREAM_REDISPATCH_MAX_BODY_SIZE = 256 * 1024;
+  const streamRedispatchBody: Record<string, unknown> | null =
+    streaming && !requestHasImage && approxRequestSize <= STREAM_REDISPATCH_MAX_BODY_SIZE
+      ? structuredClone(body)
+      : null;
+  emit.mark('dispatch');
   const pending = dispatch(
     body,
     {
-      model: primaryModel,
+      model: routedModel,
       candidates: resolvedCandidates,
-      fallbackModels: route?.fallbackModels,
+      fallbackModels: chain,
       fallbackOn: route?.fallbackOn,
+      // `project:*` routes come from the project's own Routing settings.
+      fallbackChosenByProject,
       // A fallback model gets its own clamped defaults, never the primary's.
       defaultsFor: (model) =>
         route?.generationDefaultsForModel?.(model) ??
-        (model === primaryModel ? route?.generationDefaults : undefined),
+        (model === routeModel ? route?.generationDefaults : undefined),
+      unavailable,
     },
     {
       requestId: id,
@@ -416,16 +545,64 @@ export async function handleChatCompletions(
       notePoolRateLimit: hooks.notePoolRateLimit
         ? (secretId, seconds) => hooks.notePoolRateLimit!(principal, secretId, seconds)
         : undefined,
+      admitCharge: chargeAdmitted,
     },
   );
   // Dispatch owns the parsed request now; this frame drops it before the
   // provider wait.
   body = null;
   const outcome = await pending;
-  const served = outcome.descriptor;
+  emit.mark('upstream_response');
+  // Mutable: a stream-cut transparent retry (below) can move this to the
+  // candidate that actually answered the retry, exactly like dispatch()'s own
+  // pool/profile/fallback moves already do.
+  let served = outcome.descriptor;
   // The model that served, or failed last: a fallback model when the chain moved.
   routedModel = outcome.model;
-  const { attempts, candidatesTried, attemptFailures } = outcome;
+  // Mutable: a stream-cut transparent retry (see `redispatchStream` below)
+  // extends both when it re-dispatches, so the trace and billing records
+  // reflect every attempt actually made, not just dispatch()'s own ladder.
+  let attempts = outcome.attempts;
+  let candidatesTried = outcome.candidatesTried;
+  const { attemptFailures } = outcome;
+  // Untried pool candidates of the SAME model, if any — "next pooled key"
+  // gets first refusal on a stream-cut retry before re-dispatching the same
+  // descriptor. Computed once `served` is known so it excludes whichever key
+  // actually answered.
+  const streamRedispatchCandidates: UpstreamDescriptor[] = served.poolSecretId
+    ? resolvedCandidates.filter(
+        (candidate) =>
+          Boolean(candidate.poolSecretId) &&
+          candidate.provider === served.provider &&
+          candidate.poolSecretId !== served.poolSecretId,
+      )
+    : [];
+  let streamRedispatchIndex = 0;
+  const redispatchStream = async (): Promise<ReadableStream<Uint8Array> | null> => {
+    if (!streamRedispatchBody) return null;
+    const candidate = streamRedispatchCandidates[streamRedispatchIndex] ?? served;
+    streamRedispatchIndex += 1;
+    const timeoutMs = upstreamHeadersTimeoutMs(streamRedispatchBody, candidate, true);
+    try {
+      const response = await callUpstream(structuredClone(streamRedispatchBody), candidate, {
+        fetchImpl: withUpstreamHeadersTimeout(fetchImpl ?? upstreamFetch, timeoutMs),
+        signal: req.signal,
+        requestId: id,
+      });
+      if (!response.body) return null;
+      // Attribute whatever gets billed/logged from here on to the candidate
+      // that actually answered, exactly like dispatch()'s own retries do.
+      served = candidate;
+      attempts += 1;
+      candidatesTried = [...candidatesTried, `${candidate.provider}:stream-retry`];
+      return response.body;
+    } catch (error) {
+      logger.warn(`[gateway] ${id}: stream-cut redispatch to ${candidate.provider} failed`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  };
   if (!outcome.response) {
     const { error } = outcome;
     refundHold(hooks, principal, logger);
@@ -498,7 +675,14 @@ export async function handleChatCompletions(
   const upstream = outcome.response;
 
   // Gateway-authored stream endings; their text names no upstream.
-  const GATEWAY_STREAM_CODES = new Set(['client_aborted', 'upstream_inactivity_timeout']);
+  const GATEWAY_STREAM_CODES = new Set([
+    'client_aborted',
+    'upstream_inactivity_timeout',
+    // Gateway-authored: the message names no provider ("upstream stream ended
+    // without a finish_reason or [DONE]" / "upstream stream error"), so it
+    // never needs `publicUpstreamError`'s status/message classification.
+    'upstream_incomplete_stream',
+  ]);
   const publicStreamError = (streamError: SseErrorFrame): SseErrorFrame => {
     if (GATEWAY_STREAM_CODES.has(String(streamError.code))) return streamError;
     const code = Number(streamError.code);
@@ -534,6 +718,40 @@ export async function handleChatCompletions(
       logger.warn(
         `[gateway] ${id}: stream ended without a usage frame (${streamError?.code ?? 'no error'}); settling an estimate of ${usage!.promptTokens} prompt + ${usage!.completionTokens} output tokens`,
       );
+    }
+    if (streamError?.code === 'upstream_incomplete_stream') {
+      // The upstream ended without a finish_reason/[DONE]/error frame — see
+      // relayStream's `handleIncompleteTermination`. Log it as its own,
+      // greppable line (provider/model/endpoint/bytes/tokens/duration —
+      // never prompt content) so a cluster of cuts on one endpoint is
+      // visible, and count it toward the same pool cooldown a 429 uses — a
+      // pooled key/endpoint that keeps truncating streams gets rotated away
+      // from too, not just rate-limited ones. The cooldown is short: an
+      // incomplete stream is not proof the key is dead, only unreliable now.
+      const detail = streamError.detail as
+        | { bytesForwarded?: number; durationMs?: number; redispatchAttempts?: number; reason?: unknown }
+        | undefined;
+      logger.warn(`[gateway] ${id}: incomplete upstream stream`, {
+        requestId: id,
+        provider: served.provider,
+        model: served.resolvedModel ?? routedModel,
+        endpoint: served.baseUrl,
+        bytesForwarded: detail?.bytesForwarded ?? 0,
+        outputChars: observed?.outputChars ?? 0,
+        durationMs: detail?.durationMs,
+        redispatchAttempts: detail?.redispatchAttempts ?? 0,
+        underlyingReason: detail?.reason,
+      });
+      if (served.poolSecretId && hooks.notePoolRateLimit) {
+        try {
+          await hooks.notePoolRateLimit(principal, served.poolSecretId, 10);
+        } catch (error) {
+          logger.error('[gateway] could not record stream-cut cooldown', {
+            secretId: served.poolSecretId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
     const counts: TokenCounts = usage
       ? {
@@ -628,6 +846,13 @@ export async function handleChatCompletions(
         logger,
         signal: req.signal,
         settle,
+        // A non-2xx upstream "stream" is an arbitrary error body, not SSE —
+        // never classify it as incomplete or retry it (see `treatAsSse`'s doc
+        // comment in streaming.ts). This branch already excluded the
+        // `served.publicProvider && !upstream.ok` case above, but a BYOK/
+        // non-public-provider descriptor can still reach here non-2xx.
+        treatAsSse: upstream.ok,
+        redispatch: upstream.ok && streamRedispatchBody ? redispatchStream : undefined,
         ...(served.publicProvider
           ? { rewriteLines: (text: string) => publicSseLines(text, routedModel) }
           : {}),

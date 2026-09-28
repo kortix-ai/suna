@@ -372,17 +372,25 @@ reuse the successful upload; an explicit `attachmentId` supports caller-managed 
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
-Projects can opt into `session_transcript_history` in Settings → Feature flags. `useSession`
-then reads saved messages from the platform database while `/start` continues. It uses the
-server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
-The flag is off by default. Missing or rejected history falls back to the existing runtime path.
-See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
-and local verification.
+`session_transcript_history` is on by default; a project can turn it off in Settings →
+Feature flags. `useSession` reads saved messages from the platform database while `/start`
+continues. It uses the server-validated OpenCode root and lets the live read reconcile the
+saved messages by ID. Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
 `messages`, and `none` when nothing can show until the runtime answers. A host renders
 placeholder rows on `loading` and its boot screen only on `none`.
+`useSession().conversationEmpty` is true when the saved copy proves the conversation empty
+(a complete read of the runtime found no messages), no turn ended since, and nothing is open
+or queued. A host renders the composer then, not a boot screen.
+
+A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
+userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
+into it by message ID. `createPersistedQueryCache` does the same for accounts, projects and
+the paged session list. Both are per user and bounded; clear both on sign-out. Session
+states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
+`sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 

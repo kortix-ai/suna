@@ -252,8 +252,8 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'security',
     // ACCURACY: do NOT write "credentials the model never sees" or "microVM
     // isolation per session" here. A granted runtime secret is a real env value
-    // inside the session, readable by any command the agent runs
-    // (docs/ENV_SECRET_EXPOSURE_BASELINE.md), and the default sandbox provider
+    // inside the session, readable by any command the agent runs,
+    // and the default sandbox provider
     // is not a microVM. The narrower claims below are the true ones.
     title: 'Kortix Security',
     description:

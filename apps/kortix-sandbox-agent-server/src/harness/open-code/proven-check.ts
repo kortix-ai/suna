@@ -1,8 +1,8 @@
-import type { ConfigReleaseFile } from '../../config-release/descriptor'
-import { bootLinkPath } from '../../boot-config'
+import type { ConfigReleaseFile } from '@/services/config-release/descriptor'
+import { bootLinkPath } from '@/services/config-release/boot-config'
 
 /**
- * The proven check. Spec: docs/specs/config-releases.md, "Proven check".
+ * The proven check.
  *
  * A replacement OpenCode is proven when all hold:
  *   1. It serves the session API. `reloadVerified` proves this before the

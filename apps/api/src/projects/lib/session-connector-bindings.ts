@@ -444,28 +444,6 @@ export async function validateSessionConnectorBindings(input: {
   return { ok: true, bindings: validated };
 }
 
-export async function persistSessionConnectorBindings(input: {
-  sessionId: string;
-  accountId: string;
-  projectId: string;
-  createdBy: string;
-  bindings: ValidatedSessionConnectorBinding[];
-}): Promise<void> {
-  if (input.bindings.length === 0) return;
-  await db.insert(projectSessionConnectorBindings).values(
-    input.bindings.map((binding) => ({
-      sessionId: input.sessionId,
-      accountId: input.accountId,
-      projectId: input.projectId,
-      connectorAlias: binding.alias,
-      connectorId: binding.connectorId,
-      connectionId: binding.connectionId,
-      source: 'request' as const,
-      createdBy: input.createdBy,
-    })),
-  );
-}
-
 export function sessionConnectorBindingsRequirePrivateVisibility(
   bindings: readonly ValidatedSessionConnectorBinding[],
 ): boolean {
@@ -624,8 +602,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
   actingPrincipalIsServiceAccount?: boolean;
   /**
    * Present when the caller is an agent session under the agent-principal
-   * model (spec docs/specs/2026-09-22-agents-as-principals.md §2.3). A
-   * member-owned account then keys on `onBehalfOfUserId` AND a private
+   * model. A member-owned account then keys on `onBehalfOfUserId` AND a private
    * session — never on the session creator or the token user.
    */
   agentPrincipal?: AgentPrincipalPersonalScope | null;

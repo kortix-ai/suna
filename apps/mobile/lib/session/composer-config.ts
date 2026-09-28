@@ -104,12 +104,13 @@ export function composerChip(i: {
  * (`/detail`, project home), whose `mode` is null when the agent file omits
  * it — OpenCode reads that as "all".
  */
-export function pickableAgents<T extends { mode?: string | null; hidden?: boolean; enabled?: boolean }>(
+export function pickableAgents<T extends { name: string; mode?: string | null; hidden?: boolean; enabled?: boolean }>(
   agents: T[],
 ): T[] {
   return agents.filter((a) => {
     const mode = a.mode ?? 'all';
-    return (mode === 'primary' || mode === 'all') && !a.hidden && a.enabled !== false;
+    return (mode === 'primary' || mode === 'all') && !a.hidden && a.enabled !== false &&
+      a.name !== 'build' && a.name !== 'plan';
   });
 }
 

@@ -4,8 +4,7 @@
 // It used to decide everything: Platinum had a credential edge to arm, every
 // other provider had none, and a session carrying a boundary secret on one of
 // those failed provisioning outright unless the project carried the in-guest
-// shim opt-in flag. One mechanism now serves all three
-// (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4) — the guest holds a
+// shim opt-in flag. One mechanism now serves all three — the guest holds a
 // HANDLE and the broker route substitutes the real value server-side — so the
 // arm, the edge and the flag are gone.
 //

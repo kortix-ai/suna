@@ -163,13 +163,13 @@ jobs:
               - 'apps/api/**'
               - 'apps/kortix-app-runtime/**'
               - 'apps/kortix-sandbox-agent-server/**'
+              - 'apps/kortix-worker/**'  # compiled into the API image (Dockerfile pi-worker stage)
               - 'apps/sandbox/**'
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
               - 'scripts/ci/cosign-sign-attest.sh'
               - 'infra/scripts/ecs-deploy.sh'
               - '.github/workflows/deploy-dev.yml'
-              - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'VERSION'
@@ -359,8 +359,7 @@ jobs:
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45 (see
-        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        # reused 0 layers while the registry cache reused 34-45.
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/api/Dockerfile:linux/amd64
@@ -574,7 +573,6 @@ jobs:
       # (the leader worker prepares snapshots). Removing the two keys (or an
       # unapplied Terraform) leaves the API on the Git path: the config
       # validates the bucket as optional and the worker idles.
-      # docs/runbooks/project-snapshot-s3.md#aws
       #
       # KORTIX_PROJECT_SNAPSHOT_MODE=prefer-s3 makes S3 the default for every
       # dev project. A fresh session boots from the prepared archive for its
@@ -606,7 +604,6 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      # docs/specs/config-releases.md#store
       KORTIX_ECS_ENV_OVERRIDES: >-
         {"CONFIG_RELEASES_ENABLED":"true","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}
     steps:
@@ -745,8 +742,7 @@ jobs:
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45 (see
-        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        # reused 0 layers while the registry cache reused 34-45.
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/llm-gateway/Dockerfile:linux/amd64
@@ -940,8 +936,7 @@ jobs:
         # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
         # local buildx builder. The registry cache-from/cache-to below stays:
         # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45 (see
-        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        # reused 0 layers while the registry cache reused 34-45.
         uses: useblacksmith/setup-docker-builder@v2
         with:
           cache-key: apps/web/Dockerfile:linux/amd64
