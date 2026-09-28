@@ -106,7 +106,7 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
   // Everything lives behind the one `/kortix` panel; the rest are power-user
   // shortcuts for people who'd rather type than click.
   const advanced: Array<{ cmd: string; desc: string }> = [
-    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/deepseek-v4.1-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
+    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.3-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
     { cmd: `${command} agent <name>`, desc: 'Set the channel agent directly (`default` to reset).' },
     ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different project.' }]),
     { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions here.' },

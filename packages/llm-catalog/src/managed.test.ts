@@ -24,7 +24,7 @@ const served = [
 describe('managed catalog', () => {
   test('serves the selected managed models', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual(served);
-    expect(PLATFORM_DEFAULT_MODEL_ID).toBe('deepseek-v4.1-flash');
+    expect(PLATFORM_DEFAULT_MODEL_ID).toBe('glm-5.3-flash');
     expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('kimi-k3');
   });
 
@@ -58,7 +58,7 @@ describe('managed catalog', () => {
       };
       expect(route).toMatchObject({ allow_fallbacks: true, zdr: true, data_collection: 'deny' });
       expect(route.only.length, model.id).toBeGreaterThanOrEqual(1);
-      for (const tag of route.only) expect(VERIFIED_US_MANAGED_ENDPOINTS, `${model.id} ${tag}`).toContain(tag);
+      for (const tag of route.only) expect(VERIFIED_US_MANAGED_ENDPOINTS as readonly string[], `${model.id} ${tag}`).toContain(tag);
       expect(route.only, model.id).not.toContain('morph');
       expect(new Set(route.only).size, model.id).toBe(route.only.length);
       expect(route.max_price.prompt).toBeGreaterThanOrEqual(model.pricing!.inputPerMillion);

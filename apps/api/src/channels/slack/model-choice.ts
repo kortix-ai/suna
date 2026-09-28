@@ -242,7 +242,7 @@ export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string):
     return (await setChannelModel(channelCtx, null)) ? 'Model reset to the project default.' : connect;
   }
   if (/\s/.test(id)) {
-    return `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/deepseek-v4.1-flash\` or \`deepseek-v4.1-flash\`).`;
+    return `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.3-flash\` or \`glm-5.3-flash\`).`;
   }
   // Gateway OFF: OpenCode owns the catalog — enforce the native
   // `provider/model` shape and store verbatim, no gateway check.

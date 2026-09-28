@@ -36,7 +36,7 @@ Turning the flag off is a fully supported path. The project then runs
 
 A model id has one of three shapes:
 
-- **Managed** — a bare id, like `kimi-k3` or `deepseek-v4.1-flash`.
+- **Managed** — a bare id, like `kimi-k3` or `glm-5.3-flash`.
   Kortix supplies the credentials. Cloud accounts pay with Kortix credits.
 - **BYOK** — a `provider/model` id, like `anthropic/claude-opus-4-8`. You
   supply the key. Your provider account pays.
@@ -49,14 +49,14 @@ provider's env var directly as a [secret](/docs/project/secrets).
 ### Kortix-managed models
 
 The picker lists these under **Kortix**, with their token rates. Every one
-accepts text and images. Each request goes to one pinned endpoint with zero
-data retention, and never falls back to another provider.
+accepts text and images. Requests stay within each model's approved US, zero-data-retention
+OpenRouter endpoint pool. An endpoint error may move a request to another approved pool member.
 
 | Model | Id |
 | --- | --- |
 | Kimi K3 2.8T | `kimi-k3` |
-| DeepSeek V4.1 Flash (platform default) | `deepseek-v4.1-flash` |
-| GLM 5.3 Flash | `glm-5.3-flash` |
+| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` |
+| GLM 5.3 Flash (platform default) | `glm-5.3-flash` |
 
 Kortix does not offer OpenAI or Anthropic models as managed models. Use them
 through a BYOK key or a ChatGPT plan. A ChatGPT plan adds `codex/gpt-6-astra`,

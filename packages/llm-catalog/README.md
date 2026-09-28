@@ -8,17 +8,17 @@ The picker groups every managed model under **Kortix**, and the provider is alwa
 
 | Picker name | Gateway model ID | OpenRouter model ID | Input | Displayed USD per 1M input / cached input / output tokens |
 | --- | --- | --- | --- | --- |
-| DeepSeek V4.1 Flash (default) | `deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash` | Text, image | $0.20 / $0.03 / $0.65 |
-| GLM-5.3-Flash | `glm-5.3-flash` | `z-ai/glm-5.3-flash` | Text, image | $0.15 / $0.05 / $0.50 |
+| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash` | Text, image | $0.20 / $0.03 / $0.65 |
+| GLM-5.3-Flash (default) | `glm-5.3-flash` | `z-ai/glm-5.3-flash` | Text, image | $0.15 / $0.05 / $0.50 |
 | Kimi K3 2.8T | `kimi-k3` | `moonshotai/kimi-k3` | Text, image | $3.30 / $0.33 / $16.50 |
 
 The displayed prices are the OpenRouter pool prices, or the pool cap for GLM. OpenRouter requests bill its reported `usage.cost`. Direct Morph requests use the separate Morph prices in `MANAGED_MODELS`. All rates exclude Kortix credit markup.
 
-The OpenCode reference is `kortix/<gateway model ID>`. The bundled sandbox fallback (`MINIMAL_FALLBACK_MODELS`) uses the same IDs, prices, and capabilities.
+The OpenCode reference is `kortix/<gateway model ID>`. The bundled sandbox fallback (`MINIMAL_FALLBACK_MODELS`) uses the same IDs, prices, and capabilities. The default applies only when no account, project, agent, session, or operator model override exists; saved choices are not migrated. Unset `LLM_GATEWAY_DEFAULT_MODEL`, `LLM_GATEWAY_VISION_MODEL`, and `LLM_GATEWAY_BYOK_FALLBACK_MODEL` to inherit GLM. The default gateway policy falls back from a failed Codex turn to GLM, not DeepSeek. GLM retries within its permitted OpenRouter endpoint pool rather than switching to another model.
 
 ### Routing: per-model Morph selection
 
-1. `MORPH_MANAGED_MODELS` is a comma-separated list of managed model IDs. Its default is `deepseek-v4.1-flash,kimi-k3`. GLM uses OpenRouter only. An empty value disables Morph for every managed model. Add `glm-5.3-flash` to explicitly enable Morph for GLM. The change takes effect after an API restart or deployment. A selected model uses Morph direct first when `MORPH_API_KEY` exists, then OpenRouter on a retryable error.
+1. `MORPH_MANAGED_MODELS` is a comma-separated list of managed model IDs. Its default is empty, so managed models use OpenRouter. Add `glm-5.3-flash` to explicitly enable Morph for GLM. The change takes effect after an API restart or deployment. A selected model uses Morph direct first when `MORPH_API_KEY` exists, then OpenRouter on a retryable error.
 2. OpenRouter routes inside the model's endpoint pool: `only` lists the pool, `allow_fallbacks: true` lets OpenRouter move to the next pool member on an endpoint error, `zdr: true` and `data_collection: deny` are forced by the gateway, and `max_price` (USD per 1M tokens) excludes premium tiers. The gateway intersects operator-defined pools with the verified US endpoint list. Morph is excluded from every OpenRouter pool.
 3. The OpenRouter model ID names the model author, not the inference host. The allowlist names the permitted hosts.
 
@@ -76,7 +76,7 @@ Qwen3.8 Max 0902 remains excluded. On 2026-09-21, OpenRouter listed one `alibaba
 
 ## Catalog
 
-`CATALOG` is the bundled models.dev snapshot. It lives in `src/catalog-data.ts`, not in `index.ts`, so a bundler drops the ~7.6 MB JSON for consumers that never read `CATALOG` or `catalogModelForWireModel`. `MANAGED_MODELS` contains the managed lineup. `PLATFORM_DEFAULT_MODEL_ID` is `deepseek-v4.1-flash`. The runtime catalog refreshes from the configured models.dev URL.
+`CATALOG` is the bundled models.dev snapshot. It lives in `src/catalog-data.ts`, not in `index.ts`, so a bundler drops the ~7.6 MB JSON for consumers that never read `CATALOG` or `catalogModelForWireModel`. `MANAGED_MODELS` contains the managed lineup. `PLATFORM_DEFAULT_MODEL_ID` is `glm-5.3-flash`. The runtime catalog refreshes from the configured models.dev URL.
 
 ## License
 
