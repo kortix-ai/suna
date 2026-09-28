@@ -39,8 +39,7 @@ CREATE INDEX "idx_account_github_user_tokens_account" ON "kortix"."account_githu
 -- drizzle-kit also proposed uniq_account_github_installations_owner here. It is
 -- already built CONCURRENTLY by
 -- 20260925164209388_github_installations_one_per_owner_index (the table is live;
--- a plain CREATE INDEX would block its writers). Removed on purpose — the
--- snapshot carries it, so it is not proposed again.
+-- a plain CREATE INDEX would block its writers). Removed on purpose.
 
--- Both indexes above are on a table created in this same migration, so they take
--- no lock anyone can see and need no CONCURRENTLY escape hatch.
+-- Both indexes above are on a table created in this migration, so they take no
+-- lock anyone can see and need no CONCURRENTLY escape hatch.

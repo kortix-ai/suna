@@ -624,6 +624,13 @@
       "when": 1790583495303,
       "tag": "20260928081815_account_secret_needs_reauth",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790599180379,
+      "tag": "20260928123940_github_user_tokens",
+      "breakpoints": true
     }
   ]
 }
