@@ -46,6 +46,7 @@
     "deleteAccount": "删除账户",
     "connectAccount": "连接账户",
     "oauthWaiting": "等待授权…",
+    "oauthFinishing": "已登录，正在保存你的账户…",
     "oauthExpired": "授权已超时，请重试。",
     "oauthPrivateDescription": "在此项目中使用您的 ChatGPT Plus 或 Pro 套餐。新账户在您共享之前仅供您自己使用。",
     "chatGptSubscription": "ChatGPT 订阅",

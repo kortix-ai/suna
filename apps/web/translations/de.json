@@ -46,6 +46,7 @@
     "deleteAccount": "Konto löschen",
     "connectAccount": "Konto verbinden",
     "oauthWaiting": "Warte auf Autorisierung…",
+    "oauthFinishing": "Angemeldet. Konto wird gespeichert…",
     "oauthExpired": "Autorisierung abgelaufen. Versuchen Sie es erneut.",
     "oauthPrivateDescription": "Nutzen Sie Ihr ChatGPT-Plus- oder Pro-Abo in diesem Projekt. Neue Konten sind privat, bis Sie sie teilen.",
     "chatGptSubscription": "ChatGPT-Abo",

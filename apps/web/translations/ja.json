@@ -46,6 +46,7 @@
     "deleteAccount": "アカウントを削除",
     "connectAccount": "アカウントを接続",
     "oauthWaiting": "認証を待機中…",
+    "oauthFinishing": "サインインしました。アカウントを保存しています…",
     "oauthExpired": "認証がタイムアウトしました。もう一度お試しください。",
     "oauthPrivateDescription": "このプロジェクトで ChatGPT Plus または Pro プランを使用します。新しいアカウントは共有するまで自分専用です。",
     "chatGptSubscription": "ChatGPT サブスクリプション",

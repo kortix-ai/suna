@@ -30,6 +30,16 @@ import { accessSummary, chatGptSharing, type ConnectionAccessChoice, keyAccessFi
 const NO_MEMBERS: PrincipalSelection = { memberIds: [], groupIds: [], inviteEmails: [] };
 type StartInput = NonNullable<Parameters<typeof startProjectProviderOAuth>[2]>;
 
+/** Between ChatGPT confirming the sign-in and the account appearing in the list. */
+function ChatGptSignInFinishing({ label }: { label: string }) {
+  return (
+    <div role="status" className="text-muted-foreground flex items-center gap-2 text-sm">
+      <Loading variant="spokes" className="size-4" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 /**
  * One ChatGPT device authorization at a time. A newer start or a cancel bumps
  * the generation, so a stale poll never updates a later dialog. Failures stay
@@ -40,16 +50,18 @@ function useChatGptAuthorization(projectId: string | undefined) {
   useEffect(() => () => { generation.current++; }, []);
   const [challenge, setChallenge] = useState<{ url: string; code: string | null } | null>(null);
   const [waiting, setWaiting] = useState(false);
+  /** ChatGPT confirmed the sign-in; the account list is catching up. */
+  const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useCallback(() => {
     generation.current++;
-    setWaiting(false); setChallenge(null); setError(null);
+    setWaiting(false); setFinishing(false); setChallenge(null); setError(null);
   }, []);
   const authorize = useCallback(async (input: StartInput, messages: { expired: string; failed: string }) => {
     if (!projectId) return null;
     const current = ++generation.current;
     const isCurrent = () => current === generation.current;
-    setWaiting(true); setChallenge(null); setError(null);
+    setWaiting(true); setFinishing(false); setChallenge(null); setError(null);
     try {
       const start = await startProjectProviderOAuth(projectId, 'openai', input);
       if (!isCurrent()) return null;
@@ -73,7 +85,9 @@ function useChatGptAuthorization(projectId: string | undefined) {
           continue;
         }
         if (result.status === 'success') {
-          setWaiting(false); setChallenge(null);
+          // Still busy: the caller closes the dialog once the list shows the
+          // account, so nothing clickable appears in between.
+          setChallenge(null); setFinishing(true);
           return result.credential;
         }
         throw new Error(result.status === 'failed' ? result.error : messages.expired);
@@ -88,7 +102,7 @@ function useChatGptAuthorization(projectId: string | undefined) {
       return null;
     }
   }, [projectId]);
-  return { challenge, waiting, error, authorize, cancel };
+  return { challenge, waiting, finishing, error, authorize, cancel };
 }
 
 /**
@@ -146,6 +160,16 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     refreshProjectProviderState(queryClient, projectId);
     await queryClient.invalidateQueries({ queryKey: ['session-provider-secret-pools'] });
   };
+  /** Waits only for the list this dialog sits on; the rest refreshes behind it. */
+  const finishConnection = async () => {
+    try {
+      await queryClient.invalidateQueries({ queryKey });
+    } finally {
+      refreshProjectProviderState(queryClient, projectId);
+      void queryClient.invalidateQueries({ queryKey: ['session-provider-secret-pools'] });
+      oauth?.onConnected('codex');
+    }
+  };
   const connectOAuth = async () => {
     if (!oauth || !label.trim()) return;
     const credential = await authorization.authorize({
@@ -153,16 +177,16 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
       sharing: chatGptSharing(createMode, selectedMembers.memberIds, user?.id),
     }, authMessages);
     if (!credential) return;
-    await refresh();
-    oauth.onConnected('codex');
+    await finishConnection().catch(() => {});
+    authorization.cancel();
     setCreating(false); setLabel('');
     successToast(t('accountConnected'));
   };
   const reconnectOAuth = async (secret: AccountSecretResource) => {
     const credential = await authorization.authorize({ resourceId: secret.secret_id }, authMessages);
     if (!credential) return;
-    await refresh();
-    oauth?.onConnected('codex');
+    await finishConnection().catch(() => {});
+    authorization.cancel();
     setReconnecting(null);
     successToast(t('accountReconnected'));
   };
@@ -281,7 +305,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
         })}</ul>
       ) : null}
 
-      <Modal open={creating || rotating !== null} onOpenChange={(open) => { if (!open && !save.isPending) closeCreate(); }}>
+      <Modal open={creating || rotating !== null} onOpenChange={(open) => { if (!open && !save.isPending && !authorization.finishing) closeCreate(); }}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader><ModalTitle>{rotating ? t('rotateLabel', { label: rotating.label }) : `${oauth ? t('addAccount') : t('addKey')} · ${providerName}`}</ModalTitle>
             <ModalDescription>{t(rotating ? 'valueNeverShown' : oauth ? 'oauthCreationDescription' : 'creationDescription')}</ModalDescription></ModalHeader>
@@ -291,9 +315,10 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
             {!rotating && <>
               <Field><FieldLabel htmlFor={`provider-key-label-${providerId}`}>{t('label')}</FieldLabel><Input id={`provider-key-label-${providerId}`} value={label} disabled={busy} onChange={(event) => setLabel(event.target.value)} placeholder={oauth ? t('accountLabelPlaceholder') : t('primaryKey')} maxLength={100} /></Field>
             </>}
-            {oauth ? authorization.challenge && <ChatGptDeviceChallenge url={authorization.challenge.url} code={authorization.challenge.code} /> :
+            {oauth ? authorization.finishing ? <ChatGptSignInFinishing label={t('oauthFinishing')} />
+              : authorization.challenge && <ChatGptDeviceChallenge url={authorization.challenge.url} code={authorization.challenge.code} /> :
               <Field><FieldLabel htmlFor={`provider-key-value-${providerId}`}>{t('apiKey')}</FieldLabel><Input id={`provider-key-value-${providerId}`} type="password" value={value} disabled={save.isPending} onChange={(event) => setValue(event.target.value)} autoComplete="off" /></Field>}
-            {!rotating && !authorization.challenge && <div className="space-y-2">
+            {!rotating && !authorization.challenge && !authorization.finishing && <div className="space-y-2">
               <FieldLabel>{t('whoCanUse')}</FieldLabel>
               <RadioGroup value={createMode} onValueChange={(next) => setCreateMode(next as ConnectionAccessChoice)} className="space-y-2">
                 <RadioGroupItem value="private" id={`create-${providerId}-private`} label={t('onlyYou')} description={t('onlyYouDescription')} size="lg" variant="outline" disabled={busy} />
@@ -305,27 +330,29 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
                 value={selectedMembers} onChange={setSelectedMembers} disabled={busy} autoFocus={false} />}
             </div>}
           </ModalBody>
-          <ModalFooter><Button variant="secondary" disabled={save.isPending} onClick={closeCreate}>{t('cancel')}</Button>
+          <ModalFooter><Button variant="secondary" disabled={save.isPending || authorization.finishing} onClick={closeCreate}>{t('cancel')}</Button>
             <Button disabled={oauth ? authorization.waiting || !label.trim() : save.isPending || !value.trim() || (!rotating && !label.trim())}
               onClick={() => oauth ? void connectOAuth() : save.mutate()}>
-              {oauth ? authorization.waiting ? t('oauthWaiting') : authorization.error ? common('retry') : t('connectAccount') : save.isPending ? t('saving') : t('saveKey')}
+              {oauth ? authorization.finishing ? t('saving') : authorization.waiting ? t('oauthWaiting') : authorization.error ? common('retry') : t('connectAccount') : save.isPending ? t('saving') : t('saveKey')}
             </Button></ModalFooter>
         </ModalContent>
       </Modal>
 
-      {oauth && <Modal open={reconnecting !== null} onOpenChange={(open) => { if (!open) closeReconnect(); }}>
+      {oauth && <Modal open={reconnecting !== null} onOpenChange={(open) => { if (!open && !authorization.finishing) closeReconnect(); }}>
         <ModalContent className="lg:max-w-md">
           <ModalHeader><ModalTitle>{t('reconnectTitle', { label: reconnecting?.label ?? '' })}</ModalTitle>
             <ModalDescription>{t('reconnectDescription')}</ModalDescription></ModalHeader>
           <ModalBody className="space-y-3">
             {authorization.error && <p role="alert" className="text-destructive text-sm">{authorization.error}</p>}
-            {authorization.challenge
-              ? <ChatGptDeviceChallenge url={authorization.challenge.url} code={authorization.challenge.code} />
-              : authorization.waiting && <div role="status" aria-label={t('oauthWaiting')}><Loading /></div>}
+            {authorization.finishing
+              ? <ChatGptSignInFinishing label={t('oauthFinishing')} />
+              : authorization.challenge
+                ? <ChatGptDeviceChallenge url={authorization.challenge.url} code={authorization.challenge.code} />
+                : authorization.waiting && <div role="status" aria-label={t('oauthWaiting')}><Loading /></div>}
           </ModalBody>
-          <ModalFooter><Button variant="secondary" onClick={closeReconnect}>{t('cancel')}</Button>
+          <ModalFooter><Button variant="secondary" disabled={authorization.finishing} onClick={closeReconnect}>{t('cancel')}</Button>
             <Button disabled={authorization.waiting || !reconnecting} onClick={() => { if (reconnecting) void reconnectOAuth(reconnecting); }}>
-              {authorization.waiting ? t('oauthWaiting') : authorization.error ? common('retry') : t('reconnectAccount')}
+              {authorization.finishing ? t('saving') : authorization.waiting ? t('oauthWaiting') : authorization.error ? common('retry') : t('reconnectAccount')}
             </Button></ModalFooter>
         </ModalContent>
       </Modal>}
