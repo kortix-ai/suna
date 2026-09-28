@@ -94,8 +94,6 @@ const JSON_OBJECT_ALLOW: Record<string, string> = {};
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
   'shared/html.ts': 'the one implementation',
-  // TODO(follow-up): import shared/html.ts once PR #7180 lands.
-  'apps/public-proxy.ts': 'open PR #7180 edits this file',
 };
 
 describe('request primitives have one implementation', () => {
