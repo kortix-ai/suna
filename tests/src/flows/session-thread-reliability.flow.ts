@@ -185,13 +185,16 @@ harnessFlow(
     // the first OpenCode read through the preview proxy right after `/start`
     // reported ready — the box was still waking (the "503 = waking state"
     // class), i.e. the same pre-existing stop→wake defect the earlier
-    // quarantine documented (#6638 investigation). The flow now reads through
-    // `GET .../transcript`, not the preview proxy. Re-quarantined until the
-    // wake path is proven on a staging dry run
+    // quarantine documented (#6638 investigation). On Kortix routes
+    // (2026-09-28, local stack, 2 of 2 runs) the OpenCode defect reads
+    // differently: the first prompt after the wake is recorded
+    // "accepted by the runtime but never became a message" and gets no
+    // reply. SESS-23-pi passed the same flow. Quarantined until the wake path
+    // is proven on a staging dry run
     // (`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`);
     // un-quarantine ONLY in the PR that carries that green run.
     quarantine:
-      'stop→wake: first post-wake OpenCode read through the preview proxy answers 503 while the box is still waking after /start reports ready — pre-existing wake-path defect, re-quarantined 2026-08-26 (gate run 32992496089)',
+      'stop→wake on OpenCode: the first prompt after the wake is accepted by the runtime but never becomes a message, so it gets no reply (local stack 2026-09-28, 2 of 2 runs; pi passes). First seen as a post-wake 503 on gate run 32992496089; quarantined since 2026-08-26',
     // Boot readiness 540_000 + turn start 120_000 + stop settle 60_000 + wake
     // 180_000 + reply 240_000 exceeds 900_000 only when every wait runs to its
     // bound; 1_200_000 matches SESS-24.
@@ -265,6 +268,18 @@ harnessFlow(
       },
     );
 
+    let stoppedAbortCount = 0;
+    await ctx.step("the stop's own abort stamps the live turn at most once", async () => {
+      // pi stamps the aborted reply `MessageAbortedError`; OpenCode can finalize
+      // it with no error at all. Either is one Interrupted marker at most. The
+      // stopped session answers from its durable mirror.
+      const { messages } = await readTranscript(ctx, projectId, sessionId);
+      stoppedAbortCount = messages.filter(isAbortStamp).length;
+      if (stoppedAbortCount > preStopAbortCount + 1) {
+        throw new Error(`stopping one live turn added ${stoppedAbortCount - preStopAbortCount} abort stamps`);
+      }
+    });
+
     await ctx.step('wake the box back up via /start', async () => {
       // A WAKE resumes the VM (~19-25s measured); cold-boot money would let one
       // slow wake swallow the whole flow budget.
@@ -285,9 +300,9 @@ harnessFlow(
           );
         }
         const abortCount = messages.filter(isAbortStamp).length;
-        if (abortCount !== preStopAbortCount) {
+        if (abortCount !== stoppedAbortCount) {
           throw new Error(
-            `abort-marked assistant message count changed on wake alone (no new prompt sent yet) — a new "Interrupted" stamp appeared: before=${preStopAbortCount} after=${abortCount}`,
+            `abort-marked assistant message count changed on wake alone (no new prompt sent yet) — a new "Interrupted" stamp appeared: after stop=${stoppedAbortCount} after wake=${abortCount}`,
           );
         }
         afterWakeUserCount = userIds.length;
@@ -325,9 +340,9 @@ harnessFlow(
           throw new Error(`expected exactly one assistant reply carrying the wake-prompt marker, saw ${replies.length}`);
         }
         const abortCount = messages.filter(isAbortStamp).length;
-        if (abortCount !== preStopAbortCount) {
+        if (abortCount !== stoppedAbortCount) {
           throw new Error(
-            `abort-marked assistant messages grew after the wake prompt — a NEW "Interrupted" stamp appeared: before=${preStopAbortCount} after=${abortCount}`,
+            `abort-marked assistant messages grew after the wake prompt — a NEW "Interrupted" stamp appeared: after stop=${stoppedAbortCount} now=${abortCount}`,
           );
         }
       },
