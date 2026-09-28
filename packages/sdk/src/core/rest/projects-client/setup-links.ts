@@ -115,6 +115,8 @@ export interface ApprovalLinkDetails {
   review_complete?: boolean;
   /** One-line rendering of the fields that identify the target. */
   args_summary: string | null;
+  /** The agent's own description of the call's effect. Unverified. */
+  approval_context?: string | null;
   policy_source: string | null;
   requested_at: string;
   resolved_at: string | null;

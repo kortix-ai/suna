@@ -19231,7 +19231,10 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Listou os apps conectados",
       "text37698a37f9d2": "Revogou um app conectado",
-      "text8c8fb214b592": "Autorizou o GitHub como usuário"
+      "text8c8fb214b592": "Autorizou o GitHub como usuário",
+      "text9dcde51d9ff2": "Descrição do agente",
+      "textfa0db737cb09": "Escrita pelo agente e não verificada. O conector recebe os parâmetros abaixo.",
+      "text2edf70730233": "Mensagem para o agente (opcional)"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

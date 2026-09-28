@@ -19231,7 +19231,10 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "列出了已连接的应用",
       "text37698a37f9d2": "撤销了已连接的应用",
-      "text8c8fb214b592": "以用户身份授权了 GitHub"
+      "text8c8fb214b592": "以用户身份授权了 GitHub",
+      "text9dcde51d9ff2": "代理的说明",
+      "textfa0db737cb09": "由代理撰写，未经验证。连接器接收的是下方参数。",
+      "text2edf70730233": "给代理的消息（可选）"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

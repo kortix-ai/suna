@@ -123,6 +123,35 @@ describe('a gated call records what it was going to do', () => {
     });
   });
 
+  test("an id-only call records the agent's description of its effect, outside the args", async () => {
+    const { deps, records } = makeDeps();
+
+    const res = await handleCall(deps, {
+      ...input({ draft_id: 'r-1' }),
+      approvalContext: '  Sends draft r-1 to stranger@other-company.test, subject "Hi"  ',
+    });
+
+    const pending = records.find((r) => r.status === 'pending_approval');
+    expect(pending?.resultSummary?.approval_context).toBe(
+      'Sends draft r-1 to stranger@other-company.test, subject "Hi"',
+    );
+    expect(pending?.resultSummary?.args_preview).toEqual({ draft_id: 'r-1' });
+    // With a description, the agent is not nagged to add one.
+    expect((res as { approvalInstructions?: string }).approvalInstructions).not.toContain(
+      'approval_context',
+    );
+  });
+
+  test('a gated call without a description tells the agent how to add one', async () => {
+    const { deps, records } = makeDeps();
+
+    const res = await handleCall(deps, input({ draft_id: 'r-1' }));
+
+    const pending = records.find((r) => r.status === 'pending_approval');
+    expect(pending?.resultSummary).not.toHaveProperty('approval_context');
+    expect((res as { approvalInstructions?: string }).approvalInstructions).toContain('--reason');
+  });
+
   test('a policy BLOCK is also recorded with what it blocked', async () => {
     const { deps, records } = makeDeps({
       projectPolicies: [{ match: 'gmail.send_email', action: 'block', position: 0 }],

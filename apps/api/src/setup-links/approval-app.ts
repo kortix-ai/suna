@@ -172,6 +172,8 @@ approvalLinksApp.get('/:token', async (c) => {
     args_preview: argsPreview,
     review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
+    approval_context:
+      typeof summary.approval_context === 'string' ? summary.approval_context : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,

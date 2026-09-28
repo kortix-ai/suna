@@ -206,12 +206,15 @@ export function resolveApprovalMutationOptions(
     mutationFn: ({
       executionId,
       decision,
+      note,
     }: {
       executionId: string;
       decision: 'approve' | 'deny';
+      /** The approver's message to the agent, delivered with the decision. */
+      note?: string;
     }) => {
       if (!projectId) throw new Error('No project in context');
-      return resolveApproval(projectId, executionId, decision);
+      return resolveApproval(projectId, executionId, decision, { note });
     },
     // See the jsdoc above `useResolveApproval` — opts out of the global
     // default mutation `onError` so it doesn't double-toast alongside each

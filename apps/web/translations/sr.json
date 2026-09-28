@@ -19231,7 +19231,10 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Prikazane povezane aplikacije",
       "text37698a37f9d2": "Opozvana povezana aplikacija",
-      "text8c8fb214b592": "GitHub je autorizovan kao korisnik"
+      "text8c8fb214b592": "GitHub je autorizovan kao korisnik",
+      "text9dcde51d9ff2": "Опис агента",
+      "textfa0db737cb09": "Написао агент, није проверено. Конектор прима параметре испод.",
+      "text2edf70730233": "Порука агенту (опционо)"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
