@@ -229,7 +229,6 @@ export interface McpStatus {
 }
 
 export const opencodeKeys = {
-  agents: (url: string) => ['opencode', 'agents', url] as const,
   providers: (url: string) => ['opencode', 'providers', url] as const,
   config: (url: string) => ['opencode', 'config', url] as const,
   commands: (url: string) => ['opencode', 'commands', url] as const,
@@ -240,19 +239,6 @@ export const opencodeKeys = {
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
-
-export function useOpenCodeAgents(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: opencodeKeys.agents(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      const agents = await opencodeFetch<Agent[]>(sandboxUrl, '/agent');
-      return agents.filter((a) => !a.hidden);
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
-}
 
 export function useOpenCodeProviders(sandboxUrl: string | undefined) {
   return useQuery({
