@@ -120,6 +120,9 @@ const LEGACY_MANAGED_IDS: Record<string, string> = {
   'morph-dsv41flash': 'deepseek-v4.1-flash',
   'morph-dsv4flash': 'deepseek-v4-flash-0731',
   'deepseek-v4-flash': 'deepseek-v4-flash-0731',
+  // deepseek-v4-flash-0731 was itself retired 2026-09-28 in favor of
+  // deepseek-v4.1-flash — see RETIRED_MANAGED_MODEL_IDS above.
+  'deepseek-v4-flash-0731': 'deepseek-v4.1-flash',
 };
 
 export function canonicalManagedModelId(id: string): string {
@@ -128,6 +131,24 @@ export function canonicalManagedModelId(id: string): string {
 
 export function isKnownManagedModelId(id: string): boolean {
   return BUNDLED_BY_ID.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
+}
+
+/** Explicitly retired — distinct from merely "not currently servable" (off
+ *  deployment / missing credential), which stays a bundled-but-unserved id. */
+export function isRetiredManagedModelId(id: string): boolean {
+  return RETIRED_MANAGED_MODEL_IDS.has(id);
+}
+
+/**
+ * The declared successor for a retired id, ONLY when that successor is
+ * itself in `served` — never a dead pin swapped for another dead pin.
+ * `null` when the id isn't retired, has no declared successor
+ * (LEGACY_MANAGED_IDS), or the successor isn't servable here either.
+ */
+export function retiredManagedModelReplacement(id: string, served: readonly ManagedModel[]): string | null {
+  if (!isRetiredManagedModelId(id)) return null;
+  const successor = canonicalManagedModelId(id);
+  return successor !== id && served.some((model) => model.id === successor) ? successor : null;
 }
 
 /**

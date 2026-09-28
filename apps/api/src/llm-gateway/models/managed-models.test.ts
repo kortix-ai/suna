@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ManagedModel, parseManagedModels, resolvePlatformDefaultModelId } from './managed-models';
+import {
+  canonicalManagedModelId,
+  isRetiredManagedModelId,
+  type ManagedModel,
+  parseManagedModels,
+  resolvePlatformDefaultModelId,
+  retiredManagedModelReplacement,
+} from './managed-models';
 
 describe('runtime managed model registry', () => {
   test('accepts a complete operator-defined managed-model replacement', () => {
@@ -159,5 +166,48 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
   test('leaves the configured default unchanged when nothing managed is served at all', () => {
     expect(resolvePlatformDefaultModelId('morph-glm53-744b', [])).toBe('morph-glm53-744b');
     expect(resolvePlatformDefaultModelId('', [])).toBe('');
+  });
+});
+
+describe('isRetiredManagedModelId', () => {
+  test('the two ids from the 2026-09-28 sweep are retired', () => {
+    expect(isRetiredManagedModelId('deepseek-v4-flash-0731')).toBe(true);
+    expect(isRetiredManagedModelId('grok-4.6')).toBe(true);
+  });
+
+  test('a current lineup id is not retired', () => {
+    expect(isRetiredManagedModelId('deepseek-v4.1-flash')).toBe(false);
+    expect(isRetiredManagedModelId('glm-5.3-flash')).toBe(false);
+    expect(isRetiredManagedModelId('kimi-k3')).toBe(false);
+  });
+
+  test('an id this catalog has never heard of is not retired — it is simply unknown', () => {
+    expect(isRetiredManagedModelId('not-a-real-model')).toBe(false);
+  });
+});
+
+describe('deepseek-v4-flash-0731 declares deepseek-v4.1-flash as its successor', () => {
+  test('canonicalManagedModelId resolves it', () => {
+    expect(canonicalManagedModelId('deepseek-v4-flash-0731')).toBe('deepseek-v4.1-flash');
+  });
+});
+
+describe('retiredManagedModelReplacement', () => {
+  const lineup = [managed('deepseek-v4.1-flash', 'openrouter'), managed('kimi-k3', 'openrouter')];
+
+  test('names the declared successor when it is actually served', () => {
+    expect(retiredManagedModelReplacement('deepseek-v4-flash-0731', lineup)).toBe('deepseek-v4.1-flash');
+  });
+
+  test('returns null when the declared successor is not itself served here', () => {
+    expect(retiredManagedModelReplacement('deepseek-v4-flash-0731', [managed('kimi-k3', 'openrouter')])).toBeNull();
+  });
+
+  test('returns null when there is no declared successor at all', () => {
+    expect(retiredManagedModelReplacement('grok-4.6', lineup)).toBeNull();
+  });
+
+  test('returns null for an id that was never retired', () => {
+    expect(retiredManagedModelReplacement('kimi-k3', lineup)).toBeNull();
   });
 });

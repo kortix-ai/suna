@@ -21,7 +21,12 @@ import {
 } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
-import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
+import {
+  canonicalManagedModelId,
+  getRuntimeManagedModel,
+  isKnownManagedModelId,
+  isRetiredManagedModelId,
+} from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
   bedrockByokBaseUrl,
@@ -441,9 +446,33 @@ export async function resolveCandidates(
 
   // The model id is a genuine managed-model id (checked against the BUNDLED
   // catalog, which — unlike RUNTIME_MANAGED_MODELS — is never gated by
-  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above: either the
-  // managed provider is off on this deployment, or it's misconfigured.
+  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above. Two distinct
+  // causes collapse into ONE catch-all here on purpose (both are "ask your
+  // operator" for the same reason — a deployment-config gap, never a client
+  // mistake): the managed provider is off on this deployment, or it's on but
+  // misconfigured (managedCandidates() above found no transport credential).
+  //
+  // A THIRD, unrelated cause gets its own code: the id was RETIRED from the
+  // lineup (`RETIRED_MANAGED_MODEL_IDS`, never emptied by
+  // KORTIX_MANAGED_PROVIDER_ENABLED, unlike the other two). Nothing is
+  // disabled or misconfigured — the id is simply gone, and no client-side key
+  // or operator flag fixes it. Pairs with the session-level fix that stops a
+  // session ever reaching this: llm-gateway/resolution/session-model-repoint.ts
+  // (re-point at boot) and its pure decision, session-model.ts.
   if (isKnownManagedModelId(effectiveModel)) {
+    if (isRetiredManagedModelId(effectiveModel)) {
+      const replacement = canonicalManagedModelId(effectiveModel);
+      const named = replacement !== effectiveModel ? replacement : null;
+      throw new GatewayResolutionError(
+        'model_retired',
+        named
+          ? `The "${effectiveModel}" model was retired from Kortix's managed lineup. Use "${named}" instead.`
+          : `The "${effectiveModel}" model was retired from Kortix's managed lineup.`,
+        named
+          ? `Switch to "${named}", or choose another model from the current lineup.`
+          : 'Choose another model from the current managed lineup.',
+      );
+    }
     throw new GatewayResolutionError(
       'model_disabled_on_deployment',
       `The "${effectiveModel}" model requires Kortix's managed provider, which is disabled on this deployment.`,
