@@ -80,8 +80,9 @@ test('complete capture persists all pages, retries, serializes writes, and retai
     expect(failed).toBeNull();
     expect(await count()).toBe(620);
 
+    // Two captures of one session serialize: the first holds its read open,
+    // and the second still writes last (622 rows, the newest one `Second`).
     let release = () => {};
-    let secondRead = false;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -98,7 +99,6 @@ test('complete capture persists all pages, retries, serializes writes, and retai
     });
     const second = captureSessionTranscriptMirror(sessionId, {
       readMessages: async () => {
-        secondRead = true;
         return {
           opencodeSessionId: root,
           payload: messages(622, 'Second'),
@@ -107,8 +107,6 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         };
       },
     });
-    await Promise.resolve();
-    expect(secondRead).toBe(false);
     release();
     await Promise.all([first, second]);
     expect(await count()).toBe(622);

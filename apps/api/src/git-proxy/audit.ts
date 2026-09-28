@@ -15,7 +15,7 @@
  *                  sha, create|update|delete) and, when refused, the reason
  *                  per ref.
  *
- * Attribution follows spec docs/specs/2026-09-22-agents-as-principals.md §2:
+ * Attribution follows:
  * a session credential names the agent, the human it acts on behalf of, and
  * the initiator (shared/agent-audit-attribution.ts, resolved when the row is
  * written); a person names the user; a monitor box or an account API key is

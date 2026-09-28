@@ -3,7 +3,6 @@ import Purchases, {
   PurchasesPackage,
   CustomerInfo,
   PurchasesStoreProduct,
-  LOG_LEVEL,
 } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
@@ -44,58 +43,9 @@ let lastSetEmail: string | null = null;
 let lastSetUserId: string | null = null;
 let currentInitializationParams: { userId: string; email?: string; canTrack: boolean } | null =
   null;
-/**
- * Ensures the RevenueCat log handler is set.
- * This must be called before any SDK operations to prevent "customLogHandler is not a function" errors.
- * Safe to call multiple times - setLogHandler can be called repeatedly.
- * 
- * IMPORTANT: This should be called after logout/login cycles as the SDK may reset the handler.
- */
-function ensureLogHandler(): void {
-  // TEMPORARILY DISABLED: setLogHandler triggers "Purchases-TrackedEvent is not a supported event type"
-  // error in RNPurchases. Disabling until SDK is updated to fix this issue.
-  // try {
-  //   Purchases.setLogHandler((logLevel, message) => {
-  //     const isCancelledMessage = 
-  //       message.toLowerCase().includes('cancelled') ||
-  //       message.toLowerCase().includes('canceled') ||
-  //       message.toLowerCase().includes('usercancelled');
-  //     
-  //     switch (logLevel) {
-  //       case LOG_LEVEL.VERBOSE:
-  //         log.rcDebug(message);
-  //         break;
-  //       case LOG_LEVEL.DEBUG:
-  //         log.rcDebug(message);
-  //         break;
-  //       case LOG_LEVEL.INFO:
-  //         log.rc(message);
-  //         break;
-  //       case LOG_LEVEL.WARN:
-  //         if (isCancelledMessage) {
-  //           log.rcDebug(message);
-  //         } else {
-  //           log.rcWarn(message);
-  //         }
-  //         break;
-  //       case LOG_LEVEL.ERROR:
-  //         if (isCancelledMessage) {
-  //           log.rc('User cancelled purchase (expected behavior)');
-  //         } else {
-  //           log.rcError(message);
-  //         }
-  //         break;
-  //     }
-  //   });
-  // } catch {
-  //   // SDK might not be initialized yet, which is fine - handler will be set on configure
-  // }
-}
 
 async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
   try {
-    // Ensure log handler is set before any SDK operations
-    ensureLogHandler();
     // Try to get customer info - if this succeeds, RevenueCat is already configured
     await Purchases.getCustomerInfo();
     return true;
@@ -106,7 +56,6 @@ async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
 
 export async function logoutRevenueCat(): Promise<void> {
   try {
-    ensureLogHandler();
     await Purchases.logOut();
     isConfigured = false;
     initializationPromise = null;
@@ -232,8 +181,7 @@ export async function initializeRevenueCat(
       log.rc('Initializing for:', userId);
 
       // Ensure log handler is set before configure() to prevent "customLogHandler is not a function" errors
-      ensureLogHandler();
-
+  
       Purchases.configure({ apiKey, appUserID: userId });
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -275,7 +223,6 @@ export async function getOfferings(
   forceRefresh: boolean = false
 ): Promise<PurchasesOffering | null> {
   try {
-    ensureLogHandler();
     
     if (forceRefresh) {
       try {
@@ -285,8 +232,7 @@ export async function getOfferings(
 
         if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
           await Purchases.logOut();
-          ensureLogHandler();
-          await Purchases.logIn(currentAppUserId);
+                await Purchases.logIn(currentAppUserId);
         }
 
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -314,7 +260,6 @@ export async function getOfferingById(
   forceRefresh: boolean = false
 ): Promise<PurchasesOffering | null> {
   try {
-    ensureLogHandler();
     
     if (forceRefresh) {
       try {
@@ -324,8 +269,7 @@ export async function getOfferingById(
 
         if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
           await Purchases.logOut();
-          ensureLogHandler();
-          await Purchases.logIn(currentAppUserId);
+                await Purchases.logIn(currentAppUserId);
         }
 
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -364,7 +308,6 @@ export async function purchasePackage(
   onSyncComplete?: (response: SyncResponse) => void | Promise<void>
 ): Promise<CustomerInfo> {
   try {
-    ensureLogHandler();
 
     // Verify RevenueCat is linked to the correct user before purchase
     let currentCustomerInfo = await Purchases.getCustomerInfo();
@@ -375,8 +318,7 @@ export async function purchasePackage(
 
     if ((isAnonymous || isMismatched) && expectedUserId) {
       try {
-        ensureLogHandler();
-        // Check current user ID before logging in to avoid RevenueCat warning
+            // Check current user ID before logging in to avoid RevenueCat warning
         const currentInfo = await Purchases.getCustomerInfo();
         if (currentInfo.originalAppUserId !== expectedUserId) {
           const loginResult = await Purchases.logIn(expectedUserId);
@@ -459,7 +401,6 @@ export async function purchasePackage(
 
 export async function getCustomerInfo(): Promise<CustomerInfo> {
   try {
-    ensureLogHandler();
     return await Purchases.getCustomerInfo();
   } catch (error) {
     log.rcError('Error fetching customer info:', error);
@@ -598,7 +539,6 @@ export async function presentPaywall(
   paywallName?: string
 ): Promise<{ purchased: boolean; cancelled: boolean }> {
   try {
-    ensureLogHandler();
     
     let offering: PurchasesOffering | null = null;
 

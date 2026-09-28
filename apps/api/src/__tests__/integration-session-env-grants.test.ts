@@ -16,6 +16,8 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { and, eq, sql, inArray, isNull } from 'drizzle-orm';
 import {
+  accountMembers,
+  accounts,
   auditEvents,
   auditSessionSequences,
   connectors,
@@ -35,8 +37,10 @@ import {
   listProjectSecretsSnapshotForUser,
   writeSharedProjectSecret,
 } from '../projects/secrets';
+import { insertIntoView } from './helpers/compat-views';
+import { seedAccount } from './helpers/integration-fixtures';
 
-let ctx: { projectId: string; accountId: string } | null = null;
+let ctx: { projectId: string; accountId: string };
 const USER = crypto.randomUUID();
 const SESSION_ID = `e2e-clobber-${crypto.randomUUID()}`;
 const SUFFIX = crypto.randomUUID().slice(0, 8).toUpperCase().replace(/-/g, '');
@@ -51,9 +55,9 @@ const RESTARTER = crypto.randomUUID();
 const OVERRIDE_IDENT = `E2E_OVR_${SUFFIX}`;
 const OVERRIDE_KEY = `E2E_OVR_KEY_${SUFFIX}`;
 const PRINCIPAL_SESSION = `e2e-principal-${crypto.randomUUID()}`;
-const VEYRIS_API_IDENT = `veyris-api-url-${SUFFIX}`;
-const VEYRIS_TOKEN_IDENT = `veyris-agent-token-${SUFFIX}`;
-const VEYRIS_SESSION = `e2e-veyris-${crypto.randomUUID()}`;
+const WRAPPER_API_IDENT = `wrapper-api-url-${SUFFIX}`;
+const WRAPPER_TOKEN_IDENT = `wrapper-agent-token-${SUFFIX}`;
+const WRAPPER_SESSION = `e2e-wrapper-${crypto.randomUUID()}`;
 const BROKER_IDENT = `E2E_BROKER_${SUFFIX}`;
 const BROKER_KEY = `E2E_BROKER_KEY_${SUFFIX}`;
 const BROKER_SESSION = `e2e-broker-${crypto.randomUUID()}`;
@@ -62,11 +66,12 @@ const CONNECTOR_IDENT = `E2E_CONNECTOR_${SUFFIX}`;
 const CONNECTOR_KEY = `E2E_CONNECTOR_KEY_${SUFFIX}`;
 
 beforeAll(async () => {
-  const rows = (await db.execute(
-    sql`select account_id from kortix.accounts limit 1`,
-  )) as unknown as Array<{ account_id: string }>;
-  if (!rows[0]) return;
-  ctx = { projectId: crypto.randomUUID(), accountId: rows[0].account_id };
+  ctx = { projectId: crypto.randomUUID(), accountId: await seedAccount('session-env-grants') };
+  // The session owner is a member of the account. Session secrets resolve as
+  // the owner only after that membership check passes.
+  await insertIntoView(db, accountMembers, [
+    { userId: OWNER, accountId: ctx.accountId, accountRole: 'member' },
+  ]);
   await db.insert(projects).values({
     projectId: ctx.projectId,
     accountId: ctx.accountId,
@@ -155,15 +160,15 @@ beforeAll(async () => {
     agentName: 'default',
   });
   await db.insert(projectSessions).values({
-    sessionId: VEYRIS_SESSION,
+    sessionId: WRAPPER_SESSION,
     accountId: ctx.accountId,
     projectId: ctx.projectId,
-    branchName: `kaab-veyris-${SUFFIX}`,
+    branchName: `kaab-wrapper-${SUFFIX}`,
     createdBy: USER,
-    agentName: 'veyris',
-    // Same two-identifier narrowing Veyris sends on create; the test suffix
-    // keeps this fixture isolated from any real Veyris rows in the local DB.
-    secretsAllowlist: [VEYRIS_API_IDENT, VEYRIS_TOKEN_IDENT],
+    agentName: 'wrapper-agent',
+    // A backend wrapper narrows its session to the two identifiers it sends on
+    // create.
+    secretsAllowlist: [WRAPPER_API_IDENT, WRAPPER_TOKEN_IDENT],
   });
   await writeSharedProjectSecret({
     projectId: ctx.projectId,
@@ -208,7 +213,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (!ctx) return;
   await db.transaction(async (tx) => {
     await tx.execute(sql`set local kortix.audit_maintenance = 'on'`);
     await tx.delete(auditEvents).where(eq(auditEvents.projectId, ctx!.projectId));
@@ -218,14 +222,14 @@ afterAll(async () => {
         inArray(auditSessionSequences.sessionId, [
           SESSION_ID,
           PRINCIPAL_SESSION,
-          VEYRIS_SESSION,
+          WRAPPER_SESSION,
           BROKER_SESSION,
         ]),
       );
   });
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, SESSION_ID));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
-  await db.delete(projectSessions).where(eq(projectSessions.sessionId, VEYRIS_SESSION));
+  await db.delete(projectSessions).where(eq(projectSessions.sessionId, WRAPPER_SESSION));
   await db.delete(projectSessions).where(eq(projectSessions.sessionId, BROKER_SESSION));
   await db
     .delete(projectSecrets)
@@ -237,20 +241,19 @@ afterAll(async () => {
           BACKUP,
           UNSCOPED,
           OVERRIDE_IDENT,
-          VEYRIS_API_IDENT,
-          VEYRIS_TOKEN_IDENT,
+          WRAPPER_API_IDENT,
+          WRAPPER_TOKEN_IDENT,
           BROKER_IDENT,
           CONNECTOR_IDENT,
         ]),
       ),
     );
   await db.delete(projects).where(eq(projects.projectId, ctx.projectId));
+  await db.delete(accounts).where(eq(accounts.accountId, ctx.accountId));
 });
 
 describe('listProjectSecretsSnapshotForUser — session env injection by identifier', () => {
   test('a connector binding excludes a legacy runtime row and permanently confines it', async () => {
-    if (!ctx) return;
-
     const before = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [CONNECTOR_IDENT]);
     expect(before.env).toEqual({});
     expect(before.names).toEqual([]);
@@ -280,10 +283,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
   });
 
   test('an agent granted ONE identifier gets exactly that value under the shared key', async () => {
-    if (!ctx) {
-      console.warn('[integration] no project in local DB — skipping');
-      return;
-    }
     const { env, names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [PRIMARY]);
     expect(env[KEY]).toBe('primary-val');
     expect(names).toContain(KEY);
@@ -292,35 +291,30 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
   });
 
   test('a DIFFERENT identifier grant gets the OTHER value under the same key', async () => {
-    if (!ctx) return;
     const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [BACKUP]);
     expect(env[KEY]).toBe('backup-val');
   });
 
   test("'all' (default/back-compat) sees every identifier, deterministically resolving the shared key", async () => {
-    if (!ctx) return;
     const { env, names } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, 'all');
     expect(env[UNSCOPED]).toBe('open-val');
     expect(names).toContain(UNSCOPED);
     // One of the two GMAPS values wins deterministically — never both/neither.
-    expect([isEitherGmapsValue(env)]).toContain(true);
+    expect(isEitherGmapsValue(env)).toBe(true);
   });
 
   test('an agent granted BOTH identifiers for the same key is ambiguous — rejected', async () => {
-    if (!ctx) return;
     await expect(
       listProjectSecretsSnapshotForUser(ctx.projectId, USER, [PRIMARY, BACKUP]),
     ).rejects.toThrow(AmbiguousSecretGrantError);
   });
 
   test('an unscoped (single-identifier) secret is unaffected by the collision above', async () => {
-    if (!ctx) return;
     const { env } = await listProjectSecretsSnapshotForUser(ctx.projectId, USER, [UNSCOPED]);
     expect(env).toEqual({ [UNSCOPED]: 'open-val' });
   });
 
   test('a KaaB per-session allowlist narrows an "all" agent grant (the boot/hot-push composition)', async () => {
-    if (!ctx) return;
     // Both sandbox boot (buildSessionSandboxEnvVars) and hot-push
     // (resolveOwnerRawEnv) compose intersectSecretGrants(grant, allowlist) and
     // pass the result to this resolver. An "all" agent grant narrowed by a
@@ -339,7 +333,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
   });
 
   test('resolveSandboxEnvSnapshot (hot-push) reads + applies the session secretsAllowlist — the CLOBBER FIX', async () => {
-    if (!ctx) return;
     await db.insert(projectSessions).values({
       sessionId: SESSION_ID,
       accountId: ctx.accountId,
@@ -363,7 +356,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
   });
 
   test('sandbox-boot resolves per-user overrides as the session OWNER, not the provisioner', async () => {
-    if (!ctx) return;
     // Control: the two principals genuinely resolve DIFFERENT values for the same
     // identifier — so an incorrect principal would be observable.
     const asOwner = await listProjectSecretsSnapshotForUser(ctx.projectId, OWNER, [OVERRIDE_IDENT]);
@@ -392,18 +384,17 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
 
-  test('sandbox boot snapshots the latest committed Veyris capability secrets without caching', async () => {
-    if (!ctx) return;
+  test('sandbox boot snapshots the latest committed backend-wrapper capability secrets without caching', async () => {
     await writeSharedProjectSecret({
       projectId: ctx.projectId,
-      identifier: VEYRIS_API_IDENT,
-      name: 'VEYRIS_API_URL',
-      value: 'https://stale.veyris.example.test',
+      identifier: WRAPPER_API_IDENT,
+      name: 'WRAPPER_API_URL',
+      value: 'https://stale.wrapper.example.test',
     });
     await writeSharedProjectSecret({
       projectId: ctx.projectId,
-      identifier: VEYRIS_TOKEN_IDENT,
-      name: 'VEYRIS_AGENT_TOKEN',
+      identifier: WRAPPER_TOKEN_IDENT,
+      name: 'WRAPPER_AGENT_TOKEN',
       value: 'stale-capability',
     });
 
@@ -412,14 +403,14 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     await Promise.all([
       writeSharedProjectSecret({
         projectId: ctx.projectId,
-        identifier: VEYRIS_API_IDENT,
-        name: 'VEYRIS_API_URL',
-        value: 'https://fresh.veyris.example.test',
+        identifier: WRAPPER_API_IDENT,
+        name: 'WRAPPER_API_URL',
+        value: 'https://fresh.wrapper.example.test',
       }),
       writeSharedProjectSecret({
         projectId: ctx.projectId,
-        identifier: VEYRIS_TOKEN_IDENT,
-        name: 'VEYRIS_AGENT_TOKEN',
+        identifier: WRAPPER_TOKEN_IDENT,
+        name: 'WRAPPER_AGENT_TOKEN',
         value: 'fresh-capability',
       }),
     ]);
@@ -429,24 +420,22 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     const env = await buildSessionSandboxEnvVars({
       accountId: ctx.accountId,
       projectId: ctx.projectId,
-      sessionId: VEYRIS_SESSION,
+      sessionId: WRAPPER_SESSION,
       userId: USER,
-      repoUrl: 'https://example.test/veyris.git',
+      repoUrl: 'https://example.test/wrapper.git',
       baseRef: 'main',
-      agentName: 'veyris',
+      agentName: 'wrapper-agent',
       llmGatewayEnabled: false,
     });
-    expect(env.VEYRIS_API_URL).toBe('https://fresh.veyris.example.test');
-    expect(env.VEYRIS_AGENT_TOKEN).toBe('fresh-capability');
+    expect(env.WRAPPER_API_URL).toBe('https://fresh.wrapper.example.test');
+    expect(env.WRAPPER_AGENT_TOKEN).toBe('fresh-capability');
     expect(env.KORTIX_PROJECT_SECRET_NAMES?.split(',').sort()).toEqual([
-      'VEYRIS_AGENT_TOKEN',
-      'VEYRIS_API_URL',
+      'WRAPPER_AGENT_TOKEN',
+      'WRAPPER_API_URL',
     ]);
   });
 
   test('broker delivery stores one auditable session handle and never returns plaintext', async () => {
-    if (!ctx) return;
-
     const first = await listProjectSecretsSnapshotForUser(
       ctx.projectId,
       USER,
@@ -550,7 +539,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
   });
 
   test('broker delivery stays absent for an unscoped grant', async () => {
-    if (!ctx) return;
     const snapshot = await listProjectSecretsSnapshotForUser(
       ctx.projectId,
       USER,

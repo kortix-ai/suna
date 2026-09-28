@@ -35,7 +35,9 @@ export function parseFrontmatter(content: string): ParsedMarkdown {
   let currentParent: string | null = null;
 
   for (const rawLine of yaml.split(/\r?\n/)) {
-    const line = rawLine.replace(/\s+$/, '');
+    // `trimEnd` drops what `/\s+$/` did; the regex retried a whitespace run
+    // inside the line from every position in it (quadratic on V8).
+    const line = rawLine.trimEnd();
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
     // A nested key may be QUOTED, and in the opencode permission idiom it

@@ -15,7 +15,9 @@ import {
   SandboxProviderTransitionStateSchema,
   projectsApp,
 } from '../lib/app';
-import { readBody, serializeProject } from '../lib/serializers';
+import { serializeProject } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
+import { isPlainObject } from '../../shared/json';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import { isFeatureFlagKey } from '../../feature-flags/registry';
 import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
@@ -90,7 +92,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -207,14 +209,14 @@ projectsApp.openapi(
 const patchFeatureFlagHandler = async (c: any) => {
   const projectId = c.req.param('projectId');
   // Strict body: malformed JSON is a client error, not an empty object —
-  // readBody() would swallow the parse failure and mis-report "unknown flag".
-  let body: Record<string, unknown>;
+  // readJsonObject() would swallow the parse failure and mis-report "unknown flag".
+  let body: unknown;
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  if (!isPlainObject(body)) {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
   const feature = body.feature;
@@ -330,7 +332,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const raw = body.provider ?? body.sandbox_provider;
     // Floor 'read'; project.customize.write is the human gate below (was
     // 'manage' → project.write, so unchecking customize.write did nothing here).

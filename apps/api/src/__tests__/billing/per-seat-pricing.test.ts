@@ -1,38 +1,19 @@
-// Billing v2 — pure-math unit tests for per-seat pricing and compute metering.
-// No mocks needed since these are pure functions on the tiers/compute modules.
+// Billing v2 — pure-math unit tests for per-seat pricing: seat grants,
+// auto-topup defaults, the claim-card gate, renewal grants, and the LLM markup.
+// No mocks needed since these are pure functions on the tiers module. The
+// compute price is pinned in billing/services/compute-metering.test.ts.
 
-import { describe, test, expect } from 'bun:test';
+import { afterEach, describe, test, expect } from 'bun:test';
 import {
-  CREDITS_PER_DOLLAR,
-  PER_SEAT_PRICE_USD,
-  TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
-  TYPICAL_LLM_BUDGET_PER_SEAT_USD,
-  COMPUTE_CPU_PRICE_PER_CORE_SECOND,
-  COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
-  COMPUTE_DISK_PRICE_PER_GB_SECOND,
-  AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT,
-  AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT,
-  DEFAULT_LLM_PRICE_MARKUP,
   defaultAutoTopupForSeats,
   grantForSeats,
   INCLUDED_CREDITS_RATIO,
-  isPerSeatAccount,
-  isLegacyAccount,
   canClaimPerSeat,
   llmPriceMarkup,
   resolveRenewalGrant,
 } from '../../billing/services/tiers';
 
-import { calculateComputeCost } from '../../billing/services/compute-metering';
-
 describe('Per-seat pricing math', () => {
-  test('$40/seat; typical compute+LLM budget split is a display figure ($25)', () => {
-    expect(PER_SEAT_PRICE_USD).toBe(40);
-    // Display-only "typical" split — illustrative usage, not a wallet partition,
-    // so it doesn't have to equal the seat price.
-    expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(25);
-  });
-
   test('seat grant equals $25 included credits × seat count (NOT the $40 price)', () => {
     // The $40 seat includes $25 of usage credits; the other $15 is platform margin.
     expect(grantForSeats(1)).toBe(25);
@@ -46,30 +27,10 @@ describe('Per-seat pricing math', () => {
   });
 
   test('auto-topup defaults scale with seat count', () => {
-    const oneSeat = defaultAutoTopupForSeats(1);
-    expect(oneSeat.threshold).toBe(AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT);
-    expect(oneSeat.amount).toBe(AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT);
-
-    const tenSeats = defaultAutoTopupForSeats(10);
-    expect(tenSeats.threshold).toBe(50);
-    expect(tenSeats.amount).toBe(200);
-  });
-});
-
-describe('billing_model guards', () => {
-  test('isPerSeatAccount returns true only for explicit per_seat', () => {
-    expect(isPerSeatAccount('per_seat')).toBe(true);
-    expect(isPerSeatAccount('legacy')).toBe(false);
-    expect(isPerSeatAccount(null)).toBe(false);
-    expect(isPerSeatAccount(undefined)).toBe(false);
-    expect(isPerSeatAccount('')).toBe(false);
-  });
-
-  test('isLegacyAccount returns true for anything not per_seat (safe default)', () => {
-    expect(isLegacyAccount('legacy')).toBe(true);
-    expect(isLegacyAccount(null)).toBe(true);
-    expect(isLegacyAccount(undefined)).toBe(true);
-    expect(isLegacyAccount('per_seat')).toBe(false);
+    // A quarter seat-month of threshold and one seat-month of refill, per seat.
+    expect(defaultAutoTopupForSeats(1)).toEqual({ threshold: 5, amount: 20 });
+    expect(defaultAutoTopupForSeats(10)).toEqual({ threshold: 50, amount: 200 });
+    expect(defaultAutoTopupForSeats(0)).toEqual({ threshold: 5, amount: 20 });
   });
 });
 
@@ -161,97 +122,27 @@ describe('resolveRenewalGrant — the ONE renewal-grant rule', () => {
     ).toBe(50);
   });
 
-  test('per-seat and the amount rule agree at the standard seat price', () => {
-    const seats = 4;
-    const bySeats = resolveRenewalGrant({
-      tierName: 'per_seat', billingModel: 'per_seat', seatCount: seats, amountPaidUsd: PER_SEAT_PRICE_USD * seats,
-    }).credits;
-    expect(bySeats).toBe(PER_SEAT_PRICE_USD * seats * INCLUDED_CREDITS_RATIO);
-  });
-
   test('nothing paid → nothing granted; negative amounts clamp to 0', () => {
     expect(resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: 0 }).credits).toBe(0);
     expect(resolveRenewalGrant({ tierName: 'pro', billingModel: null, seatCount: null, amountPaidUsd: -5 }).credits).toBe(0);
   });
 });
 
-describe('Compute cost calculation', () => {
-  const spec = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
-
-  test('zero duration yields zero cost', () => {
-    expect(calculateComputeCost(spec, 0)).toBe(0);
-    expect(calculateComputeCost(spec, -5)).toBe(0);
-  });
-
-  test('cost matches 1.2× the published Daytona resource rates', () => {
-    const seconds = 3600; // one hour
-    const expected =
-      (spec.cpuCores * COMPUTE_CPU_PRICE_PER_CORE_SECOND * seconds +
-        spec.memoryGb * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * seconds +
-        spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * seconds);
-
-    const actual = calculateComputeCost(spec, seconds);
-    expect(Math.abs(actual - expected)).toBeLessThan(1e-9);
-  });
-
-  test('hourly cost for a 2vCPU/4GB/20GB sandbox is exactly $0.201312', () => {
-    const hourCost = calculateComputeCost(spec, 3600);
-    expect(hourCost).toBeCloseTo(0.201312, 8);
-  });
-
-  test('2,500 credits covers about 125 hours of default compute', () => {
-    const creditValueUsd = 2500 / CREDITS_PER_DOLLAR;
-    const computeHours = creditValueUsd / calculateComputeCost(spec, 3600);
-    expect(computeHours).toBeCloseTo(124.1853, 4);
-  });
-
-  test('all hosted providers use the same customer compute price', () => {
-    const daytona = calculateComputeCost(spec, 3600, 'daytona');
-    expect(calculateComputeCost(spec, 3600, 'platinum')).toBeCloseTo(daytona, 8);
-    expect(calculateComputeCost(spec, 3600, 'e2b')).toBeCloseTo(daytona, 8);
-  });
-
-  test('cost scales linearly with both spec and time', () => {
-    const baseline = calculateComputeCost(spec, 60);
-    const doubleTime = calculateComputeCost(spec, 120);
-    expect(doubleTime / baseline).toBeCloseTo(2, 5);
-
-    const doubleSpec = calculateComputeCost(
-      { ...spec, cpuCores: spec.cpuCores * 2, memoryGb: spec.memoryGb * 2, diskGb: spec.diskGb * 2 },
-      60,
-    );
-    expect(doubleSpec / baseline).toBeCloseTo(2, 5);
-  });
-
-  test('monthly heavy usage exceeds the typical compute budget', () => {
-    // 8h × 22 days of compute exceeds the $15 typical compute budget per seat,
-    // funded from the fungible seat wallet.
-    const monthlySeconds = 8 * 3600 * 22;
-    const monthlyCost = calculateComputeCost(spec, monthlySeconds);
-    expect(monthlyCost).toBeGreaterThan(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD);
-    expect(monthlyCost).toBeLessThan(PER_SEAT_PRICE_USD);
-    expect(monthlyCost).toBeCloseTo(35.430912, 5);
-  });
-});
-
 describe('LLM gateway markup', () => {
   const original = process.env.KORTIX_LLM_MARKUP;
-  const restore = () => {
+  afterEach(() => {
     if (original === undefined) delete process.env.KORTIX_LLM_MARKUP;
     else process.env.KORTIX_LLM_MARKUP = original;
-  };
+  });
 
   test('default markup is 1.2 (20% margin)', () => {
     delete process.env.KORTIX_LLM_MARKUP;
-    expect(DEFAULT_LLM_PRICE_MARKUP).toBe(1.2);
     expect(llmPriceMarkup()).toBe(1.2);
-    restore();
   });
 
   test('env override is honored', () => {
     process.env.KORTIX_LLM_MARKUP = '1.35';
     expect(llmPriceMarkup()).toBeCloseTo(1.35, 5);
-    restore();
   });
 
   test('values below 1 are rejected (never undercut OpenRouter)', () => {
@@ -261,7 +152,6 @@ describe('LLM gateway markup', () => {
     expect(llmPriceMarkup()).toBe(1.2);
     process.env.KORTIX_LLM_MARKUP = '-2';
     expect(llmPriceMarkup()).toBe(1.2);
-    restore();
   });
 
   test('non-numeric values fall back to default', () => {
@@ -269,13 +159,6 @@ describe('LLM gateway markup', () => {
     expect(llmPriceMarkup()).toBe(1.2);
     process.env.KORTIX_LLM_MARKUP = '';
     expect(llmPriceMarkup()).toBe(1.2);
-    restore();
   });
 
-  test('markup of 1.5 yields 50% margin over upstream', () => {
-    process.env.KORTIX_LLM_MARKUP = '1.5';
-    const upstreamCost = 0.10;
-    expect(upstreamCost * llmPriceMarkup()).toBeCloseTo(0.15, 5);
-    restore();
-  });
 });

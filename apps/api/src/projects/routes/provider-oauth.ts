@@ -31,8 +31,8 @@ import {
   CODEX_AUTH_JSON_SECRET_NAME,
   loadSecretViewsForUser,
   normalizeString,
-  readBody,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
@@ -280,7 +280,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const provider = c.req.param('provider');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -425,7 +425,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const provider = c.req.param('provider');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 

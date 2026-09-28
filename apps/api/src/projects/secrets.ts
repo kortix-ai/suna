@@ -720,8 +720,7 @@ export async function materializeSecretDelivery(
     // every SDK that reads `os.environ[...]` fails with an unset variable and
     // the model's only way forward is to ask a human for the real value.
     //
-    // The handle is what makes the mechanism transparent (docs/specs/
-    // 2026-08-19-secrets-exposure-usage-model.md §5): the client sends it, the
+    // The handle is what makes the mechanism transparent: the client sends it, the
     // relay swaps it for the value server-side on an approved host, and a
     // handle that leaks anywhere else is a self-describing string worth
     // nothing. Same per-session rotation and same revocation as a broker

@@ -250,6 +250,14 @@ describe('permission-denial identity footer', () => {
     expect(out).not.toContain('kortix_permissions');
   });
 
+  test('agent_session_forbidden (e.g. granting a secret) says a person must do it', async () => {
+    // No kortix_permissions entry unlocks these routes, so the manifest hint
+    // would send the agent to a fix that cannot work.
+    const out = await footerFor({ code: 'agent_session_forbidden' });
+    expect(out).toMatch(/a person with project access must do this/i);
+    expect(out).not.toContain('kortix_permissions');
+  });
+
   test('any other code keeps the existing manifest hint', async () => {
     const out = await footerFor({ code: 'project_role_insufficient', action: 'project.file.read' });
     expect(out).toContain('agents.osp-vision-route-agent.kortix_permissions');

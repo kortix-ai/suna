@@ -26,6 +26,8 @@
  * gate that reads it.
  */
 
+import { isPlainObject } from '../../shared/json';
+
 /** One override: the value, plus an optional ISO-8601 expiry. */
 export interface OverrideEntry<T> {
   value: T;
@@ -109,10 +111,6 @@ export const MAX_COMPUTE_RATE_MULTIPLIER = 10;
 
 /** No override anywhere: the multiplier every account bills at by default. */
 export const DEFAULT_COMPUTE_RATE_MULTIPLIER = 1;
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Milliseconds for an `expires_at`, or `null` when it is absent or unusable.

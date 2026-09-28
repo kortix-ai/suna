@@ -27,7 +27,6 @@ import { Input } from '@/components/ui/input';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -1060,10 +1059,7 @@ function AuthContent() {
 export default function AuthPage() {
   return (
     <Suspense fallback={<div className="bg-background min-h-svh" />}>
-      <>
-        <AuthBrowserNoiseGuard />
-        <AuthContent />
-      </>
+      <AuthContent />
     </Suspense>
   );
 }

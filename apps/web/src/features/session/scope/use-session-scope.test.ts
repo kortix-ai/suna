@@ -80,6 +80,23 @@ describe('session scope query keys', () => {
   });
 });
 
+describe('createSessionScopeCatalogSources — connections', () => {
+  test('offers only accounts the creator may use, never a manage-only shared one', async () => {
+    const usable = connection('conn-usable');
+    const manageOnly: Connection = { ...connection('conn-manage-only'), usable: false };
+    const legacy = connection('conn-legacy-server');
+    const sources = createSessionScopeCatalogSources(
+      new QueryClient(),
+      undefined,
+      async () => ({ connections: [{ ...usable, usable: true }, manageOnly, legacy] }),
+    );
+    expect((await sources.listConnections('project-1')).map((c) => c.connection_id)).toEqual([
+      'conn-usable',
+      'conn-legacy-server',
+    ]);
+  });
+});
+
 describe('loadSessionScopeCatalog', () => {
   test('reuses the canonical project-secrets cache', async () => {
     const queryClient = new QueryClient();
@@ -104,6 +121,37 @@ describe('loadSessionScopeCatalog', () => {
     expect(canonical).toEqual(response);
     expect(catalogItems).toEqual(response.items);
     expect(await sources.listSecrets('project-1')).toEqual(response.items);
+    expect(calls).toBe(1);
+  });
+
+  test('reuses the canonical project-connectors cache — never a second raw request for the same list', async () => {
+    // The project shell's Customize prefetch (`use-customize-prefetch.ts`)
+    // already warms `qk.project.connectors(projectId)` on session-view mount.
+    // Before this fix, `listConnectors` bypassed the cache entirely and asked
+    // the network again — two identical `GET /connectors/...` calls for one
+    // paint (the turn-latency spec (PR #7840) R4, the census's `connectors x2`).
+    const queryClient = new QueryClient();
+    let calls = 0;
+    const response = { connectors: [connector('mail')] };
+    const fetchConnectors = async () => {
+      calls += 1;
+      return response;
+    };
+    const sources = createSessionScopeCatalogSources(queryClient, undefined, undefined, fetchConnectors);
+
+    const [canonical, catalogItems] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: qk.project.connectors('project-1'),
+        queryFn: () => fetchConnectors('project-1', { includeSchemas: false }),
+        staleTime: 60_000,
+      }),
+      sources.listConnectors('project-1'),
+    ]);
+
+    expect(calls).toBe(1);
+    expect(canonical.connectors).toEqual(response.connectors);
+    expect(catalogItems).toEqual(response.connectors);
+    expect(await sources.listConnectors('project-1')).toEqual(response.connectors);
     expect(calls).toBe(1);
   });
 

@@ -33,6 +33,7 @@ import {
   isWireIdAheadOf,
   mintWireMessageId,
   newestWireIdTime,
+  wireIdClockDelta,
   wireIdTime,
 } from '../projects/wire-message-id';
 
@@ -105,8 +106,12 @@ export function repairPromptWireId(input: {
 
   const wellFormed = WIRE_MESSAGE_ID.test(clientId);
   const clientTime = wellFormed ? wireIdTime(clientId) : null;
+  // At-or-below the newest on record, measured on the 48-bit ring: a pre-wrap
+  // id is BELOW a post-wrap one although its number is larger.
   const stale =
-    input.newestKnownTime !== null && clientTime !== null && clientTime <= input.newestKnownTime;
+    input.newestKnownTime !== null &&
+    clientTime !== null &&
+    wireIdClockDelta(clientTime, input.newestKnownTime) <= BigInt(0);
   // Positive evidence without any read: no transcript placed an id this far
   // ahead of the clock (the pre-fix CLI minted the HIGH bits, ~40 days out).
   const farAhead = wellFormed && isWireIdAheadOf(clientId, input.nowMs);

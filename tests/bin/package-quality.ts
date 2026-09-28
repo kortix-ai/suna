@@ -148,6 +148,7 @@ await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
   run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+  run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
 ]);
 await rejectFocusedTests();
 await runAll([
@@ -155,7 +156,7 @@ await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
 ]);
 await runAll([
-  ...['llm-catalog', 'sdk', 'executor-sdk'].map((directory) =>
+  ...['llm-catalog', 'sdk'].map((directory) =>
     verifyPublishablePackage(directory, false),
   ),
   verifyAgentTunnelCli(),
@@ -165,9 +166,7 @@ await runAll([
 // removing idle CPU time between independent load classes. Keep the CLI and
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
 await runAll([
-  runWorkspaceTests(['kortix-api'], 1, {
-    KORTIX_API_TEST_WORKERS: '3',
-  }),
+  runWorkspaceTests(['kortix-api'], 1),
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);

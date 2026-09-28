@@ -13,6 +13,8 @@ import { agentGovernanceMergeRefusal } from '../change-request-governance';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
+import { kickPiPackageBundle } from '../../pi-packages/bundle';
+import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 import {
   invalidateProjectMirror,
@@ -24,7 +26,8 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
-import { normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // POST /v1/projects/:projectId/change-requests/:crId/merge
 // Body: { message?: string }
@@ -48,7 +51,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const crId = c.req.param('crId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
@@ -230,6 +233,10 @@ projectsApp.openapi(
       .returning();
 
     invalidateProjectMirror(projectId);
+    // The merge moved the CR's base branch. Sessions on it converge.
+    void import('../lib/config-convergence-triggers')
+      .then((triggers) => triggers.notifyBaseBranchMoved(projectId, cr.baseRef, 'change-request-merge'))
+      .catch(() => {});
 
     // A merged CR may have edited a `sandbox.templates` Dockerfile or spec.
     // Reconcile this project's own templates and pre-build any whose identity
@@ -239,6 +246,14 @@ projectsApp.openapi(
     kickProjectTemplatePrebuilds(projectForGit, {
       accountId: loaded.row.accountId,
       source: 'cr-merge',
+    });
+
+    // A merged CR may have changed kortix.yaml `harnesses.pi` (top level or an
+    // agent's): build every distinct agent package list now, so the next pi
+    // session downloads its bundle instead of booting without its packages.
+    // Agents with the same list share one build. Best-effort, never blocks.
+    void resolveManifestPiPackageLists(projectForGit, cr.baseRef).then((lists) => {
+      for (const packages of lists) kickPiPackageBundle(packages, { projectId, source: 'cr-merge' });
     });
 
     // A merged CR may have edited kortix.yaml's `connectors:` list. The connector DB

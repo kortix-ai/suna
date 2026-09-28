@@ -19,6 +19,8 @@ import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
+import { requestClientIp } from '../../shared/client-ip';
+import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
@@ -53,8 +55,6 @@ export type RequestAuditContext = {
   userAgent: string | null;
   clientReportedSource?: string | null;
 };
-
-export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 // Session-status constants live in a dependency-free module so lean callers (the
 // sandbox reaper) can import them without this heavy serializer graph. Re-exported
@@ -359,17 +359,11 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-function clientIp(c: Context) {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null
-  );
-}
-
 export function requestAuditContext(c: Context): RequestAuditContext {
   return {
     method: c.req.method,
     path: c.req.path,
-    ip: clientIp(c),
+    ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
     clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
@@ -537,8 +531,7 @@ export function buildSecretView(input: {
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
     // Always true since the exposure/usage model: one mechanism serves every
-    // provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so
-    // there is no deployment where egress-enforced delivery is missing. Kept on
+    // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent
     // field reads as "unknown" to them, a `false` would falsely disable the UI.
     network_boundary_available: true,
@@ -675,14 +668,6 @@ export function normalizeBoolean(value: unknown): boolean | null {
   return null;
 }
 
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function normalizeJsonObject(value: unknown): Record<string, unknown> {
-  return isPlainObject(value) ? value : {};
-}
-
 export function normalizeRepoUrl(value: unknown): string | null {
   const repoUrl = normalizeString(value);
   if (!repoUrl) return null;
@@ -723,14 +708,6 @@ export function deriveProjectName(repoUrl: string): string {
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
   if (!tail) return 'Untitled Project';
   return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-export async function readBody(c: Context) {
-  try {
-    return await c.req.json<Record<string, unknown>>();
-  } catch {
-    return {};
-  }
 }
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {

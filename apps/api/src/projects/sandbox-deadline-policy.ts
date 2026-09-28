@@ -123,6 +123,35 @@ export function turnUnconfirmedDripMs(): number {
 }
 
 /**
+ * Granted when the control plane PARKS a queued prompt whose delivery found
+ * the runtime unreachable and commits to a bounded backoff before the next
+ * attempt (`parkPromptForUnreachableRuntime` in session-lifecycle/store.ts).
+ *
+ * A queued prompt holds no turn record of its own — a `delivering` entry is
+ * only ever created once a prompt actually reaches the daemon — so nothing
+ * else in this file keeps its box alive while it waits out that backoff. The
+ * box's own deadline can be as short as the 15-minute resume floor, and
+ * MAX_RUNTIME_UNREACHABLE_RETRIES's 30 s / 120 s / 480 s ladder plus one
+ * failed attempt is enough real time for the reaper to stop the box mid-ladder
+ * — the very next retry then finds a box the platform itself just stopped and
+ * burns a retry proving it.
+ *
+ * The park write is CONTROL-PLANE-authored (the API decided to retry, never
+ * the sandbox), so it satisfies the invariant stated at the top of this file.
+ * It is bounded exactly like every other non-turn grant: monotone and capped
+ * at NON_TURN_DEADLINE_CAP_MS through extendSandboxDeadline. It is bounded a
+ * second way too — MAX_RUNTIME_UNREACHABLE_RETRIES caps how many times a park
+ * can ever re-issue it, so a poisoned prompt still dead-letters instead of
+ * holding its box alive forever.
+ *
+ * 15 minutes comfortably covers the ladder's longest single backoff step
+ * (8 minutes) with margin for the retry's own processing time.
+ */
+export function promptRetryGraceMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_PROMPT_RETRY_GRACE_MINUTES', 15) * 60_000;
+}
+
+/**
  * Maximum time an idle-stop claim may block prompt delivery.
  *
  * Provider stop calls are bounded below this value. If an API process exits
@@ -240,31 +269,18 @@ export function isSandboxAuthored(
   return apiKeyType === 'sandbox' || (sessionId ?? null) !== null;
 }
 
-/** opencode's own ports, and the in-box agent that reverse-proxies to it. */
-const AGENT_PORT = 8000;
-
 /**
- * `/command` and `/summarize` are here because both start a real, billable turn
- * — a classifier admitting only prompt_async/message would kill a box mid
- * command. Do NOT reuse `isLongTurnCompletionRequest` from
- * sandbox-proxy/preview-retry-budget.ts: it matches only `/message` (every real
- * client uses prompt_async), and widening it would change that module's proxy
- * attempt-timeout behaviour.
+ * `isTurnStartRequest` moved to ./turn-start-request.ts, a LEAF that imports no
+ * `config`, so `sandbox-proxy/pre-prompt-env-sync.ts` can build its own turn
+ * predicate on it without dragging a module the proxy suites replace with
+ * `mock.module` into their graph. It is re-exported here because every existing
+ * call site imports it from this module, and the two must never drift back into
+ * two definitions. Do NOT reuse `isLongTurnCompletionRequest` from
+ * sandbox-proxy/preview-retry-budget.ts in its place: that one matches only
+ * `/message` (every real client uses prompt_async), and widening it would change
+ * that module's proxy attempt-timeout behaviour.
  */
-const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/;
-
-/** Does this proxied request START a turn? Used by the proxy to observe a run
- *  beginning without trusting anything the sandbox says about itself. */
-export function isTurnStartRequest(port: number, method: string, path: string): boolean {
-  if (method.toUpperCase() !== 'POST') return false;
-  // Either half of the opencode pair counts. A verified reload swaps which one
-  // is live, and letting the other through here would let the box's own agent
-  // traffic read as a human using a preview — extending the deadline, which is
-  // exactly the self-renewal bounded lifetimes exist to prevent.
-  if (port !== AGENT_PORT && !isOpencodePort(port)) return false;
-  const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
-  return TURN_START.test(p);
-}
+export { isTurnStartRequest } from './turn-start-request';
 
 /**
  * Is this proxied request a HUMAN USING THE BOX'S PREVIEW, and therefore a

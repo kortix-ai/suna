@@ -1,4 +1,6 @@
 /**
+ * Waives schema-contract.ts only: an entry means kortix.ts does not declare the object (verify-live-schema-waivers.ts means a live database lacks it).
+ *
  * Objects in the `kortix` schema that SQL migrations manage and `kortix.ts`
  * does not declare. `scripts/schema-contract.ts` accepts exactly these, and
  * fails on anything else the database holds that kortix.ts does not declare.

@@ -20,6 +20,7 @@ describe('STOP_REASONS', () => {
         'provisioning_stalled',
         'restart_failed',
         'run_cap',
+        'runtime_admission_refused',
         'runtime_boot_failed',
         'runtime_wake_failed',
         'unusable_runtime_state',
@@ -41,7 +42,7 @@ describe('STOP_REASONS', () => {
 describe('STOP_REASONS_NOT_YET_EMITTED', () => {
   test('names every member no code path writes today', () => {
     expect(([...STOP_REASONS_NOT_YET_EMITTED] as string[]).sort()).toEqual(
-      ['boot_floor_expired', 'idle_grace'].sort(),
+      ['boot_floor_expired', 'idle_grace', 'runtime_admission_refused'].sort(),
     );
   });
 

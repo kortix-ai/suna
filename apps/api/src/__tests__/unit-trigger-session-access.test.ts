@@ -69,6 +69,13 @@ describe('trigger session access policy', () => {
     ).toBe(false);
   });
 
+  test('accepts principal ids of any uuid version', () => {
+    const id = 'a7100000-0000-0000-0000-000000000001';
+    expect(
+      parseTriggerSessionAccess({ mode: 'members', memberIds: [id], groupIds: [] }),
+    ).toEqual({ ok: true, access: { mode: 'members', memberIds: [id], groupIds: [] } });
+  });
+
   test('maps public policies onto persisted session visibility', () => {
     expect(
       triggerSessionAccessToVisibility({

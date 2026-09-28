@@ -72,6 +72,28 @@ export const QUOTA_GC_MIN_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
 export const QUOTA_GC_MAX_PER_PASS = 15;
 
 export const DEFAULT_PREFIX = 'kortix-default-';
+/**
+ * `kortix-app-<deploymentId-no-dashes>` — one per App deployment build
+ * (`deployment-worker.ts`). It was never in `MANAGED_PREFIXES`, so quota-gc
+ * could not see or reclaim any of it: 39/99 org snapshots on 2026-09-27, 25 of
+ * them 38+ days idle, with zero code path ever reclaiming one (the sibling of
+ * the 2026-08-13 "anything created per-deploy needs a reaper" incident).
+ *
+ * Deliberately reaped through the SAME rule 5 (unreferenced + idle >
+ * `QUOTA_GC_MIN_IDLE_MS`) as `kortix-tpl-` / `kortix-wproj-`, not a dedicated
+ * DB-status rule, even though a deployment's own `status` column is a more
+ * precise, always-correct signal for THIS environment (a deployment is a
+ * valid rollback target only while `status = 'ready'` — the rollback route's
+ * own gate — and nothing ever moves a row back to `ready`). The reason is the
+ * cross-environment safety argument above: dev/staging/prod share this ORG
+ * but not a database, so `referenced` (built from the CALLING environment's
+ * `app_deployments`) is blind to another environment's `ready` deployment. A
+ * DB-status-only rule would treat a foreign, live, actively-serving App image
+ * as "no row says ready" and delete it out from under it. `referenced` here
+ * is strictly a same-environment PROTECTION on top of the idle floor, never
+ * the sole reason to reap — exactly the role it already plays for `kortix-tpl-`.
+ */
+export const APP_DEPLOYMENT_PREFIX = 'kortix-app-';
 /** Namespaces we own and may reap. Anything else (stock/bench images) is untouched. */
 export const MANAGED_PREFIXES = [
   DEFAULT_PREFIX,
@@ -79,6 +101,7 @@ export const MANAGED_PREFIXES = [
   'kortix-wproj-',
   PPWARM_PREFIX,
   SCOPED_PPWARM_PREFIX,
+  APP_DEPLOYMENT_PREFIX,
 ] as const;
 
 /** States that mean a build is IN FLIGHT — deleting these would break a live boot. */
@@ -227,9 +250,12 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
     claim(s, 'superseded default (beyond freshest N)');
   }
 
-  // 5. Everything else we own (user templates `kortix-tpl-`, legacy `kortix-wproj-`):
-  //    conservative idle gate. These can encode real user intent, so they get the
-  //    benefit of the doubt that a content-addressed default does not.
+  // 5. Everything else we own (user templates `kortix-tpl-`, legacy
+  //    `kortix-wproj-`, App-deployment images `kortix-app-`): conservative
+  //    idle gate. These can encode real user intent — or, for `kortix-app-`,
+  //    a foreign environment's live rollback target that `referenced` cannot
+  //    see (see `APP_DEPLOYMENT_PREFIX`'s header) — so they get the benefit
+  //    of the doubt that a content-addressed default does not.
   for (const s of pool) {
     if (s.name.startsWith(DEFAULT_PREFIX) || isPpwarmNamespaceName(s.name)) continue;
     const t = lastTouch(s);

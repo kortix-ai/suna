@@ -29,10 +29,12 @@ let queueLeg: () => Promise<unknown[]>;
 let transcriptLeg: (limit: number) => Promise<unknown>;
 let modelsLeg: () => Promise<Record<string, unknown>>;
 let runtimeLeg: () => Promise<Record<string, unknown>>;
+let auditLeg: () => Promise<Record<string, unknown>>;
 let refreshCalls: Array<Record<string, unknown>> = [];
 let legCalls: string[] = [];
 let transcriptLimits: number[] = [];
 let gatewayEnabled = true;
+let auditedAccount = false;
 
 mock.module('../lib/access', () => ({
   ...realAccess,
@@ -98,6 +100,13 @@ mock.module('../../repositories/model-preferences', () => ({
 }));
 mock.module('../../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => true,
+  accountHasEntitlement: async () => auditedAccount,
+}));
+mock.module('../lib/session-audit-read', () => ({
+  readSessionAuditActions: async () => {
+    legCalls.push('audit');
+    return auditLeg();
+  },
 }));
 mock.module('../../llm-gateway/resolution/default-model', () => ({
   resolveEffectiveModel: async () => ({ model: 'anthropic/claude-sonnet-4-6', source: 'project' }),
@@ -140,6 +149,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     refreshCalls = [];
     transcriptLimits = [];
     gatewayEnabled = true;
+    auditedAccount = false;
     loadedProject = {
       row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, defaultBranch: 'main', metadata: {} },
       userId: USER_ID,
@@ -186,6 +196,13 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
         head_seq: { ses_root: 2016 },
       },
       state: { agents: { known: true, value: [{ name: 'build' }] } },
+    });
+    auditLeg = async () => ({
+      session_id: SESSION_ID,
+      agent: 'kortix',
+      audit_access: false,
+      count: 0,
+      actions: [],
     });
   });
 
@@ -234,7 +251,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     const response = await openBundle();
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, any>;
-    expect(legCalls.sort()).toEqual(['models', 'queue', 'runtime', 'transcript', 'turn']);
+    expect(legCalls.sort()).toEqual(['audit', 'models', 'queue', 'runtime', 'transcript', 'turn']);
     expect(body.observed_at).toMatch(ISO_UTC_MS);
     expect(body.session).toEqual({ session_id: SESSION_ID });
     expect(body.turn).toEqual({
@@ -256,6 +273,14 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     expect(body.models.known).toBe(true);
     expect(body.models.projectDefault).toBe('p');
     expect(body.models.resolvedForCaller).toBe('anthropic/claude-sonnet-4-6');
+    expect(body.audit).toEqual({
+      known: true,
+      session_id: SESSION_ID,
+      agent: 'kortix',
+      audit_access: false,
+      count: 0,
+      actions: [],
+    });
   });
 
   test('still answers at /open-bundle — the path every published SDK requests', async () => {
@@ -421,6 +446,110 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
       // a session whose box is asleep answers on the control plane's clock. A
       // refresh that took a second would show up here as a second of latency.
       runtimeLeg = async () => ({ known: false, reason: 'no_projection' });
+      const started = Date.now();
+      const response = await openBundle();
+      expect(response.status).toBe(200);
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
+  });
+
+  /**
+   * The `audit` leg — the approval-projection half of `GET .../audit`
+   * (`include_events=false`, the shape every open session tab polls), shared
+   * with the standalone route through `readSessionAuditActions`.
+   */
+  describe('the audit leg', () => {
+    test('answers the pending-approvals projection, tagged known', async () => {
+      auditLeg = async () => ({
+        session_id: SESSION_ID,
+        agent: 'kortix',
+        audit_access: false,
+        count: 1,
+        actions: [
+          {
+            execution_id: 'exec-1',
+            action: 'crm.delete',
+            connector_id: null,
+            connector: null,
+            status: 'pending_approval',
+            risk: 'destructive',
+            acted_by: USER_ID,
+            acted_by_email: null,
+            resolved_by: null,
+            resolved_by_email: null,
+            result_summary: null,
+            at: '2026-09-27T10:00:00.000Z',
+            resolved_at: null,
+            approval_url: 'https://dev.kortix.com/approve/x',
+          },
+        ],
+      });
+      const body = (await (await openBundle()).json()) as Record<string, any>;
+      expect(body.audit).toEqual({
+        known: true,
+        session_id: SESSION_ID,
+        agent: 'kortix',
+        audit_access: false,
+        count: 1,
+        actions: [
+          {
+            execution_id: 'exec-1',
+            action: 'crm.delete',
+            connector_id: null,
+            connector: null,
+            status: 'pending_approval',
+            risk: 'destructive',
+            acted_by: USER_ID,
+            acted_by_email: null,
+            resolved_by: null,
+            resolved_by_email: null,
+            result_summary: null,
+            at: '2026-09-27T10:00:00.000Z',
+            resolved_at: null,
+            approval_url: 'https://dev.kortix.com/approve/x',
+          },
+        ],
+      });
+    });
+
+    test('is read ONCE, alongside the other legs', async () => {
+      await openBundle();
+      expect(legCalls.filter((leg) => leg === 'audit')).toHaveLength(1);
+    });
+
+    test('resolves the caller entitlement to decide full-trail vs pending-only, same as the route', async () => {
+      auditedAccount = true;
+      let observedAudited: boolean | undefined;
+      auditLeg = async () => {
+        // The mock cannot see the arguments `readSessionAuditActions` was
+        // called with directly (it is mocked at the module boundary), so this
+        // asserts through the entitlement mock instead: `auditedAccount` is
+        // what `accountHasEntitlement` resolved to, and the bundle must have
+        // read it before calling the leg.
+        observedAudited = auditedAccount;
+        return { session_id: SESSION_ID, agent: null, audit_access: true, count: 0, actions: [] };
+      };
+      await openBundle();
+      expect(observedAudited).toBe(true);
+    });
+
+    test('a THROWING audit leg degrades that leg only, with a stable code', async () => {
+      auditLeg = async () => {
+        throw new Error('relation "connector_calls" does not exist');
+      };
+      const response = await openBundle();
+      const body = (await response.json()) as Record<string, any>;
+      expect(response.status).toBe(200);
+      expect(body.audit).toEqual({ known: false, reason: 'leg_failed' });
+      expect(JSON.stringify(body)).not.toContain('connector_calls');
+      // Every other leg still answered.
+      expect(body.turn.known).toBe(true);
+      expect(body.queue.known).toBe(true);
+      expect(body.transcript.known).toBe(true);
+    });
+
+    test('never touches the sandbox — it is a DB read like every other leg', async () => {
+      auditLeg = async () => ({ session_id: SESSION_ID, agent: null, audit_access: false, count: 0, actions: [] });
       const started = Date.now();
       const response = await openBundle();
       expect(response.status).toBe(200);

@@ -35,7 +35,9 @@ export const DETACHED_SESSION_LIMIT = 3;
 interface LiveSession {
   sessionId: string;
   sandboxUrl: string;
-  controller: Pick<SessionSyncController, 'reconcile'>;
+  /** `loadOlder` + `getSnapshot` let `loadFullHistory` page back; the SSE-gap reads need only `reconcile`. */
+  controller: Pick<SessionSyncController, 'reconcile'> &
+    Partial<Pick<SessionSyncController, 'loadOlder' | 'getSnapshot'>>;
 }
 
 const liveSessions = new Set<LiveSession>();
@@ -128,6 +130,39 @@ export function reconcileLiveSession(sessionId: string, reason: SessionSyncReaso
     if (entry.sessionId === sessionId) requests.push(reconcileOne(entry, reason));
   }
   return Promise.all(requests).then(() => undefined);
+}
+
+/** The most older pages `loadFullHistory` reads before it gives up. */
+export const FULL_HISTORY_MAX_PAGES = 20;
+
+/**
+ * Page a mounted session's older history into the sync store until none is
+ * left (KRTX-248: Share transcript). The thread loads only its newest page;
+ * this pulls the rest through the session page's own controller, at most
+ * `maxPages` pages. `complete: false` when history is left after the bound,
+ * a page fails, or no mounted page holds the session (nothing to ask, so
+ * whether older messages exist is unknown).
+ */
+export async function loadFullHistory(
+  sessionId: string,
+  maxPages: number = FULL_HISTORY_MAX_PAGES,
+): Promise<{ complete: boolean }> {
+  let controller: Required<LiveSession['controller']> | undefined;
+  for (const entry of liveSessions) {
+    if (entry.sessionId === sessionId && entry.controller.loadOlder && entry.controller.getSnapshot) {
+      controller = entry.controller as Required<LiveSession['controller']>;
+      break;
+    }
+  }
+  if (!controller) return { complete: false };
+  try {
+    for (let page = 0; page < maxPages && controller.getSnapshot().hasOlder; page += 1) {
+      await controller.loadOlder();
+    }
+    return { complete: !controller.getSnapshot().hasOlder };
+  } catch {
+    return { complete: false };
+  }
 }
 
 /** True while at least one mounted session page holds this session. */

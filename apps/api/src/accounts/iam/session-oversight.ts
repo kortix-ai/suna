@@ -17,7 +17,8 @@ import { actorOf } from '../../iam/actor';
 import { accountRoleFor } from '../../iam/read-models';
 import { invalidateSessionOversight } from '../../iam/session-oversight';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, readBody } from './helpers';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 const SessionOversightStatus = z.object({
   enabled: z.boolean(),
@@ -91,7 +92,7 @@ iamRouter.openapi(
     }
 
     // `enabled` is REQUIRED: `{}` must never silently flip a privacy setting.
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     if (typeof body.enabled !== 'boolean') {
       return c.json({ error: 'enabled (boolean) is required' }, 400);
     }

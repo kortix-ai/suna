@@ -57,7 +57,7 @@ describe('the kortix-api suite actually runs on pull requests', () => {
   });
 
   test('the unit suite runs off the committed fake env, not dotenvx', () => {
-    const runLine = testScript.split('\n').find((line) => line.trim().startsWith('exec bun test'));
+    const runLine = testScript.split('\n').find((line) => line.trim().startsWith('if bun test'));
     expect(runLine).toContain('--env-file=scripts/test.env');
     expect(runLine).not.toContain('dotenvx');
   });

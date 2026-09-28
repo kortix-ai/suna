@@ -6,6 +6,7 @@ import {
   matchesOwnerFilters,
   resolveAccessFacetOptions,
   resolveOwnerFacetOptions,
+  resolvePageFacetVisibility,
   sessionAccessKind,
   sessionOwnerKey,
   UNKNOWN_OWNER_KEY,
@@ -115,5 +116,36 @@ describe('resolveAccessFacetOptions', () => {
       ['private', 1],
       ['project', 0],
     ]);
+  });
+});
+
+// Release gate 35744913604 dry run: picking Access = Whole project left one
+// owner, the Owner facet vanished from the OPEN menu, every row below moved up
+// under a still pointer, and the Access submenu closed. A facet's presence
+// must not depend on another facet's selection.
+describe('resolvePageFacetVisibility', () => {
+  test('an access pick that leaves one owner keeps the Owner facet', () => {
+    expect(resolvePageFacetVisibility([mine, alice], [], ['project'])).toEqual({
+      owner: true,
+      access: true,
+    });
+  });
+
+  test('an owner pick that leaves one access kind keeps the Access facet', () => {
+    expect(resolvePageFacetVisibility([mine, alice], ['u-alice'], [])).toEqual({
+      owner: true,
+      access: true,
+    });
+  });
+
+  test('one owner and one access kind offer neither facet', () => {
+    expect(resolvePageFacetVisibility([alice], [], [])).toEqual({ owner: false, access: false });
+  });
+
+  test('an active selection keeps its facet even when nothing matches it', () => {
+    expect(resolvePageFacetVisibility([alice], ['u-bob'], ['private'])).toEqual({
+      owner: true,
+      access: true,
+    });
   });
 });

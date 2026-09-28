@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import {
   parsePnpmGlobalPackagePath,
   publishOpencodeNativeLink,
-  resolveInstalledOpencodeNative,
 } from '../harness/open-code/opencode-binary'
 import { detectOpencodeBinary } from '../harness/open-code/lifecycle'
 import { installOpencodeVersion } from '../harness/open-code/assets'
@@ -29,42 +28,12 @@ afterEach(async () => {
 })
 
 describe('pnpm OpenCode native binary resolution', () => {
-  test('selects the pnpm v11 package directory instead of the global root', () => {
-    const root = '/home/kortix/.local/share/pnpm/global/v11'
-    const packagePath = `${root}/1423c-1a022964b2a-a2220588c319339d/node_modules/opencode-ai`
-
-    expect(parsePnpmGlobalPackagePath(`${root}\n${packagePath}\n`)).toBe(packagePath)
-  })
-
   test('rejects root-only, relative, and lookalike output', () => {
     expect(parsePnpmGlobalPackagePath('/home/kortix/.local/share/pnpm/global/v11\n')).toBeNull()
     expect(parsePnpmGlobalPackagePath('node_modules/opencode-ai\n')).toBeNull()
     expect(
       parsePnpmGlobalPackagePath('/tmp/node_modules/opencode-ai-malicious\n'),
     ).toBeNull()
-  })
-
-  test('resolves bin/opencode.exe and verifies it is executable', async () => {
-    const dir = await tempDir()
-    const packagePath = join(dir, 'global', 'v11', 'hash', 'node_modules', 'opencode-ai')
-    const nativePath = join(packagePath, 'bin', 'opencode.exe')
-    await mkdir(join(packagePath, 'bin'), { recursive: true })
-    await Bun.write(join(packagePath, 'package.json'), '{}')
-    await executable(nativePath)
-    const calls: Array<{ file: string; args: string[] }> = []
-
-    const resolved = await resolveInstalledOpencodeNative(async (file, args) => {
-      calls.push({ file, args })
-      return `${join(dir, 'global', 'v11')}\n${packagePath}\n`
-    })
-
-    expect(resolved).toBe(nativePath)
-    expect(calls).toEqual([
-      {
-        file: 'pnpm',
-        args: ['list', '-g', '--parseable', '--depth', '0', 'opencode-ai'],
-      },
-    ])
   })
 })
 

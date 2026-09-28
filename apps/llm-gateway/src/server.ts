@@ -92,6 +92,18 @@ export async function cloudflareSafe(res: Response): Promise<Response> {
   return new Response(res.body, { status: 503, headers });
 }
 
+// Anthropic SDKs, and Claude Code with ANTHROPIC_API_KEY, send the key as
+// `x-api-key`. The Anthropic-shaped route accepts it when no Authorization
+// header is present.
+export function messagesAuthorization(
+  authorization: string | undefined,
+  apiKey: string | undefined,
+): string | undefined {
+  if (authorization) return authorization;
+  const key = apiKey?.trim();
+  return key ? `Bearer ${key}` : undefined;
+}
+
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
   const inflight = options.inflight ?? defaultInflight;
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
@@ -244,12 +256,23 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     const errorSpike =
       traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
 
+    // A sustained streak, not one blip: a single dropped POST during a
+    // Langfuse hiccup is not an incident, and this must never page on it.
+    const TRACE_FAILURE_STREAK_ALERT = 5;
+    const tracesStatus = traces?.status() ?? null;
+    const traceStreakAlert =
+      tracesStatus !== null && tracesStatus.consecutiveFailures >= TRACE_FAILURE_STREAK_ALERT;
+
     const incidents: string[] = [];
     if (!apiCheck.ok)
       incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
     if (errorSpike)
       incidents.push(
         `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
+      );
+    if (traceStreakAlert)
+      incidents.push(
+        `langfuse trace recording failed ${tracesStatus.consecutiveFailures}x in a row (${tracesStatus.lastError ?? 'unknown error'})`,
       );
 
     const status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy';
@@ -270,7 +293,21 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
             ...(apiCheck.status ? { http_status: apiCheck.status } : {}),
             ...(apiCheck.error ? { error: apiCheck.error } : {}),
           },
-          traces: { langfuse: traces ? 'enabled' : 'disabled' },
+          traces: {
+            langfuse: traces ? 'enabled' : 'disabled',
+            ...(tracesStatus
+              ? {
+                  last_queued_at: tracesStatus.lastQueuedAt
+                    ? new Date(tracesStatus.lastQueuedAt).toISOString()
+                    : null,
+                  last_failure_at: tracesStatus.lastFailureAt
+                    ? new Date(tracesStatus.lastFailureAt).toISOString()
+                    : null,
+                  consecutive_failures: tracesStatus.consecutiveFailures,
+                  ...(tracesStatus.lastError ? { last_error: tracesStatus.lastError } : {}),
+                }
+              : {}),
+          },
           admission,
         },
         traffic,
@@ -374,7 +411,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       }
       try {
         const request = {
-          authorization: c.req.header('authorization'),
+          authorization: messagesAuthorization(c.req.header('authorization'), c.req.header('x-api-key')),
           rawBody: body.body,
           // Without this a disconnected /v1/messages client left the provider
           // generating — and billing — to nobody.
@@ -405,6 +442,61 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   app.post('/v1/messages', messages);
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
+
+  // OpenAI Responses-API-compatible ingress — Codex CLI >=0.157 only supports
+  // `wire_api = "responses"` (`POST {base_url}/responses`, Bearer token), so
+  // it cannot reach `/chat/completions` at all. `gateway.responses` translates
+  // the Responses request/response/SSE shape at the edges only; auth, grants,
+  // routing, dispatch, metering and audit run through the identical pipeline.
+  // Mirrors the chat-completions/messages alias namespaces above.
+  const responses = async (c: {
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+      raw: Request;
+    };
+  }) => {
+    try {
+      const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
+      if (!body.ok) {
+        const status = body.reason === 'too_large' ? 413 : 503;
+        if (body.reason !== 'client_aborted') recordOutcome(status);
+        return status === 413
+          ? requestTooLargeResponse()
+          : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
+      }
+      try {
+        const request = {
+          authorization: c.req.header('authorization'),
+          rawBody: body.body,
+          // Without this a disconnected `codex exec` left the ChatGPT
+          // backend generating — and billing — a turn nobody would read.
+          signal: c.req.raw?.signal,
+        };
+        body.body = '';
+        const res = await cloudflareSafe(await gateway.responses(request));
+        recordOutcome(res.status);
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
+      }
+    } catch (err) {
+      console.error('[gateway] responses request failed', err);
+      recordOutcome(503);
+      return new Response(
+        JSON.stringify({
+          error: { type: 'server_error', message: 'Gateway unavailable', code: null, param: null },
+        }),
+        { status: 503, headers: { 'content-type': 'application/json' } },
+      );
+    }
+  };
+
+  app.post('/responses', responses);
+  app.post('/v1/responses', responses);
+  app.post('/v1/llm/responses', responses);
+  app.post('/v1/openai/responses', responses);
 
   // `?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
   // project's servable set (~80KB), which sandboxes fetch on every boot so

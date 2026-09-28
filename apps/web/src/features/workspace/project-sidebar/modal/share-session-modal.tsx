@@ -35,6 +35,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { SessionPublicLinkSection } from './session-public-link-section';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
 
 /**
@@ -209,7 +210,7 @@ export function ShareSessionModal({
                   )}
           </ModalDescription>
         </ModalHeader>
-        <ModalBody className="max-h-[60vh] overflow-y-auto">
+        <ModalBody className="max-h-[60vh] space-y-5 overflow-y-auto">
           {view.canEdit ? (
             <SharingPicker
               projectId={projectId}
@@ -234,11 +235,16 @@ export function ShareSessionModal({
             <InfoBanner
               tone="neutral"
               icon={ShieldCheckIcon}
-              className="mt-4"
               data-testid="session-oversight-disclosure"
             >
               {tOversight.raw('shareDisclosure')}
             </InfoBanner>
+          ) : null}
+          {/* Next to the in-team picker: who in the project can open the
+              session, and a read-only link for anyone outside it. Same
+              server verdict as the picker (`can_manage_sharing`). */}
+          {view.canEdit && session ? (
+            <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />
           ) : null}
         </ModalBody>
         <ModalFooter className="sm:justify-between">

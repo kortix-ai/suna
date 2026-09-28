@@ -331,6 +331,8 @@ export interface SettingsRowProps {
   description?: string;
   /** Read-only value shown on the right, e.g. the account email. */
   value?: string;
+  /** Draws `value` in the destructive colour (a merge conflict). Default muted. */
+  valueDestructive?: boolean;
   /** Shows a check mark — the selected option in a picker list. */
   checked?: boolean;
   /** Omit for a row whose control lives in `right`. */
@@ -351,6 +353,12 @@ export interface SettingsRowProps {
   /** Opens a page outside the app (browser, device settings): arrow instead of chevron. */
   external?: boolean;
   badge?: string;
+  /**
+   * A node right after the label, on its line (the Sessions page's
+   * sub-session count). The label shrinks and truncates before it; `value`
+   * and `right` keep the far right edge.
+   */
+  labelAccessory?: React.ReactNode;
   destructive?: boolean;
   /**
    * The action exists but cannot run now (a session with no changes, a busy
@@ -387,7 +395,9 @@ export function SettingsRow({
   right,
   external = false,
   badge,
+  labelAccessory,
   destructive = false,
+  valueDestructive = false,
   disabled = false,
   multiline = false,
   dense = false,
@@ -449,11 +459,13 @@ export function SettingsRow({
               className={cn(
                 destructive ? 'text-destructive' : 'text-foreground',
                 multiline && 'flex-1',
+                labelAccessory != null && 'shrink',
                 labelClassName,
               )}
               numberOfLines={multiline ? undefined : 1}>
               {label}
             </Text>
+            {labelAccessory != null ? <View className="ml-2 shrink-0">{labelAccessory}</View> : null}
             {badge ? (
               <View className="ml-2 rounded-full bg-destructive/15 px-2 py-0.5">
                 <Text className="font-roobert-medium text-[10px] text-destructive">{badge}</Text>
@@ -468,7 +480,10 @@ export function SettingsRow({
         </View>
 
         {value ? (
-          <Text variant="muted" className="ml-3 max-w-[60%]" numberOfLines={1}>
+          <Text
+            variant="muted"
+            className={valueDestructive ? 'ml-3 max-w-[60%] text-destructive' : 'ml-3 max-w-[60%]'}
+            numberOfLines={1}>
             {value}
           </Text>
         ) : null}

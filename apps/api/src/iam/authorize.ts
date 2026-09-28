@@ -209,7 +209,6 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // session IS the agent: grant ∩ ceiling − HUMAN_ONLY. The launcher's role and
   // super-admin bit never reach this point — the principal is the agent's
   // service account (actingPrincipal), so step 5 above cannot fire for it.
-  // Spec docs/specs/2026-09-22-agents-as-principals.md §2.1.
   if (actor.credential.kind === 'agent_session' && actor.credential.agentPrincipal && binding?.agentGrant) {
     const grant = binding.agentGrant;
     const target = obj.type === 'project' ? obj.id : null;
@@ -446,6 +445,13 @@ export async function filterAccessibleObjects(
 
   const roles = await loadSystemRoles();
   const systemRole = effectiveProjectRole(roles, rec, projectId);
+  // Step 8 before step 9, as in `authorize`: the Slack and Teams pickers reach
+  // here with only an account member, and a `project` grant names everyone IN
+  // the project, not everyone in the account.
+  const inProject =
+    (systemRole !== null && systemRole.actions.has('project.read')) ||
+    customRoleAllows(rec, 'project', 'project.read', { type: 'project', id: projectId });
+  if (!inProject) return [];
   const managerTier = systemRole !== null && systemRole.actions.has('project.write');
   const grants = await loadObjectGrants(projectId, objectType);
   const unscopedOpen = (await unscopedDefaultFor(objectType)) === 'open';
@@ -454,12 +460,32 @@ export async function filterAccessibleObjects(
   return objectIds.filter((id) => {
     const principals = grants.get(id);
     if (!principals || principals.length === 0) return unscopedOpen || managerTier;
-    return principals.some(
-      (p) =>
-        (p.principalType === 'user' && p.principalId === principal.id) ||
-        (p.principalType === 'group' && groups.has(p.principalId)),
-    );
+    return principals.some((p) => objectGrantReaches(p, principal.id, groups));
   });
+}
+
+/**
+ * Does ONE object grant name this principal?
+ *
+ *   user     -> that user
+ *   group    -> any member of that group
+ *   project  -> everyone with access to the project. The grant map is loaded
+ *               per project, so a `project` row here is always the caller's
+ *               own project, and the caller has already passed the
+ *               project-role check. The DB shape check keeps `principal_id =
+ *               scope_id` for every writer.
+ *
+ * Any other kind grants nothing.
+ */
+export function objectGrantReaches(
+  grant: { principalType: string; principalId: string },
+  principalId: string,
+  groupIds: ReadonlySet<string>,
+): boolean {
+  if (grant.principalType === 'project') return true;
+  if (grant.principalType === 'user') return grant.principalId === principalId;
+  if (grant.principalType === 'group') return groupIds.has(grant.principalId);
+  return false;
 }
 
 // ─── Pure decision helpers (exported for unit tests) ────────────────────────
@@ -503,7 +529,8 @@ export function isImplicitManager(accountRoleKey: string | null): boolean {
  *   no grant rows at all -> the OBJECT TYPE's default (agents closed, the rest
  *                           open), with the manager tier always getting open
  *   >=1 grant row        -> only the named principals, identically for both
- *                           tiers
+ *                           tiers (`objectGrantReaches`; a `project` row names
+ *                           everyone in the project)
  */
 export async function objectUsable(
   objectType: string,
@@ -517,11 +544,7 @@ export async function objectUsable(
     return (await unscopedDefaultFor(objectType)) === 'open';
   }
   const groups = new Set(groupIds);
-  return grantsForObject.some(
-    (g) =>
-      (g.principalType === 'user' && g.principalId === principalId) ||
-      (g.principalType === 'group' && groups.has(g.principalId)),
-  );
+  return grantsForObject.some((g) => objectGrantReaches(g, principalId, groups));
 }
 
 // ─── Principal resolution ───────────────────────────────────────────────────
@@ -797,12 +820,24 @@ export function customRoleAllows(
 // ─── Object grants ──────────────────────────────────────────────────────────
 
 /**
- * Object types whose unscoped default is CLOSED for member-tier (mirrors the
- * `object_policies` seed: agent closed; skill/secret/app/trigger open). Kept as
- * a constant here because the memo's caching rule must not itself depend on a
- * DB read; `unscopedDefaultFor` stays the source of truth for the VERDICT.
+ * Object types where an EMPTY grant map must never be cached, because a first
+ * grant can still be written later and must take effect on every replica at
+ * once. `agent` is CLOSED by unscoped default (mirrors the `object_policies`
+ * seed): a stale empty map there reads as "still closed" and denies a member
+ * who was just granted an agent for one TTL (measured on dev 2026-08-19:
+ * create 403, then 201 ×3 after the TTL). `connection` is OPEN by unscoped
+ * default but narrowable (`20260926172248000_share_access_project_principal.sql`):
+ * before its first grant, "open" and "empty map" mean the same thing, but the
+ * FIRST grant flips that — an empty map read afterwards on a replica that has
+ * not seen the write means "still open to everyone", which is a stale
+ * over-grant for anyone the new grant was meant to exclude, not a harmless
+ * stale negative. `skill`/`secret`/`app`/`trigger` are OPEN by unscoped
+ * default and have no per-object grant writer today, so their empty map can
+ * never go stale and stays cache-eligible. Kept as a constant here because the
+ * memo's caching rule must not itself depend on a DB read;
+ * `unscopedDefaultFor` stays the source of truth for the VERDICT.
  */
-const CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent']);
+const NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection']);
 
 interface ObjectGrantPrincipal {
   principalType: string;
@@ -812,15 +847,14 @@ interface ObjectGrantPrincipal {
 /**
  * (project, objectType) -> objectId -> the principals granted it.
  *
- * The EMPTY map is cached only for object types whose unscoped default is OPEN
- * (skill, secret, app, trigger): there a stale empty map means "still open",
- * which is the state the caller already had. For CLOSED-by-default types (agent)
- * a stale empty map would mean "still closed" — invalidation is per-process, so
- * a member granted an agent kept getting 403 for one TTL on every replica that
- * had not seen the write (measured on dev 2026-08-19: create 403, then 201 ×3
- * after the TTL). One extra indexed query per uncached check is the price of a
- * grant taking effect on every replica at once — the same rule the legacy
- * `loadProjectResourceGrants` memo already applies (#6535).
+ * The EMPTY map is cached only for object types outside
+ * `NEVER_CACHE_EMPTY_OBJECT_TYPES` — invalidation is per-process (each replica
+ * busts its own cache on write), so caching an empty map for a type whose
+ * first grant can still narrow it leaves every OTHER replica serving the
+ * pre-grant state for up to one TTL. One extra indexed query per uncached
+ * check is the price of a grant taking effect on every replica at once — the
+ * same rule the legacy `loadProjectResourceGrants` memo already applies
+ * (#6535).
  */
 /**
  * `role_assignments.account_id` equals the account that owns `projectId`. A
@@ -864,7 +898,7 @@ const loadObjectGrants = ttlMemo({
     return map;
   },
   shouldCache: (map, _projectId, objectType) =>
-    map.size > 0 || !CLOSED_BY_DEFAULT_OBJECT_TYPES.has(objectType),
+    map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType),
 });
 registerProjectScopedMemo(loadObjectGrants);
 

@@ -4,11 +4,11 @@
  * It stopped offering one. Every affordance still existed in the tree and none
  * of them rendered:
  *
- * - `features/layout/account-switcher.tsx` carries a "New account" row and
- *   mounts `CreateAccountModal`, but its only render site is
- *   `features/layout/app-header.tsx`, and `AppHeader` has no render site at
- *   all — the accounts layout was replaced by `AccountSettingsShell`, which
- *   never mounts it. Dead code cannot be an entry point.
+ * - `features/layout/account-switcher.tsx` carried a "New account" row and
+ *   mounted `CreateAccountModal`, but its only render site was `AppHeader`,
+ *   and `AppHeader` had no render site at all — the accounts layout was
+ *   replaced by `AccountSettingsShell`, which never mounts it. Both files are
+ *   deleted now. Dead code cannot be an entry point.
  * - `features/accounts/hub/account-list-content.tsx` carries the other one. It
  *   renders only for `hubTarget(null)` (`?accountId=` with no value), and every
  *   live caller opens the hub ON an account, so the list pane was reachable

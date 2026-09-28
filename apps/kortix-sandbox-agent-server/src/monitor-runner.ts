@@ -1,6 +1,5 @@
 /**
- * The monitor runner — the in-box half of Monitors
- * (docs/specs/2026-08-12-monitors.md).
+ * The monitor runner — the in-box half of Monitors.
  *
  * It supervises one process per enabled monitor, turns their STDOUT LINES into
  * events, and POSTs them to the project's ingest route. Three invariants shape
@@ -131,7 +130,7 @@ export function normalizeLine(line: string): Record<string, unknown> {
  * Truncating here (rather than only server-side) keeps an 80 MB runaway line
  * out of the queue and off the wire. Mirrors truncateMonitorLine in apps/api.
  */
-export function truncateLine(line: Record<string, unknown>): Record<string, unknown> {
+function truncateLine(line: Record<string, unknown>): Record<string, unknown> {
   const encoded = JSON.stringify(line)
   if (Buffer.byteLength(encoded, 'utf8') <= MONITOR_LINE_MAX_BYTES) return line
   // Reserve room for the `{"raw":…,"truncated":true}` envelope itself.

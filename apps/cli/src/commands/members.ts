@@ -1,4 +1,5 @@
 import { clientFromAuth } from '../api/client.ts';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   missing,
@@ -7,6 +8,7 @@ import {
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
+  fail,
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { confirm } from '../prompts.ts';
@@ -113,21 +115,11 @@ Examples:
 `;
 
 export async function runMembers(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let projectGrantArgs: string[] = [];
   let json = false;
@@ -140,8 +132,7 @@ export async function runMembers(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -266,17 +257,13 @@ async function membersInvite(
       );
       return 2;
     }
-    process.stderr.write(`${status.err(`--role must be ${INVITE_ROLES.join(' or ')}.`)}\n`);
-    return 2;
+    return fail(`--role must be ${INVITE_ROLES.join(' or ')}.`);
   }
 
   const grants: Array<{ project_id: string; role: string }> = [];
   for (const raw of projectArgs) {
     const parsed = parseProjectGrant(raw);
-    if ('error' in parsed) {
-      process.stderr.write(`${status.err(parsed.error)}\n`);
-      return 2;
-    }
+    if ('error' in parsed) return fail(parsed.error);
     grants.push(parsed);
   }
   if (grants.length > 0 && role !== 'member') {
@@ -333,8 +320,7 @@ async function membersSetRole(
   if (!who) return missing('a user id or email');
   if (!role) return missing(`--role <${ACCOUNT_ROLES.join('|')}>`);
   if (!(ACCOUNT_ROLES as readonly string[]).includes(role)) {
-    process.stderr.write(`${status.err(`--role must be one of ${ACCOUNT_ROLES.join('|')}.`)}\n`);
-    return 2;
+    return fail(`--role must be one of ${ACCOUNT_ROLES.join('|')}.`);
   }
   const userId = await resolveUserId(client, accountId, who);
   if (!userId) return 1;
@@ -487,9 +473,6 @@ async function membersInvites(
     }
 
     default:
-      process.stderr.write(
-        `${status.err(`unknown invites verb "${verb}" — use ls|cancel|resend`)}\n`,
-      );
-      return 2;
+      return fail(`unknown invites verb "${verb}" — use ls|cancel|resend`);
   }
 }

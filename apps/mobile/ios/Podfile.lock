@@ -261,6 +261,8 @@ PODS:
     - RNScreens
   - ExpoSharing (56.0.26):
     - ExpoModulesCore
+  - ExpoSpeechRecognition (56.0.4):
+    - ExpoModulesCore
   - ExpoSplashScreen (56.0.15):
     - ExpoModulesCore
   - ExpoSymbols (56.0.7):
@@ -2777,6 +2779,7 @@ DEPENDENCIES:
   - "ExpoNotifications (from `../../../node_modules/.pnpm/expo-notifications@56.0.25_expo@56.0.22_react-native@0.85.3_react@19.2.3_typescript@5.9.3/node_modules/expo-notifications/ios`)"
   - "ExpoRouter (from `../../../node_modules/.pnpm/expo-router@56.2.21_@babel+core@7.29.7_@expo+log-box@56.0.14_@expo+metro-runtime@56.0.21_@tes_wptfccdj27l4az2ieizsagdzsu/node_modules/expo-router/ios`)"
   - "ExpoSharing (from `../../../node_modules/.pnpm/expo-sharing@56.0.26_expo@56.0.22_react-native@0.85.3_react@19.2.3_typescript@5.9.3/node_modules/expo-sharing/ios`)"
+  - "ExpoSpeechRecognition (from `../../../node_modules/.pnpm/expo-speech-recognition@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-speech-recognition/ios`)"
   - "ExpoSplashScreen (from `../../../node_modules/.pnpm/expo-splash-screen@56.0.15_expo@56.0.22_typescript@5.9.3/node_modules/expo-splash-screen/ios`)"
   - "ExpoSymbols (from `../../../node_modules/.pnpm/expo-symbols@56.0.7_expo-font@56.0.7_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-symbols/ios`)"
   - "ExpoSystemUI (from `../../../node_modules/.pnpm/expo-system-ui@56.0.5_expo@56.0.22_react-native-web@0.21.2_react-native@0.85.3/node_modules/expo-system-ui/ios`)"
@@ -2964,6 +2967,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-router@56.2.21_@babel+core@7.29.7_@expo+log-box@56.0.14_@expo+metro-runtime@56.0.21_@tes_wptfccdj27l4az2ieizsagdzsu/node_modules/expo-router/ios"
   ExpoSharing:
     :path: "../../../node_modules/.pnpm/expo-sharing@56.0.26_expo@56.0.22_react-native@0.85.3_react@19.2.3_typescript@5.9.3/node_modules/expo-sharing/ios"
+  ExpoSpeechRecognition:
+    :path: "../../../node_modules/.pnpm/expo-speech-recognition@56.0.4_expo@56.0.22_react-native@0.85.3_react@19.2.3/node_modules/expo-speech-recognition/ios"
   ExpoSplashScreen:
     :path: "../../../node_modules/.pnpm/expo-splash-screen@56.0.15_expo@56.0.22_typescript@5.9.3/node_modules/expo-splash-screen/ios"
   ExpoSymbols:
@@ -3212,6 +3217,7 @@ SPEC CHECKSUMS:
   ExpoNotifications: 341b29647a07fada79e8bf721e5f191531534c9b
   ExpoRouter: c760bde5ab55028273ba1ebc5d35505e4570c4b4
   ExpoSharing: 5e3ac486863cd9fd6d8a22b11295386609cc8d33
+  ExpoSpeechRecognition: b167eed8044f79fad6189ee7ae9d668887d0c696
   ExpoSplashScreen: 06ea4c812a646bf65802fe0f87f5fcd8d68a22bf
   ExpoSymbols: 37e96a38eed3fb50af4b7c86b8a80ed3054a0a01
   ExpoSystemUI: 8f4fb641c6a6ebe2a01dda0fbd3fdd952ab5823a
@@ -3324,6 +3330,6 @@ SPEC CHECKSUMS:
   RNWorklets: 62f2be9792b49bc9e69d62e4ccb2a2199a76d46a
   Yoga: e240fec777ff1f21ef42ccebbb44b6d262125855
 
-PODFILE CHECKSUM: e52809ad86a71106a0669c091c0b07eca4b9bd4c
+PODFILE CHECKSUM: 7d6d106b4b1a0aa8cc77e2cd2f074709e9b05bb6
 
 COCOAPODS: 1.16.2

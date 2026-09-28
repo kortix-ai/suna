@@ -48,7 +48,7 @@ import {
   GitPullRequestIcon,
   PencilIcon as Pencil,
   ArrowCounterClockwiseIcon as RotateCcw,
-  ExportIcon as Share,
+  ShareNetworkIcon,
   SquareIcon as Square,
   StackIcon,
   TrashIcon as Trash2,
@@ -74,6 +74,11 @@ import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-st
 import { SessionChangeFileView, SessionChangesList } from '@/components/session/SessionChangesView';
 import { SessionRenameForm } from '@/components/session/SessionRenameForm';
 import { SessionShareForm } from '@/components/session/SessionShareForm';
+import {
+  PUBLIC_SHARE_CONFIRM_TITLE,
+  SessionShareLinkConfirm,
+  type PublicShareConfirmKind,
+} from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
 import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
@@ -95,29 +100,49 @@ import {
   type ProjectSession,
 } from '@/lib/projects/projects-client';
 import { sessionDisplayStatus, sessionDisplayTitle } from '@/lib/session/session-list';
+import {
+  applyToSessionCache,
+  withoutSession,
+  writeSessionLists,
+} from '@/lib/session/session-cache-write';
 import { useTabStore } from '@/stores/tab-store';
 
-/** The sheet's view: its actions, or a form pushed over them. */
-type SheetView = 'options' | 'rename' | 'share' | 'changes' | 'change-file';
+/**
+ * The sheet's view: its actions, or a form pushed over them. The public
+ * link's confirms push over Share, and Back returns to Share.
+ */
+type SheetView = 'options' | 'rename' | 'share' | PublicShareConfirmKind | 'changes' | 'change-file';
 const PUSHED_VIEW_TITLE: Record<Exclude<SheetView, 'options'>, string> = {
   rename: 'Rename session',
   share: 'Share session',
+  ...PUBLIC_SHARE_CONFIRM_TITLE,
   changes: 'Changes',
   // The pushed file's name replaces this while one shows.
   'change-file': 'Changes',
 };
+/** The view Back returns to from each pushed view. */
+const PARENT_VIEW: Record<Exclude<SheetView, 'options'>, SheetView> = {
+  rename: 'options',
+  share: 'options',
+  'create-link': 'share',
+  'stop-link': 'share',
+  changes: 'options',
+  'change-file': 'changes',
+};
 /** What runs once the sheet has closed: a follow-up overlay, never two at once. */
 type AfterClose = 'delete' | 'open-cr' | 'compact' | null;
+
+/** A view `present` can open straight to, skipping the options. */
+export type SessionActionsInitialView = 'rename';
 
 export interface SessionActionsSheetRef {
   /**
    * Open the sheet for this session. `initialView: 'rename'` (COR-140) opens
    * straight to the Rename view instead of the options list — what the
    * thread header's title tap uses, so a rename has exactly one
-   * implementation. Back from it returns to the options, same as a normal
-   * Rename → Back.
+   * implementation. Back returns to the options, same as a normal push → Back.
    */
-  present: (session: ProjectSession, initialView?: 'rename') => void;
+  present: (session: ProjectSession, initialView?: SessionActionsInitialView) => void;
 }
 
 export interface SessionActionsSheetProps {
@@ -187,7 +212,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     // The session and runtime a Compact tap was for, kept past the sheet's close.
     const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
 
-    const present = React.useCallback((session: ProjectSession, initialView?: 'rename') => {
+    const present = React.useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
       haptics.medium();
       setMenuSession(session);
       if (initialView) setSheetView(initialView);
@@ -276,8 +301,8 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const popView = React.useCallback(() => {
       haptics.tap();
       setReturning(true);
-      // A file's diff goes back to the changes list; every other view to the options.
-      setSheetView((view) => (view === 'change-file' ? 'changes' : 'options'));
+      // Each pushed view goes back to its parent (`PARENT_VIEW`).
+      setSheetView((view) => (view === 'options' ? view : PARENT_VIEW[view]));
       // Back to the content height: index 0, the stop under the full-height one.
       actionSheetRef.current?.snapToIndex(0);
     }, []);
@@ -346,11 +371,28 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       mutationFn: (session: ProjectSession) => deleteProjectSession(projectId, session.session_id),
     });
 
+    // Set from the tap: `isPending` flips only once the request starts, after
+    // the list write below, and a second tap in between would delete twice.
+    const deletingRef = React.useRef(false);
     const confirmDeleteSession = React.useCallback(async () => {
-      if (!confirmDelete || deleteSession.isPending) return;
+      if (!confirmDelete || deletingRef.current) return;
+      deletingRef.current = true;
       haptics.medium();
       setDeleteFailed(false);
+      let undo = () => {};
       try {
+        // The row leaves the drawer and the Sessions page behind the dialog
+        // now, and comes back if the server refuses. A refetch in flight would
+        // put it back first, so it is cancelled. The paged list only: the flat
+        // one names the open thread, which keeps its title until the delete
+        // succeeds.
+        const pagedKey = projectKeys.projectSessionsPaged(projectId);
+        await queryClient.cancelQueries({ queryKey: pagedKey });
+        undo = writeSessionLists(queryClient, [pagedKey], (cached) =>
+          applyToSessionCache<ProjectSession>(cached, (rows) =>
+            withoutSession(rows, confirmDelete.session_id)
+          )
+        );
         await deleteSession.mutateAsync(confirmDelete);
         // Drop the session's tab, so the store never points at a deleted
         // session and no dead tab survives — matters most when this was the
@@ -366,12 +408,14 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         toast.success('Session deleted');
         setConfirmDelete(null);
       } catch {
+        undo();
         haptics.warning();
         setDeleteFailed(true);
       } finally {
+        deletingRef.current = false;
         void invalidateSessions();
       }
-    }, [confirmDelete, deleteSession, toast, invalidateSessions]);
+    }, [confirmDelete, deleteSession, projectId, queryClient, toast, invalidateSessions]);
 
     const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
@@ -474,7 +518,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                   <SettingsGroup>
                     <SettingsRow icon={Pencil} label="Rename" onPress={() => pushView('rename')} />
                     {canManageSharing ? (
-                      <SettingsRow icon={Share} label="Share" onPress={() => pushView('share')} />
+                      <SettingsRow icon={ShareNetworkIcon} label="Share" onPress={() => pushView('share')} />
                     ) : null}
                     {canManageLifecycle ? (
                       <SettingsRow
@@ -519,22 +563,33 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
               <Animated.View key="change-file" entering={PUSH_IN}>
                 {changeFile ? <SessionChangeFileView file={changeFile} /> : null}
               </Animated.View>
+            ) : sheetView === 'rename' ? (
+              <Animated.View key="rename" entering={PUSH_IN}>
+                <SessionRenameForm
+                  projectId={projectId}
+                  session={liveRow(menuSession)}
+                  onDone={closeSheet}
+                />
+              </Animated.View>
+            ) : sheetView === 'share' ? (
+              // Share pushes in place of the options. Back from a link confirm
+              // slides it back in from the left.
+              <Animated.View key="share" entering={returning ? POP_IN : PUSH_IN}>
+                <SessionShareForm
+                  projectId={projectId}
+                  session={liveRow(menuSession)}
+                  onDone={closeSheet}
+                  onConfirmPublicLink={pushView}
+                />
+              </Animated.View>
             ) : (
-              // Rename and Share push in place of the options; Back returns to them.
               <Animated.View key={sheetView} entering={PUSH_IN}>
-                {sheetView === 'rename' ? (
-                  <SessionRenameForm
-                    projectId={projectId}
-                    session={liveRow(menuSession)}
-                    onDone={closeSheet}
-                  />
-                ) : (
-                  <SessionShareForm
-                    projectId={projectId}
-                    session={liveRow(menuSession)}
-                    onDone={closeSheet}
-                  />
-                )}
+                <SessionShareLinkConfirm
+                  projectId={projectId}
+                  session={liveRow(menuSession)}
+                  kind={sheetView}
+                  onDone={popView}
+                />
               </Animated.View>
             )}
           </BottomSheetScrollView>

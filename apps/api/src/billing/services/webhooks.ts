@@ -31,6 +31,7 @@ import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { isUuid } from '../../shared/validate';
 
 /**
  * The plan a Stripe object names in its metadata.
@@ -165,13 +166,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** Mark the `credit_purchases` row this Checkout Session was created for. */
 async function markCreditPurchase(session: Stripe.Checkout.Session, status: 'completed' | 'failed') {
   const completedAt = status === 'completed' ? new Date().toISOString() : undefined;
   const purchaseId = session.metadata?.purchase_id;
-  if (purchaseId && UUID_PATTERN.test(purchaseId)) {
+  if (purchaseId && isUuid(purchaseId)) {
     await updatePurchaseStatus(purchaseId, status, completedAt);
     return;
   }
@@ -393,7 +392,7 @@ async function activateSubscriptionForAccount(params: {
   );
 
   // A real subscription ends an admin-issued trial: mark it converted so the
-  // trial overlay (effective-tier.ts) stops masking the purchased plan.
+  // trial overlay (resolve-billing.ts) stops masking the purchased plan.
   // `trial_status` is admin-owned, so it cannot ride along in the patch above —
   // it goes through the narrow cross-domain helper in trial-admin.ts.
   if (existingAccount?.trialStatus === 'active') {

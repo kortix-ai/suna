@@ -7,7 +7,8 @@ import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } fro
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
-import { AccountIdParam, accountsRouter, getMembership, readBody } from './core/app';
+import { AccountIdParam, accountsRouter, getMembership } from './core/app';
+import { readJsonObject } from '../shared/http-body';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });
@@ -86,7 +87,7 @@ export function registerSecretResourceRoutes() {
     const accountId = c.req.param('accountId');
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
-    const parsed = Create.safeParse(await readBody(c));
+    const parsed = Create.safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'Invalid secret resource' }, 400);
     const body = parsed.data;
     if (resolveCatalogUpstream(body.provider_id)?.envVar !== body.name) {
@@ -141,7 +142,7 @@ export function registerSecretResourceRoutes() {
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (!row.projectId || !(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
-    const parsed = z.object({ mode: z.enum(['project', 'members']), user_ids: z.array(z.string().uuid()).max(200) }).strict().safeParse(await readBody(c));
+    const parsed = z.object({ mode: z.enum(['project', 'members']), user_ids: z.array(z.string().uuid()).max(200) }).strict().safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'Invalid access' }, 400);
     const creatorStillEligible = Boolean(await getMembership(row.createdBy, accountId)) &&
       await memberMayReadProject(accountId, row.projectId, row.createdBy);
@@ -179,7 +180,7 @@ export function registerSecretResourceRoutes() {
     if (row.providerId === 'codex' && row.name === 'CODEX_AUTH_JSON') {
       return c.json({ error: 'Reconnect this ChatGPT account to refresh its OAuth login' }, 400);
     }
-    const parsed = z.object({ value: z.string().min(1).max(65536) }).safeParse(await readBody(c));
+    const parsed = z.object({ value: z.string().min(1).max(65536) }).safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'Invalid value' }, 400);
     const [updated] = await db.update(accountSecretResources).set({ valueEnc: encryptAccountSecret(accountId, parsed.data.value), cooldownUntil: null, updatedAt: new Date() })
       .where(eq(accountSecretResources.secretId, row.secretId)).returning();

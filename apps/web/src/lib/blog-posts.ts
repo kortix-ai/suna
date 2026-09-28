@@ -1734,14 +1734,13 @@ for (const dispute of open.data?.disputes ?? []) {
  *
  * ==========================================================================
  * ACCURACY GATE. Every claim here is checked against the accuracy-reviewed
- * landing copy it summarises (`features/marketing/capabilities/content.ts`,
- * `how-it-work/how-it-works-content.ts`, `open-source/content.ts`,
- * `landing/content.ts`) and against the `comms` skill. Do not soften, inflate
+ * landing copy it summarises (`how-it-work/how-it-works-content.ts`,
+ * `open-source/content.ts`, `landing/content.ts`) and against the `comms` skill. Do not soften, inflate
  * or "restore" any of it.
  * ==========================================================================
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value readable by any command the
- *    agent runs (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). Only CONNECTOR
+ *    agent runs. Only CONNECTOR
  *    credentials never enter the machine.
  *  - EGRESS is not controlled at the network. Nothing implements it.
  *  - microVM is the Platinum provider only; containers are the default. Write

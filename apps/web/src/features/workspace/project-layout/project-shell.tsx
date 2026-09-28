@@ -15,6 +15,7 @@ import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
 import { useBrandingScope } from '@/features/branding/branding-provider';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useCustomizePrefetch } from '@/features/workspace/capabilities/shared/use-customize-prefetch';
 import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
@@ -40,7 +41,7 @@ import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
-import { SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -85,6 +86,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   });
 
   useGatewayCatalogSync(projectId);
+  // Fill every Customize tab's cache on the first idle slot, so opening
+  // Customize renders from memory instead of waiting on the API.
+  useCustomizePrefetch(projectId);
 
   // Presence: this shell is mounted for EVERY /projects/[id] route and survives
   // in-project navigation, so mounting the warm hook here means "one ensure

@@ -1,6 +1,5 @@
 /**
- * `on_behalf_of` — the human an agent session acts for (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.3).
+ * `on_behalf_of` — the human an agent session acts for.
  *
  * Stored on the session token (`kortix.account_tokens.on_behalf_of_user_id`).
  * It decides ONLY that human's personal resources (member-owned connector

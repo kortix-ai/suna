@@ -1,12 +1,10 @@
 import { test, expect } from 'bun:test';
 import {
-	buildAuthHeaders,
 	isStreamingRequest,
 	syntheticUnauthenticatedResponse,
 	withDefaultTimeout,
 	withTokenRetry,
 } from '../../platform/auth-core';
-import type { KortixPlatformConfig } from './config';
 
 // These tests deliberately target `auth-core.ts` — the pure implementation —
 // NOT `./auth`. Several suites in this package register process-wide
@@ -111,59 +109,9 @@ test('a Request input carries its own signal through the streaming exemption', (
 	expect(signal?.aborted).toBe(true);
 });
 
-// ── buildAuthHeaders / syntheticUnauthenticatedResponse ─────────────────────
-
-test('buildAuthHeaders injects the Bearer token without clobbering an existing Authorization', () => {
-	const injected = buildAuthHeaders('http://x.test/', undefined, 'tok');
-	expect(injected.get('Authorization')).toBe('Bearer tok');
-
-	const preset = buildAuthHeaders(
-		'http://x.test/',
-		{ headers: { Authorization: 'Bearer mine' } },
-		'tok',
-	);
-	expect(preset.get('Authorization')).toBe('Bearer mine');
-});
-
-test('buildAuthHeaders identifies the configured client surface', () => {
-	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'cli');
-	expect(headers.get('x-kortix-client')).toBe('cli');
-});
-
-test('buildAuthHeaders preserves an explicit client surface header', () => {
-	const headers = buildAuthHeaders(
-		'http://x.test/',
-		{ headers: { 'X-Kortix-Client': 'mobile' } },
-		'tok',
-		'cli',
-	);
-	expect(headers.get('x-kortix-client')).toBe('mobile');
-});
-
-test('buildAuthHeaders identifies the tui surface', () => {
-	// `apps/tui` is its own client surface: a terminal UI that authenticates
-	// with the CLI's host config but is NOT the CLI. Reporting it as 'cli'
-	// makes the two indistinguishable in `kortix.session_audit_events`
-	// (`client_reported_source`), which is the column that answers "which
-	// surface started this session". The server-side normalizer
-	// (`apps/api/src/shared/audit-client-source.ts:1`) accepts any
-	// `^[a-z0-9][a-z0-9._:-]{0,63}$` token, so the SDK's own allowlist in
-	// `platform/auth-core.ts` is the only gate that dropped it.
-	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'tui');
-	expect(headers.get('x-kortix-client')).toBe('tui');
-
-	// The runtime allowlist and the compile-time union must agree: a value the
-	// header builder emits that `KortixPlatformConfig` rejects is unreachable
-	// from a host. `tsc --noEmit` covers `src/**/*`, so this annotation is the
-	// gate on the union itself.
-	const config: Pick<KortixPlatformConfig, 'clientSource'> = { clientSource: 'tui' };
-	expect(config.clientSource).toBe('tui');
-});
-
-test('buildAuthHeaders omits an unknown configured client surface', () => {
-	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'forged-source');
-	expect(headers.has('x-kortix-client')).toBe(false);
-});
+// ── syntheticUnauthenticatedResponse ──────────────────────────────────────
+// The header policy (bearer, client surface, admin bypass, act-as) is tested
+// at its one owner, `send`, in `./transport.test.ts`.
 
 test('the synthetic 401 is a JSON fetch-semantics Response (no network call implied)', async () => {
 	const res = syntheticUnauthenticatedResponse();

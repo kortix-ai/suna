@@ -51,18 +51,111 @@ export interface RunTuiOptions {
   projectId?: string | null;
   /** Open this session at boot. */
   sessionId?: string | null;
+  /** Create a session in the project at boot and open it (`kortixt --new`). */
+  newSession?: { agentName?: string } | null;
+  /** Open the sandbox terminal panel at boot, focused (`--terminal`). */
+  openTerminal?: boolean;
+  /** Start with the sidebar hidden (`--no-sidebar`). `Alt+B` shows it. */
+  hideSidebar?: boolean;
+  /**
+   * Take the mouse (`--mouse`). Off by default: with mouse reporting on, the
+   * host terminal hands every click and drag to the app, so its own text
+   * selection, copy-on-select and Cmd+click on a URL stop working — and the
+   * app has no mouse features to give back for that.
+   */
+  mouse?: boolean;
 }
 
-/** The project whose sessions the sidebar lists. */
+export interface BootSessionDeps {
+  createSession: (projectId: string, agentName?: string) => Promise<{ session_id: string }>;
+}
+
+const DEFAULT_BOOT_SESSION_DEPS: BootSessionDeps = {
+  createSession: (projectId, agentName) =>
+    kortix().projects.createSession(projectId, agentName ? { agent_name: agentName } : {}),
+};
+
+/**
+ * `--new`: the session `kortixt` opens. Created BEFORE the renderer exists so
+ * the app boots straight into it; a failure is a note, not a dead TUI — the
+ * sidebar still works and Ctrl+N is one key away.
+ */
+export async function bootSession(
+  projectId: string | null,
+  request: RunTuiOptions['newSession'],
+  note: (text: string) => void,
+  deps: BootSessionDeps = DEFAULT_BOOT_SESSION_DEPS,
+): Promise<string | null> {
+  if (!request) return null;
+  if (!projectId) {
+    note('--new needs a project: none is configured on this host.');
+    return null;
+  }
+  try {
+    const created = await deps.createSession(projectId, request.agentName);
+    return created.session_id;
+  } catch (error) {
+    const reason = error instanceof Error && error.message ? error.message : String(error);
+    note(
+      `Could not create a session${request.agentName ? ` for agent ${request.agentName}` : ''}: ${reason}`,
+    );
+    return null;
+  }
+}
+
+export interface ResolveProjectDeps {
+  /** Resolves when the project exists and this host may read it; rejects otherwise. */
+  getProject: (projectId: string) => Promise<unknown>;
+  /**
+   * The host ACCOUNT's projects. A PAT can see every account its user belongs
+   * to, and the unscoped list answers across all of them — on the first
+   * machine this was measured the first row was a project in another account,
+   * so the sidebar showed a raw id and the wrong sessions.
+   */
+  listProjects: (
+    accountId: string | null,
+  ) => Promise<Array<{ project_id: string }> | null | undefined>;
+  /** Where a skipped candidate is reported. */
+  note: (text: string) => void;
+}
+
+const DEFAULT_RESOLVE_PROJECT_DEPS: ResolveProjectDeps = {
+  getProject: (projectId) => kortix().projects.get(projectId),
+  listProjects: (accountId) =>
+    accountId ? kortix().projects.listForAccount(accountId) : kortix().projects.list(),
+  note: (text) => process.stderr.write(`${text}\n`),
+};
+
+/**
+ * The project whose sessions the sidebar lists.
+ *
+ * Every candidate is PROVED before it is used. The CLI config's
+ * `default_project` is written at login and never revalidated, so a project
+ * that was deleted or moved since then boots the TUI onto a dead id: a raw
+ * id where the name should be, an empty session list, and Files saying "Open
+ * a session" with nothing to open. A candidate that does not answer is
+ * skipped with one stderr line, and the first project the host can see wins.
+ */
 export async function resolveProjectId(
-  ...candidates: (string | null | undefined)[]
+  candidates: (string | null | undefined)[],
+  accountId: string | null = null,
+  deps: ResolveProjectDeps = DEFAULT_RESOLVE_PROJECT_DEPS,
 ): Promise<string | null> {
   for (const candidate of candidates) {
     const trimmed = candidate?.trim();
-    if (trimmed) return trimmed;
+    if (!trimmed) continue;
+    try {
+      await deps.getProject(trimmed);
+      return trimmed;
+    } catch (error) {
+      const reason = error instanceof Error && error.message ? error.message : String(error);
+      deps.note(
+        `Project ${trimmed.slice(0, 8)} is not available on this host (${reason}); using the first project in your account.`,
+      );
+    }
   }
   try {
-    const projects = await kortix().projects.list();
+    const projects = await deps.listProjects(accountId);
     return projects?.[0]?.project_id ?? null;
   } catch {
     return null;
@@ -70,6 +163,14 @@ export async function resolveProjectId(
 }
 
 interface RootProps {
+  /** The account the boot project belongs to (may differ from the host's active account). */
+  initialAccountId: string | null;
+  /** `--terminal`: open the sandbox terminal panel at boot. */
+  initialTerminalOpen: boolean;
+  /** `--no-sidebar`: start with the sidebar hidden. */
+  initialSidebarHidden: boolean;
+  /** What boot had to work around (a dead default project), shown once as a toast. */
+  bootNotice: string | null;
   initialHost: ResolvedHost | null;
   /** Why boot fell through to the login screen, when it did. */
   initialNotice: string | null;
@@ -89,8 +190,12 @@ interface RootProps {
 function Root({
   initialHost,
   initialNotice,
+  bootNotice,
   initialProjectId,
   initialSessionId,
+  initialAccountId,
+  initialTerminalOpen,
+  initialSidebarHidden,
   onQuit,
 }: RootProps) {
   const [host, setHost] = useState<ResolvedHost | null>(initialHost);
@@ -136,11 +241,14 @@ function Root({
 
   return (
     <App
+      bootNotice={bootNotice}
       key={`${host.name}:${host.backendUrl}:${generation}`}
       host={host}
       projectId={projectId}
-      accountId={host.accountId || null}
+      accountId={initialAccountId ?? (host.accountId || null)}
       initialSessionId={initialSessionId}
+      initialTerminalOpen={initialTerminalOpen}
+      initialSidebarHidden={initialSidebarHidden}
       onQuit={onQuit}
       onSwitchHost={() => {
         setPreviousHost(host);
@@ -185,7 +293,35 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
     notice = await preflight(host);
     if (notice) host = null;
   }
-  const projectId = host ? await resolveProjectId(options.projectId, host.defaultProjectId) : null;
+  const bootNotes: string[] = [];
+  const projectId = host
+    ? await resolveProjectId([options.projectId, host.defaultProjectId], host.accountId || null, {
+        ...DEFAULT_RESOLVE_PROJECT_DEPS,
+        note: (text) => {
+          bootNotes.push(text);
+          process.stderr.write(`${text}\n`);
+        },
+      })
+    : null;
+
+  // `--project` may name a project outside the host's active account; the
+  // sidebar and every account-scoped read follow the PROJECT's account.
+  let bootAccountId: string | null = null;
+  if (host && projectId) {
+    try {
+      const project = (await kortix().projects.get(projectId)) as { account_id?: string | null };
+      bootAccountId = project.account_id ?? null;
+    } catch {
+      bootAccountId = null;
+    }
+  }
+  const createdSessionId = host
+    ? await bootSession(projectId, options.newSession ?? null, (text) => {
+        bootNotes.push(text);
+        process.stderr.write(`${text}\n`);
+      })
+    : null;
+  const initialSessionId = createdSessionId ?? options.sessionId?.trim() ?? null;
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -199,7 +335,10 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
     },
   });
 
-  const renderer = await createCliRenderer({ exitOnCtrlC: false });
+  const renderer = await createCliRenderer({
+    exitOnCtrlC: false,
+    useMouse: Boolean(options.mouse),
+  });
   const root = createRoot(renderer);
 
   return await new Promise<number>((resolve) => {
@@ -240,8 +379,12 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         <Root
           initialHost={host}
           initialNotice={notice}
+          bootNotice={bootNotes.length ? bootNotes.join(' ') : null}
           initialProjectId={projectId}
-          initialSessionId={options.sessionId?.trim() || null}
+          initialSessionId={initialSessionId}
+          initialAccountId={bootAccountId}
+          initialTerminalOpen={Boolean(options.openTerminal) && Boolean(initialSessionId)}
+          initialSidebarHidden={Boolean(options.hideSidebar)}
           onQuit={() => shutdown(0)}
         />
       </QueryClientProvider>,

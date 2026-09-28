@@ -14,7 +14,7 @@ import { projectTranscript } from './opencode-projection'
 import { configureRuntimeState, runtimeStateStore, type RuntimeStateStore } from './runtime-state-projection'
 import { kortixEventBus } from '../../kortix-event-bus'
 import { OPENCODE_EVENT_RECOVERY } from './event-bus'
-import { readPinnedSessionId } from './opencode-turn-state'
+import { readOpenCodeSessionPin } from './runtime-state'
 import { observeRequestedTurn, resolveTurnObservationIdentity } from './diagnostics'
 import { runtimeConvergenceReport } from '../../runtime-assets'
 import { OPENCODE_HOME } from './paths'
@@ -44,7 +44,7 @@ export function createOpenCodeQueryService(
     bind({ cfg }) {
       const native = requireOpenCodeConfig(cfg)
       const db = options.db ?? new OpencodeDb(opencodeDbPath(OPENCODE_HOME))
-      const pinnedSessionId = options.pinnedSessionId ?? readPinnedSessionId
+      const pinnedSessionId = options.pinnedSessionId ?? readOpenCodeSessionPin
       const state =
         options.state ??
         runtimeStateStore() ??
@@ -292,7 +292,7 @@ async function readMessagesOverHttp(
   }
 }
 
-export function findAttachment(
+function findAttachment(
   parts: Array<Record<string, unknown>> | undefined,
   partID: string,
 ): AttachmentLike | null {

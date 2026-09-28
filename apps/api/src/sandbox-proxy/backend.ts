@@ -151,18 +151,18 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
  * service key it finds is cached as a side-effect for `resolveServiceKey`.
  */
 /**
- * The one query behind `loadSandbox`, exported so its rendered SQL is pinned by
- * a test (`backend-load-sandbox-sql.test.ts`).
+ * The one query behind `loadSandbox`. Its behavior on real rows is proven in
+ * `__tests__/integration-correlated-subquery-isolation.test.ts`.
  *
  * The session's agent comes from a typed LEFT JOIN — never a raw `sql`
  * subquery. INC-2026-09-15: the subquery that used to live here rendered its
  * correlation unqualified (`where "session_id" = "session_id"`, true for every
  * row), so every proxied request got the agent of the first tuple of
- * `project_sessions` — another customer's `chief-of-staff` — and agent-less
+ * `project_sessions` — an agent of another customer — and agent-less
  * prompts re-pointed session tokens at it. `project_sessions.session_id` is the
  * primary key, so the join never multiplies rows.
  */
-export function sandboxRecordQuery(condition: SQL) {
+function sandboxRecordQuery(condition: SQL) {
   return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -410,8 +410,20 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
     // deadline BY CONSTRUCTION so the heal is refused for exactly the same
     // rows, and additionally a box stopped by a transient provider blip while
     // its deadline is still live IS healed — which the flag got wrong.
+    //
+    // The SESSION status follows the BOX, never the request. A stopped or
+    // errored box that the heal just revived is active, so its session is
+    // running; a REFUSED heal (the box is parked and its deadline has passed)
+    // must leave the session exactly as the stop left it. The session write
+    // used to be unconditional, so one passive request to a parked box —
+    // an open preview tab or a share link — flipped the session back to
+    // `running` while the box stayed stopped. That session then reported
+    // running for hours after its last turn (KRTX-378) and the DB-only
+    // stuck-session reconcile could not catch it while the traffic kept
+    // bumping `updated_at`.
+    let boxIsRunning = !['error', 'stopped'].includes(row.status);
     if (['error', 'stopped'].includes(row.status)) {
-      await db
+      const healed = await db
         .update(sessionSandboxes)
         .set({ status: 'active', lastUsedAt: now, updatedAt: now })
         .where(
@@ -419,13 +431,17 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
             eq(sessionSandboxes.sandboxId, row.sandboxId),
             gt(sessionSandboxes.deadlineAt, now),
           ),
-        );
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId });
+      boxIsRunning = healed.length > 0;
     }
 
-    await db
-      .update(projectSessions)
-      .set({ status: 'running', updatedAt: now })
-      .where(eq(projectSessions.sessionId, row.sessionId));
+    if (boxIsRunning) {
+      await db
+        .update(projectSessions)
+        .set({ status: 'running', updatedAt: now })
+        .where(eq(projectSessions.sessionId, row.sessionId));
+    }
   } catch (err) {
     sandboxTouchCache.delete(sandboxId);
     console.warn('[PREVIEW] Failed to mark sandbox used:', err);

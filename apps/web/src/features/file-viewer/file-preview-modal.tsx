@@ -3,6 +3,7 @@
 import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -13,6 +14,7 @@ import {
   useDialogLayerDepth,
 } from '@/lib/z-stack';
 import {
+  ArrowClockwiseIcon,
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CodeIcon as Code,
@@ -34,7 +36,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { FileContentRenderer } from './file-content-renderer';
-import { FileSourceProvider, type FileSource } from './file-source';
+import { FileSourceProvider, type FileRefreshResult, type FileSource } from './file-source';
 import { getLanguageFromExt } from './preview-policy';
 
 /** Tabbable elements used by the focus trap below. */
@@ -81,6 +83,12 @@ export interface FilePreviewModalProps extends FilePreviewState {
    */
   embedded?: boolean;
 }
+
+/** A fixed source (a git ref) has nothing to re-read. */
+function useNoRefresh(_filePath: string | null): FileRefreshResult {
+  return NO_REFRESH;
+}
+const NO_REFRESH: FileRefreshResult = { refresh: () => {}, refreshing: false, reloadKey: 0 };
 
 /**
  * The single full-screen file preview modal shared by every surface (the
@@ -133,6 +141,11 @@ export function FilePreviewModal({
   const hasPrev = currentFileIndex > 0;
 
   const [historyPath, setHistoryPath] = useState<string | null>(null);
+  // Module-stable per source, so the hook identity never changes between
+  // renders — the same pattern `FileContentRenderer` uses for `useFileContent`.
+  const useRefresh = source.useRefresh ?? useNoRefresh;
+  const { refresh, refreshing, reloadKey } = useRefresh(selectedFilePath);
+  const refreshLabel = tI18nHardcoded.raw('i18nComplete.text0e9161011702');
   const [markdownPreview, setMarkdownPreview] = useState(true);
   // Markdown and Mermaid files both open rendered, with a Source toggle.
   const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
@@ -342,6 +355,25 @@ export function FilePreviewModal({
             </Button>
           </Hint>
         )}
+        {source.useRefresh && (
+          <Hint label={refreshLabel} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={refreshLabel}
+              aria-busy={refreshing}
+              disabled={refreshing}
+              className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
+              onClick={refresh}
+            >
+              {refreshing ? (
+                <Loading className="text-muted-foreground size-4 motion-reduce:animate-none" />
+              ) : (
+                <ArrowClockwiseIcon className="h-4 w-4" />
+              )}
+            </Button>
+          </Hint>
+        )}
         <Hint label={historyLabel} side="bottom">
           <Button
             variant="ghost"
@@ -456,6 +488,7 @@ export function FilePreviewModal({
         <FileSourceProvider value={source}>
           <FileContentRenderer
             filePath={selectedFilePath!}
+            reloadKey={reloadKey}
             showHeader={false}
             readOnly
             markdownPreview={markdownPreview}

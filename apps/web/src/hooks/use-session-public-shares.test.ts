@@ -1,6 +1,11 @@
 import type { SessionPublicShare } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { isShareLive, publicSharesQueryKey, shareListState } from './use-session-public-shares';
+import {
+  isShareLive,
+  publicSharesQueryKey,
+  publicShareUrl,
+  shareListState,
+} from './use-session-public-shares';
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 
@@ -73,5 +78,24 @@ describe('shareListState', () => {
 
   test('any share renders the list', () => {
     expect(shareListState({ isLoading: false, isError: false, count: 1 })).toBe('list');
+  });
+});
+
+describe('publicShareUrl', () => {
+  test('joins the web origin and the share page path', () => {
+    expect(publicShareUrl('/share/session/kps_abc', 'https://app.example.test')).toBe(
+      'https://app.example.test/share/session/kps_abc',
+    );
+  });
+
+  test('is null without a path or an origin', () => {
+    expect(publicShareUrl(null, 'https://app.example.test')).toBeNull();
+    expect(publicShareUrl('', 'https://app.example.test')).toBeNull();
+    expect(publicShareUrl('/share/session/kps_abc', null)).toBeNull();
+  });
+
+  test('defaults to no origin outside a browser, so a server render never builds a link', () => {
+    expect(typeof window).toBe('undefined');
+    expect(publicShareUrl('/share/session/kps_abc')).toBeNull();
   });
 });

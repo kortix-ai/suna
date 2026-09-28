@@ -417,8 +417,8 @@ export async function provisionSessionSandbox(opts: {
           // those suites die at import with `SyntaxError: Export named
           // 'ensurePiWorkerImage' not found` — attributed to no test, and it
           // takes an unrelated parallel worker down with it. The register's
-          // rule is "fix the import, not the mocks"
-          // (.claude/skills/learnings/SKILL.md:39). This edge is reached once,
+          // rule is "fix the import, not the mocks" (learnings entry
+          // 2026-08-27T142521Z-a-new-import-edge-into-a-widely-mocked-graph-breaks-hand-wri.md). This edge is reached once,
           // on the pi-worker branch only, so deferring it costs nothing and
           // needs no test churn.
           import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
@@ -642,8 +642,7 @@ export async function provisionSessionSandbox(opts: {
       // throws on a policy no session could serve, which is what turns a broken
       // secret config into `invalid-secret-boundary-policy` instead of a
       // generic provider fault. There is nothing to register with a provider —
-      // one mechanism serves daytona, e2b and platinum alike (docs/specs/
-      // 2026-08-19-secrets-exposure-usage-model.md §4): the guest gets a HANDLE
+      // one mechanism serves daytona, e2b and platinum alike: the guest gets a HANDLE
       // and the broker route substitutes the real value server-side.
       await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
 
@@ -700,8 +699,7 @@ export async function provisionSessionSandbox(opts: {
         ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
         : undefined;
       // No provider edge is armed at create: one mechanism serves daytona, e2b
-      // and platinum alike (docs/specs/2026-08-19-secrets-exposure-usage-model.md
-      // §4). The guest holds a handle; the broker route substitutes server-side.
+      // and platinum alike. The guest holds a handle; the broker route substitutes server-side.
       let result: ProvisionResult;
       let attempts: number;
       // P1.8 (harness/worker split): a pi worker boot tries the parked pool

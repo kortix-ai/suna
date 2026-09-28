@@ -39,6 +39,8 @@ export {
   projectGitConnections,
   projectGitCredentials,
   projectSnapshotArchives,
+  configReleases,
+  configReleaseFailures,
   projectMembers,
   projectAccessRequests,
   projectSecrets,
@@ -112,6 +114,8 @@ export {
   creditUsage,
   accountDeletionRequests,
   creditPurchases,
+  // Mobile push notification device tokens
+  pushDeviceTokens,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,

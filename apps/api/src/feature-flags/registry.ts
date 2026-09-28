@@ -121,7 +121,7 @@ export interface FeatureFlagDef {
  * Pairing does not auto-create project access. This flag gates the dedicated
  * fleet surface (Customize → Computers, device auth, and tunnel permissions).
  * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration. See docs/specs/computer-connector.md.
+ * repository configuration.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
@@ -251,7 +251,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'monitors',
     name: 'Monitors',
     description:
-      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental; see docs/specs/2026-08-12-monitors.md.',
+      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental.',
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
@@ -341,6 +341,33 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
   {
+    key: 'config_releases',
+    name: 'Config Releases',
+    description:
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+    stability: 'experimental',
+    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
+    // Settings row disappears and the surface is dark for every project.
+    available: () => config.CONFIG_RELEASES_ENABLED,
+    // OFF by default until this is proven on real projects (Marko, 2026-09-24:
+    // "its off for now, as its untested"). The behaviour it gates is the
+    // intended one; the default is a rollout decision, not a design opinion.
+    // Turn it on per project in Settings, watch it, then widen. Flip this to
+    // `true` when the rollout is done.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +
+      '(POST /projects/:id/sessions/:id/config-release) and the archive route ' +
+      '(GET /projects/:id/config-archives/:tree) answer 403 `feature_disabled` ' +
+      'when off — config-releases/routes.ts. BEHAVIORAL: convergeSessionConfig ' +
+      'returns `disabled` without reaching the box (session-config-convergence.ts), ' +
+      'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
+      'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
+      'no release is built, no archive is stored, and no kortix.config_releases ' +
+      'row is written.',
+  },
+  {
     key: 'agent_principal',
     name: 'Agents as Principals',
     description:
@@ -352,8 +379,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // different power per person, let an owner-launched agent ignore its own
     // grant entirely (super-admin short-circuit), and ran every unattended
     // trigger as the account owner. Switching a project OFF restores that old
-    // model as an escape hatch for one release; the switch is then deleted
-    // (spec docs/specs/2026-09-22-agents-as-principals.md §5).
+    // model as an escape hatch for one release; the switch is then deleted.
     platformDefault: () => true,
     // Not listed in Settings → Feature flags. An agent acting as itself is how
     // Kortix works, not a choice we offer, so presenting a switch would invite
@@ -368,6 +394,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
       'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
       'the change-request merge governance guard.',
+  },
+  {
+    key: 'mcp',
+    name: 'MCP server',
+    description:
+      'Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls the Kortix API with your permissions. Settings shows the URL under Connect MCP in the workspace menu.',
+    stability: 'experimental',
+    available: () => true,
+    // OFF until the hosted MCP is proven with real clients (Marko, 2026-09-28:
+    // "the entire thing should be a feature flag because this ain't ready yet").
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'POST /projects/:id/mcp answers 403 `feature_disabled` when off (mcp/index.ts). ' +
+      'The OAuth client registration and discovery documents are user-scoped and stay ' +
+      'reachable; a token they produce opens no MCP endpoint on a project with the flag off.',
   },
 ];
 

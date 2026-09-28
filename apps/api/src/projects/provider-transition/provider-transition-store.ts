@@ -161,19 +161,6 @@ export async function findLiveTransitionByIdentity(
   return row ?? null;
 }
 
-export async function latestTransitionForProject(
-  db: Database,
-  projectId: string,
-): Promise<ProviderTransitionRow | null> {
-  const [row] = await db
-    .select()
-    .from(providerTransitions)
-    .where(eq(providerTransitions.projectId, projectId))
-    .orderBy(desc(providerTransitions.requestedAt))
-    .limit(1);
-  return row ?? null;
-}
-
 export async function listTransitionsForProject(
   db: Database,
   projectId: string,

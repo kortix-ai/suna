@@ -27,6 +27,10 @@ describe('shareUpstreamResult', () => {
       new URL('../../../kortix-sandbox-agent-server/src/proxy.ts', import.meta.url),
       'utf8',
     );
-    expect(proxy).toContain(`c.json({ error: '${UNKNOWN_DAEMON_ROUTE_ERROR}' }, 404)`);
+    // The catch-all line answers 404 with exactly this error string, whatever
+    // its handler variable is called.
+    const catchAll = proxy.split('\n').find((line) => line.includes("kortixRouter.all('*'"));
+    expect(catchAll).toContain(`'${UNKNOWN_DAEMON_ROUTE_ERROR}'`);
+    expect(catchAll).toMatch(/\b404\)/);
   });
 });

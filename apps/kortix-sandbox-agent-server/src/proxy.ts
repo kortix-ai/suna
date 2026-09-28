@@ -7,7 +7,8 @@ import type { ProjectEnvStore } from './project-env'
 import type { ResourceMonitor } from './resources'
 import { egressShimPort } from './egress-shim'
 import { logger } from './logger'
-import { registerAgentSwapBlocker } from './runtime-assets'
+import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from './runtime-assets'
+import { kortixEventBus } from './kortix-event-bus'
 import { createEnvRpcRouter } from './routes/env-rpc'
 import { createHarnessControlRouter } from './routes/harness-control'
 import { createRuntimeProxyRouter } from './routes/runtime-proxy'
@@ -17,7 +18,14 @@ import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
 import { createWebProxyRouter } from './routes/web-proxy'
-import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
+import {
+  createPtyRegistry,
+  createPtyRouter,
+  ptyIsAbandoned,
+  PTY_ABANDONED_AFTER_MS,
+  type PtyAttachHandle,
+  type PtyRegistry,
+} from './routes/pty'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from './kortix-user-context'
 
 // The id segment is optional: connecting with no id (or an id the daemon
@@ -236,9 +244,56 @@ export function startProxy(
   // is the only thing that knows, so it answers the question rather than the
   // updater guessing at it. A busy box just keeps the staging: the supervisor
   // installs it at the next start.
-  registerAgentSwapBlocker('pty', () =>
-    ptyRegistry.list().some((entry) => entry.status === 'running'),
+  //
+  // DEF-D 2026-09-26: `status === 'running'` alone starved a real box for its
+  // whole 30.8-day uptime — a terminal someone opened once and never closed
+  // (not exited, just abandoned) blocked every later reconcile forever, and
+  // that box never gained a daemon update again. `ptyHasLiveWork` excludes a
+  // running pty with no attached viewer that has been silent past
+  // `PTY_ABANDONED_AFTER_MS`; an attached viewer, or output within the bound,
+  // still blocks unconditionally. Logged with the actual numbers so a stuck
+  // box is diagnosable from its own health/log output, not a mystery.
+  registerAgentSwapBlocker('pty', () => {
+    const entries = ptyRegistry.list()
+    const live = entries.filter((e) => !ptyIsAbandoned(e))
+    if (live.length === 0) return false
+    logger.info('[proxy] pty swap blocker: live terminal(s) present', {
+      liveCount: live.length,
+      abandonedCount: entries.length - live.length,
+      abandonedAfterMs: PTY_ABANDONED_AFTER_MS,
+    })
+    return true
+  })
+  // A swap must not exit this process while the runtime is COMING UP. The turn
+  // oracle cannot see a boot: it reads the root's newest assistant message, and
+  // a box that is still starting OpenCode has no turn in flight by that test, so
+  // it answers `false` and the swap proceeds — turning a recoverable restart (a
+  // verified reload, a boot fallback) into a dead box plus a supervisor restart.
+  // `getState()` is the harness's own answer to "am I serving", so it is the
+  // thing that answers rather than the updater guessing.
+  registerAgentSwapBlocker('runtime-starting', () => harness.lifecycle.getState() !== 'ok')
+  // Off by default — see `agentSwapRequiresUnattendedBox` for the trade. A swap
+  // severs every open SSE stream; the client reconnects and the ring replays,
+  // so the cost is visible but not lossy, and blocking on subscribers would stop
+  // a watched session from EVER converging.
+  registerAgentSwapBlocker(
+    'sse-subscriber',
+    () => agentSwapRequiresUnattendedBox() && kortixEventBus().subscriberCount > 0,
   )
+  // A swap must not exit this process while a config convergence is mid-verify
+  // (fetch → download → candidate spawn → proven check → promotion). This
+  // process exiting takes the candidate down with it — `harness.stop()` kills
+  // every OpenCode this daemon spawned, standby port included — and
+  // `reloadVerified` cannot tell that SIGTERM from a release that genuinely
+  // never starts (`cause: null` either way). DEF-B/DEF-A 2026-09-26: on a real
+  // box the candidate had 815 ms before the daemon's own shutdown killed it,
+  // and the release it never got a fair chance to prove was quarantined for
+  // it. `harness.control.convergenceInFlight()` is the harness CONTRACT's
+  // answer (config-release.ts owns the actual `inFlight` state, behind the
+  // opencode adapter this module must not import directly — the harness
+  // ownership boundary, `__tests__/harness-boundary.test.ts`); absent on a
+  // runtime with no such concept, which never blocks.
+  registerAgentSwapBlocker('config-convergence', () => harness.control.convergenceInFlight?.() ?? false)
   let app = buildDaemonApp(cfg, harness, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
   const server = Bun.serve<PtyWsData>({

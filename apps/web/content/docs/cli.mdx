@@ -104,7 +104,8 @@ composer, a shell in the sandbox, and the Files, Review, Apps, Customize and
 Account screens — run the experimental terminal client:
 
 ```sh
-kortix tui
+kortix tui        # or: kortix t, or kortixt
+kortixt --project <id> --new --terminal   # new session + sandbox shell, one command
 ```
 
 It signs in with the host you are already on. See [the TUI page](/docs/tui).
@@ -362,10 +363,11 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--connect] [--json]` | Start a session. `--connect` attaches the OpenCode TUI once it is ready (implies `--wait`); on an interactive terminal without it, the CLI asks whether to connect after creation. `--model <id>` overrides the project's default model; a model that runs on an API key or a ChatGPT subscription uses every key you may use for it, and they rotate. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--queue] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. `--queue` is one-shot only: it stores the prompt in the session's durable inbox and returns as soon as it is stored, instead of handing it to the runtime. |
 | `kortix sessions connect [<id>] [-- <opencode args>]` | Attach the OpenCode TUI to the session's OpenCode server. Also available top-level: `kortix connect` / `kortix attach`. With no id, opens a session picker (running, stopped-with-restart, or new). The CLI auto-downloads the version-matched `opencode` binary (cache: `~/.kortix/opencode/<version>/`; override: `KORTIX_OPENCODE_BIN`). |
-| `kortix tui [--host <name>] [--project <id>] [--session <id>] [--install] [--uninstall]` | **Experimental.** Open the Kortix terminal client: sessions, transcript, composer, sandbox shell, Files, Review, Apps, Customize and Account. The TUI is a separate ~80 MB binary; the first run asks, then installs the version-matched `kortix-tui` into `~/.kortix/tui/<version>/`. `--install` does it without a prompt, `--uninstall` removes it. Uses the active host unless `--host` names another; with no host logged in it opens its own login screen. `?` prints every binding. See [/docs/tui](/docs/tui). |
+| `kortix tui [--host <name>] [--project <id>] [--session <id>] [--new] [--agent <name>] [--terminal] [--no-sidebar] [--mouse] [--install] [--uninstall]` | **Experimental.** Open the Kortix terminal client: sessions, transcript, composer, sandbox shell, Files, Review, Apps, Customize and Account. Aliases `kortix t` and `kortixt`. `--new` creates a session in the project at boot (`--agent` picks the agent), `--terminal` opens the sandbox shell focused, `--no-sidebar` starts without the sidebar (`Alt+B` toggles it), `--mouse` hands the mouse to the app (off by default so your terminal's selection, copy and link clicks keep working). The TUI is a separate ~80 MB binary; the first run asks, then installs the version-matched `kortix-tui` into `~/.kortix/tui/<version>/`; later CLI updates refresh it without asking and reuse an unchanged binary. `--install` does it without a prompt, `--uninstall` removes it. Uses the active host unless `--host` names another; with no host logged in it opens its own login screen. `?` prints every binding. See [/docs/tui](/docs/tui). |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Reattaches to the session's existing terminal; `--new` always starts a fresh one. Aliases: `terminal`, `ssh`. |
 | `kortix sessions shell <id> ls [--json]` | List the session's terminals: id, status, command. Needs no TTY. |
 | `kortix sessions shell <id> kill <pty-id>` | Kill one terminal. The ambient shell respawns on the next attach; anything running inside it does not. |
+| `kortix sessions forward <id> --port <sandbox>[:<local>]` | Forward a sandbox port to your machine, VS Code-style, so `http://localhost:3000` an agent printed works in your own browser. `--port` is repeatable; with no local port the same number is used if free, else the next free one; `:0` requests an OS-assigned ephemeral port. HTTP and WebSocket both forward (dev-server hot reload works). Prints one `⇄ localhost:N → sandbox:M` line per forward and stays in the foreground until Ctrl+C. Does not start a stopped session — it prints the `kortix sessions restart` remedy instead. Alias: `ports`. |
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. A running session is read live; a stopped one is read from the transcript saved at the end of every turn, so it is never woken just to be read. The source is noted on stderr, so `--json` output is unchanged. Aliases: `messages`, `history`. |
 | `kortix sessions attachments <id> [--download <attachment-id>\|--all] [--out <dir>] [--json]` | List a session's stored files — what users attached, and copies of the files the agent showed — and download them. Works while the session is stopped: neither the list nor the bytes need its sandbox. Downloads never overwrite; a name already taken becomes `name (1).ext`. |
 | `kortix sessions pending <id> [--json]` | List open tool-permission or question prompts. Alias: `prompts`. |
@@ -619,8 +621,9 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
-| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, status, and default. |
+| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
+| `kortix connectors connections share <id> [--group <id>]… [--user <email\|id>]… [--everyone]` | Share your own private account: it becomes a shared account only they may use (`--everyone`: the whole project). Needs the right to manage the project's connections. |
 | `kortix connectors apps [<query>] [--category <c>] [--cursor <c>] [--limit <n>] [--json]` | Search the Composio toolkit catalog — the slugs `add --provider composio --app <slug>` accepts. Alias: `kortix connectors toolkits`. Add `--pipedream` for the legacy Pipedream catalog. |
 | `kortix connectors catalog [<query>] [--cursor <c>] [--json]` | Browse the direct-connector catalogue. Needs the `connectors_api_discover` flag. |
 | `kortix connectors catalog show <id> [--json]` | Show one catalogue record's surfaces. |
@@ -711,6 +714,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
 | `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. Pass large args as `@file.json` or `-` (stdin). |
 | `kortix connectors call <connector>.<action> @args.json --attach <file>` | Stage a file and append its reference to the action's attachments array. The gateway writes the bytes into the provider's attachment item. `--attach` repeats; `--attach-path <a.b.c>` names the array. See [Attach files](/docs/connect/connectors#attach-files). |
+| `kortix connectors call <connector>.<action> '<json-args>' --out <file>` | Write the full JSON result to `<file>` and print only a summary: `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). See [Large results](/docs/connect/connectors#large-results). |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
@@ -779,9 +783,14 @@ roles: `owner`, `admin`, `member`. Project roles: `manager`, `member`.
 
 Grant options: `--project <id>` (default: the linked project), `--account` (the
 whole account), `--agent <name>` (narrow the grant to one agent — an object
-assignment), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
-a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`, or
-`pending:<email>`; a bare id is read as a user. An agent's identity is a
+assignment), `--connection <id>` (narrow the use of one shared connector
+account; the first grant limits the account to its grantees, and revoking the
+last opens it to the whole project again), `--everyone` (grant to everyone with
+access to the project; it holds an `--agent` or a `--connection`, never a
+role), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
+a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`,
+`project:<id>`, or `pending:<email>`; a bare id is read as a user. A grant to
+everyone lists as `everyone`. An agent's identity is a
 `service_account`, so `--service-account <id>` is how you assign a role to an
 agent. `--user` accepts an email and resolves it against the account member
 directory.
@@ -791,6 +800,8 @@ kortix access grant --user alice@corp.com --role manager
 kortix access grant --user alice@corp.com --role admin --account
 kortix access grant --group 8f3c… --role member --project 1a2b…
 kortix access grant --user alice@corp.com --agent support-bot
+kortix access grant --everyone --agent support-bot
+kortix access grant --group 8f3c… --connection 2b7e…
 kortix access revoke 4d5e…
 ```
 

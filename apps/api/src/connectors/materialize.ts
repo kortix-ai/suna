@@ -5,7 +5,7 @@
  * and onto the gateway's runtime view. Pure mapping + diff here (unit-tested);
  * the DB upsert + network catalog sync (fetch spec/introspection/listTools →
  * normalize → connector_actions) is the connector layer that calls
- * these. See docs/specs/connector.md §3, §7, §8.
+ * these.
  */
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';

@@ -1,6 +1,10 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import type { SecretDeliveryBlockedReason, SecretEgressPolicy } from './secrets';
+import type {
+  ProjectSecretsAgentScope,
+  SecretDeliveryBlockedReason,
+  SecretEgressPolicy,
+} from './secrets';
 import {
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
@@ -351,7 +355,7 @@ test('an older server that omits both fields still parses', async () => {
 // carries a handle, the relay swaps it for the real value on an approved host,
 // and the policy is nothing but a host list. `inject` names a slot only for
 // legacy rows, so a host-list-only policy has to typecheck and has to reach the
-// wire unchanged — see docs/specs/2026-08-19-secrets-exposure-usage-model.md §6.
+// wire unchanged.
 test('setProjectSecretStrategy sends a host-list-only egress policy (no inject slot)', async () => {
   const egress_policy: SecretEgressPolicy = {
     rules: [{ host: 'api.stripe.com' }],
@@ -390,4 +394,20 @@ test('setProjectSecretStrategy still sends a legacy policy that carries an injec
     name: 'authorization',
     template: 'Bearer {{secret}}',
   });
+});
+
+test('listProjectSecrets surfaces the calling agent own secrets grant', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [],
+      required: ['API_KEY'],
+      optional: [],
+      agent_scope: { agent: 'analyst', secrets: ['OTHER_KEY'] },
+    },
+  };
+
+  const scope: ProjectSecretsAgentScope | null | undefined = (await listProjectSecrets('P1'))
+    .agent_scope;
+  expect(scope).toEqual({ agent: 'analyst', secrets: ['OTHER_KEY'] });
 });

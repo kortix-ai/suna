@@ -506,8 +506,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(audits).toHaveLength(1);
   });
 
-  // The DEFAULT shape since docs/specs/2026-08-19-secrets-exposure-usage-model.md
-  // §6: an egress-enforced secret is served by handle substitution, so the
+  // The DEFAULT shape: an egress-enforced secret is served by handle substitution, so the
   // policy is a HOST LIST and there is no injection slot to name. This route
   // used to reject it with `policy.inject is invalid`.
   test('stores a substitution-only policy that names no injection slot', async () => {

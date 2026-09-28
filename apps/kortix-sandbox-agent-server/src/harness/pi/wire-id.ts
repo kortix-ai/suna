@@ -7,16 +7,32 @@
  * sorts every local one AFTER every placed one, so a reply minted here must
  * carry a real clock and sort strictly after the user message it answers.
  *
- * Mirrors apps/api/src/projects/wire-message-id.ts. The daemon ships inside
- * the sandbox image and cannot import apps/api, so the codec is duplicated
- * deliberately; `pi-wire-id.test.ts` reads the API's regex off disk and
- * asserts every id minted here satisfies it, so the two cannot drift silently.
+ * A deliberate copy of the platform codec, `@kortix/sdk/wire-message-id`
+ * (packages/sdk/src/core/session/wire-message-id.ts), which names this file as
+ * its one remaining copy. kortixd is a standalone compiled binary with no
+ * workspace dependencies, so it does not import the SDK. `pi-wire-id.test.ts`
+ * reads the SDK's regex and the golden vectors
+ * (`tests/spec/wire-message-id.vectors.json`) off disk and runs the mint and
+ * `delta` vectors here, so neither the format nor the ordering can drift
+ * silently. The one difference is on purpose: a pi reply is dated at the box
+ * clock with no backdate, where OpenCode itself would mint it.
+ *
+ * The clock is the LOW 48 bits of `Date.now() * 0x1000`, so it wraps every
+ * 2^36 ms (~2.2 years; the last wrap was 2026-08-14 11:19:55 UTC). A session
+ * crosses a wrap by being live at that instant, not by spanning 2.2 years, so
+ * every ordering compare here is on the ring ({@link wireIdClockDelta}).
  */
 import { createHash } from 'node:crypto'
 
 /** One pi root per session, deterministic: a restart resolves the same id. */
 export function mintRootId(sessionId: string): string {
   const digest = createHash('sha256').update(`pi-root\0${sessionId}`).digest('hex')
+  return `ses_pi${digest.slice(0, 24)}`
+}
+
+/** A child session id: same shape as the root's, unique per (root, minted message id). */
+export function mintChildId(rootId: string, nonce: string): string {
+  const digest = createHash('sha256').update(`pi-child\0${rootId}\0${nonce}`).digest('hex')
   return `ses_pi${digest.slice(0, 24)}`
 }
 
@@ -31,6 +47,21 @@ export const WIRE_ID_TIME_SCALE = BigInt(0x1000)
 /** Same one-hour correction ceiling as the API and SDK wire-id minters. */
 export const MAX_WIRE_ID_CLOCK_CORRECTION = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCALE
 
+const WIRE_ID_TIME_SPAN = WIRE_ID_TIME_MASK + BigInt(1)
+const HALF_SPAN = WIRE_ID_TIME_SPAN / BigInt(2)
+const ZERO = BigInt(0)
+
+/**
+ * Signed distance from `reference` to `clock` on the 48-bit ring: positive
+ * when `clock` is ahead. Copy of the SDK's `wireIdClockDelta`. Every ordering
+ * compare here goes through it, never through `>`.
+ */
+export function wireIdClockDelta(clock: bigint, reference: bigint): bigint {
+  let delta = (clock - reference) & WIRE_ID_TIME_MASK
+  if (delta >= HALF_SPAN) delta -= WIRE_ID_TIME_SPAN
+  return delta
+}
+
 function wireClockAt(nowMs: number): bigint {
   return (BigInt(Math.trunc(nowMs)) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK
 }
@@ -43,7 +74,8 @@ export function wireIdTime(messageId: string | null | undefined): bigint | null 
 }
 
 /**
- * Mint an id that sorts strictly after `newestKnownTime`.
+ * Mint an id that sorts strictly after `newestKnownTime` when that floor is
+ * 0 to {@link MAX_WIRE_ID_CLOCK_CORRECTION} ahead of `nowMs` on the ring.
  *
  * Pure: the caller supplies the clock and the randomness, which is what makes
  * the format assertable without stubbing globals.
@@ -56,16 +88,10 @@ export function mintWireMessageId(input: {
   const random = input.random ?? Math.random
   let encoded = wireClockAt(input.nowMs)
   const newest = input.newestKnownTime ?? null
-  if (newest === WIRE_ID_TIME_MASK) throw new Error('wire message id ordering clock is exhausted')
-  if (
-    newest !== null &&
-    newest >= encoded &&
-    newest < WIRE_ID_TIME_MASK &&
-    newest - encoded <= MAX_WIRE_ID_CLOCK_CORRECTION
-  ) {
-    encoded = newest + BigInt(1)
+  if (newest !== null) {
+    const ahead = wireIdClockDelta(newest, encoded)
+    if (ahead >= ZERO && ahead <= MAX_WIRE_ID_CLOCK_CORRECTION) encoded = (newest + BigInt(1)) & WIRE_ID_TIME_MASK
   }
-  encoded &= WIRE_ID_TIME_MASK
   let tail = ''
   for (let i = 0; i < 14; i++) tail += BASE62[Math.min(61, Math.floor(random() * 62))]
   return { id: `msg_${encoded.toString(16).padStart(12, '0')}${tail}`, time: encoded }
@@ -78,7 +104,7 @@ export class WireIdClock {
   /** Advance past an externally supplied or restored id. */
   observe(id: string | null | undefined): void {
     const time = wireIdTime(id)
-    if (time !== null && (this.newest === null || time > this.newest)) this.newest = time
+    if (time !== null && (this.newest === null || wireIdClockDelta(time, this.newest) > ZERO)) this.newest = time
   }
 
   mint(nowMs: number = Date.now()): string {

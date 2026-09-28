@@ -31,10 +31,10 @@ import {
   deriveProjectName,
   isRepoNameTakenError,
   normalizeString,
-  readBody,
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 
 // POST /v1/projects/link-repository
@@ -57,7 +57,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -228,7 +228,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 

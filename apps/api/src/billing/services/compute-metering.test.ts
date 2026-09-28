@@ -1,12 +1,15 @@
-import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
-import { appRuntimes } from '@kortix/db';
-import * as realProviders from '../../platform/providers';
+// What compute metering does without a database: its price, its self-host
+// gates, and its recovery from a concurrent open. Every database-backed
+// behaviour (windows, candidate SQL, ledger debits) runs on PostgreSQL in
+// compute-metering.integration.test.ts and
+// ../repositories/compute-sessions.integration.test.ts.
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let billingEnabled = true;
 
 // The other config exports must be listed explicitly: a partial namespace makes
 // ESM named-export resolution fail for any sibling test file that imports them
-// in the same run (SANDBOX_VERSION was breaking the whole billing/services suite).
+// in the same run.
 mock.module('../../config', () => ({
   SANDBOX_VERSION: '0.0.0-test',
   KNOWN_PROVIDERS: [],
@@ -18,7 +21,6 @@ mock.module('../../config', () => ({
     {},
     {
       get: (target: Record<PropertyKey, unknown>, key) => {
-        if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
         return target[key];
       },
@@ -26,459 +28,125 @@ mock.module('../../config', () => ({
   ),
 }));
 
-let accountsById: Record<string, { billingModel: string; tier?: string | null } | undefined> = {};
-let throwForAccountIds = new Set<string>();
+/** Every storage call the service made, by name. */
+let storageCalls: string[] = [];
+let openRows: Array<{ id: string } | null> = [];
+let insertError: unknown = null;
 
 mock.module('../repositories/credit-accounts', () => ({
-  getCreditAccount: async (accountId: string) => {
-    if (throwForAccountIds.has(accountId)) throw new Error('credit account lookup failed');
-    return accountsById[accountId] ?? null;
+  getCreditAccount: async () => {
+    storageCalls.push('getCreditAccount');
+    return { billingModel: 'per_seat', tier: 'free' };
   },
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => null,
 }));
 
-mock.module('../wallet', () => ({
-  wallet: { settle: async () => ({ amount: 0, balance: 0, overdraft: false, transactionId: 'tx', replayed: false }) },
-}));
-
-interface FakeComputeRow {
-  id: string;
-  accountId: string;
-  sandboxId: string;
-  sessionId: string | null;
-  provider: string;
-  cpuCores: number;
-  memoryGb: number;
-  diskGb: number;
-  gpuCount: number;
-  state: string;
-  costUsd: string;
-  lastBilledAt: string;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-  endedAt: string | null;
-}
-
-let computeRows: FakeComputeRow[] = [];
-let insertCalls = 0;
-let nextId = 1;
-let staleCutoff: Date | null = null;
-
-function openRowFor(sandboxId: string): FakeComputeRow | null {
-  return computeRows.find((r) => r.sandboxId === sandboxId && r.endedAt === null) ?? null;
-}
-
 mock.module('../repositories/compute-sessions', () => ({
-  insertComputeSession: async (data: Record<string, unknown>) => {
-    insertCalls += 1;
-    const row: FakeComputeRow = {
-      id: `row-${nextId++}`,
-      endedAt: null,
-      costUsd: '0',
-      lastBilledAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      ...data,
-    } as FakeComputeRow;
-    computeRows.push(row);
-    return row;
+  insertComputeSession: async () => {
+    storageCalls.push('insertComputeSession');
+    if (insertError) throw insertError;
+    return { id: 'cs_inserted' };
   },
-  getOpenComputeSession: async (sandboxId: string) => openRowFor(sandboxId),
-  getLatestComputeSession: async (sandboxId: string) => {
-    const rows = computeRows.filter((r) => r.sandboxId === sandboxId);
-    if (rows.length === 0) return null;
-    return rows.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+  getOpenComputeSession: async () => {
+    storageCalls.push('getOpenComputeSession');
+    return openRows.shift() ?? null;
   },
-  // The claim/release pair the real repository uses. Implemented FAITHFULLY
-  // rather than stubbed true: the compare-and-set IS the fix (one settler wins a
-  // window, the loser bills nothing), so a fake that always succeeded would let
-  // the double-billing regression back in with the suite still green.
-  claimComputeWindow: async (input: {
-    id: string;
-    expectedLastBilledAt: string;
-    nextLastBilledAt: string;
-    addCostUsd: number;
-    terminalState?: 'stopped' | 'finalized';
-  }) => {
-    const row = computeRows.find((r: any) => r.id === input.id);
-    if (!row) return false;
-    if (row.endedAt !== null && row.endedAt !== undefined) return false;
-    if (row.lastBilledAt !== input.expectedLastBilledAt) return false;
-    row.lastBilledAt = input.nextLastBilledAt;
-    row.costUsd = String(Number(row.costUsd ?? 0) + input.addCostUsd);
-    if (input.terminalState) {
-      row.state = input.terminalState;
-      row.endedAt = input.nextLastBilledAt;
-    }
-    return true;
+  getLatestComputeSession: async () => {
+    storageCalls.push('getLatestComputeSession');
+    return null;
   },
-  releaseComputeWindow: async (input: {
-    id: string;
-    claimedLastBilledAt: string;
-    revertToLastBilledAt: string;
-    subCostUsd: number;
-    terminalState?: 'stopped' | 'finalized';
-  }) => {
-    const row = computeRows.find((r: any) => r.id === input.id);
-    if (!row) return false;
-    if (row.lastBilledAt !== input.claimedLastBilledAt) return false;
-    row.lastBilledAt = input.revertToLastBilledAt;
-    row.costUsd = String(Number(row.costUsd ?? 0) - input.subCostUsd);
-    if (input.terminalState) {
-      row.state = 'active';
-      row.endedAt = null;
-    }
-    return true;
+  claimComputeWindow: async () => {
+    storageCalls.push('claimComputeWindow');
+    return false;
   },
-  findStaleActiveSessions: async (cutoff: Date) => {
-    staleCutoff = cutoff;
+  releaseComputeWindow: async () => {
+    storageCalls.push('releaseComputeWindow');
+    return false;
+  },
+  findStaleActiveSessions: async () => {
+    storageCalls.push('findStaleActiveSessions');
     return [];
   },
 }));
 
-interface FakeSandboxRow {
-  sandboxId: string;
-  sessionId: string;
-  accountId: string;
-  provider: string;
-  status: string;
-  externalId?: string | null;
-}
-
-let sandboxRows: FakeSandboxRow[] = [];
-interface FakeAppRuntimeRow {
-  runtimeId: string;
-  accountId: string;
-  provider: string;
-  externalId: string;
-  status: string;
-  desiredState: string;
-  active: boolean;
-  cpuCores: number;
-  memoryGb: number;
-  diskGb: number;
-  appId: string;
-  deploymentId: string;
-}
-let appRuntimeRows: FakeAppRuntimeRow[] = [];
-let providerStatusById: Record<string, string> = {};
-
-// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
-// lists exports by hand deletes every export it omits — the failure surfaces in
-// whatever unrelated file imports the missing name next, attributed to no test.
-mock.module('../../platform/providers', () => ({
-  ...realProviders,
-  // 60 minutes — the provider's own idle auto-stop, which is also the ceiling on
-  // how long a compute window may bill past its last liveness observation
-  // (services/compute-liveness.ts).
-  providerAutoStopBackstopMinutes: () => 60,
-  getProvider: () => ({
-    getStatus: async (externalId: string) => providerStatusById[externalId] ?? 'running',
-  }),
-}));
-
-// Mirrors the SQL join in selectMissingComputeCandidates: a metered model, or
-// a legacy-default row that is not a legacy paid plan.
-const isMetered = (a: { billingModel: string; tier?: string | null } | undefined) =>
-  !!a &&
-  (a.billingModel === 'per_seat' ||
-    a.billingModel === 'credit' ||
-    !['tier_2_20', 'tier_6_50', 'tier_25_200', 'tier_200_1000', 'pro'].includes(a.tier ?? 'free'));
-
-const selectMissing = async (limit: number) =>
-  sandboxRows
-    .filter(
-      (r) =>
-        r.status === 'active' &&
-        !openRowFor(r.sandboxId) &&
-        isMetered(accountsById[r.accountId]),
-    )
-    .slice(0, limit)
-    .map((r) => ({
-      sandboxId: r.sandboxId,
-      sessionId: r.sessionId,
-      accountId: r.accountId,
-      provider: r.provider,
-      externalId: r.externalId ?? `ext-${r.sandboxId}`,
-    }));
-
-const selectMissingApps = async (limit: number) =>
-  appRuntimeRows
-    .filter(
-      (r) =>
-        r.status === 'running' &&
-        r.desiredState === 'running' &&
-        r.active &&
-        !openRowFor(r.runtimeId) &&
-        isMetered(accountsById[r.accountId]),
-    )
-    .slice(0, limit)
-    .map((r) => ({
-      sandboxId: r.runtimeId,
-      accountId: r.accountId,
-      provider: r.provider,
-      externalId: r.externalId,
-      cpuCores: r.cpuCores,
-      memoryGb: r.memoryGb,
-      diskGb: r.diskGb,
-      appId: r.appId,
-      deploymentId: r.deploymentId,
-    }));
-
 mock.module('../../shared/db', () => ({
-  db: {
-    select: () => ({
-      from: (table: unknown) => {
-        const selectRows = table === appRuntimes ? selectMissingApps : selectMissing;
-        const chain: any = {
-          innerJoin: () => chain,
-          leftJoin: () => chain,
-          where: () => ({
-            orderBy: () => ({ limit: selectRows }),
-            limit: selectRows,
-          }),
-        };
-        return chain;
+  db: new Proxy(
+    {},
+    {
+      get: () => {
+        storageCalls.push('db');
+        throw new Error('the database was reached');
       },
-    }),
-  },
+    },
+  ),
 }));
 
-const { reconcileMissingAppComputeSessions, reconcileMissingComputeSessions, tickRunningComputeCharges } = await import(
-  './compute-metering'
-);
+const metering = await import('./compute-metering');
+const { calculateComputeCost } = metering;
+
+const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
 beforeEach(() => {
   billingEnabled = true;
-  accountsById = {};
-  throwForAccountIds = new Set();
-  computeRows = [];
-  providerStatusById = {};
-  sandboxRows = [];
-  appRuntimeRows = [];
-  insertCalls = 0;
-  nextId = 1;
-  staleCutoff = null;
+  storageCalls = [];
+  openRows = [];
+  insertError = null;
 });
 
-afterEach(() => { setSystemTime(); });
-
-function sandbox(overrides: Partial<FakeSandboxRow> = {}): FakeSandboxRow {
-  return {
-    sandboxId: 'sb-1',
-    sessionId: 'sb-1',
-    accountId: 'acct-1',
-    provider: 'daytona',
-    status: 'active',
-    ...overrides,
-  };
-}
-
-function appRuntime(overrides: Partial<FakeAppRuntimeRow> = {}): FakeAppRuntimeRow {
-  return {
-    runtimeId: 'app-runtime-1',
-    accountId: 'acct-1',
-    provider: 'daytona',
-    externalId: 'app-external-1',
-    status: 'running',
-    desiredState: 'running',
-    active: true,
-    cpuCores: 2,
-    memoryGb: 4,
-    diskGb: 20,
-    appId: 'app-1',
-    deploymentId: 'deployment-1',
-    ...overrides,
-  };
-}
-
-describe('reconcileMissingComputeSessions', () => {
-  test('opens a compute window for a per-seat active sandbox with no open row', async () => {
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    sandboxRows = [sandbox({ sandboxId: 'sb-ps', sessionId: 'sb-ps', accountId: 'acct-ps' })];
-
-    const result = await reconcileMissingComputeSessions();
-
-    expect(result).toEqual({ checked: 1, reconciled: 1, errors: 0 });
-    expect(openRowFor('sb-ps')).not.toBeNull();
+describe('calculateComputeCost', () => {
+  test.each([
+    ['a zero-length window', SPEC, 0, 0],
+    ['a negative window', SPEC, -5, 0],
+    ['one hour of 2 vCPU / 4 GB / 20 GB', SPEC, 3600, 0.201312],
+    ['one minute, with no minimum charge', SPEC, 60, 0.201312 / 60],
+    ['twice the machine for twice the time', { cpuCores: 4, memoryGb: 8, diskGb: 40, gpuCount: 0 }, 7200, 0.805248],
+  ])('%s', (_name, spec, seconds, cost) => {
+    expect(calculateComputeCost(spec, seconds)).toBeCloseTo(cost, 8);
   });
 
-  test('opens a compute window for a free account whose billing_model is the legacy default', async () => {
-    accountsById['acct-free'] = { billingModel: 'legacy', tier: 'free' };
-    sandboxRows = [sandbox({ sandboxId: 'sb-free', sessionId: 'sb-free', accountId: 'acct-free' })];
-
-    const result = await reconcileMissingComputeSessions();
-
-    expect(result).toEqual({ checked: 1, reconciled: 1, errors: 0 });
-    expect(openRowFor('sb-free')).not.toBeNull();
+  test.each(['e2b', 'platinum'] as const)('%s bills the one hosted customer rate', (provider) => {
+    expect(calculateComputeCost(SPEC, 3600, provider)).toBeCloseTo(0.201312, 8);
   });
+});
 
-  test('never opens a compute window for a legacy PAID subscriber', async () => {
-    accountsById['acct-legacy'] = { billingModel: 'legacy', tier: 'tier_2_20' };
-    sandboxRows = [
-      sandbox({ sandboxId: 'sb-legacy', sessionId: 'sb-legacy', accountId: 'acct-legacy' }),
-    ];
-
-    const result = await reconcileMissingComputeSessions();
-
-    expect(result).toEqual({ checked: 0, reconciled: 0, errors: 0 });
-    expect(openRowFor('sb-legacy')).toBeNull();
-    expect(insertCalls).toBe(0);
+describe('a self-hosted deployment never meters compute', () => {
+  test.each([
+    ['startComputeSession', () => metering.startComputeSession({ sandboxId: 'sb', accountId: 'acct', spec: SPEC }), null],
+    ['reopenComputeForSandbox', () => metering.reopenComputeForSandbox('sb', 'acct'), null],
+    ['pauseComputeSession', () => metering.pauseComputeSession('sb'), undefined],
+    ['endComputeSession', () => metering.endComputeSession('sb'), undefined],
+    ['markComputeSessionAlive', () => metering.markComputeSessionAlive('sb'), undefined],
+    ['reconcileMissingComputeSessions', () => metering.reconcileMissingComputeSessions(), { checked: 0, reconciled: 0, errors: 0 }],
+    ['reconcileMissingAppComputeSessions', () => metering.reconcileMissingAppComputeSessions(), { checked: 0, reconciled: 0, errors: 0 }],
+    ['tickRunningComputeCharges', () => metering.tickRunningComputeCharges(), { settled: 0, reconciled: 0 }],
+  ] as const)('%s returns without reading storage', async (_name, call, expected) => {
+    billingEnabled = false;
+    expect(await call()).toEqual(expected);
+    expect(storageCalls).toEqual([]);
   });
+});
 
-  test('is idempotent — a second pass does not open a duplicate row', async () => {
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    sandboxRows = [sandbox({ sandboxId: 'sb-dup', sessionId: 'sb-dup', accountId: 'acct-ps' })];
-
-    const first = await reconcileMissingComputeSessions();
-    expect(first.reconciled).toBe(1);
-
-    const second = await reconcileMissingComputeSessions();
-    expect(second).toEqual({ checked: 0, reconciled: 0, errors: 0 });
-    expect(computeRows.filter((r) => r.sandboxId === 'sb-dup').length).toBe(1);
-    expect(insertCalls).toBe(1);
-  });
-
-  test('leaves a stopped sandbox untouched', async () => {
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    sandboxRows = [
-      sandbox({ sandboxId: 'sb-stopped', sessionId: 'sb-stopped', accountId: 'acct-ps', status: 'stopped' }),
-    ];
-
-    const result = await reconcileMissingComputeSessions();
-
-    expect(result).toEqual({ checked: 0, reconciled: 0, errors: 0 });
-    expect(computeRows.length).toBe(0);
-  });
-
-  test('reuses the last known spec instead of resetting to the default', async () => {
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    computeRows.push({
-      id: 'row-old',
-      accountId: 'acct-ps',
-      sandboxId: 'sb-resume',
-      sessionId: 'sb-resume',
-      provider: 'daytona',
-      cpuCores: 8,
-      memoryGb: 16,
-      diskGb: 100,
-      gpuCount: 0,
-      state: 'stopped',
-      costUsd: '1.23',
-      lastBilledAt: new Date().toISOString(),
-      metadata: {},
-      createdAt: new Date(Date.now() - 60_000).toISOString(),
-      endedAt: new Date().toISOString(),
+describe('startComputeSession', () => {
+  // `uniq_sandbox_compute_sessions_one_open`: a concurrent start opened the row
+  // between the read and the insert. The loser returns the winner's row. Real
+  // PostgreSQL cannot interleave that race on demand; the index and the wrapped
+  // driver error are proven in compute-sessions.integration.test.ts.
+  test('a start that loses the open race returns the winning window', async () => {
+    openRows = [null, { id: 'cs_winner' }];
+    insertError = Object.assign(new Error('Failed query: insert into sandbox_compute_sessions'), {
+      cause: { code: '23505', constraint_name: 'uniq_sandbox_compute_sessions_one_open' },
     });
-    sandboxRows = [
-      sandbox({ sandboxId: 'sb-resume', sessionId: 'sb-resume', accountId: 'acct-ps' }),
-    ];
 
-    await reconcileMissingComputeSessions();
-
-    const opened = openRowFor('sb-resume');
-    expect(opened?.cpuCores).toBe(8);
-    expect(opened?.memoryGb).toBe(16);
-    expect(opened?.diskGb).toBe(100);
+    expect(await metering.startComputeSession({ sandboxId: 'sb', accountId: 'acct', spec: SPEC })).toBe('cs_winner');
   });
 
-  test('a lookup failure for one sandbox does not stop the rest of the pass', async () => {
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    // per_seat so it survives the SQL filter and reaches the loop, where the
-    // per-row lookup is what throws.
-    accountsById['acct-throws'] = { billingModel: 'per_seat' };
-    throwForAccountIds.add('acct-throws');
-    sandboxRows = [
-      sandbox({ sandboxId: 'sb-bad', sessionId: 'sb-bad', accountId: 'acct-throws' }),
-      sandbox({ sandboxId: 'sb-good', sessionId: 'sb-good', accountId: 'acct-ps' }),
-    ];
+  test('any other insert failure propagates', async () => {
+    insertError = Object.assign(new Error('Failed query'), { cause: { code: '23502' } });
 
-    const result = await reconcileMissingComputeSessions();
-
-    expect(result.checked).toBe(2);
-    expect(result.reconciled).toBe(1);
-    expect(result.errors).toBe(1);
-    expect(openRowFor('sb-good')).not.toBeNull();
-    expect(openRowFor('sb-bad')).toBeNull();
-  });
-
-  test('is a no-op when internal billing is disabled (self-host)', async () => {
-    billingEnabled = false;
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    sandboxRows = [sandbox({ sandboxId: 'sb-ps', sessionId: 'sb-ps', accountId: 'acct-ps' })];
-
-    const result = await reconcileMissingComputeSessions();
-
-    expect(result).toEqual({ checked: 0, reconciled: 0, errors: 0 });
-    expect(computeRows.length).toBe(0);
-  });
-});
-
-describe('tickRunningComputeCharges', () => {
-  test('makes active compute billable after one maintenance interval', async () => {
-    setSystemTime(new Date('2026-09-22T16:00:00.000Z'));
-
-    await tickRunningComputeCharges();
-
-    expect(staleCutoff?.toISOString()).toBe('2026-09-22T15:55:00.000Z');
-  });
-
-  test('runs the missing-compute reconciler in the same pass and reports both counts', async () => {
-    accountsById['acct-ps'] = { billingModel: 'per_seat' };
-    sandboxRows = [sandbox({ sandboxId: 'sb-tick', sessionId: 'sb-tick', accountId: 'acct-ps' })];
-
-    const result = await tickRunningComputeCharges();
-
-    expect(result).toEqual({ settled: 0, reconciled: 1 });
-    expect(openRowFor('sb-tick')).not.toBeNull();
-  });
-
-  test('is a no-op when internal billing is disabled (self-host)', async () => {
-    billingEnabled = false;
-    sandboxRows = [sandbox({ sandboxId: 'sb-tick', sessionId: 'sb-tick', accountId: 'acct-ps' })];
-
-    const result = await tickRunningComputeCharges();
-
-    expect(result).toEqual({ settled: 0, reconciled: 0 });
-  });
-});
-
-describe('reconcileMissingAppComputeSessions', () => {
-  test('opens an App compute window with the exact App machine and attribution', async () => {
-    accountsById['acct-app'] = { billingModel: 'per_seat' };
-    appRuntimeRows = [appRuntime({
-      runtimeId: 'app-runtime-metered',
-      accountId: 'acct-app',
-      cpuCores: 4,
-      memoryGb: 8,
-      diskGb: 40,
-    })];
-
-    const result = await reconcileMissingAppComputeSessions();
-
-    expect(result).toEqual({ checked: 1, reconciled: 1, errors: 0 });
-    const opened = openRowFor('app-runtime-metered') as FakeComputeRow & {
-      workloadType?: string;
-      appRuntimeId?: string;
-    };
-    expect(opened.workloadType).toBe('app');
-    expect(opened.appRuntimeId).toBe('app-runtime-metered');
-    expect([opened.cpuCores, opened.memoryGb, opened.diskGb]).toEqual([4, 8, 40]);
-  });
-
-  test('does not meter a stopped, inactive, or provider-stopped App runtime', async () => {
-    accountsById['acct-app'] = { billingModel: 'per_seat' };
-    appRuntimeRows = [
-      appRuntime({ runtimeId: 'runtime-db-stopped', accountId: 'acct-app', status: 'stopped' }),
-      appRuntime({ runtimeId: 'runtime-not-active', accountId: 'acct-app', active: false }),
-      appRuntime({ runtimeId: 'runtime-provider-stopped', accountId: 'acct-app', externalId: 'ext-stopped' }),
-    ];
-    providerStatusById['ext-stopped'] = 'stopped';
-
-    const result = await reconcileMissingAppComputeSessions();
-
-    expect(result).toEqual({ checked: 1, reconciled: 0, errors: 0 });
-    expect(computeRows).toHaveLength(0);
+    await expect(metering.startComputeSession({ sandboxId: 'sb', accountId: 'acct', spec: SPEC })).rejects.toThrow(
+      'Failed query',
+    );
   });
 });

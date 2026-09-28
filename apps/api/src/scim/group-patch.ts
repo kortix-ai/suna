@@ -1,3 +1,5 @@
+import { isUuid } from '../shared/validate';
+
 export class InvalidGroupMemberError extends Error {}
 
 export type GroupChange =
@@ -5,10 +7,8 @@ export type GroupChange =
   | { path: 'externalId'; op: 'replace'; value: string | null }
   | { path: 'members'; op: 'add' | 'replace' | 'remove'; value: string[] | null };
 
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export function memberValues(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some(m => !m || typeof m.value !== 'string' || !uuid.test(m.value))) {
+  if (!Array.isArray(value) || value.some(m => !m || typeof m.value !== 'string' || !isUuid(m.value))) {
     throw new Error('members must be an array of valid user references');
   }
   return [...new Set(value.map(m => m.value as string))];

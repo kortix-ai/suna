@@ -26,7 +26,7 @@ import { logger } from '../../logger'
 // it cannot false-abort (see MAX_CONSECUTIVE_REPEATS below), and it is the only
 // thing that bounded the 2026-08-18 incident. Cheap insurance stays.
 // Per opencode SESSION, children included: the 2026-08-18
-// SampleCo incident (session `5d9e298a`) was a spawned child looping this way
+// SampleCo incident was a spawned child looping this way
 // while `relayTurnEndToApi` filtered non-root sessions out before this guard
 // ever saw a repeat — the abort must target the session that is looping.
 //
@@ -39,12 +39,12 @@ import { logger } from '../../logger'
 
 export const MAX_CONSECUTIVE_REPEATS = 3
 
-export interface RunawayGuardState {
+interface RunawayGuardState {
   lastParentMessageId: string | null
   repeatCount: number
 }
 
-export function createRunawayGuardState(): RunawayGuardState {
+function createRunawayGuardState(): RunawayGuardState {
   return { lastParentMessageId: null, repeatCount: 0 }
 }
 
@@ -65,7 +65,7 @@ export function createRunawayGuardState(): RunawayGuardState {
  * event count, not elapsed time, since each repeat here fired within single-
  * digit seconds of the last (see the incident note above).
  */
-export function stepRunawayGuard(
+function stepRunawayGuard(
   state: RunawayGuardState,
   parentMessageId: string | null,
 ): { state: RunawayGuardState; shouldAbort: boolean } {

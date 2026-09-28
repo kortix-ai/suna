@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 process.env.KORTIX_API_URL = process.env.KORTIX_API_URL ?? 'https://api.test.invalid';
 process.env.GATEWAY_INTERNAL_TOKEN = process.env.GATEWAY_INTERNAL_TOKEN ?? 'test-internal-token';
 
-const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER } = await import('./server');
+const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER, messagesAuthorization } = await import('./server');
 
 // Piece B: `POST /v1/messages` (+ the `/v1/llm/messages` and `/v1/openai/messages`
 // aliases, mirroring the `/v1/chat/completions` alias namespaces) must be
@@ -38,13 +38,59 @@ describe('standalone gateway inference routes', () => {
       expect(body.type).toBe('error');
       expect(body.error.type).toBe('authentication_error');
       expect(body.error.message).toBe('Missing bearer token');
+      // Not the OpenAI-compat shape a chat completions 401 returns.
+      expect((body as unknown as { code?: unknown }).code).toBeUndefined();
     });
   }
+
+  // Anthropic SDKs, and Claude Code with ANTHROPIC_API_KEY, send the key as
+  // `x-api-key`, not as a bearer token.
+  test('messagesAuthorization accepts x-api-key when no Authorization header is set', () => {
+    expect(messagesAuthorization(undefined, 'kortix_gw_abc')).toBe('Bearer kortix_gw_abc');
+    expect(messagesAuthorization('Bearer kortix_gw_a', 'kortix_gw_b')).toBe('Bearer kortix_gw_a');
+    expect(messagesAuthorization(undefined, undefined)).toBeUndefined();
+    expect(messagesAuthorization(undefined, '  ')).toBeUndefined();
+  });
+
+  test('/v1/messages authenticates an x-api-key request instead of reporting a missing token', async () => {
+    const res = await app.request('/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'kortix_gw_not_real' },
+      body: JSON.stringify({ model: 'x', max_tokens: 8, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    const body = (await res.json()) as { error?: { message?: string } };
+    expect(body.error?.message).not.toBe('Missing bearer token');
+  });
 
   test('an unregistered path 404s (sanity check against an accidental catch-all)', async () => {
     const res = await post('/v1/not-a-real-messages-route');
     expect(res.status).toBe(404);
   });
+
+  // Piece: `POST /responses` (+ `/v1/responses`, `/v1/llm/responses`,
+  // `/v1/openai/responses`) — Codex CLI >=0.157 only supports
+  // `wire_api = "responses"` and cannot reach `/chat/completions` at all.
+  // Proven here by the response using the Responses API error envelope
+  // (`{error:{type,message,code,param}}`, no top-level `type`, unlike the
+  // Anthropic envelope), which only `gateway.responses()` produces.
+  const postResponses = (path: string) =>
+    app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codex/gpt-6-sol', input: 'hi' }),
+    });
+
+  for (const path of ['/responses', '/v1/responses', '/v1/llm/responses', '/v1/openai/responses']) {
+    test(`${path} is registered and speaks the Responses API error envelope`, async () => {
+      const res = await postResponses(path);
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as { type?: unknown; error: { type: string; message: string } };
+      expect(body.type).toBeUndefined();
+      expect(body.error.type).toBe('invalid_request_error');
+      expect(body.error.message).toBe('Missing bearer token');
+      expect((body as unknown as { code?: unknown }).code).toBeUndefined();
+    });
+  }
 
   for (const path of ['/chat/completions', '/v1/chat/completions']) {
     test(`${path} speaks the OpenAI-compat error envelope`, async () => {

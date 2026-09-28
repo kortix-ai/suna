@@ -21,7 +21,8 @@ import {
   upsertProjectGitConnection,
   upsertProjectGitCredential,
 } from '../lib/git';
-import { normalizeString, readBody, serializeProjectGitConnection } from '../lib/serializers';
+import { normalizeString, serializeProjectGitConnection } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
 // These are PATs (`kortix_pat_...`) bound to a single project. The auth
@@ -106,12 +107,7 @@ projectsApp.openapi(
   // Body fields: `name` (defaults to "cli · <project name>") and an optional
   // ISO-8601 `expires_at`. The account's PAT policy (require expiry, maximum
   // lifetime) applies to this token like any other durable PAT.
-  let body: { name?: unknown; expires_at?: unknown } = {};
-  try {
-    body = (await c.req.json()) ?? {};
-  } catch {
-    /* empty body is fine */
-  }
+  const body = await readJsonObject(c);
   const name =
     typeof body.name === 'string' && body.name.trim()
       ? body.name.trim().slice(0, 255)
@@ -213,7 +209,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Storing a git credential is a connector-write capability — a custom role can

@@ -27,13 +27,14 @@ export function projectModelsWebUrl(
 
 /**
  * The `kortix://` URLs that only close an in-app browser session: provider
- * connect (this file), connector connect (`ConnectorAuthSheet`), the project
- * drawer's Connectors row (`kortix://connectors/done`) and
- * connections (`ConnectionsPage`). They have no screen. On Android the URL
- * also reaches the app as a deep link, so `app/+native-intent.ts` must not
- * route it (the router would show the not-found screen).
+ * connect (this file), connector connect (`ConnectorAuthSheet`), the
+ * project drawer's Connectors row (`kortix://connectors/done`) and the web
+ * create hand-off (`kortix://web`, `WEB_CREATE_RETURN_URL`). They have no
+ * screen. On Android the URL also reaches the app as a deep link, so
+ * `app/+native-intent.ts` must not route it (the router would show the
+ * not-found screen).
  */
-const BROWSER_RETURN_ROOTS = new Set(['providers', 'connectors', 'connections']);
+const BROWSER_RETURN_ROOTS = new Set(['providers', 'connectors', 'web']);
 
 export function isBrowserReturnPath(path: string): boolean {
   const root = path

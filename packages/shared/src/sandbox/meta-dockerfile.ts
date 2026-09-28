@@ -1,8 +1,16 @@
 import { NODE_VERSION, OPENCODE_VERSION, PNPM_VERSION } from '../runtime-versions';
+import { kortixShellProfileRun } from './dockerfile-layer';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
 } from './shell-tools';
+import {
+  SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
+  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
+} from './platform-binaries';
 
 export interface MetaSandboxDockerfileOptions {
   agentBinaryPath: string;
@@ -98,6 +106,8 @@ COPY ${options.cliBinaryPath} /tmp/kortix.gz
 RUN gzip -dc /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
  && gzip -dc /tmp/kortix.gz > /usr/local/bin/kortix \\
  && chmod 0755 /usr/local/bin/kortix-agent /usr/local/bin/kortix \\
+ && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\
+ && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\
  && rm /tmp/kortix-agent.gz /tmp/kortix.gz
 COPY ${options.entrypointScriptPath} /usr/local/bin/kortix-entrypoint
 RUN chmod 0755 /usr/local/bin/kortix-entrypoint
@@ -105,7 +115,10 @@ COPY --chown=kortix:kortix <<'KORTIX_META_AGENT_GUIDE' /workspace/AGENTS.md
 ${META_AGENT_GUIDE}
 KORTIX_META_AGENT_GUIDE
 COPY --chown=kortix:kortix ${options.catalogPath} /opt/kortix/llm-catalog.json
-COPY --chown=kortix:kortix ${options.managedSkillsPath} /opt/kortix/managed-skills
+COPY --chown=kortix:kortix ${options.managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}
+RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\
+ && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}
+${kortixShellProfileRun()}
 
 ENV KORTIX_WORKSPACE=/workspace \\
     KORTIX_PROJECT_AUTO_CLONE=0 \\

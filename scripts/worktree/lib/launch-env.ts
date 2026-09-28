@@ -37,6 +37,17 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     SUPABASE_URL: c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
     ...(c.jwtSecret ? { SUPABASE_JWT_SECRET: c.jwtSecret } : {}),
+    // Config archives go through the API's one object store, pointed at THIS
+    // slot's Supabase Storage S3 endpoint. Without the override a --db
+    // worktree would publish into the primary checkout's Supabase (the
+    // endpoint baked into apps/api/.env), i.e. another stack's data plane.
+    CONFIG_RELEASES_ENABLED: 'true',
+    KORTIX_CONFIG_ARCHIVE_S3_BUCKET: 'kortix-config-releases',
+    KORTIX_CONFIG_ARCHIVE_S3_REGION: 'local',
+    KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${c.supabaseUrl.replace(/\/+$/, '')}/storage/v1/s3`,
+    KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: 'true',
+    ...(c.s3AccessKeyId ? { KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: c.s3AccessKeyId } : {}),
+    ...(c.s3SecretAccessKey ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: c.s3SecretAccessKey } : {}),
     INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
     SCHEDULER_ENABLED: 'false',
     // Billing is opt-in. --billing exposes local routes. --stripe also injects

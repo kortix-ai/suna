@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
+import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -113,4 +114,17 @@ test('resetIdentityState removes the persisted model store', () => {
   storage.setItem('opencode-model-store-v1', JSON.stringify({ user: [], recent: [], variant: {} }));
   resetIdentityState();
   expect(storage.getItem('opencode-model-store-v1')).toBeNull();
+});
+
+test('resetIdentityState forgets the previous user\'s LSP diagnostics', () => {
+  // The SDK event stream writes `lsp.client.diagnostics` here. File paths and
+  // messages belong to the previous user's workspace.
+  useDiagnosticsStore.getState().setFromLspEvent({
+    '/workspace/a.ts': [{ range: { start: { line: 1, character: 0 } }, severity: 1, message: 'boom' }],
+  });
+  expect(Object.keys(useDiagnosticsStore.getState().byFile)).toEqual(['/workspace/a.ts']);
+
+  resetIdentityState();
+
+  expect(useDiagnosticsStore.getState().byFile).toEqual({});
 });

@@ -25,6 +25,12 @@ Use the **`kortix connectors` CLI** for normal agent work:
   ran when it matters.
 - `kortix connectors call … --attach <file>` attaches a file (see **Attach
   files** below). Never put base64 in args.
+- `kortix connectors call … --out <file>` writes the full JSON result to
+  `<file>` and prints only `saved_to`, `bytes`, and `shape` (keys, array
+  lengths, `pageInfo`). Use it for list and search calls; tool output above
+  ~50 KB is truncated. Then query the file with `jq` or `bun`, never `cat`.
+  The `kortix-connectors_call` MCP tool does this by itself above 16 KB: it
+  returns `{ saved_to, bytes, shape, preview }`.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
 - `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 
@@ -79,12 +85,12 @@ two accounts:
 ```sh
 $ kortix connectors accounts gmail-ffiod0
 
-  LABEL                        OWNER    DEFAULT  CONNECTION ID
-  markokraemer.mail@gmail.com  private  no       11111111-…
-  marko@kortix.ai              private  no       22222222-…
+  LABEL                 OWNER    DEFAULT  CONNECTION ID
+  personal@example.com  private  no       11111111-…
+  work@example.com      private  no       22222222-…
 
-  kortix connectors call gmail-ffiod0 <action> --account "markokraemer.mail@gmail.com"
-  kortix connectors call gmail-ffiod0 <action> --account "marko@kortix.ai"
+  kortix connectors call gmail-ffiod0 <action> --account "personal@example.com"
+  kortix connectors call gmail-ffiod0 <action> --account "work@example.com"
   kortix connectors call gmail-ffiod0 <action> --account me
   kortix connectors call gmail-ffiod0 <action> --account project
 
@@ -96,8 +102,15 @@ $ kortix connectors accounts gmail-ffiod0
 Neither account is pinned, so — asked "check my gmail" with no account named —
 the right move is to ASK which mailbox, not to call `get_profile` on whichever
 account resolves first and report "one account connected". If the human says
-"the kortix one", call with `--account "marko@kortix.ai"` and report: "Checked
-marko@kortix.ai — …".
+"the work one", call with `--account "work@example.com"` and report: "Checked
+work@example.com — …".
+
+**Adding another account.** When the human wants a new one ("connect my other
+Gmail"), mint a link with the MCP `connect` tool and a `label` that tells it
+apart (`connect({ slug, label: "Personal Gmail" })`). The link opens a dialog
+where the human names the account and chooses who can use it; you are then told
+its name. Call it with `--account "<name>"` from then on. `kortix connectors
+connect` from a shell cannot name a new account.
 </choosing-the-account>
 
 <cli-first-loop>

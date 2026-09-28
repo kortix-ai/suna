@@ -366,6 +366,7 @@ export class SessionSyncController {
   private tailRequest: Promise<void> | undefined;
   private olderRequest: Promise<void> | undefined;
   private livenessTimer: unknown;
+  private livenessBusy = false;
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
@@ -450,10 +451,13 @@ export class SessionSyncController {
    * NOT an opinion about whether the session is working — that answer belongs
    * to `projectWorking` alone. This only says whether anyone still needs the
    * transcript refreshed behind the SSE stream: a caller passes the working
-   * state it already has, and the last consumer leaving passes `false`.
+   * state it already has. `watchIdle` keeps a visible session on a slower
+   * verification cadence when the working signal itself was missed.
    */
-  setBusy(isBusy: boolean): void {
-    if (!isBusy) {
+  setBusy(isBusy: boolean, watchIdle = false): void {
+    const turnEnded = this.livenessBusy && !isBusy;
+    this.livenessBusy = isBusy;
+    if (!isBusy && !watchIdle) {
       // The turn is over — and that is exactly when the transcript is most
       // likely to be short. A stream that dropped its last frames leaves the
       // browser holding a truncated answer while the runtime holds the whole
@@ -463,13 +467,13 @@ export class SessionSyncController {
       // runtime's own terminal while the tab still showed a spinner under a
       // half-written answer.
       //
-      // One bounded read, only for a session that was actually busy, so an
-      // idle session churns nothing.
-      const wasBusy = this.livenessTimer !== undefined;
+      // One bounded read for a session that was actually busy. A watched idle
+      // session continues at the verification cadence below.
       this.stopLivenessTimer();
-      if (wasBusy && !this.destroyed) void this.reconcile('turn-end');
+      if (turnEnded && !this.destroyed) void this.reconcile('turn-end');
       return;
     }
+    if (turnEnded && !this.destroyed) void this.reconcile('turn-end');
     if (this.livenessTimer !== undefined) return;
     this.lastActivityAt = this.scheduler.now();
     this.livenessTimer = this.scheduler.setInterval(
@@ -656,7 +660,21 @@ export class SessionSyncController {
         controller.abort(error);
       }, this.readTimeoutMs);
     });
-    return Promise.race([read(controller.signal), deadline]).finally(() => {
+    // A loader can throw SYNCHRONOUSLY — the registry's page loader evaluates
+    // `resolveClient(key)`, which throws `RuntimeNotReadyError` while the
+    // runtime is not bound. That throw must not unwind before `Promise.race`
+    // subscribes to `deadline`: the read-timeout timer is already armed, and an
+    // unobserved rejection 120 s later reaches the browser's
+    // `onunhandledrejection` as a `SessionSyncReadTimeoutError`. Bind a
+    // synchronous throw into a rejected promise so the race always observes it
+    // and `.finally` cancels the timer.
+    let readPromise: Promise<T>;
+    try {
+      readPromise = read(controller.signal);
+    } catch (error) {
+      readPromise = Promise.reject(error);
+    }
+    return Promise.race([readPromise, deadline]).finally(() => {
       this.cancelTimer(timer);
       lifetime.removeEventListener('abort', onLifetimeAbort);
     });
@@ -768,10 +786,10 @@ export class SessionSyncController {
     const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
     // `noteActivity` proves frames are ARRIVING, not that none were lost. A
     // degraded stream that still delivers a trickle renewed the quiet timer
-    // forever while the transcript diverged — so a busy session re-reads the
-    // tail at `verifyIntervalMs` no matter how live the stream looks.
+    // forever while the transcript diverged. The verification read also runs
+    // while idle, because a missed working signal cannot enable the busy poll.
     const verifyDue = nowMs - this.lastTailReadAt >= this.verifyIntervalMs;
-    if (!quiet && !verifyDue) return;
+    if (!(this.livenessBusy && quiet) && !verifyDue) return;
     // Reconcile the TAIL, and nothing else. This is the repair for a dropped
     // SSE stream: the transcript catches up on messages the stream never
     // delivered.

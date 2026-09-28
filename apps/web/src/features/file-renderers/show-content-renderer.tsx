@@ -37,6 +37,7 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Loading from '@/components/ui/loading';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
@@ -237,6 +238,12 @@ export interface ShowContentProps {
    * way the user sees one header with the actions on its right.
    */
   toolbarActions?: React.ReactNode;
+  /**
+   * Show the file name in the viewer's header row. Off when the card header
+   * already names the item (the inline carousel's tabs): a row carrying only a
+   * repeated name is dead height, and with no actions it is not drawn at all.
+   */
+  showFileLabel?: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -255,6 +262,7 @@ export function ShowContentRenderer({
   fill = false,
   onStatusChange,
   toolbarActions,
+  showFileLabel = true,
 }: ShowContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const arCSS = showAspectRatioToCSS(aspectRatio);
@@ -306,6 +314,7 @@ export function ShowContentRenderer({
   }, [path, isLocalPath]);
 
   const fileName = useMemo(() => path.split('/').pop() || '', [path]);
+  const frameLabel = showFileLabel ? fileName : undefined;
 
   /**
    * ── One header, never two ──────────────────────────────────────────────
@@ -329,14 +338,14 @@ export function ShowContentRenderer({
     fill ? (
       node
     ) : (
-      <ViewerFrame label={fileName} actions={toolbarActions}>
+      <ViewerFrame label={frameLabel} actions={toolbarActions}>
         {node}
       </ViewerFrame>
     );
 
   /** For renderers that never draw a header themselves. */
   const alwaysFramed = (node: React.ReactNode) => (
-    <ViewerFrame label={fileName} actions={toolbarActions}>
+    <ViewerFrame label={frameLabel} actions={toolbarActions}>
       {node}
     </ViewerFrame>
   );
@@ -983,6 +992,9 @@ export interface ShowCarouselItem {
   aspect_ratio?: string;
   /** Stored copy of `path` from saved history — see `ShowContentProps.attachment`. */
   attachment?: string;
+  /** `pending`: a grouped `show` call whose payload has not arrived yet. The
+   *  slot holds its place so the card does not jump when it lands. */
+  status?: 'pending' | 'ready' | 'error';
 }
 
 export interface ShowCarouselProps {
@@ -996,6 +1008,12 @@ export interface ShowCarouselProps {
   /** Header actions for the ACTIVE item, forwarded to its renderer so paging
    *  between deliverables keeps the toolbar instead of losing it after item 1. */
   toolbarActions?: React.ReactNode;
+  /** Controlled active index. The inline card's header tabs own the index, so
+   *  the tabs and the body can never disagree. Omit to let the carousel own it. */
+  activeIndex?: number;
+  /** Hide the chevron + pill strip: the caller renders its own navigation
+   *  (the inline card's header tabs). */
+  hideNav?: boolean;
 }
 
 const SHOW_TYPE_LABELS: Record<string, string> = {
@@ -1082,11 +1100,18 @@ export function ShowCarousel({
   onIndexChange,
   fill = false,
   toolbarActions,
+  activeIndex,
+  hideNav = false,
 }: ShowCarouselProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const typeLabels = useLocalizedUiCatalog(SHOW_TYPE_LABELS);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [ownIndex, setCurrentIndex] = useState(0);
+  const requestedIndex = activeIndex ?? ownIndex;
   const count = items.length;
+  // A grouped carousel can lose an item (a call that settled empty), so the
+  // stored index is clamped instead of trusted.
+  const currentIndex = Math.max(0, Math.min(requestedIndex, count - 1));
   const segmentRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const stripRef = useRef<HTMLDivElement | null>(null);
 
@@ -1127,8 +1152,8 @@ export function ShowCarousel({
     });
   }, [currentIndex]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  const handleArrowKey = useCallback(
+    (e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'preventDefault'>) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (
@@ -1148,34 +1173,64 @@ export function ShowCarousel({
         e.preventDefault();
         next();
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [prev, next]);
+    },
+    [prev, next],
+  );
+
+  // The panel shows one carousel, so ←/→ page it from anywhere. Inline, a
+  // thread can hold several carousels: a window listener paged all of them at
+  // once. There the keys act only while focus is inside this card (see the
+  // root's `onKeyDown`).
+  useEffect(() => {
+    if (!fill) return;
+    window.addEventListener('keydown', handleArrowKey);
+    return () => window.removeEventListener('keydown', handleArrowKey);
+  }, [fill, handleArrowKey]);
 
   const currentItem = items[currentIndex];
   if (!currentItem) return null;
 
   return (
-    <div className={cn(fill && 'flex h-full flex-col')}>
+    <div
+      className={cn('outline-none', fill && 'flex h-full flex-col')}
+      // -1: a click on the content focuses the card, so ←/→ page it next,
+      // without adding a Tab stop. Tab still reaches the chevrons inside.
+      tabIndex={fill || count < 2 ? undefined : -1}
+      onKeyDown={fill || count < 2 ? undefined : (e) => handleArrowKey(e)}
+    >
       <div className={cn(fill ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-[420px]')}>
-        <ShowContentRenderer
-          type={currentItem.type}
-          title={currentItem.title}
-          description={currentItem.description}
-          path={currentItem.path}
-          url={currentItem.url}
-          content={currentItem.content}
-          language={currentItem.language}
-          aspectRatio={currentItem.aspect_ratio}
-          attachment={currentItem.attachment}
-          LocalhostPreview={LocalhostPreview}
-          toolbarActions={toolbarActions}
-          fill={fill}
-        />
+        {currentItem.status === 'pending' ? (
+          <div
+            className={cn(
+              'flex items-center justify-center gap-3',
+              fill ? 'h-full' : 'min-h-[420px]',
+            )}
+          >
+            <Loading className="text-muted-foreground size-4" />
+            <TextShimmer duration={1} spread={2} className="text-sm">
+              {tHardcodedUi.raw('componentsSessionToolRenderers.line4935JsxTextPreparingOutput')}
+            </TextShimmer>
+          </div>
+        ) : (
+          <ShowContentRenderer
+            type={currentItem.type}
+            title={currentItem.title}
+            description={currentItem.description}
+            path={currentItem.path}
+            url={currentItem.url}
+            content={currentItem.content}
+            language={currentItem.language}
+            aspectRatio={currentItem.aspect_ratio}
+            attachment={currentItem.attachment}
+            LocalhostPreview={LocalhostPreview}
+            toolbarActions={toolbarActions}
+            showFileLabel={!hideNav}
+            fill={fill}
+          />
+        )}
       </div>
 
-      {count > 1 && (
+      {count > 1 && !hideNav && (
         <div className="border-border flex shrink-0 items-center gap-2 border-t px-2 py-1.5 pr-3.5">
           <div className="flex shrink-0 items-center">
             <Button

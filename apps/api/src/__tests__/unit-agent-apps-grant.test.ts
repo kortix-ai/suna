@@ -1,6 +1,5 @@
 /**
- * `agents.<a>.apps` — the per-agent App grant (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.5), from manifest text to
+ * `agents.<a>.apps` — the per-agent App grant, from manifest text to
  * the stored `AgentGrant` and the gate predicate `agentMayOpenApp`.
  *
  * Default is NONE in both manifest versions. An agent that declares no Apps

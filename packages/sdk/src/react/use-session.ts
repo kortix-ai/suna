@@ -815,8 +815,16 @@ export interface UseSessionOptions {
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
-   * Explicitly resume the preserved runtime for a session created before the
-   * project repository changed. Git access remains denied by the platform.
+   * Ask `/start` to resume the preserved runtime of a session created before
+   * the project repository changed.
+   *
+   * It is no longer needed, and it changes nothing about what the session may
+   * do. Such a session starts, runs the project's CURRENT config release and
+   * converges like any other. What remains true of it is physical: its
+   * `/workspace` clone came from the old repository while `origin` now
+   * resolves to the new one, so a push without a rebase is refused by Git
+   * itself. Kept for callers built against the older behaviour; the server
+   * reads it as telemetry only.
    */
   repositoryMode?: 'previous';
   /**

@@ -7,8 +7,7 @@ import { resolveSecretDelivery } from './strategy';
  * One egress-enforced secret, as a session carries it.
  *
  * There is no provider credential edge any more: every provider serves this
- * class the same way (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4)
- * — the sandbox env holds a HANDLE and the broker route substitutes the real
+ * class the same way — the sandbox env holds a HANDLE and the broker route substitutes the real
  * value server-side, only for an approved host. So this record carries policy,
  * never credential material: no value, no rendered header value, nothing that
  * would be a secret if it were logged.

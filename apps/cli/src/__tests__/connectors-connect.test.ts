@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { runConnectors } from '../commands/connectors.ts';
+import { stripAnsi } from '../style.ts';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_STDOUT_WRITE = process.stdout.write;
@@ -205,6 +206,54 @@ describe('kortix connectors connections', () => {
     });
   });
 
+  test('the table says who can use each account', async () => {
+    const row = (connection_id: string, owner_type: string, label: string, extra = {}) => ({
+      connection_id,
+      connector_alias: 'crm',
+      owner_type,
+      owner_id: owner_type === 'member' ? 'user-1' : null,
+      label,
+      status: 'active',
+      is_default: false,
+      metadata: {},
+      ...extra,
+    });
+    const share = (principal_type: string, label: string) => ({
+      grant_id: `g-${label}`,
+      principal_type,
+      principal_id: `id-${label}`,
+      label,
+      expires_at: null,
+    });
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          connections: [
+            row('11111111-1111-4111-8111-111111111111', 'project', 'Team CRM', { shared_with: [] }),
+            row('22222222-2222-4222-8222-222222222222', 'project', 'Sales CRM', {
+              shared_with: [share('group', 'Sales'), share('member', 'ada@x.test')],
+              usable: false,
+            }),
+            row('33333333-3333-4333-8333-333333333333', 'project', 'Opened', {
+              shared_with: [share('group', 'Sales'), share('project', 'Acme')],
+            }),
+            row('44444444-4444-4444-8444-444444444444', 'member', 'Mine'),
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch;
+
+    expect(await runConnectors(['connections', 'ls'])).toBe(0);
+
+    const lines = stripAnsi(stdout).split('\n');
+    const line = (label: string) => lines.find((l) => l.includes(` ${label} `)) ?? '';
+    expect(lines.some((l) => l.includes('WHO CAN USE'))).toBe(true);
+    expect(line('Team CRM')).toContain('everyone');
+    expect(line('Sales CRM')).toContain('Sales, ada@x.test (not you)');
+    expect(line('Opened')).toContain('everyone');
+    expect(line('Mine')).toContain('owner only');
+  });
+
   test('creates a project connection with canonical fields', async () => {
     const code = await runConnectors([
       'connections',
@@ -332,6 +381,66 @@ describe('kortix connectors connections', () => {
         body: { label: 'Support inbox' },
       },
     ]);
+  });
+
+  test('shares your own private account with groups and people (id or email); --everyone names no one', async () => {
+    const connectionId = '11111111-1111-4111-8111-111111111111';
+    const group = '22222222-2222-4222-8222-222222222222';
+    const ada = '33333333-3333-4333-8333-333333333333';
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : init?.body;
+      requests.push({ url, method: init?.method ?? 'GET', body });
+      const payload = url.endsWith('/projects/project-1')
+        ? { project_id: 'project-1', account_id: 'acct-1' }
+        : url.endsWith('/accounts/acct-1/members')
+          ? [{ user_id: ada, email: 'ada@example.test' }]
+          : {
+              connection_id: connectionId,
+              connector_alias: 'crm',
+              owner_type: 'project',
+              owner_id: null,
+              label: 'My CRM',
+              status: 'active',
+              is_default: false,
+              metadata: {},
+            };
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    expect(
+      await runConnectors([
+        'connections', 'share', connectionId, '--group', group, '--user', 'ada@example.test',
+      ]),
+    ).toBe(0);
+    const share = requests.find((r) => r.url.endsWith(`/connections/${connectionId}/share`));
+    expect(share).toEqual({
+      url: `https://api.test/v1/projects/project-1/connections/${connectionId}/share`,
+      method: 'POST',
+      body: {
+        principals: [
+          { principal_type: 'group', principal_id: group },
+          { principal_type: 'user', principal_id: ada },
+        ],
+      },
+    });
+    expect(stdout).toContain('My CRM');
+
+    requests = [];
+    expect(await runConnectors(['connections', 'share', connectionId, '--everyone'])).toBe(0);
+    expect(requests.at(-1)?.body).toEqual({ principals: [] });
+  });
+
+  test('share needs an audience, and --everyone excludes naming people: exit 2 before any request', async () => {
+    const connectionId = '11111111-1111-4111-8111-111111111111';
+    expect(await runConnectors(['connections', 'share', connectionId])).toBe(2);
+    expect(
+      await runConnectors(['connections', 'share', connectionId, '--everyone', '--group', 'g-1']),
+    ).toBe(2);
+    expect(requests).toHaveLength(0);
   });
 
   test('rename without a label exits 2 before calling the API', async () => {

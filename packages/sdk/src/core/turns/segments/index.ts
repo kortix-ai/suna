@@ -15,6 +15,7 @@ export * from './message-time';
 export * from './narration';
 export * from './segment-turn';
 export * from './session-activity-groups';
+export * from './show-group';
 export * from './step-label';
 export * from './working-turn';
 export * from './turn-busy-visibility';

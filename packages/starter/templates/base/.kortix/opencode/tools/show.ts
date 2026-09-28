@@ -209,7 +209,10 @@ export default tool({
     "language: for type='code', the language for syntax highlighting (e.g. 'python', 'typescript').\n\n" +
     "MULTI-ITEM MODE: To show multiple items at once (rendered as a carousel), pass a JSON array " +
     "string to the 'items' parameter instead of individual type/path/url/content params. " +
-    "Each item in the array is an object with the same fields (type, title, path, url, content, etc.).",
+    "Each item in the array is an object with the same fields (type, title, path, url, content, etc.).\n" +
+    "When you have 2 or more outputs to present together (several screenshots, a page and its docs, " +
+    "v1 and v2 of a design), make ONE show call with 'items' — not one show call per output. " +
+    "Give each item its own title so the user can tell them apart while paging.",
   args: {
     action: tool.schema
       .string()

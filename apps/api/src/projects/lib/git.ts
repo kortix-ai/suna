@@ -33,7 +33,8 @@ import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/actor';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from './serializers';
+import { normalizeJsonObject } from '../../shared/json';
 import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
   workspaceMetadataAllowsRepositoryAccess,
@@ -1184,8 +1185,7 @@ async function authorizeGitProxyUncached(
       if (!sandbox) {
         // Not a session box — a MONITOR box authenticates with the same token
         // class but lives in `project_monitor_boxes` (it has no session row by
-        // design; docs/specs/2026-08-12-monitors.md §Security model). It clones
-        // the repo at default-branch HEAD through this proxy.
+        // design). It clones the repo at default-branch HEAD through this proxy.
         const { loadMonitorBoxForToken } = await import('./monitor-ingest');
         const monitorBox = await loadMonitorBoxForToken({
           projectId,
@@ -1399,29 +1399,6 @@ export async function resolveProjectGitAccessById(projectId: string): Promise<{
     );
     return null;
   }
-}
-
-/**
- * Resolve a project's upstream git auth token from just its id — loads the
- * project row, then runs the normal `resolveProjectGitAuth` resolution
- * (managed App/PAT, BYO App, project_credential, legacy secret).
- *
- * This is the lazy fallback the shared mirror layer (`git/mirror.ts`) calls
- * when a caller reaches `refreshMirror()` without a token. The per-project
- * mirror is a shared resource hit by ~15 code paths; relying on every caller to
- * thread a non-null token is fragile, and `refreshMirror`'s per-project dedup
- * means a single tokenless caller can make the cold bare-clone of a PRIVATE
- * repo run unauthenticated (`fatal: could not read Username for github.com`)
- * and fail every concurrent caller piggybacking on that shared clone. Resolving
- * here guarantees the network git op is authenticated whenever a credential
- * exists, regardless of which caller won the refresh lock.
- *
- * Returns null when the project is gone or has no resolvable git auth. Never
- * throws — a resolution failure must degrade to "no token" (caller behaves
- * exactly as before this hook existed), never crash the mirror refresh.
- */
-export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
-  return (await resolveProjectGitAccessById(projectId))?.token ?? null;
 }
 
 // GET /v1/projects/:projectId/sandboxes

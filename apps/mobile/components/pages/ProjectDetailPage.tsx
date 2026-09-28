@@ -10,7 +10,6 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
-  ActivityIndicator,
   ActionSheetIOS,
   Keyboard,
   Platform,
@@ -26,6 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const monoFont = MONO_FONT_FAMILY;
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
@@ -590,7 +590,7 @@ export function ProjectDetailPage({
     return (
       <View
         style={{ flex: 1, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={muted} />
+        <KortixLoader />
       </View>
     );
   }
@@ -770,7 +770,7 @@ export function ProjectDetailPage({
 
               {filesLoading && folders.length === 0 && regularFiles.length === 0 && (
                 <View style={{ padding: 30, alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color={muted} />
+                  <KortixLoader size="small" />
                 </View>
               )}
 
@@ -1170,7 +1170,7 @@ export function ProjectDetailPage({
                         }}
                       >
                         {contextSaving ? (
-                          <ActivityIndicator size="small" color={themeColors.primaryForeground} />
+                          <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
                         ) : (
                           <RNText
                             style={{
@@ -1210,7 +1210,7 @@ export function ProjectDetailPage({
                   />
                 ) : contextLoading ? (
                   <View style={{ paddingVertical: 18, alignItems: 'center' }}>
-                    <ActivityIndicator color={muted} />
+                    <KortixLoader size="small" />
                   </View>
                 ) : contextError || !contextContent ? (
                   <Pressable onPress={startContextEdit} className="active:opacity-70">
@@ -2313,7 +2313,7 @@ export function ProjectDetailPage({
                   opacity: canSubmit ? 1 : 0.55,
                 }}>
                 {isBusy ? (
-                  <ActivityIndicator size="small" color={themeColors.primaryForeground} />
+                  <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
                 ) : autoRun ? (
                   <Play
                     size={14}

@@ -22,10 +22,10 @@ import {
   autoClaimPendingInvites,
   getMembership,
   normalizeString,
-  readBody,
   resolveAccountDisplayNames,
   serializeAccount,
 } from './app';
+import { readJsonObject } from '../../shared/http-body';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -230,7 +230,7 @@ export function registerAccountRoutes(): void {
         );
       }
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);
       if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
@@ -376,7 +376,7 @@ export function registerAccountRoutes(): void {
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-      const body = await readBody(c);
+      const body = await readJsonObject(c);
       const name = normalizeString(body.name);
       if (!name) return c.json({ error: 'name is required' }, 400);
       if (name.length > 255) return c.json({ error: 'name is too long' }, 400);

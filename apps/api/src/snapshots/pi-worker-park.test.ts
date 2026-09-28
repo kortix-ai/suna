@@ -3,6 +3,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { piWorkerParkScriptForTest } from './build-context';
 
 // The real park script (the exact bytes baked into the pi-worker snapshot)
@@ -55,7 +57,16 @@ async function bootPark(): Promise<{ port: number; base: string }> {
   await writeFile(join(root, 'park.mjs'), piWorkerParkScriptForTest());
   await writeFile(join(root, 'fetch-runtime.mjs'), FAKE_FETCH);
   await writeFile(join(root, 'session-worker.mjs'), FAKE_WORKER);
-  const port = 18800 + Math.floor(Math.random() * 500);
+  // A fixed 500-port range collided with another local server. bootPark then
+  // accepted that server's health response and failed at `parked === true`.
+  const port = await new Promise<number>((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const chosen = (probe.address() as AddressInfo).port;
+      probe.close((error) => error ? reject(error) : resolve(chosen));
+    });
+  });
   child = spawn('node', [join(root, 'park.mjs')], {
     env: {
       PATH: process.env.PATH,

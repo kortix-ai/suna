@@ -1,3 +1,4 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -116,21 +117,11 @@ Examples:
 `;
 
 export async function runReview(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
@@ -147,8 +138,7 @@ export async function runReview(argv: string[]): Promise<number> {
     f.agent = takeFlagValue(rest, ['--agent']);
     f.session = takeFlagValue(rest, ['--session']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -392,10 +382,7 @@ async function reviewAct(
         );
         return 0;
       }
-      process.stderr.write(
-        `${status.err(`A change request takes approve, reject, or changes — not "${verdict}".`)}\n`,
-      );
-      return 2;
+      return fail(`A change request takes approve, reject, or changes — not "${verdict}".`);
     }
 
     // ── A native row.

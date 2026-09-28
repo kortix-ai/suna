@@ -1,6 +1,5 @@
 /**
- * Who an agent session acts ON BEHALF OF at mint (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.3): the launching human for
+ * Who an agent session acts ON BEHALF OF at mint: the launching human for
  * a human-initiated session, NULL for every unattended run.
  */
 import { describe, expect, test } from 'bun:test';

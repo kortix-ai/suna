@@ -11,8 +11,8 @@ import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
-function isBrowserNoiseEvent(event: Sentry.ErrorEvent): boolean {
-  return shouldIgnoreSentryNoiseEvent(event);
+function isBrowserNoiseEvent(event: Sentry.ErrorEvent, hint?: Sentry.EventHint): boolean {
+  return shouldIgnoreSentryNoiseEvent(event, hint);
 }
 
 if (SENTRY_DSN) {
@@ -102,6 +102,11 @@ if (SENTRY_DSN) {
       'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
+      // Firefox: an extension set `window.onerror` before this SDK loaded, and
+      // the SDK's chained `_oldOnErrorHandler.apply(...)` is refused across the
+      // extension compartment. The frame is the SDK in our bundle, so only
+      // this anchored message gate can drop it.
+      /^(?:Error: )?Permission denied to access property "apply"$/,
       // Third-party injected scripts / wallet extensions
       'MetaMask extension not found',
       'Looks like your website URL has changed',
@@ -141,8 +146,8 @@ if (SENTRY_DSN) {
     ],
 
     // Filter out internal/low-value errors before sending
-    beforeSend(event) {
-      if (isBrowserNoiseEvent(event)) {
+    beforeSend(event, hint) {
+      if (isBrowserNoiseEvent(event, hint)) {
         return null;
       }
       return event;

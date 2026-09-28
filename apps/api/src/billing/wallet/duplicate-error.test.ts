@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { errorChainText, isDuplicateCreditGrantError } from './duplicate-error';
+import { isDuplicateCreditGrantError } from './duplicate-error';
+
+// The first-row path through a real Drizzle wrapper (a replayed reset key
+// raising `kortix_unique_stripe_event` on `cause`) is proven on PostgreSQL by
+// tests/migration/wallet-ledger.test.ts "a replayed reset key is a silent no-op".
 
 /** The exact shape a Drizzle insert failure has: the wrapper carries the
  *  statement and the parameters, and NOTHING else. Everything that identifies
@@ -10,42 +14,13 @@ function drizzleFailure(cause: unknown): Error {
       'Failed query: insert into "kortix"."credit_ledger" ("id", "account_id", "amount", ' +
         '"amount_precise", "balance_after", "balance_after_precise", "type", "description") ' +
         'values (default, $1, default, $2, default, $3, $4, $5) returning "id"\nparams: ' +
-        '3049dd09-ea07-4b76-8096-a7d01b65c25b,2,2,credit_reset,Free tier monthly credit reset: 2 credits',
+        '00000000-0000-4000-8000-000000000001,2,2,credit_reset,Free tier monthly credit reset: 2 credits',
     ),
     { cause },
   );
 }
 
 describe('isDuplicateCreditGrantError', () => {
-  test('recognizes the duplicate through a Drizzle wrapper', () => {
-    // The regression: the old guard read `error.message` only, which never
-    // contains the constraint — so a correctly-refused re-grant was logged as
-    // an error every nine minutes for four days in prod.
-    const pg = Object.assign(
-      new Error('duplicate key value violates unique constraint "kortix_unique_stripe_event"'),
-      { code: '23505', constraint: 'kortix_unique_stripe_event' },
-    );
-    expect(isDuplicateCreditGrantError(drizzleFailure(pg))).toBe(true);
-  });
-
-  test('the naive message-only check would have missed it', () => {
-    const pg = Object.assign(new Error('duplicate key value violates unique constraint'), {
-      code: '23505',
-      constraint: 'kortix_unique_stripe_event',
-    });
-    const wrapper = drizzleFailure(pg);
-    expect(wrapper.message.includes('duplicate key')).toBe(false);
-    expect(isDuplicateCreditGrantError(wrapper)).toBe(true);
-  });
-
-  test('recognizes the idempotency-key index too', () => {
-    const pg = Object.assign(new Error('duplicate key value'), {
-      code: '23505',
-      constraint: 'idx_kortix_credit_ledger_idempotency',
-    });
-    expect(isDuplicateCreditGrantError(drizzleFailure(pg))).toBe(true);
-  });
-
   test('recognizes the unique idempotency-key index that refuses a concurrent same-key grant', () => {
     const pg = Object.assign(
       new Error('duplicate key value violates unique constraint "uniq_credit_ledger_idempotency_key"'),
@@ -64,18 +39,29 @@ describe('isDuplicateCreditGrantError', () => {
     expect(isDuplicateCreditGrantError(drizzleFailure(pg))).toBe(false);
   });
 
-  test('a non-duplicate failure is never suppressed', () => {
-    const pg = Object.assign(new Error('null value in column "type" violates not-null constraint'), {
-      code: '23502',
-    });
-    expect(isDuplicateCreditGrantError(drizzleFailure(pg))).toBe(false);
+  test.each([
+    ['a not-null violation', Object.assign(new Error('null value in column "type" violates not-null constraint'), { code: '23502' })],
+    [
+      // Names a grant marker but carries no duplicate signal: the marker alone
+      // must not suppress a real failure.
+      'a statement timeout while writing the idempotency-key index',
+      Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+        detail: 'while inserting index tuple in "uniq_credit_ledger_idempotency_key"',
+      }),
+    ],
+  ])('a non-duplicate failure is never suppressed: %s', (_name, cause) => {
+    expect(isDuplicateCreditGrantError(drizzleFailure(cause))).toBe(false);
+  });
+
+  test('a failure with no cause chain is never suppressed', () => {
     expect(isDuplicateCreditGrantError(new Error('connection terminated'))).toBe(false);
     expect(isDuplicateCreditGrantError(null)).toBe(false);
   });
 
   test('a self-referencing cause cannot loop', () => {
-    const error: { message?: string; cause?: unknown } = { message: 'x' };
+    const error: { message?: string; cause?: unknown } = { message: 'duplicate key' };
     error.cause = error;
-    expect(errorChainText(error)).toBe('x');
+    expect(isDuplicateCreditGrantError(error)).toBe(false);
   });
 });

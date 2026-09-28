@@ -5,6 +5,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
@@ -73,8 +74,7 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     timeoutRaw = takeFlagValue(rest, ['--timeout', '-t']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const sessionId = rest.find((a) => !a.startsWith('-'));
   if (!sessionId) {
@@ -82,10 +82,7 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     return 2;
   }
   const timeoutMs = Math.max(1, Number(timeoutRaw ?? 300)) * 1000;
-  if (!Number.isFinite(timeoutMs)) {
-    process.stderr.write(`${status.err(`--timeout expects seconds, got "${timeoutRaw}"`)}\n`);
-    return 2;
-  }
+  if (!Number.isFinite(timeoutMs)) return fail(`--timeout expects seconds, got "${timeoutRaw}"`);
 
   const found = await locateSessionAnywhere(
     sessionId,
