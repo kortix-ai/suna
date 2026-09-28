@@ -390,13 +390,14 @@ flow(
         )
       ).status(200);
     await ctx.step(
-      "attachments require authentication and the explicit project flag",
+      "attachments require authentication and the project flag, which a project can turn off",
       async () => {
         (
           await ctx.client
             .as(ctx.P.ANON)
             .request("POST", upload, { params, body: form() })
         ).status(401);
+        await setFlag(false);
         (await owner.request("POST", upload, { params, body: form() }))
           .status(403)
           .body()
