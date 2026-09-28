@@ -61,6 +61,7 @@ import {
   STALE_OPENCODE_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
   opencodeReadyWaitPatch,
+  repairInFlight,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import {
@@ -579,7 +580,7 @@ function sandboxMetadata(row: typeof sessionSandboxes.$inferSelect): Record<stri
     : {};
 }
 
-function staleRuntimeWakeReason(
+export function staleRuntimeWakeReason(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
   nowMs = Date.now(),
@@ -587,6 +588,23 @@ function staleRuntimeWakeReason(
   if (row.status !== 'active' || !row.externalId) return null;
   if (providerStatus === 'running' || providerStatus === 'removed') return null;
   const metadata = sandboxMetadata(row);
+  // An active repair is progress: never park a session the platform is fixing.
+  //
+  // This is the same rule `staleOpencodeReadyReason` carries (#7954), and this
+  // is its SECOND call site — a session open has two clocks that park, and
+  // guarding one of them fixed one of the two failure shapes. The budgets are
+  // structurally incompatible without this line: the wake fence is
+  // RUNTIME_WAKE_GRACE_MS (90s), a legacy-runtime repair is
+  // LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS (8 min), so the fence parked EVERY
+  // repair that needed more than 90 seconds and the platform then spent the
+  // remaining ~6.5 minutes fixing a box it had already reported as `failed`.
+  // Measured on dev session 8e3d6a63, 2026-09-28: repair started 08:17:58.513,
+  // park stamped 08:20:15.322 (`runtime_status_unknown_timeout`), repair ran on
+  // until 08:26:08.293.
+  //
+  // `repairInFlight` is bounded by the repair's own budget, so a repair that
+  // never reports a terminal state cannot hold the session open forever.
+  if (repairInFlight(metadata, nowMs)) return null;
   const wakeStartedAtMs = parseTimestampMs(metadata.runtimeWakeStartedAt);
   if (wakeStartedAtMs && nowMs - wakeStartedAtMs > STALE_RUNTIME_WAKE_MS) {
     return providerStatus === 'stopped' ? 'runtime_wake_timeout' : 'runtime_status_unknown_timeout';
@@ -1179,6 +1197,43 @@ export async function openSession(args: {
   // payload that claims a negative without a live check is not expressible.
   const log = createStartCallLog();
   const result = await runOpenSession(args, log);
+  // A RETIRED model pin is repaired here, at the open — not only when the box
+  // is provisioned. A resumed box never rebuilds its env, so the model baked
+  // into OpenCode's config at its ORIGINAL provision outlives every later
+  // lineup rotation and every turn on it dies. See
+  // `lib/session-model-repair.ts` for the measurement.
+  //
+  // DYNAMIC import, and the reason is not style: a static edge from this module
+  // pulls `sandbox-env-sync` -> `sandbox-proxy` into this file's module-init
+  // graph, and closing that cycle is exactly what broke the API boot in #7859
+  // (`ReferenceError: Cannot access 'preview' before initialization`) with a
+  // clean typecheck. Only a healthy session's FAST PATH runs, and it does no
+  // import at all.
+  if (result.stage === 'ready') {
+    try {
+      const { pinNeedsRepair, repairRetiredSessionModelOnOpen } = await import(
+        '../lib/session-model-repair'
+      );
+      const metadata = (args.visible.row.metadata ?? null) as Record<string, unknown> | null;
+      if (pinNeedsRepair(metadata)) {
+        await repairRetiredSessionModelOnOpen({
+          projectId: args.projectId,
+          sessionId: args.sessionId,
+          accountId: args.visible.row.accountId,
+          userId: args.loaded.userId,
+          agentName: args.visible.row.agentName,
+          metadata,
+        });
+      }
+    } catch (error) {
+      // Never fails an open. The turn's own `model_retired` error remains the
+      // fallback explanation, exactly as before this ran.
+      console.warn(
+        '[start] retired model repair skipped:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
   return withStartEnvelope(
     result,
     log,
@@ -1487,8 +1542,7 @@ async function runOpenSession(args: {
     const staleWake = staleRuntimeWakeReason(row, providerStatus);
     if (staleWake) {
       log.did('reconciled');
-      log.did('reconciled');
-    return preserveEstablishedRuntimeOnOpen(
+      return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,

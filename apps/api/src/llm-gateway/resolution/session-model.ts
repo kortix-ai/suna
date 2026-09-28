@@ -3,7 +3,7 @@ import { retiredManagedModelReplacement } from '../models/managed-models';
 
 export type SessionModelDecision =
   | { kind: 'kept' }
-  | { kind: 'repoint'; to: string; reason: 'successor' | 'project_default' };
+  | { kind: 'repoint'; to: string; reason: 'successor' | 'project_default' | 'platform_default' };
 
 /**
  * PURE. What a session's pinned model should become at boot, mirroring
@@ -28,11 +28,18 @@ export function resolveSessionManagedModel(
   storedWireModel: string,
   served: readonly ManagedModel[],
   projectDefaultWireModel: string | null,
+  platformDefaultWireModel: string | null = null,
 ): SessionModelDecision {
   const successor = retiredManagedModelReplacement(storedWireModel, served);
   if (successor) return { kind: 'repoint', to: successor, reason: 'successor' };
   if (projectDefaultWireModel && projectDefaultWireModel !== storedWireModel) {
     return { kind: 'repoint', to: projectDefaultWireModel, reason: 'project_default' };
+  }
+  // The PLATFORM default is the floor, and it is reported as its own reason:
+  // an audit row that says `project_default` for a value the project never set
+  // sends the next reader to the wrong setting.
+  if (platformDefaultWireModel && platformDefaultWireModel !== storedWireModel) {
+    return { kind: 'repoint', to: platformDefaultWireModel, reason: 'platform_default' };
   }
   return { kind: 'kept' };
 }
