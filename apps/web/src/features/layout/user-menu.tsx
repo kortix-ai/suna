@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import {
   HelpSubmenu,
   THEME_OPTIONS,
@@ -34,6 +35,7 @@ import {
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
+  PlugsConnectedIcon,
   SignOutIcon as LogOut,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -66,6 +68,8 @@ export function UserMenu({
   const { selectedAccountId } = useCurrentAccountStore();
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [connectMcpOpen, setConnectMcpOpen] = useState(false);
+  const tSidebar = useTranslations('sidebar');
 
   const accountsQuery = useAccountsList();
   // Extracted verbatim to `hooks/account/use-ensure-selected-account.ts` so the
@@ -237,6 +241,14 @@ export function UserMenu({
           </Link>
         </DropdownMenuItem>
 
+        <DropdownMenuItem
+          onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
+          size="sm"
+        >
+          <PlugsConnectedIcon />
+          {tSidebar('workspace.connectMcp')}
+        </DropdownMenuItem>
+
         {/* `/accounts/<id>?tab=billing`, NOT `/settings/billing`. Billing is
             an ACCOUNT setting and it left the settings overlay for the account
             page; `parseSettingsTab('billing')` returns `null` now, so the old
@@ -285,6 +297,7 @@ export function UserMenu({
       )}
 
       {logoutDialog}
+      <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
     </>
   );
 }
