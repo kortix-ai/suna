@@ -205,12 +205,13 @@ restores data for a different user, but a signed-out device should not keep it.
 
 ## Saved history during startup
 
-Enable **Session Transcript History** in a project's **Settings → Feature flags** to let
-`useSession(projectId, sessionId)` show saved chat history while its computer starts.
+**Session Transcript History** is on by default: `useSession(projectId, sessionId)` shows
+saved chat history while its computer starts. A project can turn it off in
+**Settings → Feature flags**.
 The SDK reads the database independently of runtime readiness. Live messages then reconcile
 by their original IDs. Hosts do not need a separate history request or message store.
 
-This flag is off by default. Sessions without saved history use the existing runtime read.
+Sessions of a project that turned the flag off use the existing runtime read.
 Saved history renders exactly like the live transcript: text, reasoning, and every tool call
 with its input, output and error. A sub-agent's full view reads the sub-agent's own saved
 transcript: pass the parent's scope and `savedChild: true` to

@@ -39,12 +39,14 @@ flow(
     };
     const owner = ctx.client.as(ctx.P.OWNER);
     await ctx.step(
-      "the default flag rejects early history with 403",
+      "history is on by default: a project that never set the flag reads its stored messages while stopped",
       async () => {
         (await owner.get(route, options))
-          .status(403)
+          .status(200)
           .body()
-          .has("$.code", "feature_disabled");
+          .has("$.source", "mirror")
+          .has("$.available", true)
+          .has("$.message_count", 2);
       },
     );
     await ctx.step(

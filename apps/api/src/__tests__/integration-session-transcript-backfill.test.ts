@@ -44,13 +44,15 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
   try {
     accountId = await seedAccount('transcript-backfill-test');
 
-    /** A session on a project with the flag as given, pinned to ROOT. */
-    const seedSession = async (flagEnabled: boolean) => {
+    /** A session on a project with the flag as given (`default`: never set),
+     *  pinned to ROOT. */
+    const seedSession = async (flag: boolean | 'default') => {
       const project = await seedProject(
-        `backfill-${flagEnabled ? 'on' : 'off'}-${randomUUID().slice(0, 8)}`,
+        `backfill-${flag === 'default' ? 'default' : flag ? 'on' : 'off'}-${randomUUID().slice(0, 8)}`,
         {
           accountId,
-          metadata: flagEnabled ? { experimental: { session_transcript_history: true } } : {},
+          metadata:
+            flag === 'default' ? {} : { experimental: { session_transcript_history: flag } },
         },
       );
       seeded.push(project);
@@ -118,12 +120,18 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
     await backfillSessionTranscriptMirrorOnWake(pruned, deps);
     expect(await stored(pruned)).toBe(120);
 
-    // 4. FLAG OFF ⇒ THE SURFACE STAYS DARK. No read, no rows. Turn-end capture
-    //    keeps its legacy tail behaviour untouched.
+    // 4. FLAG TURNED OFF ⇒ THE SURFACE STAYS DARK. No read, no rows. Turn-end
+    //    capture keeps its legacy tail behaviour untouched.
     const off = await seedSession(false);
     await backfillSessionTranscriptMirrorOnWake(off, deps);
     expect(reads.has(off)).toBe(false);
     expect(await stored(off)).toBe(0);
+
+    // 4b. ON BY DEFAULT: a project that never set the flag keeps its history.
+    const unset = await seedSession('default');
+    await backfillSessionTranscriptMirrorOnWake(unset, deps);
+    expect(reads.get(unset)).toBe(1);
+    expect(await stored(unset)).toBe(120);
 
     // 5. AN ALREADY-WHOLE MIRROR IS LEFT ALONE — no box read on every wake
     //    forever after.
