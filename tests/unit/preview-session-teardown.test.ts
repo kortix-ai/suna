@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  managedReposCreatedLastHour,
   reconcilePlatinumPreviews,
+  runPlatinumPreviewSuite,
   teardownPlatinumPreview,
 } from '../src/core/sandbox-preview-providers';
+import { PREVIEW_SUITE_SUPERSEDED } from '../src/core/sandbox-preview';
 
 // A fake Platinum control plane: one listing page, and a record of every
 // mutating call. Synthetic ids only.
@@ -28,7 +31,7 @@ function session(id: string, owner: string | null, env = 'preview', idleHours = 
 
 const listing = [
   { id: 'host-7', name: 'kortix-preview-pr-7', state: 'running', ramMb: 16_384, metadata: { owner: 'kortix-preview', pr_number: '7', git_sha: 'a'.repeat(40) } },
-  { id: 'host-feature', name: 'kortix-env-feature-x', state: 'running', ramMb: 16_384, metadata: { owner: 'kortix-branch-env' } },
+  { id: 'host-feature', name: 'kortix-env-feature-x', state: 'running', ramMb: 16_384, metadata: { owner: 'kortix-branch-env', pr_number: '9' } },
   session('s7', 'kortix-preview-pr-7'),
   session('sfeature', 'kortix-env-feature-x'),
   session('sgone', 'kortix-preview-pr-1'),
@@ -38,7 +41,7 @@ const listing = [
 
 let calls: string[] = [];
 
-function stubPlatinum() {
+function stubPlatinum(rows: unknown[] = listing) {
   calls = [];
   vi.stubGlobal(
     'fetch',
@@ -46,7 +49,7 @@ function stubPlatinum() {
       const parsed = new URL(String(url));
       const method = String(init?.method ?? 'GET').toUpperCase();
       if (method === 'GET' && parsed.pathname === '/v1/sandboxes') {
-        return new Response(JSON.stringify({ rows: listing, has_more: false, total: listing.length }));
+        return new Response(JSON.stringify({ rows, has_more: false, total: rows.length }));
       }
       calls.push(`${method} ${parsed.pathname}`);
       return new Response('{}');
@@ -71,7 +74,7 @@ describe('preview teardown and sweep against the provider API', () => {
     expect(calls).toEqual(['POST /v1/sandboxes/sfeature/stop', 'DELETE /v1/sandboxes/host-feature']);
   });
 
-  it('the daily reconcile deletes a stale host, then stops orphaned and idle sessions only', async () => {
+  it('the hourly reconcile deletes a stale host, then stops orphaned and idle sessions only', async () => {
     stubPlatinum();
     await reconcilePlatinumPreviews({
       apiUrl: 'https://platinum.example.test',
@@ -89,5 +92,57 @@ describe('preview teardown and sweep against the provider API', () => {
     // Never a session delete, never a dev box, never the live branch host.
     expect(calls.some((call) => call.startsWith('DELETE') && !call.endsWith('host-7'))).toBe(false);
     expect(calls.some((call) => call.includes('sdev') || call.includes('sfeature'))).toBe(false);
+  });
+
+  it('the reconcile stops a branch host whose pull request closed, with its sessions, and deletes nothing more', async () => {
+    stubPlatinum();
+    await reconcilePlatinumPreviews({
+      apiUrl: 'https://platinum.example.test',
+      apiKey: 'k',
+      // PR 7 is open at the listed SHA; the feature branch's PR 9 is not.
+      activePullRequests: new Map([[7, 'a'.repeat(40)]]),
+      liveBranchSandboxNames: new Set(['kortix-env-feature-x']),
+    });
+    expect(calls).toEqual([
+      'POST /v1/sandboxes/sgone/stop',
+      'POST /v1/sandboxes/suntagged-idle/stop',
+      'POST /v1/sandboxes/sfeature/stop',
+      'POST /v1/sandboxes/host-feature/stop',
+    ]);
+  });
+
+  it('a suite waits for pool headroom and never launches into a full pool once superseded', async () => {
+    const full = Array.from({ length: 32 }, (_, i) => ({
+      id: `h${i}`,
+      name: `kortix-env-b${i}`,
+      state: 'running',
+      ramMb: 16_384,
+      lastActivityAt: ago(0),
+      metadata: { owner: 'kortix-branch-env', pr_number: String(i + 1) },
+    }));
+    stubPlatinum(full);
+    const code = await runPlatinumPreviewSuite({
+      repository: 'kortix-ai/suna',
+      sha: 'b'.repeat(40),
+      prNumber: 1,
+      runId: '1',
+      runAttempt: '1',
+      root: '/tmp',
+      sandboxId: 'h0',
+      branchEnv: 'b0',
+      platinum: { apiUrl: 'https://platinum.example.test', apiKey: 'k' },
+      superseded: async () => true,
+    });
+    expect(code).toBe(PREVIEW_SUITE_SUPERSEDED);
+    // Nothing written, executed, or stopped: the suite never started.
+    expect(calls).toEqual([]);
+  });
+
+  it('counts managed repositories created in the last hour, and answers null when GitHub fails', async () => {
+    const created = [0.1, 0.5, 0.9, 1.2, 5].map((hours) => ({ created_at: ago(hours) }));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(created))));
+    expect(await managedReposCreatedLastHour('org', 't', NOW)).toBe(3);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 403 })));
+    expect(await managedReposCreatedLastHour('org', 't', NOW)).toBeNull();
   });
 });
