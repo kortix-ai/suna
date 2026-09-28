@@ -96,6 +96,7 @@ export function renderSecretCapabilitiesInstruction(raw: string | undefined): st
     'Kortix grants this session only the secret capabilities listed below.',
     `Read \`$${SECRET_CAPABILITIES_ENV_NAME}\` for machine-readable usage rules.`,
     'Never print, copy, or return a secret value or broker handle.',
+    'A value the human gives you in the conversation is theirs to hand over: store it at once with the `set_secret` tool or `printf %s "$VALUE" | kortix secrets set NAME=- [--scope connector]`. Do not mint a link for it or ask them to enter it again.',
     'Use sandbox secrets through their named environment variable.',
     'Use egress-enforced secrets through their named environment variable too: it holds a handle Kortix swaps for the real value on the listed hosts.',
     'Use HTTPS broker secrets with `kortix secrets call IDENTIFIER URL [options]`.',
