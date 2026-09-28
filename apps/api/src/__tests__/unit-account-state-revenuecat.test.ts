@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import * as realDb from '../shared/db';
+
 let account: any = null;
 let creditSummary: any = null;
 let autoTopup: any = null;
@@ -27,6 +29,16 @@ mock.module('../billing/services/auto-topup', () => ({
 mock.module('../shared/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
+
+// The unit gate's DATABASE_URL is a closed port, and every read the service
+// makes beside the mocked row (instances, sessions, seats) went to it: ~11 s
+// of connect failures per file, one test past the 5 s default timeout. Every
+// such read returns no rows here.
+const noRows: unknown = new Proxy(() => undefined, {
+  get: (_target, property) =>
+    property === 'then' ? (resolve: (rows: unknown[]) => void) => resolve([]) : () => noRows,
+});
+mock.module('../shared/db', () => ({ ...realDb, db: noRows }));
 
 const { buildMinimalAccountState } = await import('../billing/services/account-state');
 
