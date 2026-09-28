@@ -43,6 +43,7 @@ function fakeDeps(over: Partial<StrandReconcileDeps> & { open: StoredSandboxTurn
     closeStrandedTurn: async (...a) => { calls.closeStranded.push(a); },
     readTip: async () => over.tip,
     removeMessage: async (...a) => { calls.remove.push(a); return true; },
+    hasRequeueableRow: async () => true,
     requeueStranded: async (...a) => { calls.requeue.push(a); return 'requeued'; },
     kickDrain: (...a) => { calls.kick.push(a); },
     ...over,
@@ -199,6 +200,33 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', endedMessageId: M }, deps);
     expect(out.orphaned).toBe(0);
     expect(calls.remove).toHaveLength(0);
+  });
+
+  // KRTX-624: a prompt delivered by a DIRECT path (a trigger, a channel reply,
+  // an approval resume, the first prompt) or an adopted box-initiated turn has
+  // no `continue_session` row. There is nothing to re-queue, so the message
+  // must stay in the transcript and the warn must not claim a re-queue.
+  test('a stranded candidate with no durable queue row is left in the transcript, never removed or re-queued', async () => {
+    const tip = tipOf([{ id: M, role: 'user' }, { id: u4, role: 'user' }, { id: aM, role: 'assistant', parentID: M, completed: T + 3_500 }]);
+    const { deps, calls } = fakeDeps({ open: [turn(u4, 'delivering')], tip, hasRequeueableRow: async () => false });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M }, deps);
+    expect(out).toEqual({ closedOlder: 0, candidates: 1, stranded: 1, orphaned: 0, requeued: 0 });
+    expect(calls.remove).toHaveLength(0);
+    expect(calls.requeue).toHaveLength(0);
+    // The record still closes, so the session stops reading as working on it.
+    expect(calls.closeStranded).toEqual([['s', u4]]);
+    expect(calls.kick).toHaveLength(0);
+  });
+
+  test('a re-queue that does not happen is not logged or counted as one', async () => {
+    const tip = tipOf([{ id: M, role: 'user' }, { id: u4, role: 'user' }, { id: aM, role: 'assistant', parentID: M, completed: T + 3_500 }]);
+    // The row exists (so the delete is allowed) but is exhausted at requeue.
+    const { deps, calls } = fakeDeps({ open: [turn(u4, 'delivering')], tip, requeueStranded: async (...a) => { calls.requeue.push(a); return 'exhausted'; } });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M }, deps);
+    expect(out.requeued).toBe(0);
+    expect(calls.remove).toEqual([['s', u4]]);
+    expect(calls.closeStranded).toEqual([['s', u4]]);
+    expect(calls.kick).toHaveLength(0);
   });
 
   test('a candidate absent from the tip window is left to the reaper', async () => {

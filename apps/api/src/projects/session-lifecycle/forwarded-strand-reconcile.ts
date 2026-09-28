@@ -75,8 +75,40 @@ export interface StrandReconcileDeps {
   closeStrandedTurn: (sessionId: string, messageId: string) => Promise<void>;
   readTip: (sessionId: string) => Promise<PlacementTipMessage[] | null>;
   removeMessage: (sessionId: string, messageId: string) => Promise<boolean>;
+  /** A durable `continue_session` row this wire id names, in the state a
+   *  re-queue can act on. False for a DIRECT or box-initiated delivery, which
+   *  has no queue row to redeliver. */
+  hasRequeueableRow: (sessionId: string, messageId: string) => Promise<boolean>;
   requeueStranded: (sessionId: string, messageId: string) => Promise<'requeued' | 'no_row' | 'exhausted' | 'not_open'>;
   kickDrain: (sessionId: string) => void;
+}
+
+/**
+ * The durable `continue_session` row a wire id names, or null. ONE query — and
+ * one place for the shared `wireMessageIdMatches` predicate — so the
+ * existence check and the re-queue cannot disagree about which row an id names.
+ */
+function findForwardedRow(sessionId: string, messageId: string) {
+  return db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      status: sessionLifecycleCommands.status,
+      payload: sessionLifecycleCommands.payload,
+    })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        // Shared with every other reader — see `wire-id-match.ts`. Before
+        // 2026-08-20 the other readers matched the payload only, so a stranded
+        // prompt delivered under an id only `result.forwarded_message_id`
+        // recorded returned 'no_row' and was never redelivered.
+        wireMessageIdMatches(messageId),
+      ),
+    )
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    .limit(1);
 }
 
 const liveDeps: StrandReconcileDeps = {
@@ -138,27 +170,14 @@ const liveDeps: StrandReconcileDeps = {
     });
     return res.ok || res.status === 404;
   },
+  async hasRequeueableRow(sessionId, messageId) {
+    // Only the state `requeueStranded` acts on; a `queued`/`running` row
+    // already owns its own delivery.
+    const [row] = await findForwardedRow(sessionId, messageId);
+    return row?.status === 'succeeded';
+  },
   async requeueStranded(sessionId, messageId) {
-    const [row] = await db
-      .select({
-        commandId: sessionLifecycleCommands.commandId,
-        status: sessionLifecycleCommands.status,
-        payload: sessionLifecycleCommands.payload,
-      })
-      .from(sessionLifecycleCommands)
-      .where(
-        and(
-          eq(sessionLifecycleCommands.sessionId, sessionId),
-          eq(sessionLifecycleCommands.commandType, 'continue_session'),
-          // Shared with every other reader — see `wire-id-match.ts`. Before
-          // 2026-08-20 this matched the payload only, so a stranded prompt
-          // delivered under an id only `result.forwarded_message_id` recorded
-          // returned 'no_row' and was never redelivered.
-          wireMessageIdMatches(messageId),
-        ),
-      )
-      .orderBy(desc(sessionLifecycleCommands.createdAt))
-      .limit(1);
+    const [row] = await findForwardedRow(sessionId, messageId);
     if (!row) return 'no_row';
     if (row.status !== 'succeeded') return 'not_open';
     const payload = (row.payload ?? {}) as { redeliveries?: unknown };
@@ -307,6 +326,20 @@ export async function reconcileForwardedTurnsAtEnd(
   // row is a send still on the wire), the message must actually be on the
   // tip, and the tip must not be mid-step (an open newest assistant is a
   // fresh turn that will read it).
+  // Nothing is running a candidate once its record closes, so the session
+  // stops reading as working on it. Shared: the exact same close runs whether
+  // the prompt was re-queued or left in the transcript.
+  const closeTurnRecord = async (messageId: string) => {
+    try {
+      await deps.closeStrandedTurn(input.sessionId, messageId);
+    } catch (err) {
+      logger.warn('[forwarded-turns] could not close a stranded turn record', {
+        session_id: input.sessionId,
+        message_id: messageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
   for (const { turn, verdict } of verdicts) {
     const orphanedAtTip =
       !verdict.stranded &&
@@ -325,6 +358,25 @@ export async function reconcileForwardedTurnsAtEnd(
         message_id: turn.messageId,
         stranded_by: verdict.strandedBy,
       });
+      continue;
+    }
+    // A re-queue can only redeliver a prompt that has a DURABLE queue row.
+    // Not every open ledger row has one: a DIRECT delivery (a trigger, a
+    // channel reply, an approval resume, the first prompt) and an adopted
+    // box-initiated turn both open a row with no `continue_session` command
+    // behind it. Deleting that message destroys the prompt with nothing to
+    // redeliver it, and `requeueStranded` can only answer `no_row`. Leave the
+    // message in the transcript, close the record as before, and report the
+    // real reason. (Measured 2026-09-28: 289 of 293 `stranded forwarded prompt
+    // re-queued` warns carried `outcome: no_row` — every one claimed a re-queue
+    // that never happened.)
+    if (!(await deps.hasRequeueableRow(input.sessionId, turn.messageId!))) {
+      logger.info('[forwarded-turns] stranded prompt has no durable queue row — left in the transcript', {
+        session_id: input.sessionId,
+        message_id: turn.messageId,
+        stranded_by: verdict.strandedBy,
+      });
+      await closeTurnRecord(turn.messageId!);
       continue;
     }
     let removed = false;
@@ -349,27 +401,26 @@ export async function reconcileForwardedTurnsAtEnd(
       continue;
     }
     const requeue = await deps.requeueStranded(input.sessionId, turn.messageId!);
-    logger.warn('[forwarded-turns] stranded forwarded prompt re-queued', {
-      session_id: input.sessionId,
-      message_id: turn.messageId,
-      stranded_by: verdict.strandedBy,
-      outcome: requeue,
-    });
     if (requeue === 'requeued') {
-      out.requeued += 1;
-      kicked = true;
-    }
-    // Whatever the row became, nothing is running THIS copy of the prompt:
-    // close its turn authority so the session does not read as working on it.
-    try {
-      await deps.closeStrandedTurn(input.sessionId, turn.messageId!);
-    } catch (err) {
-      logger.warn('[forwarded-turns] could not close a stranded turn record', {
+      logger.warn('[forwarded-turns] stranded forwarded prompt re-queued', {
         session_id: input.sessionId,
         message_id: turn.messageId,
-        error: err instanceof Error ? err.message : String(err),
+        stranded_by: verdict.strandedBy,
+      });
+      out.requeued += 1;
+      kicked = true;
+    } else {
+      // The row was there a moment ago but is not deliverable now (exhausted,
+      // or raced out of `succeeded`). Never log a re-queue that did not happen.
+      logger.warn('[forwarded-turns] stranded forwarded prompt could not be re-queued', {
+        session_id: input.sessionId,
+        message_id: turn.messageId,
+        stranded_by: verdict.strandedBy,
+        outcome: requeue,
       });
     }
+    // Whatever the row became, nothing is running THIS copy of the prompt.
+    await closeTurnRecord(turn.messageId!);
   }
   if (kicked) deps.kickDrain(input.sessionId);
   // Husk sweep: a cancelled prompt whose whole-message delete was refused

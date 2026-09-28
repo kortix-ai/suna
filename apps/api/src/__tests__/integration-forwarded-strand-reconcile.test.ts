@@ -119,6 +119,17 @@ async function forwardedPrompt(payloadPatch: Record<string, unknown> = {}): Prom
   return row.commandId;
 }
 
+/** An open ledger turn keyed to a wire id with NO `continue_session` row
+ *  behind it: a DIRECT delivery (trigger, channel reply, approval resume, first
+ *  prompt) or an adopted box-initiated turn. */
+async function ledgerOnlyTurn(messageId: string): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO kortix.session_turns
+      (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+    VALUES (${`tok-direct-${messageId}`}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+            ${ACCOUNT_ID}::uuid, ${OPENCODE_SESSION}, ${messageId}, 'active')`);
+}
+
 async function readCommand(commandId: string) {
   const [row] = rowsOf<{
     status: string;
@@ -206,6 +217,34 @@ test('a stranded prompt known only by its forwarded id is taken out of the trans
   expect(row.payload).toMatchObject({ redeliveries: 1, remintOnDelivery: true });
   expect(row.result).toEqual({ redelivered_from: 'stranded_placement' });
   expect(drainKicks).toHaveLength(1);
+});
+
+// KRTX-624: 289 of 293 `stranded forwarded prompt re-queued` warns carried
+// `outcome: no_row` — a prompt with no durable row to redeliver. The message
+// must stay in the transcript; the old code deleted it and logged a re-queue
+// that never happened.
+test('a stranded prompt with no durable queue row is left in the transcript, never deleted', async () => {
+  await ledgerOnlyTurn(STRANDED);
+
+  const out = await reconcile();
+
+  expect(out).toMatchObject({ candidates: 1, stranded: 1, requeued: 0 });
+  expect(deletedMessages).toEqual([]);
+  expect(drainKicks).toEqual([]);
+});
+
+test('a matching row that is not succeeded is left alone — its own delivery owns it', async () => {
+  const commandId = await forwardedPrompt();
+  await db.execute(
+    sql`UPDATE kortix.session_lifecycle_commands SET status = 'running'
+         WHERE command_id = ${commandId}::uuid`,
+  );
+
+  const out = await reconcile();
+
+  expect(out).toMatchObject({ stranded: 1, requeued: 0 });
+  expect(deletedMessages).toEqual([]);
+  expect(drainKicks).toEqual([]);
 });
 
 test('a prompt already redelivered three times is not re-queued again', async () => {
