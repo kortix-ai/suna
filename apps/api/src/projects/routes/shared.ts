@@ -61,6 +61,7 @@ import {
   STALE_OPENCODE_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
   opencodeReadyWaitPatch,
+  repairInFlight,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import {
@@ -579,7 +580,7 @@ function sandboxMetadata(row: typeof sessionSandboxes.$inferSelect): Record<stri
     : {};
 }
 
-function staleRuntimeWakeReason(
+export function staleRuntimeWakeReason(
   row: typeof sessionSandboxes.$inferSelect,
   providerStatus: SandboxStatus,
   nowMs = Date.now(),
@@ -587,6 +588,23 @@ function staleRuntimeWakeReason(
   if (row.status !== 'active' || !row.externalId) return null;
   if (providerStatus === 'running' || providerStatus === 'removed') return null;
   const metadata = sandboxMetadata(row);
+  // An active repair is progress: never park a session the platform is fixing.
+  //
+  // This is the same rule `staleOpencodeReadyReason` carries (#7954), and this
+  // is its SECOND call site — a session open has two clocks that park, and
+  // guarding one of them fixed one of the two failure shapes. The budgets are
+  // structurally incompatible without this line: the wake fence is
+  // RUNTIME_WAKE_GRACE_MS (90s), a legacy-runtime repair is
+  // LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS (8 min), so the fence parked EVERY
+  // repair that needed more than 90 seconds and the platform then spent the
+  // remaining ~6.5 minutes fixing a box it had already reported as `failed`.
+  // Measured on dev session 8e3d6a63, 2026-09-28: repair started 08:17:58.513,
+  // park stamped 08:20:15.322 (`runtime_status_unknown_timeout`), repair ran on
+  // until 08:26:08.293.
+  //
+  // `repairInFlight` is bounded by the repair's own budget, so a repair that
+  // never reports a terminal state cannot hold the session open forever.
+  if (repairInFlight(metadata, nowMs)) return null;
   const wakeStartedAtMs = parseTimestampMs(metadata.runtimeWakeStartedAt);
   if (wakeStartedAtMs && nowMs - wakeStartedAtMs > STALE_RUNTIME_WAKE_MS) {
     return providerStatus === 'stopped' ? 'runtime_wake_timeout' : 'runtime_status_unknown_timeout';
@@ -1487,8 +1505,7 @@ async function runOpenSession(args: {
     const staleWake = staleRuntimeWakeReason(row, providerStatus);
     if (staleWake) {
       log.did('reconciled');
-      log.did('reconciled');
-    return preserveEstablishedRuntimeOnOpen(
+      return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,
