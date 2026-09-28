@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 
-import type { Config } from '../../lib/config/config'
-import { commitAndPushWorkingTree } from '../../lib/git/git'
-import { logger } from '../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import { commitAndPushWorkingTree } from '@/lib/git/git'
+import { logger } from '@/lib/log/logger'
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null

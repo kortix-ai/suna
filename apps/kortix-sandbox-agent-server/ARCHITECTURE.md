@@ -84,6 +84,28 @@ Consequences:
 - Type-only imports, dynamic `import()` and `export * from` count the same as
   value imports.
 
+## Import style
+
+`@/` is `src/` (a `tsconfig.json` path; Bun resolves it in `bun run`, `bun test`,
+`mock.module` and `bun build`). An import that crosses a top-level folder of
+`src/` uses it; an import inside one folder stays relative:
+
+```ts
+// src/harness/pi/boot.ts
+import { materializeProject } from '@/services/config-provider/config-provider' // another folder
+import { runSandboxOnBoot } from '../shared/on-boot'                             // same folder: harness/
+```
+
+The folders are `app`, `routes`, `harness`, `services`, `lib`, `types` and
+`__tests__`; `src/main.ts` stands alone, so everything it imports uses `@/`. A
+path outside `src/` (another package, `package.json`) stays relative. The
+`kortixd/import-style` lint rule enforces both directions and fixes them:
+`bun run lint --fix`.
+
+Files that another package imports (`src/harness/open-code/fallback-models.ts`,
+`src/services/egress-shim/rules.ts`) have no imports, because that package's
+typecheck does not know this `@/`.
+
 ## Where a type goes
 
 1. A type its consumers may already import stays with its owner. The harness
@@ -153,7 +175,7 @@ layer what it needs from the layer above.
 
 | Command | What it checks |
 | --- | --- |
-| `bun run lint` | The rules above over `src/`. |
+| `bun run lint` | The import rules and the import style over `src/` (`--fix` rewrites the style). |
 | `bun run test:architecture` | Each rule allows and rejects its cases; the docs name paths that exist. |
 | `bun test` | Everything, including `src/__tests__/architecture-boundaries.test.ts`, which runs the two commands above. |
 

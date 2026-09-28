@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
 
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 /**
  * Static Web Server — ported from main's `core/services/static-web.js`

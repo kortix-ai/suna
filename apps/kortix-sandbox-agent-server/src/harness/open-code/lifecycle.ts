@@ -109,20 +109,20 @@ import { access, constants, open, readFile, realpath, stat } from 'node:fs/promi
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from '../shared/agent-env-file'
-import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '../../services/llm-proxy/llm-proxy'
+import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
-import { buildGitIdentityEnv } from '../../lib/git/git'
-import { egressShimEnv } from '../../services/egress-shim'
-import { logger } from '../../lib/log/logger'
+import { buildGitIdentityEnv } from '@/lib/git/git'
+import { egressShimEnv } from '@/services/egress-shim'
+import { logger } from '@/lib/log/logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
-import { mergeProjectEnv, type ProjectEnvStore } from '../../services/sandbox-env/project-env'
+import { mergeProjectEnv, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { OPENCODE_CURRENT_LINK, OPENCODE_SYSTEM_LINK } from './opencode-binary'
 import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
-} from '../../services/sandbox-env/secret-capabilities'
-import { configReleaseNoticePath } from '../../services/config-release/notice'
-import { bootLinkPath } from '../../services/config-release/boot-config'
+} from '@/services/sandbox-env/secret-capabilities'
+import { configReleaseNoticePath } from '@/services/config-release/notice'
+import { bootLinkPath } from '@/services/config-release/boot-config'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from './fallback-models'
 

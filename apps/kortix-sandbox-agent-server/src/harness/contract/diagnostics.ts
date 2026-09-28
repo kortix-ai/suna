@@ -1,6 +1,6 @@
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 import type { SandboxBootState } from './boot-state'
-import type { ResourceMonitor } from '../../services/resources/resources'
+import type { ResourceMonitor } from '@/services/resources/resources'
 
 /** Supplied per invocation so warm adoption uses the current host configuration. */
 export interface HarnessDiagnosticsContext {

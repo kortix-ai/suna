@@ -6,12 +6,12 @@
  * place, there is no process to restart and no turn to interrupt.
  */
 import { writeAgentEnvFile } from '../shared/agent-env-file'
-import { syncEgressShim } from '../../services/egress-shim'
-import { refreshRepo, syncWorkspaceToBase } from '../../lib/git/git'
-import { llmProxyBaseUrl, setLlmProxyToken } from '../../services/llm-proxy/llm-proxy'
-import { logger } from '../../lib/log/logger'
-import { reconcileProjectEnv } from '../../services/sandbox-env/project-env'
-import { scheduleRuntimeAssetsReconcile } from '../../services/runtime-assets/runtime-assets'
+import { syncEgressShim } from '@/services/egress-shim'
+import { refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
+import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
+import { logger } from '@/lib/log/logger'
+import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
+import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import type { HarnessControlOperations, HarnessControlService, HarnessEnvironmentInput, HarnessRefreshInput } from '../contract/control'
 import type { PiRuntime } from './runtime'
 

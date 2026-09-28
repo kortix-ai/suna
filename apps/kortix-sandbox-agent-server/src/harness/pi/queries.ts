@@ -3,7 +3,7 @@
  * the sequenced event stream, actions and attachment bytes. Same shapes as the
  * OpenCode adapter serves — the web client is not namespace-parameterized.
  */
-import { kortixEventBus } from '../../services/event-bus/kortix-event-bus'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type {
   HarnessActionResult,

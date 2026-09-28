@@ -1,24 +1,24 @@
 import { Hono } from 'hono'
-import type { DaemonServer } from '../harness/contract/server'
+import type { DaemonServer } from '@/harness/contract/server'
 import type { ServerWebSocket } from 'bun'
-import type { Config } from '../lib/config/config'
-import type { SandboxBootState } from '../harness/contract/boot-state'
-import type { HarnessService } from '../harness/harness'
-import type { ProjectEnvStore } from '../services/sandbox-env/project-env'
-import type { ResourceMonitor } from '../services/resources/resources'
-import { egressShimPort } from '../services/egress-shim'
-import { logger } from '../lib/log/logger'
-import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '../services/runtime-assets/runtime-assets'
-import { kortixEventBus } from '../services/event-bus/kortix-event-bus'
-import { createEnvRpcRouter } from '../routes/kortix/env-rpc'
-import { createHarnessControlRouter } from '../routes/kortix/harness-control'
-import { createRuntimeProxyRouter } from '../routes/proxy/runtime-proxy'
-import { createGitRouter } from '../routes/kortix/git'
-import { createPortProxyRouter } from '../routes/proxy/port-proxy'
-import { createFilesRouter } from '../routes/workspace/files'
-import { createFindRouter } from '../routes/workspace/find'
-import { createPresentationRouter } from '../routes/workspace/presentation'
-import { createWebProxyRouter } from '../routes/proxy/web-proxy'
+import type { Config } from '@/lib/config/config'
+import type { SandboxBootState } from '@/harness/contract/boot-state'
+import type { HarnessService } from '@/harness/harness'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
+import type { ResourceMonitor } from '@/services/resources/resources'
+import { egressShimPort } from '@/services/egress-shim'
+import { logger } from '@/lib/log/logger'
+import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/services/runtime-assets/runtime-assets'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
+import { createHarnessControlRouter } from '@/routes/kortix/harness-control'
+import { createRuntimeProxyRouter } from '@/routes/proxy/runtime-proxy'
+import { createGitRouter } from '@/routes/kortix/git'
+import { createPortProxyRouter } from '@/routes/proxy/port-proxy'
+import { createFilesRouter } from '@/routes/workspace/files'
+import { createFindRouter } from '@/routes/workspace/find'
+import { createPresentationRouter } from '@/routes/workspace/presentation'
+import { createWebProxyRouter } from '@/routes/proxy/web-proxy'
 import {
   createPtyRegistry,
   createPtyRouter,
@@ -26,8 +26,8 @@ import {
   PTY_ABANDONED_AFTER_MS,
   type PtyAttachHandle,
   type PtyRegistry,
-} from '../routes/kortix/pty'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../lib/kortix-api/kortix-user-context'
+} from '@/routes/kortix/pty'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
 
 // The id segment is optional: connecting with no id (or an id the daemon
 // doesn't recognize) still opens a working terminal — see the lookup-or-

@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
-import type { Config } from '../../lib/config/config'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
-import { logger } from '../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
+import { logger } from '@/lib/log/logger'
 
 export function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null

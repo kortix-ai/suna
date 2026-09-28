@@ -13,10 +13,10 @@
  * verified user context for a principal who can see this session.
  */
 import { Hono } from 'hono'
-import type { Config } from '../../lib/config/config'
-import type { HarnessDiagnosticsService } from '../../harness/contract/diagnostics'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
-import { logger } from '../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import type { HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
+import { logger } from '@/lib/log/logger'
 
 export const DEFAULT_TAIL_LINES = 500
 export const MAX_TAIL_LINES = 5_000

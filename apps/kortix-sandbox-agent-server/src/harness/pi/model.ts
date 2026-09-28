@@ -22,8 +22,8 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
-import { LLM_PROXY_PLACEHOLDER_KEY } from '../../services/llm-proxy/llm-proxy'
-import { logger } from '../../lib/log/logger'
+import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
+import { logger } from '@/lib/log/logger'
 
 /** Staged unconditionally by apps/api's snapshot build-context. */
 export const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'

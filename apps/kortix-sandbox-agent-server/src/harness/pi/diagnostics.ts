@@ -8,10 +8,10 @@
  */
 import { existsSync } from 'node:fs'
 import type { HarnessDiagnosticsContext, HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'
-import { readRepoInfo } from '../../lib/git/git'
-import { daemonLogFilePath } from '../../lib/log/logger'
-import { tailFile } from '../../lib/log/log-tail'
-import { runtimeConvergenceReport } from '../../services/runtime-assets/runtime-assets'
+import { readRepoInfo } from '@/lib/git/git'
+import { daemonLogFilePath } from '@/lib/log/logger'
+import { tailFile } from '@/lib/log/log-tail'
+import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import type { PiBootState } from './boot-state'
 import type { PiRuntime } from './runtime'
 

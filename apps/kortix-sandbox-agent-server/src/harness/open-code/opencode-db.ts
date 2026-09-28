@@ -51,7 +51,7 @@
  *    change in a future OpenCode therefore degrades to "slower", never "wrong".
  */
 import { Database } from 'bun:sqlite'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 /** Tiny retry for `SQLITE_BUSY` past `busy_timeout` — a checkpoint window. */
 export const DB_BUSY_RETRIES = 3

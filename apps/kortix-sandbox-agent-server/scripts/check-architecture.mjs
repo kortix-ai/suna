@@ -26,31 +26,31 @@ const { options } = ts.parseJsonConfigFileContent(tsconfig.config, ts.sys, root)
 const cases = [
   // shared layer: lib/ — building blocks
   ['lib to lib', 'src/lib/git/git.ts', "import '../log/logger';", true],
-  ['lib to types', 'src/lib/log/logger.ts', "import type { InitialTurnClaim } from '../../types/control-plane';", true],
+  ['lib to types', 'src/lib/log/logger.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
   ['lib to runtime built-in subpath', 'src/lib/log/logger.ts', "import { readFile } from 'node:fs/promises';", true],
   ['lib to zod', 'src/lib/log/logger.ts', "import { z } from 'zod';", true],
-  ['lib to the harness resolver', 'src/lib/config/config.ts', "import '../../harness/harness';", false],
-  ['lib to a harness type', 'src/lib/log/logger.ts', "import type { SandboxBootState } from '../../harness/contract/boot-state';", false],
-  ['lib to a service', 'src/lib/log/logger.ts', "import '../../services/resources/resources';", false],
+  ['lib to the harness resolver', 'src/lib/config/config.ts', "import '@/harness/harness';", false],
+  ['lib to a harness type', 'src/lib/log/logger.ts', "import type { SandboxBootState } from '@/harness/contract/boot-state';", false],
+  ['lib to a service', 'src/lib/log/logger.ts', "import '@/services/resources/resources';", false],
   ['lib to hono', 'src/lib/log/logger.ts', "import { Hono } from 'hono';", false],
   ['lib to bun:sqlite', 'src/lib/log/logger.ts', "import { Database } from 'bun:sqlite';", false],
 
   // shared layer: types/ — the leaf; type declarations only
   ['types to types', 'src/types/config-release.ts', "import type { InitialTurnClaim } from './control-plane';", true],
-  ['types to lib', 'src/types/config-release.ts', "import type { Config } from '../lib/config/config';", false],
-  ['types to a service', 'src/types/config-release.ts', "import type { ProjectEnvStore } from '../services/sandbox-env/project-env';", false],
+  ['types to lib', 'src/types/config-release.ts', "import type { Config } from '@/lib/config/config';", false],
+  ['types to a service', 'src/types/config-release.ts', "import type { ProjectEnvStore } from '@/services/sandbox-env/project-env';", false],
   ['types to a package', 'src/types/config-release.ts', "import type { z } from 'zod';", false],
 
   // services/<name>/ — own folder, the shared layer and declared services
   ['service to own folder', 'src/services/config-provider/config-provider.ts', "import './types';", true],
-  ['service to lib', 'src/services/config-provider/config-provider.ts', "import '../../lib/git/git';", true],
-  ['service to types', 'src/services/runtime-assets/runtime-truth.ts', "import type { ConfigReleaseReport } from '../../types/config-release';", true],
+  ['service to lib', 'src/services/config-provider/config-provider.ts', "import '@/lib/git/git';", true],
+  ['service to types', 'src/services/runtime-assets/runtime-truth.ts', "import type { ConfigReleaseReport } from '@/types/config-release';", true],
   ['service to a declared service', 'src/services/runtime-assets/runtime-assets.ts', "import '../config-release/boot-config';", true],
   ['service to an undeclared service', 'src/services/static-web/static-web.ts', "import '../egress-shim';", false],
-  ['service to the harness resolver', 'src/services/static-web/static-web.ts', "import '../../harness/harness';", false],
-  ['service to a harness type', 'src/services/runtime-assets/runtime-assets.ts', "import type { HarnessService } from '../../harness/harness';", false],
-  ['service to a route', 'src/services/resources/resources.ts', "import '../../routes/kortix/health';", false],
-  ['service to app', 'src/services/monitor/monitor-runner.ts', "import '../../app/shutdown';", false],
+  ['service to the harness resolver', 'src/services/static-web/static-web.ts', "import '@/harness/harness';", false],
+  ['service to a harness type', 'src/services/runtime-assets/runtime-assets.ts', "import type { HarnessService } from '@/harness/harness';", false],
+  ['service to a route', 'src/services/resources/resources.ts', "import '@/routes/kortix/health';", false],
+  ['service to app', 'src/services/monitor/monitor-runner.ts', "import '@/app/shutdown';", false],
   ['service to hono', 'src/services/llm-proxy/llm-proxy.ts', "import { Hono } from 'hono';", false],
   ['egress-shim to the shared relay contract', 'src/services/egress-shim/relay-client.ts', "import '@kortix/api-contract/secret-relay';", true],
   ['another service to the shared relay contract', 'src/services/llm-proxy/llm-proxy.ts', "import '@kortix/api-contract/secret-relay';", false],
@@ -61,14 +61,14 @@ const cases = [
   ['adapter to own nested folder', 'src/harness/pi/runtime.ts', "import './extensions/host';", true],
   ['adapter to the contract', 'src/harness/pi/boot.ts', "import type { SandboxBootState } from '../contract/boot-state';", true],
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],
-  ['adapter to a service', 'src/harness/pi/boot.ts', "import '../../services/config-provider/config-provider';", true],
-  ['adapter to types', 'src/harness/pi/relay.ts', "import type { InitialTurnClaim } from '../../types/control-plane';", true],
+  ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", true],
+  ['adapter to types', 'src/harness/pi/relay.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
   ['adapter to another adapter', 'src/harness/pi/boot.ts', "import '../open-code/boot';", false],
   ['adapter to another adapter, type-only', 'src/harness/pi/boot.ts', "import type { Opencode } from '../open-code/lifecycle';", false],
   ['adapter to another adapter, dynamic', 'src/harness/pi/boot.ts', "void import('../open-code/boot');", false],
   ['adapter to another adapter, re-export', 'src/harness/pi/boot.ts', "export * from '../open-code/paths';", false],
-  ['adapter to app', 'src/harness/pi/boot.ts', "import '../../app/server';", false],
-  ['adapter to a route', 'src/harness/open-code/boot.ts', "import '../../routes/kortix/health';", false],
+  ['adapter to app', 'src/harness/pi/boot.ts', "import '@/app/server';", false],
+  ['adapter to a route', 'src/harness/open-code/boot.ts', "import '@/routes/kortix/health';", false],
   ['adapter to hono', 'src/harness/open-code/boot.ts', "import { Hono } from 'hono';", false],
   ['open-code to pi packages', 'src/harness/open-code/boot.ts', "import '@earendil-works/pi-agent-core';", false],
   ['pi to pi packages', 'src/harness/pi/runtime.ts', "import '@earendil-works/pi-agent-core';", true],
@@ -81,20 +81,25 @@ const cases = [
 
   // routes/ — controllers
   ['route to hono', 'src/routes/kortix/health.ts', "import { Hono } from 'hono';", true],
-  ['route to the contract', 'src/routes/kortix/health.ts', "import type { HarnessDiagnosticsService } from '../../harness/contract/diagnostics';", true],
-  ['route to lib', 'src/routes/workspace/files.ts', "import '../../lib/git/git';", true],
-  ['route to types', 'src/routes/kortix/health.ts', "import type { ConfigReleaseReport } from '../../types/config-release';", true],
-  ['route to an adapter', 'src/routes/kortix/runtime.ts', "import '../../harness/open-code/queries';", false],
-  ['route to app', 'src/routes/kortix/health.ts', "import '../../app/server';", false],
+  ['route to the contract', 'src/routes/kortix/health.ts', "import type { HarnessDiagnosticsService } from '@/harness/contract/diagnostics';", true],
+  ['route to lib', 'src/routes/workspace/files.ts', "import '@/lib/git/git';", true],
+  ['route to types', 'src/routes/kortix/health.ts', "import type { ConfigReleaseReport } from '@/types/config-release';", true],
+  ['route to an adapter', 'src/routes/kortix/runtime.ts', "import '@/harness/open-code/queries';", false],
+  ['route to app', 'src/routes/kortix/health.ts', "import '@/app/server';", false],
 
   // app/ and main.ts — the composition root
-  ['app to routes', 'src/app/server.ts', "import '../routes/kortix/health';", true],
-  ['app to an adapter', 'src/app/server.ts', "import '../harness/open-code/boot';", false],
-  ['main to the resolver', 'src/main.ts', "import './harness/harness';", true],
-  ['main to an adapter', 'src/main.ts', "import './harness/pi/boot';", false],
+  ['app to routes', 'src/app/server.ts', "import '@/routes/kortix/health';", true],
+  ['app to an adapter', 'src/app/server.ts', "import '@/harness/open-code/boot';", false],
+  ['main to the resolver', 'src/main.ts', "import '@/harness/harness';", true],
+  ['main to an adapter', 'src/main.ts', "import '@/harness/pi/boot';", false],
+
+  // The same boundary seen through a relative path (the import-style rule flags
+  // it separately; the boundary rule must still reject it).
+  ['adapter to app, relative path', 'src/harness/pi/boot.ts', "import '../../app/server';", false],
+  ['lib to the harness resolver, relative path', 'src/lib/config/config.ts', "import '../../harness/harness';", false],
 
   // tests reach what they exercise
-  ['test to an adapter', 'src/__tests__/pi-harness.test.ts', "import '../harness/open-code/boot';", true],
+  ['test to an adapter', 'src/__tests__/pi-harness.test.ts', "import '@/harness/open-code/boot';", true],
 ]
 
 for (const [name, file, code, allowed] of cases) {
@@ -126,6 +131,27 @@ test('architecture: a file outside every layer is rejected', async () => {
   const [result] = await eslint.lintText("import '../lib/log/logger';", { filePath: resolve(root, 'src/unlisted/probe.ts') })
   assert.ok(result.messages.some((message) => message.ruleId === RULE && /outside every layer/.test(message.message)))
 })
+
+// [name, file, code, messageId | null] — `@/` across top-level folders of
+// src/, relative inside one (kortixd/import-style).
+const styleCases = [
+  ['relative inside one folder', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", null],
+  ['@/ across folders', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", null],
+  ['relative across folders', 'src/harness/pi/boot.ts', "import '../../services/config-provider/config-provider';", 'useAlias'],
+  ['@/ inside one folder', 'src/harness/pi/boot.ts', "import '@/harness/shared/on-boot';", 'useRelative'],
+  ['main.ts is its own folder', 'src/main.ts', "import './app/server';", 'useAlias'],
+  ['a type-only import across folders', 'src/lib/log/logger.ts', "import type { InitialTurnClaim } from '../../types/control-plane';", 'useAlias'],
+  ['a dynamic import across folders', 'src/app/server.ts', "void import('../lib/log/logger');", 'useAlias'],
+  ['mock.module across folders', 'src/__tests__/pi-harness.test.ts', "mock.module('../lib/log/logger', () => ({}));", 'useAlias'],
+  ['a path outside src/ is left alone', 'src/app/cli.ts', "import '../../package.json';", null],
+]
+for (const [name, file, code, messageId] of styleCases) {
+  test(`import style: ${name}`, async () => {
+    const [result] = await eslint.lintText(code, { filePath: resolve(root, file) })
+    const found = result.messages.filter((message) => message.ruleId === 'kortixd/import-style').map((message) => message.messageId)
+    assert.deepEqual(found, messageId ? [messageId] : [], JSON.stringify(result.messages))
+  })
+}
 
 // [name, code, allowed] — types/ declares types; nothing in it exists at runtime.
 const typeOnlyCases = [

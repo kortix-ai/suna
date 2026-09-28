@@ -9,8 +9,8 @@
  * `authorizeControl` helper this reuses.
  */
 import { Hono } from 'hono'
-import type { Config } from '../../lib/config/config'
-import type { HarnessAttachmentService } from '../../harness/contract/queries'
+import type { Config } from '@/lib/config/config'
+import type { HarnessAttachmentService } from '@/harness/contract/queries'
 import { authorizeControl } from './control-auth'
 
 export function createPartRouter(cfg: Config, attachments: HarnessAttachmentService): Hono {

@@ -9,7 +9,7 @@
 //   shared   lib/, types/             building blocks and shared types; no service state, no Hono
 import { realpathSync } from 'node:fs'
 import { builtinModules, createRequire } from 'node:module'
-import { posix, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, posix, relative, resolve, sep } from 'node:path'
 import tseslint from 'typescript-eslint'
 import { createIndependentModules, projectStructurePlugin } from 'eslint-plugin-project-structure'
 
@@ -94,7 +94,10 @@ const independentModules = createIndependentModules({
   packageRoot: base || '.',
   // tsconfig.json's alias, restated with this package's prefix: the plugin
   // resolves `paths` against its root, which under pnpm is the monorepo root.
-  pathAliases: { baseUrl: '.', paths: { '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')] } },
+  pathAliases: {
+    baseUrl: '.',
+    paths: { '@/*': [at('src/*')], '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')] },
+  },
   reusableImportPatterns: { sharedLayer: [lib, types] },
   modules: [
     // Tests reach whatever they exercise; the layers bind production code.
@@ -155,14 +158,76 @@ const independentModules = createIndependentModules({
   ],
 })
 
+// Import style: `@/` between the top-level folders of src/ (app, routes,
+// harness, services, lib, types, __tests__; main.ts stands alone), a relative
+// path inside one. Autofixable: `bun run lint --fix`.
+const SRC = resolve(import.meta.dirname, 'src')
+/** The top-level folder of `abs` inside src/, or null outside src/. @param {string} abs */
+const topFolder = (abs) => {
+  const rel = relative(SRC, abs)
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null
+  const parts = rel.split(sep)
+  return parts.length > 1 ? parts[0] : `/${parts[0]}`
+}
+/** @param {string} path */
+const posixPath = (path) => path.split(sep).join('/')
+/** @type {import('eslint').Rule.RuleModule} */
+const importStyle = {
+  meta: {
+    type: 'suggestion',
+    fixable: 'code',
+    messages: {
+      useAlias: "Import across top-level folders of src/ with '{{spec}}'.",
+      useRelative: "Import inside {{folder}}/ with the relative path '{{spec}}'.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const file = context.filename
+    const own = topFolder(file)
+    /** @param {any} literal */
+    const check = (literal) => {
+      if (!own || !literal || typeof literal.value !== 'string') return
+      const spec = literal.value
+      const quote = literal.raw[0]
+      if (spec.startsWith('./') || spec.startsWith('../')) {
+        const target = resolve(dirname(file), spec)
+        const theirs = topFolder(target)
+        if (!theirs || theirs === own) return
+        const alias = `@/${posixPath(relative(SRC, target))}`
+        context.report({ node: literal, messageId: 'useAlias', data: { spec: alias }, fix: (fixer) => fixer.replaceText(literal, `${quote}${alias}${quote}`) })
+      } else if (spec.startsWith('@/')) {
+        const target = resolve(SRC, spec.slice(2))
+        if (topFolder(target) !== own) return
+        let local = posixPath(relative(dirname(file), target))
+        if (!local.startsWith('.')) local = `./${local}`
+        context.report({ node: literal, messageId: 'useRelative', data: { spec: local, folder: own }, fix: (fixer) => fixer.replaceText(literal, `${quote}${local}${quote}`) })
+      }
+    }
+    return {
+      ImportDeclaration: (node) => check(node.source),
+      ExportNamedDeclaration: (node) => check(node.source),
+      ExportAllDeclaration: (node) => check(node.source),
+      ImportExpression: (node) => check(node.source),
+      /** @param {any} node */
+      TSImportType: (node) => check(node.argument?.literal ?? node.argument),
+      /** `mock.module('…')` in bun tests names a module the same way. @param {any} node */
+      CallExpression: (node) => {
+        const callee = node.callee
+        if (callee.type === 'MemberExpression' && callee.object.name === 'mock' && callee.property.name === 'module') check(node.arguments[0])
+      },
+    }
+  },
+}
+
 export default tseslint.config(
   { ignores: ['dist/**', 'node_modules/**'] },
   {
     files: ['src/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    plugins: { 'project-structure': projectStructurePlugin },
-    rules: { 'project-structure/independent-modules': ['error', independentModules] },
+    plugins: { 'project-structure': projectStructurePlugin, kortixd: { rules: { 'import-style': importStyle } } },
+    rules: { 'project-structure/independent-modules': ['error', independentModules], 'kortixd/import-style': 'error' },
   },
   {
     // The boundary plugin resolves a built-in only with the `node:` prefix. A

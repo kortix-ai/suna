@@ -28,17 +28,17 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
   createOpencodeLifecycle,
   waitForOpencodeReady,
   type Opencode,
   type OpencodeLifecycleOptions,
-} from '../harness/open-code/lifecycle'
-import { createOpenCodeHarnessService } from '../harness/open-code/service'
-import { bootLinkPath } from '../services/config-release/boot-config'
+} from '@/harness/open-code/lifecycle'
+import { createOpenCodeHarnessService } from '@/harness/open-code/service'
+import { bootLinkPath } from '@/services/config-release/boot-config'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
-import { createProjectEnvStore, type ProjectEnvStore } from '../services/sandbox-env/project-env'
+import { createProjectEnvStore, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 let root: string
 let ctl: string

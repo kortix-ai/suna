@@ -12,7 +12,7 @@
  * Auth is the host's: the daemon verifies the signed user context before this
  * catch-all runs, so the surface never sees an unauthenticated request.
  */
-import { kortixEventBus } from '../../services/event-bus/kortix-event-bus'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
 import { PromptRejected, parsePromptBody, type PiRuntime } from './runtime'

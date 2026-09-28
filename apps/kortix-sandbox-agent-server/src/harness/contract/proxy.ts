@@ -1,4 +1,4 @@
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 import type { SandboxBootState } from './boot-state'
 
 export type HarnessReadiness =

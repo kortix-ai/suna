@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { z } from 'zod'
-import { readProjectManifest, extractNestedString, type Config as HostConfig } from '../../lib/config/config'
+import { readProjectManifest, extractNestedString, type Config as HostConfig } from '@/lib/config/config'
 import { loadConfig } from '../harness'
 
 type Config = OpenCodeConfig

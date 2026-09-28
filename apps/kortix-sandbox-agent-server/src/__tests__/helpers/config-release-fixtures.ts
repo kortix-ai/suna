@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ConfigReleaseDescriptor, ConfigReleaseFile } from '../../services/config-release/descriptor'
+import type { ConfigReleaseDescriptor, ConfigReleaseFile } from '@/services/config-release/descriptor'
 
 export function git(cwd: string, ...args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' })

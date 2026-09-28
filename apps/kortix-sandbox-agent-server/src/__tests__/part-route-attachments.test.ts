@@ -7,11 +7,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OFFLOAD_PLACEHOLDER_URL } from '../harness/open-code/attachment-offload'
-import type { Config } from '../lib/config/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { createPartRouter } from '../routes/kortix/part'
-import { createOpenCodeAttachmentService } from '../harness/open-code/queries'
+import { OFFLOAD_PLACEHOLDER_URL } from '@/harness/open-code/attachment-offload'
+import type { Config } from '@/lib/config/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { createPartRouter } from '@/routes/kortix/part'
+import { createOpenCodeAttachmentService } from '@/harness/open-code/queries'
 
 const TOKEN = 'test-sandbox-token'
 const AUTH = { headers: { Authorization: `Bearer ${TOKEN}` } }

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '../../harness/contract/diagnostics'
+import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 
 /** Daemon liveness stays HTTP 200 even when the selected runtime is unavailable. */
 export function createHealthRouter(

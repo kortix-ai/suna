@@ -24,7 +24,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { ensureInjectedManagedSkills } from '../services/skills/managed-skills'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import {
   activateBootConfig,
   bootLinkPath,
@@ -40,7 +40,7 @@ import {
   releaseDir,
   verifyRelease,
   type ReleaseManifest,
-} from '../services/config-release/boot-config'
+} from '@/services/config-release/boot-config'
 import { buildRelease, commitAll, git, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
 
 const REL = '.kortix/opencode'

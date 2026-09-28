@@ -1,6 +1,6 @@
 import { OPENCODE_HOME } from './paths'
 import type { OpenCodeConfig as Config } from './config'
-import type { ProjectEnvStore } from '../../services/sandbox-env/project-env'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService } from '../harness'
 import { loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
 import { createOpenCodeAssetsService } from './assets'

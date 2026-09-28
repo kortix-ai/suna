@@ -1,9 +1,9 @@
-import { writeAgentEnvFile } from '../harness/shared/agent-env-file'
-import { configureGlobalGitIdentity, configureGitCredentialHelper, materializeRepo } from '../lib/git/git'
-import type { HarnessBootContext, HarnessDefinition } from '../harness/harness'
-import { logger } from '../lib/log/logger'
-import { MonitorRunner, parseMonitorSpecs } from '../services/monitor/monitor-runner'
-import { createProjectEnvStore } from '../services/sandbox-env/project-env'
+import { writeAgentEnvFile } from '@/harness/shared/agent-env-file'
+import { configureGlobalGitIdentity, configureGitCredentialHelper, materializeRepo } from '@/lib/git/git'
+import type { HarnessBootContext, HarnessDefinition } from '@/harness/harness'
+import { logger } from '@/lib/log/logger'
+import { MonitorRunner, parseMonitorSpecs } from '@/services/monitor/monitor-runner'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 /**
  * Monitor mode — the box that watches things 24/7.

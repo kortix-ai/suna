@@ -16,26 +16,26 @@ import {
   verifyReleaseDetail,
   writeReleaseManifest,
   type ReleaseManifest,
-} from '../../services/config-release/boot-config'
+} from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '../../services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '../../services/config-release/descriptor'
-import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../services/config-release/notice'
+} from '@/services/config-release/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
 import { MAX_SWAP_DELAY_MS } from '../contract/control'
-import { logger } from '../../lib/log/logger'
-import { ensureInjectedManagedSkills } from '../../services/skills/managed-skills'
-import { isDaemonShuttingDown } from '../../lib/shutdown-state'
+import { logger } from '@/lib/log/logger'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
+import { isDaemonShuttingDown } from '@/lib/shutdown-state'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check'
-import type { ConfigReleaseReport, ConfigSource } from '../../types/config-release'
+import type { ConfigReleaseReport, ConfigSource } from '@/types/config-release'
 
 /**
  * Convergence: the daemon applies the release the API assigns.

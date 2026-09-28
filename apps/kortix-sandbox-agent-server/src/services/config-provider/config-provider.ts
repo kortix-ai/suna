@@ -18,9 +18,9 @@
  * cleared before Git runs), and never falls back on cancellation or an
  * authorization denial.
  */
-import type { Config, ProjectSnapshotMode } from '../../lib/config/config'
-import { adoptOrClearBakedCheckout, clearDirContents, finalizeSnapshotStage, readRepoInfo } from '../../lib/git/git'
-import { logger } from '../../lib/log/logger'
+import type { Config, ProjectSnapshotMode } from '@/lib/config/config'
+import { adoptOrClearBakedCheckout, clearDirContents, finalizeSnapshotStage, readRepoInfo } from '@/lib/git/git'
+import { logger } from '@/lib/log/logger'
 import { materializeViaGit } from './git/git-config-provider'
 import {
   checkS3Eligibility,

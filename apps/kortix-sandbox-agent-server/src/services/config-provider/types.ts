@@ -4,7 +4,7 @@
  * `target` (or a private stage under it); selection, fallback, telemetry and
  * activation belong to `config-provider.ts`.
  */
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 
 export type ConfigProviderName = 'git' | 's3'
 

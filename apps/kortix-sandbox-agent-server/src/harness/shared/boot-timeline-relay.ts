@@ -1,6 +1,6 @@
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import type { BootMark } from '../contract/boot-state'
-import { sandboxRelayContext } from '../../lib/kortix-api/relay-context'
+import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 
 /**
  * Relays the in-guest boot timeline to the control plane, once, when a

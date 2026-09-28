@@ -38,7 +38,7 @@ import {
   type PackageSource,
   type Skill,
 } from '@earendil-works/pi-coding-agent'
-import { logger } from '../../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 export type { InlineExtension }
 

@@ -11,10 +11,10 @@ import {
 } from './lifecycle'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { OPENCODE_HOME } from './paths'
-import { logger } from '../../lib/log/logger'
-import { scheduleRuntimeAssetsReconcile } from '../../services/runtime-assets/runtime-assets'
-import { configureRuntimeTruth, startRuntimeTruthTicker, type RuntimeTruthDeps } from '../../services/runtime-assets/runtime-truth'
-import type { Config as HostConfig } from '../../lib/config/config'
+import { logger } from '@/lib/log/logger'
+import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
+import { configureRuntimeTruth, startRuntimeTruthTicker, type RuntimeTruthDeps } from '@/services/runtime-assets/runtime-truth'
+import type { Config as HostConfig } from '@/lib/config/config'
 
 /**
  * Wires `runtime-truth.ts` (host, harness-neutral) to THIS harness's concrete

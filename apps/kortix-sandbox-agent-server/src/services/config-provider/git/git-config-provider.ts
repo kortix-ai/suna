@@ -5,7 +5,7 @@
  * always starts from an empty target. Nothing here changes what Git does; it
  * only reports what it delivered.
  */
-import { acquireProjectViaGit, readRepoInfo } from '../../../lib/git/git'
+import { acquireProjectViaGit, readRepoInfo } from '@/lib/git/git'
 import type { MaterializeRequest, MaterializedProject } from '../types'
 
 export async function materializeViaGit(req: MaterializeRequest): Promise<MaterializedProject> {

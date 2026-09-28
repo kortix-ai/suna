@@ -42,7 +42,7 @@
 import { Database } from 'bun:sqlite'
 import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 import { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder } from '../shared/inline-attachments'
 export { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder }

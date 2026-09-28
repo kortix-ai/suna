@@ -1,6 +1,6 @@
-import type { Config } from '../../lib/config/config'
-import type { RepoInfo } from '../../lib/git/git'
-import type { ProjectEnvStore } from '../../services/sandbox-env/project-env'
+import type { Config } from '@/lib/config/config'
+import type { RepoInfo } from '@/lib/git/git'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
 export interface HarnessEnvironmentInput {

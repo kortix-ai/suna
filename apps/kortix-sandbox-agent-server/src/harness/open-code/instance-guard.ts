@@ -1,4 +1,4 @@
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ONE STOP MUST NOT BREAK EVERY LATER TURN.

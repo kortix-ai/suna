@@ -24,8 +24,8 @@ import {
   ptyHasLiveWork,
   ptyIsAbandoned,
   type KortixPtyMeta,
-} from '../routes/kortix/pty'
-import type { Config } from '../lib/config/config'
+} from '@/routes/kortix/pty'
+import type { Config } from '@/lib/config/config'
 
 function meta(over: Partial<KortixPtyMeta> = {}): KortixPtyMeta {
   return {

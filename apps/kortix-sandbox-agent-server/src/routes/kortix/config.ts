@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import type { Config } from '../../lib/config/config'
-import { MAX_SWAP_DELAY_MS, type HarnessControlOperations } from '../../harness/contract/control'
-import { logger } from '../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import { MAX_SWAP_DELAY_MS, type HarnessControlOperations } from '@/harness/contract/control'
+import { logger } from '@/lib/log/logger'
 import { authorizeControl } from './control-auth'
 
 /**

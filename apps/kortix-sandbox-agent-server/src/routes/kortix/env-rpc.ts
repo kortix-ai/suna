@@ -4,12 +4,12 @@ import os from 'node:os'
 import path from 'node:path'
 import { Hono, type Context } from 'hono'
 
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
-} from '../../lib/kortix-api/kortix-user-context'
-import { logger } from '../../lib/log/logger'
+} from '@/lib/kortix-api/kortix-user-context'
+import { logger } from '@/lib/log/logger'
 
 /**
  * `/kortix/env-rpc` — the environment half of the harness/worker split (P1.7).

@@ -4,8 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
 
-import type { Config } from '../lib/config/config'
-import { createEnvRpcRouter } from '../routes/kortix/env-rpc'
+import type { Config } from '@/lib/config/config'
+import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
 // The worker half, imported from its real sources (apps/kortix-worker is
 // workspace-excluded but dependency-free on this path — `ws` loads lazily).
 import { LazyKortixEnv } from '../../../kortix-worker/src/lazy-env.ts'

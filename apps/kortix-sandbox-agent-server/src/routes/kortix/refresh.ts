@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
-import type { Config } from '../../lib/config/config'
-import type { HarnessControlOperations } from '../../harness/contract/control'
-import { KORTIX_SERVICE_CALL_HEADER } from '../../lib/kortix-api/kortix-user-context'
-import { logger } from '../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import type { HarnessControlOperations } from '@/harness/contract/control'
+import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { logger } from '@/lib/log/logger'
 import { runConvergence } from './config'
 import { authorizeControl } from './control-auth'
 

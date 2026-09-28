@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
   buildGitAuthArgs,
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   resolveGitCredentialOutput,
-} from '../lib/git/git'
+} from '@/lib/git/git'
 
 const execFileAsync = promisify(execFile)
 

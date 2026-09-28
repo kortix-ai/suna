@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import type { Config } from '../lib/config/config'
-import type { HarnessControlOperations, HarnessEnvironmentInput, HarnessEnvironmentResult } from '../harness/contract/control'
-import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
-import { createEnvRouter } from '../routes/kortix/env'
+import type { Config } from '@/lib/config/config'
+import type { HarnessControlOperations, HarnessEnvironmentInput, HarnessEnvironmentResult } from '@/harness/contract/control'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { createEnvRouter } from '@/routes/kortix/env'
 
 const cfg = { sandboxToken: 'control-boundary-token' } as Config
 const applied: HarnessEnvironmentResult = {

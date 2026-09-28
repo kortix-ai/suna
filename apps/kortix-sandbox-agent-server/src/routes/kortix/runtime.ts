@@ -1,11 +1,11 @@
 /** HTTP controllers for the existing runtime API; the selected harness owns operations. */
 import { Hono, type Context } from 'hono'
-import type { Config } from '../../lib/config/config'
-import { logger } from '../../lib/log/logger'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
-import type { KortixEvent } from '../../services/event-bus/kortix-event-bus'
+import type { Config } from '@/lib/config/config'
+import { logger } from '@/lib/log/logger'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
+import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
-import type { HarnessActionResult, HarnessQueryService, HarnessReadResult } from '../../harness/contract/queries'
+import type { HarnessActionResult, HarnessQueryService, HarnessReadResult } from '@/harness/contract/queries'
 
 /** Existing transcript page-size contract. */
 export const DEFAULT_MESSAGE_PAGE = 20

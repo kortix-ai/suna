@@ -20,9 +20,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as tar from 'tar'
 
-import type { Config } from '../lib/config/config'
-import { loadConfig } from '../harness/harness'
-import { materializeProject } from '../services/config-provider/config-provider'
+import type { Config } from '@/lib/config/config'
+import { loadConfig } from '@/harness/harness'
+import { materializeProject } from '@/services/config-provider/config-provider'
 import {
   PROJECT_SNAPSHOT_FORMAT,
   buildProjectSnapshotDescriptorUrl,
@@ -30,9 +30,9 @@ import {
   makeEntryGuard,
   parseProjectSnapshotPin,
   type ProjectSnapshotDescriptor,
-} from '../services/config-provider/s3/s3-config-provider'
-import { ConfigProviderError } from '../services/config-provider/types'
-import { __setScaffoldRepoPathForTests, readRepoInfo } from '../lib/git/git'
+} from '@/services/config-provider/s3/s3-config-provider'
+import { ConfigProviderError } from '@/services/config-provider/types'
+import { __setScaffoldRepoPathForTests, readRepoInfo } from '@/lib/git/git'
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
 const EXTERNAL_ID = '424242'

@@ -1,4 +1,4 @@
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 
 /** The daemon's HTTP server (app/server.ts), as an adapter's boot holds it. */
 export interface DaemonServer {

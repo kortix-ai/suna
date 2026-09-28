@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import type http from 'node:http'
 import { dirname } from 'node:path'
 
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { createEphemeralCa } from './ca'
 import { createEgressShim } from './shim'
 import { resolveShimConfig, type ShimConfig, shimUnavailableReason } from './rules'

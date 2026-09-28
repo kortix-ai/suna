@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fetchArtifactByChunks } from '../services/runtime-assets/runtime-asset-chunks'
+import { fetchArtifactByChunks } from '@/services/runtime-assets/runtime-asset-chunks'
 
 const BASE = 'https://api.test.invalid/v1/runtime-assets'
 const TOKEN = 'kortix_pat_test'

@@ -42,7 +42,9 @@ function hasCredentialCheck(source: string): boolean {
 function resolveImport(hostSource: string, hostFile: string, name: string): string | null {
   const re = new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*'([^']+)'`)
   const spec = re.exec(hostSource)?.[1]
-  return spec ? resolve(dirname(hostFile), `${spec}.ts`) : null
+  if (!spec) return null
+  // `@/` is src/ (tsconfig.json); anything else is relative to the host file.
+  return spec.startsWith('@/') ? resolve(sourceRoot, `${spec.slice(2)}.ts`) : resolve(dirname(hostFile), `${spec}.ts`)
 }
 
 /**

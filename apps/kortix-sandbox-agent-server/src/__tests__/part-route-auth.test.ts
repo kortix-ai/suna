@@ -14,10 +14,10 @@
  */
 import { createHmac } from 'node:crypto'
 import { describe, expect, test } from 'bun:test'
-import type { Config } from '../lib/config/config'
-import type { HarnessAttachmentResult, HarnessAttachmentService } from '../harness/contract/queries'
-import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
-import { createPartRouter } from '../routes/kortix/part'
+import type { Config } from '@/lib/config/config'
+import type { HarnessAttachmentResult, HarnessAttachmentService } from '@/harness/contract/queries'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { createPartRouter } from '@/routes/kortix/part'
 
 const TOKEN = 'test-sandbox-token'
 const WRONG_TOKEN = 'wrong-sandbox-token'

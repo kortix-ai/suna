@@ -23,7 +23,7 @@ import * as piTui from '@earendil-works/pi-tui'
 import * as typebox from 'typebox'
 import * as typeboxCompile from 'typebox/compile'
 import * as typeboxValue from 'typebox/value'
-import { logger } from '../../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { parseNpmSource } from './host'
 
 /** pi-coding-agent's VIRTUAL_MODULES, keyed exactly as prebuild.ts rewrites the imports. */

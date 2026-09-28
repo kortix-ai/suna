@@ -15,8 +15,8 @@ import {
   type RuntimeAssetsResult,
   registerHarnessAssets,
   resetHarnessAssetsForTests,
-} from '../services/runtime-assets/runtime-assets'
-import { resolveHarness } from '../harness/harness'
+} from '@/services/runtime-assets/runtime-assets'
+import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))

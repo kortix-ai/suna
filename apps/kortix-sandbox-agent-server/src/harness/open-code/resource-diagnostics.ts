@@ -3,7 +3,7 @@ import {
   evaluatePressure,
   type PressureFinding,
   type ResourceSnapshot,
-} from '../../services/resources/resources'
+} from '@/services/resources/resources'
 
 /** Match executable and subcommand arguments, never arbitrary test-file paths. */
 export function isOpenCodeServeCommand(cmdline: string): boolean {

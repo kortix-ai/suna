@@ -1,12 +1,12 @@
-import { resolveHarness } from '../../harness/harness'
+import { resolveHarness } from '@/harness/harness'
 import { Hono } from 'hono'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 
-import type { Config } from '../../lib/config/config'
-import { logger } from '../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import { logger } from '@/lib/log/logger'
 
 /**
  * Presentation export — turn a deck of HTML slides (created by the

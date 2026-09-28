@@ -36,20 +36,20 @@ import {
   runtimeTruthReport,
   startRuntimeTruthTicker,
   type RuntimeTruthComponent,
-} from '../services/runtime-assets/runtime-truth'
+} from '@/services/runtime-assets/runtime-truth'
 import {
   noteRuntimeConvergence,
   resetRuntimeConvergenceReportForTests,
   type RuntimeAssetsResult,
   registerHarnessAssets,
   resetHarnessAssetsForTests,
-} from '../services/runtime-assets/runtime-assets'
+} from '@/services/runtime-assets/runtime-assets'
 import {
   configReleaseReport,
   resetConfigReleaseStateForTests,
   setRunningConfig,
-} from '../harness/open-code/config-release'
-import { resolveHarness } from '../harness/harness'
+} from '@/harness/open-code/config-release'
+import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))

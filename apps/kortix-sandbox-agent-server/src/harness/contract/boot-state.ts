@@ -1,4 +1,4 @@
-import type { ConfigProviderSummary } from '../../services/config-provider/types'
+import type { ConfigProviderSummary } from '@/services/config-provider/types'
 
 export type BootMark = { label: string; atMs: number }
 

@@ -3,9 +3,9 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, wr
 import { randomBytes } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
-import { egressShimEnv } from '../../services/egress-shim'
-import { logger } from '../../lib/log/logger'
-import type { ProjectEnvStore } from '../../services/sandbox-env/project-env'
+import { egressShimEnv } from '@/services/egress-shim'
+import { logger } from '@/lib/log/logger'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 // tmpfs (RAM-backed) so plaintext secrets never land on the persisted container
 // disk — Daytona hibernate/archive keeps the disk, /dev/shm is never captured.

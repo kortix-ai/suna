@@ -12,14 +12,14 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import type { Config } from '../../lib/config/config'
-import { noteControlPlaneResponse } from '../../lib/kortix-api/session-token-health'
+import type { Config } from '@/lib/config/config'
+import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 import type {
   HarnessAssetOutcome,
   HarnessAssetsCompatibilityResult,
   HarnessAssetsService,
 } from './port'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { fetchArtifactByChunks } from './runtime-asset-chunks'
 import { withReleaseStoreLock } from '../config-release/boot-config'
 

@@ -31,7 +31,7 @@ import { Hono, type Context } from 'hono'
 import { lookup } from 'node:dns/promises'
 import { networkInterfaces } from 'node:os'
 
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import {
   FETCH_TIMEOUT_MS,
   MAX_RETRIES,

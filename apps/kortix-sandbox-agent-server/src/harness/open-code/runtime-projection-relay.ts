@@ -1,5 +1,5 @@
-import { logger } from '../../lib/log/logger'
-import { readControlPlaneEnv } from '../../lib/kortix-api/relay-context'
+import { logger } from '@/lib/log/logger'
+import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
 import { runtimeStateStore, type RuntimeStateDoc } from './runtime-state-projection'
 
 /**

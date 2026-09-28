@@ -3,8 +3,8 @@
  * has nothing of pi's to install or roll: no components. The managed skill
  * overlay still lands in the project's skills directory, which pi reads.
  */
-import { ensureInjectedManagedSkills } from '../../services/skills/managed-skills'
-import type { HarnessAssetsService } from '../../services/runtime-assets/port'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
+import type { HarnessAssetsService } from '@/services/runtime-assets/port'
 import { resolvePiConfigDir } from './config'
 
 export function createPiAssetsService(): HarnessAssetsService {

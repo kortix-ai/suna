@@ -3,9 +3,9 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import crypto from 'node:crypto'
 
-import type { Config } from '../../lib/config/config'
-import { logger } from '../../lib/log/logger'
-import { runGit } from '../../lib/git/git'
+import type { Config } from '@/lib/config/config'
+import { logger } from '@/lib/log/logger'
+import { runGit } from '@/lib/git/git'
 import { isLikelyBinary, mimeTypeFor } from './file-mime'
 
 /**

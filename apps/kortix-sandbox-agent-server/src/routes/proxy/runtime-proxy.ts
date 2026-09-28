@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import type { Config } from '../../lib/config/config'
-import type { SandboxBootState } from '../../harness/contract/boot-state'
-import type { HarnessProxyService } from '../../harness/contract/proxy'
+import type { Config } from '@/lib/config/config'
+import type { SandboxBootState } from '@/harness/contract/boot-state'
+import type { HarnessProxyService } from '@/harness/contract/proxy'
 import { withSseKeepalive } from './sse-keepalive'
 
 // Connection-scoped headers are a transport concern, not harness behavior.

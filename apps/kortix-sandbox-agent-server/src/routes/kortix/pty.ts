@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
-} from '../../lib/kortix-api/kortix-user-context'
-import { logger } from '../../lib/log/logger'
+} from '@/lib/kortix-api/kortix-user-context'
+import { logger } from '@/lib/log/logger'
 
 // Scrollback replayed to a newly (re)attached viewer, so reattaching after a
 // disconnect shows recent context instead of a blank prompt — same UX the

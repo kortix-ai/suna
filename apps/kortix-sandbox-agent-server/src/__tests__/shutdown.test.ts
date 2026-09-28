@@ -8,8 +8,8 @@
  * instead of `config-release.ts` guessing from a symptom.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { installShutdownHandlers } from '../app/shutdown'
-import { isDaemonShuttingDown, resetDaemonShutdownStateForTests } from '../lib/shutdown-state'
+import { installShutdownHandlers } from '@/app/shutdown'
+import { isDaemonShuttingDown, resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
 
 function fakeProxy() {
   return {

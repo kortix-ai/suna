@@ -10,7 +10,7 @@ import {
   isPlainRelativePath,
   type ConfigReleaseFile,
 } from './descriptor'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { managedSkillsDir } from '../skills/managed-skills'
 
 /**

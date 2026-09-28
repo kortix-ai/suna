@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
-import type { Config } from '../../lib/config/config'
-import type { HarnessControlOperations } from '../../harness/contract/control'
-import { logger } from '../../lib/log/logger'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '../../lib/kortix-api/kortix-user-context'
+import type { Config } from '@/lib/config/config'
+import type { HarnessControlOperations } from '@/harness/contract/control'
+import { logger } from '@/lib/log/logger'
+import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
 
 // POST /kortix/abort interrupts the pinned session's current turn.
 // /kortix/abort/after-tool arms or disarms an interrupt at the next tool boundary.

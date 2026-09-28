@@ -10,14 +10,14 @@ import type {
 import { requireOpenCodeConfig } from './config'
 import { OPENCODE_HOME } from './paths'
 import { projectOpenCodeResourceSnapshot } from './resource-diagnostics'
-import { daemonLogFilePath } from '../../lib/log/logger'
-import { tailFile } from '../../lib/log/log-tail'
+import { daemonLogFilePath } from '@/lib/log/logger'
+import { tailFile } from '@/lib/log/log-tail'
 
 import { configReleaseReport, runningSourceCommit } from './config-release'
-import type { Config } from '../../lib/config/config'
-import { readRepoInfo } from '../../lib/git/git'
-import { runtimeConvergenceReport } from '../../services/runtime-assets/runtime-assets'
-import { runtimeTruthReport, tickIntervalMs as runtimeTruthTickIntervalMs } from '../../services/runtime-assets/runtime-truth'
+import type { Config } from '@/lib/config/config'
+import { readRepoInfo } from '@/lib/git/git'
+import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
+import { runtimeTruthReport, tickIntervalMs as runtimeTruthTickIntervalMs } from '@/services/runtime-assets/runtime-truth'
 import { managedCatalogFallbackReason, managedModelIdsSnapshot, type Opencode } from './lifecycle'
 import {
   type OpencodeDeliveryObservation,

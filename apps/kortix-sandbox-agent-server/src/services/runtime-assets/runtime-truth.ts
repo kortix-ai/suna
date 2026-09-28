@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { HarnessAssetOutcome } from './port'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { runtimeConvergenceReport } from './runtime-assets'
-import type { ConfigReleaseReport } from '../../types/config-release'
+import type { ConfigReleaseReport } from '@/types/config-release'
 
 /**
  * the runtime-convergence contract (PR #7785) — the BOX side.

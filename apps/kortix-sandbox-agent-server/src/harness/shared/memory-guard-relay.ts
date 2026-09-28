@@ -11,8 +11,8 @@
  * without importing each other — the boundary lint (eslint.config.mjs) forbids
  * a concrete adapter from importing another adapter's module.
  */
-import { sandboxRelayContext } from '../../lib/kortix-api/relay-context'
-import { logger } from '../../lib/log/logger'
+import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
+import { logger } from '@/lib/log/logger'
 
 export async function relayMemoryGuardTurnEnd(input: {
   reason: string

@@ -1,4 +1,4 @@
-import { publishOpenCodeEvent } from '../harness/open-code/event-bus'
+import { publishOpenCodeEvent } from '@/harness/open-code/event-bus'
 /**
  * `/kortix/opencode/*` end to end, against a REAL local OpenCode stand-in and a
  * REAL fixture `opencode.db`.
@@ -14,13 +14,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { OpencodeDb } from '../harness/open-code/opencode-db'
-import { RuntimeStateStore } from '../harness/open-code/runtime-state-projection'
-import { kortixEventBus, resetKortixEventBusForTests } from '../services/event-bus/kortix-event-bus'
-import { createRuntimeRouter } from '../routes/kortix/runtime'
-import { createOpenCodeQueryService } from '../harness/open-code/queries'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { OpencodeDb } from '@/harness/open-code/opencode-db'
+import { RuntimeStateStore } from '@/harness/open-code/runtime-state-projection'
+import { kortixEventBus, resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { createRuntimeRouter } from '@/routes/kortix/runtime'
+import { createOpenCodeQueryService } from '@/harness/open-code/queries'
 
 const TOKEN = 'sandbox-token'
 const SESSION = 'ses_test00000000000000routes'

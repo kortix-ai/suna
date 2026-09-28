@@ -1,5 +1,5 @@
 import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from './llm-image-window'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localhost credential-injecting reverse proxy (the warm-fork "no restart on

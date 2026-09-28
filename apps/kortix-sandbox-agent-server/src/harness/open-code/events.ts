@@ -1,4 +1,4 @@
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
 

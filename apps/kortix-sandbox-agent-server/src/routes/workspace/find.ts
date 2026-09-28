@@ -3,9 +3,9 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 
-import type { Config } from '../../lib/config/config'
-import { logger } from '../../lib/log/logger'
-import { runGit } from '../../lib/git/git'
+import type { Config } from '@/lib/config/config'
+import { logger } from '@/lib/log/logger'
+import { runGit } from '@/lib/git/git'
 
 /**
  * Search routes — the daemon owns find too (was forwarded to OpenCode).

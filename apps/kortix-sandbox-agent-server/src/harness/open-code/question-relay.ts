@@ -1,5 +1,5 @@
-import { logger } from '../../lib/log/logger'
-import { sandboxRelayContext, sessionChannel } from '../../lib/kortix-api/relay-context'
+import { logger } from '@/lib/log/logger'
+import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-context'
 import type { OpenCodeConfig as Config } from './config'
 import type { QuestionRequest } from './events'
 import type { Opencode } from './lifecycle'

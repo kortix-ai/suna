@@ -23,8 +23,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { harnessProtectedPathSegments } from '../harness/harness'
-import { startStaticWebServer } from '../services/static-web/static-web'
+import { harnessProtectedPathSegments } from '@/harness/harness'
+import { startStaticWebServer } from '@/services/static-web/static-web'
 
 let server: ReturnType<typeof startStaticWebServer>
 let base: string

@@ -38,9 +38,9 @@ import { Readable, Transform, type Writable } from 'node:stream'
 import { createGunzip } from 'node:zlib'
 import * as tar from 'tar'
 
-import type { Config } from '../../../lib/config/config'
-import { createStagePath, runGit } from '../../../lib/git/git'
-import { logger } from '../../../lib/log/logger'
+import type { Config } from '@/lib/config/config'
+import { createStagePath, runGit } from '@/lib/git/git'
+import { logger } from '@/lib/log/logger'
 import {
   ConfigProviderError,
   type MaterializeRequest,

@@ -12,21 +12,21 @@
 import { homedir } from 'node:os'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
-import { materializeProject } from '../../services/config-provider/config-provider'
-import { startEgressShim } from '../../services/egress-shim'
+import { materializeProject } from '@/services/config-provider/config-provider'
+import { startEgressShim } from '@/services/egress-shim'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   scheduleHistoryBackfill,
-} from '../../lib/git/git'
+} from '@/lib/git/git'
 import type { HarnessBootContext } from '../harness'
-import { kortixEventBus } from '../../services/event-bus/kortix-event-bus'
-import { startLlmProxy } from '../../services/llm-proxy/llm-proxy'
-import { logger } from '../../lib/log/logger'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { startLlmProxy } from '@/services/llm-proxy/llm-proxy'
+import { logger } from '@/lib/log/logger'
 import { runSandboxOnBoot } from '../shared/on-boot'
-import { createProjectEnvStore } from '../../services/sandbox-env/project-env'
-import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../services/runtime-assets/runtime-assets'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
 import {

@@ -1,10 +1,10 @@
 import { createHmac } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import { loadOpenCodeConfig, type OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
-import { KORTIX_USER_CONTEXT_HEADER } from '../lib/kortix-api/kortix-user-context'
-import { INLINE_ATTACHMENT_MAX_BYTES } from '../harness/shared/inline-attachments'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { INLINE_ATTACHMENT_MAX_BYTES } from '@/harness/shared/inline-attachments'
 
 /**
  * End to end through the daemon: a transcript list leaves WITHOUT its

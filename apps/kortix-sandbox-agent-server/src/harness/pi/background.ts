@@ -5,10 +5,10 @@
  * ending the turn, and aborts the turn in place only once shedding is
  * exhausted (see `resources.ts` `pickShedCandidate`).
  */
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { relayMemoryGuardTurnEnd } from '../shared/memory-guard-relay'
-import { startResourceMonitor, type ResourceMonitor } from '../../services/resources/resources'
-import type { Config } from '../../lib/config/config'
+import { startResourceMonitor, type ResourceMonitor } from '@/services/resources/resources'
+import type { Config } from '@/lib/config/config'
 import type { PiRuntime } from './runtime'
 
 export function startPiBackground(runtime: () => PiRuntime | null, cfg: Config): ResourceMonitor {

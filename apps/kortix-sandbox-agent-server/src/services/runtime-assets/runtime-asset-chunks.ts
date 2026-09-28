@@ -47,7 +47,7 @@
  */
 import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 /** What the API serves at `GET /v1/runtime-assets/chunks/{component}`. */
 interface ChunkManifest {

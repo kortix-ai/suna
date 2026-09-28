@@ -12,11 +12,11 @@ import type { Opencode } from './lifecycle'
 import { OpencodeDb, isSupportedOpencodeVersion } from './opencode-db'
 import { projectTranscript } from './opencode-projection'
 import { configureRuntimeState, runtimeStateStore, type RuntimeStateStore } from './runtime-state-projection'
-import { kortixEventBus } from '../../services/event-bus/kortix-event-bus'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { OPENCODE_EVENT_RECOVERY } from './event-bus'
 import { readOpenCodeSessionPin } from './runtime-state'
 import { observeRequestedTurn, resolveTurnObservationIdentity } from './diagnostics'
-import { runtimeConvergenceReport } from '../../services/runtime-assets/runtime-assets'
+import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import { OPENCODE_HOME } from './paths'
 import {
   defaultSidecarDir,
@@ -26,7 +26,7 @@ import {
   sidecarPathFor,
   type AttachmentLike,
 } from './attachment-offload'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 interface OpenCodeQueryOptions {
   db?: OpencodeDb

@@ -30,7 +30,7 @@
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 /** Longest serialized line the log stores; longer lines truncate with a marker. */
 export const MONITOR_LINE_MAX_BYTES = 8 * 1024

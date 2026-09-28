@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync, openSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { resolveSandboxOnBoot, type Config } from '../../lib/config/config'
-import { logger } from '../../lib/log/logger'
+import { resolveSandboxOnBoot, type Config } from '@/lib/config/config'
+import { logger } from '@/lib/log/logger'
 
 /**
  * Project-declared boot command (`sandbox.on_boot` in kortix.yaml), e.g.

@@ -4,16 +4,16 @@ import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import type {
   HarnessAssetOutcome,
   HarnessAssetsInput,
   HarnessAssetsResult,
   HarnessAssetsService,
-} from '../../services/runtime-assets/port'
+} from '@/services/runtime-assets/port'
 import { requireOpenCodeConfig } from './config'
-import { ensureInjectedManagedSkills } from '../../services/skills/managed-skills'
-import { isInReleaseStore, readBootLinkTarget } from '../../services/config-release/boot-config'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
+import { isInReleaseStore, readBootLinkTarget } from '@/services/config-release/boot-config'
 import {
   captureProcessOutput,
   latchOpencodePinned,

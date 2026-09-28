@@ -1,11 +1,11 @@
-import { shredAgentEnvFile } from '../harness/shared/agent-env-file'
-import { stopEgressShim } from '../services/egress-shim'
-import { logger } from '../lib/log/logger'
-import { beginDaemonShutdown } from '../lib/shutdown-state'
-import type { HarnessLifecycleService } from '../harness/harness'
+import { shredAgentEnvFile } from '@/harness/shared/agent-env-file'
+import { stopEgressShim } from '@/services/egress-shim'
+import { logger } from '@/lib/log/logger'
+import { beginDaemonShutdown } from '@/lib/shutdown-state'
+import type { HarnessLifecycleService } from '@/harness/harness'
 import type { ProxyServer } from './server'
-import type { DaemonShutdown } from '../harness/contract/server'
-import type { StaticWebServer } from '../services/static-web/static-web'
+import type { DaemonShutdown } from '@/harness/contract/server'
+import type { StaticWebServer } from '@/services/static-web/static-web'
 
 export function installShutdownHandlers(
   harness: Pick<HarnessLifecycleService, 'stop'>,

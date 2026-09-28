@@ -18,7 +18,7 @@
  * testable on macOS, where /proc does not exist.
  */
 import { readFile, readdir, statfs } from 'node:fs/promises'
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 
 export interface MemorySnapshot {
   totalMb: number | null

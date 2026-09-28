@@ -1,13 +1,13 @@
-import { dispatchCli, isManagementSubcommand } from './app/cli'
-import { runGitCredentialHelper } from './lib/git/git'
-import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from './harness/harness'
-import { kortixEventBus } from './services/event-bus/kortix-event-bus'
-import { enableDaemonLogFile, logger } from './lib/log/logger'
-import { runMonitorMode } from './app/monitor-mode'
-import { startStaticWebServer } from './services/static-web/static-web'
-import { startProxy } from './app/server'
-import { installShutdownHandlers } from './app/shutdown'
-import { bakeRuntimeAssetsState, registerHarnessAssets } from './services/runtime-assets/runtime-assets'
+import { dispatchCli, isManagementSubcommand } from '@/app/cli'
+import { runGitCredentialHelper } from '@/lib/git/git'
+import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from '@/harness/harness'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { enableDaemonLogFile, logger } from '@/lib/log/logger'
+import { runMonitorMode } from '@/app/monitor-mode'
+import { startStaticWebServer } from '@/services/static-web/static-web'
+import { startProxy } from '@/app/server'
+import { installShutdownHandlers } from '@/app/shutdown'
+import { bakeRuntimeAssetsState, registerHarnessAssets } from '@/services/runtime-assets/runtime-assets'
 
 async function main() {
   const bootTime = Date.now()

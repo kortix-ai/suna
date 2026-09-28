@@ -1,4 +1,4 @@
-import type { Config } from '../../lib/config/config'
+import type { Config } from '@/lib/config/config'
 
 export type HarnessAssetOutcome = 'skipped' | 'current' | 'updated' | 'failed' | 'staged'
 

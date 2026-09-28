@@ -17,6 +17,8 @@ goes. `bun run lint` enforces them, and `bun test` runs the lint.
 - **A type two isolated modules share goes to `src/types/`** (two adapters, a service and
   an adapter, two services) instead of being copied. `src/types/` holds type declarations
   only.
+- **`@/` across top-level folders of `src/`, relative inside one** (`@/services/...` from
+  `harness/`, `../shared/...` inside `harness/`). `bun run lint --fix` rewrites either way.
 - **A rule change ships with its proof:** `eslint.config.mjs`, a case in
   `scripts/check-architecture.mjs`, and ARCHITECTURE.md, in one PR.
 

@@ -1,5 +1,5 @@
-import type { Config } from '../../lib/config/config'
-import type { KortixEventListener, SubscribeResult } from '../../services/event-bus/kortix-event-bus'
+import type { Config } from '@/lib/config/config'
+import type { KortixEventListener, SubscribeResult } from '@/services/event-bus/kortix-event-bus'
 
 /** Existing response documents remain opaque until the public protocol changes. */
 export type HarnessDocument = Record<string, unknown>

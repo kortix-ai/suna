@@ -13,8 +13,8 @@ import {
   materializeScaffoldSeed,
   materializeProjectSeed,
   scheduleHistoryBackfill,
-} from '../../lib/git/git'
-import { logger } from '../../lib/log/logger'
+} from '@/lib/git/git'
+import { logger } from '@/lib/log/logger'
 import {
   catalogIsDegraded,
   hasKortixLlmGateway,
@@ -28,7 +28,7 @@ import {
   type Opencode,
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
-import { materializeProject } from '../../services/config-provider/config-provider'
+import { materializeProject } from '@/services/config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { ConvergeBusyError, convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
@@ -43,7 +43,7 @@ import {
   configureRuntimeConvergence,
   convergeRuntimeAssetsAtTurnEnd,
   scheduleRuntimeAssetsReconcile,
-} from '../../services/runtime-assets/runtime-assets'
+} from '@/services/runtime-assets/runtime-assets'
 import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import {
@@ -53,12 +53,12 @@ import {
   type OpencodeTurnError,
 } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
-import { kortixEventBus } from '../../services/event-bus/kortix-event-bus'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
 import { relayPermissionToApi } from './permission-relay'
 import { relayQuestionToApi } from './question-relay'
-import { readControlPlaneEnv, sandboxRelayContext } from '../../lib/kortix-api/relay-context'
+import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   openCodeSeedBakedPinPath,
@@ -68,8 +68,8 @@ import {
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
 } from './runtime-state'
-import { createProjectEnvStore } from '../../services/sandbox-env/project-env'
-import { startEgressShim } from '../../services/egress-shim'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { startEgressShim } from '@/services/egress-shim'
 import {
   startLlmProxy,
   setLlmProxyToken,
@@ -79,14 +79,14 @@ import {
   setConnectorProxyToken,
   connectorProxyReady,
   connectorProxyBaseUrl,
-} from '../../services/llm-proxy/llm-proxy'
+} from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
-import { noteControlPlaneResponse } from '../../lib/kortix-api/session-token-health'
+import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
-import type { InitialTurnClaim } from '../../types/control-plane'
+import type { InitialTurnClaim } from '@/types/control-plane'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',

@@ -1,4 +1,4 @@
-import { logger } from '../../lib/log/logger'
+import { logger } from '@/lib/log/logger'
 import { readOpenCodeSessionPin } from './runtime-state'
 
 /**
