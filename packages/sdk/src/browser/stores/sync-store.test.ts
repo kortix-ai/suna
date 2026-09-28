@@ -3938,6 +3938,48 @@ describe("hydrate preserves the server's page order", () => {
 	});
 });
 
+describe("hydrate reconciles provisional cache rows", () => {
+	test("an empty runtime page removes cached rows and their parts", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_cached"), parts: [textPart("prt_cached", "msg_cached", "draft")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", []);
+
+		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
+		expect(useSyncStore.getState().parts.msg_cached).toBeUndefined();
+	});
+
+	test("a bounded runtime tail keeps older cached history but removes a covered phantom", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_10"), parts: [textPart("prt_10", "msg_10", "history")] },
+			{ info: userMessage("msg_30"), parts: [textPart("prt_30", "msg_30", "phantom")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_20"), parts: [] }]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_10", "msg_20"]);
+		expect(useSyncStore.getState().parts.msg_10?.[0]).toMatchObject({ text: "history" });
+		expect(useSyncStore.getState().parts.msg_30).toBeUndefined();
+	});
+
+	test("a runtime row confirms a cached id while retaining longer existing text", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "cached longer text")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "runtime text")] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_20"]);
+		expect(useSyncStore.getState().parts.msg_20?.[0]).toMatchObject({ text: "cached longer text" });
+	});
+});
+
 describe("session.error stub reconciliation reads parentID and time, never id order", () => {
 	function stageFailedTurn(userId: string, created: number): string {
 		const store = useSyncStore.getState();
