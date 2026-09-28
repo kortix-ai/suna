@@ -83,7 +83,7 @@ describe('project git connection state', () => {
 
 describe('a GitHub App with no OAuth client', () => {
   test('boot warns instead of staying silent', async () => {
-    const config = await Bun.file(new URL('../config.ts', import.meta.url)).text();
+    const config = await Bun.file(new URL('../validate-env.ts', import.meta.url)).text();
     // The gap that hid this for months: these two are read straight from
     // process.env, so they never appeared in the startup report and every
     // environment ran without them unnoticed.
@@ -95,7 +95,7 @@ describe('a GitHub App with no OAuth client', () => {
     expect(start).toBeGreaterThan(-1);
     // Bound the slice to THIS block — the next conditional legitimately raises
     // errors, and reading into it would assert the wrong thing.
-    const end = config.indexOf('// ── Conditional: Tunnel enabled', start);
+    const end = config.indexOf('function checkTunnel', start);
     expect(end).toBeGreaterThan(start);
     const block = config.slice(start, end);
     // Only warn when an App is actually configured — a deployment with no
