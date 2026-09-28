@@ -3,7 +3,8 @@ import { downloadAccountAudit, type AuditEvent, type AuditEventList } from '@kor
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeAccount } from '../api/config.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
-import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
+import { splitHelp } from '../command-argv.ts';
+import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool, fail, missing } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
 
@@ -329,20 +330,10 @@ async function collectAuditPages(
 }
 
 export async function runAudit(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let all = false;
@@ -373,8 +364,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     json = takeFlagBool(rest, ['--json']);
     all = takeFlagBool(rest, ['--all']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -387,10 +377,7 @@ export async function runAudit(argv: string[]): Promise<number> {
       case 'ls':
       case 'list': {
         const built = buildAuditQuery(f);
-        if ('error' in built) {
-          process.stderr.write(`${status.err(built.error)}\n`);
-          return 2;
-        }
+        if ('error' in built) return fail(built.error);
         const { search } = built;
         if (f.limit) search.set('limit', f.limit);
         if (f.cursor) search.set('cursor', f.cursor);
@@ -431,10 +418,7 @@ export async function runAudit(argv: string[]): Promise<number> {
           return 2;
         }
         const built = buildAuditQuery({ ...f, project: undefined });
-        if ('error' in built) {
-          process.stderr.write(`${status.err(built.error)}\n`);
-          return 2;
-        }
+        if ('error' in built) return fail(built.error);
         const { search } = built;
         if (f.limit) search.set('limit', f.limit);
         if (f.cursor) search.set('cursor', f.cursor);
@@ -468,15 +452,9 @@ export async function runAudit(argv: string[]): Promise<number> {
 
       case 'export': {
         const built = buildAuditQuery(f);
-        if ('error' in built) {
-          process.stderr.write(`${status.err(built.error)}\n`);
-          return 2;
-        }
+        if ('error' in built) return fail(built.error);
         const format = (f.format || 'csv').toLowerCase();
-        if (format !== 'csv' && format !== 'jsonl') {
-          process.stderr.write(`${status.err('--format must be csv or jsonl.')}\n`);
-          return 2;
-        }
+        if (format !== 'csv' && format !== 'jsonl') return fail('--format must be csv or jsonl.');
         const { search } = built;
         let cursor = f.cursor ?? undefined;
         const chunks: string[] = [];
@@ -541,17 +519,9 @@ export async function runAudit(argv: string[]): Promise<number> {
 
       case 'session': {
         const sessionId = positional[0];
-        if (!sessionId) {
-          process.stderr.write(`${status.err('Missing a session id.')}\n`);
-          return 2;
-        }
+        if (!sessionId) return fail('Missing a session id.');
         const projectId = f.project;
-        if (!projectId) {
-          process.stderr.write(
-            `${status.err('Pass --project <id> — the session audit route is project-scoped.')}\n`,
-          );
-          return 2;
-        }
+        if (!projectId) return missing('--project <id> — the session audit route is project-scoped');
         const sessionSearch = new URLSearchParams();
         if (f.limit) sessionSearch.set('limit', f.limit);
         if (f.cursor) sessionSearch.set('cursor', f.cursor);
@@ -636,14 +606,8 @@ export async function runAudit(argv: string[]): Promise<number> {
 
           case 'add':
           case 'create': {
-            if (!f.name) {
-              process.stderr.write(`${status.err('Pass --name <label>.')}\n`);
-              return 2;
-            }
-            if (!f.url) {
-              process.stderr.write(`${status.err('Pass --url <https endpoint>.')}\n`);
-              return 2;
-            }
+            if (!f.name) return missing('--name <label>');
+            if (!f.url) return missing('--url <https endpoint>');
             const created = await ctx.client.post<AuditWebhook>(`${base}/webhooks`, {
               name: f.name,
               url: f.url,
@@ -675,12 +639,7 @@ export async function runAudit(argv: string[]): Promise<number> {
 
           case 'enable':
           case 'disable': {
-            if (!webhookId) {
-              process.stderr.write(
-                `${status.err('Pass a webhook id (see `kortix audit webhooks ls`).')}\n`,
-              );
-              return 2;
-            }
+            if (!webhookId) return missing('a webhook id (see `kortix audit webhooks ls`)');
             const updated = await ctx.client.patch<AuditWebhook>(
               `${base}/webhooks/${encodeURIComponent(webhookId)}`,
               { enabled: verb === 'enable' },
@@ -697,12 +656,7 @@ export async function runAudit(argv: string[]): Promise<number> {
 
           case 'rm':
           case 'delete': {
-            if (!webhookId) {
-              process.stderr.write(
-                `${status.err('Pass a webhook id (see `kortix audit webhooks ls`).')}\n`,
-              );
-              return 2;
-            }
+            if (!webhookId) return missing('a webhook id (see `kortix audit webhooks ls`)');
             await ctx.client.delete(`${base}/webhooks/${encodeURIComponent(webhookId)}`);
             process.stdout.write(
               `${status.ok(`Deleted webhook ${C.bold}${webhookId}${C.reset}`)}\n`,
@@ -711,10 +665,7 @@ export async function runAudit(argv: string[]): Promise<number> {
           }
 
           default:
-            process.stderr.write(
-              `${status.err(`unknown webhooks verb "${verb}" — use ls|add|enable|disable|rm`)}\n`,
-            );
-            return 2;
+            return fail(`unknown webhooks verb "${verb}" — use ls|add|enable|disable|rm`);
         }
       }
 

@@ -123,7 +123,8 @@ describe('withheldSecretsFix', () => {
     expect(text).toContain('kortix secrets grant API_KEY --agent analyst');
     expect(text).toContain('cannot widen its own grant');
     expect(text).toContain('pushes the change to this session when it is saved');
-    expect(text).toContain('cannot run `kortix secrets sync`');
+    expect(text).toContain('run `kortix secrets sync` to pull it right away');
+    expect(text).not.toContain('cannot run');
   });
 
   test('several names use a placeholder command', () => {

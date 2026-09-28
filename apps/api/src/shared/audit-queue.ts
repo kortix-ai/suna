@@ -15,8 +15,14 @@
  *
  * Invariants:
  *  - `enqueue` never throws and never blocks on I/O.
- *  - a flush never throws into a caller; failures are logged and the batch is
- *    dropped (retrying in-process would amplify the stall that caused it).
+ *  - a flush never throws into a caller.
+ *  - a batch that fails on lock/connection CONTENTION (55P03/57014/40001/
+ *    40P01, or the database being unreachable) is requeued for a later flush,
+ *    with exponential backoff, and is NEVER dropped for that reason alone —
+ *    only the queue-overflow path above may drop rows, under sustained
+ *    overload. Only a genuinely POISON batch (a data error: a constraint, a
+ *    bad value) is logged loudly and dead-lettered, because retrying that can
+ *    never succeed.
  *  - the batch INSERT uses `onConflictDoNothing()`, which preserves the
  *    `idx_audit_events_source_phase` partial-unique dedup semantics
  *    (source_ledger, source_record_id, phase, coalesce(source_revision,''))
@@ -24,9 +30,18 @@
  *    fail an entire batch.
  */
 import { type Database, auditEvents } from '@kortix/db';
-import { errorSqlstate, innermostMessage } from './error-cause';
+import { withAuditSessionLock } from './audit-session-serial';
+import { errorSqlstate, innermostMessage, isAuditContentionError } from './error-cause';
 
 export type AuditRow = typeof auditEvents.$inferInsert;
+
+/**
+ * How the queue serializes one session's statements against the other
+ * in-process audit writer (the sandbox ingest route). Defaults to the shared
+ * per-session lock; injectable so a test can observe the grouping without the
+ * real mutex. See `audit-session-serial.ts` for why this exists.
+ */
+export type AuditSessionSerializer = (sessionId: string, fn: () => Promise<void>) => Promise<void>;
 
 /** The minimum surface the queue needs from Drizzle — keeps tests db-free. */
 export type AuditInsertClient = Pick<Database, 'insert'>;
@@ -41,8 +56,23 @@ export interface AuditQueueOptions {
   /** Minimum gap between "dropped N events" warnings. */
   dropLogIntervalMs?: number;
   now?: () => number;
+  /** Called for a genuinely poison batch (a data error) that is dead-lettered. */
   onError?: (error: unknown, rowCount: number) => void;
   onDrop?: (droppedTotal: number, sinceLastLog: number) => void;
+  /** Called when a batch is requeued after lock/connection contention. */
+  onRetry?: (error: unknown, rowCount: number, attempt: number, delayMs: number) => void;
+  /** Base of the exponential backoff applied between contended retries. */
+  retryBaseMs?: number;
+  /** Ceiling the backoff never exceeds, however many consecutive contentions. */
+  retryMaxMs?: number;
+  /** Source of jitter for the backoff. Injectable so a test is deterministic. */
+  random?: () => number;
+  /** How long `shutdown()` keeps retrying contended rows before giving up. */
+  shutdownDeadlineMs?: number;
+  /** Sleep primitive `shutdown()` uses between contended retries. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Serializes one session's statement against the in-process ingest writer. */
+  serialize?: AuditSessionSerializer;
 }
 
 export const AUDIT_FLUSH_MS_DEFAULT = 250;
@@ -53,6 +83,14 @@ export const AUDIT_FLUSH_MS_DEFAULT = 250;
 export const AUDIT_FLUSH_MAX_DEFAULT = 100;
 export const AUDIT_QUEUE_MAX_DEFAULT = 5_000;
 const DROP_LOG_INTERVAL_MS = 60_000;
+
+// A contended batch is requeued, never dropped, so it must be retried without
+// hammering the same session lock every `flushMs`. Exponential backoff with
+// equal jitter (half fixed, half random) keeps the floor predictable while
+// still spreading concurrent replicas' retries apart.
+export const AUDIT_RETRY_BASE_MS_DEFAULT = 200;
+export const AUDIT_RETRY_MAX_MS_DEFAULT = 10_000;
+export const AUDIT_SHUTDOWN_DEADLINE_MS_DEFAULT = 10_000;
 
 function positiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -65,8 +103,28 @@ export interface AuditQueueStats {
   enqueued: number;
   written: number;
   dropped: number;
+  /** Poison batches (a data error) dead-lettered — these can never succeed. */
   failed: number;
+  /** Contention (lock/connection) failures requeued for a later attempt. */
+  contended: number;
   flushes: number;
+}
+
+/**
+ * Exponential backoff with equal jitter: half the capped delay is fixed, half
+ * is random, so the delay is never near-zero (which would just re-hammer the
+ * lock) and never unbounded. `attempt` is 1 for the first retry.
+ */
+export function retryBackoffMs(
+  attempt: number,
+  baseMs: number,
+  maxMs: number,
+  randomValue: number,
+): number {
+  const exponent = Math.max(0, attempt - 1);
+  const capped = Math.min(maxMs, baseMs * 2 ** exponent);
+  const half = capped / 2;
+  return Math.floor(half + randomValue * half);
 }
 
 /**
@@ -144,17 +202,38 @@ export class AuditQueue {
   private readonly now: () => number;
   private readonly onError: (error: unknown, rowCount: number) => void;
   private readonly onDrop: (droppedTotal: number, sinceLastLog: number) => void;
+  private readonly onRetry: (
+    error: unknown,
+    rowCount: number,
+    attempt: number,
+    delayMs: number,
+  ) => void;
+  private readonly retryBaseMs: number;
+  private readonly retryMaxMs: number;
+  private readonly random: () => number;
+  private readonly shutdownDeadlineMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly serialize: AuditSessionSerializer;
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inFlight: Promise<void> | null = null;
   /** `null` = never warned yet. The FIRST overflow must always warn. */
   private lastDropLogAt: number | null = null;
   private droppedSinceLastLog = 0;
+  /**
+   * Consecutive contention events across flushes, reset by any flush that
+   * completes with zero contention. Backs off `scheduleFlush`'s delay so a
+   * stuck session lock is retried on a growing interval, not every `flushMs`.
+   */
+  private consecutiveContentions = 0;
+  /** Earliest time the NEXT flush may run. 0 means no active backoff. */
+  private nextEligibleFlushAt = 0;
 
   private enqueued = 0;
   private written = 0;
   private dropped = 0;
   private failed = 0;
+  private contended = 0;
   private flushes = 0;
 
   constructor(
@@ -166,12 +245,25 @@ export class AuditQueue {
     this.queueMax = options.queueMax ?? AUDIT_QUEUE_MAX_DEFAULT;
     this.dropLogIntervalMs = options.dropLogIntervalMs ?? DROP_LOG_INTERVAL_MS;
     this.now = options.now ?? Date.now;
+    this.retryBaseMs = options.retryBaseMs ?? AUDIT_RETRY_BASE_MS_DEFAULT;
+    this.retryMaxMs = options.retryMaxMs ?? AUDIT_RETRY_MAX_MS_DEFAULT;
+    this.random = options.random ?? Math.random;
+    this.shutdownDeadlineMs = options.shutdownDeadlineMs ?? AUDIT_SHUTDOWN_DEADLINE_MS_DEFAULT;
+    this.sleep =
+      options.sleep ??
+      ((ms) =>
+        new Promise((resolve) => {
+          const t = setTimeout(resolve, ms);
+          t.unref?.();
+        }));
     this.onError =
       options.onError ??
       ((error, rowCount) => {
+        // A poison batch is a DEFECT, not backpressure: retrying a constraint
+        // violation or a bad value can never succeed, so it is logged loudly
+        // (with the count, per incident policy) and dead-lettered once.
         console.error(
-          `[audit] Dropped a batch of ${rowCount} events after a write failure: ` +
-            describeAuditWriteFailure(error),
+          `[audit] Dead-lettered a poison batch of ${rowCount} events (data error, cannot be retried): ${describeAuditWriteFailure(error)}`,
         );
       });
     this.onDrop =
@@ -181,6 +273,29 @@ export class AuditQueue {
           `[audit] Queue full — dropped ${sinceLastLog} oldest events (${droppedTotal} total). Audit writes are falling behind; raise KORTIX_AUDIT_QUEUE_MAX or investigate database latency.`,
         );
       });
+    this.onRetry =
+      options.onRetry ??
+      ((error, rowCount, attempt, delayMs) => {
+        // Expected backpressure, not a defect: warn, don't page. The batch is
+        // still buffered and will be retried — it is never dropped for this.
+        console.warn(
+          `[audit] Write contended — requeuing ${rowCount} events for retry #${attempt} in ${delayMs}ms: ${describeAuditWriteFailure(error)}`,
+        );
+      });
+    // Off the request path: wait for our turn without a timeout. The wait is in
+    // memory, so `lock_timeout` cannot drop the batch the way it did when this
+    // row raced the sandbox ingest for the same session's sequence row lock.
+    this.serialize = options.serialize ?? ((sessionId, fn) => withAuditSessionLock(sessionId, fn));
+  }
+
+  /** The delay before the next contended retry, given the current streak. */
+  private retryDelayMs(): number {
+    return retryBackoffMs(
+      this.consecutiveContentions,
+      this.retryBaseMs,
+      this.retryMaxMs,
+      this.random(),
+    );
   }
 
   /**
@@ -202,7 +317,12 @@ export class AuditQueue {
       this.maybeLogDrops();
     }
 
-    if (this.rows.length >= this.flushMax) {
+    // Under an active contention backoff, reaching flushMax must NOT trigger
+    // an immediate flush — that would re-hammer the same session lock on
+    // every arriving row instead of honoring the backoff window, defeating
+    // the whole point of it. Fall through to `scheduleFlush`, which respects
+    // `nextEligibleFlushAt`.
+    if (this.rows.length >= this.flushMax && this.now() >= this.nextEligibleFlushAt) {
       void this.flush();
       return;
     }
@@ -220,10 +340,11 @@ export class AuditQueue {
 
   private scheduleFlush(): void {
     if (this.timer !== null || this.rows.length === 0) return;
+    const delay = Math.max(this.flushMs, this.nextEligibleFlushAt - this.now());
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.flush();
-    }, this.flushMs);
+    }, delay);
     // Never hold the process open for a pending audit flush; `flush()` on the
     // shutdown path is what guarantees the tail is written.
     this.timer.unref?.();
@@ -256,25 +377,97 @@ export class AuditQueue {
     return run;
   }
 
+  /**
+   * Write a snapshot. A batch that fails on lock/connection CONTENTION
+   * (55P03/57014/40001/40P01, or the database being unreachable) is requeued
+   * for a later flush — never dropped. Only a genuinely POISON batch (a data
+   * error: a constraint, a bad value) is dead-lettered, because retrying that
+   * can never succeed.
+   *
+   * Prod, 2026-09-24 through 2026-09-27: every drop this queue logged was
+   * sqlstate=55P03 (lock_timeout), i.e. 100% backpressure, 0% poison — and
+   * every one of them was silently discarded audit history. See the
+   * `learnings` entry for this incident.
+   */
   private async write(snapshot: AuditRow[]): Promise<void> {
+    const requeue: AuditRow[] = [];
+    const contentions: Array<{ error: unknown; rowCount: number }> = [];
     for (const batch of statementBatches(snapshot, this.flushMax)) {
       this.flushes += 1;
-      try {
+      // `statementBatches` guarantees one session per statement, so the first
+      // row names the sequence row lock this insert will take. Session-less
+      // rows take no such lock, so they are written directly.
+      const sessionId = batch[0]?.sessionId ?? null;
+      const insert = async (): Promise<void> => {
         await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
+      };
+      try {
+        if (sessionId) await this.serialize(sessionId, insert);
+        else await insert();
         this.written += batch.length;
       } catch (error) {
-        // Re-queuing would amplify whatever stalled the database, and the audit
-        // trail is best-effort by construction. Account for it and move on.
-        this.failed += batch.length;
-        this.onError(error, batch.length);
+        if (isAuditContentionError(error)) {
+          // Backpressure, not a defect. Keep the rows — in their original
+          // relative order, restored below — for the next flush attempt.
+          this.contended += batch.length;
+          requeue.push(...batch);
+          contentions.push({ error, rowCount: batch.length });
+        } else {
+          // A poison batch can never succeed on retry: dead-letter it once,
+          // loudly, with the count, and move on.
+          this.failed += batch.length;
+          this.onError(error, batch.length);
+        }
       }
+    }
+
+    if (requeue.length > 0) {
+      // Prepend: these rows arrived before anything enqueued DURING this
+      // flush (already at the tail of `this.rows`), so putting them back at
+      // the front preserves arrival order — the only order `session_sequence`
+      // is defined over.
+      this.rows.unshift(...requeue);
+      this.consecutiveContentions += 1;
+      const delayMs = this.retryDelayMs();
+      this.nextEligibleFlushAt = this.now() + delayMs;
+      for (const { error, rowCount } of contentions) {
+        this.onRetry(error, rowCount, this.consecutiveContentions, delayMs);
+      }
+    } else {
+      this.consecutiveContentions = 0;
+      this.nextEligibleFlushAt = 0;
     }
   }
 
-  /** Flush everything and stop the timer. Used by the shutdown path. */
+  /**
+   * Flush everything and stop the timer. Used by the shutdown path.
+   *
+   * A contended row is never dropped by `write()`, so a database that stays
+   * down would otherwise spin this loop forever and wedge the process exit.
+   * Bound it: sleep out the backoff between attempts (never spin-hammer the
+   * lock), and give up after `shutdownDeadlineMs` — at that point the process
+   * is exiting regardless, and whatever is still buffered is lost with it
+   * exactly as it would be if the process were killed mid-request. Logged
+   * loudly so this is never a silent loss.
+   */
   async shutdown(): Promise<void> {
+    const deadline = this.now() + this.shutdownDeadlineMs;
     while (this.rows.length > 0 || this.inFlight) {
       await this.flush();
+      // Rows can remain buffered for two reasons: a benign race (something
+      // enqueued while this flush ran — loop again immediately, same as
+      // before this fix) or an active contention backoff. Only the second
+      // needs a bounded sleep and a deadline.
+      if (this.rows.length > 0 && this.consecutiveContentions > 0) {
+        const remaining = deadline - this.now();
+        if (remaining <= 0) {
+          console.error(
+            `[audit] Shutdown deadline reached with ${this.rows.length} events still contended — the process is exiting and these will NOT be written.`,
+          );
+          break;
+        }
+        await this.sleep(Math.min(this.retryDelayMs(), remaining));
+      }
     }
     if (this.timer !== null) {
       clearTimeout(this.timer);
@@ -289,6 +482,7 @@ export class AuditQueue {
       written: this.written,
       dropped: this.dropped,
       failed: this.failed,
+      contended: this.contended,
       flushes: this.flushes,
     };
   }
@@ -303,6 +497,8 @@ export function getAuditQueue(client: AuditInsertClient): AuditQueue {
       flushMs: positiveInt(process.env.KORTIX_AUDIT_FLUSH_MS, AUDIT_FLUSH_MS_DEFAULT),
       flushMax: positiveInt(process.env.KORTIX_AUDIT_FLUSH_MAX, AUDIT_FLUSH_MAX_DEFAULT),
       queueMax: positiveInt(process.env.KORTIX_AUDIT_QUEUE_MAX, AUDIT_QUEUE_MAX_DEFAULT),
+      retryBaseMs: positiveInt(process.env.KORTIX_AUDIT_RETRY_BASE_MS, AUDIT_RETRY_BASE_MS_DEFAULT),
+      retryMaxMs: positiveInt(process.env.KORTIX_AUDIT_RETRY_MAX_MS, AUDIT_RETRY_MAX_MS_DEFAULT),
     });
   }
   return queue;

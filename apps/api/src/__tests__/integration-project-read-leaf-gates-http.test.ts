@@ -6,6 +6,7 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { PROJECT_ACTIONS } from '../iam';
 import { insertIntoView } from './helpers/compat-views';
+import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -17,8 +18,10 @@ const MEMBER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
+let upstream: LocalGitUpstream;
 
 beforeAll(async () => {
+  upstream = createLocalGitUpstream('read-leaf-gates');
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
@@ -28,7 +31,7 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'leaf-gate-http-test-project',
-    repoUrl: 'https://example.com/leaf-gate-http-test.git',
+    repoUrl: upstream.repoUrl,
     // Flag-gated routes in CASES / SEND_PRIMITIVE_CASES (channels/teams/*)
     // reject with 403 `feature_disabled` when off. Turn them on so this suite
     // measures the LEAF gate, not the flag. `review_center: false` is a stale
@@ -52,6 +55,7 @@ afterAll(async () => {
   }
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  upstream.remove();
 });
 
 async function mintToken(agentGrant: unknown): Promise<string> {

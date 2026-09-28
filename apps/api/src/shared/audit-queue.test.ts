@@ -6,11 +6,18 @@ import {
   type AuditInsertClient,
   AuditQueue,
   type AuditRow,
+  retryBackoffMs,
   statementBatches,
 } from './audit-queue';
+import { resetAuditSessionLocksForTest, withAuditSessionLock } from './audit-session-serial';
 
 function row(action: string): AuditRow {
   return { action, resourceType: 'account' } as AuditRow;
+}
+
+/** The shape a failed `postgres.js`/Drizzle write actually carries: a `code`. */
+function codedError(code: string, message = 'write failed'): Error {
+  return Object.assign(new Error(message), { code });
 }
 
 interface FakeClient {
@@ -21,7 +28,9 @@ interface FakeClient {
   conflictCalls: number;
   failNext: (fail: boolean) => void;
   /** Fail only the statements whose rows match — one contended session. */
-  failOn: (predicate: (rows: AuditRow[]) => boolean) => void;
+  failOn: (predicate: (rows: AuditRow[]) => boolean, error?: unknown) => void;
+  /** Fail every write with this error until called again with `null`. */
+  failWith: (error: unknown | null) => void;
   /** Blocks the write until released, so overlapping flushes can be observed. */
   gate: (enabled: boolean) => void;
   release: () => void;
@@ -31,6 +40,8 @@ function makeClient(): FakeClient {
   const batches: AuditRow[][] = [];
   let shouldFail = false;
   let failPredicate: ((rows: AuditRow[]) => boolean) | null = null;
+  let failPredicateError: unknown = new Error('write failed');
+  let failError: unknown | null = null;
   let gated = false;
   let releaseFn: (() => void) | null = null;
   const state = {
@@ -45,7 +56,9 @@ function makeClient(): FakeClient {
                 releaseFn = resolve;
               });
             }
-            if (shouldFail || failPredicate?.(rows)) throw new Error('write failed');
+            if (failError !== null) throw failError;
+            if (shouldFail) throw new Error('write failed');
+            if (failPredicate?.(rows)) throw failPredicateError;
           },
         }),
       }),
@@ -55,8 +68,12 @@ function makeClient(): FakeClient {
     failNext: (fail: boolean) => {
       shouldFail = fail;
     },
-    failOn: (predicate: (rows: AuditRow[]) => boolean) => {
+    failOn: (predicate: (rows: AuditRow[]) => boolean, error?: unknown) => {
       failPredicate = predicate;
+      if (error !== undefined) failPredicateError = error;
+    },
+    failWith: (error: unknown | null) => {
+      failError = error;
     },
     gate: (enabled: boolean) => {
       gated = enabled;
@@ -367,5 +384,312 @@ describe('AuditQueue statement isolation', () => {
 
     expect(errors).toEqual([1]);
     expect(queue.stats()).toMatchObject({ written: 2, failed: 1 });
+  });
+});
+
+/**
+ * The same-process convoy (prod 2026-09-26).
+ *
+ * `POST /v1/projects/:p/sessions/:s/audit/events` is written twice by the same
+ * process for the SAME session: the ingest route's chunk and the request's own
+ * inbound audit row the queue flushes. Both take the session's
+ * `audit_session_sequences` row lock. Without the in-process lock the queue's
+ * row lost that race at the pool's 2.5 s `lock_timeout` (55P03) and the batch
+ * was dropped (`[audit] Dropped a batch …`); the ingest rode its 10 s
+ * `statement_timeout` to 57014 and answered 503.
+ */
+describe('AuditQueue per-session serialization', () => {
+  test('a flush for a session waits for another in-process writer of the SAME session', async () => {
+    resetAuditSessionLocksForTest();
+    const fake = makeClient();
+    let releaseRoute!: () => void;
+    const routeHeld = withAuditSessionLock(
+      's1',
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRoute = resolve;
+        }),
+    );
+
+    const queue = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    queue.enqueue({ action: 'a', resourceType: 'session', sessionId: 's1' } as unknown as AuditRow);
+    const flush = queue.flush();
+
+    // The route-like writer holds the session lock, so the queue must NOT have
+    // opened a competing Postgres insert yet.
+    await sleep(20);
+    expect(fake.batches).toHaveLength(0);
+
+    releaseRoute();
+    await routeHeld;
+    await flush;
+
+    expect(fake.batches).toHaveLength(1);
+    expect(queue.stats()).toMatchObject({ written: 1, failed: 0 });
+  });
+
+  test('a DIFFERENT session is not blocked by a held session lock', async () => {
+    resetAuditSessionLocksForTest();
+    const fake = makeClient();
+    let releaseHeld!: () => void;
+    const held = withAuditSessionLock(
+      'busy',
+      () =>
+        new Promise<void>((resolve) => {
+          releaseHeld = resolve;
+        }),
+    );
+
+    const queue = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    queue.enqueue({
+      action: 'a',
+      resourceType: 'session',
+      sessionId: 'other',
+    } as unknown as AuditRow);
+    await queue.flush();
+
+    expect(fake.batches).toHaveLength(1);
+    releaseHeld();
+    await held;
+  });
+
+  test('passes the batch session to the serializer; session-less rows bypass it', async () => {
+    const seen: string[] = [];
+    const fake = makeClient();
+    const queue = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      flushMax: 100,
+      serialize: async (sessionId, fn) => {
+        seen.push(sessionId);
+        await fn();
+      },
+    });
+
+    queue.enqueue({ action: 'a', resourceType: 'session', sessionId: 's1' } as unknown as AuditRow);
+    queue.enqueue(row('no-session'));
+    await queue.flush();
+
+    expect(seen).toEqual(['s1']);
+    expect(fake.batches).toHaveLength(2);
+  });
+});
+
+describe('retryBackoffMs', () => {
+  test('grows exponentially and caps at retryMaxMs', () => {
+    expect(retryBackoffMs(1, 200, 5_000, 0)).toBe(100); // half of the base
+    expect(retryBackoffMs(1, 200, 5_000, 1)).toBe(200); // full base
+    expect(retryBackoffMs(4, 200, 5_000, 0)).toBe(800); // 200*2^3=1600, half=800
+    expect(retryBackoffMs(10, 200, 5_000, 1)).toBe(5_000); // capped, not 200*2^9
+  });
+
+  test('never returns a near-zero delay that would re-hammer the lock', () => {
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      expect(retryBackoffMs(attempt, 200, 5_000, 0)).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * The actual production incident (`[audit] Dropped a batch of 1 events after
+ * a write failure: sqlstate=55P03 canceling statement due to lock timeout`):
+ * hundreds per hour, 100% lock-timeout contention, 0% a real data defect. The
+ * queue dropped every one of them. This is the regression suite for that bug.
+ */
+describe('AuditQueue never drops a contended batch', () => {
+  test('55P03 (lock_timeout) is requeued for the next flush, not dropped', async () => {
+    const fake = makeClient();
+    const errors: number[] = [];
+    const retries: Array<{ rowCount: number; attempt: number }> = [];
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      onError: (_e, count) => errors.push(count),
+      onRetry: (_error, rowCount, attempt) => retries.push({ rowCount, attempt }),
+    });
+
+    fake.failWith(codedError('55P03', 'canceling statement due to lock timeout'));
+    q.enqueue(row('a'));
+    await q.flush();
+
+    // Never dead-lettered, never counted as an overflow drop.
+    expect(errors).toEqual([]);
+    expect(q.stats().failed).toBe(0);
+    expect(q.stats().dropped).toBe(0);
+    expect(q.stats().written).toBe(0);
+    expect(q.stats().contended).toBe(1);
+    // The row goes back into the buffer, in original order, for a later try.
+    expect(q.stats().queued).toBe(1);
+    expect(retries).toEqual([{ rowCount: 1, attempt: 1 }]);
+
+    // Once the database recovers, the SAME row is written — it was never lost.
+    fake.failWith(null);
+    await q.flush();
+    expect(q.stats().written).toBe(1);
+    expect(q.stats().queued).toBe(0);
+    expect(fake.batches.map((b) => b.map((r) => r.action))).toEqual([['a'], ['a']]);
+  });
+
+  test('every documented contention SQLSTATE is requeued, not dropped', async () => {
+    for (const code of ['57014', '55P03', '40001', '40P01', '57P03', '08006', '53300']) {
+      const fake = makeClient();
+      const errors: number[] = [];
+      const q = new AuditQueue(fake.client, {
+        flushMs: 10_000,
+        onError: (_e, c) => errors.push(c),
+      });
+      fake.failWith(codedError(code));
+      q.enqueue(row('a'));
+      await q.flush();
+      expect(errors).toEqual([]);
+      expect(q.stats().failed).toBe(0);
+      expect(q.stats().queued).toBe(1);
+    }
+  });
+
+  test('a driver-level connection code (no SQLSTATE) is requeued too', async () => {
+    const fake = makeClient();
+    const errors: number[] = [];
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, onError: (_e, c) => errors.push(c) });
+    fake.failWith(codedError('ECONNREFUSED'));
+    q.enqueue(row('a'));
+    await q.flush();
+    expect(errors).toEqual([]);
+    expect(q.stats().queued).toBe(1);
+  });
+
+  test('a genuinely poison batch (a data error) is still dead-lettered once, not retried forever', async () => {
+    const fake = makeClient();
+    const errors: number[] = [];
+    const retries: unknown[] = [];
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      onError: (_e, count) => errors.push(count),
+      onRetry: () => retries.push(true),
+    });
+
+    fake.failWith(codedError('23505', 'duplicate key value violates unique constraint'));
+    q.enqueue(row('a'));
+    await q.flush();
+
+    expect(errors).toEqual([1]);
+    expect(retries).toEqual([]);
+    expect(q.stats().failed).toBe(1);
+    expect(q.stats().contended).toBe(0);
+    expect(q.stats().queued).toBe(0); // not requeued — retrying can never succeed
+  });
+
+  test('one contended session does not block another session in the same flush', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    fake.failOn(
+      (rows) => (rows[0] as unknown as { sessionId: string }).sessionId === 's2',
+      codedError('55P03'),
+    );
+
+    for (const sessionId of ['s1', 's2', 's3']) {
+      q.enqueue({ action: 'a', resourceType: 'session', sessionId } as unknown as AuditRow);
+    }
+    await q.flush();
+
+    // s1 and s3 wrote cleanly; s2 alone is buffered for retry.
+    expect(q.stats().written).toBe(2);
+    expect(q.stats().queued).toBe(1);
+    expect(q.stats().failed).toBe(0);
+  });
+
+  test('backs off exponentially instead of retrying every flushMs', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, {
+      flushMs: 5,
+      retryBaseMs: 100,
+      retryMaxMs: 2_000,
+      random: () => 0, // pins the delay to the deterministic floor (half the cap)
+    });
+    fake.failWith(codedError('55P03'));
+    q.enqueue(row('a'));
+    await q.flush(); // first attempt fails and schedules the backed-off retry
+
+    // Without backoff the 5ms timer would have retried several times by now.
+    await sleep(30);
+    expect(fake.batches).toHaveLength(1);
+
+    // The backoff floor for attempt 1 is retryBaseMs/2 = 50ms; well past it.
+    await sleep(120);
+    expect(fake.batches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('reaching flushMax during an active backoff does not bypass it', async () => {
+    const fake = makeClient();
+    const q = new AuditQueue(fake.client, {
+      // Small enough that, without the backoff guard, hitting flushMax would
+      // fire an unthrottled flush well before the backoff window elapses.
+      flushMs: 20,
+      flushMax: 2,
+      retryBaseMs: 300,
+      retryMaxMs: 2_000,
+      random: () => 0,
+    });
+    fake.failWith(codedError('55P03'));
+    q.enqueue(row('a'));
+    await q.flush(); // contended; backoff window now active
+    fake.failWith(null);
+
+    // These two enqueues hit flushMax immediately. Without the backoff guard
+    // this would trigger an unthrottled flush and re-hammer the same lock.
+    q.enqueue(row('b'));
+    q.enqueue(row('c'));
+    await sleep(20);
+    expect(fake.batches).toHaveLength(1); // only the first (failed) attempt so far
+
+    await sleep(300);
+    expect(fake.batches.length).toBeGreaterThanOrEqual(2);
+    expect(q.stats().written).toBe(3); // a, b, c all eventually land
+  });
+
+  test('shutdown retries a contended batch, respecting backoff, before giving up at its deadline', async () => {
+    const fake = makeClient();
+    fake.failWith(codedError('55P03'));
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      retryBaseMs: 5,
+      retryMaxMs: 20,
+      shutdownDeadlineMs: 200,
+      sleep: async (ms) => {
+        await new Promise((r) => setTimeout(r, Math.min(ms, 5)));
+      },
+    });
+    q.enqueue(row('a'));
+
+    await q.shutdown();
+
+    // The database never recovered: the row is still buffered, not silently
+    // dropped, and the loop terminated instead of hanging forever.
+    expect(q.stats().queued).toBe(1);
+    expect(q.stats().failed).toBe(0);
+    expect(fake.batches.length).toBeGreaterThan(1); // it did retry more than once
+  });
+
+  test('shutdown drains a contended batch once the database recovers mid-drain', async () => {
+    const fake = makeClient();
+    let attempts = 0;
+    const original = fake.failWith;
+    void original;
+    fake.failWith(codedError('55P03'));
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      retryBaseMs: 5,
+      retryMaxMs: 10,
+      shutdownDeadlineMs: 5_000,
+      sleep: async (ms) => {
+        attempts += 1;
+        if (attempts === 2) fake.failWith(null); // recovers after the 2nd wait
+        await new Promise((r) => setTimeout(r, Math.min(ms, 5)));
+      },
+    });
+    q.enqueue(row('a'));
+
+    await q.shutdown();
+
+    expect(q.stats().written).toBe(1);
+    expect(q.stats().queued).toBe(0);
   });
 });

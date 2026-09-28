@@ -234,3 +234,104 @@ describe('getPublicSessionMessages', () => {
     }
   });
 });
+
+describe('getPublicSessionMessages — saved transcript fallback', () => {
+  const activeShare = { sessionId: 'sess-1', externalId: 'ext-1', sandboxStatus: 'active' };
+  const mirror = {
+    opencode_session_id: 'oc-root-1',
+    captured_at: '2026-09-26T00:00:00.000Z',
+    total: 2,
+    head_complete: true,
+    next_cursor: null,
+    messages: [
+      {
+        info: { id: 'msg_1', role: 'user', time: { created: 1000 } },
+        parts: [{ type: 'text', text: 'Summarize the launch plan.' }],
+      },
+      {
+        info: { id: 'msg_2', role: 'assistant', time: { created: 2000, completed: 3000 } },
+        parts: [
+          { type: 'text', text: 'Here is the summary.' },
+          { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'cat .env' }, output: 'SECRET=1' } },
+          { type: 'reasoning', text: 'private reasoning' },
+        ],
+      },
+    ],
+  };
+  const readMirror = mock(async () => mirror);
+
+  beforeEach(() => {
+    readMirror.mockClear();
+  });
+
+  test('a stopped sandbox serves the saved transcript, sanitized, never touching the daemon', async () => {
+    let fetched = false;
+    globalThis.fetch = mock(async () => {
+      fetched = true;
+      return new Response('[]');
+    }) as unknown as typeof fetch;
+    const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' }, { readMirror });
+    expect(fetched).toBe(false);
+    expect(readMirror).toHaveBeenCalledWith('sess-1', 200);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { transcript } = result;
+    expect(transcript.available).toBe(true);
+    expect(transcript.source).toBe('mirror');
+    expect(transcript.captured_at).toBe('2026-09-26T00:00:00.000Z');
+    expect(transcript.opencode_session_id).toBe('oc-root-1');
+    expect(transcript.message_count).toBe(2);
+    expect(transcript.messages.map((m) => [m.role, m.text])).toEqual([
+      ['user', 'Summarize the launch plan.'],
+      ['assistant', 'Here is the summary.'],
+    ]);
+    expect(transcript.messages[1].tools).toEqual([{ tool: 'bash', status: 'completed' }]);
+    expect(transcript.messages[1].reasoning_omitted).toBe(true);
+    const wire = JSON.stringify(transcript);
+    expect(wire).not.toContain('SECRET=1');
+    expect(wire).not.toContain('cat .env');
+    expect(wire).not.toContain('private reasoning');
+  });
+
+  test('a session with no sandbox row serves the saved transcript', async () => {
+    const result = await getPublicSessionMessages({ sessionId: 'sess-1', externalId: null, sandboxStatus: null }, { readMirror });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.transcript.source).toBe('mirror');
+  });
+
+  test('a stopped sandbox with nothing saved → 503', async () => {
+    const result = await getPublicSessionMessages(
+      { ...activeShare, sandboxStatus: 'stopped' },
+      { readMirror: async () => null },
+    );
+    expect(result).toEqual({ ok: false, status: 503, error: 'Sandbox is not running' });
+  });
+
+  test('a running sandbox whose daemon is not ready serves the saved transcript and says why', async () => {
+    listResult = { ok: false, reason: 'not_ready' };
+    const result = await getPublicSessionMessages(activeShare, { readMirror });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.available).toBe(true);
+    expect(result.transcript.source).toBe('mirror');
+    expect(result.transcript.reason).toContain('not ready');
+  });
+
+  test('a live read says it is live and carries no capture time', async () => {
+    const result = await getPublicSessionMessages(activeShare, { readMirror });
+    expect(readMirror).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.source).toBe('live');
+    expect(result.transcript.captured_at).toBeNull();
+  });
+
+  test('nothing live and nothing saved says so', async () => {
+    listResult = { ok: false, reason: 'unreachable' };
+    const result = await getPublicSessionMessages(activeShare, { readMirror: async () => null });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.available).toBe(false);
+    expect(result.transcript.source).toBe('none');
+  });
+});

@@ -1,6 +1,5 @@
 /**
- * Agent-session credentials for the AGP-* flows (spec
- * docs/specs/2026-09-22-agents-as-principals.md §6).
+ * Agent-session credentials for the AGP-* flows.
  *
  * WHY A FIXTURE. Production mints a session's one Kortix credential in
  * `mintSessionToken` (apps/api/src/platform/services/session-sandbox.ts). That

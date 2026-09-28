@@ -7,6 +7,13 @@ type SidebarToggleProps = React.SVGProps<SVGSVGElement> & {
   mirrored?: boolean;
 };
 
+/**
+ * A rounded panel frame split by a divider, drawn as strokes so the weight is
+ * one number. 2.25 viewBox units is ~1.5px at the default 16px — the fill
+ * outline this replaced was 1.77 units (~1.2px) and read as hairline next to
+ * the Phosphor icons around it. The frame spans 21 × 19 of the 24 box (was
+ * 20 × 17.7), so the glyph fills its square like its neighbours do.
+ */
 export const SidebarToggle = ({ className, mirrored, ...props }: SidebarToggleProps) => {
   return (
     <svg
@@ -14,16 +21,15 @@ export const SidebarToggle = ({ className, mirrored, ...props }: SidebarTogglePr
       width="16"
       height="16"
       viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
       aria-hidden="true"
       className={cn('size-4', mirrored && '-scale-x-100', className)}
       {...props}
     >
-      <path
-        fill="currentColor"
-        fillRule="evenodd"
-        d="M6.416 4.767a2.65 2.65 0 0 0-2.65 2.65v8.832a2.65 2.65 0 0 0 2.65 2.65h1.461V4.767h-1.46Zm0-1.767A4.416 4.416 0 0 0 2 7.416v8.833a4.416 4.416 0 0 0 4.416 4.417h11.168A4.416 4.416 0 0 0 22 16.248V7.416A4.416 4.416 0 0 0 17.584 3zm3.228 1.767v14.132h7.94a2.65 2.65 0 0 0 2.65-2.65V7.416a2.65 2.65 0 0 0-2.65-2.65h-7.94Z"
-        clipRule="evenodd"
-      />
+      <rect x="2.625" y="3.625" width="18.75" height="16.75" rx="4" />
+      <path d="M9.25 3.625v16.75" />
     </svg>
   );
 };

@@ -71,12 +71,13 @@ Subcommands:
                                     while one is unexpired. Warns when this
                                     session's agent will not receive a name.
                                     --scope runtime|connector  --expires <min>
-  sync                              Force a re-push of all project secrets to
-                                    this session's sandbox. Use after setting
-                                    a secret via the intake link or after a
-                                    secret was updated mid-session. People
-                                    only: an agent session gets 403 — its env
-                                    re-syncs on every prompt.
+  sync                              Re-push secrets into sandboxes. In an agent
+                                    session: pulls THIS session's secrets and
+                                    grant now (the per-prompt sync, on
+                                    demand). As a person: every active
+                                    sandbox of the project. Use after a secret
+                                    is set via the intake link, updated, or
+                                    newly granted to the agent mid-session.
   delivery IDENTIFIER EXPOSURE      Set environment (default), enforced, or
                                     none. \`enforced\` is EXPERIMENTAL and needs
                                     the project's \`secrets_egress\` feature flag
@@ -218,8 +219,7 @@ type SecretRow = {
 /**
  * The DELIVERY cell: the secret's exposure, or the service that spends it.
  *
- * The words are the model's own (docs/specs/
- * 2026-08-19-secrets-exposure-usage-model.md §3): `runtime` reads as
+ * The words are the model's own: `runtime` reads as
  * "environment" because that is the exposure a reader has to weigh, and
  * `egress` reads as its host list because the hosts ARE the policy. A
  * `broker` row has no sandbox presence at all, so it names its spender.
@@ -472,7 +472,7 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       )}\n` +
         `  ${C.dim}Fix (a person with project access; an agent cannot widen its own grant): ` +
         `Customize → Agents → ${agentScope.agent} → Secrets and enable ${notGranted.length === 1 ? 'it' : 'them'}. ` +
-        `This session receives the change when it is saved.${C.reset}\n`,
+        `Then run \`kortix secrets sync\` to pull ${notGranted.length === 1 ? 'it' : 'them'} into this session.${C.reset}\n`,
     );
   }
   if (scopedGrant && agentScope) {
@@ -493,8 +493,7 @@ type SecretStrategy = (typeof SECRET_STRATEGIES)[number];
 /**
  * What a user types → what the API stores.
  *
- * The exposure words are the model's (docs/specs/
- * 2026-08-19-secrets-exposure-usage-model.md §3); the stored `strategy` column
+ * The exposure words are the model's; the stored `strategy` column
  * is unchanged, so both spellings resolve to the same four values and no
  * existing script or agent transcript breaks. `broker` has no exposure word of
  * its own: which exposure it means depends on its consumer, so it stays
@@ -707,8 +706,7 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     const exactHost =
       /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
     const normalizedHosts = allowedHosts.map((host) => host.trim().toLowerCase());
-    // The whole policy of an enforced secret is its host list (docs/specs/
-    // 2026-08-19-secrets-exposure-usage-model.md §6): the value is substituted
+    // The whole policy of an enforced secret is its host list: the value is substituted
     // for the handle wherever the agent's own client put it, so there is no
     // slot for the CLI to name and no method or path for it to promise.
     const legacyOnly = [

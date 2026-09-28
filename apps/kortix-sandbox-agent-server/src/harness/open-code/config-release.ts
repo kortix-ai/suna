@@ -26,8 +26,10 @@ import {
 } from '../../config-release/api-client'
 import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
 import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '../../config-release/notice'
+import { MAX_SWAP_DELAY_MS } from '../control'
 import { logger } from '../../logger'
 import { ensureInjectedManagedSkills } from '../../managed-skills'
+import { isDaemonShuttingDown } from '../../shutdown'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
@@ -36,8 +38,6 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check
 
 /**
  * Convergence: the daemon applies the release the API assigns.
- * Spec: docs/specs/config-releases.md, "Apply sequence", "Fallback chain",
- * "Health".
  *
  * The API decides. The daemon fetches the descriptor itself (a request body
  * never supplies it), verifies the archive against the descriptor's blob IDs,
@@ -53,9 +53,9 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles } from './proven-check
  * NOT a step in it — OpenCode never boots from the session's checkout while
  * the feature is on.
  *
- * `workspace` is reachable only when config releases are OFF for the project
- * (docs/specs/config-releases.md, "Feature flag"), which is the pre-release
- * behaviour: OpenCode reads `<workspace>/<config dir>`. The API emits no
+ * `workspace` is reachable only when config releases are OFF for the project,
+ * which is the pre-release behaviour: OpenCode reads `<workspace>/<config dir>`.
+ * The API emits no
  * release block for such a session, so `workspace` never reaches a client.
  */
 export type ConfigSource = 'release' | 'workspace' | 'image-default'
@@ -81,7 +81,20 @@ export interface ConvergeResponse {
   ok: boolean
   outcome: ConvergeOutcome
   config: ConfigReleaseReport
-  reload: { how: 'restarted'; turn_ended: boolean | null } | null
+  reload: {
+    how: 'restarted'
+    turn_ended: boolean | null
+    /**
+     * The assistant message the RETIRED OpenCode left open, read off it before
+     * it was killed. `null` when there was none, or when it could not be read.
+     *
+     * The API settles that row `runtime_gone` and redelivers its prompt. Left
+     * unreported, the row stays `completed = null` for ever: the process that
+     * owned it is gone, so it never emits `session.idle`/`session.error`, and
+     * the replacement never held that turn's stream to finalize it.
+     */
+    orphaned_message_id: string | null
+  } | null
   /** Why the release did not apply. Null when it applied or nothing changed. */
   reason: string | null
 }
@@ -112,6 +125,21 @@ const INITIAL: RunningConfig = {
 
 let running: RunningConfig = { ...INITIAL }
 let inFlight: Promise<ConvergeResponse> | null = null
+
+/**
+ * DEF-B 2026-09-26: is a config convergence — fetch, download, candidate
+ * spawn, proven check, promotion — in flight RIGHT NOW?
+ *
+ * This module is the one thing that actually knows: `inFlight` spans the
+ * whole `applyDesiredRelease` call, from before the descriptor fetch to after
+ * promotion or decline. `runtime-assets.ts` must not guess this from a proxy
+ * signal — it registers this predicate as a swap blocker instead (proxy.ts),
+ * so a staged daemon update never exits mid-verify and kills the candidate
+ * `reloadVerified` is proving. See DEF-A above for what happens when it does.
+ */
+export function isConvergenceInFlight(): boolean {
+  return inFlight !== null
+}
 
 export function configReleaseReport(): ConfigReleaseReport {
   const { source_commit: _sourceCommit, ...report } = running
@@ -216,6 +244,20 @@ export interface ConvergeDeps {
   turnInFlight?: () => Promise<boolean | null>
   /** Proven check budget for a release already running; the spec's 90 s. */
   proofBudgetMs?: number
+  /**
+   * FAULT INJECTION, in the same spirit as `verify_fail` on `POST
+   * /kortix/refresh`: hold the convergence between the turn gate and the swap.
+   *
+   * The window this widens is the one DEF-DEV-1 lived in — the seconds a real
+   * box spends downloading and extracting a release. Without it a test that
+   * wants "a prompt arrives mid-convergence" has to win a race it cannot see;
+   * with it the race is a schedule. It changes no decision: the same gate runs
+   * before it and the same `mayPromote` runs after it.
+   *
+   * Bounded by `MAX_SWAP_DELAY_MS`. The route that accepts it is already
+   * authorized, and a caller who can reach it can restart opencode outright.
+   */
+  delayBeforeSwapMs?: number
 }
 
 type ConfigDepsOptions = Omit<NonNullable<Parameters<typeof ensureOpencodeConfigDeps>[1]>, 'platformOwned'>
@@ -358,7 +400,14 @@ function respond(
     ok: outcome === 'applied' || outcome === 'unchanged',
     outcome,
     config: configReleaseReport(),
-    reload: reload && reload.outcome === 'swapped' ? { how: 'restarted', turn_ended: reload.turnEnded } : null,
+    reload:
+      reload && reload.outcome === 'swapped'
+        ? {
+            how: 'restarted',
+            turn_ended: reload.turnEnded,
+            orphaned_message_id: reload.orphanedMessageId,
+          }
+        : null,
     reason,
   }
 }
@@ -389,8 +438,7 @@ export function noteRunningConfig(
 
 /**
  * `config_releases` is OFF for this project — per project, or platform-wide
- * through the operator kill switch (docs/specs/config-releases.md, "Feature
- * flag"). The API answered `403 feature_disabled`.
+ * through the operator kill switch. The API answered `403 feature_disabled`.
  *
  * This is the transition, and it must not strand a box that already runs a
  * release:
@@ -438,8 +486,10 @@ async function revertToPreReleaseConfig(
     return respond('unchanged', null, reason)
   }
 
+  const idle = async (): Promise<boolean> =>
+    !deps.turnInFlight || (await deps.turnInFlight().catch(() => null)) === false
   if (opencode.getPid() === null) return respond('failed', null, 'opencode is not running; nothing to replace')
-  if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+  if (!(await idle())) {
     return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
   }
 
@@ -448,6 +498,12 @@ async function revertToPreReleaseConfig(
   await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
   const toolNames = await toolNamesInDir(dir)
   const pluginFiles = await pluginFilesInDir(dir)
+  // The check above ran before `prepare`, which walks and rewrites a config
+  // directory. Ask again now that the work is done, and ask once more inside
+  // the reload — see `mayPromote`.
+  if (!(await idle())) {
+    return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
+  }
   const previousDir = await servingConfigDir(root)
   await serveConfigDir(dir, 'config releases are disabled for this project', root)
   const result = await opencode.reloadVerified({
@@ -459,9 +515,11 @@ async function revertToPreReleaseConfig(
         configDir: dir,
         fetchImpl: deps.proveFetch,
       }),
+    mayPromote: deps.turnInFlight ? idle : undefined,
   })
   if (result.outcome === 'kept-old') {
     if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root)
+    if (result.promotionCalledOff) return respond('failed', null, result.reason)
     logger.warn('[config-release] disabled, but the workspace config dir did not start; keeping the release', {
       dir,
       reason: result.reason,
@@ -510,9 +568,19 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   // Every replacement needs a live process to fall back on, and must not end
   // a running turn.
+  //
+  // It is asked THREE times on the download path, and that is the point: once
+  // here, once again after the archive is built, and once more inside the
+  // reload, after the candidate is proven and before the live port moves
+  // (`mayPromote`). Dev measured 2.4-6.1 s for the fetch and extract and ~3.3 s
+  // for the candidate boot, so a single check at the top is a TOCTOU: the
+  // prompt that arrives inside that window starts a turn on the very process
+  // the swap is about to kill.
+  const idle = async (): Promise<boolean> =>
+    !deps.turnInFlight || (await deps.turnInFlight().catch(() => null)) === false
   const requireRunning = async (): Promise<ConvergeResponse | null> => {
     if (opencode.getPid() === null) return respond('failed', null, 'opencode is not running; nothing to replace')
-    if (deps.turnInFlight && (await deps.turnInFlight().catch(() => null)) !== false) {
+    if (!(await idle())) {
       return respond('failed', null, 'a turn is running or its state is unknown; the swap waits for the next trigger')
     }
     return null
@@ -541,6 +609,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
           configDir: dir,
           fetchImpl: deps.proveFetch,
         }),
+      mayPromote: deps.turnInFlight ? idle : undefined,
     })
     if (result.outcome === 'kept-old') {
       if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root)
@@ -561,6 +630,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     if (notRunning) return notRunning
     const result = await swap(dir, [])
     if (result.outcome === 'kept-old') {
+      if (result.promotionCalledOff) return respond('failed', null, result.reason)
       setRunningConfig({ fallback_reason: result.reason })
       return respond('declined', null, result.reason)
     }
@@ -610,6 +680,16 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   const notRunning = await requireRunning()
   if (notRunning) return notRunning
 
+  // Fault injection only; zero in production. Stands in for the seconds the
+  // download and extract below cost on a real box — see `delayBeforeSwapMs`.
+  const injectedDelay = Math.min(Math.max(deps.delayBeforeSwapMs ?? 0, 0), MAX_SWAP_DELAY_MS)
+  if (injectedDelay > 0) {
+    logger.warn('[config-release] holding the convergence before the swap (fault injection)', {
+      ms: injectedDelay,
+    })
+    await new Promise((resolve) => setTimeout(resolve, injectedDelay))
+  }
+
   // 5–6. Download, extract, verify, prepare, seal, rename. An intact copy
   //      from an earlier attempt is reused without a download.
   try {
@@ -637,8 +717,33 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   }
 
   // 7–9. Governance, replacement on the standby port, proven check, promotion.
+  // The download and extract above took seconds. Ask again before paying the
+  // ~3.3 s candidate boot, so a prompt that landed meanwhile costs nothing.
+  const lateTurn = await requireRunning()
+  if (lateTurn) return lateTurn
   const result = await swap(dir, toolNamesFromFiles(manifest.files), pluginFilesFrom(manifest.files))
   if (result.outcome === 'kept-old') {
+    // A turn that started while the release was being built is not a release
+    // failure: nothing is quarantined and nothing is recorded against it.
+    if (result.promotionCalledOff) return respond('failed', null, result.reason)
+    // DEF-A 2026-09-26: a candidate this daemon's OWN shutdown killed reports
+    // `kept-old`/`candidateFailed: true` exactly like a release that never
+    // starts — `reloadVerified` sees `cause: null` either way. Quarantining
+    // here would blame the release for something the release never did:
+    // measured on a real box, the candidate had 815 ms before `harness.stop()`
+    // SIGTERMed it, well inside the ~1.7-5 s a healthy OpenCode needs to
+    // announce listening. `isDaemonShuttingDown()` is the one place that
+    // actually knows this is self-inflicted, so treat it as a transient
+    // `failed` — nothing quarantined, nothing recorded — and let the next
+    // pass (on the daemon the supervisor just started) retry the same
+    // release with a full window.
+    if (isDaemonShuttingDown()) {
+      logger.warn(
+        '[config-release] the candidate died because this daemon is exiting, not because the release failed; not quarantining',
+        { releaseId, reason: result.reason },
+      )
+      return respond('failed', null, result.reason)
+    }
     // 10. Keep the old process. Quarantine only a release whose candidate failed.
     if (result.candidateFailed) await quarantineRelease(root, releaseId, result.reason)
     recordKeptConfigFailure(releaseId, result.reason)

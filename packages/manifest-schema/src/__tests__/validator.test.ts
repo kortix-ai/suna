@@ -333,7 +333,7 @@ prompt = "Error sweep"
   });
 });
 
-// `type: monitor` — docs/specs/2026-08-12-monitors.md. A monitor names a repo
+// `type: monitor`. A monitor names a repo
 // command the platform supervises 24/7; its stdout lines are the events.
 describe('validateManifest — [[triggers]] type = "monitor"', () => {
   test('a stream monitor with run + mode passes', () => {

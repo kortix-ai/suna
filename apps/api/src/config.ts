@@ -113,6 +113,20 @@ const optFallbackPolicies = z
 //   - CONDITIONAL: required when a related feature is enabled
 //   - OPTIONAL:    graceful degradation or sane default if missing
 
+/**
+ * Morph direct is OFF by default (2026-09-27). Its deepseek-v4.1-flash endpoint
+ * ran at 78.9% uptime over 30 min on OpenRouter's public stats while our users
+ * waited 18-75 s per call: the gateway fails over only on errors and a 90 s
+ * header timeout, never on a slow first byte. Managed models are served by
+ * their OpenRouter pool instead. Re-enable per environment by setting
+ * MORPH_MANAGED_MODELS to a comma-separated list of managed model ids.
+ */
+export const MORPH_MANAGED_MODELS_DEFAULT = '';
+
+export function parseMorphManagedModels(value: string): string[] {
+  return value.split(',').map((id) => id.trim()).filter(Boolean);
+}
+
 const envSchema = z.object({
   // ── Core (required) ──────────────────────────────────────────────────────
   PORT: optInt(8008),
@@ -339,8 +353,7 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
-  // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
+  // Mandatory declared agents. GATED OFF platform-wide by default — flipping it on would
   // immediately reject every session/trigger on a pre-existing, agent-less project.
   // The intent is ON for NEW projects: since there's no per-project flag store yet,
   // a project is "subject" to enforcement when EITHER this is true OR its own
@@ -408,6 +421,10 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: optStr,
   MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
   MORPH_API_KEY: optStr,
+  // Managed model IDs that use Morph direct as their first candidate.
+  // An empty value disables Morph for every managed model — the default since
+  // 2026-09-27 (see MORPH_MANAGED_MODELS_DEFAULT).
+  MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -598,8 +615,7 @@ const envSchema = z.object({
 
   // ── Config releases (optional) ──────────────────────────────────────────
   // Operator kill switch for the whole config-release feature (the
-  // `config_releases` per-project flag, docs/specs/config-releases.md →
-  // "Feature flag"). Default ON: a session runs the base branch's current
+  // `config_releases` per-project flag). Default ON: a session runs the base branch's current
   // config. Set to false and the flag is unavailable platform-wide — the
   // Settings row disappears, both routes answer 403 `feature_disabled` for
   // every project, no convergence is scheduled, and every session falls back
@@ -806,6 +822,17 @@ const envSchema = z.object({
   // domain is not yet claimed/verified in the Resend team. The intended from
   // address is preserved as Reply-To.
   RESEND_FROM_EMAIL: optStr,
+  // Mobile push notifications through the Expo Push API
+  // (notifications/expo-push.ts). The access token is optional: Expo accepts
+  // unauthenticated sends unless the project enables enhanced push security.
+  EXPO_ACCESS_TOKEN: optStr,
+  // Kill switch for session push notifications. On by default; `0` or `false`
+  // stops every send. Device-token registration keeps working.
+  PUSH_NOTIFICATIONS_ENABLED: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => !['0', 'false'].includes(v.trim().toLowerCase())),
   // Local-only HTTP capture. The deterministic test profile points this at
   // Supabase Mailpit. Deployed environments leave it unset.
   MAILPIT_API_URL: optStr,
@@ -1269,6 +1296,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   MORPH_API_URL: env.MORPH_API_URL,
   MORPH_API_KEY: env.MORPH_API_KEY,
+  MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1458,6 +1486,8 @@ export const config = {
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,

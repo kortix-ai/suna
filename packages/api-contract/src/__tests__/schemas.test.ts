@@ -124,6 +124,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       pi_harness: false,
       config_releases: true,
       agent_principal: false,
+      mcp: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -503,7 +504,7 @@ describe('TriggerSchema', () => {
     ).not.toThrow();
   });
 
-  // `monitor` is the third trigger type (docs/specs/2026-08-12-monitors.md):
+  // `monitor` is the third trigger type:
   // no cron/secret_env wiring, a `run` command plus a `mode` instead.
   test('accepts a monitor trigger', () => {
     expect(() =>
@@ -701,6 +702,7 @@ describe('envelopes', () => {
       'pi_harness',
       'config_releases',
       'agent_principal',
+      'mcp',
     ]);
   });
 

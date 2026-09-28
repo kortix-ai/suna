@@ -211,10 +211,11 @@ package**. JSON output.
 | `kortix connectors accounts <slug> --default <label>` | Pin one account as the one an unnamed call uses. |
 | `kortix connectors call <connector> <action> '<json>' [--account <label\|id\|me\|project>]` | Invoke an action, optionally naming which account. Omit `--account` for the default. The gateway resolves the account, enforces policy, and audits. Every successful result echoes `account` — say which one ran when it matters. |
 | `kortix connectors call <connector> <action> @args.json --attach <file>` | Attach a file from `/workspace/{output,artifacts,reports,deliverables}`. The gateway writes it into the action's attachments array as the provider's item (e.g. Microsoft Graph `body.message.attachments`). `@file` / `-` read large args. |
+| `kortix connectors call <connector> <action> '<json>' --out <file>` | Write the full JSON result to `<file>` (parent dirs created). Stdout gets only `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). Use it for results too large to read; query the file with `jq` or `bun`. |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug> [--owner me\|project]` | Mint the configured provider's authorization URL for a NEW account. `me` (default) is yours alone; `project` shares it with the whole project. |
+| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). It cannot name a new account: add one with the MCP `connect` tool and its `label`. |
 | `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
 
 > Use Composio for every new managed SaaS connector. Pipedream is retained only

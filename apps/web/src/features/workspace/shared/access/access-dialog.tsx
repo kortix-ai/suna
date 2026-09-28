@@ -67,6 +67,7 @@ import {
   updateProjectGroupGrant,
   type AccountRole,
   type AssignmentInput,
+  type ConnectionShare,
   type ProjectAgentResourceItem,
   type ProjectRole,
 } from '@kortix/sdk';
@@ -77,11 +78,13 @@ import {
   PlugIcon,
   PlusIcon,
   RobotIcon,
+  UsersThreeIcon,
   XIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 
+import { ShareAccessBody, type ShareableObject } from './access-dialog-share';
 import { endOfLocalDayIso, isoToDateInputValue, removeAccessCopy } from './access-shared';
 import {
   EMPTY_PRINCIPAL_SELECTION,
@@ -142,10 +145,17 @@ export type AccessDialogMode =
   /** Account Members bulk action: put every selected person into one group.
    *  Membership carries no role, so the body is the fixed principal rows plus
    *  a single-selection group picker. */
-  | { kind: 'bulk-group'; principals: AccessDialogPrincipal[] };
+  | { kind: 'bulk-group'; principals: AccessDialogPrincipal[] }
+  /** Project scope: who may use ONE shared connector account. No role and no
+   *  agents — the body is who can use it now, plus the picker to add people,
+   *  groups, or everyone in the project (`access-dialog-share.tsx`). */
+  | { kind: 'share'; object: ShareableObject; current: readonly ConnectionShare[] };
+
+/** Every mode that grants to principals — all but `share`. */
+export type PrincipalAccessMode = Exclude<AccessDialogMode, { kind: 'share' }>;
 
 /** The principals a non-grant mode shows as fixed header rows. */
-export function fixedPrincipalsOf(mode: AccessDialogMode): AccessDialogPrincipal[] {
+export function fixedPrincipalsOf(mode: PrincipalAccessMode): AccessDialogPrincipal[] {
   if (mode.kind === 'bulk-role' || mode.kind === 'bulk-group') return mode.principals;
   if (mode.kind === 'edit' || mode.kind === 'attach') return [mode.principal];
   return [];
@@ -153,7 +163,7 @@ export function fixedPrincipalsOf(mode: AccessDialogMode): AccessDialogPrincipal
 
 export function agentAccessProjectId(
   scope: AccessDialogScope,
-  mode: AccessDialogMode,
+  mode: PrincipalAccessMode,
   selectedProjectId: string,
 ): string | undefined {
   if (mode.kind === 'attach') return selectedProjectId || undefined;
@@ -292,7 +302,7 @@ export interface AccessDialogCopy {
 /** The prop-driven chrome copy. Identical shape for every mode. */
 export function accessDialogCopy(
   scope: AccessDialogScope,
-  mode: AccessDialogMode,
+  mode: PrincipalAccessMode,
   opts: { accountName?: string; selectedCount?: number } | undefined,
   tI18nComplete: UiTranslator,
 ): AccessDialogCopy {
@@ -368,7 +378,7 @@ export function accessDialogCopy(
  * requests for no gain. `null` when there is nothing to write.
  */
 export function bulkGroupPlan(
-  mode: AccessDialogMode,
+  mode: PrincipalAccessMode,
   groupId: string,
 ): { groupId: string; userIds: string[] } | null {
   if (mode.kind !== 'bulk-group' || !groupId) return null;
@@ -402,7 +412,7 @@ interface AccessDraftState {
 }
 
 function initialDraftState(
-  mode: AccessDialogMode,
+  mode: PrincipalAccessMode,
   roleScope: 'account' | 'project' | null,
   initialAgentIds?: string[],
 ): AccessDraftState {
@@ -431,7 +441,30 @@ function initialDraftState(
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
-export function AccessDialog({
+export function AccessDialog(props: AccessDialogProps) {
+  const { mode, scope } = props;
+  // Two bodies, one chrome and one picker. The router keeps each body's hook
+  // order fixed: a mode switch remounts instead of changing the hooks called.
+  if (mode.kind === 'share') {
+    // A shared object lives in a project; there is nothing to share elsewhere.
+    if (scope.kind !== 'project') return null;
+    return (
+      <ShareAccessBody
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+        accountId={props.accountId}
+        projectId={scope.projectId}
+        projectName={scope.projectName}
+        object={mode.object}
+        current={mode.current}
+        onDone={props.onDone}
+      />
+    );
+  }
+  return <PrincipalAccessDialog {...props} mode={mode} />;
+}
+
+function PrincipalAccessDialog({
   open,
   onOpenChange,
   accountId,
@@ -445,9 +478,10 @@ export function AccessDialog({
   inheritedFrom,
   initialAgentIds,
   onDone,
-}: AccessDialogProps) {
+}: AccessDialogProps & { mode: PrincipalAccessMode }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tCommon = useI18nTranslations('common');
+  const tSharing = useI18nTranslations('accessSharing');
   const tAgents = useI18nTranslations('agentPrincipals');
   const queryClient = useQueryClient();
   const roleScope = roleScopeFor(scope);
@@ -520,10 +554,21 @@ export function AccessDialog({
     selectedAgentPrincipals.length > 0 &&
     principals.memberIds.length + principals.groupIds.length + principals.inviteEmails.length === 0;
   const showAgentCeilingNote = editingAgent || selectedAgentPrincipals.length > 0;
+  // Everyone in the project holds agent grants only, never a role: its row
+  // needs the agent picker whatever role the people beside it get, and on its
+  // own it needs no Role field at all.
+  const everyoneSelected = mode.kind === 'grant' && principals.everyone === true;
+  const onlyEveryoneSelected =
+    everyoneSelected &&
+    principals.memberIds.length +
+      principals.groupIds.length +
+      principals.inviteEmails.length +
+      selectedAgentPrincipals.length ===
+      0;
   const showAgents =
     !!agentProjectId &&
     (mode.kind === 'grant' || mode.kind === 'edit' || mode.kind === 'attach') &&
-    builtin !== 'manager' &&
+    (builtin !== 'manager' || everyoneSelected) &&
     !editingAgent &&
     !onlyAgentsSelected;
   const resourceGrantsQuery = useQuery({
@@ -790,6 +835,27 @@ export function AccessDialog({
         principalId: serviceAccountId,
         kind: 'other',
         run: () => assignAgentCeiling(serviceAccountId, pid, roleId, projectBuiltin, expiresIso),
+      });
+    }
+    // Everyone in the project: one `project`-principal grant per agent. It
+    // reaches every member at the member tier, so "All agents" means every
+    // agent the project has today, exactly as it does for a member.
+    if (principals.everyone) {
+      const everyoneAgentIds = effectiveAgentIds('member', null, agents, projectAgents);
+      tasks.push({
+        principalId: pid,
+        kind: 'other',
+        run: async () => {
+          for (const agentId of everyoneAgentIds) {
+            await createAssignment(accountId, {
+              principal: { type: 'project', id: pid },
+              roleKey: OBJECT_ASSIGNMENT_ROLE_KEY,
+              scope: { type: 'project', id: pid },
+              object: { type: 'agent', id: agentId },
+              ...(expiresIso ? { expiresAt: expiresIso } : {}),
+            });
+          }
+        },
       });
     }
     for (const email of principals.inviteEmails) {
@@ -1074,8 +1140,12 @@ export function AccessDialog({
     mode.kind === 'edit'
       ? diffAccessDraft(mode.current, { role, agents, expiresAt: expires })
       : null;
+  // Everyone alone with no agent to receive writes nothing — refuse the no-op.
+  const everyoneHasNoAgent =
+    onlyEveryoneSelected && effectiveAgentIds('member', null, agents, projectAgents).length === 0;
   const canSubmit =
     !pending &&
+    !everyoneHasNoAgent &&
     (!showAgents || (resourceGrantsQuery.isSuccess && !resourceGrantsQuery.isFetching)) &&
     (mode.kind === 'grant'
       ? selectedCount > 0
@@ -1130,6 +1200,11 @@ export function AccessDialog({
                       : ['member']
                   }
                   allowInvite={scope.kind !== 'group'}
+                  everyone={
+                    scope.kind === 'project'
+                      ? { label: tSharing('everyone', { project: scope.projectName }) }
+                      : undefined
+                  }
                   excludeUserIds={excludeUserIds}
                   value={principals}
                   onChange={setPrincipals}
@@ -1190,8 +1265,9 @@ export function AccessDialog({
               </Field>
             ) : null}
 
-            {/* 3. Role — group membership has no role, so bulk-group skips it. */}
-            {roleScope && mode.kind !== 'bulk-group' ? (
+            {/* 3. Role — group membership has no role, so bulk-group skips it;
+                neither does everyone in the project, which only holds agents. */}
+            {roleScope && mode.kind !== 'bulk-group' && !onlyEveryoneSelected ? (
               <Field className="gap-1.5">
                 <FieldLabel htmlFor="access-role">
                   {tI18nComplete.raw('text14736a2eb9f4')}
@@ -1216,6 +1292,12 @@ export function AccessDialog({
                   <FieldDescription>{tI18nComplete.raw('text237f1a28cf06')}</FieldDescription>
                 ) : null}
               </Field>
+            ) : null}
+
+            {scope.kind === 'project' && everyoneSelected ? (
+              <InfoBanner tone="neutral" icon={UsersThreeIcon}>
+                {tSharing('everyoneRoleNote', { project: scope.projectName })}
+              </InfoBanner>
             ) : null}
 
             {scope.kind === 'project' && showAgentCeilingNote ? (

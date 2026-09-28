@@ -109,8 +109,19 @@ describe('recordSessionActivity', () => {
     expect((await rowOf(sessionId)).metadata.last_activity_at).toBeUndefined();
   });
 
-  test('never throws on a missing identifier', async () => {
-    await recordSessionActivity({ sessionId: '', projectId: PROJECT });
-    await recordSessionActivity({ sessionId: 'x', projectId: '' });
+  // A server-side follow-up delivered straight to an old session skips /start,
+  // so the turn path must drop the warm marker itself, in the same statement.
+  test('drops a warm marker and stamps activity together', async () => {
+    const sessionId = await seed({ warm: true });
+
+    await recordSessionActivity({
+      sessionId,
+      projectId: PROJECT,
+      at: Date.parse('2026-08-11T09:00:00.000Z'),
+    });
+
+    const { metadata } = await rowOf(sessionId);
+    expect(metadata.warm).toBeUndefined();
+    expect(metadata.last_activity_at).toBe('2026-08-11T09:00:00.000Z');
   });
 });

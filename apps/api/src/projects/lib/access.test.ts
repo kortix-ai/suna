@@ -7,6 +7,7 @@ import {
   isAdminBypassEligible,
   sessionIsTombstoned,
   shouldApplyAdminBypass,
+  resolveUserIdentities,
   userIdentityIsCacheable,
   viewerManagerStanding,
 } from './access';
@@ -197,8 +198,7 @@ describe('sessionIsTombstoned — a deleted session refuses every runtime verb',
   });
 });
 
-// Spec docs/specs/2026-09-22-agents-as-principals.md §2.1: under the
-// agent-principal model the launcher's role is not an input. The
+// Under the agent-principal model the launcher's role is not an input. The
 // `effectiveRole` label every manage-tier branch reads is derived from the
 // agent's own effective permissions.
 describe('deriveEffectiveRole', () => {
@@ -245,5 +245,58 @@ describe('agentSessionStanding', () => {
 
   test('without a session binding nothing is owned and nothing widens', () => {
     expect(agentSessionStanding(null, launcherPrivate, true)).toEqual({ isOwner: false, visible: false });
+  });
+});
+
+describe('resolveUserIdentities', () => {
+  const A = '11111111-1111-4111-8111-111111111111';
+  const B = '22222222-2222-4222-8222-222222222222';
+  const GONE = '33333333-3333-4333-8333-333333333333';
+
+  test('answers every id with ONE auth-table read, including ids with no user', async () => {
+    const reads: string[][] = [];
+    const identities = await resolveUserIdentities([A, B, GONE, A, 'trigger:nightly'], {
+      readAuthUsers: async (ids) => {
+        reads.push(ids);
+        return [
+          { id: A, email: 'a@example.test', name: 'Ada', full_name: 'Ada Full' },
+          { id: B, email: 'b@example.test', name: null, full_name: 'Bo Full' },
+        ];
+      },
+    });
+
+    expect(reads).toEqual([[A, B, GONE]]);
+    expect(identities.get(A)).toEqual({ email: 'a@example.test', displayName: 'Ada', exists: true });
+    expect(identities.get(B)).toEqual({ email: 'b@example.test', displayName: 'Bo Full', exists: true });
+    expect(identities.get(GONE)).toEqual({ email: null, displayName: null, exists: false });
+    expect(identities.get('trigger:nightly')).toEqual({ email: null, displayName: null, exists: false });
+  });
+
+  test('never queries for an empty list or for ids that cannot be auth users', async () => {
+    let reads = 0;
+    const readAuthUsers = async () => {
+      reads += 1;
+      return [];
+    };
+
+    expect((await resolveUserIdentities([], { readAuthUsers })).size).toBe(0);
+    expect((await resolveUserIdentities(['agent:bot'], { readAuthUsers })).get('agent:bot')?.exists).toBe(false);
+    expect(reads).toBe(0);
+  });
+
+  test('falls back to the per-user auth lookup when the auth table cannot be read', async () => {
+    const looked: string[] = [];
+    const identities = await resolveUserIdentities([A, B], {
+      readAuthUsers: async () => {
+        throw new Error('permission denied for schema auth');
+      },
+      lookupUser: async (uid) => {
+        looked.push(uid);
+        return { email: null, displayName: null, exists: true, transient: true };
+      },
+    });
+
+    expect(looked.sort()).toEqual([A, B]);
+    expect(identities.get(A)).toEqual({ email: null, displayName: null, exists: true });
   });
 });

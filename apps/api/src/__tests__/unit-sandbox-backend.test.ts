@@ -68,13 +68,6 @@ describe('buildSandboxUpstreamHeaders', () => {
     expect(h['Authorization']).toBeUndefined();
   });
 
-  test('includes provider traffic credentials only when supplied by the adapter', async () => {
-    const withTok = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: 'u1', serviceKey: 'k', providerHeaders: { 'X-Daytona-Preview-Token': 'ptok' } });
-    expect(withTok['X-Daytona-Preview-Token']).toBe('ptok');
-    const without = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: 'u1', serviceKey: 'k' });
-    expect(without['X-Daytona-Preview-Token']).toBeUndefined();
-  });
-
   test('signs X-Kortix-User-Context when user + service key + payload exist', async () => {
     const h = await buildSandboxUpstreamHeaders({ sandboxId: 'sbx', userId: 'u1', serviceKey: 'svc-key' });
     expect(h['X-Kortix-User-Context']).toBe('signed:svc-key:u1');

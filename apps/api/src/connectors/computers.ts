@@ -10,8 +10,7 @@
  * include a machine selector, and the gateway restricts it to the profile's
  * server-side allowlist. The gateway routes `tunnel` bindings
  * through the shared tunnel RPC core
- * (`tunnel/core/rpc-core.ts`), NOT executeCall. See
- * docs/specs/computer-connector.md.
+ * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
@@ -22,11 +21,6 @@ export function computerLabel(): string {
 
 /** Legacy aggregate slug. Kept for existing session bindings during migration. */
 export const COMPUTER_SLUG = 'computer';
-
-/** Legacy per-machine slug. Kept only for compatibility and migration. */
-export function computerConnectorSlug(tunnelId: string): string {
-  return `computer-${tunnelId.toLowerCase()}`;
-}
 
 /** One curated computer action — normalized into a `tunnel`-bound NormalizedAction. */
 interface ComputerActionDef {

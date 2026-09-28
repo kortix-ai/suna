@@ -17,6 +17,7 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
+import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
 // These endpoints are the project-scoped members-governance surface (group
 // grants, resource grants, approvals, access requests). Each already asserts
@@ -47,8 +48,10 @@ const CUSTOM_ROLE = crypto.randomUUID();
 const GROUP = crypto.randomUUID();
 
 const minted: string[] = [];
+let upstream: LocalGitUpstream;
 
 beforeAll(async () => {
+  upstream = createLocalGitUpstream('members-manage-gates');
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
@@ -62,7 +65,7 @@ beforeAll(async () => {
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'members-manage-gate-test-project',
-    repoUrl: 'https://example.com/members-manage-gate-test.git',
+    repoUrl: upstream.repoUrl,
   });
   await db.insert(accountGroups).values({
     groupId: GROUP,
@@ -135,6 +138,7 @@ afterAll(async () => {
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(creditAccounts).where(eq(creditAccounts.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  upstream.remove();
 });
 
 async function mint(userId: string): Promise<string> {

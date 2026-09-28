@@ -1,18 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  PREVIEW_STATE_HEADER,
-  previewStateCopy,
-  previewStatePage,
-  type PreviewState,
-} from './preview-state-page';
+import { previewStatePage, type PreviewState } from './preview-state-page';
 
-const ALL: PreviewState[] = [
-  'signed-out',
-  'forbidden',
-  'unknown',
-  'starting',
-  'not-listening',
-  'unreachable',
+// Literal copy, not the helper's own answer: a changed title or a state that
+// starts offering sign-in is a product change this table must be edited for.
+const STATES: Array<[PreviewState, string, boolean, boolean]> = [
+  ['signed-out', 'Sign in to open this preview', true, false],
+  ['forbidden', 'This preview address is not signed', true, false],
+  ['unknown', 'This preview is no longer available', false, false],
+  ['starting', 'Starting the sandbox', false, true],
+  ['not-listening', 'Nothing is listening on port 8081 yet', false, true],
+  ['unreachable', 'Port 8081 isn&#39;t responding', false, true],
 ];
 
 const BASE = {
@@ -21,42 +18,21 @@ const BASE = {
 };
 
 describe('every preview state renders a page a person can read', () => {
-  test('all six states produce a complete, titled document', () => {
-    for (const state of ALL) {
-      const html = previewStatePage({ ...BASE, state, port: 8081 });
-      expect(html).toStartWith('<!doctype html>');
-      expect(html).toContain('</html>');
-      // The page escapes everything it prints, its own copy included — hence
-      // the apostrophe in "isn't" arriving as an entity.
-      const title = previewStateCopy(state, 8081).title.replace(/'/g, '&#39;');
-      expect(html).toContain(`<title>${title}</title>`);
-      // Never a bare machine payload.
-      expect(html).not.toContain('"error"');
-    }
-  });
-
-  test('only the states a person can act on offer sign-in', () => {
-    for (const state of ALL) {
-      const html = previewStatePage({ ...BASE, state });
-      const offers = previewStateCopy(state).signIn;
-      expect(html.includes('/preview/authorize?to=')).toBe(offers);
-      // A sign-in inside the session-panel iframe must break out of the frame.
-      if (offers) expect(html).toContain('target="_top"');
-    }
-  });
-
-  test('only the states that resolve on their own retry themselves', () => {
-    for (const state of ALL) {
-      const html = previewStatePage({ ...BASE, state });
-      expect(html.includes('location.reload()')).toBe(previewStateCopy(state).autoRetry);
-    }
-  });
-
-  test('a state that will never fix itself offers no false hope', () => {
-    const html = previewStatePage({ ...BASE, state: 'unknown' });
-    expect(html).toContain('no longer available');
-    expect(html).not.toContain('location.reload()');
-    expect(html).not.toContain('/preview/authorize');
+  // Only the states a person can act on offer sign-in, and only the states
+  // that resolve on their own retry themselves. A state that will never fix
+  // itself offers neither.
+  test.each(STATES)('%s: titled "%s", sign-in %p, auto-retry %p', (state, title, signIn, retry) => {
+    const html = previewStatePage({ ...BASE, state, port: 8081 });
+    expect(html).toStartWith('<!doctype html>');
+    expect(html).toContain('</html>');
+    // The page escapes everything it prints, its own copy included.
+    expect(html).toContain(`<title>${title}</title>`);
+    // Never a bare machine payload.
+    expect(html).not.toContain('"error"');
+    expect(html.includes('/preview/authorize?to=')).toBe(signIn);
+    // A sign-in inside the session-panel iframe must break out of the frame.
+    if (signIn) expect(html).toContain('target="_top"');
+    expect(html.includes('location.reload()')).toBe(retry);
   });
 
   test('the port is named when we know it, and never printed as undefined', () => {
@@ -91,9 +67,5 @@ describe('every preview state renders a page a person can read', () => {
     const html = previewStatePage({ ...BASE, state: 'starting' });
     expect(html).not.toMatch(/<link[^>]+href="http/);
     expect(html).not.toMatch(/<script[^>]+src=/);
-  });
-
-  test('the state header name is stable for probes and logs', () => {
-    expect(PREVIEW_STATE_HEADER).toBe('x-kortix-preview-state');
   });
 });

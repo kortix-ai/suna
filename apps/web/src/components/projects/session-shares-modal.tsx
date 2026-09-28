@@ -17,6 +17,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import type { SessionPublicShare } from '@kortix/sdk';
 import {
+  ChatTextIcon as ChatText,
   CheckIcon as Check,
   FileTextIcon as FileText,
   GlobeIcon as Globe,
@@ -42,22 +43,12 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
   isShareLive,
+  publicShareUrl,
   shareListState,
   useRevokePublicShare,
   useSessionPublicShares,
 } from '@/hooks/use-session-public-shares';
 import { cn } from '@/lib/utils';
-
-/**
- * Read at render time, not in an event handler, so it must survive SSR. Today
- * it never runs on the server (the list is empty until react-query resolves, so
- * only the empty state renders), but that is a property of the fetch timing
- * rather than of this function — guard it rather than depend on that holding.
- */
-function shareUrl(share: SessionPublicShare): string | null {
-  if (!share.public_path || typeof window === 'undefined') return null;
-  return `${window.location.origin}${share.public_path}`;
-}
 
 function ShareRow({
   share,
@@ -69,10 +60,15 @@ function ShareRow({
   isRevoking: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tTranscript = useTranslations('hardcodedUi.publicTranscriptShare');
   const [copied, setCopied] = useState(false);
   const live = isShareLive(share);
-  const url = shareUrl(share);
+  // Read at render time: `publicShareUrl` is null outside a browser (SSR).
+  const url = publicShareUrl(share.public_path);
   const isFile = share.resource_type === 'file';
+  // A transcript share has no port and no file: it names the conversation.
+  const isTranscript = share.resource_type === 'transcript';
+  const Icon = isFile ? FileText : isTranscript ? ChatText : Globe;
 
   const copy = async () => {
     if (!url) return;
@@ -95,13 +91,7 @@ function ShareRow({
           live ? 'bg-kortix-green/15' : 'bg-muted',
         )}
       >
-        {isFile ? (
-          <FileText
-            className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')}
-          />
-        ) : (
-          <Globe className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')} />
-        )}
+        <Icon className={cn('size-5', live ? 'text-kortix-green' : 'text-muted-foreground')} />
       </span>
 
       <div className="min-w-0 flex-1">
@@ -114,7 +104,11 @@ function ShareRow({
           )}
         </div>
         <p className="text-muted-foreground truncate text-xs">
-          {isFile ? share.file_path : `Port ${share.port}${share.path}`}
+          {isFile
+            ? share.file_path
+            : isTranscript
+              ? tTranscript('rowMeta')
+              : `Port ${share.port}${share.path}`}
         </p>
       </div>
 

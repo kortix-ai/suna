@@ -208,8 +208,7 @@ export async function persistProjectRepositoryReplacement(input: {
       // in git-proxy/index.ts); `/start` reports it as telemetry; and the web
       // shows an older session a notice about its own clone. It does NOT
       // freeze the session: every session of this project receives the
-      // project's current config release and converges normally
-      // (docs/specs/config-releases.md, "Repository replacement"). What is
+      // project's current config release and converges normally. What is
       // left is physical — that clone and the new origin hold unrelated
       // histories, so Git itself refuses a push without a rebase.
       repository_generation: randomUUID(),

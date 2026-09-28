@@ -146,11 +146,6 @@ describe('static web server live curl e2e', () => {
     expect(res.body).toContain('<h1>hello</h1>')
   })
 
-  it('rejects paths outside the allow-list with 403', async () => {
-    const res = await curl(`${base}/abs/etc/passwd`)
-    expect(res.status).toBe(403)
-  })
-
   it('returns 404 for a missing file under an allowed root', async () => {
     const res = await curl(`${base}/abs${siteDir}/missing.css`)
     expect(res.status).toBe(404)

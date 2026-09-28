@@ -52,8 +52,6 @@ export interface MaterializeProjectOptions {
   inactivityTimeoutMs?: number
   /** Test seam: the extractor binary (a bogus path forces the in-process fallback). */
   tarBinary?: string
-  /** Budget for the post-activation blob import. */
-  hydrationTimeoutMs?: number
 }
 
 export type MaterializeProjectResult = MaterializedProject & { summary: ConfigProviderSummary }
@@ -236,7 +234,6 @@ export async function materializeProject(
             fetchImpl: opts.fetchImpl,
             inactivityTimeoutMs: opts.inactivityTimeoutMs,
             signal: opts.signal,
-            timeoutMs: opts.hydrationTimeoutMs,
           }),
         )
       const finished = finish({

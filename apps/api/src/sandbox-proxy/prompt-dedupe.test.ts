@@ -134,74 +134,27 @@ describe('promptDeliveryKey', () => {
       expect(key).toBe('idem:sb\0se\0cli-key-1');
     });
 
-    test('a command body (no messageID field) still falls back to the content hash', () => {
+    // Commands send no Idempotency-Key and no messageID, so the content hash
+    // is the only thing between a client double-submit and a double run: it
+    // must be the same key both times.
+    test('a command body (no messageID field) falls back to a stable content hash', () => {
       const body = new TextEncoder().encode('{"command":"webapp","arguments":"explain"}').buffer;
       const key = promptDeliveryKey({ idempotencyKey: null, sandboxId: 'sb', sessionId: 'se', body });
       expect(key.startsWith('hash:')).toBe(true);
-    });
-
-    // T13 — the no-blind-repost guarantee for the API's OWN
-    // `continue_session` delivery (session-lifecycle/runtime-client.ts `postPrompt`,
-    // called through the SAME `forwardToSandbox` → prompt-dedupe path a
-    // browser/CLI send goes through). `postPrompt` sends no messageID field —
-    // its body is exactly `{"parts":[{"type":"text","text":…}]}` — so a
-    // retried delivery of the SAME queued command (identical sessionId + text)
-    // falls to the content-hash key, and MUST collide with the first attempt's
-    // claim so the drain loop's re-post is recognized as the same delivery
-    // instead of re-enqueuing it. See the comment on `executeQueuedContinue`
-    // in queued-continue.ts for the full mechanism this pins.
-    test('a retried continue_session delivery — postPrompt\'s exact body shape — collides on the same dedupe key', () => {
-      const postPromptBody = (text: string) =>
-        new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] })).buffer;
-      const firstAttempt = promptDeliveryKey({
-        idempotencyKey: null,
-        sandboxId: 'ext-1',
-        sessionId: 'sess-1',
-        body: postPromptBody('please continue'),
-      });
-      const retryAfterWake = promptDeliveryKey({
-        idempotencyKey: null,
-        sandboxId: 'ext-1',
-        sessionId: 'sess-1',
-        body: postPromptBody('please continue'),
-      });
-      expect(firstAttempt).toBe(retryAfterWake);
-      expect(firstAttempt.startsWith('hash:')).toBe(true);
-      // And the claim itself: the SAME two calls that `forwardToSandbox` makes
-      // — claim on the first attempt, re-claim on the retry — must observe the
-      // second as already-held, at a gap that spans the old 60s TTL but stays
-      // inside the new 10-minute one (the realistic worst case: a ~45s
-      // deliverWithRetry deadline plus a delayed drain tick).
-      expect(claimPromptDelivery(firstAttempt, 0)).toBe(true);
-      expect(claimPromptDelivery(retryAfterWake, 90_000)).toBe(false);
+      expect(promptDeliveryKey({ idempotencyKey: null, sandboxId: 'sb', sessionId: 'se', body })).toBe(
+        key,
+      );
     });
 
     // F2 — `postPrompt` (session-lifecycle/runtime-client.ts) now sends
     // `Idempotency-Key: <row.commandId>` on every continue_session delivery.
-    // These pin the two halves of that guarantee directly against the real
-    // dedupe cache, one layer below the session-lifecycle proof in
-    // `postprompt-idempotency-key.test.ts`.
+    // This pins the F2 hazard against the real dedupe cache, one layer below
+    // the session-lifecycle proof in `postprompt-idempotency-key.test.ts`. A
+    // retried command colliding on its own key is the key-precedence rows
+    // above plus the claim rows below.
     describe('F2 — Idempotency-Key outranks the content hash for postPrompt deliveries', () => {
       const postPromptBody = (text: string) =>
         new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] })).buffer;
-
-      test('same commandId retried → deduped (second claim is short-circuited)', () => {
-        const key = promptDeliveryKey({
-          idempotencyKey: 'cmd-1',
-          sandboxId: 'ext-1',
-          sessionId: 'sess-1',
-          body: postPromptBody('please approve and continue'),
-        });
-        const retryKey = promptDeliveryKey({
-          idempotencyKey: 'cmd-1',
-          sandboxId: 'ext-1',
-          sessionId: 'sess-1',
-          body: postPromptBody('please approve and continue'),
-        });
-        expect(key).toBe(retryKey);
-        expect(claimPromptDelivery(key, 0)).toBe(true);
-        expect(claimPromptDelivery(retryKey, 1_000)).toBe(false);
-      });
 
       test('two DIFFERENT commandIds, identical body → BOTH deliver (independent claims)', () => {
         // Exactly the F2 hazard: two distinct queued continues whose text
@@ -297,22 +250,18 @@ describe('releasePromptDelivery', () => {
 
 // ── Which calls may never be re-POSTed ─────────────────────────────────────
 describe('isNonIdempotentSessionWrite', () => {
-  test('all three turn-creating endpoints match', () => {
-    for (const path of [
-      '/session/abc123/message',
-      '/session/abc123/prompt_async',
-      '/session/abc123/command',
+  // `/command` was the omission behind a 4x duplicate send (2026-08-11: one
+  // `/webapp` submit, four identical user messages): the proxy treated a
+  // non-idempotent agent turn as a safe-to-retry request.
+  test('all three turn-creating endpoints match, whatever the method case or query', () => {
+    for (const [method, path] of [
+      ['POST', '/session/abc123/message'],
+      ['POST', '/session/abc123/prompt_async'],
+      ['POST', '/session/abc123/command'],
+      ['post', '/session/abc-123/command?x=1'],
     ]) {
-      expect(isNonIdempotentSessionWrite(8000, 'POST', path)).toBe(true);
+      expect(isNonIdempotentSessionWrite(8000, method, path)).toBe(true);
     }
-  });
-
-  test('/command matches — the omission that caused the 4x duplicate send', () => {
-    // 2026-08-11, session 9f6b0d87: one `/webapp` submit, four identical user
-    // messages. `/command` was absent from the guard's path list, so the proxy
-    // treated a non-idempotent agent turn as a safe-to-retry request.
-    expect(isNonIdempotentSessionWrite(8000, 'POST', '/session/abc123/command')).toBe(true);
-    expect(isNonIdempotentSessionWrite(8000, 'post', '/session/abc-123/command?x=1')).toBe(true);
   });
 
   test('reads are always safe to retry', () => {
@@ -339,17 +288,6 @@ describe('isNonIdempotentSessionWrite', () => {
     expect(isNonIdempotentSessionWrite(8000, 'post', '/session/abc-123/summarize?x=1')).toBe(true);
     expect(isNonIdempotentSessionWrite(8000, 'GET', '/session/abc123/summarize')).toBe(false);
     expect(isNonIdempotentSessionWrite(8000, 'POST', '/session/abc123/summarizes')).toBe(false);
-  });
-
-  test('a command body with no Idempotency-Key still gets a stable content key', () => {
-    // The proxy's own retry is now blocked, but a CLIENT resend must still
-    // collide. Commands send no Idempotency-Key, so the content hash is the
-    // only thing standing between a double-submit and a double-execution.
-    const body = new TextEncoder().encode('{"command":"webapp","arguments":"explain"}').buffer;
-    const a = promptDeliveryKey({ idempotencyKey: null, sandboxId: 's', sessionId: 'x', body });
-    const b = promptDeliveryKey({ idempotencyKey: null, sandboxId: 's', sessionId: 'x', body });
-    expect(a).toBe(b);
-    expect(a.startsWith('hash:')).toBe(true);
   });
 });
 

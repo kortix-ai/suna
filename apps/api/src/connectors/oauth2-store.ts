@@ -72,12 +72,14 @@ async function authorizationCanCompleteOAuth(
     .limit(1);
   if (!authorization) return false;
   // OAuth completion runs as the human who started the flow, never as a
-  // service account or an agent principal.
-  return connectionRowIsReachable(authorization, {
-    userId: initiatedBy,
-    isServiceAccount: false,
-    agentPrincipal: null,
-  });
+  // service account or an agent principal. Completing an authorization manages
+  // the account (the initiate route already required the manage capability for
+  // a shared one), so its audience does not apply: 'open'.
+  return connectionRowIsReachable(
+    authorization,
+    { userId: initiatedBy, isServiceAccount: false, agentPrincipal: null },
+    'open',
+  );
 }
 
 /**

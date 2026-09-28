@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
+import { useRetiredQuery } from './retired-endpoint';
 
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
@@ -208,6 +209,14 @@ export interface AdminAccountsFilters {
   limit?: number;
 }
 
+// The admin console has a manual refresh (re-filter/re-sort); it must not
+// auto-retry. `GET /admin/api/accounts` joins `accounts` to `credit_accounts`
+// and can hit a `statement_timeout` (measured: prod 2026-09-27,
+// 25013/25019/25056 ms), so React Query's default 3 retries would triple the
+// load on an already-slow database. A failure shows the page's own error
+// state. Mirrors `ANALYTICS_RETRY` in `use-admin-activity-analytics.ts`.
+const ADMIN_ACCOUNTS_RETRY = false;
+
 export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
   const {
     search = '',
@@ -260,6 +269,7 @@ export function useAdminAccounts(filters: AdminAccountsFilters = {}) {
       return response.data!;
     },
     staleTime: 15_000,
+    retry: ADMIN_ACCOUNTS_RETRY,
     placeholderData: (prev) => prev,
   });
 }
@@ -289,6 +299,7 @@ export function useAdminAccount(accountId: string | null) {
       return response.data?.accounts?.[0] ?? null;
     },
     staleTime: 5_000,
+    retry: ADMIN_ACCOUNTS_RETRY,
   });
 }
 
@@ -606,18 +617,9 @@ export function useAdminAccountProjects(accountId: string | null) {
   });
 }
 
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
 export function useAdminAccountSandboxes(accountId: string | null) {
-  return useQuery<{ sandboxes: AdminAccountSandbox[] }>({
-    queryKey: ['admin', 'accounts', accountId, 'sandboxes'],
-    enabled: !!accountId,
-    queryFn: async () => {
-      const response = await backendApi.get<{ sandboxes: AdminAccountSandbox[] }>(
-        `/admin/api/accounts/${accountId}/sandboxes`,
-      );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-  });
+  return useRetiredQuery<{ sandboxes: AdminAccountSandbox[] }>('useAdminAccountSandboxes', ['admin', 'accounts', accountId, 'sandboxes'], !!accountId);
 }
 
 /**

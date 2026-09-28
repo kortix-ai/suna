@@ -32,7 +32,7 @@ interface ResourceGrantsResponse {
     grant_id: string;
     resource_type: string;
     resource_id: string;
-    principal_type: 'member' | 'group';
+    principal_type: 'member' | 'group' | 'project';
     principal_id: string;
     principal_label: string;
   }[];
@@ -213,6 +213,87 @@ test.describe('22 — Resource-grant multi-select', () => {
       await deleteAuthUser(owner.id, authOptions).catch(() => {});
     }
   });
+});
+
+test('grants an agent to everyone in the project from the same Grant access dialog', async ({
+  page,
+}) => {
+  test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+  test.setTimeout(120_000);
+  const runId = Date.now().toString(36);
+  const ownerEmail = `e2e-grant-everyone-${runId}@example.test`;
+  const owner = await createAuthUser(ownerEmail, authOptions);
+  const session = await signIn(ownerEmail, authOptions);
+  let project: ManifestProject | null = null;
+  try {
+    const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+    const accountId = accounts.find(
+      (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+    )!.account_id;
+    const projectName = `Everyone grant ${runId}`;
+    project = await createManifestProject({
+      api,
+      accessToken: session.access_token,
+      accountId,
+      userId: owner.id,
+      name: projectName,
+      databaseUrl: databaseUrl!,
+    });
+    const projectId = project.id;
+
+    await installBrowserSessionDirect(page, session, `/projects/${projectId}/members`, authOptions);
+    await selectAccountForUi(page, accountId);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await dismissOnboarding(page);
+
+    await page.getByRole('button', { name: 'Grant access', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
+    await expect(dialog).toBeVisible();
+
+    // Everyone in the project is a principal that holds agents, never a role:
+    // picking it alone hides the Role field and explains why.
+    await dialog.getByRole('button', { name: `Everyone in ${projectName}` }).click();
+    await expect(dialog.getByText(/Everyone keeps their own project role/)).toBeVisible();
+    await expect(dialog.getByLabel('Role')).toHaveCount(0);
+    await dialog.getByRole('tab', { name: 'Only these…', exact: true }).click();
+    await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
+
+    const grantRequest = page.waitForRequest(
+      (request) =>
+        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(request.url()) && request.method() === 'POST',
+    );
+    const grantResponse = page.waitForResponse(
+      (response) =>
+        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(response.url()) &&
+        response.request().method() === 'POST',
+    );
+    await dialog.getByRole('button', { name: 'Grant access (1)', exact: true }).click();
+    expect((await grantRequest).postDataJSON()).toEqual(
+      expect.objectContaining({
+        principal_type: 'project',
+        principal_id: projectId,
+        role_key: 'agent-user',
+        scope_type: 'project',
+        scope_id: projectId,
+        object_type: 'agent',
+        object_id: 'kortix',
+      }),
+    );
+    expect((await grantResponse).status()).toBe(201);
+    await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+
+    const after = await api<ResourceGrantsResponse>(
+      session.access_token,
+      'GET',
+      `/projects/${projectId}/resource-grants`,
+    );
+    expect(
+      after.grants.filter((g) => g.resource_id === 'kortix').map((g) => [g.principal_type, g.principal_label]),
+    ).toEqual([['project', projectName]]);
+  } finally {
+    if (project) await project.dispose().catch(() => {});
+    await deleteAuthUser(owner.id, authOptions).catch(() => {});
+  }
 });
 
 for (const selection of ['selected', 'all'] as const) {

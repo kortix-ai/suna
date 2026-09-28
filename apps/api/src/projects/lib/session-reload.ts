@@ -56,8 +56,13 @@ import {
   type SessionConfigRelease,
 } from './session-config-release';
 import {
+  parseDaemonRuntimeReport,
+  type DaemonRuntimeReport,
+} from '../../runtime-assets/daemon-runtime-report';
+import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
+import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
 
 const SANDBOX_SERVICE_PORT = 8000;
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
@@ -388,6 +393,17 @@ export interface SessionReloadDeps {
   recordReport: typeof recordDaemonConfigReport;
   /** The project's `config_releases` flag. False ⇒ the pre-release path. */
   configReleasesEnabled: (projectId: string) => Promise<boolean>;
+  /**
+   * Repair the turn a config swap took with it.
+   *
+   * The daemon retires the OpenCode process that was writing a turn. That
+   * process emits neither `session.idle` nor `session.error`, so the ledger row
+   * it opened would stay open for ever and the client that sent the prompt gets
+   * a bare `HTTP 503` with its dedupe claim still held. This settles those rows
+   * `runtime_gone` and hands each prompt back to the redelivery path — the SAME
+   * repair a provider restart takes, not a second one.
+   */
+  repairOrphanedTurn: (input: { sessionId: string; orphanedMessageId: string | null }) => Promise<void>;
 }
 
 function defaultReloadDeps(): SessionReloadDeps {
@@ -399,7 +415,45 @@ function defaultReloadDeps(): SessionReloadDeps {
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     recordReport: recordDaemonConfigReport,
     configReleasesEnabled: projectConfigReleasesEnabled,
+    repairOrphanedTurn: repairTurnOrphanedBySwap,
   };
+}
+
+/**
+ * Settle and redeliver the turn a config swap retired.
+ *
+ * DYNAMIC import on purpose, for the reason `turn-start-convergence.ts` gives
+ * for its own: a static edge would pull the whole session-lifecycle engine into
+ * every module graph that reaches a reload. Nothing needs it before this call —
+ * it runs only when the daemon reported that its swap orphaned a turn.
+ */
+async function repairTurnOrphanedBySwap(input: {
+  sessionId: string;
+  orphanedMessageId: string | null;
+}): Promise<void> {
+  const [row] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId, externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')))
+    .limit(1);
+  if (!row?.sandboxId) return;
+  const { recoverTurnsAfterRuntimeRestart } = await import(
+    '../session-lifecycle/runtime-restart-recovery'
+  );
+  const result = await recoverTurnsAfterRuntimeRestart({
+    sandboxId: row.sandboxId,
+    sessionId: input.sessionId,
+    externalId: row.externalId,
+    // The box is up and the prompt's sender is waiting: redeliver now, do not
+    // park it. `MAX_PROMPT_REDELIVERIES` bounds any loop.
+    hold: false,
+  });
+  console.log('[session-reload] a config swap orphaned a turn; settled and redelivered', {
+    session_id: input.sessionId,
+    orphaned_message_id: input.orphanedMessageId,
+    settled: result.lost.length,
+    redelivered: result.redeliveries.length,
+  });
 }
 
 export interface SandboxConfigState {
@@ -414,6 +468,25 @@ export interface SandboxConfigState {
   configReleases: boolean;
   /** The health `config` block. Null for a daemon without config releases. */
   release: DaemonConfigReport | null;
+  /**
+   * The health `runtime` block — which runtime-asset bytes this box has on disk,
+   * and whether the supervisor latched updates off after a rollback.
+   *
+   * NOT gated on `configReleases`: the two are independent. A daemon can serve
+   * `runtime` without `config.release.v1`, and `pinned: true` — a box that
+   * crash-looped an update and will not self-heal — must reach the control plane
+   * regardless of which config path the project is on.
+   */
+  runtime: DaemonRuntimeReport | null;
+  /**
+   * The health `runtime_truth` block (Rule 1, the runtime-convergence contract (PR #7785))
+   * — the box's ACTUAL runtime document. Tolerant of a daemon that predates it
+   * entirely: {@link UNREPORTED_ACTUAL_RUNTIME}, never null and never a crash,
+   * because "this box reports nothing" is itself a diff (`unknown`), not the
+   * absence of one. Independent of `configReleases`/`runtime` above for the
+   * same reason those two are independent of each other.
+   */
+  runtimeTruth: ActualRuntimeDocument;
 }
 
 const UNREACHABLE_STATE: SandboxConfigState = {
@@ -424,6 +497,8 @@ const UNREACHABLE_STATE: SandboxConfigState = {
   turnInFlight: null,
   configReleases: false,
   release: null,
+  runtime: null,
+  runtimeTruth: UNREPORTED_ACTUAL_RUNTIME,
 };
 
 /** What the sandbox says it is running right now. */
@@ -450,6 +525,8 @@ export async function readSandboxConfigState(
       turn_in_flight?: unknown;
       capabilities?: unknown;
       config?: unknown;
+      runtime?: unknown;
+      runtime_truth?: unknown;
     };
     const configReleases = hasConfigReleaseCapability(body.capabilities);
     return {
@@ -463,6 +540,8 @@ export async function readSandboxConfigState(
         body.turn_in_flight === true ? true : body.turn_in_flight === false ? false : null,
       configReleases,
       release: configReleases ? parseDaemonConfigReport(body.config) : null,
+      runtime: parseDaemonRuntimeReport(body.runtime),
+      runtimeTruth: parseActualRuntime(body.runtime_truth),
     };
   } catch {
     return UNREACHABLE_STATE;
@@ -645,8 +724,7 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  // CHOKEPOINT — the `config_releases` flag for the reload path
-  // (docs/specs/config-releases.md, "Feature flag"). Off ⇒ the daemon's own
+  // CHOKEPOINT — the `config_releases` flag for the reload path. Off ⇒ the daemon's own
   // capability is ignored and this reload takes the pre-release path: the
   // plain refresh plus the compiled-governance push, an etag-based result,
   // and no `release` block for the CLI or the web to render. Nothing is
@@ -735,6 +813,23 @@ export async function reloadSessionConfig(input: {
       };
     }
     await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: converged.config });
+    // The swap retired the process that was writing this turn. Settle the row
+    // it left open and hand the prompt back, instead of leaving the client with
+    // a 503 over a row that never completes. Never fails the reload: the config
+    // DID converge, and saying otherwise would hide that.
+    if (converged.reload?.orphaned_message_id) {
+      await deps
+        .repairOrphanedTurn({
+          sessionId: input.sessionId,
+          orphanedMessageId: converged.reload.orphaned_message_id,
+        })
+        .catch((error) =>
+          console.warn(
+            `[session-reload] orphaned-turn repair failed for ${input.sessionId}:`,
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
+    }
     // Read the etag the box runs now: the release carried the governance.
     const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
     return {

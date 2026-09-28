@@ -450,7 +450,7 @@ check again now that the lineage is fixed.
 Local: `pnpm --filter @kortix/db lint` runs the same `lint` + `squawk`
 checks (not `immutability`/`sequence`, which need PR-diff context;
 not `shadow-db`/`schema-sync`, which need a database). There is no repo-wide
-git hook wired up (`.claude/skills/migration/SKILL.md` and this file are the
+git hook wired up (`.agents/skills/migration/SKILL.md` and this file are the
 enforcement point for local discipline) — run it before every push that
 touches `packages/db/migrations`.
 

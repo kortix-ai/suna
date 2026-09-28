@@ -181,6 +181,10 @@ export interface OAuthConsentRequest {
   scope?: string;
   /** True when this user already approved this client for every requested scope — approve without asking. */
   remembered?: boolean;
+  /** True when the client registered itself (RFC 7591, e.g. an MCP client) — no account vouches for it. */
+  self_registered?: boolean;
+  /** Where approval sends the browser: the redirect host, or a native app's scheme (`cursor:`). */
+  redirect_to?: string;
 }
 
 export function getOAuthConsentRequest(
@@ -201,7 +205,13 @@ export function submitOAuthConsent(
 }
 
 export interface ConnectorSetupLinkInfo {
+  /** The project the link belongs to. Absent on older servers. */
+  project_id?: string;
   project_name: string;
+  /** The name the agent suggested for the new account, or `null`. Absent on older servers. */
+  label?: string | null;
+  /** Whose account the agent meant the link to create. Absent on older servers. */
+  owner?: 'me' | 'project';
   slug: string;
   app: string | null;
   /**
@@ -243,6 +253,15 @@ export interface ConnectorSetupLinkFinalize {
    * `null` (or absent, on older servers) when the provider exposes none.
    */
   connected_as?: string | null;
+  /** The account finalized, when the call named one (`connectionId`). */
+  connection_id?: string;
+  /** That account's name, when the call named one. */
+  label?: string;
+}
+
+/** Name ONE account the link's dialog created, so the session is told about it. */
+export interface FinalizeConnectorSetupLinkInput {
+  connectionId?: string;
 }
 
 export function startConnectorSetupLink(
@@ -265,10 +284,11 @@ export function startConnectorSetupLink(
 export function finalizeConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
+  input: FinalizeConnectorSetupLinkInput = {},
 ): Promise<ConnectorSetupLinkFinalize> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
     method: 'POST',
-    body: {},
+    body: input.connectionId ? { connection_id: input.connectionId } : {},
   });
 }
 

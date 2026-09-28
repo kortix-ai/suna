@@ -19,6 +19,8 @@ export type RuntimeVersions = {
   agentBrowser: string;
   playwright: string;
   anydoc: string;
+  /** pi packages every pi session loads, as pi sources: `npm:<name>@<exact version>`. */
+  piSystemPackages: string[];
 };
 
 export const RUNTIME_VERSIONS = runtimeVersions as RuntimeVersions;
@@ -60,3 +62,33 @@ export const OPENCODE_USER_AGENT = `opencode/${OPENCODE_VERSION}`;
 export const AGENT_BROWSER_VERSION = RUNTIME_VERSIONS.agentBrowser;
 export const PLAYWRIGHT_VERSION = RUNTIME_VERSIONS.playwright;
 export const ANYDOC_VERSION = RUNTIME_VERSIONS.anydoc;
+
+// An exact npm pin. Each spec is inlined into the image's install RUN line, so
+// the pattern also keeps every shell metacharacter out.
+const PI_SYSTEM_PACKAGE = /^npm:(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+
+/** Throws unless `source` is an exact `npm:<name>@<x.y.z>` pin. */
+export function assertPiSystemPackage(source: string): void {
+  if (!PI_SYSTEM_PACKAGE.test(source)) {
+    throw new Error(`pi system package "${source}" must be an exact npm pin: npm:<name>@<x.y.z>`);
+  }
+}
+
+/**
+ * The packages pi hands to every extension itself (virtual modules in the
+ * compiled daemon). An install of pi packages satisfies their peer range with an
+ * empty stub instead of a second copy.
+ */
+export const PI_SUPPLIED_PACKAGES: readonly string[] = [
+  '@earendil-works/pi-agent-core',
+  '@earendil-works/pi-ai',
+  '@earendil-works/pi-coding-agent',
+  '@earendil-works/pi-tui',
+];
+
+/**
+ * The pi system packages: installed into every sandbox image, loaded by every
+ * pi session (apps/kortix-sandbox-agent-server/src/harness/README.md). To add
+ * one from https://pi.dev/packages, append `npm:<name>@<version>`.
+ */
+export const PI_SYSTEM_PACKAGES: readonly string[] = RUNTIME_VERSIONS.piSystemPackages ?? [];

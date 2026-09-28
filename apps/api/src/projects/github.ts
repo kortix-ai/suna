@@ -2,6 +2,7 @@ import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
 import { resolveAppIdentity } from '../platform/services/github-app-identity';
+import { createInstallationTokenCache } from './github-installation-token-cache';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -220,17 +221,6 @@ export function githubAppId() {
 
 function githubAppPrivateKey() {
   return resolveAppIdentity()?.privateKey ?? null;
-}
-
-/**
- * The slug an operator configured, on whichever source owns the identity.
- * It is a FALLBACK: `resolveGitHubAppSlug()` derives the live slug from
- * `GET /app` and only reads this when derivation fails. Production ran for
- * months with `KORTIX_GITHUB_APP_SLUG=kortix-private-repo-access` while the
- * App's real slug was `kortix-managed`, so every install URL 404ed.
- */
-export function configuredGitHubAppSlug() {
-  return resolveAppIdentity()?.configuredSlug ?? null;
 }
 
 export function isGithubAppConfigured() {
@@ -864,15 +854,21 @@ export async function createInstallationToken(
   const id = installationId.trim();
   if (!id) throw new Error('installation_id is required');
   const scoped = (repositories ?? []).map((r) => r.trim()).filter(Boolean);
-  return ghFetch<GitHubInstallationToken>(
-    `/app/installations/${encodeURIComponent(id)}/access_tokens`,
-    {
-      method: 'POST',
-      ...(scoped.length ? { body: JSON.stringify({ repositories: scoped }) } : {}),
-    },
-    { token: createGitHubAppJwt() },
+  // Keyed by App id too: a stored installation minted under a previous App
+  // identity must not be answered from the new identity's cache.
+  return installationTokens.get(githubAppId()?.trim() ?? '', id, scoped, (installId, repos) =>
+    ghFetch<GitHubInstallationToken>(
+      `/app/installations/${encodeURIComponent(installId)}/access_tokens`,
+      {
+        method: 'POST',
+        ...(repos.length ? { body: JSON.stringify({ repositories: repos }) } : {}),
+      },
+      { token: createGitHubAppJwt() },
+    ),
   );
 }
+
+const installationTokens = createInstallationTokenCache();
 
 export async function listInstallationRepositories(
   installationId: string,

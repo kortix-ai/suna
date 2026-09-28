@@ -63,8 +63,7 @@ module "certificate" {
 # to, and sandboxes read through short-lived presigned GETs. The name is
 # deterministic on purpose: the task names it through the non-secret
 # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET / _S3_REGION overrides in the deploy
-# workflow (see .github/workflows/deploy-<env>.yml and
-# docs/runbooks/project-snapshot-s3.md#aws). Applying this creates the bucket
+# workflow (see .github/workflows/deploy-<env>.yml). Applying this creates the bucket
 # and the task-role grant only; naming it in the task env starts the producer;
 # KORTIX_PROJECT_SNAPSHOT_MODE / a project's metadata turns consumption on.
 module "project_snapshots" {

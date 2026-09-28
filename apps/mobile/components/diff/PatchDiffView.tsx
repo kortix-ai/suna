@@ -14,96 +14,16 @@ import { FilePlusIcon as FilePlus, FileMinusIcon as FileMinus, NotePencilIcon as
 import type { ProjectCommitFile } from '@/lib/projects/projects-client';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { parsePatch, type DiffRow } from '@/lib/diff/parse-patch';
 
 const MONO = MONO_FONT_FAMILY;
-const MAX_DIFF_ROWS = 2000;
 
-export interface DiffRow {
-  kind: 'hunk' | 'add' | 'del' | 'ctx';
-  num: number | null;
-  text: string;
-}
+export { MAX_DIFF_ROWS, parsePatch, type DiffRow } from '@/lib/diff/parse-patch';
 
 export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = false): { icon: AppIcon; color: string } {
   if (status === 'added') return { icon: FilePlus, color: THEME.accent.green };
   if (status === 'deleted') return { icon: FileMinus, color: isDark ? THEME.dark.destructive : THEME.light.destructive };
   return { icon: FilePen, color: THEME.accent.blue };
-}
-
-/** Split the concatenated git patch per-file and parse each into renderable rows. */
-export function parsePatch(patch: string): { byPath: Map<string, { binary: boolean; rows: DiffRow[] }>; truncated: boolean } {
-  const byPath = new Map<string, { binary: boolean; rows: DiffRow[] }>();
-  let total = 0;
-  let truncated = false;
-  if (!patch) return { byPath, truncated };
-
-  const chunks = patch.split(/^(?=diff --git )/m).filter((c) => c.trim().length > 0);
-  for (const chunk of chunks) {
-    const header = chunk.match(/^diff --git a\/(?:.*?) b\/(.+?)$/m);
-    const path = header?.[1]?.trim();
-    if (!path) continue;
-
-    const rows: DiffRow[] = [];
-    let binary = false;
-    let oldLine = 0;
-    let newLine = 0;
-
-    for (const line of chunk.split('\n')) {
-      if (
-        line.startsWith('diff --git') ||
-        line.startsWith('index ') ||
-        line.startsWith('--- ') ||
-        line.startsWith('+++ ') ||
-        line.startsWith('new file mode') ||
-        line.startsWith('deleted file mode') ||
-        line.startsWith('old mode') ||
-        line.startsWith('new mode') ||
-        line.startsWith('rename from') ||
-        line.startsWith('rename to') ||
-        line.startsWith('copy from') ||
-        line.startsWith('copy to') ||
-        line.startsWith('similarity index') ||
-        line.startsWith('dissimilarity index') ||
-        line.startsWith('\\ No newline')
-      ) {
-        if (line.startsWith('Binary files')) binary = true;
-        continue;
-      }
-      if (line.startsWith('Binary files')) {
-        binary = true;
-        continue;
-      }
-      if (line.startsWith('@@')) {
-        const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-        if (m) {
-          oldLine = parseInt(m[1], 10);
-          newLine = parseInt(m[2], 10);
-        }
-        rows.push({ kind: 'hunk', num: null, text: line });
-        total++;
-      } else if (line.startsWith('+')) {
-        rows.push({ kind: 'add', num: newLine, text: line.slice(1) });
-        newLine++;
-        total++;
-      } else if (line.startsWith('-')) {
-        rows.push({ kind: 'del', num: oldLine, text: line.slice(1) });
-        oldLine++;
-        total++;
-      } else if (line.startsWith(' ')) {
-        rows.push({ kind: 'ctx', num: newLine, text: line.slice(1) });
-        oldLine++;
-        newLine++;
-        total++;
-      }
-      if (total >= MAX_DIFF_ROWS) {
-        truncated = true;
-        break;
-      }
-    }
-    byPath.set(path, { binary, rows });
-    if (truncated) break;
-  }
-  return { byPath, truncated };
 }
 
 export function DiffFile({
@@ -171,9 +91,18 @@ export function DiffFile({
 }
 
 /** Render a whole standalone git patch (e.g. a commit's diff). */
-export function PatchDiffView({ patch, isDark }: { patch: string; isDark: boolean }) {
+export function PatchDiffView({
+  patch,
+  isDark,
+  maxRows,
+}: {
+  patch: string;
+  isDark: boolean;
+  /** Row cap across the patch (`parsePatch`). Default `MAX_DIFF_ROWS`. */
+  maxRows?: number;
+}) {
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const { byPath, truncated } = useMemo(() => parsePatch(patch), [patch]);
+  const { byPath, truncated } = useMemo(() => parsePatch(patch, maxRows), [patch, maxRows]);
 
   if (byPath.size === 0) {
     return <Text style={{ fontSize: 13, color: muted }}>No changes in this checkpoint.</Text>;

@@ -30,6 +30,8 @@ import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { resolveSessionPersonalOwner } from './personal-resources';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import { decideEnvSyncAction } from './env-sync-skip-decision';
+import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
 import { hasConfigReleaseCapability } from './session-config-release';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
@@ -90,37 +92,53 @@ export function __resetNetworkBoundaryArmCacheForTests(): void {
 }
 
 /**
- * Per-sandbox record of the last `refreshModels`-relevant payload this process
- * delivered to the daemon on the PER-PROMPT hot path (`syncSandboxEnvForPrompt`).
+ * Per-sandbox record of the last `refreshModels`-relevant payload THIS
+ * PROCESS delivered to the daemon on the PER-PROMPT hot path
+ * (`syncSandboxEnvForPrompt`).
  *
- * T3: every `/prompt_async|/message|/command` used to post
- * `refreshModels: true` unconditionally. The daemon's `/kortix/env` already
- * gates the actual reload on a value DELTA (`routes/env.ts`'s
+ * T3 (2026-09-14, #7016): every `/prompt_async|/message|/command` used to
+ * post `refreshModels: true` unconditionally. The daemon's `/kortix/env`
+ * already gates the actual reload on a value DELTA (`routes/env.ts`'s
  * `result.changed || opencodeEnvChanged`), so a byte-identical resend never
- * disposes/respawns OpenCode by itself — but it still pays for the comparison
- * on every turn, and it is the only signal the daemon has: this cache lets the
- * API stop asking at all once nothing config-affecting has moved, so a client
- * bug or a future daemon change can't turn a no-op post into a live reload.
+ * disposes/respawns OpenCode by itself — but it still paid for the round trip
+ * on every turn.
  *
- * In-process on purpose, same reasoning as `armedNetworkBoundaries`: it is a
- * cost optimization, not state anyone reads for a decision. A fresh API
- * replica (deploy, scale-out, restart) misses and sends `refreshModels: true`
- * once for that sandbox — never less correct, only a single extra no-op
- * comparison on the daemon.
+ * INCIDENT (2026-09-27): this memo is in-PROCESS, and the API runs at more
+ * than one replica (`desired_count = 2` on dev; see
+ * `infra/terraform/environments/dev/main.tf`). A load balancer round-robins
+ * requests, so a session's consecutive turns routinely land on DIFFERENT
+ * replicas — each one's memo is cold for a sandbox it has never personally
+ * pushed to, so it re-posted `/kortix/env` and re-triggered a full OpenCode
+ * respawn almost every turn instead of only the first. Measured: `send →
+ * model starts` at 4.9s / 2.5s / 7.0s across three back-to-back trivial
+ * prompts in ONE session, with the daemon logging a full
+ * `[env] project env applied` 3.3–5.3s after every send.
+ *
+ * THIS MEMO IS NOW A FAST PATH ONLY, not the correctness boundary. The
+ * correctness boundary is `env-sync-durable-state.ts`, persisted on
+ * `session_sandboxes.config` — readable by every replica. See
+ * `env-sync-skip-decision.ts` for the full three-way decision this memo feeds
+ * into (push / skip / skip-and-background-refresh) and why memory always
+ * wins over the durable record when both are present.
  */
 const lastPromptModelSignature = new Map<string, string>();
-/**
- * When each box last had its env pushed successfully. Together with the
- * signature above this is the "nothing to say" short-circuit: a prompt whose
- * whole env set is byte-identical to what THIS process pushed to THIS box
- * within `PROMPT_ENV_PUSH_TTL_MS` skips the daemon round-trip entirely. That
- * round-trip was ~1s of dead air on every send in a queue burst and every
- * back-to-back turn, for a push the daemon itself would no-op. Bounded by a
- * TTL because the box can respawn its daemon underneath us; the next prompt
- * past the TTL re-pushes, and any signature change re-pushes at once.
- */
+/** When THIS process last confirmed (by pushing, or by reading a matching
+ *  durable record) that a sandbox is running the memoed signature. Paired
+ *  with `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`, NOT a hard expiry: an
+ *  unchanged signature skips the round trip indefinitely — see
+ *  `decideEnvSyncAction`. */
 const lastPromptEnvPushAt = new Map<string, number>();
-export const PROMPT_ENV_PUSH_TTL_MS = 2 * 60_000;
+/**
+ * How stale a CONFIRMED-current record (memory or durable) may get before a
+ * skip also fires a detached background re-push. This is not a correctness
+ * TTL — the daemon's own store does not drift on its own — it is a bounded
+ * self-heal for drift THIS process did not cause (the daemon's process
+ * restarting and losing its applied env, a provider-side reset). Same
+ * reasoning, and the same order of magnitude, as this file's
+ * `BOUNDARY_ARM_TTL_MS`. Exported so the benchmark script and tests don't
+ * hardcode the number.
+ */
+export const ENV_SYNC_BACKGROUND_REFRESH_STALE_MS = 10 * 60_000;
 /** Entries are ~200 bytes; the process is long-lived and external ids are
  *  never reused, so this must be bounded the same way `armedNetworkBoundaries`
  *  is. No TTL: unlike the boundary arm this is not self-healing drift, it is a
@@ -132,6 +150,24 @@ const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
 export function __resetPromptModelSignatureCacheForTests(): void {
   lastPromptModelSignature.clear();
   lastPromptEnvPushAt.clear();
+}
+
+/**
+ * In-flight DETACHED background refreshes, keyed by sandbox external id.
+ * Guards against two prompts on the same stale sandbox both firing a
+ * redundant re-push — the second joins the first instead of starting a
+ * second daemon round trip. Never awaited by a caller; see
+ * `scheduleBackgroundEnvRefresh`.
+ */
+const inFlightBackgroundEnvRefresh = new Map<string, Promise<void>>();
+
+/** Test seam: let a suite wait for a scheduled background refresh instead of
+ *  racing it, and start each case from a clean slate. */
+export function __pendingBackgroundEnvRefreshesForTests(): Promise<void>[] {
+  return [...inFlightBackgroundEnvRefresh.values()];
+}
+export function __resetBackgroundEnvRefreshForTests(): void {
+  inFlightBackgroundEnvRefresh.clear();
 }
 
 /**
@@ -244,8 +280,7 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
  * Record the binding set this sandbox is serving.
  *
  * There is nothing to register with a provider any more. One mechanism serves
- * every provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4):
- * the guest holds a HANDLE, the broker route substitutes the real value
+ * every provider: the guest holds a HANDLE, the broker route substitutes the real value
  * server-side on an approved host, and the value never enters the sandbox on
  * daytona, e2b or platinum alike. The Platinum credential edge is gone, so this
  * is bookkeeping — it keeps the digest/skip and revocation accounting the
@@ -608,6 +643,71 @@ async function postEnvToDaemon(args: {
   };
 }
 
+/**
+ * Fire a DETACHED re-push of an already-confirmed-current env, for the "skip,
+ * but it's stale" branch of `decideEnvSyncAction`. Never awaited by
+ * `syncSandboxEnvForPrompt` and never lets a background failure surface to a
+ * turn — see the header on `lastPromptEnvPushAt`/`ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`.
+ *
+ * Sends the SAME snapshot the caller already resolved for THIS prompt, not a
+ * freshly re-resolved one: the signature already matched what memory/the
+ * durable record last confirmed, so there is nothing new to discover — this
+ * is a re-affirmation against possible daemon-side drift, not a check for a
+ * change (a real change is caught by the signature mismatch on ITS own
+ * triggering prompt, synchronously, before this function is ever reached).
+ *
+ * `refreshModels: true` is safe to send unconditionally here: the daemon's
+ * `/kortix/env` no-ops a byte-identical push (`routes/env.ts`'s
+ * `result.changed || opencodeEnvChanged` gate) — this call cannot itself
+ * cause a respawn, so it can never interrupt whatever turn is running on the
+ * box concurrently with it.
+ */
+function scheduleBackgroundEnvRefresh(args: {
+  externalId: string;
+  sessionId: string;
+  previewUrl: string;
+  providerHeaders: Record<string, string>;
+  serviceKey: string;
+  snapshot: SandboxEnvSnapshot;
+  opencodeEnv?: Record<string, string | null>;
+  llmGatewayEnabled: boolean;
+  llmGatewayBaseUrl?: string;
+  signature: string;
+}): void {
+  if (inFlightBackgroundEnvRefresh.has(args.externalId)) return;
+  const run = (async () => {
+    try {
+      await postEnvToDaemon({
+        previewUrl: args.previewUrl,
+        providerHeaders: args.providerHeaders,
+        serviceKey: args.serviceKey,
+        snapshot: args.snapshot,
+        refreshModels: true,
+        opencodeEnv: args.opencodeEnv,
+        llmGatewayEnabled: args.llmGatewayEnabled,
+        llmGatewayBaseUrl: args.llmGatewayBaseUrl,
+      });
+      const appliedAtMs = Date.now();
+      rememberPromptModelSignature(args.externalId, args.signature);
+      await persistEnvSyncDurableState(args.sessionId, args.signature, appliedAtMs);
+      console.log(
+        `[env-sync] background refresh confirmed current sandbox=${args.externalId} session=${args.sessionId}`,
+      );
+    } catch (err) {
+      // Not remembered — same rule as a failed synchronous push. The next
+      // prompt (synchronous or another background pass) re-decides from the
+      // last KNOWN-good state and retries.
+      console.warn(
+        `[env-sync] background refresh failed sandbox=${args.externalId} session=${args.sessionId}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      inFlightBackgroundEnvRefresh.delete(args.externalId);
+    }
+  })();
+  inFlightBackgroundEnvRefresh.set(args.externalId, run);
+}
+
 export async function syncSandboxEnvForPrompt(args: {
   projectId: string;
   sessionId: string;
@@ -734,13 +834,16 @@ export async function syncSandboxEnvForPrompt(args: {
     : undefined;
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
-  // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
-  // byte-identical push (see routes/env.ts), but every prompt used to ask
-  // anyway — this stops the ask itself, so a future daemon change can't turn a
-  // steady-state prompt into a live reload just because `refreshModels` was
-  // unconditionally true. See `promptModelSignature` for exactly what is
-  // covered (it is NOT limited to "model" fields — project-secret deltas ride
-  // the same gate and must never be silently skipped).
+  // last CONFIRMED-applied signature for this sandbox. "Confirmed" is checked
+  // first against this process's own memo, then — only on a memo miss —
+  // against the DURABLE per-session record any replica may have written
+  // (`env-sync-durable-state.ts`). See `env-sync-skip-decision.ts` for the
+  // full three-way decision (push / skip / skip-and-background-refresh) and
+  // the 2026-09-27 incident that made the durable leg necessary: a 2-replica
+  // API meant the in-process-only memo missed on roughly half of every
+  // session's turns. `promptModelSignature` is NOT limited to "model" fields —
+  // project-secret deltas ride the same gate and must never be silently
+  // skipped.
   const signature = promptModelSignature({
     revision: snapshot.revision,
     capabilitiesJson: snapshot.capabilitiesJson,
@@ -748,34 +851,74 @@ export async function syncSandboxEnvForPrompt(args: {
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
   });
-  const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
-  const pushedAt = lastPromptEnvPushAt.get(args.externalId);
-  if (
-    !refreshModels &&
-    pushedAt !== undefined &&
-    Date.now() - pushedAt < PROMPT_ENV_PUSH_TTL_MS
-  ) {
-    // Byte-identical to what this process pushed to this box moments ago:
-    // nothing to say, and the daemon would no-op it. Skip the round-trip.
+  const memoSignature = lastPromptModelSignature.get(args.externalId);
+  const memory =
+    memoSignature !== undefined
+      ? { signature: memoSignature, pushedAtMs: lastPromptEnvPushAt.get(args.externalId) ?? 0 }
+      : null;
+  // Pay for the durable read only when THIS process's own memo cannot already
+  // answer — memory is always at least as fresh (see the note on
+  // `decideEnvSyncAction`), so a matching memo makes the read pure overhead.
+  const persisted =
+    memory?.signature === signature ? null : await loadEnvSyncDurableState(args.sessionId);
+  lap('durable-read');
+  const decision = decideEnvSyncAction({
+    signature,
+    memory,
+    persisted,
+    nowMs: Date.now(),
+    backgroundRefreshStaleMs: ENV_SYNC_BACKGROUND_REFRESH_STALE_MS,
+  });
+  if (decision.action === 'skip') {
+    // Confirmed current — by this process or by another replica. Nothing to
+    // say, and the daemon would no-op it. Skip the round-trip entirely: the
+    // turn pays only the proxy hop, never the daemon RTT or a respawn wait.
+    lastPromptModelSignature.set(args.externalId, signature);
+    lastPromptEnvPushAt.set(args.externalId, decision.appliedAtMs);
+    if (decision.scheduleBackgroundRefresh) {
+      // Self-heal for drift THIS process did not cause. Detached: never
+      // awaited here, and a failure inside it never touches this turn.
+      scheduleBackgroundEnvRefresh({
+        externalId: args.externalId,
+        sessionId: args.sessionId,
+        previewUrl: args.previewUrl,
+        providerHeaders: args.providerHeaders,
+        serviceKey: args.serviceKey,
+        snapshot,
+        opencodeEnv: args.opencodeEnv,
+        llmGatewayEnabled,
+        llmGatewayBaseUrl,
+        signature,
+      });
+    }
     await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
     lap('mark');
-    console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
+    console.log(
+      `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
+        `background_refresh=${decision.scheduleBackgroundRefresh} ${JSON.stringify(timing)}`,
+    );
     return;
   }
+  // `decision.action === 'push'`: either the first prompt of a session (no
+  // memo, no durable record) or a genuine change (the signature matches
+  // neither) — always a real reload request.
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
-    refreshModels,
+    refreshModels: true,
     opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl,
   });
-  // Remember only AFTER a successful push. A throw below (network/HTTP
-  // failure) must leave the memo alone so the next prompt retries with
-  // `refreshModels: true` again instead of assuming the failed attempt landed.
+  // Remember only AFTER a successful push — in-process AND durably. A throw
+  // above (network/HTTP failure) must leave BOTH alone so the next prompt, on
+  // this replica or any other, retries with a real push again instead of
+  // assuming the failed attempt landed.
+  const appliedAtMs = Date.now();
   rememberPromptModelSignature(args.externalId, signature);
+  await persistEnvSyncDurableState(args.sessionId, signature, appliedAtMs);
   lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
   // is forwarded the instant this returns, so block until opencode is serving —
@@ -795,7 +938,7 @@ export async function syncSandboxEnvForPrompt(args: {
   }
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
   lap('mark');
-  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
+  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify(timing)}`);
 }
 
 /**
@@ -820,9 +963,24 @@ export const propagateProjectSecretsToActiveSandboxes = createCoalescedRunner<
   },
 });
 
+/**
+ * Re-push ONE session's secrets into its own sandbox — what an agent session
+ * gets from `POST /secrets/sync`. It is the same per-session work the
+ * pre-prompt env sync does on every prompt, so it grants the agent nothing new;
+ * it only lets the agent pull a just-changed secret or grant mid-turn. It never
+ * touches another session's box: the project-wide fan-out stays a person's
+ * action (d649d08932, finding F6). Not coalesced — one box, one push.
+ */
+export function syncSessionSecretsToSandbox(
+  projectId: string,
+  sessionId: string,
+): Promise<ProjectSecretPropagationResult> {
+  return runProjectSecretPropagation(projectId, { sessionId });
+}
+
 async function runProjectSecretPropagation(
   projectId: string,
-  opts?: { refreshModels?: boolean },
+  opts?: { refreshModels?: boolean; sessionId?: string },
 ): Promise<ProjectSecretPropagationResult> {
   const report: ProjectSecretPropagationResult = {
     ok: true,
@@ -843,11 +1001,21 @@ async function runProjectSecretPropagation(
         metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+      .where(
+        and(
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.status, 'active'),
+          ...(opts?.sessionId ? [eq(sessionSandboxes.sessionId, opts.sessionId)] : []),
+        ),
+      );
     // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
     // API instance provisioned must not receive THIS instance's env (its
     // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
-    const rows = allRows.filter((r) => sandboxBelongsToThisInstance(r.metadata));
+    // A session-scoped sync re-checks the session in code too: the guarantee
+    // that it never reaches another session's box must not rest on one WHERE.
+    const rows = allRows
+      .filter((r) => sandboxBelongsToThisInstance(r.metadata))
+      .filter((r) => !opts?.sessionId || r.sessionId === opts.sessionId);
 
     report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
@@ -1153,8 +1321,7 @@ function nonActiveSandboxSkip(
  * Is a config release ACTUALLY governing this box? `true`, `false`, or `null`
  * when health did not answer.
  *
- * Such a box receives compiled governance inside its config release
- * (docs/specs/config-releases.md, "Capability gate"). A separate
+ * Such a box receives compiled governance inside its config release. A separate
  * `KORTIX_COMPILED_AGENT_CONFIG` push through `/kortix/env` would restart
  * OpenCode on governance that does not match the release it runs — and the box
  * drops it anyway (`releaseGovernanceActive`, daemon `harness/open-code/control.ts`).

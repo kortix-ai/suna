@@ -18,9 +18,22 @@ afterEach(() => {
 });
 
 const boundary = await import('./host-boundary');
-import type { SecretSetupLinkSubmitResult } from './host-boundary';
+import type { OAuthConsentRequest, SecretSetupLinkSubmitResult } from './host-boundary';
 
 describe('host boundary transport', () => {
+  test('consent request carries whether the client registered itself and where approval redirects', async () => {
+    responseFactory = () =>
+      Response.json({ client_name: 'Claude', scopes: ['kortix'], remembered: false, self_registered: true, redirect_to: 'claude.ai' });
+    const request: OAuthConsentRequest = await boundary.getOAuthConsentRequest('req-1', {
+      backendUrl: 'https://api.example.test/v1',
+      accessToken: 'jwt',
+    });
+
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/oauth/authorize/consent/req-1');
+    expect(request.self_registered).toBe(true);
+    expect(request.redirect_to).toBe('claude.ai');
+  });
+
   test('secret submit returns the names the requesting agent will not receive', async () => {
     responseFactory = () =>
       Response.json({
@@ -161,6 +174,57 @@ describe('host boundary transport', () => {
       'https://api.example.test/v1/setup-links/connectors/connect-token/start',
     );
     expect(requests[0]?.init?.method).toBe('POST');
+  });
+
+  test('connector setup-link info names its project and the suggested account name', async () => {
+    responseFactory = () =>
+      Response.json({
+        kind: 'connector',
+        project_id: 'P1',
+        project_name: 'Acme',
+        label: "Dad's Gmail",
+        owner: 'project',
+        slug: 'gmail',
+        app: 'gmail',
+        expires_at: '2026-01-01',
+      });
+
+    const info = await boundary.getConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+
+    const projectId: string | undefined = info.project_id;
+    const label: string | null | undefined = info.label;
+    const owner: 'me' | 'project' | undefined = info.owner;
+    expect({ projectId, label, owner }).toEqual({ projectId: 'P1', label: "Dad's Gmail", owner: 'project' });
+  });
+
+  test('connector setup-link finalize names ONE account when given its connection id', async () => {
+    responseFactory = () =>
+      Response.json({
+        connected: true,
+        connected_as: 'dad@example.test',
+        connection_id: 'conn-2',
+        label: "Dad's Gmail",
+      });
+
+    const result = await boundary.finalizeConnectorSetupLink(
+      'connect-token',
+      { backendUrl: 'https://api.example.test/v1' },
+      { connectionId: 'conn-2' },
+    );
+
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({ connection_id: 'conn-2' });
+    const named: { id: string | undefined; label: string | null | undefined } = {
+      id: result.connection_id,
+      label: result.label,
+    };
+    expect(named).toEqual({ id: 'conn-2', label: "Dad's Gmail" });
+
+    await boundary.finalizeConnectorSetupLink('connect-token', {
+      backendUrl: 'https://api.example.test/v1',
+    });
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({});
   });
 
   test('connector setup-link finalize reports a still-pending connect as connected:false', async () => {

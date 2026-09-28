@@ -641,6 +641,7 @@ describe('kortix secrets ls — inside an agent session', () => {
     expect(out).toContain('1 secret is not granted to agent analyst');
     expect(out).toContain('Customize → Agents → analyst → Secrets');
     expect(out).toContain("Listed: only the secrets agent analyst is granted");
+    expect(out).toContain('Then run `kortix secrets sync` to pull it into this session');
   });
 
   test('a declared key inside the grant with no value is still missing', async () => {

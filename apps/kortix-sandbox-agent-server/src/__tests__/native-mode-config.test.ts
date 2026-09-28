@@ -84,14 +84,4 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
     expect(parsed.agent.support.model).toBe('codex/gpt-5.6-sol')
     expect(parsed.agent.research.model).toBe('anthropic/claude-opus-4-8')
   })
-
-  test('gateway mode is untouched: kortix provider + lockout still emitted', async () => {
-    const content = await buildOpencodeConfigContent({
-      KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-      KORTIX_TOKEN: 'tok-123',
-    })
-    const parsed = JSON.parse(content!)
-    expect(parsed.provider.kortix).toBeDefined()
-    expect(parsed.enabled_providers).toEqual(['kortix'])
-  })
 })

@@ -22,6 +22,24 @@ import type React from 'react';
 
 // ─── Inline code ─────────────────────────────────────────────────────────────
 /**
+ * Size: `0.8rem` in body text, `0.9em` inside a heading.
+ *
+ * Body text is `text-sm` (0.875rem), so the body chip is 0.8 / 0.875 ≈ 0.91
+ * of the text around it. A `rem` size ignores the parent, so inside an `h1`
+ * (`text-xl`, 1.25rem) the same chip dropped to 0.64 of the heading and read
+ * as body text pasted into the title. Inside `h1`–`h6` the chip uses `0.9em`
+ * instead: the body ratio, measured against the heading's own size.
+ *
+ * Body text keeps `rem` on purpose. `0.8em` everywhere would shrink every
+ * body chip from 12.8px to 11.2px in `text-sm` prose and tables.
+ *
+ * The heading rule is a descendant selector, so it also matches a chip inside
+ * a link or emphasis inside the heading. `:is(...) .chip` is specificity
+ * (0,1,1) and outranks the bare `text-[0.8rem]` utility (0,1,0).
+ */
+const INLINE_CODE_SIZE = 'text-[0.8rem] [:is(h1,h2,h3,h4,h5,h6)_&]:text-[0.9em]';
+
+/**
  * The chip sits IN the line, not beside it.
  *
  * No `display` of its own, and no `vertical-align`: an inline box shares the
@@ -30,7 +48,7 @@ import type React from 'react';
  * obvious-looking alternatives are what knocked it out of line:
  *
  *   - `align-middle` centres the box on the parent's baseline PLUS half the
- *     parent's x-height. The chip is `text-[0.8rem]` inside `text-base` prose,
+ *     parent's x-height. The chip is `text-[0.8rem]` inside `text-sm` prose,
  *     so its own baseline landed visibly BELOW the surrounding text's — the
  *     chip appeared to sag under the sentence.
  *   - `inline-flex` makes the chip atomic: its height comes from the flex line
@@ -42,11 +60,10 @@ import type React from 'react';
  * `text-center` is gone with them: a chip is one line of text as wide as its
  * content, so there is nothing for it to centre.
  */
-// Mirrored, out of necessity, by the search-dialog rule in `app/globals.css`:
-// fumadocs builds that chip inside its own package, so there is nowhere to
-// hand it this class. Change one, change the other.
-export const INLINE_CODE =
-  'rounded-[5px] bg-card px-1.5 py-[0.08rem] font-mono text-[0.8rem] text-foreground/95 [overflow-wrap:anywhere] border border-border tracking-tight font-medium';
+export const INLINE_CODE = cn(
+  'rounded-[5px] bg-card px-1.5 py-[0.08rem] font-mono text-foreground/95 [overflow-wrap:anywhere] border border-border tracking-tight font-medium',
+  INLINE_CODE_SIZE,
+);
 
 /**
  * The four CSS hex forms and nothing else: `#RGB`, `#RGBA`, `#RRGGBB`,

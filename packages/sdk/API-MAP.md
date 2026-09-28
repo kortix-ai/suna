@@ -21,13 +21,15 @@ a given import path is:
 
 | Tier | Entries | Guarantee |
 |---|---|---|
-| Stable | `.`, `./react`, `./server` | semver |
+| Stable | `.`, `./react`, `./server`, `./wire-message-id` | semver |
 | Deprecated | the 20 legacy subpaths | works; removed on the next major |
 | Internal | `./internal/*` | **no guarantee**, may change in any release |
 
 `.` is the canonical entry — everything framework-free lives there. `./react`
 and `./server` exist because React is a peer dependency and `./server` statically
-imports `node:async_hooks`, respectively. The 20 legacy subpaths
+imports `node:async_hooks`, respectively. `./wire-message-id` is the wire
+message-id clock module alone — it has no imports, so a server loads it without
+the root barrel; the root exports the same names. The 20 legacy subpaths
 (`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
 the zustand stores, …) are `@deprecated` aliases that still resolve — import from
 the root instead. That the root really does cover all of them is asserted by
@@ -40,7 +42,7 @@ designed API.
 ## IN SCOPE — the agent product (what the SDK needs)
 
 ### 1. Auth / session token  ✅
-Injection seam, not an endpoint. `configureKortix({ getToken })` → Supabase token on every request; 401 retry; cache invalidation.
+Injection seam, not an endpoint. `configureKortix({ getToken })` → token on every request. `backendApi`, `backendApi.postStream` and `authenticatedFetch` all send through `send()` (`core/http/transport.ts`): one header policy (bearer, client surface, admin bypass, act-as), one default deadline, one 401 replay with a fresh token.
 
 ### 1b. Token validation helper (pasted-API-key UX)  ✅
 `kortix.validateToken()` → `GET /v1/accounts/me`. Never throws — resolves
@@ -77,6 +79,7 @@ try/catching every call.
 | transcript | `GET .../sessions/:sid/transcript` → `projects-client/sessions.ts`'s `getSessionTranscript` ✅, facade `session(pid,sid).transcript()` ✅ (previously listed ✅ here with no client fn behind it — that was false; now genuinely wired) |
 | preview candidates (live ports) | `GET .../sessions/:sid/previews` |
 | public shares | `GET/POST/DELETE .../sessions/:sid/public-shares[/:id]` |
+| public transcript share (`{ transcript: true }`, one live link per session; `findActiveTranscriptShare`) + anonymous read (`getPublicSessionShare`, `getPublicSessionShareMessages`, by `share_id` or `kps_` token) | `POST .../sessions/:sid/public-shares` · `GET /v1/public/session-shares/:ref[/messages]` |
 
 ### 5b. Token minting (CLI PATs) — Kortix-as-a-Backend-critical  ✅
 | op | REST | SDK |

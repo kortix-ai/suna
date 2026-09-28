@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   missing,
@@ -7,6 +8,7 @@ import {
   surfaceApiError,
   takeFlagValue,
   takeFlagBool,
+  fail,
 } from '../command-helpers.ts';
 import { findRole, type IamRole } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
@@ -103,20 +105,10 @@ Examples:
 `;
 
 export async function runRoles(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let clearDesc = false;
@@ -135,8 +127,7 @@ export async function runRoles(argv: string[]): Promise<number> {
     f.host = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -261,21 +252,11 @@ export async function runRoles(argv: string[]): Promise<number> {
         if (f.name === undefined && f.desc === undefined && !clearDesc) {
           return missing('--name, --desc or --no-desc');
         }
-        if (f.desc !== undefined && clearDesc) {
-          process.stderr.write(
-            `${status.err('--desc and --no-desc are mutually exclusive.')}\n`,
-          );
-          return 2;
-        }
+        if (f.desc !== undefined && clearDesc) return fail('--desc and --no-desc are mutually exclusive.');
         const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
         const role = findRole(roles, ref);
         if (!role) return notFound(`role "${ref}"`);
-        if (role.is_system) {
-          process.stderr.write(
-            `${status.err('Built-in roles cannot be edited — clone it as a custom role instead.')}\n`,
-          );
-          return 2;
-        }
+        if (role.is_system) return fail('Built-in roles cannot be edited — clone it as a custom role instead.');
         const body: Record<string, unknown> = {};
         if (f.name !== undefined) body.name = f.name;
         if (f.desc !== undefined) body.description = f.desc;
@@ -299,10 +280,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
         const role = findRole(roles, ref);
         if (!role) return notFound(`role "${ref}"`);
-        if (role.is_system) {
-          process.stderr.write(`${status.err('System roles are read-only — clone it as a custom role instead.')}\n`);
-          return 2;
-        }
+        if (role.is_system) return fail('System roles are read-only — clone it as a custom role instead.');
         const actions = f.actions.split(',').map((a) => a.trim()).filter(Boolean);
         await ctx.client.put(`${base}/roles/${encodeURIComponent(role.role_id)}/permissions`, { actions });
         process.stdout.write(`${status.ok(`${C.bold}${role.key}${C.reset} → ${actions.length} permission${actions.length === 1 ? '' : 's'}`)}\n`);
@@ -317,10 +295,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
         const role = findRole(roles, ref);
         if (!role) return notFound(`role "${ref}"`);
-        if (role.is_system) {
-          process.stderr.write(`${status.err('System roles cannot be deleted.')}\n`);
-          return 2;
-        }
+        if (role.is_system) return fail('System roles cannot be deleted.');
         await ctx.client.delete(`${base}/roles/${encodeURIComponent(role.role_id)}`);
         process.stdout.write(`${status.ok(`Deleted role ${C.bold}${role.key}${C.reset}`)}\n`);
         return 0;
@@ -358,8 +333,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         const [principalType, ...idParts] = f.to.split(':');
         const principalId = idParts.join(':');
         if (!['member', 'group', 'token'].includes(principalType) || !principalId) {
-          process.stderr.write(`${status.err('--to must be member:<id>, group:<id>, or token:<id>')}\n`);
-          return 2;
+          return fail('--to must be member:<id>, group:<id>, or token:<id>');
         }
         const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
         const role = findRole(roles, ref);
@@ -448,8 +422,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         try {
           doc = file.endsWith('.json') ? JSON.parse(raw) : (parseToml(raw) as any);
         } catch (err) {
-          process.stderr.write(`${status.err(`Parse error in ${file}: ${(err as Error).message}`)}\n`);
-          return 2;
+          return fail(`Parse error in ${file}: ${(err as Error).message}`);
         }
         const existing = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
         const haveKey = new Set(existing.roles.map((r) => r.key));

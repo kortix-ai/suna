@@ -27,24 +27,19 @@ import { deliveryCountsAsActivity } from './delivery-activity';
  * true for a prompt the platform delivers.
  */
 describe('deliveryCountsAsActivity', () => {
-  test('a delivered prompt is a real turn — stamp it', () => {
-    expect(deliveryCountsAsActivity('delivered')).toBe(true);
-  });
-
-  test('a prompt still in flight is not activity yet', () => {
-    expect(deliveryCountsAsActivity('pending')).toBe(false);
-  });
-
-  test('a prompt that never reached the runtime is not activity', () => {
-    expect(deliveryCountsAsActivity('unreachable')).toBe(false);
-    expect(deliveryCountsAsActivity('no-session')).toBe(false);
-    expect(deliveryCountsAsActivity('failed')).toBe(false);
-  });
-
-  test('accepted-then-never-written is NOT activity — the turn did not happen', () => {
-    // `not-landed` means the runtime took the prompt and never wrote the
-    // message. Stamping it would move the session up the sidebar for a turn
-    // the user never sees.
-    expect(deliveryCountsAsActivity('not-landed')).toBe(false);
+  // Only a delivered prompt is a real turn. `pending` is still in flight;
+  // `unreachable`, `no-session` and `failed` never reached the runtime; and
+  // `not-landed` means the runtime took the prompt and never wrote the
+  // message, so stamping it would move the session up the sidebar for a turn
+  // the user never sees.
+  test.each([
+    ['delivered', true],
+    ['pending', false],
+    ['unreachable', false],
+    ['no-session', false],
+    ['failed', false],
+    ['not-landed', false],
+  ] as const)('a %s delivery counts as activity: %p', (outcome, counts) => {
+    expect(deliveryCountsAsActivity(outcome)).toBe(counts);
   });
 });

@@ -39,6 +39,7 @@ import {
   uploadAttachmentFiles,
 } from './attachments.ts';
 import { connectorErrorPayload } from './io.ts';
+import { spillLargeResult } from './result-spill.ts';
 
 export { uploadAttachmentFiles } from './attachments.ts';
 
@@ -111,7 +112,7 @@ const META_TOOLS = [
   {
     name: 'call',
     description:
-      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk, account } on success — `account` names WHICH connected account actually ran the call — or a denial / pending-approval result. A connector may have several accounts (see `accounts`); if it does and the human did not say which one, ask — or say which one you used, reading it off the result\'s `account`. If several accounts are reachable, none is named, and none is pinned as the default, the call is denied with reason "account_required" (not a guess) — pass `account`, or tell the human to pin one with `kortix connectors accounts <slug> --default <label>`. To attach files to an email (native Email channel, Microsoft Graph sendMail, SendGrid, Postmark, …), pass local file references in attachment_files and leave the attachment array out of args; this MCP uploads raw bytes outside the model and JSON-RPC payloads, and the gateway writes them into the field the action\'s schema declares. Never paste base64 into args. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}.',
+      'Run a tool. The gateway resolves the credential server-side, enforces sharing + policy, executes the call, and audits it. Returns { ok, data, risk, account } on success — `account` names WHICH connected account actually ran the call — or a denial / pending-approval result. A connector may have several accounts (see `accounts`); if it does and the human did not say which one, ask — or say which one you used, reading it off the result\'s `account`. If several accounts are reachable, none is named, and none is pinned as the default, the call is denied with reason "account_required" (not a guess) — pass `account`, or tell the human to pin one with `kortix connectors accounts <slug> --default <label>`. To attach files to an email (native Email channel, Microsoft Graph sendMail, SendGrid, Postmark, …), pass local file references in attachment_files and leave the attachment array out of args; this MCP uploads raw bytes outside the model and JSON-RPC payloads, and the gateway writes them into the field the action\'s schema declares. Never paste base64 into args. GraphQL tools take selected fields via an "__select" arg, e.g. {"id":"1","__select":"id name email"}. A result larger than 16 KB is saved as JSON under /workspace/.kortix/state/connector-results/ and returned as { saved_to, bytes, shape, preview }: query the file with jq or bun instead of reading it whole.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -224,7 +225,7 @@ const META_TOOLS = [
   {
     name: 'connect',
     description:
-      'Start the configured provider authorization for a connector — its first account, or an additional one beside the accounts `accounts` already lists — and SURFACE any returned url to the human in your reply. This works for Composio and explicit legacy Pipedream connectors. In the web UI the link opens a connect popup; in Slack it is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
+      'Mint a link that adds a NEW account to a connector — its first, or another beside the accounts `accounts` already lists — and SURFACE the returned url to the human in your reply. In the web UI the link opens a dialog where the human names the account (prefilled from `label`), chooses who can use it (only them, everyone in the project, or chosen people or groups), and signs in with the provider. When it lands you are told the account\'s name: pass it as `account` on every call, because a connector with several accounts refuses an unnamed call. Works for Composio and explicit legacy Pipedream connectors. In Slack the link is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -240,7 +241,12 @@ const META_TOOLS = [
           type: 'string',
           enum: ['me', 'project'],
           description:
-            'Who the new account belongs to: "me" (the human who opens the link, and only they can call with it — the default) or "project" (shared with every project member, which requires project.connector.write). Ask the human before choosing "project": it authorizes an identity the whole project can spend.',
+            'Who the new account belongs to: "me" (the human who opens the link, and only they can call with it — the default) or "project" (shared with every project member, which requires project.connector.write). In the web dialog this is only the preselected choice; the human decides. Ask the human before choosing "project": it authorizes an identity the whole project can spend.',
+        },
+        label: {
+          type: 'string',
+          description:
+            'A name for the new account that tells it apart from the others, e.g. "Dad\'s Gmail" or "Support inbox". The human sees it prefilled and may change it. Not "me", "project", or an id.',
         },
       },
       required: ['slug'],
@@ -625,8 +631,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       }
       return {
         // The result passes through untouched, including the `account` echo
-        // that names WHICH identity ran the call.
-        content: content(result),
+        // that names WHICH identity ran the call — unless it is larger than
+        // 16 KB: then it is saved to a file and the model gets the path, the
+        // shape, and a preview (OpenCode would truncate it anyway).
+        content: content(await spillLargeResult(result, { connector, action })),
         // Pending approval is a successful handoff, not a connector failure.
         isError: result.status !== 'pending_approval' && !result.ok,
       };
@@ -693,11 +701,19 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
           isError: true,
         };
       }
+      if (args.label !== undefined && typeof args.label !== 'string') {
+        return {
+          content: content({ ok: false, error: 'label must be a string' }),
+          isError: true,
+        };
+      }
+      const label = typeof args.label === 'string' ? args.label.trim() : '';
       try {
         const link = await mintConnectLink({
           slug,
           expiresInMinutes: expires,
           ...(owner ? { owner } : {}),
+          ...(label ? { label } : {}),
         });
         return {
           content: content({

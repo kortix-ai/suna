@@ -5,6 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { promptModelOverride } from '../lib/prompt-model';
 import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -35,7 +36,7 @@ import {
   promptState,
   serializePrompt,
 } from '../lib/session-prompt-view';
-import { isWireIdAheadOf } from '../wire-message-id';
+import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -57,7 +58,6 @@ import { isWireIdAheadOf } from '../wire-message-id';
 // own rows, because that answer changes between the POST and the delivery. A
 // live turn holds later prompts until its terminal event releases the next row.
 
-const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const PROMPT_LIST_LIMIT = 200;
 
 const SessionPromptSchema = z.object({
@@ -189,7 +189,7 @@ projectsApp.openapi(
     if (!clientMessageId || clientMessageId.length > 128) {
       return c.json({ error: 'client_message_id is required (1..128 chars)' }, 400);
     }
-    if (!messageId || !PROMPT_WIRE_MESSAGE_ID.test(messageId)) {
+    if (!messageId || !WIRE_MESSAGE_ID.test(messageId)) {
       // Rejected rather than repaired: an id this endpoint cannot verify the
       // ordering of is one OpenCode may read as already answered, and a
       // dropped turn is worse than a refused request.
@@ -208,12 +208,12 @@ projectsApp.openapi(
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
     const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
+    // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
+    // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
+    // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
     const overrides = {
       agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
-      model:
-        model && typeof model.providerID === 'string' && typeof model.modelID === 'string'
-          ? { providerID: model.providerID, modelID: model.modelID }
-          : null,
+      model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
       variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
       directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
     };

@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mapLimit } from '@kortix/registry';
 import { validateRef } from '../git-ref';
+import { isUuid } from '../../shared/validate';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';
@@ -14,12 +15,15 @@ import {
   hostFromRepoUrl,
   invalidateProjectMirror,
   isGitOperationError,
+  isRemotePushPolicyRejection,
   makeSessionBranchRepo,
   normalizeTreePath,
   refreshMirror,
+  retryTransientGitMirror,
   runGit,
   runGitCapture,
 } from './mirror';
+import { recentBranchList } from './branch-list-cache';
 import type { GitBackedProject, GitBranchInfo } from './types';
 
 // Bounded concurrency for blob hashing below — enough to cut many-file
@@ -29,6 +33,61 @@ const HASH_CONCURRENCY = 8;
 const BRANCH_COMPARE_CONCURRENCY = 8;
 const BRANCH_COMPARE_LIMIT = 100;
 const BRANCH_LIST_TIMEOUT_MS = 15_000;
+
+// A session branch's name IS the session id — createRemoteSessionBranch
+// (../lib/sessions.ts) never prefixes it, and every session id is a
+// validated UUID (isUuid, ../lib/sessions.ts) before a branch is ever cut
+// from it. A project with a long history can carry thousands of these, and
+// a human never picks one by name — every UI branch picker searches/limits
+// on the human branches. Excluding them from the default response is what
+// cut GET /:projectId/branches from ~977KB (thousands of session branches on
+// a busy project) down to the human-authored set.
+export function isSessionBranchName(name: string): boolean {
+  return isUuid(name);
+}
+
+export const BRANCH_LIST_DEFAULT_LIMIT = 500;
+export const BRANCH_LIST_MAX_LIMIT = 2000;
+
+export interface BranchListFilter {
+  /** Case-insensitive substring match on branch name. */
+  q?: string;
+  /** Capped at BRANCH_LIST_MAX_LIMIT regardless of what's requested. */
+  limit?: number;
+  /** `false` drops auto-created session branches (see isSessionBranchName
+   *  above) — a default-branch picker never offers one. Absent means INCLUDE:
+   *  the Files version selector and the change-request head picker list
+   *  session branches on purpose, and older clients expect them. */
+  includeSessionBranches?: boolean;
+}
+
+/**
+ * Applies the response-shaping filters for GET /:projectId/branches. Kept as
+ * a pure function, separate from the git subprocess call in `listBranches`
+ * below, so the filtering rules are unit-testable without a repository.
+ */
+export function filterBranchesForResponse(
+  branches: readonly GitBranchInfo[],
+  filter: BranchListFilter = {},
+): GitBranchInfo[] {
+  const q = filter.q?.trim().toLowerCase();
+  const limit = Math.min(
+    Math.max(Math.floor(filter.limit ?? BRANCH_LIST_DEFAULT_LIMIT), 1),
+    BRANCH_LIST_MAX_LIMIT,
+  );
+  const filtered = branches.filter((branch) => {
+    if (filter.includeSessionBranches === false && !branch.is_default && isSessionBranchName(branch.name)) {
+      return false;
+    }
+    if (q && !branch.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const page = filtered.slice(0, limit);
+  // The cap must never hide the default branch: every picker preselects it.
+  const defaultBranch = filtered.find((branch) => branch.is_default);
+  if (defaultBranch && !page.includes(defaultBranch)) page.push(defaultBranch);
+  return page;
+}
 
 export interface ExpectedFileRevision {
   path: string;
@@ -217,18 +276,30 @@ async function readCachedBranchMetadata(
  * without transferring commit history. A valid warm mirror may enrich the
  * response with commit metadata, but this read never creates or refreshes it.
  */
-export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
-  const result = await runGit(
-    ['ls-remote', '--heads', project.repoUrl],
-    undefined,
-    true,
-    project.gitAuthToken,
-    undefined,
-    hostFromRepoUrl(project.repoUrl),
-    BRANCH_LIST_TIMEOUT_MS,
-    project.gitAuthHeaders,
-  );
-  const branches = parseRemoteBranches(result.stdout, project.defaultBranch);
+export async function listBranches(
+  project: GitBackedProject,
+  options: {
+    /** A view that may show a listing up to 5 min old (see `branch-list-cache.ts`). */
+    allowRecent?: boolean;
+  } = {},
+): Promise<GitBranchInfo[]> {
+  const readUpstream = async () => {
+    const result = await runGit(
+      ['ls-remote', '--heads', project.repoUrl],
+      undefined,
+      true,
+      project.gitAuthToken,
+      undefined,
+      hostFromRepoUrl(project.repoUrl),
+      BRANCH_LIST_TIMEOUT_MS,
+      project.gitAuthHeaders,
+    );
+    return result.stdout;
+  };
+  const stdout = options.allowRecent
+    ? await recentBranchList(project.projectId, project.repoUrl, readUpstream)
+    : await readUpstream();
+  const branches = parseRemoteBranches(stdout, project.defaultBranch);
   const repoPath = existingProjectMirrorPath(project);
   if (!repoPath || branches.length === 0) return branches;
 
@@ -598,18 +669,36 @@ export async function commitMultipleFilesToBranch(
         pushArgs.push(`--force-with-lease=refs/heads/${branch}:${parentSha ?? ''}`);
       }
       pushArgs.push('origin', `${commitSha}:refs/heads/${branch}`);
-      await runGit(
-        pushArgs,
-        repoPath,
-        true,
-        project.gitAuthToken,
-        undefined,
-        authHost,
-        undefined,
-        project.gitAuthHeaders,
-      );
+      // The push is the last network step of every API write to a branch. Like
+      // the cold clone and the warm fetch, it can fail for a TRANSIENT upstream
+      // reason — a socket blip, or GitHub's ambiguous `RPC failed; HTTP 404`
+      // for a private repo whose App-installation credential is momentarily not
+      // (yet) usable. Without a retry that one blip surfaced as a 502 to the
+      // client and paged Sentry from the web app on a connector/manifest write
+      // during onboarding (Better Stack FE pattern `0cb9ab43…`). Reuse the
+      // clone/fetch retry: a transient failure retries; a permanent one (bad
+      // ref, real auth denial, a lost `--force-with-lease` race) rethrows on the
+      // first attempt and is classified by the catch below.
+      await retryTransientGitMirror({
+        run: () =>
+          runGit(
+            pushArgs,
+            repoPath,
+            true,
+            project.gitAuthToken,
+            undefined,
+            authHost,
+            undefined,
+            project.gitAuthHeaders,
+          ),
+      });
     } catch (error) {
       invalidateProjectMirror(project.projectId);
+      // A remote-policy rejection is permanent and NOT a stale tip: the remote
+      // refused the ref by rule, so refreshing and retrying cannot help. Check
+      // it before the revision-race path below, which would otherwise mistake
+      // it for a concurrent edit and hide the real cause behind a conflict.
+      if (isRemotePushPolicyRejection(error)) throw error;
       if (expectedFileRevision) {
         const remoteTip = await readRemoteBranchTip(project, repoPath, branch, authHost);
         if (remoteTip === commitSha) {

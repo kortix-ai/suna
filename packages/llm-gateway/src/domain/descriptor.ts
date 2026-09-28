@@ -31,7 +31,11 @@ export interface UpstreamDescriptor {
   apiKey: string;
   /** Stable non-secret identifier for credentials that share one provider. */
   credentialRef?: string;
-  /** Set only for an explicitly selected account-secret pool member. */
+  /**
+   * Set only for an account-secret pool member: an explicitly selected session
+   * pool, or the project-shared accounts a session without a pool falls back to.
+   * A 429 records the key's cooldown and moves the request to the next member.
+   */
   poolSecretId?: string;
   /**
    * Provider failover. When the first candidate sets this, a failed dispatch

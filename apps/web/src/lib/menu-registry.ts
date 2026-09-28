@@ -1047,11 +1047,8 @@ export const menuRegistry: MenuItemDef[] = [
   //
   // `account-referrals` is gone for a different reason: `referrals` is not a
   // member of `SettingsTab` at all, so it fell through to `general` — a
-  // mislabelled destination. Its only live surface, `ReferralModal`, mounts
-  // inside `UserMenu` -> `AppHeader`, i.e. only under `/accounts/**`, and
-  // nothing calls `useReferralDialog().openDialog()`. Pointing a palette
-  // entry at it would reproduce the "store with no renderer" defect this
-  // change exists to remove.
+  // mislabelled destination. The API has no referral routes, and the web
+  // referral modal was removed with them.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
   // WORKSPACE tab — which is a `?section=` on `/projects/[id]/customize/settings` now, not

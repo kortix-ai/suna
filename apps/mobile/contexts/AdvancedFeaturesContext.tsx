@@ -21,8 +21,7 @@ interface AdvancedFeaturesProviderProps {
  * AdvancedFeaturesProvider
  * 
  * Provides shared state for Advanced Features across the entire app.
- * This ensures that when the toggle is changed in SettingsPage,
- * all other components immediately reflect the change.
+ * When the toggle changes, every consumer reflects the change at once.
  * 
  * Features:
  * - Shared state across all components

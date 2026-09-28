@@ -1,5 +1,5 @@
 /**
- * Accounts data layer (web parity: lib/projects-client account fns + iam-client).
+ * Accounts data layer (web parity: the account and IAM calls behind apps/web `lib/iam-client`).
  *
  * Backs the mobile Account Settings surface — members, invites, IAM permission
  * probing, groups, GitHub connections, audit, and the account-level security /

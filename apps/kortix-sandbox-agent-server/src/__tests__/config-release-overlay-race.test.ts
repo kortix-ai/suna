@@ -18,6 +18,7 @@ import { materializeRelease, verifyRelease, verifyReleaseDetail, type ReleaseMan
 import { ensureInjectedManagedSkills } from '../managed-skills'
 import { overlayHash, reconcileRuntimeAssets, resetRuntimeConvergenceForTests } from '../runtime-assets'
 import { buildRelease, commitAll, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
+import type { HarnessAssetsService } from '../harness/assets'
 
 const REL = '.kortix/opencode'
 let root: string
@@ -86,6 +87,19 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+/** The harness assets service with only its overlay injection live. */
+function overlayAssets(
+  dir: string,
+  injectSkills: (configDir: string, bakedDir: string) => Promise<void>,
+): HarnessAssetsService {
+  return {
+    componentNames: [],
+    resolveConfigDir: async () => dir,
+    injectSkills,
+    reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
+  }
+}
+
 describe('DEF-5: the overlay pass and release verification', () => {
   test('a verification failure names the file and the overlay names it used', async () => {
     const { built, dir } = await oldStarterRelease()
@@ -116,11 +130,11 @@ describe('DEF-5: the overlay pass and release verification', () => {
       statePath: join(root, 'opt', 'state.json'),
       configDir: dir,
       fetchImpl: stubApi(),
-      injectSkills: async (configDir: string, bakedDir: string) => {
+      assets: overlayAssets(dir, async (configDir: string, bakedDir: string) => {
         await ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: true })
         injected()
         await gate
-      },
+      }),
     })
     await injectedOnce
     let settled = false
@@ -145,8 +159,9 @@ describe('DEF-5: the overlay pass and release verification', () => {
       statePath: join(root, 'opt', 'state.json'),
       configDir: dir,
       fetchImpl: stubApi(),
-      injectSkills: (configDir: string, bakedDir: string) =>
+      assets: overlayAssets(dir, (configDir: string, bakedDir: string) =>
         ensureInjectedManagedSkills(configDir, { bakedDir, unsealManaged: true }),
+      ),
     })
     expect(result.skills).toBe('updated')
     expect(readFileSync(join(dir, 'skills/kortix-cli/SKILL.md'), 'utf8')).toBe('CLI v2\n')

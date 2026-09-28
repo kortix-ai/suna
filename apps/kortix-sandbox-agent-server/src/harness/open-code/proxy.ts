@@ -29,7 +29,7 @@ import {
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 
 // The exception the bound above cannot express, and the omission that produced
-// the "upstream unreachable" banner in chat (2026-08-11, session 9f6b0d87).
+// the "upstream unreachable" banner in chat (2026-08-11, one session).
 //
 // The reasoning above holds for every endpoint that ANSWERS quickly and then
 // maybe streams — SSE, downloads, long polls. It does not hold for the two that
@@ -70,7 +70,7 @@ export function isBlockingTurnRequest(method: string, path: string): boolean {
 /** Native readiness and upstream protocol handling, without route registration. */
 export function createOpenCodeProxyService(
   opencode: Opencode,
-  instanceGuard?: Pick<InstanceGuard, 'settled'>,
+  instanceGuard: Pick<InstanceGuard, 'settled'>,
 ): HarnessProxyService {
   return {
     blockedPorts(cfg) {
@@ -171,7 +171,7 @@ export function createOpenCodeProxyService(
       // Wait for the daemon's own warm-up (bounded); the prompt then joins
       // caches the daemon built.
       const loopTarget = loopStartTargetOf(method, input.path)
-      if (instanceGuard && loopTarget) await instanceGuard.settled(undefined, loopTarget)
+      if (loopTarget) await instanceGuard.settled(undefined, loopTarget)
 
       // Bound only the wait for opencode's response (headers) — not the abort
       // controller's whole lifetime — so we can free-run a stream once it starts.

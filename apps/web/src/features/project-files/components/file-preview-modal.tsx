@@ -63,6 +63,7 @@ export function FilePreviewModal({
 
   return (
     <BaseFilePreviewModal
+      key={source.id}
       selectedFilePath={selectedFilePath}
       panelMode={panelMode}
       filePathList={filePathList}

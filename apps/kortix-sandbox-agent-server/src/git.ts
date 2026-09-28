@@ -139,11 +139,6 @@ async function configureRepoGitIdentity(cfg: GitIdentityConfig, target: string):
   logger.info('[git] configured default repo identity', { target, name: cfg.gitUserName, email: cfg.gitUserEmail })
 }
 
-/** Test-only: drop the memo so tests can verify the config calls fire. */
-export function __clearRepoIdentityMemoForTests(): void {
-  repoIdentityMemo.clear()
-}
-
 async function configureSafeDirectory(target: string): Promise<void> {
   const current = await execGit(['config', '--global', '--get-all', 'safe.directory'])
   if (current.code === 0) {

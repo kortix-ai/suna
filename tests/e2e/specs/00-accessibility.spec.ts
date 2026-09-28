@@ -50,14 +50,23 @@ test.describe('00 - Accessibility', () => {
     expect(response?.ok()).toBe(true);
 
     const decorativeArtwork = page.locator('[data-a11y-decorative]');
-    await decorativeArtwork.first().waitFor({ state: 'attached' });
-    const decorativeArtworkCount = await decorativeArtwork.count();
-    expect(decorativeArtworkCount).toBeGreaterThan(0);
-    expect(
-      await decorativeArtwork.evaluateAll((elements) =>
-        elements.map((element) => element.getAttribute('aria-hidden')),
-      ),
-    ).toEqual(Array(decorativeArtworkCount).fill('true'));
+    // Hydration can replace the server-rendered artwork between two separate
+    // reads (release gate 36067485325: attached, then count() returned 0).
+    // Read presence and every aria-hidden value from one DOM snapshot, and
+    // retry until that snapshot holds artwork that is all aria-hidden="true".
+    await expect
+      .poll(
+        async () => {
+          const ariaHidden = await decorativeArtwork.evaluateAll((elements) =>
+            elements.map((element) => element.getAttribute('aria-hidden')),
+          );
+          return ariaHidden.length > 0 && ariaHidden.every((value) => value === 'true')
+            ? 'all decorative artwork is aria-hidden'
+            : ariaHidden;
+        },
+        { message: 'the landing page renders decorative artwork, and every piece is aria-hidden="true"' },
+      )
+      .toBe('all decorative artwork is aria-hidden');
 
     const results = await new AxeBuilder({ page })
       .withTags(WCAG_TAGS)

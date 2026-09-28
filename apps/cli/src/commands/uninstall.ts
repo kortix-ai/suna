@@ -1,9 +1,10 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, rmSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 
-import { authFileLocation, clearAuth, loadAuth } from '../api/auth.ts';
+import { authFileLocation, clearAuth } from '../api/auth.ts';
+import { takeFlags, usageError } from '../command-argv.ts';
+import { takeFlagBool } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
 
@@ -25,30 +26,20 @@ interface UninstallFlags {
   yes: boolean;
   keepAuth: boolean;
   keepHome: boolean;
-  help: boolean;
-}
-
-function parseFlags(argv: string[]): UninstallFlags {
-  const f: UninstallFlags = { yes: false, keepAuth: false, keepHome: false, help: false };
-  for (const a of argv) {
-    if (a === '-h' || a === '--help') f.help = true;
-    else if (a === '-y' || a === '--yes') f.yes = true;
-    else if (a === '--keep-auth') f.keepAuth = true;
-    else if (a === '--keep-home') f.keepHome = true;
-    else {
-      process.stderr.write(`${status.err(`unknown option "${a}"`)}\n\n${HELP}`);
-      process.exit(2);
-    }
-  }
-  return f;
 }
 
 export async function runUninstall(argv: string[]): Promise<number> {
-  const flags = parseFlags(argv);
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  const flags = takeFlags(
+    argv,
+    HELP,
+    (rest): UninstallFlags => ({
+      yes: takeFlagBool(rest, ['-y', '--yes']),
+      keepAuth: takeFlagBool(rest, ['--keep-auth']),
+      keepHome: takeFlagBool(rest, ['--keep-home']),
+    }),
+    (message, usage) => usageError(status.err(message), usage),
+  );
+  if (typeof flags === 'number') return flags;
 
   const targets = collectTargets(flags);
   if (targets.length === 0) {
@@ -109,7 +100,12 @@ function collectTargets(flags: UninstallFlags): Target[] {
   const found: Target[] = [];
 
   // 1. The /usr/local/bin symlink, if it points at us.
-  const candidatePaths = ['/usr/local/bin/kortix', resolve(homedir(), '.local', 'bin', 'kortix')];
+  const candidatePaths = [
+    '/usr/local/bin/kortix',
+    '/usr/local/bin/kortixt',
+    resolve(homedir(), '.local', 'bin', 'kortix'),
+    resolve(homedir(), '.local', 'bin', 'kortixt'),
+  ];
   for (const p of candidatePaths) {
     if (existsSymlinkOrFile(p)) {
       found.push({ path: p, kind: 'symlink' });
@@ -167,7 +163,3 @@ function removeTarget(t: Target): void {
     rmSync(t.path, { recursive: true, force: true });
   }
 }
-
-// Reference the imports so unused-detection stays happy.
-void loadAuth;
-void spawnSync;

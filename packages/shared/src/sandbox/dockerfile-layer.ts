@@ -33,17 +33,27 @@ import {
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PI_SUPPLIED_PACKAGES,
+  PI_SYSTEM_PACKAGES,
   PYTHON_PACKAGE_FLOOR,
   PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
   UV_VERSION,
+  assertPiSystemPackage,
 } from '../runtime-versions';
 import {
   SANDBOX_SHELL_TOOL_APT_LIST,
   SANDBOX_SHELL_TOOL_LINK_COMMAND,
 } from './shell-tools';
+import {
+  SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
+  SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
+} from './platform-binaries';
 
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
@@ -276,6 +286,17 @@ export interface KortixArtifactLayerOpts {
    * instead of the daemon's minimal fallback. Optional; omit to skip.
    */
   catalogPath?: string;
+  /**
+   * Build-context path to the staged managed `kortix-*` skill overlay, baked
+   * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
+   *
+   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * place: the meta image passed a path, the standard layer had no field at
+   * all, and every ordinary session sandbox — dev, prod and preview alike —
+   * booted with nothing to overlay and downloaded the whole overlay on its
+   * first reconcile.
+   */
+  managedSkillsPath: string;
 }
 
 export interface BuildLayeredDockerfileOpts
@@ -361,6 +382,45 @@ function buildOpencodeInstanceWarmupLines(opts: {
     `RUN bash /tmp/kortix-opencode-warmup instance ${cleanup} && rm -f /tmp/kortix-opencode-warmup`,
     '',
   ];
+}
+
+/** pi's global agent dir in the image; the daemon's KORTIX_PI_AGENT_DIR default. */
+export const PI_AGENT_DIR = '/opt/kortix/pi-agent';
+
+/**
+ * Install the pi system packages the way `pi install` installs a global one:
+ * the packages under `<agentDir>/npm`, the sources in `<agentDir>/settings.json`.
+ * npm installs required peers, as pi's own install does; the packages pi
+ * supplies itself resolve to an empty stub. Install scripts do not run. An
+ * empty list adds no layer.
+ */
+export function piSystemPackageLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  for (const source of packages) assertPiSystemPackage(source);
+  const dependencies: Record<string, string> = Object.fromEntries(PI_SUPPLIED_PACKAGES.map((name) => [name, 'file:./pi-supplied']));
+  for (const source of packages) {
+    const spec = source.slice('npm:'.length);
+    const at = spec.lastIndexOf('@');
+    dependencies[spec.slice(0, at)] = spec.slice(at + 1);
+  }
+  return [
+    `RUN mkdir -p ${PI_AGENT_DIR}/npm/pi-supplied \\`,
+    `    && printf '%s' '{"name":"kortix-pi-supplied","version":"0.0.0","private":true}' > ${PI_AGENT_DIR}/npm/pi-supplied/package.json \\`,
+    `    && printf '%s' '${JSON.stringify({ name: 'kortix-pi-system-packages', private: true, dependencies })}' > ${PI_AGENT_DIR}/npm/package.json \\`,
+    `    && npm install --prefix ${PI_AGENT_DIR}/npm --omit=dev --ignore-scripts --no-audit --no-fund \\`,
+    `    && printf '%s' '${JSON.stringify({ packages })}' > ${PI_AGENT_DIR}/settings.json`,
+    '',
+  ];
+}
+
+/**
+ * Warm jiti's cache for the system packages with the daemon itself (it lands in
+ * `<agentDir>/cache/jiti`; each boot copies it in). A package that fails to
+ * load fails the image build here, not in a session.
+ */
+export function piSystemPackageWarmLines(packages: readonly string[]): string[] {
+  if (packages.length === 0) return [];
+  return ['RUN /usr/local/bin/kortix-agent warm-pi-packages', ''];
 }
 
 export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
@@ -675,6 +735,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /tmp/opencode-deps-bundle-check \\',
     '    && echo "opencode-config-deps: baked tree bundles cleanly"',
     '',
+    ...piSystemPackageLines(PI_SYSTEM_PACKAGES),
     // Placed AFTER the agent-browser/Chromium layer above — see that block's
     // comment for why the order matters (this step's RUN text is never
     // cache-stable, so nothing cache-sensitive may sit downstream of it).
@@ -702,6 +763,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     machineDocPath,
     slackCliPath,
     catalogPath,
+    managedSkillsPath,
   } = opts;
 
   return [
@@ -728,7 +790,23 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
     '    && kortix --version \\',
+    // The daemon converges this file in place and runs as `kortix`, so it needs
+    // the DIRECTORY; and opencode must not autoupdate itself for ANY caller in
+    // the box. See platform-binaries.ts — both are asserted on every image.
+    `    && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\`,
+    `    && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\`,
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
+    '',
+    // The overlay arrives ALREADY kortix-owned, below the `chown -R` above: a
+    // recursive chown in a later layer rewrites every inode it touches and
+    // forces overlayfs to copy the whole tree up again (see platform-binaries.ts).
+    `COPY --chown=kortix:kortix ${managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}`,
+    // Then state what this image carries, with the daemon that is now on disk.
+    // Only the ~500 B bookkeeping file is chowned here, and the daemon must be
+    // able to REWRITE it in place: `writeState` writes the path, it does not
+    // rename into the directory.
+    `RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\`,
+    `    && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}`,
     '',
     // Web-terminal login shells: keep the Kortix tool dirs on PATH on Debian
     // bases and load project secrets. Written here, still as root, and in the
@@ -741,6 +819,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     // empty here; the daemon's materializeRepo path fills it.
     'ENV KORTIX_WORKSPACE=/workspace',
     'USER kortix',
+    ...piSystemPackageWarmLines(PI_SYSTEM_PACKAGES),
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',

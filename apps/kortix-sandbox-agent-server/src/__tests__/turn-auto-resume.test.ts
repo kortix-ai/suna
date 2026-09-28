@@ -35,6 +35,47 @@ describe('isTransientTurnError', () => {
     expect(isTransientTurnError({ message: 'socket hang up' })).toBe(true);
   });
 
+  // A factory worker turn ended with "Stream ended without finish_reason" and
+  // nothing resumed it: the regex knew `stream (closed|error|disconnected)` only,
+  // so the sandbox idled and stopped mid-task. Every message below is verbatim
+  // from a bundle the runtime ships or will ship: @earendil-works/pi-ai 0.85.1
+  // (whose own retry.js classifies "ended without" as retryable), OpenCode
+  // 2.0.15 (classification `incomplete-stream`), ai 7.x (NoOutputGeneratedError)
+  // and undici's SocketError.
+  test.each([
+    'Stream ended without finish_reason',
+    'OpenAI Chat stream ended without finish_reason',
+    'Mistral Chat stream ended without finish_reason',
+    'Google stream ended without a finish reason',
+    'Anthropic stream ended without a stop reason',
+    'Anthropic stream ended before message_stop',
+    'OpenAI Responses stream ended before a terminal response event',
+    'SSE stream ended without a data event',
+    'No output generated. The model stream ended without a finish chunk.',
+    '"Stream ended without finish_reason"',
+    'other side closed',
+  ])('an upstream stream cut is transient: %s', (message) => {
+    expect(isTransientTurnError({ name: 'UnknownError', message })).toBe(true);
+  });
+
+  // Prod turn-enders the regex missed: a stream cut mid data-line (the partial
+  // chunk fails JSON parsing), a gateway availability error, a fetch timeout.
+  test.each([
+    'JSON parsing failed: Text: {"id":"chatcmpl-x","choices":[{"delta":{"reasoning_content":"th',
+    'JSON Parse error: Unable to parse JSON string',
+    'deepseek-v4.1-flash is temporarily unavailable.',
+    'The operation timed out.',
+  ])('a truncated or unavailable upstream is transient: %s', (message) => {
+    expect(isTransientTurnError({ name: 'UnknownError', message })).toBe(true);
+  });
+
+  test('a stream-cut message never overrides a human Stop or an auth failure', () => {
+    const message = 'Stream ended without finish_reason';
+    expect(isTransientTurnError({ name: 'MessageAbortedError', message })).toBe(false);
+    expect(isTransientTurnError({ name: 'ProviderAuthError', message })).toBe(false);
+    expect(isTransientTurnError({ name: 'APIError', statusCode: 401, message })).toBe(false);
+  });
+
   test('unknown errors without a transient shape stay fatal', () => {
     expect(isTransientTurnError(undefined)).toBe(false);
     expect(isTransientTurnError({})).toBe(false);
@@ -148,20 +189,27 @@ describe('createTurnAutoResumer', () => {
     expect(part.text).toContain('Do not redo work that already succeeded');
     // No model override — the session keeps its own model.
     expect('model' in (prompt.body as Record<string, unknown>)).toBe(false);
+    // T22: the session was read at the error AND again at fire time.
+    expect(h.sessionReads).toBe(2);
+  });
+
+  test('a root turn cut by "Stream ended without finish_reason" is resumed', async () => {
+    const h = makeHarness();
+    const resumed = await h.resumer.maybeResume('ses_root', {
+      name: 'UnknownError',
+      message: 'Stream ended without finish_reason',
+    });
+    expect(resumed).toBe(true);
+    expect(h.prompts.length).toBe(1);
+    const body = h.prompts[0]?.body as { parts: Array<{ text: string }> };
+    expect(body.parts[0]?.text).toContain('[auto-recovery]');
+    expect(body.parts[0]?.text).toContain('Stream ended without finish_reason');
   });
 
   test('never resumes a subagent session', async () => {
     const h = makeHarness();
     h.setIsRoot(false);
     expect(await h.resumer.maybeResume('ses_child', IDLE_TIMEOUT)).toBe(false);
-    expect(h.prompts.length).toBe(0);
-  });
-
-  test('never resumes a permanent error', async () => {
-    const h = makeHarness();
-    expect(
-      await h.resumer.maybeResume('ses_root', { name: 'MessageAbortedError', message: 'aborted' }),
-    ).toBe(false);
     expect(h.prompts.length).toBe(0);
   });
 
@@ -254,13 +302,6 @@ describe('createTurnAutoResumer', () => {
       expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
       expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
       expect(h.prompts.length).toBe(3);
-    });
-
-    test('no revert staged — resumes exactly as before (unchanged path)', async () => {
-      const h = makeHarness();
-      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
-      expect(h.prompts.length).toBe(1);
-      expect(h.sessionReads).toBeGreaterThan(0);
     });
 
     test('a revert staged DURING the backoff wait is caught at fire time', async () => {

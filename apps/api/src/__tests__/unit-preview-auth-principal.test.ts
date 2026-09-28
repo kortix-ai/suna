@@ -124,7 +124,13 @@ mock.module('../shared/preview-ownership', () => ({
   invalidatePreviewCacheForUser: () => {},
 }));
 
-const { authenticatePreviewPrincipal, authenticatePreviewPrincipalDetailed, extractPreviewToken } = await import('../sandbox-proxy/preview-auth');
+const { authenticatePreviewPrincipalDetailed, extractPreviewToken } = await import(
+  '../sandbox-proxy/preview-auth'
+);
+
+/** The id of the principal the credential proves on this sandbox, or null. */
+const principalId = async (token: string | null, sandboxId = SANDBOX_ID) =>
+  (await authenticatePreviewPrincipalDetailed(token, sandboxId))?.userId ?? null;
 
 beforeEach(() => {
   allowedAccounts = new Set(['acct-owner']);
@@ -136,109 +142,113 @@ beforeEach(() => {
   ]);
 });
 
-describe('authenticatePreviewPrincipal', () => {
+describe('authenticatePreviewPrincipalDetailed — which credentials prove a principal', () => {
   test('returns null for empty token', async () => {
-    expect(await authenticatePreviewPrincipal(null, SANDBOX_ID)).toBeNull();
-    expect(await authenticatePreviewPrincipal('', SANDBOX_ID)).toBeNull();
+    expect(await principalId(null)).toBeNull();
+    expect(await principalId('')).toBeNull();
   });
 
   // ── PAT (kortix_pat_) — was rejected by the subdomain edge before ──────────
   test('accepts a PAT for an owner and returns the user id', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_pat_owner', SANDBOX_ID)).toBe('pat-user-owner');
+    expect(await principalId('kortix_pat_owner')).toBe('pat-user-owner');
   });
   test('rejects a valid PAT that lacks sandbox access', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_pat_other', SANDBOX_ID)).toBeNull();
+    expect(await principalId('kortix_pat_other')).toBeNull();
   });
   test('accepts a project-scoped PAT only for a sandbox of its own project', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', SANDBOX_ID)).toBe('pat-user-owner');
-    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', 'sandbox-of-project-b')).toBeNull();
-    expect(await authenticatePreviewPrincipal('kortix_pat_project_a', 'sandbox-unknown')).toBeNull();
+    expect(await principalId('kortix_pat_project_a')).toBe('pat-user-owner');
+    expect(await principalId('kortix_pat_project_a', 'sandbox-of-project-b')).toBeNull();
+    expect(await principalId('kortix_pat_project_a', 'sandbox-unknown')).toBeNull();
   });
 
   test('rejects an invalid PAT', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_pat_bad', SANDBOX_ID)).toBeNull();
+    expect(await principalId('kortix_pat_bad')).toBeNull();
   });
 
   // ── Service-account (kortix_sa_) — was rejected by subdomain AND WS ────────
   test('accepts a service-account token for an owner and returns the SA id', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_sa_owner', SANDBOX_ID)).toBe('sa-owner');
+    expect(await principalId('kortix_sa_owner')).toBe('sa-owner');
   });
   test('rejects an invalid service-account token', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_sa_bad', SANDBOX_ID)).toBeNull();
+    expect(await principalId('kortix_sa_bad')).toBeNull();
   });
   test('rejects a valid SA token without sandbox access', async () => {
     allowedUsers.delete('sa-owner');
-    expect(await authenticatePreviewPrincipal('kortix_sa_owner', SANDBOX_ID)).toBeNull();
+    expect(await principalId('kortix_sa_owner')).toBeNull();
   });
 
   // ── Kortix API token — ownership checked by account ────────────────────────
   test('accepts a kortix token for the owning account and returns the account id', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_owner', SANDBOX_ID)).toBe('acct-owner');
+    expect(await principalId('kortix_owner')).toBe('acct-owner');
   });
   test('rejects a kortix token for another account', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_other', SANDBOX_ID)).toBeNull();
+    expect(await principalId('kortix_other')).toBeNull();
   });
   test('rejects an invalid kortix token', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_bad', SANDBOX_ID)).toBeNull();
+    expect(await principalId('kortix_bad')).toBeNull();
   });
 
   // ── Supabase JWT ───────────────────────────────────────────────────────────
   test('accepts a JWT owner via local verify', async () => {
-    expect(await authenticatePreviewPrincipal('jwt-owner', SANDBOX_ID)).toBe('user-owner');
+    expect(await principalId('jwt-owner')).toBe('user-owner');
   });
   test('rejects a JWT user without access', async () => {
-    expect(await authenticatePreviewPrincipal('jwt-other', SANDBOX_ID)).toBeNull();
+    expect(await principalId('jwt-other')).toBeNull();
   });
-  test('rejects a definitively invalid JWT without network fallback', async () => {
-    expect(await authenticatePreviewPrincipal('jwt-garbage', SANDBOX_ID)).toBeNull();
-  });
-  test('falls back to the network verify path when JWKS is cold', async () => {
-    mockSupabaseUser = { id: 'user-fallback-owner' };
-    expect(await authenticatePreviewPrincipal('jwt-fallback', SANDBOX_ID)).toBe('user-fallback-owner');
-  });
-  test('falls back to the network verify path for an unknown kid', async () => {
-    mockSupabaseUser = { id: 'user-fallback-owner' };
-    expect(await authenticatePreviewPrincipal('jwt-unknown-kid', SANDBOX_ID)).toBe('user-fallback-owner');
-  });
+  // Which verify failures are inconclusive is the shared predicate's
+  // (unit-jwt-alg-fallback.test.ts); this proves preview-auth routes on it.
   test('falls back to the network verify path for a legacy HS256 token when JWKS holds an ES256 key', async () => {
     mockSupabaseUser = { id: 'user-fallback-owner' };
-    expect(await authenticatePreviewPrincipal('jwt-hs256', SANDBOX_ID)).toBe('user-fallback-owner');
+    expect(await principalId('jwt-hs256')).toBe('user-fallback-owner');
   });
   test('rejects an expired or badly signed JWT without asking the network', async () => {
     // The network would say yes; a real local verdict must win anyway.
     mockSupabaseUser = { id: 'user-fallback-owner' };
-    expect(await authenticatePreviewPrincipal('jwt-expired', SANDBOX_ID)).toBeNull();
-    expect(await authenticatePreviewPrincipal('jwt-bad-signature', SANDBOX_ID)).toBeNull();
+    expect(await principalId('jwt-expired')).toBeNull();
+    expect(await principalId('jwt-bad-signature')).toBeNull();
   });
   test('rejects network-fallback user without access', async () => {
     mockSupabaseUser = { id: 'user-fallback-other' };
-    expect(await authenticatePreviewPrincipal('jwt-fallback', SANDBOX_ID)).toBeNull();
+    expect(await principalId('jwt-fallback')).toBeNull();
   });
 });
 
+// The same extraction priority as combinedAuth: Bearer, then X-Kortix-Token,
+// then ?token=, then the __preview_session cookie.
 describe('extractPreviewToken', () => {
-  const u = new URL('http://p3000-sbx.localhost:8008/x');
-
-  test('prefers Authorization: Bearer', () => {
-    const req = new Request(u, { headers: { Authorization: 'Bearer tok-bearer', 'X-Kortix-Token': 'tok-kx' } });
-    expect(extractPreviewToken(req, new URL(req.url))).toBe('tok-bearer');
-  });
-  test('falls back to X-Kortix-Token', () => {
-    const req = new Request(u, { headers: { 'X-Kortix-Token': 'tok-kx' } });
-    expect(extractPreviewToken(req, new URL(req.url))).toBe('tok-kx');
-  });
-  test('falls back to ?token=', () => {
-    const url = new URL('http://p3000-sbx.localhost:8008/x?token=tok-query');
-    const req = new Request(url);
-    expect(extractPreviewToken(req, url)).toBe('tok-query');
-  });
-  test('falls back to __preview_session cookie', () => {
-    const req = new Request(u, { headers: { Cookie: 'a=1; __preview_session=tok-cookie; b=2' } });
-    expect(extractPreviewToken(req, new URL(req.url))).toBe('tok-cookie');
-  });
-  test('returns null when no credential is present', () => {
-    const req = new Request(u);
-    expect(extractPreviewToken(req, new URL(req.url))).toBeNull();
+  test.each([
+    [
+      'Authorization: Bearer beats every other source',
+      'http://p3000-sbx.localhost:8008/x?token=tok-query',
+      {
+        Authorization: 'Bearer tok-bearer',
+        'X-Kortix-Token': 'tok-kx',
+        Cookie: '__preview_session=tok-cookie',
+      },
+      'tok-bearer',
+    ],
+    [
+      'X-Kortix-Token beats the query and the cookie',
+      'http://p3000-sbx.localhost:8008/x?token=tok-query',
+      { 'X-Kortix-Token': 'tok-kx', Cookie: '__preview_session=tok-cookie' },
+      'tok-kx',
+    ],
+    [
+      '?token= beats the cookie',
+      'http://p3000-sbx.localhost:8008/x?token=tok-query',
+      { Cookie: '__preview_session=tok-cookie' },
+      'tok-query',
+    ],
+    [
+      'the __preview_session cookie, among others',
+      'http://p3000-sbx.localhost:8008/x',
+      { Cookie: 'a=1; __preview_session=tok-cookie; b=2' },
+      'tok-cookie',
+    ],
+    ['nothing', 'http://p3000-sbx.localhost:8008/x', {}, null],
+  ])('%s', (_label, href, headers, token) => {
+    const url = new URL(href);
+    expect(extractPreviewToken(new Request(url, { headers }), url)).toBe(token);
   });
 });
 
@@ -246,9 +256,9 @@ describe('authenticatePreviewPrincipalDetailed — session binding', () => {
   test('a sandbox PAT reports the session it is bound to', async () => {
     // This is what separates one KaaB end-user from another: every session
     // shares the wrapper's userId, so only the token's own sessionId can.
-    const p = await authenticatePreviewPrincipalDetailed('kortix_pat_owner', SANDBOX_ID);
+    const p = await authenticatePreviewPrincipalDetailed('kortix_pat_project_a', SANDBOX_ID);
     expect(p?.userId).toBe('pat-user-owner');
-    expect(p).toHaveProperty('sessionId');
+    expect(p?.sessionId).toBe('session-a');
   });
 
   test('non-PAT credentials report no session binding', async () => {
@@ -257,10 +267,6 @@ describe('authenticatePreviewPrincipalDetailed — session binding', () => {
     expect((await authenticatePreviewPrincipalDetailed('jwt-owner', SANDBOX_ID))?.sessionId).toBeNull();
   });
 
-  test('the string wrapper still behaves exactly as before', async () => {
-    expect(await authenticatePreviewPrincipal('kortix_pat_owner', SANDBOX_ID)).toBe('pat-user-owner');
-    expect(await authenticatePreviewPrincipal('kortix_pat_bad', SANDBOX_ID)).toBeNull();
-  });
 });
 
 describe('a proven preview credential names its caller in the request audit', () => {
@@ -278,6 +284,17 @@ describe('a proven preview credential names its caller in the request audit', ()
       return { result, principal: scope.principal };
     });
   }
+
+  // A session-bound token is the sandbox's own agent, whichever user minted
+  // it, and the audit names the session it acts for.
+  test('a sandbox PAT is the agent of its session, never the person who minted it', async () => {
+    const { principal } = await principalAfter('kortix_pat_project_a');
+    expect(principal).toMatchObject({
+      actorType: 'agent',
+      actorUserId: null,
+      authMethod: { kind: 'account_token', principal_id: 'pat-user-owner', session_id: 'session-a' },
+    });
+  });
 
   test('a Supabase session is the human user', async () => {
     const { result, principal } = await principalAfter('jwt-owner');

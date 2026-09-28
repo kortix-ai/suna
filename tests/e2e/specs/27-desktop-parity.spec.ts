@@ -534,11 +534,17 @@ for (const runtime of runtimes) {
         await expect(page).toHaveURL(/\/customize\/connectors/);
         // A fresh document must also load real data, independent of the agent
         // editor's cached connector query. Do not accept a Next.js page GET.
+        // Only a request the RELOADED document started counts: the page just
+        // mounted may still be revalidating its cached connectors (and the
+        // Customize prefetch warms that entry), and that response arrives after
+        // the reload with its body already discarded.
+        const reloadStartedAt = Date.now();
         const response = page.waitForResponse(
           (response) =>
             new URL(response.url()).pathname ===
               `/v1/connectors/projects/${project!.id}/connectors` &&
-            response.request().method() === "GET",
+            response.request().method() === "GET" &&
+            response.request().timing().startTime >= reloadStartedAt,
         );
         await page.reload();
         const connectorResponse = await response;

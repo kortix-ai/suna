@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realSentry from '../lib/sentry';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 
@@ -30,6 +31,8 @@ let computeEnds = 0;
 let savepoints = 0;
 /** When set, every `tx.execute` fails with this message. */
 let executeThrows: string | null = null;
+/** `runtime_lost` exceptions filed. */
+let lostReports = 0;
 
 function describeSql(expression: unknown): string {
   const chunks = (expression as { queryChunks?: unknown[] } | null)?.queryChunks ?? [];
@@ -101,6 +104,13 @@ mock.module('../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
 }));
 
+mock.module('../lib/sentry', () => ({
+  ...realSentry,
+  captureException: (error: unknown) => {
+    if (String(error).includes('runtime_lost')) lostReports += 1;
+  },
+}));
+
 mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
@@ -137,6 +147,7 @@ beforeEach(() => {
   computeEnds = 0;
   savepoints = 0;
   executeThrows = null;
+  lostReports = 0;
 });
 
 describe('parks outside applyStoppedState settle the turn ledger', () => {
@@ -225,5 +236,28 @@ describe('parks outside applyStoppedState settle the turn ledger', () => {
     await preserveEstablishedRuntime(ROW, 'provider_webhook_removed', 'provider_removed');
 
     expect(savepoints).toBe(1);
+  });
+});
+
+describe('a lost runtime is reported once', () => {
+  test('the first preserve reports it; a repeat for the same identity does not', async () => {
+    await preserveEstablishedRuntime(ROW, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+
+    // Every open of a lost session runs the removed path again.
+    const alreadyLost = {
+      ...ROW,
+      metadata: { runtimeIdentityState: 'unavailable', preservedExternalId: 'ext-1' },
+    };
+    await preserveEstablishedRuntime(alreadyLost, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+
+    // A DIFFERENT box lost by the same session is a new loss.
+    await preserveEstablishedRuntime(
+      { ...alreadyLost, externalId: 'ext-2' },
+      'runtime_removed',
+      'provider_removed',
+    );
+    expect(lostReports).toBe(2);
   });
 });

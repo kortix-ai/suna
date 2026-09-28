@@ -147,8 +147,8 @@ export function withheldSecretsFix(agent: string, withheld: WithheldSecret[]): s
         'An agent session cannot widen its own grant; a person with project access must. ' +
         `Fix: in the web app open Customize → Agents → ${agent} → Secrets and enable ` +
         `${byGrant.length === 1 ? 'it' : 'them'} (or, from their own CLI: \`${grantCommand}\`). ` +
-        'Kortix pushes the change to this session when it is saved, and the next message re-syncs ' +
-        'it regardless; agent sessions cannot run `kortix secrets sync`.',
+        'Kortix pushes the change to this session when it is saved; run `kortix secrets sync` ' +
+        'to pull it right away.',
     );
   }
   if (byAllowlist.length > 0) {

@@ -706,17 +706,70 @@ const userIdentityMemo = ttlMemo({
   },
 });
 
-/** Drop a user's cached identity — call after a profile/email write. */
-export function invalidateUserIdentity(userId: string): void {
-  userIdentityMemo.invalidate(userId);
+interface AuthUserRow {
+  id: string;
+  email: string | null;
+  name: string | null;
+  full_name: string | null;
 }
 
-export async function resolveUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
+/**
+ * One query for every identity, from the auth table the API's own database
+ * connection already reads (`scim/app.ts`, `admin/index.ts`).
+ *
+ * Why (2026-09-27): prod `GET /:projectId/sessions` still made 4–6 auth admin
+ * calls (`gotrue;dur=70–140`) on EVERY list fetch. The memo above keeps only
+ * positive answers, and a project's `created_by` includes principals that are
+ * not auth users (triggers, agents, service accounts), so those ids missed
+ * the memo every time. The table answers "no such user" definitively, in the
+ * same round trip as the rest.
+ */
+async function readAuthUsers(ids: string[]): Promise<AuthUserRow[]> {
+  return (await db.execute(sql`
+    SELECT u.id::text AS id,
+           u.email,
+           u.raw_user_meta_data->>'name' AS name,
+           u.raw_user_meta_data->>'full_name' AS full_name
+    FROM auth.users u
+    WHERE u.id = ANY(${`{${ids.join(',')}}`}::uuid[])
+  `)) as unknown as AuthUserRow[];
+}
+
+export async function resolveUserIdentities(
+  userIds: string[],
+  deps: {
+    readAuthUsers?: (ids: string[]) => Promise<AuthUserRow[]>;
+    lookupUser?: (uid: string) => Promise<UserIdentity & { transient?: boolean }>;
+  } = {},
+): Promise<Map<string, UserIdentity>> {
   const result = new Map<string, UserIdentity>();
   if (userIds.length === 0) return result;
+  const unique = [...new Set(userIds)];
+  // A non-UUID id cannot be an auth user; it never reaches the ::uuid[] cast.
+  const candidates = unique.filter(isUuid);
+  let rows: AuthUserRow[] | null = null;
+  try {
+    rows = candidates.length ? await (deps.readAuthUsers ?? readAuthUsers)(candidates) : [];
+  } catch {
+    rows = null;
+  }
+  if (rows) {
+    const byId = new Map(rows.map((row) => [row.id.toLowerCase(), row]));
+    for (const uid of unique) {
+      const row = byId.get(uid.toLowerCase());
+      result.set(uid, {
+        email: row?.email ?? null,
+        displayName: row?.name ?? row?.full_name ?? null,
+        exists: !!row,
+      });
+    }
+    return result;
+  }
+  // The table is unreadable (a self-host without the auth schema grant):
+  // the auth admin API, one memoized call per user, as before.
   await Promise.all(
-    [...new Set(userIds)].map(async (uid) => {
-      const { transient: _transient, ...identity } = await userIdentityMemo(uid);
+    unique.map(async (uid) => {
+      const { transient: _transient, ...identity } = await (deps.lookupUser ?? userIdentityMemo)(uid);
       result.set(uid, identity);
     }),
   );
@@ -972,9 +1025,8 @@ export function isAdminBypassEligible(input: {
  * 'manage')`: share management, `can_manage`, the serialized
  * `effective_project_role`).
  *
- * Legacy callers keep the caller's own role. An agent-principal session (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.1) never inherits its
- * launcher's role: it is `manager` only when the AGENT's effective permissions
+ * Legacy callers keep the caller's own role. An agent-principal session
+ * never inherits its launcher's role: it is `manager` only when the AGENT's effective permissions
  * hold `project.write` (the IAM action behind the `manage` tier,
  * `iamActionForProjectAccess('manage')`), else `member`. Pure; exported for
  * unit tests.

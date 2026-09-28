@@ -58,7 +58,7 @@ const GIT_AUTH_PATTERN =
  * check, plus the other policy throws (invalid consumer, missing policy, non-exact host).
  *
  * There is no longer a PROVIDER capability gap to distinguish it from: one mechanism serves
- * daytona, e2b and platinum alike (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so
+ * daytona, e2b and platinum alike, so
  * the `unsupported-secret-delivery` category is never produced. It stays on the wire contract
  * because sandbox rows written before this change still carry it.
  */

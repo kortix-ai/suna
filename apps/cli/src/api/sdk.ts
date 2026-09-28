@@ -109,12 +109,15 @@ export function unwrapRuntime<T>(result: RuntimeResult<T>): T {
   return result.data as T;
 }
 
-export interface RunningOpenCodeProxy {
+export interface RunningSandboxPortProxy {
   url: string;
   close(): void;
 }
 
-interface StartOpenCodeProxyOpts {
+/** Established name for the OpenCode-attach call site; same shape as {@link RunningSandboxPortProxy}. */
+export type RunningOpenCodeProxy = RunningSandboxPortProxy;
+
+interface StartSandboxPortProxyOpts {
   runtimeUrl: string;
   token: string;
   port?: number;
@@ -128,10 +131,15 @@ interface ProxyWsData {
 }
 
 /**
- * Expose one SDK-resolved OpenCode runtime on localhost for `opencode attach`.
- * This adapter owns the only raw HTTP/WebSocket transport allowed in the CLI.
+ * Expose one SDK-resolved sandbox port (any `/p/{externalId}/{port}` proxy
+ * route — OpenCode on 8000 for `opencode attach`, or an arbitrary dev-server
+ * port for `sessions forward` / the TUI Ports panel) on localhost, injecting
+ * the Kortix bearer token. This adapter owns the only raw HTTP/WebSocket
+ * transport allowed in the CLI. `startOpenCodeProxy` below is this same
+ * function under its established name at the one call site that predates the
+ * generalization.
  */
-export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCodeProxy {
+export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningSandboxPortProxy {
   const baseHttp = opts.runtimeUrl.replace(/\/+$/, '');
   const baseWs = baseHttp.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
 
@@ -222,6 +230,9 @@ export function startOpenCodeProxy(opts: StartOpenCodeProxyOpts): RunningOpenCod
     close: () => server.stop(true),
   };
 }
+
+/** @deprecated call {@link startSandboxPortProxy} directly; kept for the existing `opencode attach` call site. */
+export const startOpenCodeProxy = startSandboxPortProxy;
 
 async function forwardOpenCodeHttp(
   request: Request,

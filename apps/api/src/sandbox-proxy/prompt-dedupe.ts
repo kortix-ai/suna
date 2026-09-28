@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
  * never re-POST, and the ones that must take a dedupe claim.
  *
  * THREE endpoints, not two. `/command` was missing, and that omission is the
- * whole of the duplicate-send bug observed on 2026-08-11 (session 9f6b0d87):
+ * whole of the duplicate-send bug observed on 2026-08-11 (a prod session):
  * one `/webapp` submit produced four identical user messages, 11.0s / 11.8s /
  * 13.7s apart. A `/` slash-command posts to `POST /session/:id/command`, which
  * creates a user message and runs a turn exactly like `/message` does — but it
@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
  * timeout/abort, four attempts, four executions.
  *
  * Keep this as the ONE list. The predicate it replaced was
- * `shouldSyncProjectEnvBeforeProxy`, whose name is about env sync and whose
+ * `isTurnStartEnvSync`, whose name is about env sync and whose
  * path list happened to double as "is this non-idempotent" — so adding an
  * endpoint to one concern silently meant opting into the other, and forgetting
  * to meant opting out of every safety guard at once. Env sync keeps its own

@@ -15,6 +15,7 @@ import {
   skillInputDir,
   type ParsedJsonFailure,
 } from '@kortix/sdk';
+import { skillDocumentBody } from '@kortix/shared/tool-output';
 
 export interface SkillBody {
   trigger: { title: string; subtitle: string | undefined };
@@ -25,15 +26,6 @@ export interface SkillBody {
   files: string[];
   failure: ParsedJsonFailure | null;
   hasBody: boolean;
-}
-
-export function skillDocumentBody(skillContent: string): string {
-  return skillContent
-    .trimStart()
-    .replace(/<skill_files>[\s\S]*?<\/skill_files>/, '')
-    .replace(/Base directory:.*$/m, '')
-    .replace(/Note:.*relative to the base directory.*$/m, '')
-    .trim();
 }
 
 export function skillBody(input: Record<string, unknown>, output: string, status: string): SkillBody {

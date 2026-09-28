@@ -2,8 +2,7 @@
  * Integration test (real local DB): trigger-fired sessions are ATTRIBUTED to
  * the firing agent's own standing-identity service account, not the arbitrary
  * account-owner stand-in `resolveTriggerActor` provisions with — closing the
- * `triggers.ts` TODO (docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.2 "runtime attribution").
+ * `triggers.ts` TODO.
  *
  * `attributeFiredTriggerSession` remains a compatibility helper for callers
  * outside the durable trigger create-session action. The action owns the live

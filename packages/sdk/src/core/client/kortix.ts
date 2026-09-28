@@ -508,6 +508,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.setDefaultConnection(projectId, ...a),
       rename: (...a: DropFirst<Parameters<typeof P.renameConnection>>) =>
         P.renameConnection(projectId, ...a),
+      share: (...a: DropFirst<Parameters<typeof P.shareConnection>>) =>
+        P.shareConnection(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
@@ -1251,6 +1253,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
       proxyUrl: (url?: string) =>
         proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
+      /**
+       * The AUTHENTICATED backend proxy URL for a given sandbox port of THIS
+       * session's runtime: `${backendUrl}/p/{externalId}/{port}` — no browser
+       * preview-origin rewriting. This is the URL a local port-forward proxy
+       * dials with the caller's own bearer token (see `getSandboxUrlForExternalId`).
+       * Use `previewUrl()`/`proxyUrl()` instead for a browser tab.
+       */
+      sandboxPortUrl: (port: number) =>
+        getSandboxUrlForExternalId(requireReady('sandboxPortUrl').sandboxId, port),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure

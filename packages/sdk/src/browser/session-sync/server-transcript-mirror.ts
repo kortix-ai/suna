@@ -41,6 +41,7 @@ import {
 	takeOpenBundleTranscript,
 	takeOpenBundleTranscriptAbsence,
 } from "../../core/session/open-bundle";
+import type { SavedCopyStore } from "../../core/session-sync/saved-copy-store";
 
 /** How many mirrored messages a first paint asks for. Matches the sync
  *  controller's own initial tail, so the mirror and the read that replaces it
@@ -130,9 +131,24 @@ export async function loadSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
 	limit?: number;
 	signal?: AbortSignal;
+	/** A sub-agent's OpenCode session inside the scope: its own saved window. */
+	child?: string;
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
+	// A sub-agent's window is never the open bundle's: that one is the
+	// conversation, and it is claimed once, by the conversation.
+	if (input.child) {
+		try {
+			return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+				limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
+				signal: input.signal,
+				child: input.child,
+			});
+		} catch {
+			return null;
+		}
+	}
 	// The SESSION-OPEN BUNDLE fetches this mirror in the same round trip that
 	// answers the turn and the queue. This hydrate runs at MOUNT, while that
 	// read is still in flight, so it waits for the read it is riding rather
@@ -182,6 +198,8 @@ export async function loadOlderSessionTranscriptMirror(input: {
 	before: string;
 	limit?: number;
 	signal?: AbortSignal;
+	/** A sub-agent's OpenCode session inside the scope. */
+	child?: string;
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
@@ -190,8 +208,35 @@ export async function loadOlderSessionTranscriptMirror(input: {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
 			before: input.before,
 			signal: input.signal,
+			child: input.child,
 		});
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * How long after a turn ends the device's copy is re-read. The server writes
+ * its saved copy on the turn-end relay, a moment after the runtime goes idle;
+ * reading at once would return the copy from the turn before.
+ */
+export const SAVED_COPY_REFRESH_DELAY_MS = 3_000;
+
+/**
+ * Replace the device's copy of one session with the server's current one.
+ * Never throws: a failed read leaves the kept copy as it was.
+ */
+export async function refreshSavedCopy(
+	store: SavedCopyStore,
+	projectId: string,
+	sessionId: string,
+): Promise<void> {
+	try {
+		const envelope = await getSessionTranscriptSync(projectId, sessionId, {
+			limit: MIRROR_HYDRATE_LIMIT,
+		});
+		if (envelope) await store.write(projectId, sessionId, envelope);
+	} catch {
+		// The kept copy stays; the next open reconciles anyway.
 	}
 }

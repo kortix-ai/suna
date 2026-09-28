@@ -37,7 +37,17 @@
  *     Platinum's CP separately enforces per-org NAME uniqueness (409
  *     `name_taken`) — a human-debuggable belt-and-suspenders in case an
  *     idempotency record ever expires while the name index hasn't; see the
- *     409 handling in provisionFromTemplate.
+ *     409 handling in provisionFromTemplate. A name_taken that PERSISTS past
+ *     the replay retry (the idempotency record really did expire, or
+ *     `template` changed — buildIdempotencyKey folds it in, the name does
+ *     not) advances to the NEXT attempt — a fresh name/key, exactly the
+ *     transition heal/failover/id-boot-fallback already use in
+ *     session-sandbox.ts — instead of throwing. The old box is NEVER touched:
+ *     a prod org can carry tens of thousands of sandboxes (most `archived`,
+ *     holding names indefinitely), so a by-name lookup is not viable on this
+ *     path, and removing/starting a box this call cannot prove is
+ *     unreferenced elsewhere is the orphan reaper's job. See provisionFromTemplate
+ *     for the incident this closes.
  * Gated by KORTIX_PLATINUM_CREATE_DEDUP (default ON) for instant rollback —
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
@@ -47,7 +57,7 @@ import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson } from '../../shared/platinum';
+import { platinumJson, platinumJsonResponse } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -61,6 +71,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxProvider,
+  SandboxStartOptions,
   SandboxStatus,
 } from './index';
 import {
@@ -70,10 +81,38 @@ import {
 } from './index';
 import { providerAutoStopBackstopMinutes } from './index';
 import { classifyPtyWebSocketPath } from './pty-ingress';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
 const START_CONFLICT_POLL_MS = 250;
+/**
+ * How long `stop()` waits for Platinum to confirm the VM actually powered
+ * off, and the poll interval. Read per-call (not a module-load constant) so
+ * tests can shrink both without an env var set before this module is first
+ * imported.
+ */
+function stopConfirmDeadlineMs(): number {
+  return Number(process.env.PLATINUM_STOP_CONFIRM_DEADLINE_MS) || 10_000;
+}
+function stopConfirmPollMs(): number {
+  return Number(process.env.PLATINUM_STOP_CONFIRM_POLL_MS) || 500;
+}
+// Platinum holds /start on an archived box for up to 45 s while it restores the
+// disk (UNARCHIVE_INLINE_WAIT_MS). The client's 20 s default abandoned that
+// call before its 202 could arrive; give it the server's wait plus margin, as
+// create() does for its 60 s long-poll.
+export const START_CALL_TIMEOUT_MS = 60_000;
+// How long start() carries a box through a restore from cold storage. A 6 GB
+// session box restores in ~100 s alone on dev and past 150 s with a second
+// restore on the same host (2026-09-25); the slowest prod unarchive that day
+// took 546 s. The session wake must still confirm the box inside its
+// RUNTIME_WAKE_HARD_MS (10 min), after this and one last /start.
+export const START_RESTORE_BUDGET_MS = 8 * 60_000;
+// How often a caller's lease is renewed (opts.onProgress) while a restore is
+// seen in progress. The wake and restart leases run 240 s.
+export const START_PROGRESS_INTERVAL_MS = 30_000;
+const START_RESTORE_POLL_MS = 1_000;
 
 interface PlatinumSandbox {
   id: string;
@@ -84,6 +123,8 @@ interface PlatinumSandbox {
   replayed?: boolean;
   backupState?: string | null;
   backup_state?: string | null;
+  startedAt?: string | null;
+  started_at?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string | null;
   createdAt?: string | null;
@@ -209,7 +250,7 @@ function isMissingSandboxError(error: unknown): boolean {
  */
 export function providerBoxBelongsToThisInstance(stamped: unknown): boolean {
   const mine = currentInstanceId();
-  if (!mine) return true;
+  if (!mine) return stamped === undefined || stamped === null;
   return typeof stamped === 'string' && stamped === mine;
 }
 
@@ -370,6 +411,7 @@ export class PlatinumProvider implements SandboxProvider {
         ? {
             name: buildDeterministicSandboxName(opts.sandboxId, dedupAttempt),
             idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt),
+            sandboxId: opts.sandboxId,
           }
         : null;
 
@@ -378,19 +420,10 @@ export class PlatinumProvider implements SandboxProvider {
       envVars,
       type: autoStop === 0 ? 'persistent' : 'ephemeral',
       auto_stop_minutes: autoStop,
-      // OWNERSHIP MARKER, not decoration. The Platinum org is shared across
-      // prod/dev/local, and `listManagedRunningSandboxes` (the orphan-box
-      // reaper's input) filters on exactly these two keys. Without them the
-      // reaper would enumerate every environment's boxes and stop them.
-      // Boxes created before this landed carry no metadata and are
-      // therefore never reaped — the safe fail direction.
-      //
-      // S1 adds `kortix.sandbox_id` alongside them when the dedup identity is
-      // on — the logical sandbox id behind the deterministic name, so an
-      // operator can map a box back to its session without parsing the name.
-      // The reaper's filter is unaffected (it reads the two keys above only).
+      // Database + instance ownership. The versioned marker also excludes
+      // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
-        'kortix.managed': 'true',
+        'kortix.managed': await sandboxOwnershipMarker(),
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
@@ -421,23 +454,73 @@ export class PlatinumProvider implements SandboxProvider {
 
     const _tCreate0 = Date.now();
     let sandbox: PlatinumSandbox;
+    // S1 FOLLOW-UP (prod incident 2026-09-27): the attempt actually committed,
+    // for the caller to persist. Equals `dedupAttempt` unless the advance
+    // branch below fires. Never touched when `dedup` is off.
+    let committedAttempt = dedupAttempt;
     try {
       sandbox = await postCreate();
     } catch (err) {
-      if (dedup && isNameTakenConflict(err)) {
-        // See isNameTakenConflict + the module doc: the name is exclusively
-        // ours, so this can only be our own prior commit under this same
-        // attempt. Re-issue the IDENTICAL body under the SAME key once — the
-        // CP resolves it to a replay of the already-committed box rather than
-        // a second create.
-        console.warn(
-          `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
-          `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
-          err,
-        );
+      if (!dedup || !isNameTakenConflict(err)) throw err;
+      // See isNameTakenConflict + the module doc: the name is exclusively
+      // ours, so this can only be our own prior commit under this same
+      // attempt. Re-issue the IDENTICAL body under the SAME key once — the
+      // CP resolves it to a replay of the already-committed box rather than
+      // a second create.
+      console.warn(
+        `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
+        `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
+        err,
+      );
+      try {
         sandbox = await postCreate();
-      } else {
-        throw err;
+      } catch (err2) {
+        if (!isNameTakenConflict(err2)) throw err2;
+        // The replay assumption above just failed — the SAME Idempotency-Key
+        // still hit a genuine conflict, which only happens when Platinum's
+        // idempotency record for it expired, or `template` changed since the
+        // box under this name was first committed (buildIdempotencyKey folds
+        // template in, the name does not — see the module doc). The box
+        // holding `dedup.name` is NEVER touched here — a prod org can carry
+        // tens of thousands of sandboxes (most `archived`, holding names
+        // indefinitely under Platinum's `deleted_at IS NULL` uniqueness
+        // predicate), so a by-name lookup is not a viable create-path
+        // operation, and removing/starting a box this call cannot prove is
+        // unreferenced elsewhere is the orphan reaper's job, not create()'s.
+        //
+        // Advance to the NEXT attempt instead — a fresh deterministic name +
+        // Idempotency-Key, exactly the transition heal/provider-failover/
+        // id-boot-fallback already use in session-sandbox.ts. Bounded to ONE
+        // advance per call: if that also 409s name_taken, throw rather than
+        // ever advancing again. The caller persists `committedAttempt` via
+        // this method's return metadata, so the NEXT top-level `/start`
+        // reads the ADVANCED attempt (restorePlatinumCreateAttempt) and never
+        // re-hits this same stuck name — closing the prod incident where
+        // nothing ever advanced the counter and the identical name/key
+        // 409'd forever on a ~15-minute retry cadence.
+        const advancedAttempt = dedupAttempt + 1;
+        const advancedName = buildDeterministicSandboxName(dedup.sandboxId, advancedAttempt);
+        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt);
+        console.warn(
+          `[platinum] name_taken PERSISTED for ${dedup.name} after the replay retry — ` +
+          `advancing to attempt ${advancedAttempt} (fresh name ${advancedName}), never touching the old box:`,
+          err2,
+        );
+        try {
+          sandbox = await platinumJson<PlatinumSandbox>(CREATE_PATH, {
+            method: 'POST',
+            signal: AbortSignal.timeout(70_000),
+            body: JSON.stringify({ ...createBody, name: advancedName }),
+            headers: { 'Idempotency-Key': advancedKey },
+          });
+        } catch (err3) {
+          if (!isNameTakenConflict(err3)) throw err3;
+          throw new Error(
+            `[platinum] name_taken persisted for ${dedup.name} even after advancing to attempt ` +
+            `${advancedAttempt} (${advancedName}) — refusing to advance again`,
+          );
+        }
+        committedAttempt = advancedAttempt;
       }
     }
     const _vmMs = Date.now() - _tCreate0;
@@ -534,6 +617,13 @@ export class PlatinumProvider implements SandboxProvider {
         template,
         version: SANDBOX_VERSION,
         workloadType,
+        // Persisted into session_sandboxes.metadata by the caller
+        // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
+        // LATER top-level provisioning call's restorePlatinumCreateAttempt
+        // reads the attempt actually committed here — not the pre-create
+        // value session-sandbox.ts's onAttemptStart hook persisted, which the
+        // advance-on-persistent-name_taken branch above may have superseded.
+        ...(dedup ? { platinumCreateAttempt: committedAttempt } : {}),
       },
     };
   }
@@ -555,13 +645,37 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
-  async start(externalId: string): Promise<void> {
-    const deadline = Date.now() + START_CONFLICT_GRACE_MS;
+  async start(externalId: string, opts: SandboxStartOptions = {}): Promise<void> {
+    let deadline = Date.now() + START_CONFLICT_GRACE_MS;
+    const restoreDeadline = Date.now() + START_RESTORE_BUDGET_MS;
     let firstConflict: unknown = null;
+    // true = the box is back on disk and gets a fresh /start. That /start
+    // gets a fresh stop grace too: another waiter may win the race to it, and
+    // this one must then see the box through `starting`, not fail at once.
+    const restored = async () => {
+      if (!(await this.waitForRestore(externalId, restoreDeadline, opts.onProgress))) return false;
+      deadline = Date.now() + START_CONFLICT_GRACE_MS;
+      return true;
+    };
 
-    for (;;) {
+    attempt: for (;;) {
       try {
-        await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST' });
+        const started = await platinumJsonResponse<PlatinumSandbox>(
+          `/v1/sandboxes/${externalId}/start`,
+          {
+            method: 'POST',
+            signal: AbortSignal.timeout(START_CALL_TIMEOUT_MS),
+          },
+        );
+        // 202 {state:'unarchiving'}: Platinum is restoring the disk from cold
+        // storage, waited its 45 s inline budget, and will NOT boot the box
+        // when the restore lands — its contract is "call /start again". This
+        // returned on the 202, so nothing ever sent that second /start and
+        // the wake fence gave up at 90 s with start_timeout (KRTX-197; 162 of
+        // 241 prod unarchives on 2026-09-25 outran the inline wait).
+        const state = String(started.body?.state ?? '').toLowerCase();
+        if (started.status !== 202 && !state.includes('archiv')) return;
+        if (await restored()) continue;
         return;
       } catch (error) {
         // Platinum acknowledges stop before the VM always reaches `stopped`.
@@ -570,6 +684,12 @@ export class PlatinumProvider implements SandboxProvider {
         // stop settles, then retry start. The control plane remains stopped and
         // unbilled until its separate provider-running confirmation succeeds.
         const message = error instanceof Error ? error.message : String(error ?? '');
+        // The CALL gave up, not Platinum: a restore it started keeps going
+        // server-side. Wait on the box's real state instead of failing the wake.
+        if (/ timed out after /.test(message) && Date.now() < restoreDeadline) {
+          if (await restored()) continue;
+          return;
+        }
         if (!/ -> 409\b/.test(message)) throw error;
         firstConflict ??= error;
       }
@@ -578,7 +698,14 @@ export class PlatinumProvider implements SandboxProvider {
         const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
         const state = String(sandbox.state ?? '').toLowerCase();
         if (state === 'running') return;
-        if (state === 'stopped' || state.includes('archiv')) break;
+        if (state === 'stopped' || state === 'archived') break;
+        // Another caller's /start is restoring this box, or its archive is
+        // still being written. Either outlasts the stop grace, and re-posting
+        // /start meanwhile only collects 409s: wait on the box instead.
+        if (state.includes('archiv')) {
+          if (await restored()) continue attempt;
+          return;
+        }
         if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
           throw firstConflict;
         }
@@ -587,6 +714,38 @@ export class PlatinumProvider implements SandboxProvider {
 
       if (Date.now() >= deadline) throw firstConflict;
     }
+  }
+
+  /**
+   * Wait out an archive or restore. true = the box is on disk (or back to
+   * `archived`) and needs its /start now; false = it moved on without one
+   * (someone else started it, or it failed) and status polling takes over.
+   * Throws when `until` passes first: the box is not coming up on this call.
+   * `onProgress` fires on the first in-progress read, then every
+   * START_PROGRESS_INTERVAL_MS while it lasts.
+   */
+  private async waitForRestore(
+    externalId: string,
+    until: number,
+    onProgress?: () => Promise<void>,
+  ): Promise<boolean> {
+    let reportedAt = Number.NEGATIVE_INFINITY;
+    while (Date.now() < until) {
+      await Bun.sleep(START_RESTORE_POLL_MS);
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(
+        () => null,
+      );
+      const state = String(sandbox?.state ?? '').toLowerCase();
+      if (state === 'stopped' || state === 'archived') return true;
+      if (state && !state.includes('archiv')) return false;
+      if (state && onProgress && Date.now() - reportedAt >= START_PROGRESS_INTERVAL_MS) {
+        reportedAt = Date.now();
+        await onProgress().catch(() => undefined);
+      }
+    }
+    throw new Error(
+      `platinum sandbox ${externalId} still restoring from archive after ${START_RESTORE_BUDGET_MS / 1000}s`,
+    );
   }
 
   async exec(
@@ -627,8 +786,47 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  /**
+   * Stop AND CONFIRM. Platinum acknowledges the stop request before the VM
+   * always reaches `stopped` — the same fact `start()`'s comment names for the
+   * reopen race. Returning right after the ACK let the control plane mark the
+   * session/sandbox row stopped (which kills the token — see
+   * `account-tokens.ts`'s `isValid` check) while the VM was still up and
+   * still calling `turn-stream`/`audit/events`/`runtime-assets/manifest` with
+   * that now-dead token. PROD 76h window: 404,982 `401 Session token is not
+   * active` rejections across 95 projects, one box for a full 12h
+   * (`autoStopMinutes: 720`) — exactly its own idle timeout, because nothing
+   * had confirmed the stop and nothing was watching that box again.
+   *
+   * Poll bounded to `stopConfirmDeadlineMs()`: long enough for an ordinary
+   * power-off, short enough not to serialize a reaper batch pass (stops run
+   * with bounded concurrency — see `REAP_CONCURRENCY` in box-reaper.ts). A
+   * timeout throws instead of returning silently, so the caller
+   * (`stopExpiredBox`/`stopSession`) treats it as a real failure: it releases
+   * its claim and leaves the DB row `active`, so the token stays valid and the
+   * NEXT pass retries the same box — never a false "stopped" for a VM that is
+   * still on.
+   */
   async stop(externalId: string): Promise<void> {
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
+    const deadlineMs = stopConfirmDeadlineMs();
+    const pollMs = stopConfirmPollMs();
+    const deadline = Date.now() + deadlineMs;
+    for (;;) {
+      const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(
+        // A box that vanished mid-poll (archived, deleted) is stopped for our
+        // purposes — nothing left to confirm against.
+        () => null,
+      );
+      const state = String(sandbox?.state ?? '').toLowerCase();
+      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') return;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Platinum stop for ${externalId} did not reach stopped within ${deadlineMs}ms (last state: ${state || 'unknown'})`,
+        );
+      }
+      await Bun.sleep(pollMs);
+    }
   }
 
   /**
@@ -647,6 +845,7 @@ export class PlatinumProvider implements SandboxProvider {
   async listManagedRunningSandboxes(): Promise<
     Array<{ externalId: string; createdAt: Date | null }>
   > {
+    const owner = await sandboxOwnershipMarker();
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
     const limit = 100;
     // Bounded page count as well as page size: a paginator that never reports
@@ -659,10 +858,9 @@ export class PlatinumProvider implements SandboxProvider {
       for (const sandbox of rows) {
         if (!sandbox.id) continue;
         const metadata = sandbox.metadata ?? {};
-        if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
+        if (metadata['kortix.managed'] !== owner) continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
-        // Instance scope beside the env scope: another instance's box is not
-        // ours to stop. No-op when KORTIX_INSTANCE_ID is unset.
+        // An unset local instance must not claim an explicitly scoped box.
         if (!providerBoxBelongsToThisInstance(metadata['kortix.instance'])) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
@@ -681,8 +879,8 @@ export class PlatinumProvider implements SandboxProvider {
 
   async remove(externalId: string): Promise<void> {
     // No credential replicas to erase first: Kortix stopped registering secrets
-    // at the Platinum edge when one mechanism took over every provider
-    // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). The value is
+    // at the Platinum edge when one mechanism took over every provider.
+    // The value is
     // substituted server-side per request and never leaves the API.
     await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'DELETE' });
   }
@@ -744,6 +942,17 @@ export class PlatinumProvider implements SandboxProvider {
       String(sandbox.backupState ?? sandbox.backup_state ?? '').toLowerCase() === 'completed'
     ) {
       return (await this.tryRestoreFromBackup(externalId)) ? 'recovering' : 'unavailable';
+    }
+
+    // failed-start is a start that failed, not a box that is gone. Platinum
+    // keeps the disk of a box that ever booted and takes /start again from it
+    // (re-restoring the archive when there is one). 2026-09-25: a Platinum
+    // reconciler race failed 17 prod starts mid-boot with every disk intact on
+    // its host; this answered 'unavailable' for each and the sessions were
+    // reported lost. A refused /start throws, which callers read as unavailable.
+    if (state === 'failed-start' && (sandbox.startedAt ?? sandbox.started_at)) {
+      await this.start(externalId);
+      return 'recovering';
     }
 
     if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';

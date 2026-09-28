@@ -32,6 +32,7 @@ const FILES: Record<string, string> = { 'kortix.md': MD, 'kortix.yaml': YAML, 'b
 const PATHS = Object.keys(FILES);
 
 const stubSource = {
+  id: 'debug-stub',
   useFileContent: (filePath: string) => ({
     data: { type: 'text' as const, content: FILES[filePath] ?? '' },
     isLoading: false,

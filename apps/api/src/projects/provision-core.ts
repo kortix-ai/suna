@@ -455,8 +455,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
           // skills, and session start 500s on refs/heads/main".
           seed: initialSeedState,
         },
-        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
-        // unification.md §2.1/§3 Phase 2): every project created through this
+        // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
         // route is "new" in the spec's sense — subject to declared-agent
         // enforcement from birth, regardless of the platform-wide
         // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /

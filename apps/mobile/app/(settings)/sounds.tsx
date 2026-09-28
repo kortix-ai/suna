@@ -4,7 +4,6 @@ import {
   WarningCircleIcon as AlertCircle,
   BellIcon as Bell,
   ProhibitIcon as CircleOff,
-  MusicNotesIcon as Music,
   PlayIcon as Play,
   PaperPlaneTiltIcon as Send,
   VibrateIcon as Vibrate,
@@ -22,8 +21,7 @@ import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-s
 
 const PACKS: { id: SoundPack; label: string; icon: typeof Volume2 }[] = [
   { id: 'off', label: 'Off', icon: CircleOff },
-  { id: 'opencode', label: 'Default', icon: Volume2 },
-  { id: 'kortix', label: 'Seshion pack', icon: Music },
+  { id: 'kortix', label: 'Default', icon: Volume2 },
 ];
 
 const EVENTS: { id: SoundEvent; label: string; icon: typeof Volume2 }[] = [

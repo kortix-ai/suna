@@ -11,12 +11,15 @@ import type {
   ProjectSecret,
 } from '../api/types.ts';
 import { openInBrowser } from '../browser.ts';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
+  missing,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -120,24 +123,11 @@ const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot']);
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 export async function runProviders(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
-
   const sub = argv[0];
   const rest = argv.slice(1);
-  if ((sub === 'login' || sub === 'oauth') && rest.some((arg) => arg === '-h' || arg === '--help')) {
-    process.stdout.write(LOGIN_HELP);
-    return 0;
-  }
-  // The root help promises `kortix providers <subcommand> --help`. Only
-  // login/oauth own dedicated help text (handled above); every other
-  // subcommand would otherwise treat `--help` as an ordinary positional arg.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
+  // login/oauth own dedicated help text; every other subcommand shares HELP.
+  const helpCode = splitHelp(argv, sub === 'login' || sub === 'oauth' ? LOGIN_HELP : HELP);
+  if (helpCode !== null) return helpCode;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let enterpriseFlag: string | undefined;
@@ -150,8 +140,7 @@ export async function runProviders(argv: string[]): Promise<number> {
     regionFlag = takeFlagValue(rest, ['--region']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
@@ -246,12 +235,7 @@ async function providersLogin(
   enterpriseUrl: string | undefined,
   opts: CtxOpts,
 ): Promise<number> {
-  if (!provider) {
-    process.stderr.write(
-      `${status.err('Pass a provider: kortix providers login <openai|github-copilot>')}\n`,
-    );
-    return 2;
-  }
+  if (!provider) return fail('Pass a provider: kortix providers login <openai|github-copilot>');
   if (!OAUTH_PROVIDERS.has(provider)) {
     process.stderr.write(
       `${status.err(`OAuth not supported for "${provider}".`)}\n` +
@@ -334,12 +318,7 @@ async function providersSet(
   regionFlag: string | undefined,
   opts: CtxOpts,
 ): Promise<number> {
-  if (!provider) {
-    process.stderr.write(
-      `${status.err('Pass a provider: kortix providers set <provider> [<key>]')}\n`,
-    );
-    return 2;
-  }
+  if (!provider) return fail('Pass a provider: kortix providers set <provider> [<key>]');
   const envVars = PROVIDER_ENV_VARS[provider];
   if (!envVars || envVars.length === 0) {
     process.stderr.write(
@@ -412,10 +391,7 @@ async function providersSet(
 }
 
 async function providersRm(provider: string | undefined, opts: CtxOpts): Promise<number> {
-  if (!provider) {
-    process.stderr.write(`${status.err('Pass a provider.')}\n`);
-    return 2;
-  }
+  if (!provider) return missing('a provider');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 

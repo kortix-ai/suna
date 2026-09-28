@@ -25,13 +25,13 @@
  */
 
 import {
-	buildAuthHeaders,
 	syntheticUnauthenticatedResponse,
-	withDefaultTimeout,
 	withTokenRetry,
 	type TokenRetryOptions,
 } from '../../platform/auth-core';
+import { AuthError } from './api/errors';
 import { platformConfig } from './config';
+import { send } from './transport';
 
 /**
  * Get the current auth token. Delegates directly to `platformConfig().getToken()`
@@ -107,116 +107,37 @@ export async function getAuthTokenWithRetry(
 // ── Shared auth-injecting fetch ──
 
 /**
- * Execute fetch with auth headers, properly handling Request objects.
+ * `fetch` with the Kortix auth and header policy, for the session runtime,
+ * files and any other absolute URL. A thin adapter over `send()`
+ * (`./transport.ts`), which owns the token, the headers (bearer, client
+ * surface, admin bypass, act-as), the default deadline and the one 401 replay.
  *
- * When `input` is a Request (e.g. from the OpenCode SDK), we construct a new
- * Request with the auth headers merged in, rather than passing headers via the
- * second `init` argument. This avoids a production-only issue where
- * `fetch(Request, { headers })` silently drops the init headers.
- */
-function fetchWithAuth(
-  input: RequestInfo | URL,
-  init: RequestInit | undefined,
-  headers: Headers,
-  signal?: AbortSignal,
-): Promise<Response> {
-  const fetchImpl = platformConfig().fetch ?? fetch;
-  if (input instanceof Request) {
-    // Clone the Request with our auth headers baked in.
-    // This guarantees Authorization is part of the Request itself,
-    // not relying on fetch's init-merge behavior.
-    const authedRequest = new Request(input, {
-      headers,
-      ...(signal ? { signal } : {}),
-    });
-    return fetchImpl(authedRequest);
-  }
-  return fetchImpl(input, { ...init, headers, ...(signal ? { signal } : {}) });
-}
-
-/** A `ReadableStream` request body can be read once, so it cannot be resent. */
-function hasOneShotBody(init: RequestInit | undefined): boolean {
-  return typeof ReadableStream !== 'undefined' && init?.body instanceof ReadableStream;
-}
-
-// Timeout composition, streaming exemption, and header building live in
-// `auth-core.ts` (pure + directly unit-tested there); this file wires them to
-// the live token seam.
-
-/**
- * Shared authenticated fetch — injects auth tokens and handles 401 responses.
- *
- * Centralizes the pattern duplicated across opencode-sdk, use-sandbox-connection,
- * and server-selector. All three auth injection points now go through this.
- *
- * Behavior:
- *   1. Gets the current auth token (Supabase JWT)
- *   2. Injects it as Bearer token on the request
- *   3. On 401: invalidates the token cache, gets fresh, retries once
+ * Fetch semantics: it resolves a `Response` for every HTTP status and never
+ * throws for a missing token. Without a token it resolves a synthetic 401 and
+ * sends nothing, so the OpenCode client (which expects `fetch`) is safe.
  *
  * Options:
- *   - `retryOnAuthError`: if false, skips stale-token retry (default: true)
+ *   - `retryOnAuthError`: replay a 401 once with a fresh token (default `true`).
+ *   - `timeoutMs`: override the default deadline (`DEFAULT_FETCH_TIMEOUT_MS`)
+ *     for bodies large enough that it is a throughput limit rather than a hang
+ *     detector (`uploadTimeoutMsForBytes` in `core/files/client.ts`). A caller
+ *     `init.signal` still composes with it; whichever fires first wins.
  */
 export async function authenticatedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
   options?: {
     retryOnAuthError?: boolean;
-    /**
-     * Override the default 30s request deadline. For request bodies large
-     * enough that 30s is a throughput limit rather than a hang detector — see
-     * `uploadTimeoutMsForBytes` in `core/files/client.ts`. A caller-supplied
-     * `init.signal` still composes with this; whichever fires first wins.
-     */
     timeoutMs?: number;
   },
 ): Promise<Response> {
-  const { retryOnAuthError = true, timeoutMs } = options ?? {};
-
-  const token = await getAuthTokenWithRetry();
-
-  // Still no token — return a synthetic 401 response instead of sending a
-  // naked request. Safe for all callers including the OpenCode SDK which
-  // expects fetch() semantics (returns Response, never throws).
-  if (!token) {
-    return syntheticUnauthenticatedResponse();
+  try {
+    return await send(input, init, {
+      retryOnAuthError: options?.retryOnAuthError,
+      timeoutMs: options?.timeoutMs,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) return syntheticUnauthenticatedResponse();
+    throw error;
   }
-
-  const clientSource = platformConfig().clientSource;
-  const headers = buildAuthHeaders(input, init, token, clientSource);
-  // 30s default timeout for everything EXCEPT the long-lived SSE event
-  // stream (see `withDefaultTimeout`) — a "Kortix as a Backend" wrapper must
-  // never have a hung sandbox/daemon request wedge its handler forever.
-  const signal =
-    timeoutMs === undefined
-      ? withDefaultTimeout(input, init)
-      : withDefaultTimeout(input, init, timeoutMs);
-
-  // The first send consumes a body. A retry is possible only from a copy taken
-  // BEFORE that send: a `Request` is cloned, and a one-shot stream body cannot
-  // be replayed at all, so its 401 is returned as-is.
-  const canRetry = retryOnAuthError && !hasOneShotBody(init);
-  const retryInput = canRetry && input instanceof Request ? input.clone() : input;
-
-  // When the OpenCode SDK passes a Request object (single arg, no init),
-  // we must construct a new Request with the auth headers baked in.
-  // Relying on fetch(Request, { headers }) to override headers is unreliable
-  // in production builds — Next.js's patched fetch and certain browser
-  // implementations don't properly merge init.headers onto an existing
-  // Request, causing the Authorization header to be silently dropped.
-  const response = await fetchWithAuth(input, init, headers, signal);
-
-  if (response.status === 401) {
-    // The cached token is stale. Retry once with fresh token.
-    if (canRetry && token) {
-      invalidateTokenCache();
-      const newToken = await getAuthTokenWithRetry({ attempts: 2, baseDelayMs: 200 });
-      if (newToken && newToken !== token) {
-        const retryHeaders = buildAuthHeaders(retryInput, init, newToken, clientSource);
-        return fetchWithAuth(retryInput, init, retryHeaders, signal);
-      }
-    }
-  }
-
-  return response;
 }

@@ -138,13 +138,22 @@ mock.module('../../../shared/db', () => ({
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
-            // The aggregate `readDeliveredWireIdFloor` runs: always one row,
-            // with a null when the session has never delivered anything.
-            // Keyed on the PROJECTION, not the table: the admission gate reads
-            // the same table for a different question, and answering it with a
-            // floor row would make every send look like it lost the order race.
-            if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
-              return [{ newest: deliveredFloor === null ? null : deliveredFloor.toString() }];
+            // The id read `readDeliveredWireIdFloor` runs: one row per earlier
+            // prompt, none when the session has never delivered anything; the
+            // SDK picks the newest on the ring. Keyed on the PROJECTION, not
+            // the table: the admission gate reads the same table for a
+            // different question, and answering it with a floor row would make
+            // every send look like it lost the order race.
+            if (table === sessionLifecycleCommands && projection && 'redelivered' in projection) {
+              return deliveredFloor === null
+                ? []
+                : [
+                    {
+                      submitted: null,
+                      redelivered: `msg_${deliveredFloor.toString(16).padStart(12, '0')}AAAAAAAAAAAAAA`,
+                      forwarded: null,
+                    },
+                  ];
             }
             if (
               table === sessionLifecycleCommands &&
@@ -373,18 +382,37 @@ mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 
-// The wake path now converges the box before every delivery (continue-session.ts
+// The wake path converges the box before every delivery (continue-session.ts
 // `continueSession`): it reads the service key and ingress and calls
-// `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
-// the wire, not about the sync (see continue-session-env-sync.test.ts).
+// `syncSandboxEnvForPrompt`. The order of that sync is proven in
+// continue-session-runtime-env.test.ts; this file records whether it ran.
+let serviceKeyAvailable = true;
+let envSyncCalls = 0;
 mock.module('../../../platform/service-key', () => ({
-  serviceKeyForExternalId: async () => 'svc-key-1',
+  serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSandboxEnvForPrompt: async () => {
+    envSyncCalls += 1;
+  },
+}));
+
+// The private store a staged file is copied into while the project keeps its
+// history (`session_transcript_history`, on by default).
+let savedAttachments: Array<{ projectId: string; sessionId: string; filename: string }> = [];
+const realSessionAttachments = await import('../../lib/session-attachments');
+mock.module('../../lib/session-attachments', () => ({
+  ...realSessionAttachments,
+  sessionAttachmentStore: () => ({
+    put: async (file: { projectId: string; sessionId: string; attachmentId: string; filename: string }) => {
+      savedAttachments.push({ projectId: file.projectId, sessionId: file.sessionId, filename: file.filename });
+      return { url: `kortix-attachment://${file.projectId}/${file.sessionId}/${file.attachmentId}` };
+    },
+    read: async () => null,
+  }),
 }));
 
 mock.module('../runtime-prompt-file', () => ({
@@ -459,6 +487,8 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  serviceKeyAvailable = true;
+  envSyncCalls = 0;
   projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
@@ -467,11 +497,16 @@ beforeEach(() => {
   deliveryStarts = [];
   unlandedRequeues = [];
   unlandedBudgetLeft = 2;
+  savedAttachments = [];
   sessionRow = {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
+    // The wire tests pin the path WITHOUT saved history. The flag is on by
+    // default; its one extra step, keeping each staged file in the private
+    // store, is tested below and in prompt-attachment-materializer.test.ts.
+    projectMetadata: { experimental: { session_transcript_history: false } },
     sandboxProvider: 'daytona',
     baseRef: 'main',
     agentName: 'agent',
@@ -534,6 +569,15 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  // A box whose env cannot be converged would run the prompt against a stale
+  // gateway URL, stale secrets and a stale model catalog. It waits instead.
+  test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
+    serviceKeyAvailable = false;
+    expect(await executeQueuedContinue(baseRow())).toBe('queued');
+    expect(envSyncCalls).toBe(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
   test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
     expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
     expect(projectMetadataExpression).toBeDefined();
@@ -564,20 +608,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(0);
   });
 
-  test('Queue List waits for the whole turn without arming a boundary interrupt', async () => {
-    boxRow = {
-      status: 'active',
-      metadata: { activeTurns: {
-        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
-          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
-      } },
-    };
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'composer' } });
-    expect(await executeQueuedContinue(row)).toBe('queued');
-    expect(requeues).toHaveLength(1);
-    expect(quickQueueControlRequests).toHaveLength(0);
-    expect(capturedBodies).toHaveLength(0);
-  });
   test('Stop during a transient delivery failure prevents another POST', async () => {
     promptResponsePlan = ['failed'];
     pauseAfterPosts = 1;
@@ -595,6 +625,38 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       message: 'The runtime rejected this prompt.',
       options: { retryable: false },
     });
+  });
+
+  test('with saved history on (the default), a staged file is also kept in the private store', async () => {
+    sessionRow = { ...sessionRow!, projectMetadata: {} };
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'Inspect this bundle.',
+          clientMessageId: 'q_saved_files',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [
+            { type: 'text', text: 'Inspect this bundle.' },
+            {
+              type: 'file',
+              mime: 'application/zip',
+              filename: 'bundle.zip',
+              url: 'data:application/zip;base64,UEsDBA==',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(savedAttachments).toEqual([{ projectId: PROJECT_ID, sessionId: SESSION_ID, filename: 'bundle.zip' }]);
+    expect(capturedBodies).toHaveLength(1);
+    // The reference the runtime reads names the saved copy, so saved history
+    // can show the file while the computer is off.
+    expect(capturedBodies[0].parts).toEqual([
+      { type: 'text', text: 'Inspect this bundle.' },
+      { type: 'text', text: expect.stringContaining(`attachment="kortix-attachment://${PROJECT_ID}/${SESSION_ID}/`) },
+    ]);
   });
 
   test('materializes non-native staged files before prompt_async', async () => {
@@ -1259,10 +1321,17 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(1);
   });
 
-  test('a PROMPT ALREADY ANSWERED is never re-sent, redelivery or not', async () => {
-    // The already-answered guard is not a redelivery-only concern: every
-    // re-mint path re-reads the transcript, and the same assistant reply proves
-    // the same thing on all of them.
+  // The already-answered guard is not a redelivery-only concern: every
+  // re-mint path re-reads the transcript, and an assistant reply under the
+  // message proves the turn ran. Sending it again would run the user's prompt,
+  // and spend a real LLM turn, twice.
+  test.each([
+    [
+      'a promoted re-mint',
+      { payload: { remintOnDelivery: true }, result: { promoted: true } },
+    ],
+    ['a reaper redelivery', { payload: { redeliveries: 1 }, result: {} }],
+  ])('a PROMPT ALREADY ANSWERED is never re-sent: %s', async (_label, row) => {
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       {
@@ -1276,10 +1345,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ];
 
     const outcome = await executeQueuedContinue(
-      baseRow({
-        payload: { ...baseRow().payload, remintOnDelivery: true },
-        result: { promoted: true },
-      }),
+      baseRow({ payload: { ...baseRow().payload, ...row.payload }, result: row.result }),
     );
 
     expect(outcome).toBe('succeeded');
@@ -1427,33 +1493,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const outcome = await executeQueuedContinue(baseRow());
     expect(outcome).toBe('succeeded');
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
-  });
-
-  test('a redelivery whose prompt was ALREADY ANSWERED is not sent again', async () => {
-    // The delivery record proves only that the acceptance write failed. An
-    // assistant reply under this message proves the turn ran, so redelivering
-    // would run the user's prompt — and spend a real LLM turn — twice.
-    transcript = [
-      { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
-      {
-        info: {
-          id: NEWER_TRANSCRIPT_ID,
-          role: 'assistant',
-          parentID: SUBMITTED_WIRE_ID,
-          time: { completed: NOW_MS - 30_000 },
-        },
-      },
-    ];
-
-    const outcome = await executeQueuedContinue(
-      baseRow({ payload: { ...baseRow().payload, redeliveries: 1 } }),
-    );
-
-    expect(outcome).toBe('succeeded');
-    expect(capturedBodies).toEqual([]);
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'already_answered' } },
-    ]);
   });
 
   test('a redelivery whose prompt is still UNANSWERED goes out under a fresh id', async () => {

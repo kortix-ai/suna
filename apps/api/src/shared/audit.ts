@@ -48,8 +48,7 @@ export interface AuditEventInput {
   agentName?: string | null;
   initiatorActorType?: string | null;
   initiatorActorId?: string | null;
-  /** The human an agent session acted on behalf of (spec
-   *  docs/specs/2026-09-22-agents-as-principals.md §2). Null otherwise. */
+  /** The human an agent session acted on behalf of. Null otherwise. */
   onBehalfOfUserId?: string | null;
   parentEventId?: string | null;
   delegationDepth?: number;
@@ -189,10 +188,6 @@ function auditSourceFor(authType: string | undefined, actorType: AuditActorType 
 
 export function inferAuditSource(c: AuditContext, actorType: AuditActorType | null): string {
   return auditSourceFor(c.get('authType'), actorType);
-}
-
-export function clientReportedAuditSource(c: AuditContext): string | null {
-  return normalizeAuditClientSource(c.req.header('x-kortix-client'));
 }
 
 function outcomeForStatus(status: number): AuditOutcome {

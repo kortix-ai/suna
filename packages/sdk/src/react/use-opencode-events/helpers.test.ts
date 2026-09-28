@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
+import { QueryClient } from '@tanstack/react-query';
+
 import {
+  patchKortixSessionTitleMirrors,
   refetchKortixSessionMirrors,
   resolveClientEvictionUrl,
   shouldSkipStatusFill,
@@ -107,6 +110,10 @@ describe('refetchKortixSessionMirrors', () => {
     // re-issue `/turn` and `/prompts` with it.
     expect(calls).toEqual([
       { queryKey: [...qk.project.sessionsScope('proj_1'), 'list'], type: 'active' },
+      // The sidebar and the Sessions page read the PAGED list. A refetch aimed
+      // only at `'list'` never reached them: `session.created` and title events
+      // waited for the next poll (up to 60 s) to show up in the sidebar.
+      { queryKey: [...qk.project.sessionsScope('proj_1'), 'list-paged'], type: 'active' },
     ]);
     const touched = JSON.stringify(calls);
     expect(touched).not.toContain('"turn"');
@@ -125,8 +132,9 @@ describe('refetchKortixSessionMirrors', () => {
   test('never reaches a different project\'s sessions prefix', () => {
     const { client, calls } = fakeQueryClient();
     refetchKortixSessionMirrors(client, 'proj_1');
-    const [call] = calls as Array<{ queryKey: readonly unknown[] }>;
-    expect(call.queryKey).not.toEqual(qk.project.sessionsScope('proj_2'));
+    for (const call of calls as Array<{ queryKey: readonly unknown[] }>) {
+      expect(call.queryKey.slice(0, 3)).toEqual([...qk.project.scope('proj_1')]);
+    }
   });
 });
 
@@ -202,5 +210,53 @@ describe('resolveClientEvictionUrl', () => {
         activeServerUrl: 'https://api.example/p/ext-1/8000',
       }),
     ).toBeNull();
+  });
+});
+
+describe('patchKortixSessionTitleMirrors', () => {
+  const pagedKey = qk.project.sessionsPaged('proj_1');
+  const row = (id: string, extra: Record<string, unknown> = {}) => ({
+    session_id: id,
+    opencode_session_id: `ses_${id}`,
+    name: null,
+    custom_name: null,
+    ...extra,
+  });
+
+  test('writes the runtime title into the paged list the sidebar reads', () => {
+    const client = new QueryClient();
+    client.setQueryData(pagedKey, {
+      pages: [{ items: [row('a'), row('b')], next_cursor: 'c1' }, { items: [row('c')], next_cursor: null }],
+      pageParams: [null, 'c1'],
+    });
+
+    patchKortixSessionTitleMirrors(client, 'proj_1', 'ses_c', 'Fix the audit 5xx');
+
+    const data = client.getQueryData(pagedKey) as { pages: Array<{ items: Array<{ name: string | null }> }> };
+    expect(data.pages[1].items[0].name).toBe('Fix the audit 5xx');
+    expect(data.pages[0].items.map((r) => r.name)).toEqual([null, null]);
+  });
+
+  test('a user rename wins over the runtime title', () => {
+    const client = new QueryClient();
+    client.setQueryData(pagedKey, {
+      pages: [{ items: [row('a', { custom_name: 'Mine' })], next_cursor: null }],
+      pageParams: [null],
+    });
+    const before: unknown = client.getQueryData(pagedKey);
+
+    patchKortixSessionTitleMirrors(client, 'proj_1', 'ses_a', 'Runtime title');
+
+    expect(client.getQueryData(pagedKey) as unknown).toBe(before);
+  });
+
+  test('leaves the prompt inbox and other per-session entries untouched', () => {
+    const client = new QueryClient();
+    const prompts = [{ prompt_id: 'p1', opencode_session_id: 'ses_a', name: 'queued' }];
+    client.setQueryData(qk.project.sessionPrompts('proj_1', 'a'), prompts);
+
+    patchKortixSessionTitleMirrors(client, 'proj_1', 'ses_a', 'Runtime title');
+
+    expect(client.getQueryData(qk.project.sessionPrompts('proj_1', 'a')) as unknown).toBe(prompts);
   });
 });

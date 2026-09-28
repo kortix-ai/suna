@@ -15,7 +15,11 @@
     "selectInstallation": "Select installation",
     "manifestRequirement": "The new repository needs {manifest} on its default branch. Stop active sessions and close open change requests first.",
     "cancel": "Cancel",
-    "changing": "Changing…"
+    "changing": "Changing…",
+    "searchBranches": "Search branches…",
+    "loadingBranches": "Loading branches…",
+    "noBranches": "No matching branch.",
+    "moreBranches": "{count} more. Type to filter."
   },
   "pooledSecrets": {
     "saveChanges": "Save changes",
@@ -41,6 +45,7 @@
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
+    "reconnectChatGpt": "Reconnect ChatGPT",
     "noChatGptAccounts": "No ChatGPT accounts yet",
     "oauthCreationDescription": "Sign in with your ChatGPT Plus or Pro account. Kortix stores the login encrypted and never shows it.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -973,6 +978,10 @@
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
+        },
+        "mcp": {
+          "name": "MCP server",
+          "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
         }
       }
     },
@@ -1443,6 +1452,7 @@
       "createAccount": "Create an account…",
       "settings": "Settings",
       "downloadApp": "Download app",
+      "connectMcp": "Connect MCP",
       "logOut": "Log out",
       "find": "Find a project…",
       "accountSettings": "Account settings",
@@ -9486,7 +9496,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624": "Propose changes",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b": "View changes",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Rename…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Share…",
     "autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00": "New session",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix Session is starting",
     "autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70": "Connecting…",
@@ -18977,6 +18986,7 @@
       "text60954a626cee": "Revoked LLM gateway key",
       "text32c1477a3336": "Revoked computer tunnel permission",
       "text953488439740": "Revoked connector account",
+      "texte817b7da7436": "Shared a private connector account",
       "text538cb0effaea": "Revoked personal access token",
       "text74be1c139903": "Revoked pooled provider key grant",
       "text6d3935be0516": "Revoked project CLI token",
@@ -19189,12 +19199,32 @@
       "text467f597e95b0": "Verified SSO domain",
       "text8295f9d4861b": "Set account SSO domain verification",
       "text7beaff63a7d3": "Downloaded project config archive",
-      "text5176d59f25fd": "Resolved session config release"
+      "text5176d59f25fd": "Resolved session config release",
+      "text273c48dbf3b9": "Registered push notification device",
+      "textbb666ddf7a57": "Removed push notification device",
+      "text397ab5aecbbf": "Relayed session permission request",
+      "text3ec6c235548a": "Read MCP server metadata",
+      "text7740934de920": "Registered an OAuth client",
+      "textcd36423ea12a": "Called the MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
       "description": "Anyone with the link can view this without signing in. The link stays active until you revoke it.",
       "confirm": "Create link"
+    },
+    "publicTranscriptShare": {
+      "sectionTitle": "Public link",
+      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
+      "create": "Create public link",
+      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
+      "rowMeta": "Read-only conversation",
+      "unavailable": "This conversation is temporarily unavailable.",
+      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
+      "loadFailedDescription": "The conversation could not be loaded.",
+      "empty": "No messages yet",
+      "savedCopy": "Saved copy from {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} account",
@@ -19326,7 +19356,17 @@
   },
   "commandPalette": {
     "title": "Command Palette",
-    "description": "Search for a command to run..."
+    "description": "Search for a command to run...",
+    "copyTitle": "Copy",
+    "copyEmail": "email",
+    "copyUserId": "user ID",
+    "copyAccountId": "account ID",
+    "copyProjectId": "project ID",
+    "copySessionId": "session ID",
+    "copySessionLink": "session link",
+    "copyAction": "Copy {label}",
+    "copied": "Copied {label}",
+    "copyFailed": "Could not copy to the clipboard"
   },
   "personalWelcome": {
     "dismiss": "Dismiss",
@@ -20093,6 +20133,9 @@
     "providerError": "Could not update provider access.",
     "managedTitle": "Kortix Managed Models",
     "managedDescription": "Managed models billed with Kortix credits. No API key needed.",
+    "pricingEstimate": "Estimated customer price. The serving route determines the charge.",
+    "pricingRoute": "{route}: {input} input / {cacheRead} cached / {output} output per 1M tokens",
+    "pricingPreferred": "Preferred",
     "textImage": "Text + image",
     "textOnly": "Text only",
     "zdrTitle": "Zero data retention",
@@ -20223,5 +20266,71 @@
     "verifiedToast": "Domain verified",
     "failedToast": "Domain not verified yet",
     "enforceNeedsVerification": "Verify the domain first. Enforcing SSO applies only to a verified domain."
+  },
+  "accessSharing": {
+    "everyone": "Everyone in {project}",
+    "everyoneRoleNote": "Everyone keeps their own project role. The agents you pick apply to everyone in {project}.",
+    "shareTitle": "Share {label}",
+    "shareDescription": "Choose who can use this account. Pick only yourself to keep it to you.",
+    "whoCanUse": "Who can use it",
+    "add": "Add people or groups",
+    "everyoneDefaultMeta": "Until you add a group or a person",
+    "everyoneMeta": "Everyone with access to the project",
+    "groupMeta": "Group",
+    "memberMeta": "Member",
+    "remove": "Remove {name}",
+    "keep": "Keep",
+    "removedMeta": "Removed when you save",
+    "resultEveryone": "Everyone in {project} can use this account.",
+    "resultNarrowed": "Only the people you chose can use this account, in their private sessions.",
+    "save": "Save",
+    "saved": "Access updated",
+    "saveFailed": "Could not update access",
+    "manageAccess": "Manage access",
+    "sharedWith": "Shared with {names}",
+    "notSharedWithYou": "Not shared with you",
+    "removeEveryoneTitle": "Stop sharing {agent} with everyone?",
+    "removeEveryoneDescription": "Only the people and groups granted {agent} keep it. Other members lose access.",
+    "removeEveryone": "Stop sharing",
+    "removed": "Removed",
+    "removeFailed": "Could not remove access",
+    "accountsTitle": "Accounts",
+    "addAccount": "Add account",
+    "addAccountTitle": "Add a {connector} account",
+    "addAccountDescription": "Name the account and choose who can use it.",
+    "onlyYou": "Only you",
+    "onlyYouDescription": "Only you can use it, in your private sessions.",
+    "specificPeople": "Specific people or groups",
+    "specificPeopleDescription": "Only the people and groups you pick, in their private sessions.",
+    "shareRequiresManage": "Sharing an account needs permission to manage the project's connections.",
+    "nameTaken": "An account named {label} already exists.",
+    "noAccountsTitle": "No account yet",
+    "noAccountsDescription": "Add an account to use {connector} in sessions.",
+    "visibilityEveryone": "Everyone in project",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Saved as {label}",
+    "connectFailed": "Could not connect the account. Try again.",
+    "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
+    "ownerMeta": "Your account"
+  },
+  "connectMcp": {
+    "title": "Connect Kortix over MCP",
+    "description": "Add this URL to Claude, ChatGPT, Cursor, Codex or any MCP client. The client asks you to sign in to Kortix the first time. Nothing to install.",
+    "urlLabel": "MCP URL",
+    "addToClient": "Add it to your client",
+    "other": "Other",
+    "claudeSteps": "In Claude (web or desktop), open Settings → Connectors → Add custom connector, paste the URL, and sign in.",
+    "claudeCodeHint": "Then run /mcp in Claude Code and sign in.",
+    "otherHint": "ChatGPT (developer mode), VS Code, Windsurf and other clients: add a remote MCP server with the URL above, or this JSON.",
+    "addToCursor": "Add to Cursor",
+    "signInOnFirstUse": "Cursor asks you to sign in to Kortix on first use.",
+    "docs": "Docs",
+    "done": "Done",
+    "copy": "Copy"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Unverified app",
+    "unverifiedBody": "{client} registered itself with Kortix. Kortix has not verified who runs it. Allow it only if you are connecting it yourself right now.",
+    "redirectsTo": "Sends you back to"
   }
 }

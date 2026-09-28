@@ -10,10 +10,11 @@
  * so the tile reads as the same shape as every other transcript row, and
  * never changes it or its icon size.
  *
- * Live status, not a one-time echo of the denial: `useConnectors` is the same
- * warm query `ConnectorsPage`/`ConnectionsPage` already keep, so a connector
- * the human connected a minute ago from anywhere else immediately reads
- * "Connected" here too, without re-running the tool call.
+ * Live status, not a one-time echo of the denial: `useConnectors` reads the
+ * project's connector list (`projectKeys.connectors`, 15 s stale time), and
+ * `ConnectorAuthSheet` invalidates that query after every connect attempt, so
+ * a connector the human connected elsewhere reads "Connected" here once the
+ * query refetches, without re-running the tool call.
  */
 import * as React from 'react';
 import { Image, View } from 'react-native';

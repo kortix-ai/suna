@@ -14,6 +14,7 @@
  * instead of silently disarming the shim in production.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 import { resolveShimConfig } from '../../../../kortix-sandbox-agent-server/src/egress-shim/rules';
 
