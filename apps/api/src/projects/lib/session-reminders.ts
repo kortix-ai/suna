@@ -13,6 +13,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { projectTriggerRuntime } from '@kortix/db';
+import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 import { and, asc, count, eq, isNotNull, sql } from 'drizzle-orm';
@@ -158,12 +159,9 @@ export function reminderSpec(input: {
   };
 }
 
-/** The text a fire delivers. The header tells the agent what woke it and how to stop it. */
+/** The text a fire delivers — `@kortix/shared` owns the format so web/mobile parse the same header. */
 export function reminderPromptText(spec: GitTriggerSpec): string {
-  const header = spec.runAt
-    ? `[REMINDER ${spec.slug} — one-time scheduled check-in on this session, not a new user message.]`
-    : `[REMINDER ${spec.slug} — recurring scheduled check-in on this session, not a new user message. When it is no longer needed, run \`kortix reminders rm ${spec.slug}\`.]`;
-  return `${header}\n\n${spec.promptTemplate}`;
+  return sharedReminderPromptText({ id: spec.slug, recurring: !spec.runAt, prompt: spec.promptTemplate });
 }
 
 type RuntimeRow = typeof projectTriggerRuntime.$inferSelect;
