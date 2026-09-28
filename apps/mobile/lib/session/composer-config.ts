@@ -114,6 +114,25 @@ export function pickableAgents<T extends { mode?: string | null; hidden?: boolea
 }
 
 /**
+ * A thread's agents: the sandbox's (`/agent`, which carries each agent's
+ * model), limited to the agents the project declares (`/detail` config
+ * agents) that are not `enabled: false`. The sandbox also lists OpenCode's
+ * built-ins (build, plan, general, explore); a Kortix project does not run
+ * them, and web never lists them because its thread reads the project config
+ * (`useRuntimeAgents({ projectId })`, KRTX-604). Sandbox order is kept:
+ * OpenCode lists the default agent first. `declared` null (no project): the
+ * sandbox list as is.
+ */
+export function declaredThreadAgents<T extends { name: string }>(
+  sandbox: T[],
+  declared: Array<{ name: string; enabled?: boolean }> | null,
+): T[] {
+  if (!declared) return sandbox;
+  const names = new Set(declared.filter((d) => d.enabled !== false).map((d) => d.name));
+  return sandbox.filter((a) => names.has(a.name));
+}
+
+/**
  * The agent project home starts a session on. Web's order
  * (`resolveCurrentAgentName`): the pick made on this screen, else the project's
  * declared default, else the last agent the user picked anywhere. A name the

@@ -571,6 +571,9 @@ importers:
       expo-notifications:
         specifier: ~56.0.25
         version: 56.0.25(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      expo-print:
+        specifier: ~56.0.4
+        version: 56.0.4(expo@56.0.22)(react-native@0.85.3)
       expo-router:
         specifier: ~56.2.20
         version: 56.2.21(@babel/core@7.29.7)(@expo/log-box@56.0.14)(@expo/metro-runtime@56.0.21)(@testing-library/dom@10.4.2)(@types/react@19.2.18)(expo-constants@56.0.26)(expo-font@56.0.7)(expo-linking@56.0.18)(expo@56.0.22)(react-dom@19.2.3)(react-native-gesture-handler@2.31.2)(react-native-reanimated@4.3.1)(react-native-safe-area-context@5.7.0)(react-native-screens@4.26.2)(react-native-web@0.21.2)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)
@@ -19543,6 +19546,16 @@ packages:
     transitivePeerDependencies:
       - supports-color
       - typescript
+    dev: false
+
+  /expo-print@56.0.4(expo@56.0.22)(react-native@0.85.3):
+    resolution: {integrity: sha512-kteKztJxp2SNjeUOLNF/HnQ4jp/Iv2IPn1xigB9tvoW6KuZgpsC0xd1fGeBtdLiIfS0PSzFp8N9N4QWA/aCx3g==}
+    peerDependencies:
+      expo: '*'
+      react-native: '*'
+    dependencies:
+      expo: 56.0.22(@babel/core@7.29.7)(@expo/dom-webview@56.0.6)(@expo/metro-runtime@56.0.21)(expo-router@56.2.21)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-webview@13.16.1)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
     dev: false
 
   /expo-router@56.2.21(@babel/core@7.29.7)(@expo/log-box@56.0.14)(@expo/metro-runtime@56.0.21)(@testing-library/dom@10.4.2)(@types/react@19.2.18)(expo-constants@56.0.26)(expo-font@56.0.7)(expo-linking@56.0.18)(expo@56.0.22)(react-dom@19.2.3)(react-native-gesture-handler@2.31.2)(react-native-reanimated@4.3.1)(react-native-safe-area-context@5.7.0)(react-native-screens@4.26.2)(react-native-web@0.21.2)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3):

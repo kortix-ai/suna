@@ -38,7 +38,7 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
-| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
+| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the message menu, `components/session/turn/message-menu.tsx`: one long-press Copy · Select text menu for user AND assistant messages, KRTX-607; rendered message text is never `selectable`, so links tap on Android, KRTX-562) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
 ## Kortix-specific components — `components/kortix/` (34 files)
 
@@ -66,7 +66,7 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | `PixelDeadFlower.tsx` | 16×16 pixel-art wilted flower, one `color` prop at 6 opacities (one `Path` per tone, no seams). One petal falls in a loop: whole-cell steps on the UI thread (Reanimated), off under Reduce Motion and while `animate={false}`. The empty session list in the project drawer (`DrawerEmptyFlower` runs the loop only while the drawer is open) and on the Sessions page (loop only while focused; errors and empty filter results keep their text) (Jay, 2026-09-24). The wrapper carries the "No sessions yet" `accessibilityLabel`. |
 | `OfflineBanner.tsx` | Global connectivity banner (slides in on disconnect / brief "Back online" flash). |
 | `SessionEndedDialog.tsx` | The one "Your session has ended" dialog (COR-144), mounted once in `app/_layout.tsx`; opens when `lib/auth/session-expiry.ts` confirms the login is gone. A new code path that signs out calls `sessionExpiry.disarm()` before `supabase.auth.signOut`, or the user sees this dialog. |
-| `selectable-markdown.tsx` | Selectable markdown text via `@expensify/react-native-live-markdown`. |
+| `selectable-markdown.tsx` | Chat markdown renderer. No rendered text is natively `selectable` (a selectable root `Text` eats nested link taps on Android). iOS double tap opens a raw-text selection sheet (`selectOnDoubleTap`, default on; the session transcript turns it off and uses `MessageMenu`). |
 | `confirm-dialog.tsx` | `useConfirmDialog()` → `{ confirm, dialog }`: the app's one confirm (COR-151), an `AlertDialog` with a secondary Cancel pill and a `default`/`destructive` action pill, portalled above open sheets. Replaces `Alert.alert(title, msg, [cancel, action])` 1:1. External web links go through `openLink` (`lib/utils/open-link.ts`): kortix.com in the in-app browser, other hosts in the system browser. |
 | `toast.tsx` / `toast-provider.tsx` | The toast seam. `sonner-native` renders toasts (Jay, 2026-09-22); `toast-provider.tsx` owns `useToast()` and mounts `<Toaster>`, `toast.tsx` owns the Kortix look, `lib/ui/toast-model.ts` owns durations/haptics. `const toast = useToast(); toast.error(...)`. Never import `sonner-native` in a screen. See design.md §11 |
 
@@ -245,6 +245,15 @@ Loading state is always `@/components/ui/skeleton`'s `<Skeleton>` (a
 `bg-accent animate-pulse` box) or the Kortix Lottie spinner
 (`@/components/kortix/kortix-loader`). Never an icon spun with `animate-spin`,
 never React Native's `ActivityIndicator`.
+
+Size (KRTX-559): `<KortixLoader />` defaults to `small` (20 pt), and that is
+the loader for every list, page, sheet, file preview, web view, and button.
+Only two surfaces pass a bigger preset, because there the loader is the whole
+screen's content: the boot screens (`app/index.tsx`, `app/welcome.tsx`,
+`app/+not-found.tsx`) use `large` (80 pt, the width of the native splash
+mark), and `SessionConnecting` uses `medium` (40 pt). There is no `xlarge`.
+`components/kortix/kortix-loader-size.test.ts` fails on any other preset.
+`customSize` stays for inline status glyphs in rows and tool cards.
 
 One loader per surface, one visible at a time (KRTX-244):
 

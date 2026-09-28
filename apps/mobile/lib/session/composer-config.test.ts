@@ -4,6 +4,7 @@ import {
   PICKER_SEARCH_THRESHOLD,
   agentDisplayName,
   composerChip,
+  declaredThreadAgents,
   pickerSections,
   homeAgentName,
   pickableAgents,
@@ -116,6 +117,33 @@ describe('agents', () => {
       { name: 'off', mode: 'primary', enabled: false },
     ];
     expect(pickableAgents(config).map((a) => a.name)).toEqual(['harness-reflector', 'kortix', 'no-mode']);
+  });
+
+  test('thread agents: only the project-declared ones, never OpenCode built-ins (KRTX-604)', () => {
+    // The sandbox `/agent` list: the project's agents plus OpenCode's built-ins.
+    const sandbox = [
+      agent('kortix', 'primary'),
+      agent('build', 'primary'),
+      agent('plan', 'primary'),
+      agent('general', 'subagent'),
+      agent('explore', 'subagent'),
+      agent('session-reviewer', 'subagent'),
+      agent('off', 'primary'),
+      agent('engineering', 'primary'),
+    ];
+    // The project config (`/detail`): what web's picker lists.
+    const declared = [
+      { name: 'engineering', enabled: true },
+      { name: 'kortix' },
+      { name: 'session-reviewer', enabled: true },
+      { name: 'off', enabled: false },
+    ];
+    const agents = declaredThreadAgents(sandbox, declared);
+    // Sandbox order is kept: OpenCode lists the default agent first.
+    expect(agents.map((a) => a.name)).toEqual(['kortix', 'session-reviewer', 'engineering']);
+    expect(pickableAgents(agents).map((a) => a.name)).toEqual(['kortix', 'engineering']);
+    // No project config (a thread without a project): the sandbox list as is.
+    expect(declaredThreadAgents(sandbox, null)).toBe(sandbox);
   });
 
   test('home agent: the pick, else the project default, else the last used; only a pickable one', () => {

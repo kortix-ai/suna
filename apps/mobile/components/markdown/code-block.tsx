@@ -84,7 +84,6 @@ export const CodeBlock = memo(function CodeBlock({
       }}
     >
       <RNText
-        selectable
         style={{
           fontFamily: MONO_FONT,
           fontSize: CODE_BLOCK.fontSize,

@@ -56,7 +56,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { FileGlyph } from '@/components/files/file-icons';
+import { DownloadMenu } from '@/components/files/DownloadMenu';
 import { downloadFailureMessage } from '@/lib/files/download-status';
+import { exportMarkdownPdf } from '@/lib/files/export-markdown-pdf';
+import type { DownloadFormat } from '@/lib/files/markdown-export';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
 import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
@@ -285,12 +288,18 @@ function FileSheetBody({
     setView(next);
   }, []);
 
-  const download = async () => {
+  const download = async (format: DownloadFormat) => {
     if (downloading) return;
     haptics.tap();
     setDownloading(true);
     try {
-      await saveTextAndShare(content.data?.content ?? '', basename(file.name));
+      if (format === 'pdf') {
+        const uri = await exportMarkdownPdf(copyText, basename(file.name));
+        if (uri == null) toast.info('Update the app to save as PDF.');
+        else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
+      } else {
+        await saveTextAndShare(content.data?.content ?? '', basename(file.name));
+      }
     } catch (e: any) {
       haptics.warning();
       toast.error(e?.message || 'Unable to download the file. Try again.');
@@ -368,7 +377,7 @@ function FileSheetBody({
       <FilePreviewBottomInsetContext.Provider value={contentInset}>
         {content.isLoading ? (
           <View className="flex-1 items-center justify-center" style={{ paddingBottom: contentInset }}>
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
           </View>
         ) : content.isError ? (
           <View className="flex-1 items-center justify-center gap-3 px-8" style={{ paddingBottom: contentInset }}>
@@ -383,10 +392,15 @@ function FileSheetBody({
 
       {/* The project drawer's pinned bar: Download · History, over a fade. */}
       <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-        <Button variant="secondary" className="flex-1 rounded-full" onPress={download} disabled={downloading || content.isLoading}>
-          <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
-          <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
-        </Button>
+        {/* A markdown file's Download offers Markdown · PDF (KRTX-605). */}
+        <DownloadMenu fileName={file.name} pdfReady={copyText !== ''} onDownload={(format) => void download(format)} className="flex-1">
+          {(onPress) => (
+            <Button variant="secondary" className="rounded-full" onPress={onPress} disabled={downloading || content.isLoading}>
+              <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
+              <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
+            </Button>
+          )}
+        </DownloadMenu>
         <Button variant="secondary" className="flex-1 rounded-full" onPress={() => goTo({ kind: 'history' }, false)}>
           <Icon as={ClockCounterClockwiseIcon} size={18} className="text-foreground" />
           <Text>History</Text>

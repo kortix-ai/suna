@@ -19,8 +19,9 @@
  * pieces on one line read as one chip, and a chip cut by a line break is open
  * at the cut — web's default `box-decoration-break: slice`.
  *
- * Cost: the chip's text is its own selectable `Text`. Selecting or copying
- * the surrounding paragraph does not include the code.
+ * The chip's text is not natively selectable, like the rest of a message: a
+ * selectable `Text` takes the tap on Android, so a URL or path chip would not
+ * open (KRTX-562). A message's Select text includes the code.
  */
 import React, { createContext, useContext } from 'react';
 import { Platform, Text as RNText, useWindowDimensions, View } from 'react-native';
@@ -184,7 +185,6 @@ export function InlineCode({
             >
               {kind === 'hex' ? <HexSwatch hex={text} palette={palette} baseline={textBaseline} /> : null}
               <RNText
-                selectable={!insideLink}
                 numberOfLines={1}
                 onPress={onPress}
                 accessibilityRole={onPress ? (kind === 'url' ? 'link' : 'button') : undefined}

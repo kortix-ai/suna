@@ -32,7 +32,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { FilePreview } from './FilePreviewRenderers';
 import { useFilePreviewData } from './use-file-preview-data';
+import { DownloadMenu } from './DownloadMenu';
 import { useOpenCodeWriteFile, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
+import { exportMarkdownPdf } from '@/lib/files/export-markdown-pdf';
+import { pdfFileName, type DownloadFormat } from '@/lib/files/markdown-export';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -109,11 +112,21 @@ export function FileViewer({
     onClose();
   };
 
-  const handleDownload = async () => {
+  const handleDownload = async (format: DownloadFormat) => {
     if (!file) return;
     setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // A markdown file saved as PDF (KRTX-605), from the loaded text.
+      if (format === 'pdf') {
+        const uri = await exportMarkdownPdf(textContent ?? '', file.name);
+        if (uri == null) Alert.alert('Save as PDF', 'Update the app to save as PDF.');
+        else if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, { dialogTitle: `Download ${pdfFileName(file.name)}` });
+        }
+        return;
+      }
 
       // For binary files (images, PDFs, etc.) write to file and share
       if (imageBlob && isBinaryFile && !blobTooLarge) {
@@ -382,23 +395,33 @@ export function FileViewer({
                     <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   </AnimatedPressable>
                 )}
-                <AnimatedPressable
-                  onPress={handleDownload}
-                  disabled={isDownloading}
-                  className="p-2"
-                  style={{ opacity: isDownloading ? 0.6 : 1 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Download">
-                  {isDownloading ? (
-                    <KortixLoader size="small" />
-                  ) : (
-                    <Icon
-                      as={Download}
-                      size={22}
-                      color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                    />
+                {/* A markdown file's Download offers Markdown · PDF (KRTX-605). */}
+                <DownloadMenu
+                  fileName={file.name}
+                  pdfReady={typeof textContent === 'string' && textContent !== ''}
+                  onDownload={(format) => void handleDownload(format)}
+                  side="bottom"
+                  portalHost={FILE_VIEWER_PORTAL_HOST}>
+                  {(onPress) => (
+                    <AnimatedPressable
+                      onPress={onPress}
+                      disabled={isDownloading}
+                      className="p-2"
+                      style={{ opacity: isDownloading ? 0.6 : 1 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Download">
+                      {isDownloading ? (
+                        <KortixLoader size="small" />
+                      ) : (
+                        <Icon
+                          as={Download}
+                          size={22}
+                          color={isDark ? THEME.dark.foreground : THEME.light.foreground}
+                        />
+                      )}
+                    </AnimatedPressable>
                   )}
-                </AnimatedPressable>
+                </DownloadMenu>
                 <AnimatedPressable
                   onPressIn={() => {
                     closeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -449,7 +472,7 @@ export function FileViewer({
             </KeyboardAvoidingView>
           ) : isLoading ? (
             <View className="flex-1 items-center justify-center">
-              <KortixLoader size="large" />
+              <KortixLoader size="small" />
               <Text className="mt-4 text-sm text-muted-foreground">Loading file...</Text>
             </View>
           ) : hasError ? (

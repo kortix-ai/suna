@@ -50,7 +50,8 @@ import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions'
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useProjectModelCatalog } from '@/lib/projects/hooks';
+import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
+import { declaredThreadAgents } from '@/lib/session/composer-config';
 import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
@@ -813,9 +814,22 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   // Agent/model/variant config
   const agentsQuery = useOpenCodeAgents(sandboxUrl);
-  const agents = agentsQuery.data ?? EMPTY_AGENTS;
-  // No list yet (sandbox still starting, or its first fetch in flight).
-  const agentsLoading = !agentsQuery.data;
+  // Web's list: the agents the project declares (`/detail`), never OpenCode's
+  // built-ins the sandbox also lists (KRTX-604). A failed `/detail` falls back
+  // to the sandbox list rather than leaving the thread with no agent.
+  const projectDetailQuery = useProjectDetail(projectId ?? null);
+  const projectDetailPending = !!projectId && projectDetailQuery.isPending;
+  const declaredAgents = projectId ? (projectDetailQuery.data?.config?.agents ?? null) : null;
+  const agents = useMemo(
+    () =>
+      agentsQuery.data && !projectDetailPending
+        ? declaredThreadAgents(agentsQuery.data, declaredAgents)
+        : EMPTY_AGENTS,
+    [agentsQuery.data, projectDetailPending, declaredAgents],
+  );
+  // No list yet (sandbox still starting, its first fetch in flight, or the
+  // project config still loading).
+  const agentsLoading = !agentsQuery.data || projectDetailPending;
   // Models are derived here from the providers query (the same query
   // useOpenCodeModels reads) so the arrays keep their identity between
   // renders and the memoized composer can skip stream renders.
