@@ -4,157 +4,99 @@
  * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
  * GOLD-1, CHN-6, SESS-10, CONN-26.
  *
- * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
+ * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
  * FLOW level on `requires: ["funded"]` and/or `["daytona"]`. The runner
- * self-skips a flow whose capability is absent (apps/api lives behind Stripe +
- * Daytona on dev-api), so these SKIP cleanly locally and run for real against
- * dev-api. The flows below are authored as REAL, correct flows derived from
- * code (apps/api/src/projects/index.ts + apps/api/src/channels + the preview
- * proxy at apps/api/src/sandbox-proxy) so they pass once those capabilities are
- * present.
+ * self-skips a flow whose capability is absent, so these SKIP cleanly locally
+ * and run for real against a deployed target.
  *
- * ── Preview-proxy coverage note (IMPORTANT) ──────────────────────────────────
- * The OpenCode agent-run surface (RUN-1..8) lives under the preview proxy
- * catch-all `/p/:sandboxId/:port/*` (a Hono wildcard mount). Like the billed
- * `router.all('/:service/*')` passthrough, this catch-all is NOT a discrete
- * entry in app.routes / spec/routes.generated.json, so it CANNOT appear in a
- * flow's `meta.routes` (Gate B fails on routes absent from the manifest). We
- * therefore declare ONLY manifest-real routes in `meta.routes` (session create,
- * sandbox status, the `/v1/p/auth` + `/v1/p/share` mounts, CR routes, etc.) and
- * drive the proxy itself via `ctx.client.request(...)` against the live
- * `/v1/p/<sbx>/8000/...` path WITHOUT declaring it as a coverage route. The
- * proxy's auth boundary is additionally covered transitively by PRX-1/PRX-2.
+ * ── One body, every harness ─────────────────────────────────────────────────
+ * The flows that run a turn are registered with `harnessFlow`: `RUN-1` boots
+ * OpenCode and `RUN-1-pi` boots pi (a project with the `pi_harness` flag on).
+ * They drive the session through the Kortix routes (`/start`, `/prompts`,
+ * `/turn`, `/transcript`, `/events`, `/commit-push`) and never through a
+ * harness's own REST API, so a difference between the harnesses fails a named
+ * flow. Two calls still use the runtime behind the preview proxy
+ * `/p/:sandboxId/:port/*`, because no Kortix route exists for them yet: the
+ * Stop abort and the daemon's `/kortix/health` (see fixtures/session-run.ts).
+ * That proxy is a Hono wildcard mount, not a manifest route, so it never
+ * appears in `meta.routes`; its auth boundary is RUN-8, PRX-1 and PRX-2.
  */
-import { flow } from '../core/flow';
+import { flow, harnessFlow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
-import { waitFor, sleep } from '../core/poll';
-import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
+import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
 import { subscribe } from '../fixtures/billing';
+import {
+  abortTurn,
+  assertRuntimeHarness,
+  bootSession,
+  endedAfter,
+  readTranscript,
+  readTurn,
+  runtimePath,
+  sandboxIdOf,
+  sendPrompt,
+  streamedText,
+  waitForAssistantText,
+  waitForSessionReady,
+  waitForTurn,
+  watchSessionEvents,
+} from '../fixtures/session-run';
 
-// ── Shared helpers ───────────────────────────────────────────────────────────
+const MORPH = { providerID: 'kortix', modelID: 'morph-dsv41flash' };
 
-/** Poll the canonical unified session-open endpoint until the runtime is ready. */
-async function waitForSessionReady(
-  ctx: FlowContext,
-  projectId: string,
-  sessionId: string,
-  timeoutMs = 540_000,
-): Promise<any> {
-  try {
-    return await waitFor(
-      async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
-          {},
-          {
-            params: { projectId, sessionId },
-            query: { wait_ms: '8000' },
-            // The server may hold the request for the full 8s wait window, and
-            // Cloudflare/ECS transit can add several more seconds under load.
-            timeoutMs: 25_000,
-          },
-        );
-        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
-        r.status(200);
-        return r.json<any>();
-      },
-      {
-        until: (s) =>
-          s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-        timeoutMs,
-        intervalMs: 3_000,
-        description: `session runtime ready for ${sessionId}`,
-        retryOnError: isKe2eRetryableError,
-      },
-    );
-  } catch (error) {
-    throw markSessionReadinessTimeoutRetryable(error, sessionId);
-  }
+/** A reply the flow can find by content: the model is told to answer with exactly `marker`. */
+function echo(marker: string): string {
+  return `Reply with exactly this single token and nothing else: ${marker}`;
 }
 
-flow(
+harnessFlow(
   'SESS-10',
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
     serial: true,
-    // Raised from 360_000 because THIS change adds a real proxy turn (conversation
-    // list/boot + prompt + assistant output) ahead of the mirror wait. Sum of the
-    // bounded waits below now exceeds 360s. Forced arithmetic, not timeout tuning.
+    // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
-  async (ctx) => {
-    const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, {
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness, {
       prompt: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
     });
+    const { projectId, sessionId } = session;
 
-    let sandboxId = '';
-    await ctx.step('the real sandbox reaches OpenCode readiness after the initial prompt', async () => {
-      const started = await waitForSessionReady(ctx, project.id, session.id);
-      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
-      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
-    });
-
-    // The mirror is populated by the PRE-PROMPT hooks on the preview proxy —
-    // `generateSessionTitleFromFirstPrompt` + `scheduleOpencodeSnapshotSync`
-    // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
-    // session whose only prompt was claimed by the daemon during boot
-    // never crosses that proxy, so it "never crosses a titling hook again" —
-    // apps/api/src/projects/routes/turn-stream.ts says exactly that in its own comment.
-    // Waiting for the mirror straight after an initial_prompt boot is therefore
-    // unsatisfiable by construction. Drive ONE real turn through the proxy, the
-    // way every client does, and then assert the mirror the flow is about.
-    const MIRROR_PROMPT =
-      'Summarize why deterministic end-to-end tests reduce release risk in one sentence.';
-    /** Prompt the pinned root through the proxy — this is what arms the snapshot. */
-    const promptPinnedRoot = async (ocId: string) => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: MIRROR_PROMPT }],
-        });
-      r.status([200, 202, 204]);
-    };
-
-    let ocSessionId = '';
-    await ctx.step('a real prompt through the preview proxy produces assistant output', async () => {
-      ocSessionId = await pinnedOcRoot(ctx, project.id, session.id, sandboxId);
-      await promptPinnedRoot(ocSessionId);
-      await waitForAssistantOutput(ctx, sandboxId, ocSessionId);
+    const marker = `SESS10_MIRROR_${Date.now()}`;
+    await ctx.step('a prompt through the session inbox produces assistant output', async () => {
+      await sendPrompt(ctx, projectId, sessionId, echo(marker));
+      await waitForAssistantText(ctx, projectId, sessionId, marker);
     });
 
     let mirrored: any = null;
-    await ctx.step('the session read exposes a non-placeholder root OpenCode title and tree', async () => {
-      // `metadata.opencode_sessions` has exactly ONE writer:
-      // `scheduleOpencodeSnapshotSync`, armed by the proxy's pre-prompt hook.
-      // It fires at prompt+20s and prompt+60s and then STOPS
-      // (apps/api/src/projects/opencode-session-snapshot.ts). The session read
-      // itself is a pure DB read — a source-level guard test enforces that. So
-      // a poll that merely waits is reading a value whose writer has already
-      // retired: run 32306385663 spent 120 of its 180 s that way. Re-arm the
-      // writer by re-prompting the pinned root, instead of waiting on a dead one.
+    await ctx.step('the session read exposes a non-placeholder root title and tree', async () => {
+      // `metadata.opencode_sessions` is written by a deferred snapshot pass that
+      // a delivered prompt arms (prompt+20s, prompt+60s, then it stops). A
+      // poll that only waits reads a value whose writer has retired, so re-arm
+      // it with another prompt when the wait outlives the pass.
       const REARM_AFTER_MS = 75_000;
       let lastPromptAt = Date.now();
       mirrored = await waitFor(
         async () => {
           if (Date.now() - lastPromptAt > REARM_AFTER_MS) {
             lastPromptAt = Date.now();
-            await promptPinnedRoot(ocSessionId);
+            await sendPrompt(ctx, projectId, sessionId, echo(`${marker}_REARM`));
           }
           const response = await ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId', {
-              params: { projectId: project.id, sessionId: session.id },
-            });
+            .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
           response.status(200);
           return response.json<any>();
         },
@@ -172,7 +114,7 @@ flow(
           },
           timeoutMs: 180_000,
           intervalMs: 3_000,
-          description: `the OpenCode title/tree mirror for ${session.id}`,
+          description: `the root title/tree mirror for ${sessionId}`,
           retryOnError: isKe2eRetryableError,
         },
       );
@@ -181,197 +123,21 @@ flow(
     await ctx.step('the project session list returns the same mirrored title and tree', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+        .get('/v1/projects/:projectId/sessions', { params: { projectId } });
       response.status(200);
       const body = response.json<any>();
       const rows = Array.isArray(body) ? body : (body.sessions ?? []);
-      const listed = rows.find((row: any) => row?.session_id === session.id);
-      if (!listed) throw new Error(`session list omitted ${session.id}`);
+      const listed = rows.find((row: any) => row?.session_id === sessionId);
+      if (!listed) throw new Error(`session list omitted ${sessionId}`);
       if (listed.name !== mirrored.name) {
         throw new Error(`list title ${String(listed.name)} != detail title ${String(mirrored.name)}`);
       }
       if (JSON.stringify(listed.opencode_sessions) !== JSON.stringify(mirrored.opencode_sessions)) {
-        throw new Error('list and detail returned different OpenCode session trees');
+        throw new Error('list and detail returned different session trees');
       }
     });
   },
 );
-
-/**
- * Boot a fresh session and wait for its runtime to reach `ready`, returning the
- * proxy id (`external_id`, the value `:sandboxId` in the preview proxy path).
- *
- * The body runs INSIDE a `ctx.step`, and that is the whole point of the wrapper.
- * Request capture is `AsyncLocalStorage`-scoped to a step (core/context.ts
- * `withRecorder`, entered only by `ctx.step` in core/runner.ts), so every
- * `POST /start` poll made outside one is recorded NOWHERE. RUN-4 failed in run
- * 32330628092 with `Timed out waiting for session runtime ready` and produced a
- * flow record with `"steps": []` — no request, no body, no `provisioningStage`,
- * no `lastInitError`, on the single failure mode these flows actually fail with.
- * Boot is the most expensive and most failure-prone part of every flow here; it
- * must leave evidence behind.
- */
-async function bootSandbox(
-  ctx: FlowContext,
-  opts?: { prompt?: string; readinessTimeoutMs?: number },
-): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  return ctx.step('a fresh session boots to a ready runtime', async () => {
-    const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
-    const started = await waitForSessionReady(
-      ctx,
-      project.id,
-      session.id,
-      opts?.readinessTimeoutMs,
-    );
-
-    const sandbox = started.sandbox;
-    const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
-    return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
-  });
-}
-
-/** The workspace directory the session's OpenCode root lives under (see
- * apps/api/src/projects/opencode-mapping.ts WORKSPACE). Session create/list must
- * carry `?directory=` or the daemon can't locate the repo root → persistent 503. */
-const WORKSPACE = '/workspace';
-
-/** Build the live (non-manifest) preview-proxy path for an OpenCode call. */
-function ocPath(sandboxId: string, suffix: string): string {
-  const tail = suffix.startsWith('/') ? suffix : `/${suffix}`;
-  return `/v1/p/${sandboxId}/8000${tail}`;
-}
-
-/**
- * Create an OpenCode conversation on a booted sandbox; returns its ocId.
- * The sandbox reaching `active` precedes OpenCode (port 4096, fronted by the
- * daemon on 8000) finishing its own boot, so the daemon returns 502/503 for a
- * window after active. Poll through that window before asserting.
- */
-async function createOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
-  const ready = await waitFor(
-    async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session?directory=${encodeURIComponent(WORKSPACE)}`), {});
-      // 502/503/504 = OpenCode upstream not up yet; keep polling.
-      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
-      return r;
-    },
-    {
-      until: (r) => Boolean(r),
-      timeoutMs: 120_000,
-      intervalMs: 3_000,
-      description: `OpenCode REST ready on sandbox ${sandboxId}`,
-    },
-  );
-  ready!.status([200, 201]);
-  const id = ready!.json<any>()?.id;
-  if (!id) throw new Error(`OpenCode session create returned no id: ${ready!.text()}`);
-  return id;
-}
-
-/**
- * The OpenCode conversation the server will treat as this session's canonical
- * root. The snapshot pass scopes `metadata.opencode_sessions` to exactly that
- * root (apps/api/src/projects/opencode-session-snapshot.ts), so a prompt sent to
- * any OTHER root is filtered straight back out of the mirror. Mirror the
- * server's own rule — most-recently-active parentless root, per
- * `pickCanonicalRoot` in apps/api/src/projects/opencode-session-resolver.ts —
- * and only create a conversation when the guest has none at all.
- */
-async function canonicalOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
-  const listed = await waitFor(
-    async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/session'));
-      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
-      return r.statusCode === 200 ? r.json<any[]>() : null;
-    },
-    {
-      until: (rows) => Array.isArray(rows),
-      timeoutMs: 120_000,
-      intervalMs: 3_000,
-      description: `OpenCode conversation list on sandbox ${sandboxId}`,
-    },
-  );
-
-  const roots = (listed ?? []).filter((s: any) => !(s?.parentID ?? s?.parent_id));
-  if (roots.length === 0) return createOcConversation(ctx, sandboxId);
-  const activity = (s: any) => s?.time?.updated ?? s?.time?.created ?? 0;
-  roots.sort(
-    (a: any, b: any) =>
-      activity(b) - activity(a) ||
-      (b?.time?.created ?? 0) - (a?.time?.created ?? 0) ||
-      String(a?.id).localeCompare(String(b?.id)),
-  );
-  const id = roots[0]?.id;
-  if (!id) throw new Error(`no canonical OpenCode root on sandbox ${sandboxId}`);
-  return String(id);
-}
-
-/**
- * The root the SERVER has pinned for this session, preferred over re-deriving it.
- *
- * `resolveRootSessionId` (apps/api/src/projects/opencode-session-resolver.ts)
- * returns an EXISTING pin unconditionally — "most recently active parentless
- * root" is the server's rule only for the FIRST resolution. Once a pin exists
- * the two rules can disagree (a daemon restart or a warm-fork seed rotation
- * leaves a second root), and then the flow prompts root B while the snapshot
- * mirrors pinned root A. Root A is never prompted, so its title never changes,
- * and the mirror wait can never be satisfied at any budget — SESS-10's 410 s
- * failure in run 32306385663. Ask the server which root it pinned.
- */
-async function pinnedOcRoot(
-  ctx: FlowContext,
-  projectId: string,
-  sessionId: string,
-  sandboxId: string,
-): Promise<string> {
-  const r = await ctx.client
-    .as(ctx.P.OWNER)
-    .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
-  const pinned = r.statusCode === 200 ? r.json<any>()?.opencode_session_id : null;
-  if (typeof pinned === 'string' && pinned.length > 0) return pinned;
-  // Nothing pinned yet — the server's first resolution will adopt whatever
-  // root is most recently active, which is exactly what this derives.
-  return canonicalOcConversation(ctx, sandboxId);
-}
-
-function hasAssistantOutput(messages: unknown): boolean {
-  return (
-    Array.isArray(messages) &&
-    messages.some((message: any) => {
-      if (message?.info?.role !== 'assistant') return false;
-      if (message?.info?.error) return true;
-      return Array.isArray(message?.parts) && message.parts.length > 0;
-    })
-  );
-}
-
-async function waitForAssistantOutput(
-  ctx: FlowContext,
-  sandboxId: string,
-  ocId: string,
-  timeoutMs = 240_000,
-): Promise<any[]> {
-  const messages = await waitFor(
-    async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
-      return r.statusCode === 200 ? r.json<any[]>() : [];
-    },
-    {
-      until: hasAssistantOutput,
-      timeoutMs,
-      intervalMs: 4_000,
-      description: `observable assistant output in OpenCode session ${ocId}`,
-    },
-  );
-  const failed = messages.find((message: any) => message?.info?.role === 'assistant' && message?.info?.error);
-  if (failed) {
-    throw new Error(`OpenCode assistant failed: ${failed.info.error.data?.message ?? failed.info.error.name}`);
-  }
-  return messages;
-}
 
 // ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
 flow(
@@ -397,6 +163,8 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/connectors/projects/:projectId/connectors',
       'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
     ],
@@ -406,87 +174,71 @@ flow(
     const session = await ctx.fixtures.session(project, {
       prompt: 'Reply with the single word READY. Do not call any tools.',
     });
+    const params = { projectId: project.id, sessionId: session.id };
 
-    let sandboxId = '';
-    await ctx.step('a fresh remote session boots to a ready Daytona runtime', async () => {
-      const started = await waitForSessionReady(ctx, project.id, session.id, 360_000);
-      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
-      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
+    await ctx.step('a fresh remote session boots to a ready runtime', async () => {
+      await waitForSessionReady(ctx, project.id, session.id, 360_000);
     });
 
-    const ocId = await createOcConversation(ctx, sandboxId);
     await ctx.step('GLM-5.3 744B receives the real Gmail connector request', async () => {
-      const prompted = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
-          parts: [
-            {
-              type: 'text',
-              text:
-                'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
-            },
-          ],
-        });
-      prompted.status([200, 202, 204]);
+      await sendPrompt(
+        ctx,
+        project.id,
+        session.id,
+        'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
+        { model: MORPH },
+      );
     });
 
-    let messages: any[] = [];
+    type FullMessage = { role: string; text: string; tools: Array<{ tool: string; input?: string }> };
+    const addConnector = (tool: { tool: string }) => /add[_ -]?connector/i.test(tool.tool);
+    let messages: FullMessage[] = [];
     await ctx.step('the agent calls the connector tools and asks the user to authorize', async () => {
       messages = await waitFor(
         async () => {
+          // `detail=full` carries each tool call's input as a JSON string.
           const response = await ctx.client
             .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return response.statusCode === 200 ? response.json<any[]>() : [];
+            .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+              params,
+              query: { limit: '200', detail: 'full', chars: '5000' },
+            });
+          response.status(200);
+          return (response.json<any>().messages ?? []) as FullMessage[];
         },
         {
           until: (rows) => {
-            const parts = rows.flatMap((message: any) =>
-              Array.isArray(message?.parts) ? message.parts : [],
-            );
-            const calledAdd = parts.some((part: any) => {
-              const tool = String(part?.tool ?? part?.toolName ?? part?.name ?? '');
-              return part?.type === 'tool' && /add[_ -]?connector/i.test(tool);
-            });
             const assistantText = rows
-              .filter((message: any) => message?.info?.role === 'assistant')
-              .flatMap((message: any) => (Array.isArray(message?.parts) ? message.parts : []))
-              .filter((part: any) => part?.type === 'text' && typeof part?.text === 'string')
-              .map((part: any) => part.text)
+              .filter((message) => message.role === 'assistant')
+              .map((message) => message.text)
               .join('\n');
             return (
-              calledAdd &&
+              rows.some((message) => (message.tools ?? []).some(addConnector)) &&
               assistantText.includes('connect.composio.dev') &&
               /open|authorize|connect/i.test(assistantText)
             );
           },
           timeoutMs: 300_000,
           intervalMs: 4_000,
-          description: `Composio Gmail authorization request from agent session ${ocId}`,
+          description: `Composio Gmail authorization request from session ${session.id}`,
           retryOnError: isKe2eRetryableError,
         },
       );
     });
 
     await ctx.step('no connector tool call attempted the legacy Pipedream escape hatch', async () => {
-      const toolParts = messages
-        .flatMap((message: any) => (Array.isArray(message?.parts) ? message.parts : []))
-        .filter((part: any) => part?.type === 'tool');
-      const addCalls = toolParts.filter((part: any) =>
-        /add[_ -]?connector/i.test(String(part?.tool ?? part?.toolName ?? part?.name ?? '')),
-      );
+      const toolCalls = messages.flatMap((message) => message.tools ?? []);
+      const addCalls = toolCalls.filter(addConnector);
       if (addCalls.length === 0) throw new Error('agent emitted no add-connector tool call');
-      for (const part of toolParts) {
-        const input = part?.state?.input ?? part?.input ?? {};
-        if (input?.provider === 'pipedream' || input?.allow_legacy_pipedream === true) {
+      for (const call of toolCalls) {
+        if (/"provider":"pipedream"|"allow_legacy_pipedream":true/.test(call.input ?? '')) {
           throw new Error('agent attempted the legacy Pipedream provider');
         }
       }
-      for (const part of addCalls) {
-        const input = part?.state?.input ?? part?.input ?? {};
-        if (input?.provider !== undefined && input.provider !== 'composio') {
-          throw new Error(`agent selected unexpected managed provider ${String(input.provider)}`);
+      for (const call of addCalls) {
+        const provider = /"provider":"([^"]*)"/.exec(call.input ?? '')?.[1];
+        if (provider !== undefined && provider !== 'composio') {
+          throw new Error(`agent selected unexpected managed provider ${provider}`);
         }
       }
     });
@@ -528,32 +280,38 @@ flow(
   },
 );
 
-// ─── RUN-1: create an OpenCode conversation through the proxy ─────────────────
-// POST /p/<sbx>/8000/session → { id }.  (proxy path is not a manifest route)
-flow(
+// ─── RUN-1: a ready session names its runtime conversation ────────────────────
+harnessFlow(
   'RUN-1',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
     timeoutMs: 660_000,
-    // Only manifest-real routes are declared; the /p/<sbx>/8000/* proxy
-    // catch-all is exercised at runtime but is not a coverage target.
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    await ctx.step('POST /p/<sbx>/8000/session → 200 {id}', async () => {
-      const ocId = await createOcConversation(ctx, sandboxId);
-      ctx.track('opencode-session', ocId, { sandboxId });
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    await ctx.step('the ready session names the root conversation its runtime serves', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId', {
+          params: { projectId: session.projectId, sessionId: session.sessionId },
+        });
+      r.status(200).body().has('$.session_id', session.sessionId);
+      const root = r.json<any>()?.opencode_session_id;
+      if (typeof root !== 'string' || !root) {
+        throw new Error(`a ready ${harness} session names no root conversation: ${r.text()}`);
+      }
     });
   },
 );
 
-// ─── RUN-2: async prompt → 204 (agent runs in background) ─────────────────────
-flow(
+// ─── RUN-2: a prompt is accepted durably, then delivered ──────────────────────
+harnessFlow(
   'RUN-2',
   {
     domain: 'agent-run',
@@ -562,27 +320,44 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('POST .../session/<ocId>/prompt_async → 204', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Reply with the single word: pong' }],
-        });
-      r.status([200, 202, 204]);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const marker = `RUN2_PONG_${Date.now()}`;
+    let promptId = '';
+    await ctx.step('POST .../prompts → 202 with a durable prompt id', async () => {
+      promptId = await sendPrompt(ctx, projectId, sessionId, echo(marker));
+    });
+    await ctx.step('the runtime consumes the prompt: the inbox drops it and the transcript holds it', async () => {
+      await waitFor(
+        async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: { projectId, sessionId } });
+          r.status(200);
+          const mine = (r.json<any>().prompts ?? []).find((p: any) => p.prompt_id === promptId);
+          if (mine?.state === 'failed') throw new Error(`prompt delivery failed: ${JSON.stringify(mine)}`);
+          return mine ? null : await readTranscript(ctx, projectId, sessionId);
+        },
+        {
+          until: (transcript) =>
+            Boolean(transcript?.messages.some((m) => m.role === 'user' && m.text.includes(marker))),
+          timeoutMs: 180_000,
+          intervalMs: 3_000,
+          description: `prompt ${promptId} consumed into the transcript`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
     });
   },
 );
 
-// ─── RUN-3: SSE event stream shows message/part deltas after a prompt ─────────
-// We don't keep an SSE connection open (the client buffers the full body); we
-// assert structural progress instead via RUN-6 message listing in RUN-3 too:
-// after prompting, a message/part must appear within N seconds.
-flow(
+// ─── RUN-3: the session event stream carries the reply as it is written ───────
+harnessFlow(
   'RUN-3',
   {
     domain: 'agent-run',
@@ -591,213 +366,232 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/events',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('prompt the agent', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Reply with a short greeting.' }],
-        });
-      r.status([200, 202, 204]);
-    });
-    await ctx.step('a message/part appears in the conversation within ~3min', async () => {
-      // A user message and empty assistant placeholder appear immediately.
-      // Require an assistant part (or an explicit assistant error) so this
-      // proves execution progressed beyond request acceptance.
-      await waitForAssistantOutput(ctx, sandboxId, ocId, 180_000);
-    });
-  },
-);
-
-// ─── RUN-4: busy/idle status read ────────────────────────────────────────────
-// GET .../session/<ocId> → status.type ∈ busy|retry ⇒ busy (idle otherwise).
-flow(
-  'RUN-4',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
-    routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-    ],
-  },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('kick off a run, then observe busy state', async () => {
-      await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-        parts: [{ type: 'text', text: 'Count slowly to ten in words.' }],
-      });
-      // Race the model: the session should report busy/retry at some point soon
-      // after a prompt. If we miss the window (fast model) it's idle — both are
-      // valid structural states, so we assert the field is present + readable.
-      const observed = await waitFor(
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const marker = `RUN3_STREAM_${Date.now()}`;
+    await ctx.step('GET .../events streams the reply text and the turn state after a prompt', async () => {
+      const frames = await watchSessionEvents(
+        ctx,
+        projectId,
+        sessionId,
         async () => {
-          const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}`));
-          return r.statusCode === 200 ? r.json<any>() : null;
+          await sendPrompt(ctx, projectId, sessionId, echo(marker));
         },
-        {
-          until: (s) => Boolean(s?.status?.type) || Boolean(s?.id),
-          timeoutMs: 120_000,
-          intervalMs: 2_000,
-          description: `readable status for OpenCode session ${ocId}`,
+        (seen) => {
+          const text = streamedText(seen);
+          return (
+            seen.some((frame) => frame.event === 'kortix.control.turn') &&
+            (text.deltas.includes(marker) || text.texts.some((t) => t.includes(marker)))
+          );
         },
       );
-      if (observed?.status?.type) {
-        const busy = observed.status.type === 'busy' || observed.status.type === 'retry';
-        // Either busy (still running) or a terminal/idle state — both legal.
-        void busy;
+      if (!frames.some((frame) => frame.event.startsWith('message.'))) {
+        throw new Error('the stream carried the reply but no message.* runtime frame');
       }
     });
   },
 );
 
-// ─── RUN-5: abort a running agent ─────────────────────────────────────────────
-flow(
+// ─── RUN-4: busy → idle, read from the lifecycle authority ────────────────────
+harnessFlow(
+  'RUN-4',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 660_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+    ],
+  },
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    let before: string | undefined;
+    await ctx.step('GET .../turn → idle once the boot prompt has ended', async () => {
+      before = (await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length === 0, 'an idle session'))
+        .last_ended?.turn_token;
+    });
+    await ctx.step('a prompt makes GET .../turn report a running turn', async () => {
+      await sendPrompt(ctx, projectId, sessionId, 'Count from one to thirty in words, one number per line.');
+      await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length > 0, 'a running turn', 120_000);
+    });
+    await ctx.step('the turn ends: no running turn, and last_ended names a completed turn', async () => {
+      const ended = await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the turn to end');
+      if (ended.last_ended?.end_reason !== 'completed') {
+        throw new Error(`the turn ended as ${String(ended.last_ended?.end_reason)}, not completed`);
+      }
+    });
+  },
+);
+
+// ─── RUN-5: Stop ends a running turn ──────────────────────────────────────────
+harnessFlow(
   'RUN-5',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('start a long run', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Write a very long essay about the sea.' }],
-        });
-      r.status([200, 202, 204]);
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    let before: string | undefined;
+    const marker = `RUN5_SEA_${Date.now()}`;
+    await ctx.step('a long turn is running', async () => {
+      before = (await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length === 0, 'an idle session'))
+        .last_ended?.turn_token;
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Start with the line ${marker}, then write a very long (2000+ word) essay about the sea. Do not stop early.`,
+      );
+      await waitForTurn(
+        ctx,
+        projectId,
+        sessionId,
+        (t) => t.turns.some((turn) => turn.state === 'active'),
+        'the long turn to become active',
+        120_000,
+      );
     });
-    await ctx.step('abort → 200/204', async () => {
-      // Give the run a moment to actually start before aborting.
-      await sleep(2_000);
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/abort`), {});
-      r.status([200, 204]);
+    await ctx.step('Stop (the runtime abort the web sends) → 200/204', async () => {
+      await abortTurn(ctx, session);
+    });
+    await ctx.step('the turn ends within 60s and its reply is finalized', async () => {
+      await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the aborted turn to end', 60_000);
+      const transcript = await readTranscript(ctx, projectId, sessionId);
+      const prompt = transcript.messages.findIndex((m) => m.role === 'user' && m.text.includes(marker));
+      const replies = transcript.messages.slice(prompt + 1).filter((m) => m.role === 'assistant');
+      if (prompt < 0 || replies.length === 0) {
+        throw new Error('the aborted prompt or its assistant message is missing from the transcript');
+      }
+      const last = replies[replies.length - 1]!;
+      if (!last.completed) throw new Error(`the aborted reply was never finalized: ${JSON.stringify(last)}`);
     });
   },
 );
 
-// ─── RUN-6: list / get messages (results) ────────────────────────────────────
-flow(
+// ─── RUN-6: the transcript returns the turn's messages ────────────────────────
+harnessFlow(
   'RUN-6',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-      parts: [{ type: 'text', text: 'Reply with one short sentence.' }],
-    });
-
-    let firstMessageId = '';
-    await ctx.step('list messages → 200 array (eventually non-empty)', async () => {
-      const msgs = await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (m) => Array.isArray(m) && m.length > 0,
-          timeoutMs: 180_000,
-          intervalMs: 4_000,
-          description: `messages list non-empty for ${ocId}`,
-        },
-      );
-      const first = msgs[0];
-      firstMessageId = first?.info?.id ?? first?.id ?? '';
-    });
-    await ctx.step('get a single message by id → 200', async () => {
-      if (!firstMessageId) ctx.skip('no message id surfaced to fetch individually');
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/session/${ocId}/message/${firstMessageId}`));
-      r.status(200);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const marker = `RUN6_RESULT_${Date.now()}`;
+    await sendPrompt(ctx, projectId, sessionId, echo(marker));
+    await ctx.step('GET .../transcript → the prompt, then a completed reply with the marker', async () => {
+      await waitForAssistantText(ctx, projectId, sessionId, marker);
+      const transcript = await waitFor(() => readTranscript(ctx, projectId, sessionId), {
+        until: (t) =>
+          t.messages.some((m) => m.role === 'assistant' && m.text.includes(marker) && Boolean(m.completed)),
+        timeoutMs: 60_000,
+        intervalMs: 2_000,
+        description: 'the reply to be completed',
+        retryOnError: isKe2eRetryableError,
+      });
+      if (!transcript.available || transcript.source !== 'live') {
+        throw new Error(`a running session must answer live, got ${transcript.source} (${transcript.reason})`);
+      }
+      const prompt = transcript.messages.findIndex((m) => m.role === 'user' && m.text.includes(marker));
+      const reply = transcript.messages.findIndex((m) => m.role === 'assistant' && m.text.includes(marker));
+      if (prompt < 0 || reply < prompt) {
+        throw new Error(`the reply (index ${reply}) does not follow its prompt (index ${prompt})`);
+      }
+      for (const m of transcript.messages) {
+        if (!m.id || !m.role || !m.created) throw new Error(`a transcript row lacks id/role/created: ${JSON.stringify(m)}`);
+      }
     });
   },
 );
 
-// ─── RUN-7: working-tree diff; agent commits land on branch <sessionId> ───────
-flow(
+// ─── RUN-7: an agent change lands on branch <sessionId> ───────────────────────
+harnessFlow(
   'RUN-7',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 480_000,
+    timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      // The durable truth (commits on branch <sessionId>) is observed via the
-      // project git API — a manifest-real route.
-      'GET /v1/projects/:projectId/commits',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
+      'GET /v1/projects/:projectId/files/content',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx);
-    await ctx.step('ask the agent to create + commit a file', async () => {
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const path = `ke2e-run7-${Date.now()}.md`;
+    const content = `ke2e-run7-${crypto.randomUUID()}`;
+    const done = `RUN7_DONE_${Date.now()}`;
+    await ctx.step('the agent writes the requested file in the workspace', async () => {
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Create the file ${path} containing exactly this single line: ${content}. Use the file-writing tool; do not describe the change. Do not commit. Then reply with exactly: ${done}`,
+      );
+      await waitForAssistantText(ctx, projectId, sessionId, done);
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
+    });
+    await ctx.step('POST .../commit-push → 200 pushed', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          ocPath(sandboxId, `/session/${await createOcConversation(ctx, sandboxId)}/prompt_async`),
-          {
-            parts: [
-              {
-                type: 'text',
-                text: "Create a file named KE2E.md with the text 'hello' and commit it.",
-              },
-            ],
-          },
+          '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+          { message: 'ke2e RUN-7 agent change' },
+          { params: { projectId, sessionId } },
         );
-      r.status([200, 202, 204]);
+      r.status(200).body().has('$.pushed', true);
     });
-    await ctx.step('working-tree diff endpoint is reachable → 200', async () => {
-      // We don't assert specific diff content (LLM-driven); only that the
-      // OpenCode diff endpoint responds structurally.
-      const conv = await createOcConversation(ctx, sandboxId);
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${conv}/diff`));
-      r.status([200, 204]);
-    });
-    await ctx.step('commits eventually land on branch <sessionId>', async () => {
-      // Structural: poll the git commit log for the session branch and assert it
-      // is readable (the branch exists once the session pushed). We don't require
-      // a specific commit count since timing of the agent commit is LLM-bound.
-      await waitFor(
-        async () => {
-          const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/commits', {
-            params: { projectId },
-            query: { ref: sessionId },
-          });
-          return r.statusCode;
-        },
+    await ctx.step('the project API reads the file on branch <sessionId>', async () => {
+      const file = await waitFor(
+        async () =>
+          ctx.client
+            .as(ctx.P.OWNER)
+            .get('/v1/projects/:projectId/files/content', {
+              params: { projectId },
+              query: { path, ref: sessionId },
+            }),
         {
-          until: (code) => code === 200,
+          until: (r) => r.statusCode === 200,
           timeoutMs: 120_000,
           intervalMs: 5_000,
-          description: `commits readable on branch ${sessionId}`,
+          description: `${path} on branch ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
         },
       );
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
     });
   },
 );
@@ -805,12 +599,13 @@ flow(
 // ─── RUN-8: proxy authz — no token → 401; share-token → scoped 200 ───────────
 // The 401 boundary is on the proxy catch-all (not a manifest route). The
 // /v1/p/share mount IS manifest-real and is what mints a scoped preview token.
+// One harness: the proxy authenticates before any request reaches a runtime.
 flow(
   'RUN-8',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -820,24 +615,16 @@ flow(
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
+    const { sandboxId } = await bootSession(ctx, 'opencode');
     await ctx.step('proxy request with NO token/cookie → 401', async () => {
-      // Auth is enforced at the proxy before forwarding, so this is 401
-      // regardless of OpenCode readiness.
-      const r = await ctx.client.as(ctx.P.ANON).get(ocPath(sandboxId, '/app'));
+      const r = await ctx.client.as(ctx.P.ANON).get(runtimePath(sandboxId, '/kortix/health'));
       r.status(401);
     });
-
-    // /v1/p/share requires the sandbox runtime ready (503 "opencode starting"
-    // otherwise). Block on OpenCode readiness before minting the share token.
-    await createOcConversation(ctx, sandboxId);
 
     // The mint proxies to the sandbox daemon's /kortix/share. A daemon without
     // share routes answers its /kortix catch-all 404, which the API reports as
     // 501 — so we assert the platform endpoint responds and extract a token if
-    // present, without failing the auth-boundary flow when the daemon doesn't
-    // implement share. (Core coverage here is the 401 boundary + the
-    // /v1/p/share mount.)
+    // present. (Core coverage here is the 401 boundary + the /v1/p/share mount.)
     let shareToken = '';
     await ctx.step('mint a scoped preview share token (endpoint responds)', async () => {
       const r = await ctx.client
@@ -850,8 +637,8 @@ flow(
       await ctx.step('the share token grants scoped proxy access → 200', async () => {
         const r = await ctx.client
           .as({ label: 'share', auth: { mode: 'query-token', token: shareToken } })
-          .get(ocPath(sandboxId, '/app'));
-        r.status([200, 204, 404]); // 404 = path-not-served-by-OpenCode but auth passed
+          .get(runtimePath(sandboxId, '/kortix/health'));
+        r.status([200, 204, 404]); // 404 = path not served, but auth passed
       });
       await ctx.step('revoke the share token → 200', async () => {
         const r = await ctx.client.as(ctx.P.OWNER).del('/v1/p/share/:token', {
@@ -980,21 +767,21 @@ flow(
   },
 );
 
-// ─── SESS-9: restart → 202; re-provisions with rotated tokens; branch preserved
-flow(
+// ─── SESS-9: restart → 202; re-provisions on the same harness ─────────────────
+harnessFlow(
   'SESS-9',
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'POST /v1/projects/:projectId/sessions/:sessionId/restart',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId } = await bootSandbox(ctx);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
     await ctx.step('restart → 202 status provisioning', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/sessions/:sessionId/restart',
@@ -1005,28 +792,28 @@ flow(
       );
       r.status(202).body().has('$.status', 'provisioning');
     });
-    await ctx.step('sandbox re-provisions back to active (branch preserved)', async () => {
-      await waitForSessionReady(ctx, projectId, sessionId);
+    await ctx.step(`the sandbox re-provisions back to a ready ${harness} runtime`, async () => {
+      const started = await waitForSessionReady(ctx, projectId, sessionId);
+      await assertRuntimeHarness(ctx, sandboxIdOf(started), harness);
     });
   },
 );
 
 // ─── SESS-12: manual stop → 200 status stopped; resumable via /start ──────────
-flow(
+harnessFlow(
   'SESS-12',
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'POST /v1/projects/:projectId/sessions/:sessionId/stop',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId } = await bootSandbox(ctx);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
     await ctx.step('stop → 200 status stopped', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/sessions/:sessionId/stop',
@@ -1047,8 +834,9 @@ flow(
       );
       r.status(409);
     });
-    await ctx.step('start resumes the stopped sandbox (disk preserved)', async () => {
-      await waitForSessionReady(ctx, projectId, sessionId);
+    await ctx.step(`start resumes the stopped sandbox on ${harness} (disk preserved)`, async () => {
+      const started = await waitForSessionReady(ctx, projectId, sessionId);
+      await assertRuntimeHarness(ctx, sandboxIdOf(started), harness);
     });
   },
 );
@@ -1105,7 +893,7 @@ flow(
     // A booted session pushes a branch named <sessionId>; diffing it against main
     // exercises a REAL two-ref diff. (version-diff itself only needs `read`, but
     // we gate the whole flow so it runs where a session branch actually exists.)
-    const { projectId, sessionId } = await bootSandbox(ctx);
+    const { projectId, sessionId } = await bootSession(ctx, 'opencode');
     await ctx.step('the session branch is published to origin before diffing it', async () => {
       await waitForRemoteBranch(ctx, projectId, sessionId);
     });
@@ -1133,10 +921,11 @@ flow(
   },
 );
 
-// ─── FILE-9: live file CRUD inside the sandbox via the OpenCode file API ──────
+// ─── FILE-9: live file CRUD inside the sandbox via the daemon file API ────────
 // Through the preview proxy on :8000. Durable truth is the git repo; the sandbox
-// tree is ephemeral. The OpenCode file endpoints live under the proxy catch-all,
-// so they are driven at runtime but not declared as coverage routes.
+// tree is ephemeral. The daemon's /file routes live under the proxy catch-all,
+// so they are driven at runtime but not declared as coverage routes. They are
+// host routes, the same on every harness, so one harness proves them.
 flow(
   'FILE-9',
   {
@@ -1149,28 +938,27 @@ flow(
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx, { readinessTimeoutMs: 420_000 });
-    // The daemon file routes 503 ("opencode not ready") until OpenCode is up;
-    // block on readiness first.
-    await createOcConversation(ctx, sandboxId);
+    // `/start` answers `ready` only once the daemon reports its runtime ready,
+    // so the file routes below never meet a booting daemon.
+    const { sandboxId } = await bootSession(ctx, 'opencode', { readinessTimeoutMs: 420_000 });
     const path = `ke2e-file-${Date.now()}.txt`;
     const content = 'ke2e live file crud';
 
     await ctx.step('upload a file into the sandbox workspace → 200', async () => {
       // The daemon owns writes through multipart POST /file/upload. A raw PUT
-      // /file is not a write contract and falls through to the OpenCode SPA.
+      // /file is not a write contract and falls through to the runtime catch-all.
       const form = new FormData();
       form.append('path', '.');
       form.append('file', new File([content], path, { type: 'text/plain' }));
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .request('POST', ocPath(sandboxId, '/file/upload'), { body: form });
+        .request('POST', runtimePath(sandboxId, '/file/upload'), { body: form });
       r.status(200).body().has('$[0].size', content.length);
     });
     await ctx.step('read it back → 200 with the content', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+        .get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
       r.status(200)
         .body()
         .has('$.type', 'text')
@@ -1178,7 +966,7 @@ flow(
         .has('$.size', content.length);
     });
     await ctx.step('list the directory → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/file?path=.'));
+      const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/file?path=.'));
       r.status([200, 204]);
     });
     await ctx.step('delete it → 200', async () => {
@@ -1186,7 +974,7 @@ flow(
       // query param (routes/files.ts: `app.delete('/', … req.json().path`).
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del(ocPath(sandboxId, '/file'), { body: { path } });
+        .del(runtimePath(sandboxId, '/file'), { body: { path } });
       r.status([200, 204, 404]);
     });
   },
@@ -1207,6 +995,8 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
       'GET /v1/projects/:projectId/snapshots',
       'POST /v1/projects/:projectId/change-requests',
@@ -1259,42 +1049,23 @@ flow(
     });
     let sandboxId = '';
     await ctx.step('session sandbox boots to active', async () => {
-      const sandbox = (await waitForSessionReady(ctx, project.id, session.id)).sandbox;
-      sandboxId = String(sandbox.external_id ?? sandbox.externalId);
+      sandboxId = sandboxIdOf(await waitForSessionReady(ctx, project.id, session.id));
     });
 
     const goldenPath = `golden-e2e-${Date.now()}.md`;
     const goldenMarker = `golden-e2e-${crypto.randomUUID()}`;
+    const goldenDone = `GOLD1_DONE_${Date.now()}`;
     await ctx.step('agent writes the requested file and produces output', async () => {
-      const ocId = await createOcConversation(ctx, sandboxId);
-      await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-        parts: [
-          {
-            type: 'text',
-            text: `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change.`,
-          },
-        ],
-      });
-      await waitForAssistantOutput(ctx, sandboxId, ocId);
-      // An assistant part can precede its file-writing tool. Wait for the
-      // requested artifact, and surface terminal model errors while waiting.
-      const file = await waitFor(async () => {
-        const messages = await ctx.client.as(ctx.P.OWNER)
-          .get(ocPath(sandboxId, `/session/${ocId}/message`));
-        messages.status(200);
-        const failed = messages.json<any[]>().find((m) => m?.info?.error);
-        if (failed) throw new Error(`golden agent turn failed: ${JSON.stringify(failed.info.error)}`);
-        const result = await ctx.client.as(ctx.P.OWNER)
-          .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
-        result.status([200, 404]);
-        return result;
-      }, {
-        until: (result) => result.statusCode === 200 &&
-          new RegExp(`^${goldenMarker}\\n?$`).test(String(result.json<any>()?.content ?? '')),
-        timeoutMs: 240_000,
-        intervalMs: 2000,
-        description: 'the golden agent writes the complete requested file',
-      });
+      await sendPrompt(
+        ctx,
+        project.id,
+        session.id,
+        `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change. Then reply with exactly: ${goldenDone}`,
+      );
+      await waitForAssistantText(ctx, project.id, session.id, goldenDone);
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
       file
         .status(200)
         .body()
