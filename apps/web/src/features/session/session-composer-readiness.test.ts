@@ -60,9 +60,9 @@ describe('sessionComposerReadiness', () => {
 
   test('a parked/idle box gets an honest idle state, not a waking spinner', () => {
     const readiness = sessionComposerReadiness({ runtimeReady: false, connection: 'waking' });
-    expect(readiness.notice).toMatch(/idle/i);
+    expect(readiness.notice).toMatch(/computer is asleep/i);
     expect(readiness.notice).not.toMatch(/waking/i);
-    expect(readiness.notice).toMatch(/starts it automatically|send/i);
+    expect(readiness.notice).toMatch(/next message wakes.*delivered/i);
     expect(readiness.ready).toBe(false);
     // No retry: there is nothing to reset — the box is simply parked, and a
     // send (not a retry button) is what wakes it.

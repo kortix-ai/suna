@@ -1114,6 +1114,20 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
 	});
 
+	test("a completed answer ignores a replayed final delta after session.idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		const delta = {
+			id: "evt_final",
+			type: "message.part.delta",
+			properties: { messageID: "msg_asst", partID: "prt_1", sessionID: "ses_1", field: "text", delta: "Done" },
+		} as never;
+		store.applyEvent(delta);
+		store.applyEvent({ type: "session.idle", properties: { sessionID: "ses_1" } } as never);
+		store.applyEvent(delta);
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Done");
+	});
+
 	// F1 review finding: the event-id was recorded as "applied" BEFORE the
 	// `set()` callback even checked whether the target part existed — so a
 	// delta that hit the not-found path (e.g. the extra was dropped by the
@@ -3935,6 +3949,48 @@ describe("hydrate preserves the server's page order", () => {
 			"msg_yy",
 			"msg_aa",
 		]);
+	});
+});
+
+describe("hydrate reconciles provisional cache rows", () => {
+	test("an empty runtime page removes cached rows and their parts", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_cached"), parts: [textPart("prt_cached", "msg_cached", "draft")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", []);
+
+		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
+		expect(useSyncStore.getState().parts.msg_cached).toBeUndefined();
+	});
+
+	test("a bounded runtime tail keeps older cached history but removes a covered phantom", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_10"), parts: [textPart("prt_10", "msg_10", "history")] },
+			{ info: userMessage("msg_30"), parts: [textPart("prt_30", "msg_30", "phantom")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_20"), parts: [] }]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_10", "msg_20"]);
+		expect(useSyncStore.getState().parts.msg_10?.[0]).toMatchObject({ text: "history" });
+		expect(useSyncStore.getState().parts.msg_30).toBeUndefined();
+	});
+
+	test("a runtime row confirms a cached id while retaining longer existing text", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "cached longer text")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "runtime text")] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_20"]);
+		expect(useSyncStore.getState().parts.msg_20?.[0]).toMatchObject({ text: "cached longer text" });
 	});
 });
 

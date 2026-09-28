@@ -12,6 +12,7 @@ import {
   backfillSessionTranscriptMirrorOnWake,
   resetTranscriptBackfillMemoForTests,
 } from '../projects/lib/session-transcript-capture';
+import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
   localTestDatabaseUrl,
   removeSeeded,
@@ -44,13 +45,15 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
   try {
     accountId = await seedAccount('transcript-backfill-test');
 
-    /** A session on a project with the flag as given, pinned to ROOT. */
-    const seedSession = async (flagEnabled: boolean) => {
+    /** A session on a project with the flag as given (`default`: never set),
+     *  pinned to ROOT. */
+    const seedSession = async (flag: boolean | 'default') => {
       const project = await seedProject(
-        `backfill-${flagEnabled ? 'on' : 'off'}-${randomUUID().slice(0, 8)}`,
+        `backfill-${flag === 'default' ? 'default' : flag ? 'on' : 'off'}-${randomUUID().slice(0, 8)}`,
         {
           accountId,
-          metadata: flagEnabled ? { experimental: { session_transcript_history: true } } : {},
+          metadata:
+            flag === 'default' ? {} : { experimental: { session_transcript_history: flag } },
         },
       );
       seeded.push(project);
@@ -118,12 +121,18 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
     await backfillSessionTranscriptMirrorOnWake(pruned, deps);
     expect(await stored(pruned)).toBe(120);
 
-    // 4. FLAG OFF ⇒ THE SURFACE STAYS DARK. No read, no rows. Turn-end capture
-    //    keeps its legacy tail behaviour untouched.
+    // 4. FLAG TURNED OFF ⇒ THE SURFACE STAYS DARK. No read, no rows. Turn-end
+    //    capture keeps its legacy tail behaviour untouched.
     const off = await seedSession(false);
     await backfillSessionTranscriptMirrorOnWake(off, deps);
     expect(reads.has(off)).toBe(false);
     expect(await stored(off)).toBe(0);
+
+    // 4b. ON BY DEFAULT: a project that never set the flag keeps its history.
+    const unset = await seedSession('default');
+    await backfillSessionTranscriptMirrorOnWake(unset, deps);
+    expect(reads.get(unset)).toBe(1);
+    expect(await stored(unset)).toBe(120);
 
     // 5. AN ALREADY-WHOLE MIRROR IS LEFT ALONE — no box read on every wake
     //    forever after.
@@ -202,6 +211,102 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
     // The old root's rows are unreachable by id and must not linger beside the
     // new ones — 120, not 240.
     expect(await stored(fresh)).toBe(120);
+  } finally {
+    await removeSeeded(seeded).catch(() => {});
+    if (accountId) {
+      await db.query('DELETE FROM kortix.accounts WHERE account_id = $1', [accountId]).catch(() => {});
+    }
+    await db.end();
+  }
+});
+
+test('a history the old mirror stripped is served with what it kept, read again on wake, and a 1:1 one left alone', async () => {
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  const seeded: SeededProject[] = [];
+  let accountId = '';
+  try {
+    accountId = await seedAccount('transcript-backfill-stripped-test');
+    const project = await seedProject(`backfill-stripped-${randomUUID().slice(0, 8)}`, {
+      accountId,
+      metadata: { experimental: { session_transcript_history: true } },
+    });
+    seeded.push(project);
+    const sessionId = await seedSessionRow(project, randomUUID());
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+      sessionId,
+      ROOT,
+    ]);
+    // OpenCode titles a command with the command, and keeps its output in
+    // `metadata.output`. The old mirror kept both.
+    const call = (state: Record<string, unknown>) => ({
+      id: 'prt_call',
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call_1',
+      state: {
+        status: 'completed',
+        title: 'ls dist',
+        metadata: { output: 'app.js', exit: 0 },
+        time: { start: 1, end: 2 },
+        ...state,
+      },
+    });
+    const info = {
+      id: 'msg_000000000001',
+      sessionID: ROOT,
+      role: 'assistant',
+      time: { created: 1, completed: 2 },
+    };
+    // What the old mirror wrote: whole (`head_complete`), same root, and the
+    // tool call without its input or output.
+    await db.query(
+      `INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete)
+       SELECT $1, project_id, account_id, $2, true FROM kortix.project_sessions WHERE session_id = $1`,
+      [sessionId, ROOT],
+    );
+    await db.query(
+      `INSERT INTO kortix.session_transcript_messages
+         (session_id, message_id, opencode_session_id, role, message_created_at, message_completed_at, info, parts)
+       VALUES ($1, $2, $3, 'assistant', to_timestamp(0.001), to_timestamp(0.002), $4::jsonb, $5::jsonb)`,
+      [sessionId, info.id, ROOT, JSON.stringify(info), JSON.stringify([call({})])],
+    );
+
+    let reads = 0;
+    const deps = {
+      readMessages: async () => {
+        reads += 1;
+        return {
+          opencodeSessionId: ROOT,
+          payload: [{ info, parts: [call({ input: { command: 'ls dist' }, output: 'app.js' })] }],
+          headComplete: true,
+          complete: true,
+        };
+      },
+    };
+    const storedState = async () =>
+      (
+        await db.query(
+          'SELECT parts FROM kortix.session_transcript_messages WHERE session_id = $1 AND message_id = $2',
+          [sessionId, info.id],
+        )
+      ).rows[0].parts[0].state;
+
+    // Served with what it kept, stored as it was: every client draws the
+    // command and its output while the computer sleeps, and the wake below
+    // still finds the row stripped.
+    const served = await readSessionTranscriptMirror({ sessionId, limit: 40 });
+    expect(served?.messages[0].parts[0].state).toMatchObject({ input: { command: 'ls dist' }, output: 'app.js' });
+    expect('input' in (await storedState())).toBe(false);
+
+    await backfillSessionTranscriptMirrorOnWake(sessionId, deps);
+    expect(reads).toBe(1);
+    expect(await storedState()).toMatchObject({ input: { command: 'ls dist' }, output: 'app.js' });
+
+    // 1:1 now: the next wake has nothing to add and reads nothing.
+    resetTranscriptBackfillMemoForTests();
+    await backfillSessionTranscriptMirrorOnWake(sessionId, deps);
+    expect(reads).toBe(1);
   } finally {
     await removeSeeded(seeded).catch(() => {});
     if (accountId) {

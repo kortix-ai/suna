@@ -8,12 +8,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Config } from '../config'
-import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
-import { createOpenCodeControlService } from '../harness/open-code/control'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { KORTIX_SERVICE_CALL_HEADER } from '../kortix-user-context'
-import { createRefreshRouter } from '../routes/refresh'
+import type { Config } from '@/lib/config/config'
+import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
+import { createOpenCodeControlService } from '@/harness/open-code/control'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { createRefreshRouter } from '@/routes/kortix/refresh'
 import { commitAll, git as gitIn, initRepo, write as writeIn } from './helpers/config-release-fixtures'
 
 let root: string
@@ -72,7 +72,7 @@ describe('reboot must not reset an existing session branch', () => {
   })
 
   test('the daemon probes for the ref and only creates when it is absent', () => {
-    const SRC = readFileSync(join(import.meta.dir, '..', 'git.ts'), 'utf8')
+    const SRC = readFileSync(join(import.meta.dir, '..', 'lib', 'git', 'git.ts'), 'utf8')
     const fn = SRC.split('async function checkoutLocalSessionBranch(')[1]?.split('\n}\n')[0]
     expect(fn).toBeTruthy()
     expect(fn).toContain("'rev-parse', '--verify', '--quiet'")

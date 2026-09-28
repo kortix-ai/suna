@@ -20,7 +20,7 @@ import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
-import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
+import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
@@ -37,6 +37,10 @@ import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bin
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { DEFAULT_AGENT_SENTINEL } from '../agents';
+import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
@@ -375,15 +379,19 @@ projectsApp.openapi(
   // hides the row). `scope=project` on the LIST deliberately keeps tombstones
   // for managers; that path is untouched.
   if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-  const ownerEmail = visible.row.createdBy && !visible.isOwner
-    ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
-    : null;
+  // The same owner resolution the list uses: without it a read-by-id reported
+  // owner_type 'unknown' and no owner name for the very session the list named.
+  const owner = visible.row.createdBy
+    ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
+    : undefined;
   return c.json(serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
-    ownerEmail,
+    ownerEmail: owner?.email ?? null,
+    ownerName: owner?.name ?? null,
+    ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
   }));
 },
 );
@@ -456,6 +464,51 @@ projectsApp.openapi(
       },
       409,
     );
+  }
+
+  // Sharing takes the owner's personal keys away from the session (spec
+  // 2026-09-22 §2.3). A model that ran only on them switches to the keys shared
+  // with the whole project, or the share is refused (lib/session-model-keys.ts).
+  if (intent.mode !== 'private' && projectLlmGatewayEnabled(loaded.row.metadata)) {
+    // The session model lives in metadata, not a column (routes/session-scope.ts).
+    const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
+    const admitted = await admitSessionSharingChange({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      owner: visible.row.createdBy ?? loaded.userId,
+      freeModelsOnly: !(await accountMayUseManagedModels(loaded.row.accountId)),
+      model: typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null,
+      visibility: next.visibility,
+      mayPool:
+        resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+        !visible.ownerIsMachine &&
+        Boolean(visible.row.createdBy),
+      callerMaySelect: async (providerId, secretIds) =>
+        !(await validateProviderSecretPool({
+          accountId: loaded.row.accountId,
+          projectId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+          userId: loaded.userId,
+          providerId,
+          ids: secretIds,
+        })),
+    });
+    if (!admitted.ok) {
+      return c.json(
+        {
+          error:
+            `This session runs ${admitted.model} on keys that work only in your private sessions. ` +
+            'A shared session uses only keys shared with the whole project, and none can run this model. ' +
+            'Share a key with the whole project, or switch the session to another model, then share the session.',
+          code: 'SHARED_SESSION_NEEDS_PROJECT_KEY',
+        },
+        409,
+      );
+    }
   }
 
   await setSessionSharing(sessionId, intent);

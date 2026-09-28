@@ -81,6 +81,8 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
       suggestion: 'Add an openai API key in project settings, then retry.',
       upstreamStatus: undefined,
       requestId: 'req_abc123',
+      requestedModel: 'openai/gpt-4.1',
+      resolvedModel: 'openai/gpt-4.1',
     });
   });
 
@@ -93,6 +95,27 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.suggestion).toBe('Add an openai API key in project settings, then retry.');
     expect(details?.requestId).toBe('req_abc123');
+  });
+
+  // A resolution error (no upstream chosen yet) carries `provider: ''` — the
+  // model ids are the only way a host can tell WHICH connection is missing,
+  // e.g. a ChatGPT subscription (`codex/…`) that needs reconnecting.
+  test('carries the requested and resolved model of a resolution error with an empty provider', () => {
+    const details = extractGatewayErrorDetails(gatewayBody({
+      message: 'The selected ChatGPT connections need reconnection.',
+      code: 'provider_reauth_required',
+      provider: '',
+      requested_model: 'codex/gpt-6-sol',
+      resolved_model: 'codex/gpt-6-sol',
+      suggestion: 'Reconnect a selected ChatGPT account or select another granted connection.',
+      error: undefined,
+    }));
+    expect(details).toMatchObject({
+      code: 'provider_reauth_required',
+      requestedModel: 'codex/gpt-6-sol',
+      resolvedModel: 'codex/gpt-6-sol',
+    });
+    expect(details?.provider).toBeUndefined();
   });
 
   test('carries upstream_status as a number when present', () => {

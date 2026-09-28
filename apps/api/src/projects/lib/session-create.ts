@@ -109,6 +109,7 @@ export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   return c.json(error.body, error.status as any);
 }
 
+/** The fields postgres.js attaches to a `Failed query:` error (pg error codes). */
 type PostgresErrorFields = {
   code?: string;
   constraint?: string;
@@ -963,11 +964,19 @@ export async function createProjectSession(input: {
   try {
     sessionRow = await insertSessionAndBindings(parsedRuntimeContext.context, validatedConnectorBindings.bindings);
   } catch (error) {
+    // Besides a randomUUID() collision on the PK / (project_id, branch_name)
+    // unique index, `sandbox_provider` is an ENUM: a provider this env enables
+    // but the target DB's type is missing fails here with 22P02, not upstream —
+    // resolveSessionProvider validates against config, never against the DB.
+    // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
+    // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
     if (error instanceof HTTPException && error.status < 500) {
       return { error: { status: error.status, body: await error.getResponse().json() } };
     }
+    // Never return `(error as Error).message`: postgres.js embeds the whole
+    // statement and its parameters in it (see `resolveSessionInsertFailure`).
     return { error: resolveSessionInsertFailure(error) };
   }
 

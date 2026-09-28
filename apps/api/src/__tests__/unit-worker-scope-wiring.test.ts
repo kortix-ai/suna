@@ -26,7 +26,7 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 const WORKERS: Record<string, string> = {
   'active-turn-renewal': 'projects/active-turn-renewal.ts',
   'project-maintenance': 'projects/maintenance.ts',
-  'trigger-scheduler': 'projects/lib/triggers.ts',
+  'trigger-scheduler': 'projects/lib/trigger-scheduler.ts',
   'startup-prebuild': 'snapshots/builder.ts',
   'suna-migration': 'projects/suna-migration/suna-migration-worker.ts',
   'provider-transition': 'projects/provider-transition/provider-transition-worker.ts',
@@ -49,7 +49,7 @@ const WORKERS: Record<string, string> = {
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
 const NOT_WORKERS: Record<string, string> = {
-  'apps/public-proxy.ts': 'stamps app activity while one proxied request streams; runs inside that request',
+  'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
   'index.ts': 'measures event-loop lag',

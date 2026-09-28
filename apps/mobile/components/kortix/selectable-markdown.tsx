@@ -246,7 +246,7 @@ const createMarkdownRules = (isDark: boolean) => {
       </RNText>
     ),
     textgroup: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.textgroup} selectable>
+      <RNText key={node.key} style={styles.textgroup}>
         {children}
       </RNText>
     ),
@@ -275,7 +275,6 @@ const createMarkdownRules = (isDark: boolean) => {
       <RNText
         key={node.key}
         style={styles.link}
-        selectable
         accessibilityRole="link"
         onPress={() => openExternalLink(node.attributes?.href)}
       >
