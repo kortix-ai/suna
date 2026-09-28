@@ -204,6 +204,33 @@ interface PlatinumTemplate {
   id: string;
   name?: string;
   state?: string;
+  /** Echoed by /from-build since Platinum #1326; absent on an older API. */
+  kernel_modules?: string;
+}
+
+/**
+ * kortix.yaml `container_runtime: true` → Platinum `kernel_modules: "container"`
+ * on /v1/templates/from-build: the rootfs gets the full guest kernel module
+ * tree, so dockerd can use bridge + overlay + netfilter. An API older than the
+ * field strips it and builds a template dockerd cannot use; `verify` turns the
+ * missing echo into a deterministic (non-retryable) build failure.
+ */
+export function fromBuildKernelModules(input: Pick<BuildableTemplate, 'snapshotName' | 'containerRuntime'>): {
+  body: { kernel_modules?: 'container' };
+  verify: (registered: PlatinumTemplate) => void;
+} {
+  if (!input.containerRuntime) return { body: {}, verify: () => {} };
+  return {
+    body: { kernel_modules: 'container' },
+    verify: (registered) => {
+      if (registered.kernel_modules === 'container') return;
+      throw new Error(
+        `Platinum template ${input.snapshotName}: container_runtime needs a Platinum API that accepts ` +
+          'kernel_modules on /v1/templates/from-build, and this one did not confirm it. ' +
+          'Upgrade Platinum, or remove container_runtime from the sandbox template.',
+      );
+    },
+  };
 }
 
 /**
@@ -633,6 +660,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       runtimeProfile: input.runtimeProfile,
       appContext: input.appContext,
       isShared: input.isShared,
+      containerRuntime: input.containerRuntime,
     });
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
@@ -659,6 +687,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       );
 
       const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
+      const kernelModules = fromBuildKernelModules(input);
 
       const registered = await this.client.json<PlatinumTemplate>('/v1/templates/from-build', {
         method: 'POST',
@@ -682,11 +711,19 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
+          ...kernelModules.body,
         }),
       });
       // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
       // poll THAT id (never the truncated name list) — see waitForActive.
       const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
+      try {
+        kernelModules.verify(registered);
+      } catch (err) {
+        // Do not let the old API finish a build that cannot run Docker.
+        await this.client.json(`/v1/templates/${externalId}`, { method: 'DELETE' }).catch(() => {});
+        throw err;
+      }
       await waitForActive(input.snapshotName, tap, externalId, this.client);
       // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
       // runner) — no name-list re-derivation downstream.

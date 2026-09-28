@@ -216,6 +216,7 @@ sandbox:
 | `cpu`        | int    | provider default    | vCPU cores. Bound: 1–32.                                                          |
 | `memory`     | int    | provider default    | RAM in GiB. Bound: 1–128.                                                         |
 | `disk`       | int    | provider default    | Disk in GiB. Bound: 1–500.                                                        |
+| `container_runtime` | bool | `false`       | Run Docker in the sandbox with bridge + overlay networking. See [Runtime](/docs/work/runtime#docker-in-the-sandbox). |
 
 Each value must be a positive integer. A value below the minimum fails validation with an error. A value above the maximum passes with a warning, then clamps at runtime. GPUs are not supported — declaring `gpu` produces a warning, not an error. See [Runtime](/docs/work/runtime) for what the runtime layer injects on top of your image.
 
@@ -250,7 +251,7 @@ Session template resolution uses this order:
 
 Cron triggers, webhook triggers, schedules, and channels use the selected agent's template.
 
-A spec change (`cpu`, `memory`, `disk`, or the image itself) rebuilds the project's snapshot. The new size applies on the next session, not a running one.
+A spec change (`cpu`, `memory`, `disk`, `container_runtime`, or the image itself) rebuilds the project's snapshot. The new size applies on the next session, not a running one.
 
 ## `opencode:`
 

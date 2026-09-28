@@ -321,6 +321,34 @@ The spec is part of the template's snapshot, not a per-session setting. Changing
 
 The default spec costs about $0.10 per hour on Daytona, the default sandbox provider. The same spec on Platinum or E2B costs about twice as much, because the Daytona rate includes a volume discount the other providers don't. Kortix meters this cost only for Team accounts; free and self-hosted plans aren't billed for it.
 
+### Docker in the sandbox
+
+Set `container_runtime: true` on a template to run Docker inside its sandboxes: bridge and user-defined networks, the `overlayfs` storage driver, and NAT egress. Local stacks such as `supabase start` and `docker compose` work as they do on a laptop.
+
+```yaml
+sandbox:
+  templates:
+    - slug: dev
+      dockerfile: .kortix/Dockerfile.dev
+      container_runtime: true
+```
+
+Your Dockerfile installs Docker (for example `curl -fsSL https://get.docker.com | sh`). The runtime layer then:
+
+- installs `kmod`, so the guest kernel can load bridge, overlay, and netfilter modules on demand;
+- adds the `kortix` user to the `docker` group;
+- starts `dockerd` as root at boot. Its log is `/var/log/dockerd.log`.
+
+If `dockerd` stops, restart it with `sudo dockerd >/var/log/dockerd.log 2>&1 &`.
+
+| Provider | Behavior |
+| -------- | -------- |
+| Platinum | Bakes the guest kernel's full module tree into the template (`kernel_modules: container`). The build fails with a clear error on a Platinum API that does not confirm the profile. |
+| Daytona  | Runs nested Docker without a module profile. |
+| E2B      | Not supported. The build fails with `container_runtime is not supported on E2B`. |
+
+Without `container_runtime`, a Platinum sandbox has only the transport kernel modules. `dockerd` then fails with `iptables: Failed to initialize nft: Protocol not supported`.
+
 ### Ports and preview URLs
 
 The daemon listens on port `8000` and proxies any other port your app uses inside the sandbox. Only port `8000` itself is blocked from the proxy.
@@ -336,6 +364,6 @@ A session's preview can also be shared through a public link, in view-only or in
 
 ### Snapshot rebuilds
 
-Kortix content-addresses each snapshot: it hashes your Dockerfile's bytes, the hardware spec, and the platform's own runtime version. An unchanged hash reuses the existing snapshot. A changed hash triggers a rebuild, shown as "preparing image" on the first session that needs it; later sessions reuse that build.
+Kortix content-addresses each snapshot: it hashes your Dockerfile's bytes, the hardware spec, `container_runtime`, and the platform's own runtime version. An unchanged hash reuses the existing snapshot. A changed hash triggers a rebuild, shown as "preparing image" on the first session that needs it; later sessions reuse that build.
 
 Editing the Dockerfile inside a session takes effect on the next session, not the current one. The edit reaches `main` only once its [change request](/docs/work/change-requests) merges.

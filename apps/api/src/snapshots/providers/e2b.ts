@@ -82,6 +82,9 @@ class E2BAdapter implements SandboxProviderAdapter {
     if (!input.image && !input.userDockerfile) {
       throw new Error('E2BAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
+    if (input.containerRuntime) {
+      throw new Error(`E2B template ${input.snapshotName}: container_runtime is not supported on E2B.`);
+    }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     const context = await stageRuntimeBuildContext({
       snapshotName: input.snapshotName,
