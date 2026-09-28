@@ -74,7 +74,7 @@ afterEach(async () => {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function reservePort(): number {
-  const server = Bun.serve({ port: 0, fetch: () => new Response('reserved') })
+  const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('reserved') })
   const port = server.port
   server.stop(true)
   if (typeof port !== 'number') throw new Error('Bun did not assign a port')
