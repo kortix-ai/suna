@@ -6,8 +6,9 @@
 
 import type { FilmDef } from './engine/film';
 import { launchFilm } from './films/launch';
-import { rentVsOwnFilm } from './films/rent-vs-own';
+import { rentVsOwnFilm, rentVsOwnVerticalFilm } from './films/rent-vs-own';
+import { sovereignFilm } from './films/sovereign';
 
-export const FILMS: readonly FilmDef[] = [launchFilm, rentVsOwnFilm];
+export const FILMS: readonly FilmDef[] = [sovereignFilm, launchFilm, rentVsOwnFilm, rentVsOwnVerticalFilm];
 
 export const findFilm = (slug: string) => FILMS.find((f) => f.slug === slug);
