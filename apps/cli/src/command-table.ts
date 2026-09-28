@@ -275,10 +275,6 @@ export const TIERS: readonly CommandTier[] = [
       {
         title: '',
         commands: [
-          {
-            name: 'mcp',
-            blurb: 'Serve every command below as an MCP server (stdio) for Claude, Cursor, Codex',
-          },
           { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
           { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
           { name: 'help', blurb: 'Show this help' },

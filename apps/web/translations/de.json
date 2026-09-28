@@ -19183,7 +19183,10 @@
       "text5176d59f25fd": "Config-Release der Sitzung aufgelöst",
       "text273c48dbf3b9": "Gerät für Push-Benachrichtigungen registriert",
       "textbb666ddf7a57": "Gerät für Push-Benachrichtigungen entfernt",
-      "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet"
+      "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet",
+      "text3ec6c235548a": "MCP-Server-Metadaten gelesen",
+      "text7740934de920": "OAuth-Client registriert",
+      "textcd36423ea12a": "MCP-Server aufgerufen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20304,16 +20307,22 @@
   },
   "connectMcp": {
     "title": "Kortix über MCP verbinden",
-    "description": "Gib Claude Code, Codex, Cursor oder jedem MCP-Client die gesamte Kortix-CLI als Tools: Projekte, Sessions, Secrets, Connectors, Trigger und mehr.",
-    "install": "CLI installieren",
-    "signIn": "Anmelden",
-    "signInHint": "Der MCP-Server handelt mit dieser Anmeldung. Auf einem Rechner ohne Browser setze stattdessen KORTIX_TOKEN in der Server-Umgebung.",
+    "description": "Füge diese URL in Claude, ChatGPT, Cursor, Codex oder einem anderen MCP-Client hinzu. Beim ersten Mal fragt der Client nach deiner Kortix-Anmeldung. Keine Installation nötig.",
+    "urlLabel": "MCP-URL",
     "addToClient": "Zum Client hinzufügen",
     "other": "Andere",
-    "otherHint": "Claude Desktop, VS Code, Windsurf und andere Clients nehmen dieses JSON in ihren MCP-Einstellungen.",
+    "claudeSteps": "Öffne in Claude (Web oder Desktop) Einstellungen → Connectors → Eigenen Connector hinzufügen, füge die URL ein und melde dich an.",
+    "claudeCodeHint": "Führe dann /mcp in Claude Code aus und melde dich an.",
+    "otherHint": "ChatGPT (Entwicklermodus), VS Code, Windsurf und andere Clients: Füge einen Remote-MCP-Server mit der URL oben hinzu oder nutze dieses JSON.",
     "addToCursor": "Zu Cursor hinzufügen",
+    "signInOnFirstUse": "Cursor fragt beim ersten Aufruf nach deiner Kortix-Anmeldung.",
     "docs": "Doku",
     "done": "Fertig",
     "copy": "Kopieren"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Nicht verifizierte App",
+    "unverifiedBody": "{client} hat sich selbst bei Kortix registriert. Kortix hat nicht geprüft, wer sie betreibt. Erlaube den Zugriff nur, wenn du sie gerade selbst verbindest.",
+    "redirectsTo": "Leitet dich zurück zu"
   }
 }

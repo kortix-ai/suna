@@ -19183,7 +19183,10 @@
       "text5176d59f25fd": "Release di configurazione della sessione risolta",
       "text273c48dbf3b9": "Dispositivo per notifiche push registrato",
       "textbb666ddf7a57": "Dispositivo per notifiche push rimosso",
-      "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata"
+      "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata",
+      "text3ec6c235548a": "Metadati del server MCP letti",
+      "text7740934de920": "Client OAuth registrato",
+      "textcd36423ea12a": "Server MCP chiamato"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20304,16 +20307,22 @@
   },
   "connectMcp": {
     "title": "Connetti Kortix tramite MCP",
-    "description": "Dai a Claude Code, Codex, Cursor o a qualsiasi client MCP l'intera CLI di Kortix come strumenti: progetti, sessioni, segreti, connettori, trigger e altro.",
-    "install": "Installa la CLI",
-    "signIn": "Accedi",
-    "signInHint": "Il server MCP agisce con questo accesso. Su una macchina senza browser, imposta invece KORTIX_TOKEN nell'ambiente del server.",
+    "description": "Aggiungi questo URL a Claude, ChatGPT, Cursor, Codex o a qualsiasi client MCP. La prima volta il client ti chiede di accedere a Kortix. Niente da installare.",
+    "urlLabel": "URL MCP",
     "addToClient": "Aggiungilo al tuo client",
     "other": "Altro",
-    "otherHint": "Claude Desktop, VS Code, Windsurf e altri client accettano questo JSON nelle impostazioni MCP.",
+    "claudeSteps": "In Claude (web o desktop), apri Impostazioni → Connettori → Aggiungi connettore personalizzato, incolla l’URL e accedi.",
+    "claudeCodeHint": "Poi esegui /mcp in Claude Code e accedi.",
+    "otherHint": "ChatGPT (modalità sviluppatore), VS Code, Windsurf e altri client: aggiungi un server MCP remoto con l’URL qui sopra, oppure questo JSON.",
     "addToCursor": "Aggiungi a Cursor",
+    "signInOnFirstUse": "Cursor ti chiede di accedere a Kortix al primo utilizzo.",
     "docs": "Documentazione",
     "done": "Fatto",
     "copy": "Copia"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "App non verificata",
+    "unverifiedBody": "{client} si è registrata da sola su Kortix. Kortix non ha verificato chi la gestisce. Consentila solo se la stai collegando tu in questo momento.",
+    "redirectsTo": "Ti rimanda a"
   }
 }

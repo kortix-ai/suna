@@ -19183,7 +19183,10 @@
       "text5176d59f25fd": "已解析会话配置发布",
       "text273c48dbf3b9": "已注册推送通知设备",
       "textbb666ddf7a57": "已移除推送通知设备",
-      "text397ab5aecbbf": "已转发会话权限请求"
+      "text397ab5aecbbf": "已转发会话权限请求",
+      "text3ec6c235548a": "读取了 MCP 服务器元数据",
+      "text7740934de920": "注册了 OAuth 客户端",
+      "textcd36423ea12a": "调用了 MCP 服务器"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20304,16 +20307,22 @@
   },
   "connectMcp": {
     "title": "通过 MCP 连接 Kortix",
-    "description": "将整个 Kortix CLI 作为工具提供给 Claude Code、Codex、Cursor 或任何 MCP 客户端：项目、会话、密钥、连接器、触发器等。",
-    "install": "安装 CLI",
-    "signIn": "登录",
-    "signInHint": "MCP 服务器以此登录身份运行。在没有浏览器的机器上，请改为在服务器环境中设置 KORTIX_TOKEN。",
+    "description": "将此 URL 添加到 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端。首次使用时，客户端会请你登录 Kortix。无需安装。",
+    "urlLabel": "MCP URL",
     "addToClient": "添加到你的客户端",
     "other": "其他",
-    "otherHint": "Claude Desktop、VS Code、Windsurf 等客户端在其 MCP 设置中使用此 JSON。",
+    "claudeSteps": "在 Claude（网页版或桌面版）中打开 设置 → 连接器 → 添加自定义连接器，粘贴 URL 并登录。",
+    "claudeCodeHint": "然后在 Claude Code 中运行 /mcp 并登录。",
+    "otherHint": "ChatGPT（开发者模式）、VS Code、Windsurf 等客户端：使用上方 URL 添加远程 MCP 服务器，或使用此 JSON。",
     "addToCursor": "添加到 Cursor",
+    "signInOnFirstUse": "首次使用时，Cursor 会请你登录 Kortix。",
     "docs": "文档",
     "done": "完成",
     "copy": "复制"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "未验证的应用",
+    "unverifiedBody": "{client} 自行在 Kortix 注册。Kortix 尚未验证其运营方。仅当你正在亲自连接它时才允许。",
+    "redirectsTo": "完成后返回至"
   }
 }

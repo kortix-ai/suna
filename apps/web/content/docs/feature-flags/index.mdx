@@ -12,6 +12,7 @@ another project, and nothing for other accounts.
 
 <CardGroup>
   <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon="plug" title="MCP server" href="/docs/feature-flags/mcp">Connect Claude, ChatGPT, Cursor or Codex to a project over OAuth.</Card>
 </CardGroup>
 
 ## Turn a flag on
@@ -132,6 +133,7 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
+| `mcp` | MCP server | Experimental | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per

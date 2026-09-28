@@ -19183,7 +19183,10 @@
       "text5176d59f25fd": "Versão de configuração da sessão resolvida",
       "text273c48dbf3b9": "Dispositivo de notificações push registrado",
       "textbb666ddf7a57": "Dispositivo de notificações push removido",
-      "text397ab5aecbbf": "Solicitação de permissão da sessão repassada"
+      "text397ab5aecbbf": "Solicitação de permissão da sessão repassada",
+      "text3ec6c235548a": "Metadados do servidor MCP lidos",
+      "text7740934de920": "Cliente OAuth registrado",
+      "textcd36423ea12a": "Servidor MCP chamado"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20304,16 +20307,22 @@
   },
   "connectMcp": {
     "title": "Conectar o Kortix via MCP",
-    "description": "Dê ao Claude Code, Codex, Cursor ou a qualquer cliente MCP toda a CLI do Kortix como ferramentas: projetos, sessões, segredos, conectores, gatilhos e mais.",
-    "install": "Instale a CLI",
-    "signIn": "Entre",
-    "signInHint": "O servidor MCP age com este login. Numa máquina sem navegador, defina KORTIX_TOKEN no ambiente do servidor.",
+    "description": "Adicione esta URL ao Claude, ChatGPT, Cursor, Codex ou a qualquer cliente MCP. Na primeira vez, o cliente pede que você entre no Kortix. Nada para instalar.",
+    "urlLabel": "URL do MCP",
     "addToClient": "Adicione ao seu cliente",
     "other": "Outro",
-    "otherHint": "Claude Desktop, VS Code, Windsurf e outros clientes aceitam este JSON nas configurações de MCP.",
+    "claudeSteps": "No Claude (web ou desktop), abra Configurações → Conectores → Adicionar conector personalizado, cole a URL e entre.",
+    "claudeCodeHint": "Depois execute /mcp no Claude Code e entre.",
+    "otherHint": "ChatGPT (modo desenvolvedor), VS Code, Windsurf e outros clientes: adicione um servidor MCP remoto com a URL acima ou com este JSON.",
     "addToCursor": "Adicionar ao Cursor",
+    "signInOnFirstUse": "O Cursor pede que você entre no Kortix no primeiro uso.",
     "docs": "Documentação",
     "done": "Concluído",
     "copy": "Copiar"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "App não verificado",
+    "unverifiedBody": "{client} se registrou sozinho no Kortix. O Kortix não verificou quem o opera. Permita apenas se você mesmo estiver conectando agora.",
+    "redirectsTo": "Leva você de volta para"
   }
 }
