@@ -144,13 +144,15 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
 // a future refactor can't silently re-enable the paging.
 describe('index.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', () => {
   const indexSrc = readFileSync(
-    fileURLToPath(new URL('../index.ts', import.meta.url)),
+    fileURLToPath(new URL('../http-errors.ts', import.meta.url)),
     'utf8',
   );
 
   test('imports isSentryIgnoredError from lib/sentry', () => {
     expect(indexSrc).toContain('isSentryIgnoredError');
     expect(indexSrc).toMatch(/import\s*\{[^}]*\bisSentryIgnoredError\b[^}]*\}\s*from\s*['"]\.\/lib\/sentry['"]/);
+    const app = readFileSync(fileURLToPath(new URL('../app.ts', import.meta.url)), 'utf8');
+    expect(app).toContain('installHttpErrors(app)');
   });
 
   test('the DB-error handler guards captureException with isSentryIgnoredError', () => {

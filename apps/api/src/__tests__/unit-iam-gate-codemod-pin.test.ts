@@ -245,13 +245,16 @@ describe('the gate codemod is complete', () => {
     // mounting section runs to the end of the last call on `app` that executes
     // at import — today the 404 handler, below the last `app.route(...)`. Every
     // form that suspends module evaluation counts, not only `await import(...)`.
-    const file = join(SRC, 'index.ts');
+    const index = code(join(SRC, 'index.ts'));
+    expect(index).toContain("import { createApp } from './app'");
+    expect(index).toContain('export const app = createApp(');
+    const file = join(SRC, 'app.ts');
     const text = readFileSync(file, 'utf8');
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const mounts: ts.CallExpression[] = [];
     const suspensions: ts.Node[] = [];
     const visit = (node: ts.Node): void => {
-      if (ts.isFunctionLike(node)) return; // runs when called, not when imported
+      if (ts.isFunctionLike(node) && !(ts.isFunctionDeclaration(node) && node.name?.text === 'createApp')) return;
       if (
         ts.isAwaitExpression(node) ||
         (ts.isForOfStatement(node) && node.awaitModifier) ||
@@ -282,7 +285,7 @@ describe('the gate codemod is complete', () => {
       .filter((node) => node.getStart(sf) < end)
       .map((node) => {
         const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-        return `index.ts:${line + 1}: ${lines[line].trim()}`;
+        return `app.ts:${line + 1}: ${lines[line].trim()}`;
       });
     expect(topLevelAwaits).toEqual([]);
   });

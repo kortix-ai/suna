@@ -52,7 +52,7 @@ const NOT_WORKERS: Record<string, string> = {
   'apps/public-proxy.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
-  'index.ts': 'measures event-loop lag',
+  'routes/system.ts': 'measures event-loop lag',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'oauth/index.ts': 'expires in-memory OAuth state',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
@@ -132,8 +132,11 @@ describe('background jobs run as named workers', () => {
 
   test('everything index.ts starts on the leader or every replica is classified', () => {
     const index = read('index.ts');
+    expect(index).toContain("import { createBootstrap } from './bootstrap'");
+    expect(index).toContain('bootstrap.start()');
+    const bootstrap = read('bootstrap.ts');
     const started = ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
-      [...functionBody(index, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
+      [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
     );
     expect(started.filter((call) => !(call in STARTS))).toEqual([]);
     for (const worker of Object.values(STARTS)) {

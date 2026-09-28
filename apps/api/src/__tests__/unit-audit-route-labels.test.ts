@@ -39,7 +39,8 @@ const manifest = JSON.parse(
 ) as { routes: Array<{ method: string; path: string }> };
 const manifestKeys = new Set(manifest.routes.map((route) => `${route.method} ${route.path}`));
 
-const indexSource = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+const indexSource = readFileSync(new URL('../inbound-dispatch.ts', import.meta.url), 'utf8');
+const indexWiring = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
 const entrypointKeys = new Set(
   [...indexSource.matchAll(/setInboundAuditEntrypoint\(\s*'[a-z_]+',\s*'([^']+)'\s*\)/g)].map(
     (match) => `ENTRY ${match[1]}`,
@@ -50,6 +51,8 @@ const labelled = new Set(Object.keys(AUDIT_ROUTE_LABELS));
 
 describe('audit route labels', () => {
   test('the live route table and the manifest were both read', () => {
+    expect(indexWiring).toContain('createInboundDispatch(app,');
+    expect(indexWiring).toContain('inbound.dispatchInbound(req, url, server)');
     expect(liveKeys.size).toBeGreaterThan(600);
     expect(manifestKeys.size).toBeGreaterThan(600);
     expect(entrypointKeys.size).toBeGreaterThan(0);

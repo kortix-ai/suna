@@ -14,7 +14,9 @@ import { describe, expect, test } from 'bun:test';
  * Hono `onError` on a module whose import boots the whole API. What has to hold
  * is a rule about severity, and the rule is visible in the source.
  */
-const SOURCE = await Bun.file(new URL('../index.ts', import.meta.url)).text();
+const SOURCE = await Bun.file(new URL('../http-errors.ts', import.meta.url)).text();
+const INDEX = await Bun.file(new URL('../index.ts', import.meta.url)).text();
+const APP = await Bun.file(new URL('../app.ts', import.meta.url)).text();
 
 function httpExceptionBranch(): string {
   const start = SOURCE.indexOf('if (err instanceof HTTPException) {');
@@ -23,6 +25,12 @@ function httpExceptionBranch(): string {
 }
 
 describe('HTTPException log severity follows the status class', () => {
+  test('the entrypoint installs the canonical error handler', () => {
+    expect(INDEX).toContain("import { createApp } from './app'");
+    expect(INDEX).toContain('export const app = createApp(');
+    expect(APP).toContain('installHttpErrors(app)');
+    expect(SOURCE).toContain('app.onError(');
+  });
   test('severity is chosen from the status, not fixed at error', () => {
     const branch = httpExceptionBranch();
     expect(branch).toContain("const level = err.status >= 500 ? 'error' : 'warn';");
