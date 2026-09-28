@@ -36,8 +36,10 @@ Tools every contributor needs:
 5. **Record a demo video** of the change with agent-browser, on the PR's preview origin.
 6. **Attach it** with `gh pr edit <pr> --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
    `gh` uploads the video and puts a player in the PR body.
-7. **Hand off.** Mark the PR ready. Merge to `main` only on explicit approval, because
-   `main` deploys to dev for the whole team.
+7. **Merge.** Mark the PR ready and squash-merge it to `main` when it is verified: the
+   local checks passed and the `Tests` lanes are green. No approval is needed for `main`.
+   `main` deploys to dev for the whole team, so verify the change on dev after the merge.
+   Merging into `staging` or `prod`, and every release step, still needs explicit approval.
 
 The skill covers each step with its commands and completion check.
 
