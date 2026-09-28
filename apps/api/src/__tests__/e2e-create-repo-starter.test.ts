@@ -64,6 +64,8 @@ const BASE_STARTER_PATHS = [
 let repoCreateCalls: any[];
 let fileShaCalls: any[];
 let commitCalls: any[];
+/** One entry per `commitFiles` call — the starter must land as ONE commit. */
+let commitBatches: any[];
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
 let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
@@ -107,6 +109,7 @@ function resetState() {
   repoCreateCalls = [];
   fileShaCalls = [];
   commitCalls = [];
+  commitBatches = [];
   insertedProject = null;
   grantedProjectRole = null;
   gitConnectionRows = [];
@@ -297,6 +300,15 @@ mock.module('../projects/github', () => ({
   },
   commitFile: async (input: any) => {
     commitCalls.push(input);
+  },
+  // The starter is written in one commit (`commitFiles`). Each file is recorded
+  // with the batch's auth / branch / message so the per-file assertions below
+  // still read every path and its content.
+  commitFiles: async (input: any) => {
+    commitBatches.push(input);
+    for (const file of input.files) {
+      commitCalls.push({ ...file, auth: input.auth, branch: input.branch, message: input.message });
+    }
   },
   createInstallationToken: async (installationId: string) => {
     expect(['42', '84']).toContain(installationId);
@@ -1077,13 +1089,18 @@ describe('create-repo starter scaffold contract', () => {
     });
     expect(repoCreateCalls[0].owner).toBeUndefined();
 
-    expect(fileShaCalls.map((call) => call.path)).toEqual(['README.md']);
-    expect(fileShaCalls[0]).toMatchObject({
+    // One commit, not one per file: ~180 sequential Contents-API writes ran
+    // past the API's 25 s request deadline. The tree overwrites the
+    // `auto_init` README in that same commit, so no sha lookup is needed.
+    expect(commitBatches).toHaveLength(1);
+    expect(commitBatches[0]).toMatchObject({
       owner: 'kortix-org',
       repo: 'company-os',
       branch: 'main',
+      message: 'chore: scaffold the Kortix starter',
       auth: { token: 'installation-token', source: 'app_installation' },
     });
+    expect(fileShaCalls).toEqual([]);
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
@@ -1091,14 +1108,8 @@ describe('create-repo starter scaffold contract', () => {
     expect(committedPaths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
-    expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
-    // README.md is upserted via sha because `auto_init: true` creates one
-    // on repo creation. Every other file is brand-new.
-    const readmeIdx = committedPaths.indexOf('README.md');
-    expect(commitCalls[readmeIdx]!.existingSha).toBe('existing-readme-sha');
-    expect(
-      commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined),
-    ).toBe(true);
+    // README.md replaces the `auto_init` one inside the same tree.
+    expect(committedPaths).toContain('README.md');
 
     expect(insertedProject).toMatchObject({
       accountId: ACCOUNT_ID,

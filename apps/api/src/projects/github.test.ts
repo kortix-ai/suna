@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   GitHubApiError,
   addRepositoryToInstallation,
+  commitFiles,
   createRepo,
   deleteRepo,
   getRepositoryBranch,
@@ -336,5 +337,88 @@ describe('a 204 answer', () => {
     await expect(
       deleteRepo({ owner: 'acme', repo: 'company', auth: { token: 't' } }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The starter is ~180 files. Committing them one Contents-API PUT at a time is
+ * ~180 sequential round trips, which ran past the API's 25 s request deadline:
+ * the repository was created and the user got `503 request_deadline` while the
+ * files were still trickling in. One tree, one commit, one ref move instead.
+ */
+describe('commitFiles', () => {
+  test('writes every file in ONE commit on top of the branch tip', async () => {
+    const calls: Array<{ method: string; path: string; body: any }> = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ method, path: url.pathname, body });
+      const json = (value: unknown, status = 200) =>
+        new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
+      if (method === 'GET' && url.pathname.endsWith('/git/ref/heads/main')) return json({ object: { sha: 'a'.repeat(40) } });
+      if (method === 'GET' && url.pathname.endsWith(`/git/commits/${'a'.repeat(40)}`)) return json({ tree: { sha: 't'.repeat(40) } });
+      if (method === 'POST' && url.pathname.endsWith('/git/trees')) return json({ sha: 'n'.repeat(40) }, 201);
+      if (method === 'POST' && url.pathname.endsWith('/git/commits')) return json({ sha: 'c'.repeat(40) }, 201);
+      if (method === 'PATCH' && url.pathname.endsWith('/git/refs/heads/main')) return json({ object: { sha: 'c'.repeat(40) } });
+      return json({ message: 'unexpected' }, 500);
+    }) as typeof fetch;
+
+    const files = Array.from({ length: 179 }, (_, i) => ({ path: `dir/file-${i}.md`, content: `# ${i}` }));
+    await commitFiles({
+      owner: 'octo-person',
+      repo: 'company',
+      branch: 'main',
+      files,
+      message: 'chore: scaffold the Kortix starter',
+      auth: { token: 'ghs_x', source: 'app_installation' },
+    });
+
+    // 5 requests, not 179.
+    expect(calls.map((c) => `${c.method} ${c.path.replace('/repos/octo-person/company', '')}`)).toEqual([
+      'GET /git/ref/heads/main',
+      `GET /git/commits/${'a'.repeat(40)}`,
+      'POST /git/trees',
+      'POST /git/commits',
+      'PATCH /git/refs/heads/main',
+    ]);
+    const tree = calls[2]!.body;
+    expect(tree.base_tree).toBe('t'.repeat(40));
+    expect(tree.tree).toHaveLength(179);
+    expect(tree.tree[0]).toEqual({ path: 'dir/file-0.md', mode: '100644', type: 'blob', content: '# 0' });
+    const commit = calls[3]!.body;
+    expect(commit.tree).toBe('n'.repeat(40));
+    expect(commit.parents).toEqual(['a'.repeat(40)]);
+    expect(commit.author).toEqual({ name: 'Kortix', email: 'noreply@kortix.ai' });
+    expect(calls[4]!.body).toEqual({ sha: 'c'.repeat(40), force: false });
+  });
+
+  test('a GitHub refusal is raised, and the branch is never moved', async () => {
+    const methods: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      methods.push(init?.method ?? 'GET');
+      if ((init?.method ?? 'GET') === 'POST') {
+        return new Response(JSON.stringify({ message: 'tree too large' }), {
+          status: 422,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ object: { sha: 'a'.repeat(40) }, tree: { sha: 't'.repeat(40) } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    await expect(
+      commitFiles({
+        owner: 'o',
+        repo: 'r',
+        branch: 'main',
+        files: [{ path: 'a.md', content: 'a' }],
+        message: 'm',
+        auth: { token: 't', source: 'app_installation' },
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(methods).not.toContain('PATCH');
   });
 });

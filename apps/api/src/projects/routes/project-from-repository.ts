@@ -7,9 +7,8 @@ import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubToken } from '../git-backends';
 import {
   addRepositoryToInstallation,
-  commitFile,
+  commitFiles,
   createRepo,
-  getFileSha,
 } from '../github';
 import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-create-errors';
 import { resolveGitHubUserToken } from '../lib/github-user-token';
@@ -401,9 +400,8 @@ projectsApp.openapi(
   const defaultBranch = repo.default_branch || 'main';
 
   // Commit the Kortix starter into the fresh repo so users land with a
-  // working project shape on first session boot. GitHub's Contents API
-  // updates the branch tip on every write, so these must be sequential.
-  // A partial starter is not a usable project.
+  // working project shape on first session boot. A partial starter is not a
+  // usable project, so it lands as one commit or not at all.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
   const starter = sourceItemId
     ? (await buildProjectSeedFilesFromItem({
@@ -418,27 +416,22 @@ projectsApp.openapi(
     repoFullName: repo.full_name,
     template: starterTemplate,
   });
-  for (const file of starter) {
-    try {
-      // README.md exists already from `auto_init: true` — upsert via sha.
-      const existingSha = file.path === 'README.md'
-        ? await getFileSha({ owner: ownerLogin, repo: repoSlug, path: file.path, branch: defaultBranch, auth: githubAuth.auth })
-        : null;
-      await commitFile({
-        owner: ownerLogin,
-        repo: repoSlug,
-        path: file.path,
-        content: file.content,
-        message: `chore: scaffold ${file.path}`,
-        branch: defaultBranch,
-        existingSha: existingSha ?? undefined,
-        auth: githubAuth.auth,
-      });
-    } catch (err) {
-      const message = (err as Error).message || 'Failed to scaffold starter file';
-      console.warn(`[projects/create-repo] Failed to scaffold ${file.path} into ${repo.full_name}:`, message);
-      return c.json({ error: `Failed to scaffold starter file ${file.path}: ${message}` }, 502);
-    }
+  // One commit for the whole starter (`commitFiles`): ~180 files, one tree,
+  // five requests. A per-file Contents-API loop ran past the 25 s request
+  // deadline. The tree overwrites the `auto_init` README in the same commit.
+  try {
+    await commitFiles({
+      owner: ownerLogin,
+      repo: repoSlug,
+      branch: defaultBranch,
+      files: starter.map((file) => ({ path: file.path, content: file.content })),
+      message: 'chore: scaffold the Kortix starter',
+      auth: githubAuth.auth,
+    });
+  } catch (err) {
+    const message = (err as Error).message || 'Failed to scaffold the starter';
+    console.warn(`[projects/create-repo] Failed to scaffold the starter into ${repo.full_name}:`, message);
+    return c.json({ error: `Failed to scaffold the starter: ${message}` }, 502);
   }
 
   const icon = normalizeProjectIcon(body.icon);

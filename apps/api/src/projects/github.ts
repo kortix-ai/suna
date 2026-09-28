@@ -1200,6 +1200,82 @@ export async function createBranchRef(opts: {
 }
 
 /**
+ * Write many text files to a branch as ONE commit, through the Git Data API:
+ * read the branch tip, create one tree on top of its tree with every file
+ * inline, create one commit, move the branch.
+ *
+ * The starter is ~180 files. One Contents-API PUT per file is ~180 sequential
+ * round trips — it ran past the API's 25 s request deadline, so the repository
+ * was created and the user saw `503 request_deadline`. This is five requests
+ * whatever the file count, and the branch moves only after the commit exists:
+ * a failure leaves the branch where it was, never half-scaffolded.
+ *
+ * `force: false` on the ref update: if something else moved the branch in the
+ * meantime, GitHub refuses rather than discarding that commit.
+ */
+export async function commitFiles(opts: {
+  owner: string;
+  repo: string;
+  branch: string;
+  files: Array<{ path: string; content: string }>;
+  message: string;
+  authorName?: string;
+  authorEmail?: string;
+  auth?: GitHubAuthContext;
+}): Promise<void> {
+  const base = `/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`;
+  const ident = {
+    name: opts.authorName || 'Kortix',
+    email: opts.authorEmail || 'noreply@kortix.ai',
+  };
+
+  const ref = await ghFetch<{ object?: { sha?: string } }>(
+    `${base}/git/ref/heads/${encodeURIComponent(opts.branch)}`,
+    undefined,
+    opts.auth,
+  );
+  const parentSha = ref.object?.sha;
+  if (!parentSha) throw new Error(`GitHub branch ${opts.branch} did not resolve to a commit`);
+
+  const parent = await ghFetch<{ tree?: { sha?: string } }>(
+    `${base}/git/commits/${parentSha}`,
+    undefined,
+    opts.auth,
+  );
+  const baseTree = parent.tree?.sha;
+  if (!baseTree) throw new Error(`GitHub commit ${parentSha} has no tree`);
+
+  const tree = await ghFetch<{ sha: string }>(`${base}/git/trees`, {
+    method: 'POST',
+    body: JSON.stringify({
+      base_tree: baseTree,
+      tree: opts.files.map((file) => ({
+        path: file.path,
+        mode: '100644',
+        type: 'blob',
+        content: file.content,
+      })),
+    }),
+  }, opts.auth);
+
+  const commit = await ghFetch<{ sha: string }>(`${base}/git/commits`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: opts.message,
+      tree: tree.sha,
+      parents: [parentSha],
+      author: ident,
+      committer: ident,
+    }),
+  }, opts.auth);
+
+  await ghFetch(`${base}/git/refs/heads/${encodeURIComponent(opts.branch)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ sha: commit.sha, force: false }),
+  }, opts.auth);
+}
+
+/**
  * Write a single file to a repo via the GitHub Contents API.
  * Used by the starter scaffold — one commit per file under the default
  * branch. If the file already exists (e.g. `README.md` from `auto_init`),
