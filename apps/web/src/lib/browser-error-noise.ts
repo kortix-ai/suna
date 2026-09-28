@@ -91,6 +91,7 @@ export {
   isExpectedNextRecoveryBailoutNoise,
   isFirefoxReactSchedulerReentryNoise,
   isLikelyDomMutationNoise,
+  isServerSuspenseBailoutNoise,
   isThirdPartyReactUpdateDepthNoise,
 } from './browser-noise/rules/react';
 export {
