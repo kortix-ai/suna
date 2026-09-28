@@ -19238,7 +19238,8 @@
       "textb7ece0360b75": "Sitzungserinnerung gelöscht",
       "text9dcde51d9ff2": "Beschreibung des Agenten",
       "textfa0db737cb09": "Vom Agenten verfasst und nicht geprüft. Der Connector erhält die Parameter unten.",
-      "text2edf70730233": "Nachricht an den Agenten (optional)"
+      "text2edf70730233": "Nachricht an den Agenten (optional)",
+      "texte88286ad9739": "Projekterinnerungen aufgelistet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

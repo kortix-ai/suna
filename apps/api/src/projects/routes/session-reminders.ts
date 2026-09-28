@@ -17,12 +17,15 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
+import { serializeSession } from '../lib/serializers';
+import { sessionIsTombstoned } from '../lib/access';
 import {
   REMINDER_MAX_ACTIVE_PER_SESSION,
   countActiveSessionReminders,
   deleteSessionReminder,
   getSessionReminder,
   insertSessionReminder,
+  listProjectReminders,
   listSessionReminders,
   reminderSpec,
   newReminderId,
@@ -65,6 +68,56 @@ async function authorizeReminderSession(c: any) {
   }
   return { projectId, sessionId, loaded, visible, agentCaller };
 }
+
+// GET /v1/projects/:projectId/reminders
+//
+// Every reminder on a session the caller can open, for the project Reminders
+// page. Visibility is `loadVisibleSession`, once per distinct session, so the
+// list can never show a reminder whose session the caller could not open.
+// Pause/resume/remove go through the session-scoped routes below.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/reminders',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/reminders',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Reminders on sessions the caller can open'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
+    const binding = callerKortixSessionId(c);
+    const rows = await listProjectReminders(projectId);
+    const sessionIds = [...new Set(rows.map((row) => row.sessionId as string))];
+    const names = new Map<string, string | null>();
+    await Promise.all(
+      sessionIds.map(async (sessionId) => {
+        const visible = await loadVisibleSession(loaded, sessionId, binding, binding);
+        if (!visible || sessionIsTombstoned(visible.row)) return;
+        names.set(sessionId, serializeSession(visible.row, { viewerId: loaded.userId }).name ?? null);
+      }),
+    );
+    return c.json({
+      reminders: rows
+        .filter((row) => names.has(row.sessionId as string))
+        .map((row) => ({ ...serializeSessionReminder(row), session_name: names.get(row.sessionId as string) })),
+    });
+  },
+);
 
 // GET /v1/projects/:projectId/sessions/:sessionId/reminders
 

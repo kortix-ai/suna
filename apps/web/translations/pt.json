@@ -19238,7 +19238,8 @@
       "textb7ece0360b75": "Lembrete de sessão excluído",
       "text9dcde51d9ff2": "Descrição do agente",
       "textfa0db737cb09": "Escrita pelo agente e não verificada. O conector recebe os parâmetros abaixo.",
-      "text2edf70730233": "Mensagem para o agente (opcional)"
+      "text2edf70730233": "Mensagem para o agente (opcional)",
+      "texte88286ad9739": "Lembretes do projeto listados"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -213,6 +213,34 @@ export async function listSessionReminders(projectId: string, sessionId: string)
     );
 }
 
+/** Rows the project page reads. Callers filter by session visibility. */
+export const PROJECT_REMINDER_LIST_LIMIT = 200;
+
+/**
+ * Every reminder in a project: active by next fire, then paused, then done by
+ * last fire. Unpinned rows (their session row is gone) are left out.
+ */
+export async function listProjectReminders(projectId: string): Promise<RuntimeRow[]> {
+  return db
+    .select()
+    .from(projectTriggerRuntime)
+    .where(
+      and(
+        eq(projectTriggerRuntime.projectId, projectId),
+        isNotNull(projectTriggerRuntime.sessionId),
+        isReminderRow,
+      ),
+    )
+    .orderBy(
+      sql`case when ${projectTriggerRuntime.enabled} and ${projectTriggerRuntime.nextFireAt} is not null then 0 when not ${projectTriggerRuntime.enabled} then 1 else 2 end`,
+      sql`${projectTriggerRuntime.nextFireAt} asc nulls last`,
+      sql`${projectTriggerRuntime.lastFiredAt} desc nulls last`,
+      asc(projectTriggerRuntime.slug),
+    )
+    // ponytail: one page of 200; add a cursor when a project holds more.
+    .limit(PROJECT_REMINDER_LIST_LIMIT);
+}
+
 export async function getSessionReminder(
   projectId: string,
   sessionId: string,

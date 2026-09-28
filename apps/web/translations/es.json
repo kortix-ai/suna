@@ -19238,7 +19238,8 @@
       "textb7ece0360b75": "Recordatorio de sesión eliminado",
       "text9dcde51d9ff2": "Descripción del agente",
       "textfa0db737cb09": "Escrita por el agente y sin verificar. El conector recibe los parámetros de abajo.",
-      "text2edf70730233": "Mensaje para el agente (opcional)"
+      "text2edf70730233": "Mensaje para el agente (opcional)",
+      "texte88286ad9739": "Recordatorios del proyecto listados"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

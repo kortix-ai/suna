@@ -194,3 +194,86 @@ flow(
     }
   },
 );
+
+flow(
+  'REM-3',
+  {
+    domain: 'reminders',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: ['GET /v1/projects/:projectId/reminders', ROUTES.create],
+  },
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const PROJECT_REMINDERS = '/v1/projects/:projectId/reminders';
+    try {
+      const mine = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
+      const shared = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER, visibility: 'project' });
+      await world.db.query(
+        `UPDATE kortix.project_sessions SET metadata = metadata || '{"custom_name":"Vendor follow-up"}'::jsonb WHERE session_id = $1`,
+        [mine.sessionId],
+      );
+      const set = async (sessionId: string, body: Record<string, unknown>) => {
+        const r = await owner.post(REMINDERS, body, { params: { projectId: project.id, sessionId } });
+        r.status(201);
+        return r.json<Reminder>().id;
+      };
+      let later = '';
+      let sooner = '';
+      let onShared = '';
+
+      await ctx.step('the owner lists reminders across sessions, soonest first, each with its session name', async () => {
+        later = await set(mine.sessionId, { prompt: 'Check again tomorrow', in: '24h' });
+        sooner = await set(mine.sessionId, { prompt: 'Check in an hour', in: '1h', every: '1h' });
+        onShared = await set(shared.sessionId, { prompt: 'Shared check', in: '2h' });
+        const r = await owner.get(PROJECT_REMINDERS, { params: { projectId: project.id } });
+        r.status(200);
+        const ids = r.json<{ reminders: Array<{ id: string }> }>().reminders.map((x) => x.id);
+        if (ids.join(',') !== [sooner, onShared, later].join(',')) throw new Error(`order ${ids.join(',')}`);
+        r.body().has('$.reminders[0].session_name', 'Vendor follow-up').has('$.reminders[0].session_id', mine.sessionId);
+      });
+
+      await ctx.step('a paused reminder sorts after every active one', async () => {
+        (await owner.patch(REMINDER, { enabled: false }, { params: { projectId: project.id, sessionId: mine.sessionId, reminderId: sooner } })).status(200);
+        const ids = (await owner.get(PROJECT_REMINDERS, { params: { projectId: project.id } }))
+          .json<{ reminders: Array<{ id: string }> }>().reminders.map((x) => x.id);
+        if (ids.join(',') !== [onShared, later, sooner].join(',')) throw new Error(`order ${ids.join(',')}`);
+      });
+
+      await ctx.step('a member sees only reminders on sessions they can open (the project-visible one), never the private ones', async () => {
+        const member = await team.addMember('member');
+        await team.grantProjectRole(project.id, member.userId!, 'member');
+        const r = await ctx.client.as(member).get(PROJECT_REMINDERS, { params: { projectId: project.id } });
+        r.status(200);
+        const ids = r.json<{ reminders: Array<{ id: string }> }>().reminders.map((x) => x.id);
+        if (ids.join(',') !== onShared) throw new Error(`member saw ${ids.join(',')}`);
+      });
+
+      await ctx.step('an agent credential sees what it may open: its own session and project-visible siblings, never a private sibling; ANON → 401', async () => {
+        const privateSibling = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
+        const hidden = await set(privateSibling.sessionId, { prompt: 'Private sibling check', in: '3h' });
+        const seen = (await mine.client.get(PROJECT_REMINDERS, { params: { projectId: project.id } }))
+          .json<{ reminders: Array<{ id: string; session_id: string }> }>().reminders;
+        const sessions = new Set(seen.map((x) => x.session_id));
+        if (seen.some((x) => x.id === hidden)) throw new Error('agent saw a private sibling session reminder');
+        if (!sessions.has(mine.sessionId) || !sessions.has(shared.sessionId) || sessions.size !== 2) {
+          throw new Error(`agent saw sessions ${[...sessions].join(',')}`);
+        }
+        (await ctx.client.as(ctx.P.ANON).get(PROJECT_REMINDERS, { params: { projectId: project.id } })).status(401);
+      });
+
+      await ctx.step('a deleted session drops out of the list', async () => {
+        await world.db.query(
+          `UPDATE kortix.project_sessions SET metadata = metadata || jsonb_build_object('deletedAt', now()::text) WHERE session_id = $1`,
+          [shared.sessionId],
+        );
+        const ids = (await owner.get(PROJECT_REMINDERS, { params: { projectId: project.id } }))
+          .json<{ reminders: Array<{ id: string }> }>().reminders.map((x) => x.id);
+        if (ids.includes(onShared)) throw new Error('deleted session still listed');
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);

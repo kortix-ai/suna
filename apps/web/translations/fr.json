@@ -19238,7 +19238,8 @@
       "textb7ece0360b75": "Rappel de session supprimé",
       "text9dcde51d9ff2": "Description de l’agent",
       "textfa0db737cb09": "Rédigée par l’agent et non vérifiée. Le connecteur reçoit les paramètres ci-dessous.",
-      "text2edf70730233": "Message à l’agent (facultatif)"
+      "text2edf70730233": "Message à l’agent (facultatif)",
+      "texte88286ad9739": "Rappels du projet listés"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
