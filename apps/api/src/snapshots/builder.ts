@@ -368,6 +368,7 @@ async function runInlineBuild(
       },
       slug: template.slug,
       isShared: !!template.isShared,
+      containerRuntime: template.containerRuntime,
       // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
       // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
       // AND on resume — the SAME path Daytona takes, no provider divergence.

@@ -198,6 +198,7 @@
       "repositoryLabel": "リポジトリ",
       "managedImportHint": "セルフホスト運用者のみ。管理 git の所有者がすでに保有しているリポジトリを一覧表示します。",
       "ownerTypeOrg": "組織",
+      "createPersonalAuthorize": "個人アカウントにリポジトリを初めて作成するとき、Kortix は GitHub で認可を求めます。",
       "sources": {
         "githubCreate": {
           "description": "Kortix が GitHub アカウントにプライベートリポジトリを作成します。"

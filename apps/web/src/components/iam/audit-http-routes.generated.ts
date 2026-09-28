@@ -612,6 +612,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|github|installations|linkable",
   "GET|v1|projects|github|repositories",
   "GET|v1|projects|github|repository-branches",
+  "POST|v1|projects|github|user-token",
   "POST|v1|projects|link-repository",
   "GET|v1|projects|managed-git|status",
   "POST|v1|projects|provision",

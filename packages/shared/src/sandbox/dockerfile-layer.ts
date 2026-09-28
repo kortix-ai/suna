@@ -240,6 +240,14 @@ export interface KortixToolchainLayerOpts {
    * alters boot semantics for the warm-seed paths too and wants its own rollout.
    */
   isSharedDefault?: boolean;
+  /**
+   * kortix.yaml `container_runtime: true`. The provider bakes the guest
+   * kernel's full module tree (Platinum `kernel_modules: container`); the guest
+   * kernel loads bridge/overlay/netfilter on demand through /sbin/modprobe, so
+   * the image needs kmod. The marker env makes the entrypoint start dockerd at
+   * boot. Unset renders the layer byte-identical to before.
+   */
+  containerRuntime?: boolean;
 }
 
 
@@ -430,6 +438,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     opencodeWarmupScriptPath,
     opencodeConfigPath,
     isSharedDefault,
+    containerRuntime,
   } = opts;
 
   return [
@@ -479,6 +488,15 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
     '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    ...(containerRuntime
+      ? [
+          'RUN apt-get update && apt-get install -y --no-install-recommends kmod \\',
+          '    && rm -rf /var/lib/apt/lists/* \\',
+          '    && (getent group docker >/dev/null || groupadd --system docker) \\',
+          '    && usermod -aG docker kortix',
+          'ENV KORTIX_CONTAINER_RUNTIME=1',
+        ]
+      : []),
     'ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\',
     `    PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
     'USER kortix',
@@ -877,6 +895,8 @@ export interface SandboxTemplate {
   image?: string;
   /** Hardware spec (cpu/memory/disk). GPUs are intentionally not supported. */
   spec: SandboxSpec;
+  /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
+  containerRuntime?: boolean;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1040,6 +1060,7 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     dockerfile: sanitizedDockerfile || undefined,
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
+    ...(row.container_runtime === true ? { containerRuntime: true } : {}),
   };
 }
 

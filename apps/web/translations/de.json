@@ -198,6 +198,7 @@
       "repositoryLabel": "Repository",
       "managedImportHint": "Nur für Self-Host-Betreiber. Listet Repositories auf, die der verwaltete Git-Inhaber bereits besitzt.",
       "ownerTypeOrg": "Organisation",
+      "createPersonalAuthorize": "Kortix bittet GitHub beim ersten Erstellen eines Repositorys in einem persönlichen Konto um deine Autorisierung.",
       "sources": {
         "githubCreate": {
           "description": "Kortix erstellt ein privates Repository in deinem GitHub-Konto."

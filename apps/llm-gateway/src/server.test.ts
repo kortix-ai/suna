@@ -7,6 +7,7 @@ process.env.KORTIX_API_URL = process.env.KORTIX_API_URL ?? 'https://api.test.inv
 process.env.GATEWAY_INTERNAL_TOKEN = process.env.GATEWAY_INTERNAL_TOKEN ?? 'test-internal-token';
 
 const { buildServer, cloudflareSafe, UPSTREAM_STATUS_HEADER, messagesAuthorization } = await import('./server');
+const { InflightBudget } = await import('@kortix/llm-gateway');
 
 // Piece B: `POST /v1/messages` (+ the `/v1/llm/messages` and `/v1/openai/messages`
 // aliases, mirroring the `/v1/chat/completions` alias namespaces) must be
@@ -214,6 +215,93 @@ describe('cloudflareSafe', () => {
       const res = await cloudflareSafe(new Response('x', { status }));
       expect(res.status).toBe(status);
       expect(res.headers.get(UPSTREAM_STATUS_HEADER)).toBeNull();
+    }
+  });
+});
+
+describe('standalone chat and messages admission', () => {
+  const routes = [
+    '/chat/completions', '/v1/chat/completions', '/v1/llm/chat/completions', '/v1/openai/chat/completions',
+    '/messages', '/v1/messages', '/v1/llm/messages', '/v1/openai/messages',
+  ];
+  const payload = JSON.stringify({ model: 'x', max_tokens: 8, messages: [{ role: 'user', content: 'hi' }] });
+  const budget = () => new InflightBudget({ maxBytes: 1024, perRequestMaxBytes: 1024, amplification: 1 });
+
+  for (const path of routes) {
+    test(`${path} rejects declared oversized bodies before dispatch`, async () => {
+      const inflight = budget();
+      const { app } = buildServer({ inflight });
+      const res = await app.request(path, {
+        method: 'POST', headers: { 'content-length': '1025' }, body: payload,
+      });
+      expect(res.status).toBe(413);
+      expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'request_too_large');
+      expect(res.headers.get('retry-after')).toBeNull();
+      expect(inflight.inflightBytes).toBe(0);
+    });
+
+    test(`${path} reports temporary overload and releases no new capacity`, async () => {
+      const inflight = budget();
+      const held = inflight.admit(1024);
+      expect(held.ok).toBe(true);
+      const { app } = buildServer({ inflight });
+      try {
+        const res = await app.request(path, {
+          method: 'POST', headers: { 'content-length': String(Buffer.byteLength(payload)) }, body: payload,
+        });
+        expect(res.status).toBe(503);
+        expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'gateway_overloaded');
+        expect(res.headers.get('retry-after')).toBe('1');
+        expect(inflight.inflightBytes).toBe(1024);
+      } finally {
+        if (held.ok) held.release();
+      }
+      expect(inflight.inflightBytes).toBe(0);
+    });
+  }
+
+  for (const path of ['/v1/chat/completions', '/v1/messages']) {
+    test(`${path} releases an aborted upload without recording a health error`, async () => {
+      const inflight = budget();
+      const { app } = buildServer({ inflight });
+      const abort = new AbortController();
+      const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode('{')); } });
+      const pending = app.fetch(new Request(`http://localhost${path}`, {
+        method: 'POST', body, duplex: 'half', signal: abort.signal,
+      } as RequestInit));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      abort.abort();
+      const res = await pending;
+      expect(res.status).toBe(503);
+      expect((await res.json()) as Record<string, unknown>).toHaveProperty('code', 'gateway_overloaded');
+      expect(inflight.inflightBytes).toBe(0);
+    });
+  }
+
+  test('chat and messages streaming aliases relay provider bytes and release admission on completion', async () => {
+    const originalFetch = globalThis.fetch;
+    const inflight = budget();
+    const { app, inflightRequests } = buildServer({ inflight });
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/internal/gateway/authorize')) return Response.json({ ok: true, principal: { userId: 'u', accountId: 'a' } });
+      if (url.endsWith('/internal/gateway/resolve-route')) return Response.json({ route: { policyId: 'direct', primaryModel: 'x' } });
+      if (url.endsWith('/internal/gateway/resolve-upstream')) return Response.json({ candidates: [{ provider: 'mock', kind: 'openai-compat', baseUrl: 'https://provider.test/v1', apiKey: 'key', billingMode: 'none', markup: 0 }] });
+      if (url.endsWith('/internal/gateway/usage') || url.endsWith('/internal/gateway/trace')) return Response.json({ ok: true });
+      if (url === 'https://provider.test/v1/chat/completions') return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+      throw new Error(`unexpected fetch ${url}`);
+    }) as typeof fetch;
+    try {
+      for (const path of ['/v1/llm/chat/completions', '/v1/openai/messages']) {
+        const res = await app.request(path, { method: 'POST', headers: { authorization: 'Bearer token', 'content-type': 'application/json' }, body: JSON.stringify({ ...JSON.parse(payload), stream: true }) });
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-type')).toContain('text/event-stream');
+        expect(await res.text()).toContain(path.includes('/messages') ? 'event: message_stop' : 'data: [DONE]');
+        expect(inflight.inflightBytes).toBe(0);
+        expect(inflightRequests()).toBe(0);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   });
 });

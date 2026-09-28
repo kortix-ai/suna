@@ -242,6 +242,37 @@ export async function linkGitHubInstallation(input: {
   );
 }
 
+/**
+ * Store the caller's GitHub App USER access token for one account.
+ *
+ * GitHub refuses `POST /user/repos` for an App installation token and accepts a
+ * user access token, so creating a repository inside a PERSONAL GitHub account
+ * needs the user's own authorization. The browser obtains that token through
+ * the GitHub authorization popup; this hands it to the server, which verifies
+ * it against GitHub, encrypts it, and never returns it to any caller.
+ *
+ * `expires_in` is GitHub's own value in seconds, present only when the App is
+ * configured to expire user tokens.
+ *
+ * `showErrors: false`: the caller decides what a failure means — the create
+ * flow retries or explains it inline, and a global toast would say the same
+ * thing twice.
+ */
+export async function storeGitHubUserToken(input: {
+  account_id: string;
+  github_user_token: string;
+  expires_in?: number;
+  refresh_token?: string;
+}) {
+  return unwrap(
+    await backendApi.post<{ ok: true; github_login: string }>(
+      '/projects/github/user-token',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
 export async function deleteGitHubInstallation(
   accountId: string,
   installationId?: string | null,
