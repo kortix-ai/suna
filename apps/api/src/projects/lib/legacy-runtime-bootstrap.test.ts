@@ -160,6 +160,17 @@ describe('classifyDaemonHealth', () => {
     expect(c.staleReasons).toEqual(['missing_capability']);
   });
 
+  test('a pi box is not stale for lacking config.release.v1: pi has no config releases', () => {
+    // Only the OpenCode runtime advertises the capability. Requiring it of pi
+    // relaunched every idle pi box on each session open, and the relaunch could
+    // never converge, so /start answered `starting` until the retries ran out.
+    const pi = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: 'pi', capabilities: ['file.import', 'file.append'] }, MANIFEST);
+    expect(pi.klass).toBe('current');
+    expect(pi.staleReasons).toEqual([]);
+    const opencode = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: 'opencode', capabilities: [] }, MANIFEST);
+    expect(opencode.staleReasons).toEqual(['missing_capability']);
+  });
+
   test('agentSwapPending: true is stale immediately — no grace window; a running box has no natural self-promotion path', () => {
     const health = { ...CURRENT_HEALTH, runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true } };
     const c = classifyDaemonHealth(health, MANIFEST);
