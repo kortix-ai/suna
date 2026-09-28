@@ -211,30 +211,25 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('gates the local suite on promotes and on an opt-in label, never on every main PR', () => {
-    // 2026-09-18. Every PR into `main` used to wait ~11 min (68 min worst
-    // case) for a suite that gated nothing: `main` and `staging` have NO
-    // required status checks. Keep this test and the workflow header in sync.
+  test('runs the local suite after a merge, on a release pull request, or when a person adds `test`', () => {
+    // 2026-09-28. Labels ran the suite on nearly every pull request into
+    // `main`: every agent PR carried `preview`, and each push re-ran six lanes.
+    // Into `main`, only the act of adding `test` runs it, once; a push does not.
     expect(testWorkflow).toContain('branches: [main, staging]');
-    expect(testWorkflow).not.toContain('branches: [main, staging, prod]');
-
-    // Adding the label to an already-open PR must re-trigger the workflow, or
-    // the opt-in silently needs a push to take effect.
-    expect(testWorkflow).toContain(
-      'types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]',
-    );
-
-    // The four clauses of the gate, asserted inside the `lane` job block so
-    // moving the `if:` onto another job fails here. `contains(<array>, 'test')`
-    // compares whole elements, so `no-tests-needed` cannot match.
+    expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
+    expect(testWorkflow).not.toContain('labels.*.name');
+    expect(testWorkflow).not.toContain("'preview'");
     const laneJob = testWorkflow.slice(
       testWorkflow.indexOf('\n  lane:'),
       testWorkflow.indexOf('\n  trunk-report:'),
     );
     expect(laneJob).toContain("github.event_name != 'pull_request'");
-    expect(laneJob).toContain("|| github.base_ref == 'staging'");
-    expect(laneJob).toContain("|| contains(github.event.pull_request.labels.*.name, 'test')");
-    expect(laneJob).toContain("|| contains(github.event.pull_request.labels.*.name, 'preview')");
+    expect(laneJob).toContain("|| (github.base_ref == 'staging' && github.event.action != 'labeled')");
+    expect(laneJob).toContain("|| (github.event.action == 'labeled' && github.event.label.name == 'test')");
+    // A later push must not cancel the run a person asked for.
+    expect(testWorkflow).toContain(
+      "group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}",
+    );
     expect(laneJob).toContain('fail-fast: false');
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
     expect(laneJob).toContain('name: ${{ matrix.lane }} lane');
@@ -244,6 +239,35 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toContain('workflow_call');
     expect(testWorkflow).not.toContain('inputs.mode');
     expect(testWorkflow).not.toMatch(/^  decide:/m);
+  });
+
+  test('no workflow runs a job on a pull request into main by itself', () => {
+    // A pull request into `main` is mergeable the moment it opens. CI runs on
+    // pull requests into `staging` and `prod`, and after the merge on `main`.
+    // Two workflows listen to pull requests into `main`, and each runs a job
+    // only when a person adds its label: tests.yml (`test`) and
+    // deploy-preview.yml (`preview`). Both gates are pinned above.
+    const labelGated = new Set(['tests.yml', 'deploy-preview.yml']);
+    const dir = resolve(root, '.github/workflows');
+    const offenders = readdirSync(dir)
+      .filter((file) => /\.ya?ml$/.test(file) && !labelGated.has(file))
+      .filter((file) => {
+        // Walk the top-level `on:` block line by line: a pull request trigger
+        // is an offender unless its `branches:` list exists and omits `main`.
+        const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
+        const on = lines.indexOf('on:');
+        if (on < 0) return false;
+        const end = lines.findIndex((line, i) => i > on && /^\S/.test(line));
+        const block = lines.slice(on + 1, end < 0 ? undefined : end);
+        return block.some((line, i) => {
+          if (!/^  pull_request(_target)?:/.test(line)) return false;
+          const next = block.slice(i + 1).findIndex((l) => /^  \S/.test(l));
+          const body = block.slice(i + 1, next < 0 ? undefined : i + 1 + next);
+          const branches = body.find((l) => /^    branches:/.test(l));
+          return !branches || /\bmain\b/.test(branches);
+        });
+      });
+    expect(offenders).toEqual([]);
   });
 
   test('the dev trunk tests its own latest commit, and cannot block anything', () => {
@@ -390,26 +414,24 @@ describe('the preview status tells the truth about the suite', () => {
 });
 
 /**
- * The `preview` label deploys; it never waits on, or starts, a 40-80 min suite.
+ * The `preview` label is one explicit request: deploy, then `--target-full`.
  *
- * 2026-09-28: every label ran `--target-full` inline. Five ran at once, all
- * shared one preview GitHub App, hit its secondary rate limit on repo creation,
- * and each ran ~80 min to red. Pushes queued behind them for up to 67 min, and
- * two queued runs finally deployed — re-creating 16 GB environments for
- * branches that had merged and been torn down minutes earlier.
+ * 2026-09-28: every PR carried the label, so five suites ran at once, shared
+ * one preview GitHub App, hit its secondary rate limit, and each ran ~80 min to
+ * red. The label is now rare by policy and a push never starts a run, so every
+ * run is a person asking for exactly this.
  */
-describe('the preview label is a fast deploy, and a superseded run never deploys', () => {
+describe('the preview label deploys and tests once, and a superseded run never deploys', () => {
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
     previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
   );
 
-  test('only an explicit dispatch runs the suite', () => {
-    expect(previewWorkflow).toContain(
-      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
-    );
-    expect(previewWorkflow).not.toContain("github.event.action == 'labeled' || github.event_name == 'workflow_dispatch'");
+  test('only an explicit act starts a run, and every run tests', () => {
+    expect(previewWorkflow).toContain("PREVIEW_RUN_TESTS: '1'");
+    expect(previewWorkflow).toContain('types: [labeled, unlabeled]');
+    expect(previewWorkflow).not.toContain('synchronize');
   });
 
   test('a moved head, a removed label, or a deleted branch cancels the run instead of deploying', () => {

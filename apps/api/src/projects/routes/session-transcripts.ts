@@ -55,6 +55,7 @@ projectsApp.openapi(
         history: z.enum(['true', 'false']).optional(),
         before: z.string().optional(),
         child: z.string().optional(),
+        detail: z.enum(['compact', 'full']).optional(),
       }),
     },
     responses: {
@@ -136,6 +137,7 @@ projectsApp.openapi(
       userId: loaded.userId,
       limit: limit.value,
       maxChars: maxChars.value,
+      full: c.req.query('detail') === 'full',
     });
     return c.json(transcript);
   },

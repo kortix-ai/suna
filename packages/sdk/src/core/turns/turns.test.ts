@@ -263,6 +263,10 @@ describe('getToolInfo agent/session tool mappings', () => {
     expect(getToolInfo('mystery_tool')).toEqual({ icon: 'cpu', title: 'mystery_tool' });
   });
 
+  test('preserves the raw name for an unknown tool with a prefix', () => {
+    expect(getToolInfo('oc-mystery-tool')).toEqual({ icon: 'cpu', title: 'oc-mystery-tool' });
+  });
+
   test('task card subtitle falls back through description, title, prompt', () => {
     expect(getToolInfo('task', { description: 'Do the thing' }).subtitle).toBe('Do the thing');
     expect(getToolInfo('task', { title: 'Fallback title' }).subtitle).toBe('Fallback title');
@@ -390,6 +394,7 @@ describe('getChildSessionId', () => {
       state: { status: 'completed', output: 'ses_shouldnotmatch' },
     };
     expect(getChildSessionId(part)).toBeUndefined();
+    expect(getChildSessionId({ ...part, tool: 'oc-agent_task' })).toBeUndefined();
   });
 });
 

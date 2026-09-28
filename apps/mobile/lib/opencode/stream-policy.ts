@@ -213,3 +213,41 @@ export function questionsToHydrate<Q extends QuestionLike>(
   }
   return added;
 }
+
+interface StatusLike {
+  type: string;
+}
+
+/**
+ * Status writes from one `GET /session/status` read, which lists every session
+ * the runtime is working on. A session opened, or a stream reopened, mid-turn
+ * otherwise reads idle until the next status frame.
+ *
+ * It only ever FILLS a working status. Absence is not evidence of idle: a
+ * first prompt is seeded busy before a freshly booted box has put the turn on
+ * the wire, and that box does not list it yet. The session's own `session.idle`
+ * frame ends a turn.
+ *
+ * `before` is the store's status map when the read was issued, `current` when
+ * it answered. A slot that changed in between holds a live frame newer than
+ * this read, and is left alone. `include` limits writes to sessions on the
+ * computer that answered.
+ */
+export function statusesToHydrate<S extends StatusLike>(
+  fetched: unknown,
+  before: Readonly<Record<string, S | undefined>>,
+  current: Readonly<Record<string, S | undefined>>,
+  include: (sessionId: string) => boolean,
+): [string, S][] {
+  if (!fetched || typeof fetched !== 'object' || Array.isArray(fetched)) return [];
+  const listed = fetched as Record<string, S>;
+  const writes: [string, S][] = [];
+  for (const sessionId of Object.keys(listed)) {
+    if (!include(sessionId) || current[sessionId] !== before[sessionId]) continue;
+    const next = listed[sessionId];
+    if (next && typeof next.type === 'string' && current[sessionId]?.type !== next.type) {
+      writes.push([sessionId, next]);
+    }
+  }
+  return writes;
+}

@@ -85,6 +85,7 @@ import {
 import {
   PROXY_RETRY_BUDGET_MS,
   PROXY_RETRY_DELAYS_MS,
+  isEnvRpcRequest,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -1255,7 +1256,8 @@ export async function forwardToSandbox(
   // on the daemon port — `/file/import` elsewhere is the user's own route.
   const uploadDelivery =
     isUploadRequest({ method, path: remainingPath }) ||
-    isFileImportRequest({ method, path: remainingPath, port: upstreamPort });
+    isFileImportRequest({ method, path: remainingPath, port: upstreamPort }) ||
+    isEnvRpcRequest({ method, path: remainingPath, port: upstreamPort });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.

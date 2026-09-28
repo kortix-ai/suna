@@ -238,6 +238,7 @@ describe('dispatch: one attempt plan', () => {
     const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
     const { run, sent } = harness((_s, index) => (index === 0 ? status(429) : ok()), {
       resolveCandidates: async () => [upstream('glm-managed')],
+      admitCharge: async () => true,
     });
     const outcome = await run({
       model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['glm-5.3-flash'],
@@ -246,6 +247,68 @@ describe('dispatch: one attempt plan', () => {
     expect(sent.map((s) => s.host)).toEqual(['provider-a', 'glm-managed']);
     expect(outcome.model).toBe('glm-5.3-flash');
     expect(outcome.response?.status).toBe(200);
+  });
+
+  // #7979 moved a failed ChatGPT request to a Kortix model without asking
+  // whether the account can pay: the wallet gate had run for the ChatGPT model
+  // alone, which bills nothing.
+  test.each([
+    ['admitted', true, ['provider-a', 'g-managed', 'h-managed'], 200],
+    ['refused', false, ['provider-a'], 429],
+    ['not asked for', undefined, ['provider-a'], 429],
+  ] as const)('a project chain reaches Kortix-billed models only when the charge is %s', async (_name, admit, hosts, expected) => {
+    const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
+    const { run, sent } = harness((s) => (s.host === 'h-managed' ? ok() : status(s.host === 'provider-a' ? 429 : 503)), {
+      resolveCandidates: async (model) => [upstream(`${model}-managed`)],
+      ...(admit === undefined ? {} : { admitCharge: async () => admit }),
+    });
+    const outcome = await run({
+      model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['g', 'h'],
+      fallbackOn: 'any-error', fallbackChosenByProject: true,
+    });
+    expect(sent.map((s) => s.host)).toEqual([...hosts]);
+    expect(outcome.response?.status).toBe(expected);
+  });
+
+  test('an own-key fallback after a ChatGPT failure needs no charge admission', async () => {
+    const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
+    const asked: string[] = [];
+    const { run, sent } = harness((_s, index) => (index === 0 ? status(429) : ok()), {
+      resolveCandidates: async (model) => [upstream(`${model}-byok`, { billingMode: 'none', markup: 0 })],
+      admitCharge: async () => { asked.push('charge'); return false; },
+    });
+    const outcome = await run({
+      model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['claude'],
+      fallbackOn: 'any-error', fallbackChosenByProject: true,
+    });
+    expect(sent.map((s) => s.host)).toEqual(['provider-a', 'claude-byok']);
+    expect(outcome.response?.status).toBe(200);
+    expect(asked).toEqual([]);
+  });
+
+  test('a plan that starts at a fallback records the unavailable routed model first', async () => {
+    const { run } = harness((s) => (s.host === 'g-upstream' ? ok() : status(503)));
+    const outcome = await run({
+      model: 'f',
+      candidates: [upstream('f-upstream')],
+      fallbackModels: ['g'],
+      fallbackOn: 'any-error',
+      fallbackChosenByProject: true,
+      unavailable: {
+        model: 'codex/gpt-6-sol',
+        failure: {
+          attempt: 1, provider: 'codex', routeModel: 'codex/gpt-6-sol', resolvedModel: 'codex/gpt-6-sol',
+          stage: 'resolve', status: 429, code: 'provider_pool_rate_limited', message: 'Every ChatGPT account is paused',
+        },
+      },
+    });
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.attempts).toBe(2);
+    expect(outcome.candidatesTried).toEqual(['codex/gpt-6-sol:provider_pool_rate_limited', 'f-upstream:f', 'g-upstream:g']);
+    expect(outcome.attemptFailures.map((f) => [f.attempt, f.stage, f.routeModel, f.status])).toEqual([
+      [1, 'resolve', 'codex/gpt-6-sol', 429],
+      [2, 'dispatch', 'f', 503],
+    ]);
   });
 
   test('a client that left stops the plan', async () => {

@@ -65,7 +65,13 @@ Removing the server from the client stops it from using your tokens.
 | --- | --- |
 | `start_session` | Starts a session in the project with a first prompt. Returns the `session_id`. |
 | `send_message` | Queues a message for a session and starts the session if it is stopped. |
-| `read_session` | Returns a session's status and a compact transcript of its latest messages. |
+| `read_session` | Returns a session's status, whether a turn is `running`, and its latest messages with each tool call's input and output. `wait_seconds` (up to 45) waits for the running turn to end. |
+| `list_sessions` | Lists the sessions you can see in the project: id, title, status, agent, owner. |
+| `run_command` | Runs a bash command in a session's sandbox and returns stdout, stderr and the exit code. |
+| `read_file` | Reads a file from a session's sandbox, or from the project's git repository when you give no `session_id`. Images return as images. |
+| `write_file` | Writes a file in a session's sandbox and creates its parent directories. |
+| `list_files` | Lists one directory of a session's sandbox, or every file of the repository under a path. |
+| `read_skill` | Lists the Kortix platform guides, or returns one guide and its reference files. |
 | `search_api` | Searches the Kortix API routes by keyword. |
 | `describe_api` | Returns one route's parameters, request body and response schema. |
 | `call_api` | Calls any `/v1/` route as you. `{projectId}` in the path means the connection's project. |
@@ -73,7 +79,23 @@ Removing the server from the client stops it from using your tokens.
 `search_api`, `describe_api` and `call_api` cover everything the web app and the
 [CLI](/docs/cli) do, because both are clients of the same API. `call_api`
 refuses `/v1/oauth/*` and MCP paths. Each call passes the same authorization
-and audit as a request from the web app.
+and audit as a request from the web app. The audit records each call with
+`client_reported_source: "mcp"`.
+
+### Sandboxes
+
+`run_command`, `read_file`, `write_file` and `list_files` with a `session_id`
+reach the session's live sandbox, the same way the web terminal and file panel
+do. Relative paths resolve under `/workspace`, the session's git checkout. A
+stopped sandbox starts on the first call. The `kortix` CLI in the sandbox is
+signed in as the session.
+
+One tool call answers within 55 seconds. `run_command` stops a command after
+45 seconds. Start longer work in the background and read its log later:
+
+```bash
+nohup npm test > /tmp/test.log 2>&1 &
+```
 
 The server is stateless: it answers `POST` with JSON, and `GET` and `DELETE`
 with `405`.

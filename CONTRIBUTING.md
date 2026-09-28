@@ -26,20 +26,24 @@ Tools every contributor needs:
 
 ## The pull request loop
 
+A pull request into `main` runs **no** CI job by itself. Your development machine runs the
+tests, the stack, and the demo before the PR opens, and the PR is mergeable at once. In the
+rare case you want CI before the merge, add the `test` or `preview` label (one run each).
+
 1. **Branch.** One canonical branch per objective, in its own worktree.
 2. **Commit.** Conventional subjects (`fix(api): …`, `feat(web): …`). The hooks must pass.
    Never use `--no-verify`.
-3. **Open a draft PR against `main` with the `preview` label.** Fill every section of
-   `.github/pull_request_template.md`.
-4. **Test.** Run the narrowest relevant test, then `pnpm test`. CI runs the suite on a PR
-   into `main` only with the `test` or `preview` label.
-5. **Record a demo video** of the change with agent-browser, on the PR's preview origin.
-6. **Attach it** with `gh pr edit <pr> --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
-   `gh` uploads the video and puts a player in the PR body.
-7. **Merge.** Mark the PR ready and squash-merge it to `main` when it is verified: the
-   local checks passed and the `Tests` lanes are green. No approval is needed for `main`.
-   `main` deploys to dev for the whole team, so verify the change on dev after the merge.
-   Merging into `staging` or `prod`, and every release step, still needs explicit approval.
+3. **Test in your box.** Run the narrowest relevant test, then `pnpm test`. Run the changed
+   behaviour on the worktree's local stack (`pnpm worktree start <slug>`).
+4. **Record a demo video** of the change with agent-browser, on the local stack.
+5. **Open the PR against `main`** with every section of `.github/pull_request_template.md`
+   filled, and attach the video:
+   `gh pr create --base main --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
+6. **Merge.** Squash-merge it to `main` when it is verified: the local checks passed and the
+   PR has no conflict. No approval and no CI check is needed for `main`. `main` deploys to
+   dev for the whole team, so verify the change on dev after the merge. The push runs the
+   `Tests` lanes as a non-blocking safety net. Merging into `staging` or `prod`, and every
+   release step, still needs explicit approval.
 
 The skill covers each step with its commands and completion check.
 
@@ -47,16 +51,13 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `preview` | Deploys a full self-host environment for the branch: its own PostgreSQL, Supabase, API, gateway, frontend, Mailpit, and HTTPS origin. Runs the six-lane `Tests` suite. It does not run `--target-full`: `gh workflow run deploy-preview.yml -f pr_number=<N>` does. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
-| `test` | Runs the six-lane `Tests` suite (~8 min) without a push. |
-| `i18n-reorder` | Allows an intentional key reorder in the translation catalogs. |
+| `test` | Runs the six `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
+| `preview` | Deploys a self-host environment for the branch on Platinum, then runs `pnpm test -- --target-full` against it, once. A push does not redeploy. Removing the label or deleting the branch tears it down. Closing the PR does not. |
+| `i18n-reorder` | Allows an intentional key reorder in the translation catalogs on a release PR. |
 
 - The preview origin appears in the sticky PR comment and in the `preview/pr-<N>` GitHub
   deployment. `.agents/skills/contributing/scripts/preview-origin.sh <pr> --wait` prints it
   once the head commit is live.
-- Sign in with a synthetic email. The magic link arrives in the preview's own Mailpit
-  (API: `<origin>/_mailpit/api/v1/messages`). `.agents/skills/contributing/scripts/preview-sign-in.sh <origin>
-  <agent-browser-session>` does the whole sign-in.
 - Previews run only for branches of this repository, and the label needs write access.
 - Full reference: `.agents/skills/contributing/references/preview-environments.md`.
 
@@ -211,12 +212,9 @@ ordinary development stack before either command.
 
 ### What CI runs
 
-| Pull request into | Runs |
+| Event | Runs |
 | --- | --- |
-| `main`, no label | `ci.yml`, security and compliance scans, migration checks. `Tests` shows as skipped. |
-| `main` + `test` | the above + the six-lane `Tests` suite (`core`, `browser-1`…`4`, `packages`) |
-| `main` + `preview` | the above + the preview deploy (`--target-full` only on dispatch) |
-| `staging` | the no-label checks + `Tests`, always |
-| `prod` | `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |
-
-Every push to `main` also runs `Tests`. A red run comments the failing lanes on the commit.
+| Pull request into `main` | nothing, unless a person adds `test` (six lanes, once) or `preview` (deploy + `--target-full`, once) |
+| Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `ci.yml`, `CodeQL`, secret scans, path-gated migration / i18n / compliance checks. None blocks: a red `Tests` run comments the failing lanes on the commit. |
+| Pull request into `staging` | the six `Tests` lanes, `ci.yml`, `CodeQL`, security, compliance, and migration checks |
+| Pull request into `prod` | the same checks + `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |

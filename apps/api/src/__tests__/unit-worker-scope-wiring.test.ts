@@ -26,7 +26,7 @@ const read = (file: string) => readFileSync(join(SRC, file), 'utf8');
 const WORKERS: Record<string, string> = {
   'active-turn-renewal': 'projects/active-turn-renewal.ts',
   'project-maintenance': 'projects/maintenance.ts',
-  'trigger-scheduler': 'projects/lib/triggers.ts',
+  'trigger-scheduler': 'projects/lib/trigger-scheduler.ts',
   'startup-prebuild': 'snapshots/builder.ts',
   'suna-migration': 'projects/suna-migration/suna-migration-worker.ts',
   'provider-transition': 'projects/provider-transition/provider-transition-worker.ts',

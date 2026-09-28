@@ -13,3 +13,7 @@ function canonicalRuntimeContext(value: unknown): string {
 export function runtimeContextConflicts(existing: unknown, requested: unknown): boolean {
   return canonicalRuntimeContext(existing) !== canonicalRuntimeContext(requested);
 }
+
+export function providerPoolConflicts(existing: unknown, requested: unknown): boolean {
+  return JSON.stringify(existing ?? null) !== JSON.stringify(requested ?? null);
+}
