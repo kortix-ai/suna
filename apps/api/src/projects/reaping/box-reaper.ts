@@ -684,18 +684,24 @@ export async function reapAndReconcileSandboxes(
               );
               probeBackoff.set(row.sandboxId, { backoffMs: nextBackoffMs, until: now.getTime() + nextBackoffMs });
             }
-            console.warn('[reaper] turn observation unknown; drip-extending', {
-              sandboxId: row.sandboxId,
-              externalId: row.externalId,
-              provider: row.provider,
-              turns: turns.length,
-              // Was the daemon ASKED this pass, or is this a backed-off drip?
-              // Without this the log cannot tell 20 s drips from 20 s probes.
-              probed: backedOffProbes === 0,
-              backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
-              deadlineAt: row.deadlineAt.toISOString(),
-              extended,
-            });
+            // An unchanged unreadable turn is one incident, not one warning
+            // every 20 s. A readable answer clears the back-off above; the next
+            // unknown episode warns again. Log a failed extension on every pass.
+            if (
+              (backedOffProbes === 0 && probeBackoff.get(row.sandboxId)?.backoffMs === PROBE_BACKOFF_MIN_MS) ||
+              !extended
+            ) {
+              console.warn('[reaper] turn observation unknown; drip-extending', {
+                sandboxId: row.sandboxId,
+                externalId: row.externalId,
+                provider: row.provider,
+                turns: turns.length,
+                probed: backedOffProbes === 0,
+                backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
+                deadlineAt: row.deadlineAt.toISOString(),
+                extended,
+              });
+            }
           }
           // THE ONE RULE. `deadline_at` is pushed out only by a
           // control-plane-OBSERVED turn start and pulled in by a

@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
+import { isRemotePushPolicyRejection } from '../git/mirror';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToTomlEntry } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
@@ -243,6 +244,12 @@ async function commitGitCliRepoFile(
   } catch (err) {
     if (err instanceof Error && err.name === 'GitFileRevisionConflictError') {
       return { error: err.message, status: 409 };
+    }
+    if (isRemotePushPolicyRejection(err)) {
+      return {
+        error: 'The repository rejected the push because of branch protection or repository rules. Allow the Kortix GitHub App to push to the default branch, or connect a repository where it can, then try again.',
+        status: 409,
+      };
     }
     return {
       error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,

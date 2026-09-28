@@ -71,15 +71,16 @@ Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
 
 The pre-merge gate is the developer's machine: run `pnpm test` (and `--full` for
 browser-visible changes) before you merge into `main`. A pull request into
-`main` runs no GitHub Actions job, with or without a label.
+`main` runs no GitHub Actions job unless a person adds the `test` label (six
+lanes, once) or the `preview` label (below).
 
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
-It runs on every push to `main`, on a pull request into `staging`, and on manual
-dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
+It runs on every push to `main`, on a pull request into `staging`, once when a
+person adds the `test` label to a pull request, and on manual dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
 and a red run comments on the offending commit with the failing lane names. A
 cancelled run means a newer commit superseded it. Deployed-target runs are
-separate: `deploy-preview.yml` (`--target-full` against a preview origin, on
-dispatch only) and `tests-release.yml` (`--target-*-full` against deployed
+separate: `deploy-preview.yml` (`--target-full` against a preview origin, once
+per `preview` label or dispatch) and `tests-release.yml` (`--target-*-full` against deployed
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
@@ -141,8 +142,8 @@ exclusions and all other browser journey exclusions fail the preview test.
 Use **Run workflow** to select `platinum` or `daytona` explicitly for one
 provider proof. A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
-A push to a labelled branch redeploys its environment in place, and the label
-stays. Removing the label or deleting the branch deletes the sandbox; closing
+A push to a labelled branch starts nothing; re-add the label to deploy and test
+the new head. Removing the label or deleting the branch deletes the sandbox; closing
 the pull request does not. A scheduled reconciler deletes environments whose
 branch no longer exists.
 

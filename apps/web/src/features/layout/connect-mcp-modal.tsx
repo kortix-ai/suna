@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * "Connect MCP": the project's hosted MCP URL and how to add it to a client.
- * The client signs in with OAuth on first use (apps/api/src/mcp), so there is
- * nothing to install. Shown only when the project's `mcp` feature flag is on.
+ * "Connect MCP": the hosted MCP URL and how to add it to a client. One URL per
+ * person, like the `kortix` CLI: it reaches every project the signed-in user
+ * can open. The client signs in with OAuth on first use (apps/api/src/mcp), so
+ * there is nothing to install.
  */
 
 import { Button } from '@/components/ui/button';
@@ -23,10 +24,10 @@ import { getEnv } from '@/lib/env-config';
 import { ArrowSquareOutIcon, CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
-/** The project's MCP endpoint: `<api origin>/v1/projects/<id>/mcp`. */
-export function mcpUrl(backendUrl: string | undefined, projectId: string): string {
+/** The MCP endpoint: `<api origin>/v1/mcp`. */
+export function mcpUrl(backendUrl: string | undefined): string {
   const base = (backendUrl || 'https://api.kortix.com/v1').replace(/\/+$/, '');
-  return `${base.endsWith('/v1') ? base : `${base}/v1`}/projects/${projectId}/mcp`;
+  return `${base.endsWith('/v1') ? base : `${base}/v1`}/mcp`;
 }
 
 export function cursorInstallUrl(url: string): string {
@@ -45,16 +46,14 @@ const TABS = [
 ] as const;
 
 export function ConnectMcpModal({
-  projectId,
   open,
   onOpenChange,
 }: {
-  projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('connectMcp');
-  const url = mcpUrl(getEnv().BACKEND_URL, projectId);
+  const url = mcpUrl(getEnv().BACKEND_URL);
   const json = JSON.stringify({ mcpServers: { kortix: { url } } }, null, 2);
 
   return (
