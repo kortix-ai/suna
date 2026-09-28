@@ -103,6 +103,44 @@ export async function revokeAccountToken(tokenId: string, accountId?: string) {
 // an agent-session token is denied outright server-side (privilege-escalation
 // guard — see apps/api/src/projects/routes/project-credentials.ts).
 
+// ─── Connected apps (OAuth grants) ─────────────────────────────────────────
+
+/**
+ * An app the caller approved with "Sign in with Kortix": an MCP client such as
+ * Claude Code or Cursor, or an account's own OAuth app. Per person, across all
+ * accounts. `GET /oauth/grants`.
+ */
+export interface OAuthGrant {
+  client_id: string;
+  name: string;
+  client_type: string;
+  /** Registered by the app itself (RFC 7591): its name is its own claim. */
+  self_registered: boolean;
+  /** Where the app sends the user back after sign-in. */
+  redirect_hosts: string[];
+  scopes: string[];
+  granted_at: string | null;
+  /** When the app last got a token; it refreshes about hourly while in use. */
+  last_active_at: string | null;
+  /** Holds a live token right now. */
+  active: boolean;
+}
+
+/** The caller's connected apps, most recently active first. */
+export async function listOAuthGrants(): Promise<OAuthGrant[]> {
+  return unwrap(await backendApi.get<{ grants: OAuthGrant[] }>('/oauth/grants')).grants;
+}
+
+/**
+ * Revoke a connected app: its consent (it must ask again) and every live token
+ * it holds for the caller.
+ */
+export async function revokeOAuthGrant(clientId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: true; revoked_tokens: number }>(`/oauth/grants/${encodeURIComponent(clientId)}`),
+  );
+}
+
 export interface ProjectCliToken {
   token_id: string;
   name: string;

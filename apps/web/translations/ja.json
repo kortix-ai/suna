@@ -1283,6 +1283,24 @@
         "blocked": "ここでは新しいセッションを開始できません",
         "ready": "新しいセッションを開始できます"
       }
+    },
+    "connectedApps": {
+      "title": "連携アプリ",
+      "description": "Kortix でサインインしたアプリ（MCP クライアントなど）。取り消すまで、各アプリはあなたとして動作します。",
+      "emptyTitle": "連携アプリはありません",
+      "emptyDescription": "「Kortix でサインイン」で承認したアプリ（MCP 経由の Claude、Cursor、Codex など）がここに表示されます。",
+      "loadFailed": "連携アプリを読み込めませんでした",
+      "retry": "再試行",
+      "unverified": "未確認のアプリ",
+      "lastActive": "最終アクティブ {time}",
+      "approved": "承認 {time}",
+      "revokeApp": "アクセスを取り消す",
+      "actionsFor": "{name} の操作",
+      "revokeTitle": "このアプリを取り消しますか？",
+      "revokeDescription": "{name} は直ちに Kortix アカウントへのアクセスを失います。再び使うには、もう一度承認してください。",
+      "revoke": "取り消す",
+      "revoked": "アプリのアクセスを取り消しました",
+      "revokeFailed": "アプリを取り消せませんでした"
     }
   },
   "triggers": {
@@ -19210,7 +19228,10 @@
       "text7740934de920": "OAuth クライアントを登録しました",
       "textcd36423ea12a": "MCP サーバーを呼び出しました",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "連携アプリを一覧表示",
+      "text37698a37f9d2": "連携アプリを取り消し",
+      "text8c8fb214b592": "ユーザーとして GitHub を認可"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

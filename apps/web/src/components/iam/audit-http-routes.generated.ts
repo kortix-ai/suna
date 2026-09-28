@@ -317,6 +317,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|oauth|authorize",
   "POST|v1|oauth|authorize|consent",
   "GET|v1|oauth|authorize|consent|:requestId",
+  "GET|v1|oauth|grants",
+  "DELETE|v1|oauth|grants|:clientId",
   "POST|v1|oauth|register",
   "POST|v1|oauth|revoke",
   "POST|v1|oauth|token",
