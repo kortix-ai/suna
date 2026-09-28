@@ -1,7 +1,7 @@
 name: Security Scan
 
 # Comprehensive DevSecOps scan suite. Runs weekly (catches newly-disclosed CVEs
-# in already-shipped images), on PRs that touch infra/containers, and on demand.
+# in already-shipped images), on PRs that touch infra or a Dockerfile, and on demand.
 # Every scanner emits SARIF into the GitHub Security → Code scanning tab so
 # findings are centralized, triageable, and trend over time.
 #

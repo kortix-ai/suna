@@ -831,16 +831,6 @@ export async function createInstallationToken(
 
 const installationTokens = createInstallationTokenCache();
 
-/** Drop cached tokens of one installation (after an uninstall or a 401). */
-export function invalidateInstallationTokens(installationId: string) {
-  installationTokens.invalidate(installationId.trim());
-}
-
-/** Test seam: forget every cached installation token. */
-export function clearInstallationTokenCacheForTests() {
-  installationTokens.clear();
-}
-
 export async function listInstallationRepositories(
   installationId: string,
   options: RepositoryListOptions = {},

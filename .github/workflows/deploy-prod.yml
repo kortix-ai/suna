@@ -902,12 +902,12 @@ jobs:
   # ── Apply DB migrations to prod BEFORE the API rolls ────────────────────────
   # Closes the gap that caused the 2026-06-21 /triggers 500: migrations used to be
   # applied by a manual step at promote that got missed, so new code shipped
-  # against a DB missing its columns. This job applies supabase/migrations
-  # (tracked in kortix.schema_migrations, idempotent, halts on real failure) and
+  # against a DB missing its columns. This job applies packages/db/migrations
+  # (node-pg-migrate, idempotent, halts on real failure) and
   # deploy-ecs `needs:` it — so the schema is ALWAYS current before new code
   # serves. Migrations are additive + reviewed; the runner never runs the
   # dangerous `drizzle-kit push --force` (which is why prod's ensureSchema stays a
-  # no-op). See scripts/apply-migrations.sh.
+  # no-op). See packages/db/MIGRATIONS.md.
   migrate-db:
     name: Apply DB migrations to prod
     needs: version
