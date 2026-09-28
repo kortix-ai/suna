@@ -8,11 +8,12 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-## Customer data
+## Design
 
-Never write customer names, people's names, emails, or real prod IDs into code,
-commits, PRs, docs, or comments. The full rule and the commit guard are in the
-root `AGENTS.md` → "NEVER write customer data or PII".
+Read the root [design reference](../../AGENTS.md#canonical-product-design-references):
+`kortix-brand-guidelines` owns values, `kortix-design-system` owns components,
+and `src/app/globals.css` owns implemented tokens. Electron shares this UI;
+native shell geometry belongs in `apps/desktop-electron/`.
 
 ## Translation catalogs
 
