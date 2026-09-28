@@ -39,7 +39,7 @@ import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/sh
 import {
   getSessionDisplayTitle,
   groupChangeRequestsBySession,
-  groupSessionsByCoordinator,
+  groupSectionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
   shortRelative,
@@ -484,7 +484,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     return (
       <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
-        {grouped.sections.map((section) => (
+        {groupSectionsByCoordinator(grouped.sections).map((section) => (
           <SessionListSection
             key={section.id}
             section={section}
@@ -495,11 +495,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             open={!collapsedSectionIds.has(section.id)}
             onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
           >
-            {/* Two independent groupings compose here: `groupSessions` splits the
-                list into sections, then within each section
-                `groupSessionsByCoordinator` nests spawned sessions under the
-                coordinator that started them. */}
-            {groupSessionsByCoordinator(section.sessions).map((group) => (
+            {/* Two groupings compose here: `groupSessions` splits the list into
+                sections, then `groupSectionsByCoordinator` nests spawned
+                sessions under their coordinator, across sections. */}
+            {section.groups.map((group) => (
               <div key={group.session.session_id} className="space-y-px">
                 {renderSessionNode(group.session, false)}
                 {group.children.length > 0 && (

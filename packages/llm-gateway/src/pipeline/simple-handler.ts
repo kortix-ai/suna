@@ -438,6 +438,8 @@ export async function handleChatCompletions(
       candidates: resolvedCandidates,
       fallbackModels: route?.fallbackModels,
       fallbackOn: route?.fallbackOn,
+      // `project:*` routes come from the project's own Routing settings.
+      fallbackChosenByProject: route?.policyId.startsWith('project:') ?? false,
       // A fallback model gets its own clamped defaults, never the primary's.
       defaultsFor: (model) =>
         route?.generationDefaultsForModel?.(model) ??

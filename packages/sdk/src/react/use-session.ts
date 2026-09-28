@@ -374,10 +374,8 @@ export const SESSION_START_FRESH_MS = 30_000;
  * maximally stale (`0`, i.e. TanStack's "always refetch on mount") —
  * unchanged from this query's behavior before this staleTime existed.
  *
- * This does NOT change `refetchInterval` (`SESSION_START_POLL_OPTIONS`,
- * below, untouched): a `ready` result already stops that poll
- * (`shouldPollSessionStart`), so this only governs remount behavior, never
- * steady-state polling.
+ * The ready-state interval below rechecks server truth while a tab remains open;
+ * staleTime only governs the immediate remount request.
  */
 export function sessionStartStaleTime(query: {
   state: { data: SessionStartResult | null | undefined };
@@ -408,9 +406,10 @@ export function cachedStartResultIsReady(
 }
 
 /**
- * TanStack Query pauses interval fetches while the document is hidden unless
- * this option is true. Session readiness must continue because it gates the
- * runtime switch, event stream, and queued-prompt replay.
+ * Recheck a ready session once a minute: a provider can park its sandbox
+ * while the tab remains open, and only /start can wake it. Pending stages
+ * retain the faster boot cadence; terminal failures still stop polling.
+ * Keep polling in background to complete an in-flight wake.
  */
 export const SESSION_START_POLL_OPTIONS = {
   refetchInterval: (query: {
@@ -418,7 +417,10 @@ export const SESSION_START_POLL_OPTIONS = {
       error: unknown;
       data: SessionStartResult | null | undefined;
     };
-  }) => shouldPollSessionStart(query.state.error, query.state.data),
+  }) =>
+    query.state.data?.stage === 'ready'
+      ? 60_000
+      : shouldPollSessionStart(query.state.error, query.state.data),
   refetchIntervalInBackground: true,
 } as const;
 
