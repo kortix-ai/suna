@@ -36,7 +36,6 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { proxyGitUrl } from './sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -251,7 +250,7 @@ export function serializeProject(
     repo_url: row.repoUrl,
     // Runtime clients clone and push only through the Kortix Git proxy. The
     // upstream origin and its credential remain server-side.
-    git_origin_url: proxyGitUrl(row.projectId),
+    git_origin_url: `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${row.projectId}.git`,
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,
