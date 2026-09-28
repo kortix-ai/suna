@@ -51,6 +51,55 @@ interface ExportTranscriptModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const TRANSCRIPT_OPTIONS = [
+  {
+    key: 'assistantMetadata',
+    id: 'opt-metadata',
+    titleKey: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadata',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadataDescription',
+  },
+  {
+    key: 'toolDetails',
+    id: 'opt-tools',
+    titleKey: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetails',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetailsDescription',
+  },
+  {
+    key: 'thinking',
+    id: 'opt-thinking',
+    titleKey: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoning',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoningDescription',
+  },
+] as const;
+
+function TranscriptOptionToggle({
+  id,
+  label,
+  description,
+  checked,
+  onToggle,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Field orientation="horizontal" variant="outline">
+      <FieldContent>
+        <FieldTitle>
+          <label htmlFor={id} className="cursor-pointer">
+            {label}
+          </label>
+        </FieldTitle>
+        <FieldDescription>{description}</FieldDescription>
+      </FieldContent>
+      <Switch id={id} checked={checked} onCheckedChange={onToggle} />
+    </Field>
+  );
+}
+
 export function ExportTranscriptModal({
   sessionId,
   kortixSessionScope,
@@ -166,71 +215,16 @@ export function ExportTranscriptModal({
 
         <ModalBody>
           <FieldGroup className="gap-4">
-            <Field orientation="horizontal" variant="outline">
-              <FieldContent>
-                <FieldTitle>
-                  <label htmlFor="opt-metadata" className="cursor-pointer">
-                    {tHardcodedUi.raw(
-                      'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadata',
-                    )}
-                  </label>
-                </FieldTitle>
-                <FieldDescription>
-                  {tHardcodedUi.raw(
-                    'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadataDescription',
-                  )}
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="opt-metadata"
-                checked={options.assistantMetadata}
-                onCheckedChange={() => toggleOption('assistantMetadata')}
+            {TRANSCRIPT_OPTIONS.map(({ key, id, titleKey, descriptionKey }) => (
+              <TranscriptOptionToggle
+                key={key}
+                id={id}
+                label={tHardcodedUi.raw(titleKey)}
+                description={tHardcodedUi.raw(descriptionKey)}
+                checked={options[key]}
+                onToggle={() => toggleOption(key)}
               />
-            </Field>
-
-            <Field orientation="horizontal" variant="outline">
-              <FieldContent>
-                <FieldTitle>
-                  <label htmlFor="opt-tools" className="cursor-pointer">
-                    {tHardcodedUi.raw(
-                      'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetails',
-                    )}
-                  </label>
-                </FieldTitle>
-                <FieldDescription>
-                  {tHardcodedUi.raw(
-                    'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetailsDescription',
-                  )}
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="opt-tools"
-                checked={options.toolDetails}
-                onCheckedChange={() => toggleOption('toolDetails')}
-              />
-            </Field>
-
-            <Field orientation="horizontal" variant="outline">
-              <FieldContent>
-                <FieldTitle>
-                  <label htmlFor="opt-thinking" className="cursor-pointer">
-                    {tHardcodedUi.raw(
-                      'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoning',
-                    )}
-                  </label>
-                </FieldTitle>
-                <FieldDescription>
-                  {tHardcodedUi.raw(
-                    'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoningDescription',
-                  )}
-                </FieldDescription>
-              </FieldContent>
-              <Switch
-                id="opt-thinking"
-                checked={options.thinking}
-                onCheckedChange={() => toggleOption('thinking')}
-              />
-            </Field>
+            ))}
           </FieldGroup>
 
           <Field>

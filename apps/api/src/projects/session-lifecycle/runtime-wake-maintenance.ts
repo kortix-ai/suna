@@ -9,8 +9,14 @@ import {
   RUNTIME_WAKE_LATE_START_GUARD_MS,
   runtimeStartFailurePatch,
 } from './runtime-wake-fence';
+import { stripMetadataKeys } from './sandbox-metadata-sql';
 
 const WAKE_RECONCILE_BATCH = 100;
+
+function openLease(key: 'runtimeWakeLeaseExpiresAt' | 'runtimeWakeCleanupLeaseExpiresAt', now: Date) {
+  const value = sql`${sessionSandboxes.metadata}->>${sql.raw(`'${key}'`)}`;
+  return sql`(${value} IS NULL OR ${value} !~ '^\\d{4}-\\d{2}-\\d{2}T' OR ${value} <= ${now.toISOString()})`;
+}
 
 export async function reconcileRuntimeWakeCandidate(input: {
   claim: () => Promise<boolean>;
@@ -55,6 +61,8 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
   removed: number;
   errors: number;
 }> {
+  const wakeLeaseOpen = openLease('runtimeWakeLeaseExpiresAt', now);
+  const cleanupLeaseOpen = openLease('runtimeWakeCleanupLeaseExpiresAt', now);
   const rows = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -71,11 +79,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
         sql`(
           (
             ${sessionSandboxes.metadata}->>'runtimeWakeId' IS NOT NULL
-            AND (
-              ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' IS NULL
-              OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
-              OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' <= ${now.toISOString()}
-            )
+            AND ${wakeLeaseOpen}
           )
           OR (
             ${sessionSandboxes.metadata}->>'runtimeWakeCleanupUntilAt' ~ '^\\d{4}-\\d{2}-\\d{2}T'
@@ -85,9 +89,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
         )
         AND (
           ${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL
-          OR ${sessionSandboxes.metadata}->>'runtimeWakeCleanupLeaseExpiresAt' IS NULL
-          OR ${sessionSandboxes.metadata}->>'runtimeWakeCleanupLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
-          OR ${sessionSandboxes.metadata}->>'runtimeWakeCleanupLeaseExpiresAt' <= ${now.toISOString()}
+          OR ${cleanupLeaseOpen}
         )`,
       ),
     )
@@ -111,6 +113,15 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
       typeof metadata.runtimeWakeId === 'string' &&
       (!Number.isFinite(leaseExpiresAt) || leaseExpiresAt <= now.getTime());
     const cleanupId = crypto.randomUUID();
+    const writeCleanupResult = async (patch: Record<string, unknown>) => {
+      await db.update(sessionSandboxes).set({
+        metadata: sql`${stripMetadataKeys(['runtimeWakeCleanupId', 'runtimeWakeCleanupLeaseExpiresAt'])} || ${JSON.stringify(patch)}::jsonb`,
+      }).where(and(
+        eq(sessionSandboxes.sandboxId, row.sandboxId),
+        eq(sessionSandboxes.status, 'stopped'),
+        sql`${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' = ${cleanupId}`,
+      ));
+    };
     try {
       const result = await reconcileRuntimeWakeCandidate({
         claim: async () => {
@@ -139,11 +150,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
           const wakePredicate = claimExpired
             ? and(
                 sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${String(metadata.runtimeWakeId)}`,
-                sql`(
-                  ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' IS NULL
-                  OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
-                  OR ${sessionSandboxes.metadata}->>'runtimeWakeLeaseExpiresAt' <= ${now.toISOString()}
-                )`,
+                wakeLeaseOpen,
               )
             : sql`${sessionSandboxes.metadata}->>'runtimeWakeId' IS NULL`;
           const [claimed] = await db
@@ -162,12 +169,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
                 eq(sessionSandboxes.sandboxId, row.sandboxId),
                 eq(sessionSandboxes.status, 'stopped'),
                 wakePredicate,
-                sql`(
-                  ${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL
-                  OR ${sessionSandboxes.metadata}->>'runtimeWakeCleanupLeaseExpiresAt' IS NULL
-                  OR ${sessionSandboxes.metadata}->>'runtimeWakeCleanupLeaseExpiresAt' !~ '^\\d{4}-\\d{2}-\\d{2}T'
-                  OR ${sessionSandboxes.metadata}->>'runtimeWakeCleanupLeaseExpiresAt' <= ${now.toISOString()}
-                )`,
+                sql`(${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL OR ${cleanupLeaseOpen})`,
               ),
             )
             .returning({ sandboxId: sessionSandboxes.sandboxId });
@@ -175,65 +177,16 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
         },
         getStatus: () => provider.getStatus(externalId),
         stop: () => provider.stop(externalId),
-        markChecked: async (status) => {
-          await db
-            .update(sessionSandboxes)
-            .set({
-              metadata: sql`(
-                coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-                  - 'runtimeWakeCleanupId'
-                  - 'runtimeWakeCleanupLeaseExpiresAt'
-                ) || ${JSON.stringify({ runtimeWakeLateStartCheckedAt: new Date().toISOString(), runtimeWakeLateStartProviderStatus: status })}::jsonb`,
-            })
-            .where(
-              and(
-                eq(sessionSandboxes.sandboxId, row.sandboxId),
-                eq(sessionSandboxes.status, 'stopped'),
-                sql`${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' = ${cleanupId}`,
-              ),
-            );
-        },
-        markStopped: async () => {
-          await db
-            .update(sessionSandboxes)
-            .set({
-              metadata: sql`(
-                coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-                  - 'runtimeWakeCleanupId'
-                  - 'runtimeWakeCleanupLeaseExpiresAt'
-                ) || ${JSON.stringify({ runtimeWakeLateStartStoppedAt: new Date().toISOString() })}::jsonb`,
-            })
-            .where(
-              and(
-                eq(sessionSandboxes.sandboxId, row.sandboxId),
-                eq(sessionSandboxes.status, 'stopped'),
-                sql`${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' = ${cleanupId}`,
-              ),
-            );
-        },
+        markChecked: (status) => writeCleanupResult({ runtimeWakeLateStartCheckedAt: new Date().toISOString(), runtimeWakeLateStartProviderStatus: status }),
+        markStopped: () => writeCleanupResult({ runtimeWakeLateStartStoppedAt: new Date().toISOString() }),
         markRemoved: async () => {
           // Record the observation FIRST and release the cleanup lease, so the
           // forensic trail survives even if the preserve below fails — this is
           // the stamp that reconstructed the original incident.
-          await db
-            .update(sessionSandboxes)
-            .set({
-              metadata: sql`(
-                coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-                  - 'runtimeWakeCleanupId'
-                  - 'runtimeWakeCleanupLeaseExpiresAt'
-                ) || ${JSON.stringify({
-                  runtimeWakeLateStartCheckedAt: new Date().toISOString(),
-                  runtimeWakeLateStartProviderStatus: 'removed',
-                })}::jsonb`,
-            })
-            .where(
-              and(
-                eq(sessionSandboxes.sandboxId, row.sandboxId),
-                eq(sessionSandboxes.status, 'stopped'),
-                sql`${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' = ${cleanupId}`,
-              ),
-            );
+          await writeCleanupResult({
+            runtimeWakeLateStartCheckedAt: new Date().toISOString(),
+            runtimeWakeLateStartProviderStatus: 'removed',
+          });
           // Same classification the box reaper writes for the identical
           // observation (reaping/box-reaper.ts `reconcile-removed`), so the
           // stop-reason query cannot tell the two discovery paths apart. The

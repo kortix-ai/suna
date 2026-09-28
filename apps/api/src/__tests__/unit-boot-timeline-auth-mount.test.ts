@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 
 const index = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
 const openapi = readFileSync(new URL('../openapi/index.ts', import.meta.url), 'utf8');
-const authMiddleware = readFileSync(new URL('../middleware/auth.ts', import.meta.url), 'utf8');
+const authMiddleware = readFileSync(new URL('../middleware/auth-scope.ts', import.meta.url), 'utf8');
 
 describe('boot-timeline is actually reachable', () => {
   test('auth middleware is mounted on the route', () => {

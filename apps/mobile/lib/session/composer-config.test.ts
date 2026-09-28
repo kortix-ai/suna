@@ -103,7 +103,7 @@ describe('agents', () => {
 
   test('pickable = primary or all, not hidden, not disabled', () => {
     const list = [agent('kortix', 'primary'), agent('explore', 'subagent'), agent('plan', 'all'), agent('ghost', 'primary', true)];
-    expect(pickableAgents(list).map((a) => a.name)).toEqual(['kortix', 'plan']);
+    expect(pickableAgents([...list, agent('build', 'primary'), agent('engineering', 'primary')]).map((a) => a.name)).toEqual(['kortix', 'engineering']);
   });
 
   test('project config agents: a missing mode is "all" (OpenCode default); `enabled: false` is out', () => {
