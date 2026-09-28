@@ -19,19 +19,13 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
+import { reserveOpenCodePortPair } from './helpers/open-code-harness'
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import { waitForOpencodeReady } from '@/harness/open-code/lifecycle'
 import { createOpenCodeHarnessService } from '@/harness/open-code/service'
 
 let root: string
 let stop: (() => Promise<void>) | null = null
-
-function reservePort(): number {
-  const server = Bun.serve({ port: 0, fetch: () => new Response('reserved') })
-  const port = server.port as number
-  server.stop(true)
-  return port
-}
 
 const FAKE_OPENCODE = `#!/usr/bin/env bun
 const port = Number(Bun.argv[Bun.argv.indexOf('--port') + 1])
@@ -74,11 +68,12 @@ async function harnessOn(dir: string) {
   mkdirSync(workspace, { recursive: true })
   writeFileSync(binary, FAKE_OPENCODE)
   chmodSync(binary, 0o755)
+  const [opencodeInternalPort, opencodeStandbyPort] = reserveOpenCodePortPair()
   const cfg = {
     workspace,
     projectTarget: workspace,
-    opencodeInternalPort: reservePort(),
-    opencodeStandbyPort: reservePort(),
+    opencodeInternalPort,
+    opencodeStandbyPort,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
   } as Config

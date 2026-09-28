@@ -213,6 +213,10 @@ export class MonitorRunner {
   private flushing = false
   private stopped = false
   private dropped = 0
+  /** Lines dropped since the last `suppressed` note, by the monitor that overflowed. */
+  private readonly pendingDrops = new Map<string, number>()
+  /** Length of the queue head that the POST in flight carries. */
+  private inFlight = 0
   private posted = 0
   private failedBatches = 0
   /** Set once the server says our epoch is superseded — nothing we send can
@@ -489,40 +493,41 @@ export class MonitorRunner {
     this.queue.push(wire)
     // Bounded queue, drop-OLDEST. A monitor that outruns delivery is reporting
     // a live situation; the newest lines describe it, the oldest do not. The
-    // drop is itself announced, so nothing is lost silently.
+    // drop is itself announced, so nothing is lost silently. The head a POST
+    // carries is already on the wire, so the oldest line BEHIND it goes; `flush`
+    // removes the head by count when the POST returns.
     if (this.queue.length > this.opts.queueMax) {
-      const overflow = this.queue.length - this.opts.queueMax
-      this.queue.splice(0, overflow)
+      const overflow = this.queue.splice(this.inFlight, this.queue.length - this.opts.queueMax).length
       this.dropped += overflow
-      this.announceDrop(state, overflow)
+      this.pendingDrops.set(state.spec.slug, (this.pendingDrops.get(state.spec.slug) ?? 0) + overflow)
     }
     // An observed EVENT proves the source is alive; a lifecycle event does not.
     if (kind === 'event') this.armSilenceWatchdog(state)
   }
 
   /**
-   * Announce a queue overflow ONCE per burst. The note itself is enqueued (as a
-   * `suppressed` lifecycle event) but must never recurse into another overflow,
-   * so it is pushed directly and the reserve slot the splice just freed holds it.
+   * Announce the drops since the last batch as ONE `suppressed` lifecycle event
+   * per monitor. The note is queued at the tail, outside the bound, so it is
+   * never itself dropped and `dropped` counts lines only. A note per dropped
+   * line would fill half the queue with notes.
    */
-  private announceDrop(state: MonitorState, dropped: number): void {
-    const last = this.queue[this.queue.length - 1]
-    if (last && last.kind === 'lifecycle' && last.line.event === 'suppressed') {
-      last.line.dropped = Number(last.line.dropped ?? 0) + dropped
-      return
+  private announceDrops(): void {
+    for (const [slug, dropped] of this.pendingDrops) {
+      const state = this.states.get(slug)!
+      this.queue.push({
+        slug,
+        seq: state.seq++,
+        kind: 'lifecycle',
+        line: {
+          event: 'suppressed',
+          monitor: slug,
+          dropped,
+          detail: `the in-box delivery queue overflowed at ${this.opts.queueMax} lines; the oldest ${dropped} line(s) were dropped before they could be sent`,
+        },
+        emitted_at: new Date(this.opts.now()).toISOString(),
+      })
     }
-    this.queue.push({
-      slug: state.spec.slug,
-      seq: state.seq++,
-      kind: 'lifecycle',
-      line: {
-        event: 'suppressed',
-        monitor: state.spec.slug,
-        dropped,
-        detail: `the in-box delivery queue overflowed at ${this.opts.queueMax} lines; the oldest ${dropped} line(s) were dropped before they could be sent`,
-      },
-      emitted_at: new Date(this.opts.now()).toISOString(),
-    })
+    this.pendingDrops.clear()
   }
 
   // ── The silence watchdog ──────────────────────────────────────────────────
@@ -561,12 +566,15 @@ export class MonitorRunner {
    * matter how many monitors are talking at once.
    */
   async flush(): Promise<void> {
-    if (this.flushing || this.queue.length === 0 || this.staleEpoch) return
+    if (this.flushing || this.staleEpoch) return
     this.flushing = true
     try {
+      this.announceDrops()
       while (this.queue.length > 0) {
         const batch = this.queue.slice(0, MONITOR_INGEST_MAX_EVENTS)
+        this.inFlight = batch.length
         const delivered = await this.post(batch)
+        this.inFlight = 0
         // Delivered or definitively rejected, the batch leaves the queue: it
         // cannot be retried into acceptance, and holding it would block every
         // line behind it forever.
@@ -574,9 +582,11 @@ export class MonitorRunner {
         if (delivered) this.posted += batch.length
         else this.failedBatches += 1
         if (this.staleEpoch) return
+        this.announceDrops()
       }
     } finally {
       this.flushing = false
+      this.inFlight = 0
     }
   }
 
