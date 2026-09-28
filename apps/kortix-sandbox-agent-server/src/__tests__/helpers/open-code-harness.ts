@@ -1,14 +1,14 @@
 import { createHmac } from 'node:crypto'
 
-import type { Config } from '../../config'
-import type { OpenCodeConfig } from '../../harness/open-code/config'
-import type { ProjectEnvStore } from '../../project-env'
-import type { OpenCodeBootState } from '../../harness/open-code/boot-state'
-import { requireOpenCodeConfig } from '../../harness/open-code/config'
-import type { Opencode } from '../../harness/open-code/lifecycle'
-import { composeOpenCodeHarnessService } from '../../harness/open-code/service'
-import { buildDaemonApp } from '../../proxy'
-import type { PtyRegistry } from '../../routes/pty'
+import type { Config } from '@/lib/config/config'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
+import type { OpenCodeBootState } from '@/harness/open-code/boot-state'
+import { requireOpenCodeConfig } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
+import { buildDaemonApp } from '@/app/server'
+import type { PtyRegistry } from '@/routes/kortix/pty'
 
 /** The production daemon app over the production service composition; only
  *  the native OpenCode lifecycle is substituted. */

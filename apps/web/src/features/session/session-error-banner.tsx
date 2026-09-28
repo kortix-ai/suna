@@ -1,8 +1,19 @@
 'use client';
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { useAuth } from '@/features/providers/auth-provider';
+import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
 import { useTranslations } from '@/i18n/use-translations';
-import type { ComponentProps, ReactNode } from 'react';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { useQuery } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
+import { useState, type ComponentProps, type ReactNode } from 'react';
+import {
+  type ChatGptConnectionAction,
+  chatGptActionApplies,
+  chatGptConnectionAction,
+} from './chatgpt-connection-action';
+import { sessionPersonalUser } from './overrides/provider-pool-draft';
 
 import { Button } from '@/components/ui/button';
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
@@ -19,8 +30,16 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { isAbortError, turnRetryLabel, type GatewayErrorDetails } from '@kortix/sdk';
-import type { KortixSendError } from '@kortix/sdk/react';
+import { getProjectDetail, isAbortError, turnRetryLabel, type GatewayErrorDetails } from '@kortix/sdk';
+import {
+  contract,
+  qk,
+  useFeatureFlag,
+  useModelAccess,
+  useProjectSession,
+  useSessionProviderSecretPools,
+  type KortixSendError,
+} from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   CreditCardIcon,
@@ -229,7 +248,7 @@ function InsufficientCreditsCard({
 
 type TurnErrorGatewayDetails = Pick<
   GatewayErrorDetails,
-  'provider' | 'code' | 'suggestion' | 'requestId' | 'attemptFailures'
+  'provider' | 'code' | 'suggestion' | 'requestId' | 'attemptFailures' | 'requestedModel' | 'resolvedModel'
 >;
 
 function failureTarget(failure: NonNullable<GatewayErrorDetails['attemptFailures']>[number]) {
@@ -355,12 +374,15 @@ function TurnErrorCheckpoint({
   gateway,
   raw,
   defaultOpen,
+  action,
   className,
 }: {
   text: string;
   gateway?: TurnErrorGatewayDetails;
   raw?: string;
   defaultOpen?: boolean;
+  /** The fix, when the reader can make it here; stays visible like the hint. */
+  action?: ReactNode;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -405,6 +427,7 @@ function TurnErrorCheckpoint({
       <div role="alert" className={className}>
         {row}
         {hint}
+        {action}
       </div>
     );
   }
@@ -419,6 +442,7 @@ function TurnErrorCheckpoint({
             <div className="group/trigger cursor-pointer">{row}</div>
           </DisclosureTrigger>
           {hint}
+          {action}
           <DisclosureContent>
             <div className="mt-3 flex flex-col gap-2 pl-7">
               <GatewayMetaLine details={gateway} />
@@ -556,6 +580,10 @@ export function TurnErrorDisplay({
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
+  // A member's own ChatGPT login expired or is missing: the fix is theirs to
+  // make, so the row carries it instead of leaving a dead end mid-session.
+  const chatGpt = chatGptConnectionAction(gateway);
+
   // Real errors → a checkpoint row in the activity lane, not a boxed alert.
   return (
     <TurnErrorCheckpoint
@@ -563,8 +591,73 @@ export function TurnErrorDisplay({
       gateway={gateway}
       raw={errorRaw}
       defaultOpen={defaultDetailsOpen}
+      action={chatGpt ? <ChatGptConnectionSlot action={chatGpt} /> : undefined}
       className={className}
     />
+  );
+}
+
+/**
+ * The ChatGPT fix for a failed turn. It needs the session the turn belongs
+ * to, so it renders only on a session route; elsewhere the row stays
+ * informational, exactly as before.
+ */
+function ChatGptConnectionSlot({ action }: { action: ChatGptConnectionAction }) {
+  const params = useParams<{ id?: string; sessionId?: string }>();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const sessionId = typeof params?.sessionId === 'string' ? params.sessionId : null;
+  if (!projectId || !sessionId) return null;
+  return <ChatGptConnectionButton action={action} projectId={projectId} sessionId={sessionId} />;
+}
+
+/**
+ * Opens the ChatGPT accounts dialog, which exists only with pooled provider
+ * secrets and the LLM gateway on. Shown only where connecting or
+ * reconnecting an account can fix this session (`chatGptActionApplies`).
+ */
+function ChatGptConnectionButton({
+  action,
+  projectId,
+  sessionId,
+}: {
+  action: ChatGptConnectionAction;
+  projectId: string;
+  sessionId: string;
+}) {
+  const t = useTranslations('pooledSecrets');
+  const { user } = useAuth();
+  const pooled = useFeatureFlag(projectId, 'pooled_provider_secrets');
+  const project = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const enabled = pooled.enabled && isLlmGatewayEnabled(project.data?.project);
+  const access = useModelAccess(enabled ? projectId : null);
+  const session = useProjectSession(projectId, sessionId, { enabled });
+  const pools = useSessionProviderSecretPools(enabled ? projectId : null, sessionId);
+  const [open, setOpen] = useState(false);
+
+  const applies =
+    enabled &&
+    !(access.data?.disabledProviders ?? []).includes('codex') &&
+    chatGptActionApplies({
+      action,
+      personalUser: sessionPersonalUser(session.data),
+      viewerId: user?.id,
+      explicitSelection: pools.isSuccess
+        ? pools.data.pools.some((pool) => pool.provider_id === 'codex')
+        : undefined,
+    });
+  if (!applies) return null;
+
+  return (
+    <div className="mt-2 pl-7">
+      <Button size="sm" className="active:scale-[0.96]" onClick={() => setOpen(true)}>
+        {t(action === 'reconnect' ? 'reconnectChatGpt' : 'connectChatGpt')}
+      </Button>
+      <ChatGptAccountsDialog projectId={projectId} open={open} onOpenChange={setOpen} />
+    </div>
   );
 }
 

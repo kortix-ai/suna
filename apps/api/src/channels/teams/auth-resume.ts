@@ -1,4 +1,4 @@
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, lt } from 'drizzle-orm';
 import { chatPendingAuthMessages } from '@kortix/db';
 import { db } from '../../shared/db';
 import type { TeamsActivity } from './types';
@@ -59,6 +59,39 @@ export async function peekPendingTeamsAuthSenderName(input: {
     const name = (row?.event as unknown as TeamsActivity | undefined)?.from?.name;
     return typeof name === 'string' && name.trim() ? name.trim() : null;
   } catch {
+    return null;
+  }
+}
+
+/**
+ * The newest message this Teams user parked while unlinked, if one still waits.
+ *
+ * In a channel or group chat the sign-in link is not shown (login-card.ts), so
+ * the user connects through `/login` in a one-to-one chat. That link carries
+ * this id, so connecting there still runs what they sent in the channel.
+ */
+export async function latestPendingTeamsAuthMessageId(input: {
+  tenantId: string;
+  teamsUserId: string;
+}): Promise<string | null> {
+  if (!input.tenantId || !input.teamsUserId) return null;
+  try {
+    const [row] = await db
+      .select({ pendingId: chatPendingAuthMessages.pendingId })
+      .from(chatPendingAuthMessages)
+      .where(
+        and(
+          eq(chatPendingAuthMessages.platform, 'teams'),
+          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
+          gt(chatPendingAuthMessages.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(desc(chatPendingAuthMessages.expiresAt))
+      .limit(1);
+    return row?.pendingId ?? null;
+  } catch (err) {
+    console.warn('[teams-auth] failed to look up a parked Teams message', err);
     return null;
   }
 }

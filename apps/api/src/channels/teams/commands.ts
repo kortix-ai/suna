@@ -13,7 +13,6 @@ import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { sendCard } from '../teams-api';
 import {
-  buildConnectAccountCard,
   buildHelpCard,
   buildNoticeCard,
   buildPanelCard,
@@ -30,7 +29,7 @@ import {
 } from './binding';
 import { teamsUserId } from './identity';
 import { type ChatUser, chatUser, lookupChatIdentity, revokeChatIdentity } from '../core/identity';
-import { buildTeamsLoginUrl } from './login';
+import { teamsLoginCard } from './login-card';
 import { conversationScope, describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
@@ -76,8 +75,9 @@ export async function handleTeamsCommand(input: {
     switch (verb) {
       case 'login':
       case 'connect': {
+        // The sign-in link only in a one-to-one chat (login-card.ts).
         if (userId) {
-          await post(buildConnectAccountCard(buildTeamsLoginUrl({ tenantId: input.tenantId, teamsUserId: userId })));
+          await post(await teamsLoginCard({ activity: input.activity, tenantId: input.tenantId, teamsUserId: userId }));
         }
         return true;
       }
@@ -89,7 +89,7 @@ export async function handleTeamsCommand(input: {
       }
       case 'whoami':
       case 'who':
-        await post(await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.projectId));
+        await post(await buildWhoamiCard(ctx, input.activity, input.tenantId, conversationId, userId, input.projectId));
         return true;
       case 'help':
         await post(helpCard());
@@ -303,17 +303,14 @@ function describeConversationSession(session: TeamsConversationSession | null): 
 
 async function buildWhoamiCard(
   ctx: ReturnType<typeof teamsChannelCtx>,
+  activity: TeamsActivity,
   tenantId: string,
   conversationId: string,
   userId: string | null,
   projectId: string,
 ) {
   const identity = userId ? await lookupChatIdentity(chatUser('teams', tenantId, userId)) : null;
-  if (!identity) {
-    return buildConnectAccountCard(
-      buildTeamsLoginUrl({ tenantId, teamsUserId: userId ?? '' }),
-    );
-  }
+  if (!identity) return teamsLoginCard({ activity, tenantId, teamsUserId: userId ?? '' });
   const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
   return buildPanelCard({
     emoji: '👤',

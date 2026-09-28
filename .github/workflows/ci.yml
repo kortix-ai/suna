@@ -4,8 +4,13 @@ name: CI
 # (SOC 2 CC8.1 — automated checks run on every change before review/merge).
 
 on:
+  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
+  # their box. The push to `main` is the non-blocking post-merge check; release
+  # pull requests (`staging`, `prod`) are the gate.
+  push:
+    branches: [main]
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
   workflow_dispatch:
 
 concurrency:
@@ -225,6 +230,13 @@ jobs:
         with:
           bun-version: latest
 
+      # The import-boundary lint runs under Node: ESLint's config validation
+      # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
@@ -235,6 +247,10 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Import boundaries
+        run: bun run lint && bun run test:architecture
         working-directory: apps/kortix-sandbox-agent-server
 
       - name: Build Linux sandbox agent daemon

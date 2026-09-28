@@ -13,7 +13,6 @@ import { ArchiveIcon as ArchiveGlyph } from 'phosphor-react-native/src/icons/Arc
 import { ArrowClockwiseIcon as ArrowClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowClockwise';
 import { ArrowCounterClockwiseIcon as ArrowCounterClockwiseGlyph } from 'phosphor-react-native/src/icons/ArrowCounterClockwise';
 import { ArrowDownIcon as ArrowDownGlyph } from 'phosphor-react-native/src/icons/ArrowDown';
-import { ArrowElbowDownRightIcon as ArrowElbowDownRightGlyph } from 'phosphor-react-native/src/icons/ArrowElbowDownRight';
 import { ArrowElbowLeftUpIcon as ArrowElbowLeftUpGlyph } from 'phosphor-react-native/src/icons/ArrowElbowLeftUp';
 import { ArrowLeftIcon as ArrowLeftGlyph } from 'phosphor-react-native/src/icons/ArrowLeft';
 import { ArrowRightIcon as ArrowRightGlyph } from 'phosphor-react-native/src/icons/ArrowRight';
@@ -204,10 +203,6 @@ export const ArchiveIcon = withAppWeight(ArchiveGlyph, 'ArchiveIcon');
 export const ArrowClockwiseIcon = withAppWeight(ArrowClockwiseGlyph, 'ArrowClockwiseIcon');
 export const ArrowCounterClockwiseIcon = withAppWeight(ArrowCounterClockwiseGlyph, 'ArrowCounterClockwiseIcon');
 export const ArrowDownIcon = withAppWeight(ArrowDownGlyph, 'ArrowDownIcon');
-export const ArrowElbowDownRightIcon = withAppWeight(
-  ArrowElbowDownRightGlyph,
-  'ArrowElbowDownRightIcon'
-);
 export const ArrowElbowLeftUpIcon = withAppWeight(ArrowElbowLeftUpGlyph, 'ArrowElbowLeftUpIcon');
 export const ArrowLeftIcon = withAppWeight(ArrowLeftGlyph, 'ArrowLeftIcon');
 export const ArrowRightIcon = withAppWeight(ArrowRightGlyph, 'ArrowRightIcon');

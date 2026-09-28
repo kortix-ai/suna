@@ -332,11 +332,16 @@ export async function callUpstreamViaAiSdk(
   // `collectStreamAsChat` for the identical client-non-streaming/
   // upstream-stream-only combination.
   if (clientWantsStream || isCodex) {
+    // The provider's own failure (status, body, headers). A streaming client
+    // reads it from fullStream's `error` part; the settled promises the JSON
+    // collapse below awaits reject with a generic NoOutputGeneratedError.
+    let streamError: unknown;
     const result = streamText({
       ...shared,
-      onError: () => {
-        /* error is surfaced through fullStream as an `error` part; swallow the
-           unhandled-rejection path here. */
+      onError: ({ error }) => {
+        // Kept for the JSON collapse; handling it here also keeps the
+        // rejection from going unhandled.
+        streamError = error;
       },
     });
     guardAgainstUnhandledResultRejections(result);
@@ -374,7 +379,7 @@ export async function callUpstreamViaAiSdk(
         ),
       );
     } catch (err) {
-      throw toTransportError(err, descriptor.provider);
+      throw toTransportError(streamError ?? err, descriptor.provider);
     }
   }
 

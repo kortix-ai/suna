@@ -622,7 +622,7 @@ describe('provider-neutral turn observation', () => {
   // The reaper's drip may keep a box alive on the first and must never keep one
   // alive on the second, so the reading has to tell them apart. A build that
   // predates the turn fields answers 200 without them
-  // (apps/kortix-sandbox-agent-server/src/routes/health.ts adds them only when
+  // (apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts adds them only when
   // it can observe the turn) — the runtime is UP and only its account of the
   // turn is missing. Nothing coming back is the opposite fact.
   test('a 200 without the turn fields is unknown, but the daemon ANSWERED', async () => {
@@ -1945,6 +1945,24 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(turnObservationCalls).toHaveLength(4);
     await reapAndReconcileSandboxes(new Date(NOW.getTime() + 201_000));
     expect(turnObservationCalls).toHaveLength(5);
+  });
+
+  test('an unreadable turn warns once per episode, not on every renewal tick', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => { warnings.push(message); };
+    try {
+      await reapAndReconcileSandboxes(NOW);
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+      expect(unconfirmedTurnDrips).toEqual(['sb-1', 'sb-1', 'sb-1']);
+      expect(warnings.filter((message) => message.includes('turn observation unknown; drip-extending'))).toHaveLength(1);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══

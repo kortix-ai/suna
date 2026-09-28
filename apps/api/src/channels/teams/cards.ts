@@ -255,6 +255,28 @@ export function buildConnectAccountCard(loginUrl: string): Record<string, unknow
   );
 }
 
+/**
+ * The sign-in prompt in a channel or group chat. It carries no link: everyone
+ * in the conversation sees the card, and the link links whoever opens it
+ * (identity-routes.ts `/bind`). The link is shown only in a one-to-one chat.
+ */
+export function buildConnectPrivatelyCard(input: {
+  /** A deep link that opens a one-to-one chat with the bot; null when unknown. */
+  chatUrl: string | null;
+  botName: string;
+  /** A message the user sent here is parked and runs once they connect. */
+  resumes?: boolean;
+}): Record<string, unknown> {
+  const lines = [
+    `I send the sign-in link only in a private chat, so nobody else can use it. Open a chat with ${input.botName} and send /login.`,
+    ...(input.resumes ? ['What you sent here runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(
+    headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')),
+    input.chatUrl ? [openUrlAction(`Open chat with ${input.botName}`, input.chatUrl)] : undefined,
+  );
+}
+
 export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
   return card(
     headerBlock('🔒', 'Request access', "You're connected, but your account can't run this project yet."),
