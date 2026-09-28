@@ -11,6 +11,14 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
   'opencodeNotReadyWaitStartedAt',
   'opencodeBootPhase',
   'opencodeBootWaitFirstSeenAt',
+  // WHY the last `unreachable` happened, stamped by the open (routes/shared.ts)
+  // so a box that has been cycling for an hour can be diagnosed from the row
+  // instead of from logs nobody can still reach. Cleared with every other
+  // readiness field: a cause left behind after a good boot is a stale reading,
+  // and a stale reading is worse than none — it is the trap this whole class of
+  // bug keeps setting.
+  'opencodeUnreachableCause',
+  'opencodeUnreachableCauseAt',
 ] as const;
 
 /**
