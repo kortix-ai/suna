@@ -208,7 +208,8 @@ describe('resolveProjectSharedProviderSecrets: the ChatGPT accounts an unconfigu
   test('an agent-principal session (no personal owner) gets the project-shared accounts, oldest first, decrypted', async () => {
     const result = await shared(READER, null);
     expect(labels(result.secrets)).toEqual(['team-oldest', 'team-account-wide']);
-    expect(result.secrets.map((s) => JSON.parse(s.value).openai.access)).toEqual(['team-oldest-token', 'team-account-wide-token']);
+    expect(result.secrets.map((s) => (s.value === null ? null : JSON.parse(s.value).openai.access)))
+      .toEqual(['team-oldest-token', 'team-account-wide-token']);
     expect(result.coolingDown).toBe(false);
   });
 

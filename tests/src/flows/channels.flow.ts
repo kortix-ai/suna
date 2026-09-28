@@ -885,6 +885,7 @@ flow(
     routes: [
       "GET /v1/projects/:projectId/channels/teams/conversations",
       "POST /v1/projects/:projectId/channels/teams/message",
+      "POST /v1/projects/:projectId/channels/teams/file/upload",
     ],
   },
   async (ctx) => {
@@ -922,6 +923,29 @@ flow(
     });
     await ctx.step("EDITOR passes the floor, but the conversation is not this project's → 404", async () => {
       const r = await ctx.client.as(editor).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    // The file upload sends into a conversation the same way. It used to take
+    // `service_url` from the body, and the allowlist accepted
+    // `*.azurewebsites.net`, a host any Azure customer can register — so the
+    // bot token could be sent to a server of the caller's choosing. The
+    // address is now the server's: the binding and the stored service URL.
+    const upload = {
+      conversation_id: body.conversation_id,
+      service_url: "https://attacker.azurewebsites.net/",
+      filename: "note.png",
+      content_base64: Buffer.from("png-bytes").toString("base64"),
+    };
+    await ctx.step("MEMBER without connector.write cannot upload a file → 403 at the floor", async () => {
+      const r = await ctx.client
+        .as(memberOnly)
+        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
+      r.status(403);
+    });
+    await ctx.step("EDITOR uploading into a conversation that is not this project's → 404, whatever service_url it sends", async () => {
+      const r = await ctx.client
+        .as(editor)
+        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
       r.status(404);
     });
     await ctx.step("EDITOR with nothing to say → 400", async () => {

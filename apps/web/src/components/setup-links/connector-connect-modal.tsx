@@ -176,6 +176,7 @@ function AddAccountDialogBody({
     label: string;
     connectedAs: string | null;
   } | null>(null);
+  const [authorizedId, setAuthorizedId] = useState<string | null>(null);
   const { user } = useAuth();
   const managed = useAddManagedAccount(projectId, info.slug, accountId, () => undefined);
 
@@ -183,15 +184,16 @@ function AddAccountDialogBody({
   const ready =
     phase === 'form' &&
     connectionsQuery.isSuccess &&
-    newAccountReady(draft, rows, { canManageConnections, accountId });
+    (authorizedId !== null || newAccountReady(draft, rows, { canManageConnections, accountId }));
 
   const submit = async () => {
     if (!ready) return;
     setError(null);
     setPhase('waiting');
     try {
-      const { connectionId } = await managed.add(draft);
+      const connectionId = authorizedId ?? (await managed.add(draft)).connectionId;
       if (!connectionId) throw new Error(tSharing('connectFailed'));
+      setAuthorizedId(connectionId);
       // Names THIS account to the link, which tells the session that asked.
       const done = await finalizeConnectorSetupLink(
         token,
@@ -282,17 +284,21 @@ function AddAccountDialogBody({
             <p className="text-sm text-pretty">{fill(copy.waiting, { app })}</p>
           </div>
         ) : (
-          <AddAccountFields
-            projectId={projectId}
-            value={draft}
-            onChange={setDraft}
-            labelTaken={labelTaken}
-            canManageConnections={canManageConnections}
-            accountId={accountId}
-            everyoneLabel={everyoneLabelFor(tSharing, headline.project)}
-            hint={fill(copy.description, { app })}
-            autoFocus={!info.label}
-          />
+          authorizedId ? (
+            <p className="text-sm">{tSharing('savedAs', { label: draft.label.trim() })}</p>
+          ) : (
+            <AddAccountFields
+              projectId={projectId}
+              value={draft}
+              onChange={setDraft}
+              labelTaken={labelTaken}
+              canManageConnections={canManageConnections}
+              accountId={accountId}
+              everyoneLabel={everyoneLabelFor(tSharing, headline.project)}
+              hint={fill(copy.description, { app })}
+              autoFocus={!info.label}
+            />
+          )
         )}
       </ModalBody>
 

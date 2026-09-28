@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   readTranscriptPages,
   retryTranscriptCapture,
+  transcriptPageUrl,
 } from "./session-transcript-pages";
 
 const page = (ids: number[], next?: string) =>
@@ -235,4 +236,21 @@ test("an empty page cannot mean caught up", async () => {
     (rows) => rows.length === 0,
   );
   expect(result.caughtUp).toBe(false);
+});
+
+test("the next page is asked for by `before`, the spelling OpenCode reads", () => {
+  // OpenCode ignores `cursor=` and answers page one again, with the same
+  // cursor, so a walk that sent it stopped as "not advancing" after the newest
+  // page: a full-history capture never reached a long session's head.
+  // Measured on a dev sandbox (2026-09-27): `cursor=` returned the same 10
+  // rows, `before=` the 4 older ones.
+  const first = transcriptPageUrl("https://box.test/", "ses_root", undefined, 80);
+  expect(first.pathname).toBe("/session/ses_root/message");
+  expect(first.searchParams.get("directory")).toBe("/workspace");
+  expect(first.searchParams.get("limit")).toBe("80");
+  expect(first.searchParams.has("before")).toBe(false);
+
+  const next = transcriptPageUrl("https://box.test", "ses_root", "msg_oldest_on_page", 80);
+  expect(next.searchParams.get("before")).toBe("msg_oldest_on_page");
+  expect(next.searchParams.has("cursor")).toBe(false);
 });

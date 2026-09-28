@@ -209,8 +209,18 @@ export function resetSandboxFail() {
  * (`markRuntimeReadyVerified`), we start connected+healthy so the chat
  * subscribes at the switch instead of after one more client health RTT.
  */
-export function resetForServerSwitch() {
+let lastResetServerUrl: string | null = null;
+
+export function resetForServerSwitch(serverUrl?: string) {
 	const runtimeReady = loadRuntimeReadyVerified();
+	// A remount of the poller for the runtime this store already describes is
+	// not a server switch. Wiping it to `connecting` closed the live SSE stream
+	// until the next probe answered (KRTX-606). A pending ready-verified seed
+	// still applies: it is newer than anything the store holds. An empty URL
+	// names no runtime (cloud, before a session switches in), so two sessions
+	// can both mount on it: it never counts as the same runtime.
+	if (serverUrl && serverUrl === lastResetServerUrl && !runtimeReady) return;
+	lastResetServerUrl = serverUrl || null;
 	clearRuntimeReadyVerified();
 
 	if (runtimeReady) {

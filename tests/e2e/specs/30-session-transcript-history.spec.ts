@@ -85,19 +85,24 @@ test('30 — saved session history paints while sandbox start and the open bundl
     await expect(page.getByRole('heading', { name: 'Feature flags', exact: true })).toBeVisible();
     const row = featureFlagRow(page.locator('body'), page, 'Session Transcript History');
     const toggle = row.getByRole('switch');
-    await expect(toggle).not.toBeChecked();
-    const patched = page.waitForResponse(
-      (r) =>
-        r.url().endsWith(`/projects/${projectId}/features`) && r.request().method() === 'PATCH',
-    );
-    await toggle.click();
-    const changed = await patched;
-    expect(changed.status()).toBe(200);
-    expect(changed.request().postDataJSON()).toEqual({
-      feature: 'session_transcript_history',
-      enabled: true,
-    });
+    // On by default. The switch still turns it off and on again.
     await expect(toggle).toBeChecked();
+    const flip = async (enabled: boolean) => {
+      const patched = page.waitForResponse(
+        (r) =>
+          r.url().endsWith(`/projects/${projectId}/features`) && r.request().method() === 'PATCH',
+      );
+      await toggle.click();
+      const changed = await patched;
+      expect(changed.status()).toBe(200);
+      expect(changed.request().postDataJSON()).toEqual({
+        feature: 'session_transcript_history',
+        enabled,
+      });
+      await expect(toggle).toBeChecked({ checked: enabled });
+    };
+    await flip(false);
+    await flip(true);
 
     const held = new Promise<void>((resolve) => {
       releaseReads = resolve;

@@ -1,7 +1,7 @@
 /**
  * The streaming secret-relay WIRE CONTRACT — one module, imported by BOTH the
  * API (`apps/api/src/projects/routes/secret-relay.ts`) and the in-guest daemon
- * (`apps/kortix-sandbox-agent-server/src/egress-shim/relay-client.ts`).
+ * (`apps/kortix-sandbox-agent-server/src/services/egress-shim/relay-client.ts`).
  *
  * ## Why the metadata is a header and not a body
  *

@@ -3,8 +3,8 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import { createPresentationRouter, parseScriptResult, type ConvertRunner } from '../routes/presentation'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import { createPresentationRouter, parseScriptResult, type ConvertRunner } from '@/routes/workspace/presentation'
 
 function baseConfig(workspace: string): Config {
   return {

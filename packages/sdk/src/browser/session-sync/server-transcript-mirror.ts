@@ -131,9 +131,24 @@ export async function loadSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
 	limit?: number;
 	signal?: AbortSignal;
+	/** A sub-agent's OpenCode session inside the scope: its own saved window. */
+	child?: string;
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
+	// A sub-agent's window is never the open bundle's: that one is the
+	// conversation, and it is claimed once, by the conversation.
+	if (input.child) {
+		try {
+			return await getSessionTranscriptSync(scope.projectId, scope.sessionId, {
+				limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
+				signal: input.signal,
+				child: input.child,
+			});
+		} catch {
+			return null;
+		}
+	}
 	// The SESSION-OPEN BUNDLE fetches this mirror in the same round trip that
 	// answers the turn and the queue. This hydrate runs at MOUNT, while that
 	// read is still in flight, so it waits for the read it is riding rather
@@ -183,6 +198,8 @@ export async function loadOlderSessionTranscriptMirror(input: {
 	before: string;
 	limit?: number;
 	signal?: AbortSignal;
+	/** A sub-agent's OpenCode session inside the scope. */
+	child?: string;
 }): Promise<SessionTranscriptSyncEnvelope | null> {
 	const scope = parseKortixSessionScope(input.kortixSessionScope);
 	if (!scope) return null;
@@ -191,6 +208,7 @@ export async function loadOlderSessionTranscriptMirror(input: {
 			limit: input.limit ?? MIRROR_HYDRATE_LIMIT,
 			before: input.before,
 			signal: input.signal,
+			child: input.child,
 		});
 	} catch {
 		return null;

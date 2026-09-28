@@ -968,7 +968,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'connectors_api_discover',
     'llm_gateway',
     'marketplace',
-    'mcp',
     'meta_agent',
     'monitors',
     'secrets_egress',
@@ -1067,4 +1066,31 @@ test('updateExperimentalFeature keeps its legacy /experimental wire path', async
 
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
   expect(sent.parsed).toEqual({ feature: 'apps', enabled: false });
+});
+
+/**
+ * `/new` renders a create failure inline, with its own wording and its own
+ * retry. The global handler ALSO toasted it, so one failure produced two
+ * different explanations — prod showed "GitHub /user/repos failed (403)… Our
+ * team has been notified" on top of an inline message that said something else
+ * entirely. The caller owns this error.
+ */
+test('a failed repository create does not raise the global error toast', async () => {
+  const toasted: unknown[] = [];
+  globalThis.fetch = mock(async () =>
+    Response.json({ error: 'GitHub /user/repos failed (403)' }, { status: 502 }),
+  ) as unknown as typeof fetch;
+  configureKortix({
+    backendUrl: 'https://api.example.test/v1',
+    getToken: async () => 'token',
+    onError: (error) => {
+      toasted.push(error);
+    },
+  });
+
+  await expect(
+    createProjectRepo({ account_id: 'acc-1', name: 'company' } as CreateProjectRepoInput),
+  ).rejects.toThrow();
+
+  expect(toasted).toEqual([]);
 });

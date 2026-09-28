@@ -115,6 +115,8 @@ mock.module('../github', () => ({
   ...realGithub,
   createRepo: async (input: { name: string }) => fakeRepo(input.name),
   commitFile: async () => {},
+  // The route writes the starter as one commit; no GitHub in a unit test.
+  commitFiles: async () => {},
   getFileSha: async () => null,
 }));
 

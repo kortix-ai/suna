@@ -6,7 +6,7 @@
  *
  * FIELD NAMING CONTRACT — CORRECTED. The daemon's `runtime_truth.components`
  * map is NOT keyed by the same names as this file's top-level document. The
- * box side (`apps/kortix-sandbox-agent-server/src/runtime-truth.ts`,
+ * box side (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-truth.ts`,
  * `RUNTIME_TRUTH_COMPONENT_NAMES`) uses
  * `config_release`/`catalog`/`daemon`/`cli`/`managed_skills`; this file's
  * `DesiredRuntimeDocument` uses
@@ -73,7 +73,7 @@ const FIELDS: Array<keyof DesiredRuntimeDocument> = [
 /**
  * The box's `runtime_truth.components` key for each field this file names.
  * Source of truth for the box side: `RUNTIME_TRUTH_COMPONENT_NAMES` in
- * `apps/kortix-sandbox-agent-server/src/runtime-truth.ts` — a different app,
+ * `apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-truth.ts` — a different app,
  * so it cannot be imported here; `diff.test.ts` mirrors that literal list and
  * asserts every value below appears in it exactly once, and every value in
  * it is used as a mapping target exactly once, so this cannot drift silently
