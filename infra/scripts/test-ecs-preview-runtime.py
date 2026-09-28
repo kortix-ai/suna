@@ -428,9 +428,10 @@ class PreviewTeardown(unittest.TestCase):
         # off (the explicit switch) and the branch being deleted.
         teardown = job("teardown")
         self.assertNotIn("github.event.action == 'closed'", WORKFLOW)
-        self.assertIn("types: [labeled, unlabeled, synchronize]", WORKFLOW)
+        self.assertIn("types: [labeled, unlabeled]", WORKFLOW)
         self.assertIn("github.event.action == 'unlabeled' && github.event.label.name == 'preview'", WORKFLOW)
-        self.assertIn("github.event.action == 'synchronize'", WORKFLOW)
+        # A push never deploys (2026-09-28): adding the label is the one trigger.
+        self.assertNotIn("synchronize", WORKFLOW)
         # Teardown runs default-branch code, never the pull request head.
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", teardown)
         # OLD: bash infra/scripts/ecs-preview.sh teardown "$NUM".
@@ -475,21 +476,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("Mark GitHub deployment inactive", teardown)
         self.assertNotIn("branch-scoped Vercel", WORKFLOW)
 
-    def test_a_new_head_sha_redeploys_instead_of_revoking_the_approval(self):
-        # WAS: a push deleted the sandbox AND stripped the `preview` label, so
-        # every push cost a human re-approval and a NEW url. A labelled preview
-        # now stays online until the label comes off or the pull request closes.
-        #
-        # The approval bar is unchanged, only re-expressed: `authorize` still
-        # runs on the push, still accepts SAME-REPOSITORY pull requests only, and
-        # still requires the actor to hold write. On `synchronize` that actor is
-        # whoever pushed — who necessarily already holds write on this
-        # repository — so nothing is loosened. The exact-SHA revalidation before
-        # deploy is untouched.
+    def test_only_an_explicit_label_or_dispatch_deploys(self):
+        # Only an explicit act deploys: a writer adds the label or dispatches.
+        # A push to a labelled branch starts nothing (2026-09-28).
         authorize = job("authorize")
-        self.assertIn("github.event.action == 'synchronize'", authorize)
+        self.assertNotIn("synchronize", authorize)
         self.assertIn(
-            "contains(github.event.pull_request.labels.*.name, 'preview')", authorize
+            "github.event.action == 'labeled' && github.event.label.name == 'preview'", authorize
         )
         self.assertIn(
             "github.event.pull_request.head.repo.full_name == github.repository", authorize
@@ -520,13 +513,8 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn(
             "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
         )
-        # The label deploys and does not test (2026-09-28: five concurrent
-        # label suites rate-limited each other for ~80 min each). Only an
-        # explicit dispatch runs --target-full against a preview.
-        self.assertIn(
-            "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
-            job("deploy"),
-        )
+        # Every run is an explicit request, so every run deploys and tests.
+        self.assertIn("PREVIEW_RUN_TESTS: '1'", job("deploy"))
 
         teardown = job("teardown")
         # A push must no longer tear anything down, and must not strip the label.

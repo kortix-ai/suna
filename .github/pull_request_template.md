@@ -3,7 +3,8 @@
   Procedure: CONTRIBUTING.md and the `contributing` skill (.agents/skills/contributing).
 
   - A pull request into `main` runs no CI. Run `pnpm test` and the changed behaviour on
-    your local stack before you open it; list the commands below.
+    your local stack before you open it; list the commands below. Add `test` or
+    `preview` only for one explicit CI run.
   - `prod` needs an approving review and the `full suite + quality gates` check.
     `main` / `staging` need the pull request only. The author owns what was verified.
   - This repo is public. Use synthetic data only, in text, screenshots, and video.
