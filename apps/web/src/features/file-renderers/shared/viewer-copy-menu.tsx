@@ -13,6 +13,8 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+// A key chord, not UI copy: it is the same in every locale.
+const COPY_SHORTCUT = isMac ? '⌘C' : 'Ctrl+C';
 
 /**
  * Right-click menu for a canvas grid (CSV, XLSX). A canvas has no text for the
@@ -34,7 +36,7 @@ export function ViewerCopyMenu({
         <ContextMenuItem onSelect={onCopy}>
           <CopyIcon className="size-4" />
           {tI18nComplete.raw('texte21f935f11d7')}
-          <ContextMenuShortcut>{isMac ? '⌘C' : 'Ctrl+C'}</ContextMenuShortcut>
+          <ContextMenuShortcut>{COPY_SHORTCUT}</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
