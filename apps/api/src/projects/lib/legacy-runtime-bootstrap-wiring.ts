@@ -227,6 +227,13 @@ async function mintRepairCredential(
     projectId: session.projectId,
     name: `Runtime repair ${row.sandboxId.slice(0, 8)}`,
     expiresAt: new Date(Date.now() + REPAIR_TOKEN_TTL_MS),
+    // Purpose-scoped, NOT a laptop-CLI PAT. A project-scoped token with a null
+    // `agentGrant` resolves to the full project authority of `session.createdBy`;
+    // an EMPTY grant makes `agentMayPerform` deny every `project.*` action while
+    // the authentication-only `/v1/runtime-assets/*` routes stay reachable, which
+    // is all the repair fetches. The narrow scope is enforced by the token model
+    // here, not merely described by the script's behaviour.
+    agentGrant: { agent: 'runtime-repair', permissions: [], connectors: [], env: [] },
   });
   return {
     secret: token.secretKey,

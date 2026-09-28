@@ -380,7 +380,10 @@ export function bootstrapExecCommand(script: string): string[] {
   return [
     'bash',
     '-c',
-    `printf '%s' '${b64}' | base64 -d > /tmp/kx-legacy-bootstrap.sh && bash /tmp/kx-legacy-bootstrap.sh`,
+    // The script carries the repair PAT and any rotated session token in
+    // plaintext, so it is removed whatever the exit status — leaving it behind
+    // persists both secrets at a predictable path inside the box.
+    `printf '%s' '${b64}' | base64 -d > /tmp/kx-legacy-bootstrap.sh && bash /tmp/kx-legacy-bootstrap.sh; rc=$?; rm -f /tmp/kx-legacy-bootstrap.sh; exit $rc`,
   ];
 }
 
