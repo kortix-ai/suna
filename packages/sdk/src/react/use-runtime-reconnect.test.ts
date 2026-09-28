@@ -568,6 +568,17 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
   });
 
+  // Cloud: with no session runtime active, the active URL is ''. Session A
+  // unmounting clears its runtime, so session B's poller mounts on '' too — the
+  // same '' A mounted on. That is two sessions, not one.
+  test('an empty URL (no runtime active yet) always resets', () => {
+    resetForServerSwitch('');
+    setSandboxStatus('connected');
+    setOpenCodeHealth(true);
+    resetForServerSwitch('');
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null, wasConnected: false });
+  });
+
   test('a reset without a URL always resets', () => {
     resetForServerSwitch('https://api.test/v1/p/box-a/8000');
     setSandboxStatus('connected');
