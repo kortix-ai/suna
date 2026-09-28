@@ -372,10 +372,10 @@ reuse the successful upload; an explicit `attachmentId` supports caller-managed 
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
-Projects can opt into `session_transcript_history` in Settings → Feature flags. `useSession`
-then reads saved messages from the platform database while `/start` continues. It uses the
-server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
-The flag is off by default. Missing or rejected history falls back to the existing runtime path.
+`session_transcript_history` is on by default; a project can turn it off in Settings →
+Feature flags. `useSession` reads saved messages from the platform database while `/start`
+continues. It uses the server-validated OpenCode root and lets the live read reconcile the
+saved messages by ID. Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
