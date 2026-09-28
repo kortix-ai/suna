@@ -61,6 +61,26 @@ product screenshots, since the screenshots are light. Reload before you record:
 after a hot reload in dev, accumulated keydown listeners make one press jump
 several steps.
 
+## Films — launch and product videos
+
+A video is not a screen recording of a deck. It is a **film**: a route at
+`/presentations/film/<slug>` where every frame is a pure function of the frame
+number. The same React tree plays live (it is the hero of `/launch`) and renders
+to MP4 through headless Chrome and ffmpeg, with a synthesized score and sound
+effects locked to the bar grid (60 fps, 120 BPM, one bar = 120 frames).
+
+```bash
+open http://localhost:<web>/presentations/film/launch           # live, scrubbable
+open "http://localhost:<web>/presentations/film/launch?frame=1800"  # one frame
+bun apps/web/scripts/film/render.ts launch --url http://localhost:<web>        # 1080p60 MP4
+bun apps/web/scripts/film/render.ts launch --url http://localhost:<web> --audio-only
+```
+
+The MP4 lands in the gitignored `output/film/<slug>/`. Never edit a film file
+while a render runs: hot reload reaches the render pages. The engine, the
+storyboard, the motion rules, the sound pipeline and the verification bar:
+**`references/films.md`**. Read it before touching a film.
+
 ## Adding a deck — two edits
 
 **1. `decks/<slug>.tsx`** — a client component exporting `useSlides()`:
