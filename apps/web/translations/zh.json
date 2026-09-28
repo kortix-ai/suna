@@ -19231,7 +19231,11 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "列出了已连接的应用",
       "text37698a37f9d2": "撤销了已连接的应用",
-      "text8c8fb214b592": "以用户身份授权了 GitHub"
+      "text8c8fb214b592": "以用户身份授权了 GitHub",
+      "text4192bb1e9ee5": "已列出会话提醒",
+      "texteee2410ea3db": "已创建会话提醒",
+      "text33954223cc7e": "已开启或关闭会话提醒",
+      "textb7ece0360b75": "已删除会话提醒"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

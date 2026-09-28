@@ -19231,7 +19231,11 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Listó las apps conectadas",
       "text37698a37f9d2": "Revocó una app conectada",
-      "text8c8fb214b592": "Autorizó GitHub como usuario"
+      "text8c8fb214b592": "Autorizó GitHub como usuario",
+      "text4192bb1e9ee5": "Recordatorios de sesión listados",
+      "texteee2410ea3db": "Recordatorio de sesión creado",
+      "text33954223cc7e": "Recordatorio de sesión activado o desactivado",
+      "textb7ece0360b75": "Recordatorio de sesión eliminado"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

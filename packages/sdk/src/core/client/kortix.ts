@@ -1192,6 +1192,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
+      /** Scheduled prompts into this session — see `CreateSessionReminderInput`. */
+      reminders: {
+        list: () => P.listSessionReminders(projectId, sessionId),
+        create: (input: Parameters<typeof P.createSessionReminder>[2]) =>
+          P.createSessionReminder(projectId, sessionId, input),
+        update: (reminderId: string, input: Parameters<typeof P.updateSessionReminder>[3]) =>
+          P.updateSessionReminder(projectId, sessionId, reminderId, input),
+        remove: (reminderId: string) => P.deleteSessionReminder(projectId, sessionId, reminderId),
+      },
       /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>
         P.getSessionAudit(projectId, sessionId, limit, options),

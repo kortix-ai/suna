@@ -20,7 +20,8 @@ origin="${origin%/}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ab() { agent-browser --session "$session" "$@" >/dev/null; }
 
-email="pr-demo-$(date +%s)@example.test"
+# KORTIX_DEMO_EMAIL signs in an existing demo user instead of a new one.
+email="${KORTIX_DEMO_EMAIL:-pr-demo-$(date +%s)@example.test}"
 since="$(date +%s)"
 
 ab open "$origin/auth"

@@ -19231,7 +19231,11 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Listou os apps conectados",
       "text37698a37f9d2": "Revogou um app conectado",
-      "text8c8fb214b592": "Autorizou o GitHub como usuário"
+      "text8c8fb214b592": "Autorizou o GitHub como usuário",
+      "text4192bb1e9ee5": "Lembretes de sessão listados",
+      "texteee2410ea3db": "Lembrete de sessão criado",
+      "text33954223cc7e": "Lembrete de sessão ativado ou desativado",
+      "textb7ece0360b75": "Lembrete de sessão excluído"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
