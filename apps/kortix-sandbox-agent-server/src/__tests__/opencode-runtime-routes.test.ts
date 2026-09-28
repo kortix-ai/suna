@@ -36,23 +36,15 @@ const TEMPLATE = '# Init\nDo the thing.\n'.repeat(80)
 
 let server: ReturnType<typeof Bun.serve>
 let opencodeCalls: string[] = []
-let opencodeUrls: string[] = []
-let acts: Array<{ path: string; body: unknown }> = []
 let permissions: unknown[] = []
 let failConfig = false
 
 function startFakeOpencode() {
   return Bun.serve({
     port: 0,
-    async fetch(req) {
+    fetch(req) {
       const url = new URL(req.url)
       opencodeCalls.push(url.pathname)
-      opencodeUrls.push(url.pathname + url.search)
-      if (req.method === 'POST') {
-        acts.push({ path: url.pathname, body: await req.json().catch(() => null) })
-        if (url.pathname.includes('/unknown/')) return Response.json({ error: 'nope' }, { status: 404 })
-        return Response.json({ ok: true })
-      }
       switch (url.pathname) {
         case '/global/health':
           return Response.json({ version: '1.18.23' })
@@ -83,17 +75,7 @@ function startFakeOpencode() {
           return Response.json(permissions)
         case '/question':
           return Response.json([])
-        case '/vcs/diff':
-          return Response.json([{ file: 'a.ts', added: 1, removed: 0 }])
-        case '/project/current':
-          return Response.json({ worktree: '/workspace', vcs: 'git' })
         default:
-          if (/^\/session\/[^/]+\/todo$/.test(url.pathname)) {
-            return Response.json([{ id: 'todo_1', content: 'do a thing', status: 'pending' }])
-          }
-          if (/^\/session\/[^/]+$/.test(url.pathname)) {
-            return Response.json({ id: SESSION, title: 'From HTTP', directory: '/workspace' })
-          }
           if (/^\/session\/[^/]+\/message$/.test(url.pathname)) {
             return Response.json([
               {
@@ -192,7 +174,7 @@ function buildDb(messages = 6, attachmentBytes = 120_000): void {
   db.close()
 }
 
-function makeRouter(options: { dbPath?: string; pinnedSessionId?: () => string | null } = {}) {
+function makeRouter(options: { dbPath?: string } = {}) {
   const cfg = { sandboxToken: TOKEN, workspace: '/workspace', opencodeInternalPort: 4096, opencodeStandbyPort: 4097, defaultOpencodeConfigDir: '/workspace/.kortix/opencode' } as Config
   const opencode = {
     getInternalUrl: () => `http://127.0.0.1:${server.port}`,
@@ -209,11 +191,7 @@ function makeRouter(options: { dbPath?: string; pinnedSessionId?: () => string |
     daemonBuild: () => 7,
   })
   return {
-    app: createRuntimeRouter(cfg, createOpenCodeQueryService(opencode, {
-      db,
-      state,
-      pinnedSessionId: options.pinnedSessionId ?? (() => SESSION),
-    }).bind({ cfg })),
+    app: createRuntimeRouter(cfg, createOpenCodeQueryService(opencode, { db, state }).bind({ cfg })),
     state,
     db,
     cfg,
@@ -232,8 +210,6 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'kortix-runtime-'))
   dbPath = join(root, 'opencode.db')
   opencodeCalls = []
-  opencodeUrls = []
-  acts = []
   permissions = []
   failConfig = false
   resetKortixEventBusForTests()
@@ -252,20 +228,9 @@ afterEach(() => {
 describe('auth', () => {
   test('every route refuses an unauthenticated call', async () => {
     const { app } = makeRouter()
-    for (const path of [
-      '/state',
-      `/messages/${SESSION}`,
-      '/events',
-      '/turn/msg_1',
-      '/vcs-diff',
-      '/project-current',
-      '/config',
-      `/session/${SESSION}`,
-      `/todo/${SESSION}`,
-    ]) {
+    for (const path of ['/state', `/messages/${SESSION}`, '/events']) {
       expect((await app.request(`http://d${path}`)).status).toBe(401)
     }
-    expect((await app.request('http://d/act', { method: 'POST', body: '{}' })).status).toBe(401)
   })
 
   test('an unconfigured daemon answers 503, not 401 — the operator gets the real reason', async () => {
@@ -275,7 +240,6 @@ describe('auth', () => {
     const app = createRuntimeRouter(cfg, createOpenCodeQueryService(opencode, {
       db,
       state: new RuntimeStateStore({ opencode, cfg, db, pinnedSessionId: () => null, daemonBuild: () => null }),
-      pinnedSessionId: () => null,
     }).bind({ cfg }))
     expect((await app.request('http://d/state', { headers: auth })).status).toBe(503)
   })
@@ -630,166 +594,3 @@ describe('GET /events (SSE)', () => {
     expect(bus.subscriberCount).toBe(0)
   })
 })
-
-describe('POST /act', () => {
-  test('permission reply forwards to OpenCode', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'permission', id: 'per_1', reply: 'once' }),
-    })
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ok: true, kind: 'permission' })
-    expect(acts).toEqual([{ path: '/permission/per_1/reply', body: { reply: 'once' } }])
-  })
-
-  test('question reply and reject take different OpenCode routes', async () => {
-    const { app } = makeRouter()
-    await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'question', id: 'qst_1', answers: [['yes']] }),
-    })
-    await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'question', id: 'qst_1', reject: true }),
-    })
-    expect(acts.map((a) => a.path)).toEqual(['/question/qst_1/reply', '/question/qst_1/reject'])
-    expect(acts[0]!.body).toEqual({ answers: [['yes']] })
-  })
-
-  test('stop aborts the PINNED session when none is named', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'stop' }),
-    })
-    expect(res.status).toBe(200)
-    expect(acts[0]!.path).toBe(`/session/${SESSION}/abort`)
-  })
-
-  test('stop with no session named and none pinned is a 409, and reaches nothing', async () => {
-    const { app } = makeRouter({ pinnedSessionId: () => null })
-    const res = await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'stop' }),
-    })
-    expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ ok: false, error: 'no opencode session pinned' })
-    expect(acts).toEqual([])
-  })
-
-  test('revert and unrevert both work, and revert needs a message id', async () => {
-    const { app } = makeRouter()
-    await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'revert', message_id: 'msg_004', part_id: 'prt_1' }),
-    })
-    await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'revert', undo: true }),
-    })
-    expect(acts.map((a) => a.path)).toEqual([`/session/${SESSION}/revert`, `/session/${SESSION}/unrevert`])
-    expect(acts[0]!.body).toEqual({ messageID: 'msg_004', partID: 'prt_1' })
-
-    const bad = await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'revert' }),
-    })
-    expect(bad.status).toBe(400)
-  })
-
-  test('a malformed act is refused with the supported kinds named', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'teleport' }),
-    })
-    expect(res.status).toBe(400)
-    expect((await res.json()) as any).toMatchObject({ supported: ['permission', 'question', 'stop', 'revert'] })
-    expect(acts).toEqual([])
-  })
-
-  test('invalid JSON is a 400, not a 500', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/act', { method: 'POST', headers: auth, body: 'not json' })
-    expect(res.status).toBe(400)
-  })
-
-  test('an OpenCode 404 is surfaced as 404, not laundered into a 200', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/act', {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'permission', id: 'unknown', reply: 'once' }),
-    })
-    // The fake answers 404 for any path containing `/unknown/`.
-    expect(res.status).toBe(404)
-    expect((await res.json()) as any).toMatchObject({ ok: false })
-  })
-})
-
-describe('GET /turn/:messageId', () => {
-  test('answers from the SAME observer /kortix/health?turn=1 uses', async () => {
-    const { app } = makeRouter()
-    const res = await app.request(`http://d/turn/msg_http_1?session_id=${SESSION}`, { headers: auth })
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as any
-    expect(body).toMatchObject({ message_id: 'msg_http_1', opencode_session_id: SESSION })
-    // The fake OpenCode's message list has msg_http_1 completed with no
-    // assistant reply after it, so the observer reports terminal-with-no-reply.
-    expect(body.in_flight).toBe(false)
-    expect(typeof body.seq).toBe('number')
-    expect(res.headers.get('server-timing')).toMatch(/read;dur=/)
-  })
-
-  test('falls back to the pinned session when the caller names none', async () => {
-    const { app } = makeRouter()
-    const body = (await (await app.request('http://d/turn/msg_http_1', { headers: auth })).json()) as any
-    expect(body.opencode_session_id).toBe(SESSION)
-  })
-
-  test('with no pin and no session_id the observer is asked about nothing and says so', async () => {
-    const { app } = makeRouter({ pinnedSessionId: () => null })
-    const body = (await (await app.request('http://d/turn/msg_http_1', { headers: auth })).json()) as any
-    expect(body.opencode_session_id).toBeNull()
-    // `null` in_flight is UNKNOWN, and unknown grants no authority — it must
-    // never be reported as "the turn is over".
-    expect(body.in_flight).toBeNull()
-  })
-})
-
-describe('GET /kortix/opencode/* passthroughs — the last raw reads move onto /kortix/*', () => {
-  test('vcs-diff, project-current, config, session, and todo forward to local OpenCode', async () => {
-    const { app } = makeRouter()
-    const cases: Array<[string, string]> = [
-      ['/vcs-diff', '/vcs/diff'],
-      ['/project-current', '/project/current'],
-      ['/config', '/config'],
-      [`/session/${SESSION}`, `/session/${SESSION}`],
-      [`/todo/${SESSION}`, `/session/${SESSION}/todo`],
-    ]
-    for (const [route, opencodePath] of cases) {
-      const res = await app.request(`http://d${route}`, { headers: auth })
-      expect(res.status).toBe(200)
-      expect(opencodeCalls).toContain(opencodePath)
-    }
-  })
-
-  test('vcs-diff forwards the mode query', async () => {
-    const { app } = makeRouter()
-    const res = await app.request('http://d/vcs-diff?mode=git', { headers: auth })
-    expect(res.status).toBe(200)
-    const forwarded = new URL(`http://x${opencodeUrls.find((u) => u.startsWith('/vcs/diff'))}`)
-    expect(forwarded.searchParams.get('mode')).toBe('git')
-  })
-})
-

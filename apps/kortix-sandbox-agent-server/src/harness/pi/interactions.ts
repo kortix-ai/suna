@@ -3,7 +3,7 @@
  * a tool runs, and a question the agent asks the user. Both are OpenCode wire
  * objects (`PermissionRequest`, `QuestionRequest`) answered over the same
  * routes the product already calls (`/permission/:id/reply`,
- * `/question/:id/reply|reject`, `/kortix/opencode/act`).
+ * `/question/:id/reply|reject`).
  */
 import { randomUUID } from 'node:crypto'
 import type { WireFrame } from './transcript'

@@ -1221,7 +1221,7 @@ export class PiRuntime {
   }
 
   /**
-   * The turn probe behind `/kortix/health?turn=1` and `/kortix/opencode/turn/:id`.
+   * The turn probe behind `/kortix/health?turn=1`.
    * The reaper renews a box's deadline on `inFlight`, records `end` when a
    * turn is over, and redelivers a prompt reported `abandoned`.
    */
