@@ -1378,6 +1378,8 @@ export function ProjectScreen() {
           <View style={{ flex: 1 }} className="bg-background">
             <FloatingMenuButton
               onPress={openDrawer}
+              // The thread's header gradient (`SessionPage` passes `fade` too).
+              fade
               title={<SessionThreadTitle title={connectingTitle} />}
             />
             <SessionConnecting
