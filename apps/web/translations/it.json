@@ -19235,7 +19235,10 @@
       "text4192bb1e9ee5": "Promemoria di sessione elencati",
       "texteee2410ea3db": "Promemoria di sessione creato",
       "text33954223cc7e": "Promemoria di sessione attivato o disattivato",
-      "textb7ece0360b75": "Promemoria di sessione eliminato"
+      "textb7ece0360b75": "Promemoria di sessione eliminato",
+      "text9dcde51d9ff2": "Descrizione dell'agente",
+      "textfa0db737cb09": "Scritta dall'agente e non verificata. Il connettore riceve i parametri qui sotto.",
+      "text2edf70730233": "Messaggio per l'agente (facoltativo)"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

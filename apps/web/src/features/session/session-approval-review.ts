@@ -76,6 +76,8 @@ export function approvalRequestFromAction(
     risk: action.risk,
     requestedAt: action.at,
     argsPreview: approvalArgsPreview(action),
+    approvalContext:
+      typeof summary?.approval_context === 'string' ? summary.approval_context : null,
     // `!summary` used to count as complete, so a pending row that recorded
     // NOTHING offered an Approve button the server answers with 409
     // (`APPROVAL_PREVIEW_UNAVAILABLE`) — the client and the gate disagreed. A

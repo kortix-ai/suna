@@ -205,6 +205,19 @@ test('call accepts one tool identifier and sends the canonical gateway payload',
   });
 });
 
+test('call sends approval_context outside args so it never reaches the provider', async () => {
+  responseBody = { ok: true, data: null, risk: 'write' };
+  await callConnector('project-one', 'gmail.send_draft', { draft_id: 'd1' }, {
+    approvalContext: 'Sends draft d1 to a@example.com, subject "Hi"',
+  });
+  expect(JSON.parse(String(calls[0]?.body))).toEqual({
+    connector: 'gmail',
+    action: 'send_draft',
+    args: { draft_id: 'd1' },
+    approval_context: 'Sends draft d1 to a@example.com, subject "Hi"',
+  });
+});
+
 test('call rejects an invalid tool identifier before making a request', async () => {
   await expect(callConnector('project-one', 'send_message')).rejects.toThrow(
     'tool must use the connector.action format',

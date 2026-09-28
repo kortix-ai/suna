@@ -242,6 +242,13 @@ export interface ConnectorCallOptions {
    * and the denial lists the names that were available.
    */
   account?: string | null;
+  /**
+   * What this call does, in the caller's words — shown to the human when a
+   * policy holds the call for approval. Use it when the arguments alone don't
+   * show the effect (`send_draft` takes only a draft id: say who it goes to and
+   * what it says). Displayed as unverified; never sent to the provider.
+   */
+  approvalContext?: string | null;
 }
 
 export async function callConnector<T = unknown>(
@@ -252,12 +259,19 @@ export async function callConnector<T = unknown>(
 ): Promise<ConnectorCallResult<T>> {
   const { connector, action } = parseConnectorTool(tool);
   const account = options.account?.trim();
+  const approvalContext = options.approvalContext?.trim();
   return unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
       // The key is omitted rather than sent as null: the gateway reads its
       // presence, and an explicit null would read as "an account was named".
-      { connector, action, args, ...(account ? { account } : {}) },
+      {
+        connector,
+        action,
+        args,
+        ...(account ? { account } : {}),
+        ...(approvalContext ? { approval_context: approvalContext } : {}),
+      },
     ),
   );
 }

@@ -313,6 +313,10 @@ export interface CallInput {
   /** @deprecated Older clients can identify an existing pending row. The
    *  gateway never blocks or polls it. */
   approvalExecutionId?: string | null;
+  /** The agent's own words on what a gated call does ("sends draft X to Y").
+   *  Shown to the approver next to the arguments, labelled unverified. Never
+   *  sent to the provider and outside the request digest. */
+  approvalContext?: string | null;
 }
 
 /** Which account a successful call ran as — echoed on the wire (router.ts). */
@@ -345,6 +349,10 @@ export type CallResult =
       approvalInstructions?: string | null;
     }
   | { status: 'error'; reason: string };
+
+const MAX_APPROVAL_CONTEXT = 4_000;
+const CONTEXT_HINT =
+  ' Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.';
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
@@ -613,6 +621,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // this: <url>") is still specific about what is being approved.
     const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
     const argsPreview = argsPreviewDetails.preview;
+    const approvalContext =
+      input.approvalContext?.trim().slice(0, MAX_APPROVAL_CONTEXT) || null;
     // Keys are OMITTED when empty rather than set to null: the pending_approval
     // result is a wire shape other code compares against, and a key that carries
     // no information shouldn't change it.
@@ -632,8 +642,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ...(url
           ? {
               approvalInstructions: input.sessionId
-                ? 'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.'
-                : 'Share approval_url with a human. Retry this exact call once they approve it.',
+                ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
+                : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
             }
           : {}),
       };
@@ -738,6 +748,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               // with no way to see who it emails. Redacted (see args-preview.ts):
               // credential-shaped fields never reach the audit trail.
               args_preview: argsPreview,
+              // Reference args (`{draft_id}`) name a target without showing it,
+              // so the agent may describe the effect. Unverified by design.
+              ...(approvalContext ? { approval_context: approvalContext } : {}),
             },
             requestDigest,
           ));

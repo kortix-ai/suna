@@ -19235,7 +19235,10 @@
       "text4192bb1e9ee5": "Lembretes de sessão listados",
       "texteee2410ea3db": "Lembrete de sessão criado",
       "text33954223cc7e": "Lembrete de sessão ativado ou desativado",
-      "textb7ece0360b75": "Lembrete de sessão excluído"
+      "textb7ece0360b75": "Lembrete de sessão excluído",
+      "text9dcde51d9ff2": "Descrição do agente",
+      "textfa0db737cb09": "Escrita pelo agente e não verificada. O conector recebe os parâmetros abaixo.",
+      "text2edf70730233": "Mensagem para o agente (opcional)"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -19235,7 +19235,10 @@
       "text4192bb1e9ee5": "Recordatorios de sesión listados",
       "texteee2410ea3db": "Recordatorio de sesión creado",
       "text33954223cc7e": "Recordatorio de sesión activado o desactivado",
-      "textb7ece0360b75": "Recordatorio de sesión eliminado"
+      "textb7ece0360b75": "Recordatorio de sesión eliminado",
+      "text9dcde51d9ff2": "Descripción del agente",
+      "textfa0db737cb09": "Escrita por el agente y sin verificar. El conector recibe los parámetros de abajo.",
+      "text2edf70730233": "Mensaje para el agente (opcional)"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

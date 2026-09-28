@@ -217,7 +217,7 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/approvals/:executionId
-// Resolve a pending approval — { decision: 'approve' | 'deny' }. Allowed for a
+// Resolve a pending approval — { decision: 'approve' | 'deny', note?: string }. Allowed for a
 // project MANAGER or the LAUNCHER of the session the action belongs to (the two
 // principals a human-in-the-loop approval should recognise). Records who decided
 // + when; idempotent-safe (a non-pending row 409s).
@@ -247,6 +247,9 @@ projectsApp.openapi(
     if (decision !== 'approve' && decision !== 'deny') {
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
+    // Optional message from the human to the agent ("deny — reword the second
+    // paragraph"). Rides into the resume prompt so a deny can steer, not just stop.
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 4_000) : '';
     // NO SCOPES. A decision applies to exactly the call that asked for it.
     //
     // This used to accept 'session' ("stop asking for this tool") and
@@ -369,6 +372,7 @@ projectsApp.openapi(
       ...existingDetail,
       decision,
       decided_by: loaded.userId,
+      ...(note ? { decision_note: note } : {}),
     };
     // Atomic resolve — guard the UPDATE on the still-pending state so two
     // concurrent resolvers can't both win (TOCTOU): approve clears the gate to
@@ -377,8 +381,10 @@ projectsApp.openapi(
     // so the row leaves the pending inbox. A lost race matches 0 rows → 409.
     const resumeText = row.sessionId
       ? decision === 'approve'
-        ? `Your pending approval to run ${row.actionPath} was approved — continue.`
-        : `Your request to run ${row.actionPath} was denied — continue without it.`
+        ? `Your pending approval to run ${row.actionPath} was approved — continue.${note ? `\n\nMessage from the approver:\n${note}` : ''}`
+        : note
+          ? `Your request to run ${row.actionPath} was denied. Message from the approver:\n${note}`
+          : `Your request to run ${row.actionPath} was denied — continue without it.`
       : null;
     const callbackValues =
       row.sessionId && resumeText
