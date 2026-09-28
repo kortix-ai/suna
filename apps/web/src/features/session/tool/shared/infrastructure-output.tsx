@@ -16,26 +16,6 @@ import { useMemo } from 'react';
 import { MD_FLUSH_CLASSES } from './infrastructure-preview';
 import { cleanErrorMessage, formatJsonFailureOutput, looksLikeError, parseJsonFailure } from './tool-outcome';
 
-// ── Tool-outcome + JSON-failure parsing ────────────────────────────────────
-export {
-  cleanErrorMessage,
-  formatJsonFailureOutput,
-  isErrorOutput,
-  looksLikeError,
-  parseJsonFailure,
-  partOutcome,
-  type ToolOutcome,
-} from './tool-outcome';
-
-import { SidebarToggle as PanelRight } from '@/features/icon/icons/sidebar-toggle';
-import {
-  cleanErrorMessage,
-  formatJsonFailureOutput,
-  looksLikeError,
-  parseJsonFailure,
-  type ToolOutcome,
-} from './tool-outcome';
-
 export function JsonFailureOutputCard({
   failure,
 }: {
