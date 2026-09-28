@@ -311,11 +311,23 @@ async function buildSandboxHealth(
  *
  * Keyed by project because the template set, its content hash and the provider
  * pin are all per-project.
+ *
+ * Stale-while-revalidate (2026-09-28): the client re-polls this at 120 s when
+ * idle (8 s while a build is active), so a 10 s TTL expires long before the
+ * next poll and the live provider probe ran on nearly every request. Prod
+ * ClickHouse showed the cost: in the hour of KRTX-620 this route's p95 was
+ * 8 616 ms over 114 requests while every other GET route's p95 was 1 025 ms.
+ * The route now serves the last resolved answer at once and refreshes behind
+ * the response (`staleWhileRevalidate`) — the provider's tail never lands on
+ * the request path after the first poll per project. Freshness is unchanged:
+ * the alert reads a value at most one refresh cycle old, exactly what the TTL
+ * contract above promises.
  */
 const SANDBOX_HEALTH_TTL_MS = 10_000;
 
 const sandboxHealthMemo = ttlMemo({
   ttlMs: SANDBOX_HEALTH_TTL_MS,
+  staleWhileRevalidate: true,
   keyFn: (_loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>, projectId: string) =>
     projectId,
   loader: (loaded, projectId) => buildSandboxHealth(loaded, projectId),
