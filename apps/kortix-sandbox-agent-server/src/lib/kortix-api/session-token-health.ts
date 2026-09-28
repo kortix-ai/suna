@@ -51,9 +51,13 @@ import { logger } from '../log/logger'
  * So the breaker now only REPORTS. It stops the log spam (one line per trip,
  * not one per 401) and exposes the state, and it clears itself the moment the
  * control plane answers anything else — which is what a rotated credential
- * looks like from here. The volume problem it was built for is closed at its
- * source: a box whose row and VM disagree is reconciled within one sweep
- * (apps/api/src/projects/reaping/row-vm-divergence.ts).
+ * looks like from here. The state a consuming call site reads is
+ * `sessionTokenPresumedDead()`: `reconcileRuntimeAssets` uses it to skip the
+ * manifest fetch, so a box that stays up after its row is parked stops adding
+ * one `warn` 401 per 60 s tick to the API log. It never converts the dead token
+ * into a terminal state of the box. The volume problem it was built for is
+ * closed at its source: a box whose row and VM disagree is reconciled within
+ * one sweep (apps/api/src/projects/reaping/row-vm-divergence.ts).
  */
 const SESSION_TOKEN_DEAD_PATTERN = /session token is not active/i
 
@@ -65,7 +69,8 @@ let tripped = false
 
 /**
  * Has the API told this box, repeatedly and without contradiction, that its
- * credential is dead? Reporting only — nothing acts on it locally.
+ * credential is dead? A consuming call site skips a request that cannot succeed;
+ * it never acts on the credential beyond that (no restart, no shutdown).
  */
 export function sessionTokenPresumedDead(): boolean {
   return tripped

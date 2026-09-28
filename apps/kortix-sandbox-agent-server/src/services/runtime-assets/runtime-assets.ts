@@ -13,7 +13,7 @@ import {
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { Config } from '@/lib/config/config'
-import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
+import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type {
   HarnessAssetOutcome,
   HarnessAssetsCompatibilityResult,
@@ -1007,6 +1007,17 @@ async function chunkStoreSources(
 export async function reconcileRuntimeAssets(
   options: RuntimeAssetsOptions = {},
 ): Promise<RuntimeAssetsResult> {
+  // A credential the control plane has refused, repeatedly and without
+  // contradiction, cannot be fixed by asking again: every request below carries
+  // that same dead token. The runtime-truth ticker runs this every 60 s, so a
+  // box that stays up after its session row is parked fetches the manifest
+  // forever and the API logs one `warn` 401 per fetch — the `infra:log` spike
+  // this guards. The breaker clears itself on the next answer that is not the
+  // dead-token 401, so the pass resumes on its own, and nothing stops the
+  // process (see `session-token-health.ts`'s header).
+  if (sessionTokenPresumedDead()) {
+    return { cli: 'skipped', skills: 'skipped', reason: 'session credential refused by the control plane' }
+  }
   const fetchImpl = options.fetchImpl ?? fetch
   const cliPath = options.cliPath ?? DEFAULT_CLI_PATH
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
