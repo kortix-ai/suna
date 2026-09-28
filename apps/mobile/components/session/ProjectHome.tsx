@@ -27,7 +27,7 @@
  */
 
 import * as React from 'react';
-import type { SessionPromptPart } from '@kortix/sdk';
+import { selectableProjectAgents, type SessionPromptPart } from '@kortix/sdk';
 import { newConfigPrompt } from '@kortix/shared';
 import { Keyboard, Pressable, View } from 'react-native';
 import {
@@ -64,7 +64,6 @@ import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
 import {
   composerChip,
   homeAgentName,
-  pickableAgents,
   type PickerOption,
 } from '@/lib/session/composer-config';
 import { catalogPickerModels, firstPromptPicks, modelPickerOptions } from '@/lib/session/model-picker';
@@ -195,14 +194,17 @@ export function ProjectHome({
   // else the last agent picked anywhere (`homeAgentName`). A pick also becomes
   // the store's last-used agent, which the thread's header reads.
   const { data: projectDetail } = useProjectDetail(projectId);
-  const projectAgents = projectDetail?.config?.agents ?? EMPTY_AGENTS;
+  const projectAgents = React.useMemo(
+    () => (projectDetail?.config ? selectableProjectAgents(projectDetail.config) : EMPTY_AGENTS),
+    [projectDetail],
+  );
   const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
   const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
   const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
   const agentName = React.useMemo(
     () =>
       homeAgentName(
-        pickableAgents(projectAgents).map((a) => a.name),
+        projectAgents.map((a) => a.name),
         {
           picked: pickedAgent,
           projectDefault: projectDetail?.config?.default_agent ?? projectDetail?.config?.open_code_default_agent,

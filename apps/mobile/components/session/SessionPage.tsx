@@ -50,9 +50,10 @@ import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions'
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useProjectModelCatalog } from '@/lib/projects/hooks';
+import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
 import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
 import { isModelUnavailable } from '@/lib/session/composer-model';
+import { threadAgents } from '@/lib/session/composer-config';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
@@ -127,7 +128,6 @@ import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
-  useOpenCodeAgents,
   useOpenCodeProviders,
   useOpenCodeConfig,
   useOpenCodeCommands,
@@ -812,10 +812,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   // Agent/model/variant config
-  const agentsQuery = useOpenCodeAgents(sandboxUrl);
-  const agents = agentsQuery.data ?? EMPTY_AGENTS;
-  // No list yet (sandbox still starting, or its first fetch in flight).
-  const agentsLoading = !agentsQuery.data;
+  // The project's own agents from the Kortix project config — the same list
+  // project home and web offer, and ready before the sandbox is.
+  const { data: projectDetail } = useProjectDetail(projectId ?? null);
+  const agents = useMemo(
+    () => (projectDetail?.config ? threadAgents(projectDetail.config) : EMPTY_AGENTS),
+    [projectDetail],
+  );
+  // No list yet: the project detail's first fetch is in flight.
+  const agentsLoading = !projectDetail;
   // Models are derived here from the providers query (the same query
   // useOpenCodeModels reads) so the arrays keep their identity between
   // renders and the memoized composer can skip stream renders.

@@ -9,7 +9,7 @@
  * The Agent tab's `+` (title row, far right) closes the sheet and starts a
  * new session on the shared "configure a new agent" prompt
  * (`newConfigPrompt('agent')`) — web's Agents page "New" does the same.
- * With fewer than two pickable agents (`pickableAgents`) and no `+` there is
+ * With fewer than two selectable agents (`isSelectableAgent`) and no `+` there is
  * nothing to do on the Agent tab: no tab bar, the sheet is the model list
  * alone. With a `+`, the tab shows even for one agent — a new one is made there.
  *
@@ -37,6 +37,7 @@ import type { FloatingTabItem } from '@/components/navigation/FloatingTabBar';
 import { PickerSheet } from '@/components/session/PickerSheet';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { isSelectableAgent } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
@@ -44,7 +45,6 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import {
   agentDisplayName,
   nearestStop,
-  pickableAgents,
   stopOffset,
   variantDisplayName,
   type PickerOption,
@@ -104,7 +104,7 @@ export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps
     const [tab, setTab] = React.useState(MODEL_TAB);
 
     const agentOptions = React.useMemo<PickerOption[]>(
-      () => pickableAgents(agent?.agents ?? []).map((a) => ({ key: a.name, label: agentDisplayName(a.name) })),
+      () => (agent?.agents ?? []).filter(isSelectableAgent).map((a) => ({ key: a.name, label: agentDisplayName(a.name) })),
       [agent?.agents],
     );
     const hasAgentTab = !!agent && (agentOptions.length >= 2 || !!agent.onCreate);

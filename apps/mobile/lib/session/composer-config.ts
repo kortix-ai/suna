@@ -10,6 +10,9 @@
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
 
+import { selectableProjectAgents, type ProjectConfigSummary } from '@kortix/sdk';
+import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+
 export interface PickerOption {
   /** Unique row id: the gateway wire id (home) or `providerID/modelID` (thread). */
   key: string;
@@ -99,19 +102,18 @@ export function composerChip(i: {
 }
 
 /**
- * Agents a user can run a thread on: primary agents that are not hidden or
- * disabled. Takes the sandbox's agents (thread) and the project config's
- * (`/detail`, project home), whose `mode` is null when the agent file omits
- * it — OpenCode reads that as "all".
+ * The agents a thread can run, from the Kortix project config: the SDK's
+ * `selectableProjectAgents`, default first. Never the sandbox's `/agent` list,
+ * which adds the runtime's built-ins (`build`, `plan`, `explore`, `general`).
+ * A missing `mode` is OpenCode's default, `all`.
  */
-export function pickableAgents<T extends { name: string; mode?: string | null; hidden?: boolean; enabled?: boolean }>(
-  agents: T[],
-): T[] {
-  return agents.filter((a) => {
-    const mode = a.mode ?? 'all';
-    return (mode === 'primary' || mode === 'all') && !a.hidden && a.enabled !== false &&
-      a.name !== 'build' && a.name !== 'plan';
-  });
+export function threadAgents(config: ProjectConfigSummary): Agent[] {
+  return selectableProjectAgents(config).map((a) => ({
+    name: a.name,
+    description: a.description ?? undefined,
+    mode: a.mode === 'primary' ? 'primary' : 'all',
+    options: {},
+  }));
 }
 
 /**
