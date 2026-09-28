@@ -567,8 +567,16 @@ export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
+/**
+ * `showErrors: false`: `/new` renders this failure inline, with its own wording
+ * and its own retry. The global handler toasting it as well produced two
+ * different explanations of one failure — prod showed GitHub's raw 403 plus
+ * "Our team has been notified" over an inline message that said something else.
+ */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+  );
 }
 
 /**
@@ -983,6 +991,8 @@ export async function setProjectOnboardingComplete(projectId: string, completed:
 
 /** Use case the account picked during guided project onboarding. */
 export type OnboardingUseCase =
+  | 'founder'
+  | 'product_design'
   | 'sales'
   | 'support'
   | 'marketing'
@@ -999,6 +1009,8 @@ export type OnboardingCompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '
  *  partial profile is the normal case, not an error case. */
 export interface OnboardingProfile {
   use_case?: OnboardingUseCase;
+  /** The typed answer when `use_case` is `'other'`. The API trims it and caps it at 120 characters. */
+  use_case_note?: string;
   company_domain?: string;
   company_size?: OnboardingCompanySize;
 }

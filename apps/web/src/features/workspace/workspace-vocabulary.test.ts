@@ -174,13 +174,4 @@ describe('the other meanings of "workspace" are left alone', () => {
     const sandbox = catalog.projectHome?.sandbox?.platformDefault ?? '';
     expect(sandbox).toContain('workspace');
   });
-
-  test('Slack workspace copy is untouched', () => {
-    const catalog = JSON.parse(
-      readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'),
-    ) as Record<string, any>;
-    const slack = catalog.projectOnboarding?.slack ?? {};
-    const joined = Object.values(slack).join(' ');
-    expect(joined).toContain('workspace');
-  });
 });

@@ -424,6 +424,12 @@ export async function listSessionsNeedingInput(
   );
 }
 
+export interface ResolveApprovalOptions {
+  /** A message to the agent, delivered with the decision ("deny — reword the
+   *  second paragraph"). The session continues with it as instructions. */
+  note?: string | null;
+}
+
 /** Resolve a pending approval. Allowed for a project manager or the session
  *  launcher; approve lets the action proceed on retry, deny records a refusal. */
 // A decision applies to exactly the call that asked for it. The `scope`
@@ -435,10 +441,13 @@ export async function resolveApproval(
   projectId: string,
   executionId: string,
   decision: 'approve' | 'deny',
+  options: ResolveApprovalOptions = {},
 ) {
+  const note = options.note?.trim();
   return unwrap(
     await backendApi.post<{ ok: boolean }>(`/projects/${projectId}/approvals/${executionId}`, {
       decision,
+      ...(note ? { note } : {}),
     }),
   );
 }

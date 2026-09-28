@@ -138,6 +138,20 @@ describe('mapApiReviewItem', () => {
     ]);
   });
 
+  test("an adapted connector call carries the agent's approval context", () => {
+    const item = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: {
+        execution_id: 'e',
+        action_path: 'gmail.send_draft',
+        args_preview: { draft_id: 'd1' },
+        approval_context: 'Sends the reply to a@b.co',
+      },
+    });
+    expect(approvalDetailOf(item).actions[0].approvalContext).toBe('Sends the reply to a@b.co');
+  });
+
   test('a viewer without argument visibility gets previewAuthorized false', () => {
     const item = mapApiReviewItem({
       ...row,

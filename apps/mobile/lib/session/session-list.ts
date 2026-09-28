@@ -376,16 +376,11 @@ export interface SessionGroup {
  * Sessions page render the coordinator as a parent row and its children
  * indented beneath it.
  *
- * Ported from web's `groupSessionsByCoordinator`
- * (`apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts`),
- * with one deliberate improvement: web's version only nests ONE level —
- * `groups` is built solely from top-level (parentless) sessions, so a
- * grandchild (a session spawned by a session that is itself a child) has no
- * entry to nest under and silently vanishes from the list. This port instead
- * resolves every session to its topmost ancestor STILL PRESENT in `sessions`
- * (`rootIdOf`, cycle-safe) and nests it there, so a deeper chain flattens
- * under its real root instead of disappearing. Behaviour is identical to web
- * for the common one-level case (a coordinator with direct children).
+ * Mirrors web's `groupSessionsByCoordinator`
+ * (`apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts`):
+ * every session resolves to its topmost ancestor STILL PRESENT in `sessions`
+ * (`rootIdOf`, cycle-safe) and nests there, so a deeper chain flattens under
+ * its real root instead of disappearing.
  *
  * A child whose coordinator is absent from `sessions` — deleted, a different
  * project, or simply not loaded onto this page yet, since the Sessions page
@@ -395,9 +390,10 @@ export interface SessionGroup {
  * that was an orphan on one render re-nests automatically once its
  * coordinator's page has loaded.
  *
- * Order is preserved: top-level groups appear in the order their session
- * first appears in `sessions`; a group's children appear in that same overall
- * order too. Never mutates `sessions`.
+ * Order: a group takes the position of its FIRST member in `sessions`, not of
+ * its coordinator. The list is newest-first, so a quiet coordinator whose
+ * sub-agent is working sits where that sub-agent would, instead of below it.
+ * A group's children keep their order in `sessions`. Never mutates `sessions`.
  */
 export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
   const present = new Set(sessions.map((session) => session.session_id));
@@ -408,40 +404,71 @@ export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionG
   }
 
   // Walk the parent chain to the topmost ancestor still present in
-  // `sessions`. `seen` stops a cycle (metadata pointing back into its own
-  // chain) at the first repeat instead of looping forever.
+  // `sessions`. A cycle (metadata pointing back into its own chain) has no
+  // root: every session on it renders top-level, once.
   const rootIdOf = (sessionId: string): string => {
     let current = sessionId;
     const seen = new Set<string>([current]);
     for (;;) {
       const parent = parentBySessionId.get(current) ?? null;
-      if (!parent || seen.has(parent)) return current;
+      if (!parent) return current;
+      if (seen.has(parent)) return sessionId;
       seen.add(parent);
       current = parent;
     }
   };
 
+  const byId = new Map(sessions.map((session) => [session.session_id, session]));
   const groups = new Map<string, SessionGroup>();
   const order: SessionGroup[] = [];
   for (const session of sessions) {
-    if (parentBySessionId.get(session.session_id)) continue;
-    const group: SessionGroup = { session, children: [] };
-    groups.set(session.session_id, group);
-    order.push(group);
-  }
-  for (const session of sessions) {
-    if (!parentBySessionId.get(session.session_id)) continue;
-    groups.get(rootIdOf(session.session_id))?.children.push(session);
+    const rootId = rootIdOf(session.session_id);
+    let group = groups.get(rootId);
+    if (!group) {
+      group = { session: byId.get(rootId)!, children: [] };
+      groups.set(rootId, group);
+      order.push(group);
+    }
+    if (rootId !== session.session_id) group.children.push(session);
   }
   return order;
 }
 
+/**
+ * `groupSessionsByCoordinator` across sections. Nesting per section left a
+ * sub-agent stranded whenever its coordinator sorted into another section
+ * (a running child under a completed coordinator, a child active today under
+ * a coordinator last touched yesterday). Groups are built over the whole list,
+ * and each group renders in the FIRST section any of its members sits in. A
+ * section left with no group is dropped.
+ */
+export function groupSectionsByCoordinator<T extends { sessions: ProjectSession[] }>(
+  sections: T[],
+): Array<T & { groups: SessionGroup[] }> {
+  const sectionIndexOf = new Map<string, number>();
+  sections.forEach((section, index) => {
+    for (const session of section.sessions) sectionIndexOf.set(session.session_id, index);
+  });
+  const bySection = sections.map(() => [] as SessionGroup[]);
+  for (const group of groupSessionsByCoordinator(sections.flatMap((section) => section.sessions))) {
+    const index = Math.min(
+      ...[group.session, ...group.children].map((s) => sectionIndexOf.get(s.session_id)!),
+    );
+    bySection[index]!.push(group);
+  }
+  return sections
+    .map((section, index) => ({ ...section, groups: bySection[index]! }))
+    .filter((section) => section.groups.length > 0);
+}
+
 /** One row of a flattened coordinator tree: a session plus whether it renders
- *  indented under its coordinator, with the sub-agent mark. */
+ *  indented under its coordinator, joined to it by a connector. */
 export interface SessionListRow {
   session: ProjectSession;
   /** True for a sub-agent session rendered under its coordinator. */
   nested: boolean;
+  /** True for the last sub-agent row of its group: its connector ends there. */
+  last: boolean;
 }
 
 /**
@@ -453,8 +480,10 @@ export interface SessionListRow {
 export function flattenSessionGroups(sessions: ProjectSession[]): SessionListRow[] {
   const rows: SessionListRow[] = [];
   for (const group of groupSessionsByCoordinator(sessions)) {
-    rows.push({ session: group.session, nested: false });
-    for (const child of group.children) rows.push({ session: child, nested: true });
+    rows.push({ session: group.session, nested: false, last: false });
+    group.children.forEach((child, index) =>
+      rows.push({ session: child, nested: true, last: index === group.children.length - 1 }),
+    );
   }
   return rows;
 }

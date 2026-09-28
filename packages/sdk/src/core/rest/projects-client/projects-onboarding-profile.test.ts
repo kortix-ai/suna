@@ -46,3 +46,11 @@ test('accepts a partial profile', async () => {
 
   expect(calls[0]?.body).toEqual({ profile: { use_case: 'engineering' } });
 });
+
+// "Something else" on the work question carries the typed answer alongside
+// `use_case: 'other'`.
+test('sends the free-form use-case note', async () => {
+  await setProjectOnboardingProfile('p1', { use_case: 'other', use_case_note: 'Research' });
+
+  expect(calls[0]?.body).toEqual({ profile: { use_case: 'other', use_case_note: 'Research' } });
+});

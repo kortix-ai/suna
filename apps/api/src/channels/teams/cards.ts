@@ -255,6 +255,28 @@ export function buildConnectAccountCard(loginUrl: string): Record<string, unknow
   );
 }
 
+/**
+ * The sign-in prompt in a channel or group chat. It carries no link: everyone
+ * in the conversation sees the card, and the link links whoever opens it
+ * (identity-routes.ts `/bind`). The link is shown only in a one-to-one chat.
+ */
+export function buildConnectPrivatelyCard(input: {
+  /** A deep link that opens a one-to-one chat with the bot; null when unknown. */
+  chatUrl: string | null;
+  botName: string;
+  /** A message the user sent here is parked and runs once they connect. */
+  resumes?: boolean;
+}): Record<string, unknown> {
+  const lines = [
+    `I send the sign-in link only in a private chat, so nobody else can use it. Open a chat with ${input.botName} and send /login.`,
+    ...(input.resumes ? ['What you sent here runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(
+    headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')),
+    input.chatUrl ? [openUrlAction(`Open chat with ${input.botName}`, input.chatUrl)] : undefined,
+  );
+}
+
 export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
   return card(
     headerBlock('🔒', 'Request access', "You're connected, but your account can't run this project yet."),
@@ -824,4 +846,97 @@ export function buildFormCard(spec: TeamsFormSpec): Record<string, unknown> | nu
   return card(body, [
     executeAction(spec.submitLabel?.trim() || 'Submit', TEAMS_FORM_VERB, { fieldIds: ids.join(',') }),
   ]);
+}
+
+/** The verb and input id of the approval card for a gated connector call. */
+export const TEAMS_APPROVAL_VERB = 'teams_approval';
+export const APPROVAL_NOTE_INPUT = 'approvalNote';
+
+const APPROVAL_VALUE_MAX = 300;
+
+function clipText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+/**
+ * A policy-gated connector call waiting on a human: the agent's own
+ * description (labelled unverified), the parameters the connector will
+ * receive, a message box, and Approve / Deny. `Action.Execute` returns the box
+ * with whichever button was pressed, so the message rides with either.
+ */
+export function buildTeamsApprovalCard(opts: {
+  executionId: string;
+  actionPath: string;
+  risk: string | null;
+  argsPreview: Record<string, unknown> | null;
+  approvalContext: string | null;
+  approvalUrl: string | null;
+  approvable: boolean;
+}): Record<string, unknown> {
+  const body: CardElement[] = [
+    ...headerBlock('🛡️', 'The agent needs your approval', `Run ${opts.actionPath}${opts.risk ? ` · ${opts.risk}` : ''}`),
+  ];
+  if (opts.approvalContext) {
+    body.push(
+      text("Agent's description (written by the agent, not verified)", { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      emphasisContainer([text(clipText(opts.approvalContext, 2_800), { spacing: 'none' })]),
+    );
+  }
+  const facts = Object.entries(opts.argsPreview ?? {}).map(([key, value]) => ({
+    title: key,
+    value:
+      value === '[redacted]'
+        ? 'hidden credential'
+        : clipText(typeof value === 'string' ? value : JSON.stringify(value) ?? '', APPROVAL_VALUE_MAX),
+  }));
+  body.push(
+    text('Parameters the connector will receive', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    facts.length > 0 ? { type: 'FactSet', facts } : text('No parameters recorded.', { isSubtle: true, spacing: 'none' }),
+    text('Message to the agent (optional)', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    {
+      type: 'Input.Text',
+      id: APPROVAL_NOTE_INPUT,
+      isMultiline: true,
+      maxLength: 2000,
+      placeholder: 'Sent to the agent with your decision',
+    },
+  );
+  const actions: CardElement[] = [];
+  if (opts.approvable) {
+    actions.push({
+      type: 'Action.Execute',
+      title: 'Approve',
+      verb: TEAMS_APPROVAL_VERB,
+      data: { verb: TEAMS_APPROVAL_VERB, executionId: opts.executionId, decision: 'approve' },
+      style: 'positive',
+    });
+  }
+  actions.push({
+    type: 'Action.Execute',
+    title: 'Deny',
+    verb: TEAMS_APPROVAL_VERB,
+    data: { verb: TEAMS_APPROVAL_VERB, executionId: opts.executionId, decision: 'deny' },
+    style: 'destructive',
+  });
+  if (opts.approvalUrl) actions.push(openUrlAction('Open in Kortix', opts.approvalUrl));
+  return card(body, actions);
+}
+
+/** What the approval card becomes once anyone decided. */
+export function buildTeamsApprovalOutcomeCard(opts: {
+  actionPath: string;
+  decision: 'approve' | 'deny';
+  note: string;
+}): Record<string, unknown> {
+  const body: CardElement[] = headerBlock(
+    opts.decision === 'approve' ? '✅' : '⛔',
+    `${opts.decision === 'approve' ? 'Approved' : 'Denied'}: ${opts.actionPath}`,
+  );
+  if (opts.note) {
+    body.push(
+      text('Message to the agent', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      emphasisContainer([text(clipText(opts.note, 2_000), { spacing: 'none' })]),
+    );
+  }
+  return card(body);
 }

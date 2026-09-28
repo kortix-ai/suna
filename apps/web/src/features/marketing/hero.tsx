@@ -19,7 +19,7 @@ const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
  *  their marks, so "AI Management System" lands without a paragraph first. */
-function RivalEyebrow({
+export function RivalEyebrow({
   content,
 }: {
   content: ReturnType<typeof getLocalizedLandingContent>['heroEyebrow'];

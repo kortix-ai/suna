@@ -150,6 +150,15 @@ const envSchema = z.object({
     .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  // The Supabase anon key. PUBLIC by design (every browser gets it from the
+  // web runtime config); the API only hands it to clients through
+  // GET /v1/auth/client-config so a native app can sign in from the API URL.
+  SUPABASE_ANON_KEY: optStr,
+  // Sign-in options the web auth page renders (apps/web/src/lib/env-config.ts
+  // reads the same names). Unset = not reported (client-config returns null);
+  // set to '' = none.
+  KORTIX_PUBLIC_AUTH_METHODS: z.string().optional(),
+  KORTIX_PUBLIC_AUTH_PROVIDERS: z.string().optional(),
   // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
   // API checks an HS256 access token's signature and expiry locally instead of
   // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
@@ -1222,6 +1231,9 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY,
+  KORTIX_PUBLIC_AUTH_METHODS: env.KORTIX_PUBLIC_AUTH_METHODS,
+  KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
   SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
   SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,

@@ -24,7 +24,7 @@ describe('shareUpstreamResult', () => {
   // The marker is the daemon's catch-all body. A rename there must fail here.
   test('the marker matches the daemon /kortix catch-all', () => {
     const proxy = readFileSync(
-      new URL('../../../kortix-sandbox-agent-server/src/proxy.ts', import.meta.url),
+      new URL('../../../kortix-sandbox-agent-server/src/app/server.ts', import.meta.url),
       'utf8',
     );
     // The catch-all line answers 404 with exactly this error string, whatever

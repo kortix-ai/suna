@@ -13,7 +13,7 @@ const render = (props: Parameters<typeof TurnErrorDisplay>[0]) =>
 
 describe('a transport failure is never swallowed as an interruption', () => {
   // The exact string the sandbox daemon returns when it severs a live turn
-  // (`kortix-sandbox-agent-server/src/proxy.ts`). Before this guard, the word
+  // (`kortix-sandbox-agent-server/src/app/server.ts`). Before this guard, the word
   // "aborted" in the detail matched a bare substring pattern and the user got a
   // muted "Interrupted" with the cause thrown away. Now an abort renders
   // nothing at all, so a misclassification would hide the failure entirely —

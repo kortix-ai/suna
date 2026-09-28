@@ -13,6 +13,10 @@
 export interface CompactToolCall {
   tool: string;
   status: string | null;
+  /** `detail: 'full'` only: the call's arguments as JSON, and what it returned
+   *  (or its error), each cut to the read's `chars` bound. */
+  input?: string;
+  output?: string;
 }
 
 export interface CompactMessage {
@@ -36,7 +40,7 @@ export type RawOpencodePart = {
   text?: string;
   synthetic?: boolean;
   tool?: string;
-  state?: { status?: string };
+  state?: { status?: string; input?: unknown; output?: unknown; error?: unknown };
   filename?: string;
   mime?: string;
 };
@@ -69,7 +73,12 @@ export function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
   return list.filter((m): m is RawOpencodeMessage => typeof m === 'object' && m !== null);
 }
 
-export function compactMessage(msg: RawOpencodeMessage, maxChars: number): CompactMessage {
+/**
+ * `full` is the reader-facing variant (the MCP `read_session` tool): line breaks
+ * survive, so code and command output stay legible, and each tool call carries
+ * its input and output. The default stays the one-line digest the CLI prints.
+ */
+export function compactMessage(msg: RawOpencodeMessage, maxChars: number, full = false): CompactMessage {
   const info = msg.info ?? msg;
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
   const text = parts
@@ -82,6 +91,12 @@ export function compactMessage(msg: RawOpencodeMessage, maxChars: number): Compa
     .map((p) => ({
       tool: p.tool ?? 'tool',
       status: p.state?.status ?? null,
+      ...(full
+        ? {
+            input: truncate(JSON.stringify(p.state?.input ?? {}), maxChars),
+            output: truncate(stringify(p.state?.output ?? p.state?.error ?? ''), maxChars),
+          }
+        : {}),
     }));
   const files = parts
     .filter((p) => p.type === 'file')
@@ -95,12 +110,16 @@ export function compactMessage(msg: RawOpencodeMessage, maxChars: number): Compa
     role: info.role ?? 'unknown',
     created: info.time?.created ? new Date(info.time.created).toISOString() : null,
     completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(normalizeWhitespace(text), maxChars),
+    text: truncate(full ? text.trim() : normalizeWhitespace(text), maxChars),
     tools,
     files,
     reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
     error: info.error ?? null,
   };
+}
+
+function stringify(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function normalizeWhitespace(s: string): string {

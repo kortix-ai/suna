@@ -362,7 +362,8 @@ export function applyPreviewEnvironment(
     FRONTEND_URL: origin,
     SITE_URL: origin,
     API_EXTERNAL_URL: `${origin}/auth/v1`,
-    ADDITIONAL_REDIRECT_URLS: `${origin}/auth/callback`,
+    // kortix://: the mobile app signs in to a preview as a private deployment.
+    ADDITIONAL_REDIRECT_URLS: `${origin}/auth/callback,kortix://**`,
     CORS_ALLOWED_ORIGINS: origin,
     KORTIX_PUBLIC_APP_URL: origin,
     KORTIX_PUBLIC_AUTH_METHODS: 'magic,password',

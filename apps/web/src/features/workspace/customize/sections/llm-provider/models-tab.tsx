@@ -28,7 +28,7 @@ import { Tag } from '@/components/ui/tag';
 import { errorToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
-import { isManagedModelId } from '@kortix/llm-catalog';
+import { isManagedModelId, MANAGED_ENDPOINT_PROVIDERS } from '@kortix/llm-catalog';
 import {
   useModelAccess,
   useModelDefaults,
@@ -224,7 +224,9 @@ export function ModelsTab({
               {group.providerID === 'kortix' &&
                 group.rows.every(({ model }) => {
                   const routes = pickerCatalog?.managedPricingRoutes?.[model.modelID];
-                  return isManagedModelId(model.modelID) && routes?.length && routes.every((route) => route.route !== 'morph');
+                  // Only a Morph route breaks the claim. A model whose price
+                  // feed is missing still serves from the verified US ZDR pool.
+                  return isManagedModelId(model.modelID) && !routes?.some((route) => route.route === 'morph');
                 }) && (
                   // One quiet line, not a green panel: both facts are
                   // reassurance, not a warning, and the detail lives one hover
@@ -350,7 +352,11 @@ export function ModelsTab({
                             {pricingRoutes.map((price) => (
                               <div key={price.route}>
                                 {tAccess('pricingRoute', {
-                                  route: price.route === 'morph' ? 'Morph' : `OpenRouter · ${price.route}`,
+                                  route:
+                                    price.route === 'morph'
+                                      ? 'Morph'
+                                      : ((MANAGED_ENDPOINT_PROVIDERS as Record<string, string>)[price.route] ??
+                                        price.route.split('/')[0]),
                                   input: formatPricePerMillion(price.input),
                                   cacheRead: formatPricePerMillion(price.cacheRead),
                                   output: formatPricePerMillion(price.output),

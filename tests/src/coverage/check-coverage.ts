@@ -80,7 +80,7 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
   const flows = allFlows();
   const flowIdParity = compareFlowIds(
     parseSpecificationFlowIds(await Bun.file(SPEC).text()),
-    flows.map((flow) => flow.id),
+    flows.map((flow) => flow.meta.specId ?? flow.id),
   );
 
   const manifest = await readManifest();

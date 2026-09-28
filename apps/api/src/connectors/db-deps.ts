@@ -25,6 +25,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { bindSlackThreadToSession } from '../channels/slack/binding';
 import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
@@ -751,6 +752,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Session metadata is user-writable, so it is not a trusted routing source
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
+    bindSlackThread: (input) => bindSlackThreadToSession(input),
     loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
       const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
@@ -763,6 +765,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadDefaultMode: loadDefaultModeFor,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // Lazy: channels import connectors, so a static import here would cycle.
+    postApprovalCard: async (input) =>
+      (await import('../channels/approval-card-relay')).postApprovalCard(input),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(connectorCalls)

@@ -1,5 +1,5 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
-import type { PromptOverridesWire, PromptPartWire } from './store';
+import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
 import type { SessionStartResult } from '../routes/shared';
 
@@ -15,6 +15,7 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
+  | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'

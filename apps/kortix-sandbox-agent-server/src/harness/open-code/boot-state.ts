@@ -1,4 +1,4 @@
-import type { SandboxBootState } from '../../boot-state'
+import type { SandboxBootState } from '../contract/boot-state'
 
 export interface OpenCodeBootState extends SandboxBootState {
   /** True when boot must create a first OpenCode conversation before the UI is usable. */

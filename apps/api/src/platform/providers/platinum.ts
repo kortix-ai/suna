@@ -37,12 +37,22 @@
  *     Platinum's CP separately enforces per-org NAME uniqueness (409
  *     `name_taken`) — a human-debuggable belt-and-suspenders in case an
  *     idempotency record ever expires while the name index hasn't; see the
- *     409 handling in provisionFromTemplate.
+ *     409 handling in provisionFromTemplate. A name_taken that PERSISTS past
+ *     the replay retry (the idempotency record really did expire, or
+ *     `template` changed — buildIdempotencyKey folds it in, the name does
+ *     not) advances to the NEXT attempt — a fresh name/key, exactly the
+ *     transition heal/failover/id-boot-fallback already use in
+ *     session-sandbox.ts — instead of throwing. The old box is NEVER touched:
+ *     a prod org can carry tens of thousands of sandboxes (most `archived`,
+ *     holding names indefinitely), so a by-name lookup is not viable on this
+ *     path, and removing/starting a box this call cannot prove is
+ *     unreferenced elsewhere is the orphan reaper's job. See provisionFromTemplate
+ *     for the incident this closes.
  * Gated by KORTIX_PLATINUM_CREATE_DEDUP (default ON) for instant rollback —
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
@@ -63,13 +73,13 @@ import type {
   SandboxProvider,
   SandboxStartOptions,
   SandboxStatus,
-} from './index';
+} from './contract';
 import {
   SandboxTemplateNotFoundError,
   assertWorkloadCredential,
   sandboxWorkloadType,
-} from './index';
-import { providerAutoStopBackstopMinutes } from './index';
+} from './contract';
+import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
@@ -401,6 +411,7 @@ export class PlatinumProvider implements SandboxProvider {
         ? {
             name: buildDeterministicSandboxName(opts.sandboxId, dedupAttempt),
             idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt),
+            sandboxId: opts.sandboxId,
           }
         : null;
 
@@ -443,23 +454,73 @@ export class PlatinumProvider implements SandboxProvider {
 
     const _tCreate0 = Date.now();
     let sandbox: PlatinumSandbox;
+    // S1 FOLLOW-UP (prod incident 2026-09-27): the attempt actually committed,
+    // for the caller to persist. Equals `dedupAttempt` unless the advance
+    // branch below fires. Never touched when `dedup` is off.
+    let committedAttempt = dedupAttempt;
     try {
       sandbox = await postCreate();
     } catch (err) {
-      if (dedup && isNameTakenConflict(err)) {
-        // See isNameTakenConflict + the module doc: the name is exclusively
-        // ours, so this can only be our own prior commit under this same
-        // attempt. Re-issue the IDENTICAL body under the SAME key once — the
-        // CP resolves it to a replay of the already-committed box rather than
-        // a second create.
-        console.warn(
-          `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
-          `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
-          err,
-        );
+      if (!dedup || !isNameTakenConflict(err)) throw err;
+      // See isNameTakenConflict + the module doc: the name is exclusively
+      // ours, so this can only be our own prior commit under this same
+      // attempt. Re-issue the IDENTICAL body under the SAME key once — the
+      // CP resolves it to a replay of the already-committed box rather than
+      // a second create.
+      console.warn(
+        `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
+        `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
+        err,
+      );
+      try {
         sandbox = await postCreate();
-      } else {
-        throw err;
+      } catch (err2) {
+        if (!isNameTakenConflict(err2)) throw err2;
+        // The replay assumption above just failed — the SAME Idempotency-Key
+        // still hit a genuine conflict, which only happens when Platinum's
+        // idempotency record for it expired, or `template` changed since the
+        // box under this name was first committed (buildIdempotencyKey folds
+        // template in, the name does not — see the module doc). The box
+        // holding `dedup.name` is NEVER touched here — a prod org can carry
+        // tens of thousands of sandboxes (most `archived`, holding names
+        // indefinitely under Platinum's `deleted_at IS NULL` uniqueness
+        // predicate), so a by-name lookup is not a viable create-path
+        // operation, and removing/starting a box this call cannot prove is
+        // unreferenced elsewhere is the orphan reaper's job, not create()'s.
+        //
+        // Advance to the NEXT attempt instead — a fresh deterministic name +
+        // Idempotency-Key, exactly the transition heal/provider-failover/
+        // id-boot-fallback already use in session-sandbox.ts. Bounded to ONE
+        // advance per call: if that also 409s name_taken, throw rather than
+        // ever advancing again. The caller persists `committedAttempt` via
+        // this method's return metadata, so the NEXT top-level `/start`
+        // reads the ADVANCED attempt (restorePlatinumCreateAttempt) and never
+        // re-hits this same stuck name — closing the prod incident where
+        // nothing ever advanced the counter and the identical name/key
+        // 409'd forever on a ~15-minute retry cadence.
+        const advancedAttempt = dedupAttempt + 1;
+        const advancedName = buildDeterministicSandboxName(dedup.sandboxId, advancedAttempt);
+        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt);
+        console.warn(
+          `[platinum] name_taken PERSISTED for ${dedup.name} after the replay retry — ` +
+          `advancing to attempt ${advancedAttempt} (fresh name ${advancedName}), never touching the old box:`,
+          err2,
+        );
+        try {
+          sandbox = await platinumJson<PlatinumSandbox>(CREATE_PATH, {
+            method: 'POST',
+            signal: AbortSignal.timeout(70_000),
+            body: JSON.stringify({ ...createBody, name: advancedName }),
+            headers: { 'Idempotency-Key': advancedKey },
+          });
+        } catch (err3) {
+          if (!isNameTakenConflict(err3)) throw err3;
+          throw new Error(
+            `[platinum] name_taken persisted for ${dedup.name} even after advancing to attempt ` +
+            `${advancedAttempt} (${advancedName}) — refusing to advance again`,
+          );
+        }
+        committedAttempt = advancedAttempt;
       }
     }
     const _vmMs = Date.now() - _tCreate0;
@@ -556,6 +617,13 @@ export class PlatinumProvider implements SandboxProvider {
         template,
         version: SANDBOX_VERSION,
         workloadType,
+        // Persisted into session_sandboxes.metadata by the caller
+        // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
+        // LATER top-level provisioning call's restorePlatinumCreateAttempt
+        // reads the attempt actually committed here — not the pre-create
+        // value session-sandbox.ts's onAttemptStart hook persisted, which the
+        // advance-on-persistent-name_taken branch above may have superseded.
+        ...(dedup ? { platinumCreateAttempt: committedAttempt } : {}),
       },
     };
   }

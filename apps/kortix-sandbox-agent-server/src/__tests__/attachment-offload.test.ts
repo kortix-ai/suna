@@ -15,7 +15,7 @@ import {
   OFFLOAD_PLACEHOLDER_URL,
   runAttachmentOffloadPass,
   sidecarPathFor,
-} from '../harness/open-code/attachment-offload'
+} from '@/harness/open-code/attachment-offload'
 
 let root: string
 let dbPath: string

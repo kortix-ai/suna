@@ -69,6 +69,19 @@ afterEach(() => {
 });
 
 describe('E2B template adapter', () => {
+  test('rejects container_runtime before staging anything', async () => {
+    await expect(
+      e2bProvider.buildSnapshot({
+        snapshotName: 'kortix-tpl-ctr',
+        slug: 'dev',
+        userDockerfile: 'FROM ubuntu:24.04\n',
+        spec: {},
+        containerRuntime: true,
+      }),
+    ).rejects.toThrow('container_runtime is not supported on E2B');
+    expect(builderCalls).toHaveLength(0);
+  });
+
   test('stages the meta runtime profile through its dedicated renderer', async () => {
     await e2bProvider.buildSnapshot({
       snapshotName: 'kortix-meta-dev-abc',

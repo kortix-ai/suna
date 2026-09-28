@@ -99,6 +99,8 @@ Load this skill when the user asks any of:
   do Y in Kortix?" / how Kortix compares to other AI tools or assistants
 - "Schedule this / remind me later / run this every morning / on a
   schedule" / "recurring task" / "cron job" / "webhook trigger"
+- "Check back on this later / follow up tomorrow / keep checking until X
+  happens" — a session reminder (`kortix remind`)
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
@@ -125,12 +127,8 @@ agent's own instructions cover that. This skill is the **configuration
 You are running inside a Kortix session sandbox. The **`kortix` CLI**
 is on `$PATH` (`/usr/local/bin/kortix`) and pre-authenticated against
 this exact project — a project-scoped token is already injected as
-`$KORTIX_CLI_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
-You can run `kortix …` from any shell with zero setup. (Don't reach for
-`$KORTIX_SANDBOX_TOKEN` (the deprecated `$KORTIX_TOKEN` alias still works too):
-that's the sandbox *service key* for the runtime/LLM/git
-layer, and the project APIs reject it — just use the CLI, which already
-holds the right token.)
+`$KORTIX_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
+You can run `kortix …` from any shell with zero setup.
 
 **Reach for the CLI** whenever the user asks for something that touches
 Kortix cloud state — not just files in the repo. Examples:
@@ -147,6 +145,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
+| "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "turn on / off a feature flag (Apps, Teams, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
@@ -175,10 +174,11 @@ nothing), or `kortix sessions chat <id> --prompt "…"` to talk to it.
 do (commits, file edits, running tests, local search). The CLI is the
 cloud-state surface; everything else is local.
 
-**Token scope reminder.** The CLI's token (`$KORTIX_CLI_TOKEN`) is
-project-scoped — it cannot enumerate other projects or hit account-level
-routes. Trying `kortix projects ls` from inside the sandbox returns 403;
-that's intentional. Use `kortix projects info` to inspect **this** project.
+**Token scope reminder.** The CLI's token (`$KORTIX_TOKEN`, a
+`kortix_pat_…` bound to this session) is project-scoped — it cannot
+enumerate other projects or hit account-level routes, and a route that
+names a session accepts only this session. Trying `kortix projects ls` from
+inside the sandbox returns 403; that's intentional. Use `kortix projects info` to inspect **this** project.
 
 **Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
 value-free JSON catalog for this session. Check it before asking for a
@@ -210,15 +210,18 @@ enforcement feature:
 Never print or return a secret value or a handle. Use `kortix secrets ls
 --json` when you need the complete stored policy.
 
-**Getting a credential — never punt to the dashboard.** When you need an API key
-or an app connected, **mint a setup link and surface the URL in the same turn** —
-don't tell the human to "open Customize → Connectors", and don't ask them to
-paste a raw key into chat. Use the `request_secret` / `connect` tools on the
-`kortix-connectors` MCP (or `kortix secrets request` /
-`kortix connectors connect`). The human gets a fill-in
-modal (web) or a tappable link (Slack); you never touch the raw value. Do this
-automatically whenever you add or need a tool. Full playbook in the
-**credentials-and-setup-links** reference below.
+**Getting a credential — never punt to the dashboard.** If the human already
+gave you the value (pasted in chat, in a file, "use this key"), **store it
+yourself in the same turn** with the `set_secret` tool (or
+`kortix secrets set NAME=-`, `--scope connector` for a connector credential) —
+no link, no second entry, never echo it back. A `403` means your agent lacks
+secret-write permission: fall back to a link. If you do NOT have the value,
+**mint a setup link and surface the URL in the same turn** with the
+`request_secret` / `connect` tools on the `kortix-connectors` MCP (or
+`kortix secrets request` / `kortix connectors connect`). The human gets a
+fill-in modal (web) or a tappable link (Slack). Never tell them to "open
+Customize → Connectors". Full playbook in the **credentials-and-setup-links**
+reference below.
 
 **Exception — connecting Slack itself.** Slack is a built-in channel, not a
 connector or a secret. `kortix channels connect` is the ONE command: it prints
@@ -354,12 +357,24 @@ had typed it — there's no separate "scheduler tool" to call at runtime, you
 `.kortix/triggers/reports/weekly.yaml`); before adding one, check where the
 project keeps its triggers and follow that layout.
 
-Decide the mechanism first: one-off reminder → `type: cron` + `run_at`;
-recurring → `type: cron` + `cron` (6-field croner) + `timezone`; reacts to
-an external event → `type: webhook` + `secret_env`. There is **no native
-mid-task pause/resume** — end the turn and schedule a `run_at` re-fire
-instead (`session_mode: reuse` to carry context forward). `session_mode`
-also governs every other fire: `"fresh"` (default, clean session, no chat
+Decide the mechanism first:
+
+- **Follow up on THIS task later** — did the email arrive, is the deploy
+  green, did they reply → a **reminder**, not a trigger:
+  `kortix remind "Did the vendor email arrive? If yes, act on it, then remove this reminder." --in 24h --every 1h`.
+  One command, no `kortix.yaml` change. It re-prompts THIS session (full
+  context) at each fire, waking it if parked, until you remove it. `--in`/
+  `--at` alone fires once; `--every` (≥5m) or `--cron` repeats. A reminder
+  is a trigger scoped to one session: it lives in the database and pauses
+  itself if the session is deleted. This is the native mid-task
+  pause/resume: set a reminder, end the turn. Always remove a recurring
+  reminder once its condition is met — every fire is a model turn.
+- **Recurring project work** anyone should see (daily digest) →
+  `type: cron` + `cron` (6-field croner) + `timezone` in `kortix.yaml`.
+- **One-off project job** not tied to this session → `type: cron` + `run_at`.
+- **Reacts to an external event** → `type: webhook` + `secret_env`.
+
+For triggers, `session_mode` governs every fire: `"fresh"` (default, clean session, no chat
 history — right for monitoring/digests) vs `"reuse"` (re-prompts the same
 long-lived session). Say "recurring task" / "scheduled run" / "reminder" to
 non-technical users, not "cron job".
@@ -381,7 +396,8 @@ watching — usually via `slack send`, silent otherwise), and it must be
   idempotency practices in depth, the pause-and-wait re-fire pattern,
   worked examples, and a pre-ship checklist.
 - `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
-  — the `kortix triggers ls/info/fire/enable/disable` command reference.
+  — the `kortix triggers ls/info/fire/enable/disable` and
+  `kortix reminders` command reference.
 </scheduling>
 
 <continual-harness>
@@ -452,8 +468,8 @@ When you, as an agent, have changes you believe should persist:
    proxy refuses it for `main` or anyone else's branch, so there is
    nothing to be careful about — it simply will not go through.
 4. **Open a CR.** From inside the sandbox the CLI reads
-   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_SANDBOX_TOKEN`
-   (deprecated alias: `$KORTIX_TOKEN`) automatically:
+   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_TOKEN`
+   automatically:
    ```sh
    kortix cr open \
      --title  "Short, imperative summary" \
@@ -497,7 +513,7 @@ When you, as an agent, have changes you believe should persist:
 
 | Surface       | How it interacts with the CR                                                              |
 | ------------- | ----------------------------------------------------------------------------------------- |
-| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_SANDBOX_TOKEN` (deprecated alias: `$KORTIX_TOKEN`). Branch tip is the session HEAD. |
+| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_TOKEN`. Branch tip is the session HEAD. |
 | Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
 | `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
@@ -647,9 +663,10 @@ to see the full enum.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
-  How to get a credential you don't have — an API key, or an app connected —
-  by minting a short-lived **setup link** and surfacing the URL, instead of
-  punting the human to the dashboard or asking them to paste a raw key. Covers
+  How to get a credential — an API key, or an app connected. A value you
+  already have (the human gave it in chat) is stored directly with
+  `set_secret` / `kortix secrets set`; a value you lack is requested with a
+  short-lived **setup link** instead of punting the human to the dashboard. Covers
   the two link kinds (secret intake / Composio connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
   `kortix connectors connect` CLI), what the human sees
@@ -663,7 +680,7 @@ to see the full enum.
   projects, secrets, env, sessions, triggers, cr, init, update,
   uninstall), every flag, every env var the CLI reads. Includes the
   project-scoped token model and what the CLI can do **from inside a
-  session sandbox** (where `KORTIX_CLI_TOKEN` + `KORTIX_API_URL` are
+  session sandbox** (where `KORTIX_TOKEN` + `KORTIX_API_URL` are
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.

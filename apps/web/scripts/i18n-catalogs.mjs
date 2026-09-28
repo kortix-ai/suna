@@ -35,7 +35,7 @@
 //   node apps/web/scripts/i18n-catalogs.mjs restore-order --from=<rev> [--from=<rev>]
 //   node apps/web/scripts/i18n-catalogs.mjs merge-driver %O %A %B %L %P %S %X %Y
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +52,9 @@ export const catalogFiles = locales.map((locale) =>
 
 /** The pull-request label that allows an intentional reorder past `check`. */
 export const REORDER_LABEL = 'i18n-reorder';
+
+/** The commit-message trailer that allows an intentional reorder on a push to `main`. */
+export const REORDER_TRAILER = 'I18n-Reorder: intentional';
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -333,11 +336,13 @@ function verifyRevision(rev) {
 }
 
 /** The catalog at `rev`, or `undefined` when the file did not exist there. */
+// The repository root is fixed relative to this file. `git rev-parse
+// --show-toplevel` is not: inside a git hook GIT_DIR is set, git treats the
+// working directory (apps/web) as the top level, every `readAt` misses, and a
+// reorder passes `check`.
+const repoRoot = path.resolve(webRoot, '..', '..');
+
 function readAt(rev, file) {
-  const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-    cwd: webRoot,
-    encoding: 'utf8',
-  }).trim();
   const spec = `${rev}:${path.relative(repoRoot, file).split(path.sep).join('/')}`;
   if (git(['cat-file', '-e', spec]).status !== 0) return undefined;
   return JSON.parse(git(['show', spec]).stdout);
@@ -361,8 +366,11 @@ function firstDifferentLine(a, b) {
 }
 
 function runCheck(flags) {
-  const base = flags.get('base')?.at(-1);
-  if (base) verifyRevision(base);
+  // A catalog passes when it keeps the order of any one base: a merge commit
+  // (`.githooks/pre-commit` passes HEAD and MERGE_HEAD) may take either
+  // parent's order, file by file.
+  const bases = flags.get('base') ?? [];
+  for (const base of bases) verifyRevision(base);
   let failed = false;
   let anyReordered = false;
   for (const file of catalogFiles) {
@@ -378,9 +386,12 @@ function runCheck(flags) {
       );
     }
     let reordered = 0;
-    if (base) {
-      const before = readAt(base, file);
-      const changes = before === undefined ? [] : findKeyOrderChanges(before, value);
+    if (bases.length > 0) {
+      const byBase = bases.map((base) => {
+        const before = readAt(base, file);
+        return { base, changes: before === undefined ? [] : findKeyOrderChanges(before, value) };
+      });
+      const { base, changes } = byBase.find(({ changes }) => changes.length === 0) ?? byBase[0];
       reordered = changes.length;
       if (changes.length > 0) {
         problems.push(`  reorders ${changes.length} object(s) it shares with ${base}:`);
@@ -403,7 +414,7 @@ function runCheck(flags) {
   }
   if (anyReordered) {
     // In CI the base is the test merge's first parent; name the branch instead.
-    const from = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : base;
+    const from = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : bases[0];
     console.log(
       [
         '',
@@ -411,7 +422,8 @@ function runCheck(flags) {
         'rebuilt it reordered keys. Repair it without changing a value:',
         `  node apps/web/scripts/i18n-catalogs.mjs restore-order --from=${from} [--from=<your branch before the merge>]`,
         'If the reorder is intentional (for example STARTER_PROMPTS changed order),',
-        `label the pull request \`${REORDER_LABEL}\`.`,
+        `commit it with I18N_REORDER=1 and the trailer \`${REORDER_TRAILER}\`,`,
+        `or label a release pull request \`${REORDER_LABEL}\`.`,
       ].join('\n'),
     );
   }

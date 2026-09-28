@@ -22,6 +22,8 @@ export interface RuntimeBlockActualWire {
 
 export interface RuntimeBlockWire {
   overall: RuntimeOverallState;
+  /** Set only when `overall === 'unknown'` — the reason the API can prove (e.g. `runtime_truth_not_reported`), for the chip to render instead of a bare state name. */
+  overall_reason: string | null;
   desired: DesiredRuntimeDocument;
   actual: RuntimeBlockActualWire;
   components: RuntimeComponentDiff[];
@@ -30,6 +32,7 @@ export interface RuntimeBlockWire {
 export function toRuntimeBlockWire(diff: RuntimeDiff): RuntimeBlockWire {
   return {
     overall: diff.overall,
+    overall_reason: diff.overall_reason,
     desired: diff.desired,
     actual: {
       release_id: diff.actual.release_id,
