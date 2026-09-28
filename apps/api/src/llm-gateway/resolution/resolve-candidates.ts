@@ -276,7 +276,8 @@ export async function resolveCandidates(
         name,
         consumer: 'llm_gateway',
       });
-    const pooledEnabled = await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets');
+    const pooledEnabled = (prospectiveIds !== undefined || principal.sessionId || principal.keyId)
+      ? await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets') : false;
     const selectedPool = (prospectiveIds !== undefined || principal.sessionId) && principal.userId && pooledEnabled
       ? await resolveSessionProviderSecrets({
           accountId: principal.accountId,
