@@ -1,21 +1,11 @@
-Sessions ride through outages
+Stuck sandboxes recover
 
-Sessions keep working through model and runtime outages, turns start faster, and sessions open instantly.
-
-## Improved
-
-- Opening a session shows its saved history immediately from cache while the live transcript loads, in one request instead of several.
-- Turns start faster: configuration, model catalog and ingress checks run in parallel.
-- Sessions retry transient model errors inside the turn and continue through short provider outages instead of stopping.
-- A session whose runtime was lost resumes automatically when it was running unattended.
-- The sandbox model catalog stays current across boot, wake, restart and every turn.
-- Streaming responses never forward a partial event line; a stream cut before the first byte is retried, and a later cut ends with an explicit error.
-- The `kortixt` terminal desk adds cloud sessions, port forwarding, a Links panel and a self-updating launcher.
+Sessions recover a stuck sandbox and a stale runtime on their own.
 
 ## Fixed
 
-- Turns were sometimes marked abandoned while still running.
-- Transcript requests could return 401 during a session.
-- Stopped sandboxes could stay running after their session ended.
-- Orphan cleanup only stops sandboxes that this deployment's database owns.
+- A session whose sandbox name was still held by an old archived sandbox could never get a new sandbox. It now provisions under a fresh name.
+- Opening a session repairs a stale runtime immediately instead of waiting for the background check.
+- A prompt parked while the sandbox restarts keeps its sandbox deadline through every retry.
+- A Firefox browser-extension error no longer reaches error reporting.
 
