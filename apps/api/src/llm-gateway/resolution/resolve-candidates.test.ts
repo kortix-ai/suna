@@ -184,6 +184,42 @@ beforeEach(() => {
 });
 
 describe('resolveCandidates — selected account key pool', () => {
+  test('agent-principal and another member use a project-shared BYOK key before legacy', async () => {
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledEnabled = true;
+    resolvedSecrets = [{ identifier: 'legacy', value: 'legacy-value' }];
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team', label: 'Team', value: 'shared-value' }] };
+    for (const actor of [principal({ sessionId: 'trigger', personalUserId: null }), principal({ userId: 'other-member', sessionId: 'member' })]) {
+      const candidates = await resolveCandidates(actor, 'anthropic/claude-sonnet-4.6');
+      expect(candidates.map(({ credentialRef, poolSecretId, apiKey }) => [credentialRef, poolSecretId, apiKey]))
+        .toEqual([['team', 'team', 'shared-value']]);
+    }
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith(expect.objectContaining({ grantUserId: null }));
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith(expect.objectContaining({ grantUserId: 'other-member' }));
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+
+  test('member-restricted BYOK keys excluded by picker cannot be used by an agent principal', async () => {
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: false, secrets: [] };
+    await expect(resolveCandidates(principal({ personalUserId: null, sessionId: 'trigger' }), 'anthropic/claude-sonnet-4.6'))
+      .rejects.toMatchObject({ code: 'provider_not_connected' });
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith(expect.objectContaining({ grantUserId: null }));
+  });
+
+  test('explicit pool remains authoritative and a gateway key has no member grants', async () => {
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team', label: 'Team', value: 'shared-value' }] };
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'selected', label: 'Selected', value: 'selected-value' }] };
+    expect((await resolveCandidates(principal({ sessionId: 's' }), 'anthropic/test'))[0]?.apiKey).toBe('selected-value');
+    expect(resolveProjectSharedProviderSecrets).not.toHaveBeenCalled();
+    pooledSecrets.configured = false;
+    await resolveCandidates(principal({ keyId: 'gateway-key' }), 'anthropic/test');
+    expect(resolveProjectSharedProviderSecrets).toHaveBeenCalledWith(expect.objectContaining({ grantUserId: null }));
+  });
+
   test('the flag preserves legacy keys until enabled, then selects only granted pool keys', async () => {
     catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
     resolvedSecrets = [{ identifier: 'legacy', value: 'legacy-value' }];
