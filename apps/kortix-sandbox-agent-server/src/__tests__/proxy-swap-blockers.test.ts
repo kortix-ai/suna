@@ -30,7 +30,6 @@ import { join } from 'node:path'
 import type { OpenCodeConfig as Config } from '../harness/open-code/config'
 import type { HarnessService } from '../harness/harness'
 import type { HarnessQueryService } from '../harness/contract/queries'
-import { requireOpenCodeConfig } from '../harness/open-code/config'
 import { startProxy } from '../app/server'
 import {
   requestAgentSwapIfIdle,

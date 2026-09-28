@@ -8,7 +8,7 @@
 //   services services/<name>/         host capabilities; each declares its dependencies
 //   shared   lib/, types/             building blocks and shared types; no service state, no Hono
 import { realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { builtinModules, createRequire } from 'node:module'
 import { posix, relative, resolve, sep } from 'node:path'
 import tseslint from 'typescript-eslint'
 import { createIndependentModules, projectStructurePlugin } from 'eslint-plugin-project-structure'
@@ -163,6 +163,22 @@ export default tseslint.config(
     linterOptions: { reportUnusedDisableDirectives: 'off' },
     plugins: { 'project-structure': projectStructurePlugin },
     rules: { 'project-structure/independent-modules': ['error', independentModules] },
+  },
+  {
+    // The boundary plugin resolves a built-in only with the `node:` prefix. A
+    // bare `crypto` fails it with a misleading "Cannot find module", so name
+    // the fix here instead.
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: builtinModules
+            .filter((name) => !name.startsWith('_') && !name.startsWith('node:'))
+            .map((name) => ({ name, message: `Import 'node:${name}' instead: the boundary lint resolves built-ins only with the node: prefix.` })),
+        },
+      ],
+    },
   },
   {
     // Importing a shared type must never pull code or a module graph into the

@@ -117,6 +117,11 @@ for (const [name, file, code, allowed] of cases) {
   })
 }
 
+test('architecture: a bare built-in import names the node: fix', async () => {
+  const [result] = await eslint.lintText("import { createHash } from 'crypto';", { filePath: resolve(root, 'src/lib/log/logger.ts') })
+  assert.ok(result.messages.some((message) => message.ruleId === 'no-restricted-imports' && /node:crypto/.test(message.message)), JSON.stringify(result.messages))
+})
+
 test('architecture: a file outside every layer is rejected', async () => {
   const [result] = await eslint.lintText("import '../lib/log/logger';", { filePath: resolve(root, 'src/unlisted/probe.ts') })
   assert.ok(result.messages.some((message) => message.ruleId === RULE && /outside every layer/.test(message.message)))

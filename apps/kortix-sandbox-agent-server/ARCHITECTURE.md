@@ -177,7 +177,9 @@ and `package.json` work around. Each one was measured, not assumed:
 - It treats `node:*` built-ins as packages and looks for `node_modules/@types/node`
   in its root and in `packageRoot`. A clean pnpm install links only declared
   dependencies there, so `@types/node` is a declared devDependency. Without it,
-  every `node:*` import reports `Cannot find module`. It stays at the version
+  every `node:*` import reports `Cannot find module`. A bare built-in name
+  (`crypto`, `fs`) does not resolve under pnpm even then, so a
+  `no-restricted-imports` rule rejects it and names the `node:` form. It stays at the version
   `bun-types` resolves in `pnpm-lock.yaml` (20.19.43): `apps/api` typechecks
   daemon source through a test, and a second `@types/node` version in that
   program breaks its typecheck.

@@ -33,7 +33,6 @@ import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { ConvergeBusyError, convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
-import { ensureInjectedManagedSkills } from '../../services/skills/managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
 // sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
 // which is also the warm-fork adoption path, since `adopt()` ends in
