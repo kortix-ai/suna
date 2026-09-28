@@ -523,7 +523,10 @@ function content(data: unknown) {
 async function runMetaTool(client: ConnectorClient, name: string, args: Record<string, unknown>) {
   switch (name) {
     case 'connectors': {
-      const connectors = await client.catalog();
+      // The summary reads no `inputSchema` — opt out, or the API's
+      // include-by-default ships the whole catalog's schemas (439KB on prod)
+      // to count actions.
+      const connectors = await client.catalog({ includeSchemas: false });
       return {
         content: content({
           connectors: connectors.map((c) => {
