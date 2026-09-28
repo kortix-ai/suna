@@ -22,6 +22,7 @@ import { haptics } from '@/lib/haptics';
 import { CheckIcon, CopyIcon, XIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils/utils';
 import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
+import { sheetScrimColor } from '@/lib/ui/sheet-scrim';
 import { SurfaceContext } from '@/components/kortix/surface-context';
 
 /**
@@ -39,9 +40,14 @@ import { SurfaceContext } from '@/components/kortix/surface-context';
  * here explicitly — it is redundant everywhere it appeared.
  */
 export function SheetBackdrop(props: React.ComponentProps<typeof BottomSheetBackdrop>) {
+  const { colorScheme } = useColorScheme();
+  // Dark mode fades toward the page background, not black: black at 50% sank
+  // the page to rgb 5, which OLED panels show reddish (`lib/ui/sheet-scrim.ts`).
+  const scrim = sheetScrimColor(colorScheme === 'dark', THEME.dark.background);
   return (
     <BottomSheetBackdrop
       {...props}
+      style={scrim ? [props.style, { backgroundColor: scrim }] : props.style}
       appearsOnIndex={props.appearsOnIndex ?? 0}
       disappearsOnIndex={props.disappearsOnIndex ?? -1}
       opacity={props.opacity ?? 0.5}

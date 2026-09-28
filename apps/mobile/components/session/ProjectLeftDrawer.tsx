@@ -17,9 +17,12 @@
  * - A muted "Sessions" label, then every session of the project, newest
  *   activity first (status mark · title; the session on screen is
  *   highlighted). A sub-agent session (one spawned by another session in the
- *   list, COR-162) nests directly under its coordinator, indented 16pt, with
- *   a 12pt branch mark (`ArrowElbowDownRightIcon`) BEFORE its status mark —
- *   both render (`flattenSessionGroups`, `lib/session/session-list.ts`).
+ *   list, COR-162) nests directly under its coordinator, joined to it by a
+ *   connector: a trunk down from the coordinator's status mark and one
+ *   rounded elbow into each sub-agent's status mark, the same strokes as
+ *   `SubsessionTree` and web's `SubAgentConnector`. No icon: web draws
+ *   `ArrowElbowDownRightIcon` only on a sub-agent whose coordinator is NOT
+ *   listed, and mobile never draws it (`flattenSessionGroups`).
  *   A row whose root OpenCode session has sub-sessions (`directSubsessions`)
  *   shows their count after its title and ALWAYS lists them under its row,
  *   joined by a connector (`SubsessionTree`) — every such row, not only the
@@ -53,7 +56,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowElbowDownRightIcon,
   CaretUpDownIcon,
   FoldersIcon,
   MagnifyingGlassIcon,
@@ -81,6 +83,8 @@ import { Avatar } from '@/components/kortix/avatar';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import {
+  CONNECTOR_RUN,
+  CONNECTOR_STROKE,
   SubsessionCountBadge,
   SubsessionTree,
   subsessionCountLabel,
@@ -127,6 +131,8 @@ const LIST_END_GAP = 16;
  * never dimmed, fully shown once a row has scrolled under the pills.
  */
 const LIST_TOP_FADE_HEIGHT = 24;
+/** The open refetch waits out the drawer's 420ms slide (`DRAWER_OPEN`). */
+const DRAWER_REFETCH_DELAY_MS = 450;
 /** Drawer progress at or below this counts as closed (fully off screen). */
 const DRAWER_CLOSED_PROGRESS = 0.01;
 
@@ -149,9 +155,14 @@ function DrawerEmptyFlower({ color }: { color: string }) {
 
 // ─── Session row ─────────────────────────────────────────────────────────────
 
-/** Sub-agent sessions indent under their coordinator by this much (mobile's
- *  own stock-Tailwind spacing, not web's tighter `ml-4`). */
-const NESTED_SESSION_INDENT = 16;
+/**
+ * Sub-agent connector geometry, from the row's column edge. The trunk runs
+ * down the centre of the coordinator's status mark: `px-4` (16) + half the
+ * 20pt mark slot (10). A sub-agent row indents so its own status mark starts
+ * one elbow (`CONNECTOR_RUN`) plus a 4pt gap past the trunk, as on web.
+ */
+const SUB_AGENT_TRUNK_X = 16 + 10;
+const NESTED_SESSION_INDENT = SUB_AGENT_TRUNK_X + CONNECTOR_RUN + 4 - 16;
 
 function ProjectSessionListItem({
   item,
@@ -168,8 +179,8 @@ function ProjectSessionListItem({
   needsYou?: SessionNeedsYou;
   /** The session on screen: `bg-accent` at rest and the `selected` state. */
   active: boolean;
-  /** A sub-agent session, rendered indented under its coordinator with a
-   *  12pt branch mark before its status mark (both render). */
+  /** A sub-agent session, rendered indented under its coordinator with an
+   *  elbow into its status mark. */
   nested?: boolean;
   /** Direct OpenCode sub-sessions: a count badge after the title when > 0. */
   subsessionCount?: number;
@@ -204,7 +215,19 @@ function ProjectSessionListItem({
         active && 'bg-accent'
       )}>
       {nested && (
-        <Icon as={ArrowElbowDownRightIcon} size={12} className="shrink-0 text-muted-foreground/60" />
+        // Elbow: down from the row's top, curving right into its status mark.
+        <View
+          pointerEvents="none"
+          className="absolute rounded-bl-md border-border"
+          style={{
+            top: 0,
+            bottom: '50%',
+            left: SUB_AGENT_TRUNK_X - NESTED_SESSION_INDENT - CONNECTOR_STROKE / 2,
+            width: CONNECTOR_RUN + CONNECTOR_STROKE / 2,
+            borderLeftWidth: CONNECTOR_STROKE,
+            borderBottomWidth: CONNECTOR_STROKE,
+          }}
+        />
       )}
       <SessionStatusMark status={status} />
       {needsYou ? (
@@ -228,10 +251,9 @@ function ProjectSessionListItem({
  * Sub-session tree geometry, from the row's column edge. The trunk runs down
  * the centre of the row's status mark: `px-4` (16) + half the 20pt mark slot
  * (10). Each sub-session title starts on the row's title edge: `px-4` + the
- * 20pt slot + `gap-3` (12). A nested row adds its indent (16), the 12pt
- * branch mark and a `gap-3` (12) before the mark to both.
+ * 20pt slot + `gap-3` (12). A nested row adds its indent to both.
  */
-const NESTED_LEAD = NESTED_SESSION_INDENT + 12 + 12;
+const NESTED_LEAD = NESTED_SESSION_INDENT;
 const TRUNK_X_TOP_LEVEL = 16 + 10;
 const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 
@@ -247,6 +269,7 @@ function DrawerSessionNode({
   shown,
   activeOpenCodeId,
   nested = false,
+  trunkBelow = false,
   needsYou,
   onPress,
   onLongPress,
@@ -258,6 +281,8 @@ function DrawerSessionNode({
   /** The OpenCode id the thread shows; null while no thread is on screen. */
   activeOpenCodeId: string | null;
   nested?: boolean;
+  /** A later sibling sub-agent follows: the trunk runs through this whole node. */
+  trunkBelow?: boolean;
   needsYou?: SessionNeedsYou;
   onPress: (s: ProjectSession) => void;
   onLongPress: (s: ProjectSession) => void;
@@ -271,6 +296,18 @@ function DrawerSessionNode({
   );
   return (
     <View>
+      {trunkBelow ? (
+        <View
+          pointerEvents="none"
+          className="absolute border-border"
+          style={{
+            top: 0,
+            bottom: 0,
+            left: SUB_AGENT_TRUNK_X - CONNECTOR_STROKE / 2,
+            borderLeftWidth: CONNECTOR_STROKE,
+          }}
+        />
+      ) : null}
       <ProjectSessionListItem
         item={session}
         active={shown && !subsessionActive}
@@ -440,7 +477,8 @@ export interface ProjectLeftDrawerProps {
   reviewNeedsYouCount?: number;
   /**
    * Session id → what it waits on (`needsYouBySession` over the review inbox).
-   * Those sessions leave the list for a "Needs you · N" group above it.
+   * Those sessions leave the list for a "Needs you" group at its top, in the
+   * same scroll (no count; Jay, 2026-09-27).
    */
   needsYouBySession?: ReadonlyMap<string, SessionNeedsYou>;
   /** New session: open project home, whose composer starts the session. */
@@ -519,7 +557,7 @@ export function ProjectLeftDrawer({
   // next page as it nears its end, and a pull refetches the loaded pages.
   const {
     sessions: projectSessions,
-    isLoading: projectSessionsLoading,
+    isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasNextPage,
     isFetchingNextPage,
@@ -555,10 +593,10 @@ export function ProjectLeftDrawer({
     [recent, needsYouBySession]
   );
   // loading / error / empty / rows — shared with the Sessions page
-  // (lib/session/session-pages) so a failed fetch never reads as "No
-  // sessions yet" (COR-146).
+  // (lib/session/session-pages) so a failed fetch, or a first load paused
+  // offline, never reads as "No sessions yet" (COR-146).
   const sessionsListState = sessionListState({
-    isLoading: projectSessionsLoading,
+    isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasSessions: rows.length > 0 || needsYouSessions.length > 0,
   });
@@ -570,9 +608,13 @@ export function ProjectLeftDrawer({
   }, [refetch]);
   // The drawer stays mounted while closed, so its query never remounts: each
   // open refetches the loaded pages in the background (no spinner), so a
-  // session created or renamed elsewhere shows without a pull.
+  // session created or renamed elsewhere shows without a pull. After the
+  // slide (open is 420ms): a response landing mid-slide re-rendered the list
+  // while it moved (Jay, 2026-09-27: "not smooth").
   useEffect(() => {
-    if (open) void refetch();
+    if (!open) return;
+    const timer = setTimeout(() => void refetch(), DRAWER_REFETCH_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [open, refetch]);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
@@ -681,6 +723,7 @@ export function ProjectLeftDrawer({
           shown={item.session.session_id === activeProjectSessionId}
           activeOpenCodeId={activeOpenCodeSessionId}
           nested={item.nested}
+          trunkBelow={item.nested && !item.last}
           onPress={handleOpenProjectSession}
           onLongPress={onSessionActions}
           onPressSubsession={handleOpenSubsession}
@@ -688,6 +731,54 @@ export function ProjectLeftDrawer({
       </View>
     ),
     [activeProjectSessionId, activeOpenCodeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
+  );
+
+  // Needs you and the Sessions heading scroll WITH the list, as its header
+  // (Jay, 2026-09-27): above it, 20 waiting sessions pushed the list off the
+  // screen and it could never be reached. The 4pt under the heading is the
+  // list's old top padding.
+  const listHeader = useMemo(
+    () => (
+      <View>
+        {needsYouSessions.length > 0 ? (
+          <View className="px-2 -mx-1">
+            <Text variant="muted" className="px-4 pb-1 pt-3">
+              Needs you
+            </Text>
+            {needsYouSessions.map((session) => (
+              <DrawerSessionNode
+                key={session.session_id}
+                session={session}
+                shown={session.session_id === activeProjectSessionId}
+                activeOpenCodeId={activeOpenCodeSessionId}
+                needsYou={needsYouBySession.get(session.session_id)}
+                onPress={handleOpenProjectSession}
+                onLongPress={onSessionActions}
+                onPressSubsession={handleOpenSubsession}
+              />
+            ))}
+          </View>
+        ) : null}
+        {/* No bare heading when every session sits in Needs you. */}
+        {rows.length > 0 || needsYouSessions.length === 0 ? (
+          <View className="px-2 -mx-1 pb-1">
+            <Text variant="muted" className="px-4 pb-1 pt-3">
+              Sessions
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    ),
+    [
+      rows.length,
+      needsYouSessions,
+      needsYouBySession,
+      activeProjectSessionId,
+      activeOpenCodeSessionId,
+      handleOpenProjectSession,
+      onSessionActions,
+      handleOpenSubsession,
+    ]
   );
 
   const handleNewSession = useCallback(() => {
@@ -740,32 +831,6 @@ export function ProjectLeftDrawer({
         />
       </View>
 
-      {needsYouSessions.length > 0 && (
-        <View className="px-2 -mx-1">
-          <Text variant="muted" className="px-4 pb-1 pt-3">
-            {`Needs you · ${needsYouSessions.length}`}
-          </Text>
-          {needsYouSessions.map((session) => (
-            <DrawerSessionNode
-              key={session.session_id}
-              session={session}
-              shown={session.session_id === activeProjectSessionId}
-              activeOpenCodeId={activeOpenCodeSessionId}
-              needsYou={needsYouBySession.get(session.session_id)}
-              onPress={handleOpenProjectSession}
-              onLongPress={onSessionActions}
-              onPressSubsession={handleOpenSubsession}
-            />
-          ))}
-        </View>
-      )}
-
-      <View className="px-2 -mx-1">
-        <Text variant="muted" className="px-4 pb-1 pt-3">
-          Sessions
-        </Text>
-      </View>
-
       <View className="flex-1">
         <Animated.FlatList
           style={{ flex: 1 }}
@@ -775,7 +840,8 @@ export function ProjectLeftDrawer({
           showsVerticalScrollIndicator={false}
           onScroll={onListScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingTop: 4, paddingBottom: listBottomPadding }}
+          contentContainerStyle={{ paddingBottom: listBottomPadding }}
+          ListHeaderComponent={listHeader}
           // Load the next page about one screen before the end of the list.
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.6}

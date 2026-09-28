@@ -14,22 +14,33 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadConfig } from '../config'
-import { resetKortixEventBusForTests } from '../kortix-event-bus'
-import { buildDaemonApp } from '../proxy'
-import { requirePiConfig } from '../harness/pi/config'
-import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
-import type { PiBootState } from '../harness/pi/boot-state'
-import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '../harness/pi/extensions/host'
-import { ensureProjectPackageBundle } from '../harness/pi/extensions/bundle'
+import { loadConfig } from '@/harness/harness'
+import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { buildDaemonApp } from '@/app/server'
+import { requirePiConfig } from '@/harness/pi/config'
+import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
+import type { PiBootState } from '@/harness/pi/boot-state'
+import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
+import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
 
 const TOKEN = 'pi-test-token'
 const MODEL_ID = 'test-model'
 
 type ToolCall = { tool: string; args: Record<string, unknown> }
-/** One scripted model reply: text, a tool call, several tool calls, or text ending on `finish`. */
-type Step = { text: string; finish?: 'stop' | 'length' } | ToolCall | { tools: ToolCall[] }
+/**
+ * One scripted model reply: text, a tool call, several tool calls, or text ending on `finish`.
+ * `cut` streams its text, then closes the stream with no `finish_reason` (an upstream
+ * cut; pi-ai throws "Stream ended without finish_reason"). `cutMidLine` streams its text, then
+ * half of the next data line, and closes (a cut inside a JSON chunk). `status` answers with that HTTP error.
+ */
+type Step =
+  | { text: string; finish?: 'stop' | 'length' }
+  | ToolCall
+  | { tools: ToolCall[] }
+  | { cut: string }
+  | { cutMidLine: string }
+  | { status: number }
 
 /**
  * An OpenAI-compatible `/chat/completions` that answers each request with the
@@ -52,7 +63,18 @@ function startFakeGateway() {
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
+      if ('status' in step) return new Response(JSON.stringify({ error: { message: 'scripted failure' } }), { status: step.status })
       let body = chunk({ role: 'assistant', content: '' })
+      if ('cut' in step) {
+        if (step.cut) body += chunk({ content: step.cut })
+        return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      }
+      if ('cutMidLine' in step) {
+        body += chunk({ content: step.cutMidLine })
+        const next = chunk({ content: ' and the rest of it' })
+        body += next.slice(0, Math.floor(next.length / 2))
+        return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      }
       if ('tool' in step || 'tools' in step) {
         const toolCalls = 'tools' in step ? step.tools : [step]
         toolCalls.forEach((call, index) => {
@@ -124,6 +146,8 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
     KORTIX_TOKEN: TOKEN,
     KORTIX_SESSION_ID: 'sess-pi-test',
     KORTIX_PROJECT_ID: 'proj-pi-test',
+    // Transient model errors retry on a real backoff; tests keep it short.
+    KORTIX_PI_TURN_RETRY_BASE_MS: '5',
     ...env,
   }
 }
@@ -183,12 +207,31 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
   }
 }
 
-beforeEach(() => resetKortixEventBusForTests())
+/**
+ * pi discovers user-level skills under the home it is handed
+ * (`harness/pi/service.ts` → `environment: { home: homedir() }`), and
+ * `homedir()` is `$HOME`. In a sandbox that is the agent's own empty home; on a
+ * developer machine it is the person's, so `GET /skill` returned their personal
+ * skills alongside the two this file writes and the name-clash assertion failed
+ * locally while passing in CI. A test that reads the machine it runs on is not
+ * a test, so give every rig an empty home of its own.
+ */
+let homeDir: string
+const realHome = process.env.HOME
+beforeEach(() => {
+  resetKortixEventBusForTests()
+  homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
+  process.env.HOME = homeDir
+})
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
     await rig.service.lifecycle.stop().catch(() => {})
     rmSync(rig.workspace, { recursive: true, force: true })
   }
+  resetKortixEventBusForTests()
+  if (realHome === undefined) delete process.env.HOME
+  else process.env.HOME = realHome
+  rmSync(homeDir, { recursive: true, force: true })
 })
 
 /** Wait until the root's transcript shows a tool part in the running state. */
@@ -628,6 +671,129 @@ describe('pi harness', () => {
     const root = r.service.runtime()!.rootId
     expect((await prompt(r, root, body)).status).toBe(400)
     expect(r.service.runtime()!.busy()).toBe(false)
+  })
+
+  test('a stream cut without finish_reason is retried and the turn completes', async () => {
+    // Prod: a provider stream closed with no finish chunk, pi-ai threw "Stream
+    // ended without finish_reason", and the whole turn stopped on it.
+    const r = await boot({ script: [{ cut: 'half an ans' }, { cut: '' }, { text: 'Full answer.' }] })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d1ABCDEFGHIJKLMN'
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(gateway.requests.length - calls).toBe(3)
+
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    // No message carries the cut as a terminal error, and the answer is the last word.
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Full answer.' })
+    // The retried request re-sends the conversation without the cut reply.
+    expect(JSON.stringify(gateway.sent.at(-1))).not.toContain('half an ans')
+
+    // The stream shows OpenCode's retry status between attempts and never a session.error.
+    const text = await readSse(events, (t) => t.includes('Full answer.') && t.includes('event: session.idle'))
+    expect(text).not.toContain('event: session.error')
+    const statuses = text
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+      .filter((e) => e.type === 'session.status' && e.payload.sessionID === root)
+      .map((e) => e.payload.status)
+    expect(statuses.filter((s) => s.type === 'retry')).toEqual([
+      { type: 'retry', attempt: 1, message: 'Stream ended without finish_reason', next: expect.any(Number) },
+      { type: 'retry', attempt: 2, message: 'Stream ended without finish_reason', next: expect.any(Number) },
+    ])
+    expect(statuses.at(-1)).toEqual({ type: 'idle' })
+  })
+
+  test('a stream cut in the middle of a JSON data line is retried and the turn completes', async () => {
+    const r = await boot({ script: [{ cutMidLine: 'half' }, { text: 'Whole answer.' }] })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d5ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(gateway.requests.length - calls).toBe(2)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Whole answer.' })
+  })
+
+  test('an outage longer than the in-turn retries is resumed and the turn completes', async () => {
+    // Seven failures: the first attempt, all five in-turn retries (~60 s at the
+    // default base) and the first resume. The second resume answers.
+    const r = await boot({ script: [...Array.from({ length: 7 }, () => ({ status: 503 })), { text: 'Back online.' }] })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d6ABCDEFGHIJKLMN'
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 10_000)
+    expect(gateway.requests.length - calls).toBe(8)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const text = await readSse(events, (t) => t.includes('Back online.') && t.includes('event: session.idle'))
+    expect(text).not.toContain('event: session.error')
+    const attempts = text
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)))
+      .filter((e) => e.type === 'session.status' && e.payload.sessionID === root && e.payload.status.type === 'retry')
+      .map((e) => e.payload.status.attempt)
+    expect(attempts).toEqual([1, 2, 3, 4, 5, 6, 7])
+  }, 20_000)
+
+  test('a transient error that outlasts the retry budget ends the turn as failed with its reason', async () => {
+    const r = await boot({ script: Array.from({ length: 12 }, () => ({ cut: '' })) })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d2ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    // One attempt, five in-turn retries and three resumes, then the reason reaches the product.
+    expect(gateway.requests.length - calls).toBe(9)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('failed')
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.at(-1)!.info.error).toEqual({ name: 'UnknownError', data: { message: 'Stream ended without finish_reason' } })
+    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    expect(state.statuses.value[root]).toEqual({ type: 'idle' })
+  })
+
+  test('a non-transient model error is not retried', async () => {
+    const r = await boot({ script: [{ status: 400 }, { text: 'unreachable' }] })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d3ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(gateway.requests.length - calls).toBe(1)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('failed')
+  })
+
+  test('abort during a retry backoff ends the turn as aborted without another request', async () => {
+    const r = await boot({ script: [{ cut: '' }, { text: 'unreachable' }], env: { KORTIX_PI_TURN_RETRY_BASE_MS: '5000' } })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const messageID = 'msg_0198e2a4b0d4ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => gateway.requests.length - calls === 1)
+    await Bun.sleep(50)
+    expect(r.service.runtime()!.busy()).toBe(true)
+    expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
+    await waitFor(() => !r.service.runtime()!.busy(), 2_000)
+    expect(gateway.requests.length - calls).toBe(1)
+    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    expect(state.statuses.value[root]).toEqual({ type: 'idle' })
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_in_flight).toBe(false)
   })
 
   test('a model reply cut off by the length limit ends the turn as failed', async () => {
@@ -1129,6 +1295,19 @@ describe('pi subagents extension', () => {
       .map((line) => JSON.parse(line.slice(6)))
       .find((e) => e.type === 'message.part.updated' && e.payload.part.tool === 'task' && e.payload.part.state.status === 'running' && e.payload.part.state.metadata?.sessionId)
     expect(running?.payload.part.state.metadata.sessionId).toBe(childId)
+  })
+
+  test('a subagent whose stream is cut retries and returns its answer', async () => {
+    const r = await boot({ script: [TASK({}), { cut: 'partial' }, { text: 'child finished' }, { text: 'parent done' }] })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'delegate it')
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const task = toolParts(page, 'task')[0]!
+    expect(task.state.status).toBe('completed')
+    expect(task.state.output).toContain('<task_result>\nchild finished\n</task_result>')
+    const child = (await r.bearer(`/kortix/opencode/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+    expect(child.messages.filter((m) => m.info.error)).toEqual([])
+    expect(child.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'child finished' })
   })
 
   test('explore is read-only, children cannot nest tasks, and an unknown type is an error', async () => {

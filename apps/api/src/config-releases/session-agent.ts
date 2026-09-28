@@ -1,6 +1,6 @@
 /**
  * WHICH AGENT A SESSION RUNS when its manifest no longer declares the one it
- * was created with (docs/specs/config-releases.md, "Dropped agents").
+ * was created with.
  *
  * THE PROBLEM. `project_sessions.agent_name` is written at create and by
  * exactly one other writer (`repointSessionAgentToDeclaredDefault`, below).

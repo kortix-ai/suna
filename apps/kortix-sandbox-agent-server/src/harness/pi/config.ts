@@ -1,7 +1,10 @@
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Config as HostConfig } from '../../config'
-import { resolveKortixRuntimeStateDirectory } from '../../runtime-state-dir'
+import type { Config as HostConfig } from '@/lib/config/config'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
+
+/** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
+const TURN_RETRY_DEFAULT_BASE_MS = 2_000
 
 /**
  * The pi harness environment contract.
@@ -30,6 +33,8 @@ const EnvironmentSchema = z.object({
   KORTIX_PI_PACKAGES_BUNDLE_DIGEST: z.string().optional(),
   // Where bundles unpack, one `<digest>/` each. Defaults under the runtime state dir.
   KORTIX_PI_PACKAGES_DIR: z.string().optional(),
+  // First backoff of a transient model-error retry (transient-retry.ts). Tests shorten it.
+  KORTIX_PI_TURN_RETRY_BASE_MS: z.coerce.number().int().positive().optional(),
 })
 
 export interface PiEnvironment {
@@ -40,6 +45,7 @@ export interface PiEnvironment {
   piPackagesFallbackUrl?: string
   piPackagesBundleDigest?: string
   piPackagesDir: string
+  piTurnRetryBaseMs: number
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -53,6 +59,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_PACKAGES_FALLBACK_URL: env.KORTIX_PI_PACKAGES_FALLBACK_URL,
     KORTIX_PI_PACKAGES_BUNDLE_DIGEST: env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST,
     KORTIX_PI_PACKAGES_DIR: env.KORTIX_PI_PACKAGES_DIR,
+    KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -62,6 +69,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piPackagesFallbackUrl: parsed.KORTIX_PI_PACKAGES_FALLBACK_URL?.trim() || undefined,
     piPackagesBundleDigest: parsed.KORTIX_PI_PACKAGES_BUNDLE_DIGEST?.trim() || undefined,
     piPackagesDir: parsed.KORTIX_PI_PACKAGES_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi-packages'),
+    piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
   }
 }
 

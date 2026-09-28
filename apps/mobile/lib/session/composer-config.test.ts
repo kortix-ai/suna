@@ -74,6 +74,20 @@ describe('composer chip (KRTX-247)', () => {
     expect(composerChip({ connectModel: false, agentName: undefined, modelName: undefined })).toBeNull();
     expect(composerChip({ connectModel: false, agentName: '', modelName: '' })).toBeNull();
   });
+
+  test('agents still loading: the agent the send was made with, never the model name', () => {
+    // A new thread: its sandbox has not listed its agents yet.
+    expect(
+      composerChip({ connectModel: false, agentName: null, pendingAgentName: 'kortix', agentsLoading: true, modelName: 'Sonnet 5' }),
+    ).toEqual({ label: 'Kortix', variant: 'ghost' });
+    expect(
+      composerChip({ connectModel: false, agentName: null, pendingAgentName: null, agentsLoading: true, modelName: 'Sonnet 5' }),
+    ).toBeNull();
+    // Once they load, the resolved agent wins over the pending name.
+    expect(
+      composerChip({ connectModel: false, agentName: 'plan', pendingAgentName: 'kortix', agentsLoading: false, modelName: 'Sonnet 5' }),
+    ).toEqual({ label: 'Plan', variant: 'ghost' });
+  });
 });
 
 describe('thinking level names', () => {
@@ -89,7 +103,7 @@ describe('agents', () => {
 
   test('pickable = primary or all, not hidden, not disabled', () => {
     const list = [agent('kortix', 'primary'), agent('explore', 'subagent'), agent('plan', 'all'), agent('ghost', 'primary', true)];
-    expect(pickableAgents(list).map((a) => a.name)).toEqual(['kortix', 'plan']);
+    expect(pickableAgents([...list, agent('build', 'primary'), agent('engineering', 'primary')]).map((a) => a.name)).toEqual(['kortix', 'engineering']);
   });
 
   test('project config agents: a missing mode is "all" (OpenCode default); `enabled: false` is out', () => {

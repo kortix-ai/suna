@@ -14,17 +14,17 @@ import {
   verifyRelease,
   writeReleaseManifest,
   type ReleaseManifest,
-} from '../../boot-config'
+} from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '../../config-release/api-client'
-import type { ConfigReleaseDescriptor } from '../../config-release/descriptor'
-import { clearConfigReleaseNotice } from '../../config-release/notice'
-import { logger } from '../../logger'
+} from '@/services/config-release/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+import { clearConfigReleaseNotice } from '@/services/config-release/notice'
+import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
@@ -36,14 +36,13 @@ import {
   prepareConfigDir,
   preparePlatformConfigDir,
   setRunningConfig,
-  type ConfigSource,
 } from './config-release'
+import type { ConfigSource } from '@/types/config-release'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
 
 /**
- * THE boot path. One function decides what OpenCode runs, and nothing else does
- * (docs/specs/config-releases.md; PLAN-one-boot-path C1–C8).
+ * THE boot path. One function decides what OpenCode runs, and nothing else does.
  *
  * The straight line, in order, with no timer anywhere on it:
  *

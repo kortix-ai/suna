@@ -106,15 +106,18 @@ import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  listCreatedSession,
   projectKeys,
   useAccounts,
   useProject,
   useProjectSessions,
   useCreateProjectSession,
 } from '@/lib/projects/hooks';
+import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { countReviewItemsBySegment, getProjectSession } from '@kortix/sdk';
+import { countReviewItemsBySegment, getProjectSession, sessionConnectionLabel } from '@kortix/sdk';
+import { loadSavedCopy } from '@/lib/session/saved-copy';
 import * as Crypto from 'expo-crypto';
 import {
   deleteProjectSession,
@@ -222,21 +225,6 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
 
 // ─── Main screen ────────────────────────────────────────────────────────────
 
-/**
- * The drawer's close spring (Jay, 2026-09-22). The library's one spring
- * (stiffness 1000, damping 500, mass 3) is 4.6× overdamped: its slow pole
- * decays at ~2/s, so a close crawls over its last third. This one is
- * critically damped (damping = 2·√stiffness at mass 1): 90% of the travel in
- * ~195ms, settled in ~330ms, no overshoot. It stays a spring, so a swipe
- * release keeps its velocity. Open keeps the library spring: an exit runs
- * faster than an enter.
- *
- * `closeSpringConfig` is not a library prop: it comes from
- * `patches/react-native-drawer-layout+4.2.10.patch`. When the patch is not
- * applied (`npx patch-package` after an install), `tsc` fails on the prop.
- * Module scope: the library lists it as a `useCallback` dependency.
- */
-const DRAWER_CLOSE_SPRING = { stiffness: 400, damping: 40, mass: 1 };
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
 
@@ -877,7 +865,13 @@ export function ProjectScreen() {
           return createSessionCommitted(
             {
               create: (body) => createProjectSession.mutateAsync(body),
-              read: (id) => getProjectSession(projectId, id, { showErrors: false }),
+              read: async (id) => {
+                const row = await getProjectSession(projectId, id, { showErrors: false });
+                // A create that timed out but committed: listed now, like
+                // one that answered (`useCreateProjectSession`).
+                listCreatedSession(queryClient, projectId, row);
+                return row;
+              },
             },
             { ...input, session_id: sessionId },
           );
@@ -914,7 +908,7 @@ export function ProjectScreen() {
         setIsDashboardSending(false);
       }
     },
-    [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
+    [projectId, isDashboardSending, createProjectSession, queryClient, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
   );
 
   // The model sheet's Agent tab `+` (thread and home alike): a new session on
@@ -1283,6 +1277,29 @@ export function ProjectScreen() {
     }
   }, [renderedOpenedThread, keptOpenedThread]);
 
+  // While the computer wakes, the connecting view shows the session's saved
+  // copy (lib/session/saved-copy.ts): the one this device kept, then the
+  // server's, painted into the sync store under the session's OpenCode root.
+  // `SessionPage` then opens on the same messages and its first runtime read
+  // settles them. Only while the connecting view is on screen.
+  const showingConnecting = !activePageId && ((!!activeSessionId && !threadReady) || !!connectingProjectSessionId);
+  const savedCopyTarget = !showingConnecting
+    ? null
+    : connectingProjectSessionId
+      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null }
+      : activeProjectSession && activeSessionId
+        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId }
+        : null;
+  const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
+  const savedCopyRootId = savedCopyTarget?.rootId ?? null;
+  useEffect(() => {
+    if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
+    void loadSavedCopy({ projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId });
+  }, [projectId, savedCopySessionId, savedCopyRootId]);
+  const savedCopyMessages = useSyncStore((state) =>
+    savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  );
+
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
@@ -1364,6 +1381,9 @@ export function ProjectScreen() {
               onRestart={handleRestartSession}
               restarting={restartingSession}
               showLoader={!drawerOpen}
+              messages={savedCopyMessages}
+              statusLabel={sessionConnectionLabel('waking')?.label ?? null}
+              sessionId={savedCopyRootId ?? undefined}
             />
           </View>
         ) : null}
@@ -1451,7 +1471,16 @@ export function ProjectScreen() {
         swipeEnabled={isFocused && edgeGesture === 'drawer'}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
-        closeSpringConfig={DRAWER_CLOSE_SPRING}
+        // A tap opens on the iOS sheet curve (420ms, 90% by ~154ms) and closes
+        // on ease-out-quad (320ms, 80% by ~170ms); a swipe release keeps a
+        // critically damped spring and its
+        // velocity (`lib/ui/drawer-springs.ts`). The props come from
+        // `patches/react-native-drawer-layout+4.2.10.patch`; without the patch
+        // applied (`npx patch-package`), `tsc` fails on them. Module-level
+        // constants: the library lists them as `useCallback` dependencies, and
+        // a new object would re-toggle the drawer.
+        openSpringConfig={DRAWER_OPEN}
+        closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the

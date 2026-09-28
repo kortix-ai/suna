@@ -58,7 +58,6 @@ import {
   REVIEW_SEGMENTS,
   formatReviewAge,
   reviewItemTone,
-  reviewRiskLabel,
   type ReviewTone,
 } from '@/lib/review/review-meta';
 import { reviewKeys, useReviewItems } from '@/lib/review/use-review';
@@ -229,8 +228,7 @@ export function ReviewPage({
               <View className="px-4 pt-1">
                 <SettingsGroup>
                   {visible.map((item) => {
-                    const risk = reviewRiskLabel(item.risk);
-                    const meta = [item.agent, formatReviewAge(item.createdAt), risk].filter(Boolean).join(' · ');
+                    const meta = [item.agent, formatReviewAge(item.createdAt)].filter(Boolean).join(' · ');
                     return (
                       <SettingsRow
                         key={item.id}
@@ -348,9 +346,9 @@ export function ReviewPage({
       <ReviewDetailSheet
         ref={sheetRef}
         projectId={projectId}
+        // The selection stays after close: clearing it would empty the sheet
+        // while it animates away.
         item={selected}
-        // The selection stays: clearing it would empty the sheet while it closes.
-        onDismiss={() => {}}
         onOpenSession={onOpenSession}
       />
     </View>

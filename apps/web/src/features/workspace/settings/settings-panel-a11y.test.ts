@@ -22,7 +22,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const RAW = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8');
+const RAW = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8');
 
 /**
  * Comments are stripped before matching, and that is load-bearing rather than

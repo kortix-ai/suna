@@ -331,6 +331,8 @@ export interface SettingsRowProps {
   description?: string;
   /** Read-only value shown on the right, e.g. the account email. */
   value?: string;
+  /** Draws `value` in the destructive colour (a merge conflict). Default muted. */
+  valueDestructive?: boolean;
   /** Shows a check mark — the selected option in a picker list. */
   checked?: boolean;
   /** Omit for a row whose control lives in `right`. */
@@ -395,6 +397,7 @@ export function SettingsRow({
   badge,
   labelAccessory,
   destructive = false,
+  valueDestructive = false,
   disabled = false,
   multiline = false,
   dense = false,
@@ -477,7 +480,10 @@ export function SettingsRow({
         </View>
 
         {value ? (
-          <Text variant="muted" className="ml-3 max-w-[60%]" numberOfLines={1}>
+          <Text
+            variant="muted"
+            className={valueDestructive ? 'ml-3 max-w-[60%] text-destructive' : 'ml-3 max-w-[60%]'}
+            numberOfLines={1}>
             {value}
           </Text>
         ) : null}

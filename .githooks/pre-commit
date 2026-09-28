@@ -70,6 +70,21 @@ if [ -n "$starter_templates" ]; then
   fi
 fi
 
+# No top-level docs/ tree. Skills hold durable knowledge, the learnings ledger
+# holds incident rules, and the PR body holds detail. tests/unit/no-docs-tree.test.ts
+# and pre-push enforce the same rule.
+new_docs=$(git diff --cached --name-only --diff-filter=AR | grep -E '^docs/' || true)
+if [ -n "$new_docs" ]; then
+  echo "pre-commit: the repository has no docs/ tree. Refusing:" >&2
+  printf '  %s\n' $new_docs >&2
+  echo "  Put runbooks and specs in a skill (.agents/skills/<name>/references/)," >&2
+  echo "  incident rules in .agents/skills/learnings/entries/, and detail in the PR body." >&2
+  exit 1
+fi
+
+# A `pnpm worktree` checkout commits only on its own branch (AGENTS.md).
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
+
 # (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
 

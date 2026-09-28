@@ -25,9 +25,9 @@ import type { ProjectBranch } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { useToast } from '@/components/kortix/toast-provider';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A branch name for display: a UUID branch shows its first 8 characters. */
-export const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
+import { shortRef } from '@/lib/review/review-detail';
+
+export { shortRef };
 
 function BranchPills({
   options,

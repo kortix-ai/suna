@@ -19,7 +19,7 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
 
 - _(default)_ **session** — everything under "Scope" below.
 - **`monitor`** — the box supervises the project's monitor processes instead
-  of opencode (`src/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
+  of opencode (`src/services/monitor/monitor-runner.ts`): it parses `KORTIX_MONITORS` (JSON
   injected by the API — the daemon never parses `kortix.yaml` itself), spawns
   one process per enabled monitor (`poll` on an interval / `stream`
   long-running, restart budget + backoff), captures stdout line-by-line
@@ -30,7 +30,6 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
   Opencode never starts; its routes 503 honestly. `GET /kortix/health`
   reports `workload: "monitor"` — the API's reconciler uses that field to
   detect (and recycle) a box whose baked agent binary predates monitor mode.
-  Contract: `docs/specs/2026-08-12-monitors.md`.
 
 **Scope:**
 
@@ -45,7 +44,7 @@ It also manages its own lifecycle — see [Management CLI](#management-cli).
    HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
    assets resolve cleanly through the sandbox proxy. Ported from main's
    always-on `core/services/static-web.js` s6 service; now runs in-process
-   (see `src/static-web.ts`). `apps/web` builds preview URLs against this exact
+   (see `src/services/static-web/static-web.ts`). `apps/web` builds preview URLs against this exact
    port via `/proxy/3211/*` and the `p3211-<sandboxId>` subdomain route.
 
 Everything else — triggers, channels, connectors, secrets, preferences — is
@@ -57,9 +56,18 @@ them, or know they exist.
 Replaces the legacy multi-script bootstrap and s6 service definitions with one
 in-process daemon.
 
+## Source layout
+
+The source has four layers, bottom to top: **shared** (`src/lib/` building blocks and
+`src/types/` shared types), **services** (`src/services/`, host capabilities),
+**harness** (`src/harness/`, the session runtime: OpenCode and pi), and **app**
+(`src/main.ts`, `src/app/`, `src/routes/`: startup and HTTP controllers). A layer
+imports only from the layers below it. [ARCHITECTURE.md](ARCHITECTURE.md) lists every folder, the
+import rules, and where new code goes; `bun run lint` enforces them.
+
 ## Boot flow
 
-1. Read env vars (`src/config.ts`).
+1. Read env vars (`src/lib/config/config.ts`).
 2. Start the static web server on `0.0.0.0:KORTIX_STATIC_PORT` (in-process).
    It only reads files off disk, so it comes up first and stays up regardless
    of repo/opencode state — previews work while the agent is still booting.
@@ -68,7 +76,7 @@ in-process daemon.
    compiled boot is enabled. `prefer` executes it with baked-agent fallback.
    `shadow` verifies it and executes the baked agent. `required` fails closed.
 4. Materialize the project repo in `/workspace/.kortix` through the
-   config-provider coordinator (`src/config-provider/config-provider.ts`). A
+   config-provider coordinator (`src/services/config-provider/config-provider.ts`). A
    baked checkout that IS the session's base is adopted first, in every mode.
    Then `KORTIX_PROJECT_SNAPSHOT_MODE` selects the transport: `git` (default)
    is the legacy path — compiled checkout (`KORTIX_COMPILED_BOOT_MODE`
@@ -176,7 +184,7 @@ KORTIX_BRANCH_FETCH_DELAY=0.25
 KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
 KORTIX_COMPILED_BOOT_MODE=off
-KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/config-provider)
+KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/config-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
 KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=       # base64 JSON of the presigned download descriptor for that pin, signed by the API at session create; first attempt only, the proxy route is the fallback
 KORTIX_COMPILED_RUNTIME_FORMAT=
@@ -210,7 +218,7 @@ binary is genuinely missing) without crashing.
 
 ## Management CLI
 
-`kortixd` is a normal installable app. Its subcommands (`src/cli.ts`) manage the
+`kortixd` is a normal installable app. Its subcommands (`src/app/cli.ts`) manage the
 binary's own lifecycle; the default (no subcommand) and `serve` boot the daemon.
 
 | Command                          | Effect                                                            |

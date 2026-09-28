@@ -9,8 +9,6 @@
  * actually has to be built. That keeps the maintenance sweep's static import
  * graph small (it was large enough to break unrelated tests that mock
  * ../projects/git) and keeps the cost off the common path.
- *
- * Spec: docs/specs/2026-08-12-monitors.md.
  */
 
 import { randomUUID } from 'node:crypto';

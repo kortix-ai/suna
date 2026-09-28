@@ -20,6 +20,9 @@ export interface CatalogCardProps {
    *  button (see the no-hard-refresh nav contract). Cards that open a modal
    *  in place keep `onClick`. Exactly one of the two. */
   href?: string;
+  /** Pointer or keyboard intent on a navigating card, before the click. Used
+   *  to start the destination's data read ~200–500 ms early. */
+  onIntent?: () => void;
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
@@ -45,6 +48,7 @@ export function CatalogCard({
   meta,
   trailing,
   href,
+  onIntent,
   onClick,
   disabled,
   className,
@@ -123,6 +127,8 @@ export function CatalogCard({
         href={href}
         prefetch
         aria-disabled={disabled || undefined}
+        onPointerEnter={onIntent}
+        onFocus={onIntent}
         style={style}
         className={classes}
       >

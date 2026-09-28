@@ -36,6 +36,7 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
+import { repointRetiredSessionModel } from '../../llm-gateway/resolution/session-model-repoint';
 import { auth, json } from '../../openapi';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
@@ -631,6 +632,7 @@ export async function buildSessionSandboxEnvVars(input: {
     .select({
       secretsAllowlist: projectSessions.secretsAllowlist,
       createdBy: projectSessions.createdBy,
+      metadata: projectSessions.metadata,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
@@ -662,6 +664,26 @@ export async function buildSessionSandboxEnvVars(input: {
     accountId: input.accountId,
     legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
   });
+
+  // A session's stored model pin outlives any single boot — the runtime
+  // managed lineup can rotate past it while the session sits open. Re-point
+  // it here, at this ONE chokepoint every provisioning path (create, restart,
+  // open/ensure) already shares, before the box boots on a dead id. No-op for
+  // native mode (no gateway, no managed catalog) and for the overwhelming
+  // common case (a still-servable or non-managed pin) — see
+  // llm-gateway/resolution/session-model-repoint.ts.
+  let opencodeModel = input.opencodeModel ?? null;
+  if (input.llmGatewayEnabled && opencodeModel) {
+    opencodeModel = await repointRetiredSessionModel(opencodeModel, {
+      projectId: input.projectId,
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      userId: secretsPrincipalUserId ?? input.userId,
+      agentName: input.agentName,
+      freeModelsOnly: !(await accountMayUseManagedModels(input.accountId)),
+      metadata: sessionPolicyRow?.metadata ?? null,
+    });
+  }
 
   let runtimeSecrets: {
     env: Record<string, string>;
@@ -751,8 +773,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // restored in the background right after boot (scheduleHistoryBackfill).
     // It is worth ~1.5x on the clone, no more — the dominant cost is the
     // working tree plus the transatlantic git-proxy hop (sandbox US → API
-    // eu-west-2 → GitHub US). See
-    // docs/specs/2026-07-25-session-boot-latency-attribution.md, Finding 1.
+    // eu-west-2 → GitHub US).
     KORTIX_CLONE_FILTER: '',
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
@@ -766,9 +787,10 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       // Concrete session model after explicit → agent → project → account →
-      // platform resolution. The sandbox uses it for the first OpenCode turn
-      // and as the session's OpenCode config default.
-      opencodeModel: input.opencodeModel,
+      // platform resolution — re-pointed above when the runtime lineup
+      // retired it. The sandbox uses it for the first OpenCode turn and as
+      // the session's OpenCode config default.
+      opencodeModel,
       compiledAgentConfig,
       harness,
       piPackages: manifestPackages,
@@ -1380,8 +1402,7 @@ export async function createProjectSession(input: {
       },
     };
   }
-  // MANDATORY DECLARED AGENTS (flagged — docs/specs/2026-07-05-agent-first-config-
-  // unification.md §2.1/§3 Phase 2). Only projects "subject" to enforcement (the
+  // MANDATORY DECLARED AGENTS (flagged — Phase 2). Only projects "subject" to enforcement (the
   // platform-wide flag, or a project stamped `metadata.require_declared_agents`
   // at creation) pay for this: an extra manifest read, done synchronously here so
   // an undeclared agent is REJECTED with an explicit 400 before any row is

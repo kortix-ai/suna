@@ -14,8 +14,9 @@
  * instead of silently disarming the shim in production.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
-import { resolveShimConfig } from '../../../../kortix-sandbox-agent-server/src/egress-shim/rules';
+import { resolveShimConfig } from '../../../../kortix-sandbox-agent-server/src/services/egress-shim/rules';
 
 // Each provider is constructed directly rather than through the registry, so
 // nothing here needs an admission list or a real credential. Assigned with

@@ -4,11 +4,9 @@ import { connectors, projects, projectSessionConnectorBindings } from '@kortix/d
  * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
  * flow (mirrors triggers). The manifest holds the connector definition.
  * Credential MODE is always `shared` (`per_user` — each member brings their
- * own — was removed 2026-07-05, docs/specs/2026-07-05-agent-first-config-
- * unification.md §2.5). Connectors are project-wide visible — the only ACCESS
+ * own — was removed 2026-07-05). Connectors are project-wide visible — the only ACCESS
  * gate is the agent-side `agents.<name>.connectors` grant (declared in git, on
- * the agent, not the connector). Credentials live in the split store. See
- * docs/specs/connector.md §3, §5–6.
+ * the agent, not the connector). Credentials live in the split store.
  */
 import { and, eq } from 'drizzle-orm';
 import { featureDisabledBody } from '../feature-flags/gate';
@@ -376,8 +374,8 @@ export async function setConnectorCredentialShared(
 }
 
 /**
- * `shared` is now the only credential mode (`per_user` removed 2026-07-05,
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.5). This entry
+ * `shared` is now the only credential mode (`per_user` removed 2026-07-05).
+ * This entry
  * point is kept, restricted to a `shared`-only no-op: it strips a lingering
  * legacy `credential: per_user` key from kortix.yaml (if present) and
  * re-syncs, but never writes a mode back. Callers asking for anything other

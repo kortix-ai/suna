@@ -86,7 +86,10 @@ import {
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
-import { Composer as SessionChatInput } from '@/features/session/composer/composer';
+import {
+  COMPOSER_SHELL_CLASS,
+  Composer as SessionChatInput,
+} from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
@@ -2118,8 +2121,20 @@ interface SessionChatProps {
   hideHeader?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
+  /**
+   * Drawn in the composer's slot, in flow, when `readOnly`: a terminal
+   * session state (stopped with no computer, lost computer, failed start)
+   * that says why nothing can be sent and offers the one action.
+   */
+  inputReplacement?: React.ReactNode;
   /** Start scrolled to the top instead of the bottom (e.g. sub-session modal viewer) */
   initialScrollTop?: boolean;
+  /**
+   * The Kortix session (`<projectId>/<sessionId>`) a read-only sub-agent
+   * session runs inside. With it, the sub-agent's saved transcript paints while
+   * the computer is off; without it, only the running computer can answer.
+   */
+  savedHistoryScope?: string;
   /**
    * Fired once this component is painting a real surface — the conversation or
    * the not-found card — rather than its own "starting" loader.
@@ -2171,7 +2186,9 @@ export function SessionChat({
   headerLeadingAction,
   hideHeader,
   readOnly,
+  inputReplacement,
   initialScrollTop,
+  savedHistoryScope,
   onContentReady,
   deferComposerFocus,
 }: SessionChatProps) {
@@ -2337,7 +2354,10 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const localSync = useSessionSync(sessionState ? '' : sessionId);
+  const localSync = useSessionSync(
+    sessionState ? '' : sessionId,
+    savedHistoryScope ? { kortixSessionScope: savedHistoryScope, savedChild: true } : undefined,
+  );
   // The page's `useSession` runs with `subscribeMessages: false`, so its
   // `messages` is a render-time snapshot and the page does not re-render per
   // streamed delta. The live rows are read HERE, where they are drawn.
@@ -5512,6 +5532,13 @@ export function SessionChat({
     serverTurnLive: serverHoldsOpenTurn(working),
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,
+    // The route's `/start` is bringing the computer up (or has not answered):
+    // the same fact the boot pill above the thread shows.
+    starting:
+      !!sessionState &&
+      (sessionState.stage == null ||
+        sessionState.stage === 'provisioning' ||
+        sessionState.stage === 'starting'),
   });
   // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
   // instrumented the deleted prompt-observation stall machinery to warn about
@@ -6188,6 +6215,10 @@ export function SessionChat({
               </div>
             </div>
           )}
+
+          {readOnly && inputReplacement ? (
+            <div className={cn(COMPOSER_SHELL_CLASS, 'pb-4')}>{inputReplacement}</div>
+          ) : null}
 
           {/* Input — hidden in read-only mode (sub-session modal) */}
           {!readOnly && (

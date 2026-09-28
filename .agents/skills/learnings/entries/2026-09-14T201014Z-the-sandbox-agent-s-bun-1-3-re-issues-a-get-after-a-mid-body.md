@@ -16,5 +16,4 @@ declared size as transient transport garbage, not "too large"; (3) run the
 streaming suite under `oven/bun:<SANDBOX_AGENT_BUN_VERSION>` before shipping.
 *Near-miss:* the S3 config provider classified a reset as `malformed` (no
 retry) under 1.3.11; caught by running its suite in Docker under 1.3.11.
-*Enforcer:* none in CI — `docs/runbooks/project-snapshot-s3.md` carries the
-Docker command; a CI lane on the pinned Bun is the TODO.
+*Enforcer:* none in CI — a CI lane on the pinned Bun is the TODO.

@@ -156,19 +156,50 @@ export async function customAuthConfigIds(input: {
 
 // Short, so an auth config an operator just created shows its toolkit within a
 // minute. The connect path never reads this cache.
+//
+// Stale-while-revalidate (2026-09-27): past the minute an answered list is
+// served at once and refreshed once in the background, so the refresh starts
+// on the first read after the minute and the next read shows the new config.
+// Measured on dev-api, the blocking refresh made every Discover view after a
+// minute of idle wait 450-600 ms. A failed refresh keeps the last list; past
+// ten minutes the read waits, as on a cold process.
 const AUTH_CONFIG_TTL_MS = 60_000;
+const AUTH_CONFIG_MAX_STALE_MS = 10 * 60_000;
 const authConfigCache = new WeakMap<
   ComposioCatalogClient,
-  { at: number; ids: Promise<Map<string, string>> }
+  { at: number; ids: Promise<Map<string, string>>; answered: boolean; refreshing: boolean }
 >();
 
 async function cachedCustomAuthConfigIds(catalogClient: ComposioCatalogClient) {
   const cached = authConfigCache.get(catalogClient);
-  if (cached && Date.now() - cached.at < AUTH_CONFIG_TTL_MS) return cached.ids;
-  const entry = { at: Date.now(), ids: customAuthConfigIds({ catalogClient }) };
+  const now = Date.now();
+  if (cached && now - cached.at < AUTH_CONFIG_TTL_MS) return cached.ids;
+  if (cached?.answered && now - cached.at < AUTH_CONFIG_MAX_STALE_MS) {
+    if (!cached.refreshing) {
+      cached.refreshing = true;
+      customAuthConfigIds({ catalogClient }).then(
+        (ids) => {
+          if (authConfigCache.get(catalogClient) !== cached) return;
+          authConfigCache.set(catalogClient, {
+            at: Date.now(),
+            ids: Promise.resolve(ids),
+            answered: true,
+            refreshing: false,
+          });
+        },
+        () => {
+          cached.refreshing = false;
+        },
+      );
+    }
+    return cached.ids;
+  }
+  const entry = { at: now, ids: customAuthConfigIds({ catalogClient }), answered: false, refreshing: false };
   authConfigCache.set(catalogClient, entry);
   try {
-    return await entry.ids;
+    const ids = await entry.ids;
+    entry.answered = true;
+    return ids;
   } catch (error) {
     if (authConfigCache.get(catalogClient) === entry) authConfigCache.delete(catalogClient);
     throw error;
@@ -283,9 +314,25 @@ export async function composioCatalogSections(input: {
   };
 }
 
-/** Composio rejects searches shorter than three characters. Search its complete
- * public catalogue here; session toolkits omit descriptions and connection data
- * must never enter this deployment-wide cache. */
+/**
+ * Where a query matches an app: name, slug, category (id or label), then
+ * description. `-1` is no match. "sla" puts Slack first; "crm" also lists
+ * every CRM app.
+ */
+function matchRank(item: CatalogToolkit, query: string): number {
+  if (item.name.toLowerCase().includes(query)) return 0;
+  if (item.slug.toLowerCase().includes(query)) return 1;
+  const categories = item.meta.categories ?? [];
+  if (categories.some((c) => `${c.id} ${c.name ?? ''}`.toLowerCase().includes(query))) return 2;
+  if ((item.meta.description ?? '').toLowerCase().includes(query)) return 3;
+  return -1;
+}
+
+/**
+ * Search the complete public catalogue. Session toolkits omit descriptions and
+ * categories, and connection data must never enter this deployment-wide cache.
+ * Matches sort by `matchRank`; within a rank the catalogue's usage order holds.
+ */
 export async function searchComposioCatalog(input: {
   q: string;
   cursor?: string;
@@ -294,9 +341,11 @@ export async function searchComposioCatalog(input: {
 }) {
   const catalog = await visibleCatalog(input.catalogClient ?? composioRestClient());
   const query = input.q.trim().toLowerCase();
-  const matches = catalog.filter((item) =>
-    `${item.name} ${item.slug} ${item.meta.description ?? ''}`.toLowerCase().includes(query),
-  );
+  const matches = catalog
+    .map((item, index) => ({ item, index, rank: matchRank(item, query) }))
+    .filter((match) => match.rank >= 0)
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((match) => match.item);
   const limit = Math.min(Math.max(input.limit ?? 48, 1), 100);
   const offset = Math.min(offsetFromCursor(input.cursor), matches.length);
   const nextOffset = offset + limit;

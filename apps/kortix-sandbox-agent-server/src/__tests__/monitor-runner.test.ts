@@ -5,8 +5,6 @@
 // owns is exactly "what a real process printed becomes exactly these events".
 // A mocked spawn would test the mock. The timers are shrunk through the
 // runner's option seams so a 10-minute restart window is a 200 ms one here.
-//
-// Spec: docs/specs/2026-08-12-monitors.md.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -20,7 +18,7 @@ import {
   type MonitorWireEvent,
   normalizeLine,
   parseMonitorSpecs,
-} from '../monitor-runner'
+} from '@/services/monitor/monitor-runner'
 
 const API_URL = 'http://api.test/v1'
 const PROJECT_ID = 'proj-1'

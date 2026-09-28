@@ -31,8 +31,11 @@ import {
   accountMembers,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
-import { oauthAuthorizationServerMetadata } from './discovery';
-import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isMcpResource, oauthAuthorizationServerMetadata } from './discovery';
+import { createOAuthClient, normalizeRedirectUris, normalizeScopes, OAuthClientInputError } from '../repositories/oauth-clients';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { requestClientKey } from '../shared/client-ip';
+import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
 import { isUuid } from '../shared/validate';
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
@@ -371,6 +374,7 @@ oauthApp.openapi(
         state: z.string().optional(),
         code_challenge: z.string().optional(),
         code_challenge_method: z.string().optional(),
+        resource: z.string().optional(),
       }),
     },
     responses: {
@@ -409,7 +413,14 @@ oauthApp.openapi(
     if (!parseRedirectUri(redirectUri) || !allowedUris.includes(redirectUri)) {
       return c.json({ error: 'invalid_request', error_description: 'redirect_uri not in allowed list' }, 400);
     }
-    const scopes = validateRequestedScopes(parseScopeList(scope), client.scopes);
+    // An MCP client names the resource (RFC 8707) and often no scope: access to
+    // a Kortix MCP endpoint IS the `kortix` scope, so that is the default.
+    const resource = c.req.query('resource');
+    const requested = parseScopeList(scope);
+    if (requested.length === 0 && resource && isMcpResource(resource, new URL(c.req.url).origin)) {
+      requested.push(OAUTH_SCOPE_KORTIX);
+    }
+    const scopes = validateRequestedScopes(requested, client.scopes);
     if (!scopes) return c.json({ error: 'invalid_scope' }, 400);
 
     const requestId = await createAuthorizationRequest({
@@ -448,6 +459,10 @@ oauthApp.openapi(
           scopes: z.array(z.string()),
           /** True when this user already approved this client for every requested scope — the UI approves without asking. */
           remembered: z.boolean(),
+          /** True when the client registered itself (RFC 7591) — no account vouches for it. */
+          self_registered: z.boolean(),
+          /** Where the browser goes after approval: the origin, or the scheme of a native app. */
+          redirect_to: z.string(),
         }),
         'The pending authorization request',
       ),
@@ -472,6 +487,8 @@ oauthApp.openapi(
       scope: request.scopes.join(' '),
       scopes: request.scopes,
       remembered,
+      self_registered: isSelfRegistered(client),
+      redirect_to: redirectTarget(request.redirectUri),
     });
   },
 );
@@ -552,6 +569,85 @@ oauthApp.openapi(
     redirect.searchParams.set('code', code);
     if (request.state) redirect.searchParams.set('state', request.state);
     return c.json({ redirect_uri: redirect.toString() });
+  },
+);
+
+// ─── POST /register (RFC 7591) ──────────────────────────────────────────────
+
+/** Stored on a self-registered client; nothing else marks one. */
+export const SELF_REGISTERED_DESCRIPTION = 'Self-registered (RFC 7591 dynamic client registration)';
+
+function isSelfRegistered(client: ClientRow): boolean {
+  return client.accountId === null && client.description === SELF_REGISTERED_DESCRIPTION;
+}
+
+function redirectTarget(redirectUri: string): string {
+  const url = parseRedirectUri(redirectUri);
+  if (!url) return redirectUri;
+  return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;
+}
+
+// ponytail: per-instance bucket; a shared store if registration spam spans instances.
+const registerLimiter = new TokenBucketRateLimiter('oauth_register');
+const REGISTER_POLICY = { limit: 30, windowMs: 60 * 60 * 1000 };
+
+oauthApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/register',
+    tags: ['oauth'],
+    summary: 'RFC 7591 dynamic client registration (public PKCE clients, e.g. MCP clients)',
+    request: { body: { content: { 'application/json': { schema: z.any() } } } },
+    responses: {
+      201: json(z.object({ client_id: z.string() }).passthrough(), 'The registered client'),
+      ...errors(400, 429),
+    },
+  }),
+  async (c: any) => {
+    const limit = registerLimiter.check(requestClientKey(c), REGISTER_POLICY);
+    if (!limit.allowed) {
+      return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many registrations' }, 429);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return c.json({ error: 'invalid_client_metadata', error_description: 'Body must be a JSON object' }, 400);
+    }
+    const name =
+      (typeof body.client_name === 'string' && body.client_name.trim().slice(0, 100)) || 'MCP client';
+    let redirectUris: string[];
+    let scopes: string[];
+    try {
+      redirectUris = normalizeRedirectUris(body.redirect_uris, { native: true });
+      scopes = normalizeScopes(body.scope ?? OAUTH_SCOPE_KORTIX);
+    } catch (err) {
+      if (err instanceof OAuthClientInputError) {
+        const error = /redirect_uri/.test(err.message) ? 'invalid_redirect_uri' : 'invalid_client_metadata';
+        return c.json({ error, error_description: err.message }, 400);
+      }
+      throw err;
+    }
+    const created = await createOAuthClient({
+      accountId: null,
+      createdBy: null,
+      name,
+      description: SELF_REGISTERED_DESCRIPTION,
+      clientType: 'public',
+      redirectUris,
+      scopes,
+    });
+    return c.json(
+      {
+        client_id: created.clientId,
+        client_id_issued_at: Math.floor(Date.now() / 1000),
+        client_name: name,
+        redirect_uris: redirectUris,
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        token_endpoint_auth_method: 'none',
+        scope: scopes.join(' '),
+      },
+      201,
+    );
   },
 );
 

@@ -19,6 +19,13 @@ const code = await runTui({
   host: resolveHost(),
   projectId: process.env.KORTIX_PROJECT_ID,
   sessionId: process.env.KORTIX_SESSION_ID,
+  newSession:
+    process.env.KORTIX_TUI_NEW === '1'
+      ? { agentName: process.env.KORTIX_TUI_AGENT?.trim() || undefined }
+      : null,
+  openTerminal: process.env.KORTIX_TUI_TERMINAL === '1',
+  hideSidebar: process.env.KORTIX_TUI_SIDEBAR === '0',
+  mouse: process.env.KORTIX_TUI_MOUSE === '1',
 });
 
 process.exit(code);

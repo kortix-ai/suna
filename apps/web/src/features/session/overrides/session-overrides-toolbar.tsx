@@ -110,6 +110,108 @@ function hasAvailableScopeAxis(catalog: SessionScopeSelectionCatalog): boolean {
   return availability.secrets || availability.connector_bindings;
 }
 
+function providerPoolSummary(
+  sessionId: string | undefined,
+  isError: boolean,
+  isLoading: boolean,
+  poolCount: number,
+  selectedCount: number,
+  t: ReturnType<typeof useTranslations<'pooledSecrets'>>,
+): string {
+  if (sessionId && isError) return t('keysLoadError');
+  if (sessionId && isLoading) return t('loadingKeys');
+  return poolCount
+    ? t(selectedCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedCount })
+    : t('projectDefaultShort');
+}
+
+function sandboxRow(
+  slot: SessionOverrideSlot | undefined,
+  sandbox: SessionOverridesToolbarProps['sandbox'],
+  t: ReturnType<typeof useTranslations<'hardcodedUi.i18nComplete'>>,
+): SessionOverrideRow {
+  if (slot) return {
+    id: 'sandbox', name: 'Sandbox', icon: Cpu,
+    hint: t.raw('text6cc00d310273'), summary: slot.summary,
+    overridden: slot.overridden,
+    description: slot.description ??
+      'The machine image this session will run on. It is fixed once the session starts — by default the agent’s environment, then the project or platform default.',
+    editor: slot.control, onReset: slot.onReset, resetLabel: slot.resetLabel,
+  };
+  return {
+    id: 'sandbox', name: 'Sandbox', icon: Cpu,
+    hint: t.raw('text57c8f2cd3dd6'),
+    summary: sandbox?.slug ?? t.raw('text0b1bdec38bf0'),
+    description: t.raw('textf3ad568c3fa6'), readOnly: true,
+    editor: (
+      <dl className="text-sm">
+        <div className="border-border flex items-center justify-between gap-3 border-b py-2">
+          <dt className="text-muted-foreground text-xs">
+            {t.raw('text0575f29df888')}
+          </dt>
+          <dd className="text-foreground truncate text-xs">
+            {sandbox?.slug ?? t.raw('text0b1bdec38bf0')}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3 py-2">
+          <dt className="text-muted-foreground text-xs">
+            {t.raw('text472590ae974d')}
+          </dt>
+          <dd className="text-foreground truncate text-xs">
+            {sandbox?.provider ?? 'Automatic'}
+          </dd>
+        </div>
+      </dl>
+    ),
+  };
+}
+
+function secretsRow(
+  draft: SessionScopeDraft,
+  catalog: SessionScopeSelectionCatalog,
+  disabled: boolean,
+  onChange: (draft: SessionScopeDraft) => void,
+  t: ReturnType<typeof useTranslations<'hardcodedUi.i18nComplete'>>,
+): SessionOverrideRow {
+  return {
+    id: 'secrets', name: 'Secrets', icon: KeyRound,
+    hint: t.raw('textb9967f948f93'),
+    summary: catalog.secrets.status === 'ready' ? sessionSecretsSummary(draft) : 'Unavailable',
+    overridden: sessionSecretsAreOverridden(draft),
+    description: t.raw('text71c0873a1cc2'), resetLabel: 'Reset to agent default',
+    editor: <SessionSecretsEditor draft={draft} catalog={catalog} disabled={disabled} onChange={onChange} />,
+    onReset: () => onChange(resetSessionSecrets(draft)),
+  };
+}
+
+function providerKeysRow(
+  projectId: string,
+  sessionId: string | undefined,
+  selection: Record<string, string[]>,
+  drafts: Record<string, string[] | null>,
+  isError: boolean,
+  isLoading: boolean,
+  gatewayEnabled: boolean,
+  saving: boolean,
+  onDraftChange: (provider: string, selection: string[] | null) => void,
+  onSelectionChange: SessionOverridesToolbarProps['onProviderSecretPoolsChange'],
+  t: ReturnType<typeof useTranslations<'pooledSecrets'>>,
+): SessionOverrideRow {
+  const selectedCount = Object.values(selection).reduce((count, ids) => count + ids.length, 0);
+  const poolCount = Object.keys(selection).length;
+  return {
+    id: 'provider-keys', name: t('providerKeys'), icon: KeyRound,
+    hint: t('chooseSharedKeys'),
+    summary: providerPoolSummary(sessionId, isError, isLoading, poolCount, selectedCount, t),
+    overridden: poolCount > 0, description: t('rateLimitDescription'),
+    editor: !gatewayEnabled
+      ? <p className="text-muted-foreground text-xs">{t('enableGateway')}</p>
+      : sessionId
+        ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} drafts={drafts} onChange={onDraftChange} saving={saving} />
+        : <NewProviderSecretPoolEditor projectId={projectId} selection={selection} onChange={onSelectionChange ?? (() => {})} />,
+  };
+}
+
 /**
  * The per-session overrides that have no control of their own, behind one
  * composer control: secrets, connectors, and the sandbox.
@@ -266,105 +368,20 @@ export function SessionOverridesToolbar({
     [],
   );
   const controlsDisabled = saving || isLoading || (Boolean(sessionId) && !scope);
-  const selectedProviderKeyCount = Object.values(providerPoolDraft).reduce((count, ids) => count + ids.length, 0);
-
   const rows = useMemo(() => {
     const list: SessionOverrideRow[] = [];
-    if (!secretsDenied) list.push({
-      id: 'secrets',
-      name: 'Secrets',
-      icon: KeyRound,
-      hint: tI18nComplete.raw('textb9967f948f93'),
-      summary:
-        activeCatalog.secrets.status === 'ready' ? sessionSecretsSummary(draft) : 'Unavailable',
-      overridden: sessionSecretsAreOverridden(draft),
-      description: tI18nComplete.raw('text71c0873a1cc2'),
-      resetLabel: 'Reset to agent default',
-      editor: (
-        <SessionSecretsEditor
-          draft={draft}
-          catalog={activeCatalog}
-          disabled={controlsDisabled || saveScope.isPending}
-          onChange={onChange}
-        />
-      ),
-      onReset: () => onChange(resetSessionSecrets(draft)),
-    });
+    if (!secretsDenied) list.push(secretsRow(draft, activeCatalog,
+      controlsDisabled || saveScope.isPending, onChange, tI18nComplete));
     // NO Connectors axis. A session used to pin one connection per connector
     // here, and check a connector that had nothing connected — which recorded a
     // requirement the next turn refused on, with no way to authorize from the
     // card it showed. Credentials are not a session-minting decision: the agent
     // may use every account it is entitled to and names one at call time
     // (`kortix connectors call --account`, `accounts` to see them).
-    if (pooledSecretsEnabled) {
-      list.push({
-        id: 'provider-keys',
-        name: tPooled('providerKeys'),
-        icon: KeyRound,
-        hint: tPooled('chooseSharedKeys'),
-        summary: sessionId ? providerPools.isError ? tPooled('keysLoadError')
-          : providerPools.isLoading ? tPooled('loadingKeys')
-          : Object.keys(providerPoolDraft).length
-            ? tPooled(selectedProviderKeyCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedProviderKeyCount })
-            : tPooled('projectDefaultShort') : Object.keys(providerPoolDraft).length
-          ? tPooled(selectedProviderKeyCount === 1 ? 'selectedOne' : 'selectedKeys', { count: selectedProviderKeyCount })
-          : tPooled('projectDefaultShort'),
-        overridden: Object.keys(providerPoolDraft).length > 0,
-        description: tPooled('rateLimitDescription'),
-        editor: !llmGatewayEnabled
-          ? <p className="text-muted-foreground text-xs">{tPooled('enableGateway')}</p>
-          : sessionId
-          ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} drafts={providerDrafts} onChange={onProviderDraftChange} saving={saving} />
-          : <NewProviderSecretPoolEditor projectId={projectId} selection={providerPoolDraft} onChange={onProviderSecretPoolsChange ?? (() => {})} />,
-      });
-    }
-    if (sandboxSlot) {
-      // Pre-create: the template is still a real choice.
-      list.push({
-        id: 'sandbox',
-        name: 'Sandbox',
-        icon: Cpu,
-        hint: tI18nComplete.raw('text6cc00d310273'),
-        summary: sandboxSlot.summary,
-        overridden: sandboxSlot.overridden,
-        description:
-          sandboxSlot.description ??
-          'The machine image this session will run on. It is fixed once the session starts — by default the agent’s environment, then the project or platform default.',
-        editor: sandboxSlot.control,
-        onReset: sandboxSlot.onReset,
-        resetLabel: sandboxSlot.resetLabel,
-      });
-    } else {
-      list.push({
-        id: 'sandbox',
-        name: 'Sandbox',
-        icon: Cpu,
-        hint: tI18nComplete.raw('text57c8f2cd3dd6'),
-        summary: sandbox?.slug ?? tI18nComplete.raw('text0b1bdec38bf0'),
-        description: tI18nComplete.raw('textf3ad568c3fa6'),
-        readOnly: true,
-        editor: (
-          <dl className="text-sm">
-            <div className="border-border flex items-center justify-between gap-3 border-b py-2">
-              <dt className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('text0575f29df888')}
-              </dt>
-              <dd className="text-foreground truncate text-xs">
-                {sandbox?.slug ?? tI18nComplete.raw('text0b1bdec38bf0')}
-              </dd>
-            </div>
-            <div className="flex items-center justify-between gap-3 py-2">
-              <dt className="text-muted-foreground text-xs">
-                {tI18nComplete.raw('text472590ae974d')}
-              </dt>
-              <dd className="text-foreground truncate text-xs">
-                {sandbox?.provider ?? 'Automatic'}
-              </dd>
-            </div>
-          </dl>
-        ),
-      });
-    }
+    if (pooledSecretsEnabled) list.push(providerKeysRow(projectId, sessionId,
+      providerPoolDraft, providerDrafts, providerPools.isError, providerPools.isLoading,
+      llmGatewayEnabled, saving, onProviderDraftChange, onProviderSecretPoolsChange, tPooled));
+    list.push(sandboxRow(sandboxSlot, sandbox, tI18nComplete));
     return list;
   }, [
     secretsDenied,
@@ -381,7 +398,6 @@ export function SessionOverridesToolbar({
     providerPools.isError,
     providerPools.isLoading,
     onProviderSecretPoolsChange,
-    selectedProviderKeyCount,
     projectId,
     sessionId,
     sandbox,

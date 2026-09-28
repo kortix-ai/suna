@@ -201,7 +201,7 @@ describe('materializeSecretDelivery', () => {
   });
 
   test('an egress-enforced secret delivers its HANDLE, never its value', async () => {
-    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §5. This row used
+    // This row used
     // to mint the handle and export nothing at all, which left the agent with
     // an unset variable and no way to spend the secret it had been granted.
     // The handle is what makes the mechanism transparent: an ordinary HTTP

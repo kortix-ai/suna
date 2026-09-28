@@ -12,20 +12,31 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pointBootLink, quarantineRelease, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '../boot-config'
-import type { ConfigReleaseApi } from '../config-release/api-client'
-import type { OpenCodeConfig } from '../harness/open-code/config'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '../config-release/notice'
+import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
+import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import {
+  __setDaemonShuttingDownForTests,
+  isDaemonShuttingDown,
+  resetDaemonShutdownStateForTests,
+} from '@/lib/shutdown-state'
 import {
   ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
+  isConvergenceInFlight,
   resetConfigReleaseStateForTests,
   runningSourceCommit,
   setRunningConfig,
-} from '../harness/open-code/config-release'
-import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../harness/open-code/lifecycle'
-import { provenCheck, toolNamesFromFiles } from '../harness/open-code/proven-check'
+} from '@/harness/open-code/config-release'
+import {
+  registerAgentSwapBlocker,
+  requestAgentSwapIfIdle,
+  resetAgentSwapBlockersForTests,
+} from '@/services/runtime-assets/runtime-assets'
+import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
+import { provenCheck, toolNamesFromFiles } from '@/harness/open-code/proven-check'
 import {
   buildRelease,
   commitAll,
@@ -257,6 +268,8 @@ afterEach(() => {
   // One bun process runs every daemon test file and bun's file order is not stable,
   // so a file that leaves `running.release_id` set poisons whichever file runs next.
   resetConfigReleaseStateForTests()
+  resetDaemonShutdownStateForTests()
+  resetAgentSwapBlockersForTests()
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
@@ -443,6 +456,122 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     serveRelease(api, baseRelease())
     const healthy = fakeOpencode()
     expect((await converge(healthy)).outcome).toBe('applied')
+  })
+
+  // ── DEF-A 2026-09-26 — our own shutdown must not read as a release failure ─
+  //
+  // Real daemon log, one box, verbatim: a config candidate spawned on port
+  // 4097, `runtime-assets` staged an agent update and exited 75 for the
+  // supervisor 767 ms later, `harness.stop()` SIGTERMed the candidate along
+  // with everything else, and the candidate's own probe reported `cause:
+  // null` — indistinguishable, from inside `reloadVerified`, from a release
+  // that never starts. The release was then quarantined ON THAT BOX, and
+  // every later prompt fell back to `image-default` for good: the daemon
+  // never gets another chance to prove a release nothing was ever wrong with.
+  describe('a candidate killed by the daemon\'s own shutdown', () => {
+    test('is not quarantined, and is not reported as a failure', async () => {
+      const bad = baseRelease()
+      serveRelease(api, bad)
+      const failing = fakeOpencode({ startFails: true })
+
+      __setDaemonShuttingDownForTests(true)
+      const response = await converge(failing)
+
+      expect(response.outcome).toBe('failed')
+      expect(response.ok).toBe(false)
+      // The box-local quarantine (config-release.ts) never saw a failure.
+      expect(await readQuarantine(store)).toEqual({})
+      // Nor did the running-config report the API's health/config read
+      // forwards through `recordDaemonConfigReport` — a report with no
+      // `failed_release_id` records nothing on that side either.
+      expect(configReleaseReport().failed_release_id).toBeNull()
+      expect(configReleaseReport().fallback_reason).toBeNull()
+    })
+
+    test('control: the SAME candidate failure, daemon NOT shutting down, is quarantined as before', async () => {
+      const bad = baseRelease()
+      serveRelease(api, bad)
+      const failing = fakeOpencode({ startFails: true })
+
+      expect(isDaemonShuttingDown()).toBe(false)
+      const response = await converge(failing)
+
+      expect(response.outcome).toBe('declined')
+      expect(Object.keys(await readQuarantine(store))).toEqual([bad.descriptor.release_id!])
+    })
+
+    test('the next pass — after the daemon comes back up — retries the same release', async () => {
+      const bad = baseRelease()
+      serveRelease(api, bad)
+      const failing = fakeOpencode({ startFails: true })
+      __setDaemonShuttingDownForTests(true)
+      expect((await converge(failing)).outcome).toBe('failed')
+
+      // The supervisor restarted the daemon: a fresh process starts clean.
+      __setDaemonShuttingDownForTests(false)
+      const healthy = fakeOpencode()
+      const retried = await converge(healthy)
+      expect(retried.outcome).toBe('applied')
+    })
+  })
+
+  // ── DEF-B 2026-09-26 — the agent swap must not fire mid-verify ────────────
+  //
+  // The seam that actually raced: `runtime-assets.ts`'s `requestAgentSwapIfIdle`
+  // decides to exit while `config-release.ts`'s `convergeConfigRelease` is
+  // between spawning a candidate and promoting or declining it.
+  // `delayBeforeSwapMs` stands in for the seconds a real box spends
+  // downloading and extracting (the fault-injection seam
+  // `config-release-converge.test.ts` already uses for DEF-DEV-1), so the
+  // window is a schedule, not a race the test has to win by luck.
+  describe('the agent swap is blocked while a config convergence is in flight', () => {
+    function stagedAgentDir() {
+      const dir = mkdtempSync(join(tmpdir(), 'agent-swap-vs-convergence-'))
+      writeFileSync(join(dir, 'agent.next'), 'candidate bytes')
+      writeFileSync(join(dir, 'agent.next.sha256'), `${createHash('sha256').update('candidate bytes').digest('hex')}\n`)
+      return dir
+    }
+
+    test('a swap requested mid-convergence is deferred, not exited', async () => {
+      registerAgentSwapBlocker('config-convergence', isConvergenceInFlight)
+      const agentStateDir = stagedAgentDir()
+
+      const release = baseRelease()
+      serveRelease(api, release)
+      const oc = fakeOpencode()
+
+      expect(isConvergenceInFlight()).toBe(false)
+      const converging = converge(oc, { delayBeforeSwapMs: 300 })
+      // Give `applyDesiredRelease` time to reach the fault-injection hold —
+      // it is deep inside `inFlight` by the time this runs.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(isConvergenceInFlight()).toBe(true)
+
+      const exits: number[] = []
+      const midConvergence = await requestAgentSwapIfIdle({
+        agentStateDir,
+        uptimeMs: 10 * 60_000,
+        turnInFlight: async () => false,
+        exit: (code) => exits.push(code),
+      })
+      expect(midConvergence).toBe('attached')
+      expect(exits).toEqual([])
+
+      const response = await converging
+      expect(response.outcome).toBe('applied')
+      expect(isConvergenceInFlight()).toBe(false)
+
+      const afterConvergence = await requestAgentSwapIfIdle({
+        agentStateDir,
+        uptimeMs: 10 * 60_000,
+        turnInFlight: async () => false,
+        exit: (code) => exits.push(code),
+      })
+      expect(afterConvergence).toBe('exited')
+      expect(exits).toEqual([75])
+
+      rmSync(agentStateDir, { recursive: true, force: true })
+    })
   })
 
   // ── DEF-FLAGON-2 — a healed session must not keep claiming a failure ──────
@@ -922,7 +1051,7 @@ describe('the session is told which commit it runs', () => {
     // every spawn, so the note survives the restart the convergence performs.
     const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-release/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
   })

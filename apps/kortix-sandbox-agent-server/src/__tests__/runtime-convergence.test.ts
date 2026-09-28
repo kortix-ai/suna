@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import {
@@ -23,18 +23,26 @@ import {
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
+  resetCliUpdateBlockedNoticeForTests,
   resetRuntimeConvergenceForTests,
   noteRuntimeConvergence,
   runtimeConvergenceReport,
   resetRuntimeConvergenceReportForTests,
   overlayHash,
   type RuntimeAssetsOptions,
-} from '../runtime-assets'
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
+} from '@/services/runtime-assets/runtime-assets'
 import {
   createOpenCodeAssetsService,
   type OpenCodeAssetsOptions,
   type OpenCodeAssetsRuntime,
-} from '../harness/open-code/assets'
+} from '@/harness/open-code/assets'
+import { resolveHarness } from '@/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 /**
  * Convergent runtime — the v2 half of `reconcileRuntimeAssets`.
@@ -91,6 +99,7 @@ afterEach(async () => {
   resetRuntimeConvergenceReportForTests()
   resetAgentSwapBlockersForTests()
   resetRuntimeConvergenceForTests()
+  resetCliUpdateBlockedNoticeForTests()
   while (dirs.length > 0) await rm(dirs.pop() as string, { recursive: true, force: true })
 })
 
@@ -883,6 +892,10 @@ describe('runtime convergence report', () => {
       staged_agent_sha256: 'd'.repeat(64),
       opencode_version: '1.18.23',
       build: 1787241641,
+      // Never on disk — this call supplied no `catalogSnapshot`, so it reads
+      // as "unconfirmed", the same as an older daemon with no such concept.
+      managed_model_ids: null,
+      managed_catalog_fallback_reason: null,
     })
     // The pass-level fields stay honest about having no pass yet.
     expect(report.build).toBeNull()
@@ -900,6 +913,8 @@ describe('runtime convergence report', () => {
       staged_agent_sha256: null,
       opencode_version: null,
       build: null,
+      managed_model_ids: null,
+      managed_catalog_fallback_reason: null,
     })
   })
 
@@ -1018,6 +1033,93 @@ describe('a candidate binary must run before it replaces a working one', () => {
     expect(result.agent).toBe('staged')
     expect(result.agentSwapPending).toBe(true)
     expect(await readFile(ws.agentNext, 'utf8')).toBe(AGENT_BYTES)
+  })
+})
+
+/**
+ * DEF-C 2026-09-26 — a box created before the image baked `/usr/local/bin`
+ * kortix-owned (SANDBOX_CLI_OWNERSHIP_COMMAND,
+ * packages/shared/src/sandbox/platform-binaries.ts) never gets that fix:
+ * Platinum suspends and resumes the SAME disk instead of rebooting from a new
+ * image, so the image build never re-runs there. Measured on a real box
+ * created 2026-08-25, repeating on every reconcile: `CLI replace failed
+ * {"err":"Error: EACCES: permission denied, open
+ * '/usr/local/bin/.kortix.download...'"}`, forever, even after the daemon's
+ * own `sudo -n chown` escalation.
+ *
+ * `$HOME/.local/bin` is already first on this box's PATH ahead of
+ * `/usr/local/bin` (apps/sandbox/entrypoint.sh `KORTIX_PATH`) and is the
+ * daemon's OWN home directory — writable by `kortix` with no escalation at
+ * all, on every image, old or new. `apps/cli`'s own self-update already
+ * relies on the same location for a non-sandbox install
+ * (apps/cli/src/commands/update.ts).
+ */
+describe('the CLI falls back to the PATH fallback when /usr/local/bin is not writable', () => {
+  test('a writable primary path never touches the fallback', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'OLD-CLI')
+    const fallback = join(ws.stateDir, 'local-bin', 'kortix')
+    const stub = stubFetch()
+
+    const result = await run(ws, stub, { cliFallbackPath: fallback })
+
+    expect(result.cli).toBe('updated')
+    expect(await readFile(ws.cliPath, 'utf8')).toBe(CLI_BYTES)
+    expect(await stat(fallback).then(() => true, () => false)).toBe(false)
+  })
+
+  test('an unwritable primary directory installs to the PATH fallback instead', async () => {
+    const ws = await workspace()
+    const cliDir = join(ws.root, 'bin-locked')
+    const cliPath = join(cliDir, 'kortix')
+    await Bun.write(cliPath, 'OLD-CLI')
+    await chmod(cliDir, 0o555)
+    const fallback = join(ws.stateDir, 'local-bin', 'kortix')
+    const stub = stubFetch()
+
+    try {
+      const result = await run(ws, stub, {
+        cliPath,
+        cliFallbackPath: fallback,
+        // No escalation available on this box either — the real failure mode.
+        unlockCliDir: async () => false,
+      })
+
+      expect(result.cli).toBe('updated')
+      // The primary path is untouched: no escalation succeeded, so nothing
+      // there was ever writable.
+      expect(await readFile(cliPath, 'utf8')).toBe('OLD-CLI')
+      expect(await readFile(fallback, 'utf8')).toBe(CLI_BYTES)
+    } finally {
+      await chmod(cliDir, 0o755)
+    }
+  })
+
+  test('neither location writable: loud, not a silent forever-failed', async () => {
+    const ws = await workspace()
+    const cliDir = join(ws.root, 'bin-locked-2')
+    const cliPath = join(cliDir, 'kortix')
+    await Bun.write(cliPath, 'OLD-CLI')
+    await chmod(cliDir, 0o555)
+    const fallbackDir = join(ws.root, 'fallback-locked')
+    const fallback = join(fallbackDir, 'kortix')
+    await mkdir(fallbackDir, { recursive: true })
+    await chmod(fallbackDir, 0o555)
+    const stub = stubFetch()
+
+    try {
+      const result = await run(ws, stub, {
+        cliPath,
+        cliFallbackPath: fallback,
+        unlockCliDir: async () => false,
+      })
+
+      expect(result.cli).toBe('failed')
+      expect(result.reasons?.cli).toContain('cannot be updated')
+    } finally {
+      await chmod(cliDir, 0o755)
+      await chmod(fallbackDir, 0o755)
+    }
   })
 })
 

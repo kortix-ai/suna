@@ -6,7 +6,9 @@ import { ACCOUNT_KEYS } from './features/account/keys.ts';
 import { APPS_KEYS } from './features/apps/keys.ts';
 import { CUSTOMIZE_KEYS } from './features/customize/keys.ts';
 import { FILES_KEYS } from './features/files/keys.ts';
+import { LINKS_KEYS } from './features/links/keys.ts';
 import { LOGIN_KEYS } from './features/login/keys.ts';
+import { PORTS_KEYS } from './features/ports/keys.ts';
 import { REVIEW_KEYS } from './features/review/keys.ts';
 import { COMPOSER_KEYMAP } from './features/session/composer/keys.ts';
 import { TRANSCRIPT_KEYS } from './features/session/transcript/keys.ts';
@@ -107,6 +109,8 @@ describe('allBindings', () => {
     ['customize', CUSTOMIZE_KEYS],
     ['account', ACCOUNT_KEYS],
     ['login', LOGIN_KEYS],
+    ['ports', PORTS_KEYS],
+    ['links', LINKS_KEYS],
   ];
 
   test('every feature table is included, whole', () => {

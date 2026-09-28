@@ -503,7 +503,7 @@ describe('TriggerSchema', () => {
     ).not.toThrow();
   });
 
-  // `monitor` is the third trigger type (docs/specs/2026-08-12-monitors.md):
+  // `monitor` is the third trigger type:
   // no cron/secret_env wiring, a `run` command plus a `mode` instead.
   test('accepts a monitor trigger', () => {
     expect(() =>

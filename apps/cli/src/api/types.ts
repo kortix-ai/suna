@@ -154,7 +154,7 @@ export interface ProjectSession {
 
 // ── Triggers ──────────────────────────────────────────────────────────────
 
-/** A `type: monitor` trigger's shape — see docs/specs/2026-08-12-monitors.md. */
+/** A `type: monitor` trigger's shape. */
 export type MonitorMode = 'poll' | 'stream';
 
 export interface ProjectTrigger {

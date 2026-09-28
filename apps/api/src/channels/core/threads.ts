@@ -74,10 +74,13 @@ export async function findChatThreadSession(
 
 /**
  * Map a thread to a session. The first mapping wins: a thread already bound
- * keeps its session.
+ * keeps its session. Returns the thread's owner after the write, so a caller
+ * can tell "bound to me" from "already bound elsewhere".
  */
-export async function bindChatThread(key: ChatThreadKey & { projectId: string; sessionId: string }): Promise<void> {
-  await db
+export async function bindChatThread(
+  key: ChatThreadKey & { projectId: string; sessionId: string },
+): Promise<{ sessionId: string; projectId: string } | null> {
+  const [inserted] = await db
     .insert(chatThreads)
     .values({
       projectId: key.projectId,
@@ -86,7 +89,9 @@ export async function bindChatThread(key: ChatThreadKey & { projectId: string; s
       threadId: key.threadId,
       sessionId: key.sessionId,
     })
-    .onConflictDoNothing({ target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId] });
+    .onConflictDoNothing({ target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId] })
+    .returning({ sessionId: chatThreads.sessionId, projectId: chatThreads.projectId });
+  return inserted ?? (await findChatThread(key));
 }
 
 /** Record a delivered message on the thread. */

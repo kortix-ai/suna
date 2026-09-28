@@ -156,8 +156,9 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
 
   test('two identical prompts in a row push ONCE — the byte-identical follow-ups skip the daemon', async () => {
     // The daemon would no-op an identical push; the round-trip itself was ~1s
-    // of dead air on every queued message. Within PROMPT_ENV_PUSH_TTL_MS an
-    // unchanged signature does not reach the box at all.
+    // of dead air on every queued message. An unchanged signature does not
+    // reach the box at all — indefinitely, not just within a TTL window (see
+    // `decideEnvSyncAction`).
     await prompt();
     await prompt();
     await prompt();

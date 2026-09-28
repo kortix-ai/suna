@@ -181,6 +181,10 @@ export interface OAuthConsentRequest {
   scope?: string;
   /** True when this user already approved this client for every requested scope — approve without asking. */
   remembered?: boolean;
+  /** True when the client registered itself (RFC 7591, e.g. an MCP client) — no account vouches for it. */
+  self_registered?: boolean;
+  /** Where approval sends the browser: the redirect host, or a native app's scheme (`cursor:`). */
+  redirect_to?: string;
 }
 
 export function getOAuthConsentRequest(

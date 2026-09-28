@@ -25,7 +25,7 @@ const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = requir
 const { menuContextForUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
 const { backgroundForTheme, normalizeTheme } = require('./theme-state');
-const { restoreWindowState } = require('./window-state');
+const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
 const { buildFrontendMenu } = require('./frontend-menu');
 const { resolveChannel } = require('./update-channel');
 const { openInstanceChooser, focusInstanceChooser } = require('./instance-chooser');
@@ -296,8 +296,8 @@ function createMainWindow() {
 
   mainWindow = new BrowserWindow({
     ...restored.bounds,
-    minWidth: 720,
-    minHeight: 480,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
     show: false, // revealed once the remote app finishes loading (splash covers the gap)
     backgroundColor: currentBackgroundColor(),
     title: 'Kortix',

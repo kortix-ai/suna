@@ -1,5 +1,5 @@
 /**
- * Config archive store (docs/specs/config-releases.md, "Store").
+ * Config archive store.
  *
  * The store is a cache. The API can rebuild every config archive from its Git
  * mirror, so a store failure never blocks a release.

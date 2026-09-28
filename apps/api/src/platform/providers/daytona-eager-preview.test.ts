@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 mock.module('../../config', () => ({
   config: {

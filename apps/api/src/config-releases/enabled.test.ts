@@ -1,6 +1,5 @@
 /**
- * The `config_releases` flag resolution (docs/specs/config-releases.md,
- * "Feature flag"): default ON, an explicit project override wins, and the
+ * The `config_releases` flag resolution: default ON, an explicit project override wins, and the
  * operator kill switch beats both.
  */
 import { describe, expect, test } from 'bun:test';

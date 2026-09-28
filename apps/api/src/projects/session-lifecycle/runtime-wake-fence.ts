@@ -204,6 +204,15 @@ export function runtimeWakeInProgress(
 export const STAMPED_RUNTIME_FAILURE_STOP_REASONS = [
   'runtime_wake_failed',
   'runtime_boot_failed',
+  // Rule 4 admission control (the runtime-convergence contract (PR #7785)):
+  // kept defensively. An admission refusal is no longer PARKED with this
+  // stamp — it is retired and replaced on the session
+  // (`retireRefusedRuntime` / `replaceRefusedRuntimeOnOpen`,
+  // routes/shared.ts), so no live code path writes it any more (see
+  // STOP_REASONS_NOT_YET_EMITTED in ../stop-reason.ts). Left here so a park
+  // written under the earlier wiring still gets the escalating cooldown
+  // instead of being re-woken forever.
+  'runtime_admission_refused',
 ] as const;
 
 /**

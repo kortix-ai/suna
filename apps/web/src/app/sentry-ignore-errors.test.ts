@@ -79,3 +79,17 @@ test('sentry.client.config drops the old-WebKit lookbehind parse failure', async
   const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
   expect(source).toContain("'invalid group specifier name'");
 });
+
+test('sentry.client.config drops the Firefox cross-compartment onerror-chain failure', async () => {
+  // Better Stack pattern 0f9e1780… (Kortix Frontend prod, 2026-09-27): 107
+  // events from one Firefox session in 4 minutes, call site
+  // `GLOBAL_OBJ.onerror`. A Firefox extension set `window.onerror` before the
+  // Sentry SDK loaded. The SDK's global handler chains to it with
+  // `_oldOnErrorHandler.apply(this, arguments)`, and Firefox refuses property
+  // access on the extension-compartment function. The throw's frame is the
+  // SDK inside our bundle, so only a message gate can drop it. Anchored: a
+  // first-party cross-origin access names a different property.
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  expect(source).toContain('/^(?:Error: )?Permission denied to access property "apply"$/');
+  expect(source).not.toContain("'Permission denied to access property'");
+});

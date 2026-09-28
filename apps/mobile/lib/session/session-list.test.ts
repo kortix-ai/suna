@@ -9,6 +9,7 @@ import {
   sessionStatusFilterSummary,
   flattenSessionGroups,
   groupSessionsByActivity,
+  groupSectionsByCoordinator,
   groupSessionsByCoordinator,
   recentSessions,
   sessionDisplayStatus,
@@ -106,9 +107,10 @@ describe('sessionDisplayStatus', () => {
     expect(sessionDisplayStatus(makeSession({ status: 'running' }))).toBe('running');
   });
 
-  test('stopped and completed both collapse to stopped', () => {
+  // One vocabulary with web: a finished session is Done, not Stopped.
+  test('stopped reads stopped; completed reads done', () => {
     expect(sessionDisplayStatus(makeSession({ status: 'stopped' }))).toBe('stopped');
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('stopped');
+    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('done');
   });
 
   test('failed stays failed', () => {
@@ -130,7 +132,13 @@ describe('sessionDisplayStatus', () => {
   });
 
   test('review count defaults to zero when omitted', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('stopped');
+    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('done');
+  });
+
+  test('a migrated session that has not run reads legacy', () => {
+    expect(
+      sessionDisplayStatus(makeSession({ status: 'stopped', metadata: { legacy_migration: true } } as never)),
+    ).toBe('legacy');
   });
 });
 
@@ -478,7 +486,8 @@ describe('filterSessionsByStatus', () => {
     ).toEqual(['a', 'b']);
   });
 
-  test('completed and stopped both resolve to the stopped filter', () => {
+  // One vocabulary with web: Done and Stopped are two filters, as they are two words.
+  test('completed matches Done and stopped matches Stopped', () => {
     const sessions = [
       makeSession({ session_id: 'a', status: 'completed' }),
       makeSession({ session_id: 'b', status: 'stopped' }),
@@ -486,7 +495,8 @@ describe('filterSessionsByStatus', () => {
     ];
     expect(
       filterSessionsByStatus(sessions, new Set(['stopped'])).map((s) => s.session_id),
-    ).toEqual(['a', 'b']);
+    ).toEqual(['b']);
+    expect(filterSessionsByStatus(sessions, new Set(['done'])).map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('a set matching nothing returns an empty array', () => {
@@ -508,7 +518,7 @@ describe('filterSessionsByStatus', () => {
   });
 
   test('the filter sheet offers no separate Starting option', () => {
-    expect(SESSION_STATUS_FILTERS).toEqual(['needs-you', 'running', 'stopped', 'failed']);
+    expect(SESSION_STATUS_FILTERS).toEqual(['needs-you', 'running', 'done', 'stopped', 'failed', 'legacy']);
   });
 
   test('needs-you matches the sessions with a pending inbox item', () => {
@@ -688,10 +698,17 @@ describe('groupSessionsByCoordinator', () => {
     const a = makeSession({ session_id: 'a', metadata: { spawned_by_session: 'b' } });
     const b = makeSession({ session_id: 'b', metadata: { spawned_by_session: 'a' } });
     const groups = groupSessionsByCoordinator([a, b]);
-    // Both point at each other, so neither has a parentless entry to become
-    // a `groups` root; the cycle resolves to no group at all rather than an
-    // infinite loop or a crash.
-    expect(groups).toEqual([]);
+    // Both point at each other, so neither has a root. Each renders
+    // top-level, once, instead of looping forever or vanishing.
+    expect(groups.map((g) => g.session.session_id)).toEqual(['a', 'b']);
+    expect(groups.every((g) => g.children.length === 0)).toBe(true);
+  });
+
+  test('a quiet coordinator takes the position of its newest child', () => {
+    // Newest-first list: the child is working, the coordinator went quiet.
+    const groups = groupSessionsByCoordinator([childA, solo, coordinator]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['coord-1', 'solo-1']);
+    expect(groups[0]?.children.map((c) => c.session_id)).toEqual(['child-a']);
   });
 
   test('never mutates the input array', () => {
@@ -715,6 +732,18 @@ describe('flattenSessionGroups', () => {
       ['coord-1', false],
       ['child-a', true],
       ['solo-1', false],
+    ]);
+  });
+
+  test('only the last sub-agent of a group ends the connector', () => {
+    const coordinator = makeSession({ session_id: 'coord-1' });
+    const childA = makeSession({ session_id: 'child-a', metadata: { spawned_by_session: 'coord-1' } });
+    const childB = makeSession({ session_id: 'child-b', metadata: { spawned_by_session: 'coord-1' } });
+    const rows = flattenSessionGroups([coordinator, childA, childB]);
+    expect(rows.map((r) => [r.session.session_id, r.last])).toEqual([
+      ['coord-1', false],
+      ['child-a', false],
+      ['child-b', true],
     ]);
   });
 
@@ -930,5 +959,31 @@ describe('showSubsessionCountBadge', () => {
   test('a negative or non-finite count never shows a badge', () => {
     expect(showSubsessionCountBadge(-1)).toBe(false);
     expect(showSubsessionCountBadge(Number.NaN)).toBe(false);
+  });
+});
+
+describe('groupSectionsByCoordinator', () => {
+  const coord = makeSession({ session_id: 'coord' });
+  const child = makeSession({ session_id: 'child', metadata: { spawned_by_session: 'coord' } } as never);
+  const solo = makeSession({ session_id: 'solo' });
+
+  test('a child in an earlier section pulls its coordinator group there', () => {
+    // e.g. child is "Running"/"Today", coordinator is "Completed"/"Last week".
+    const out = groupSectionsByCoordinator([
+      { id: 'running', sessions: [child] },
+      { id: 'done', sessions: [solo, coord] },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(['running', 'done']);
+    expect(out[0]!.groups.map((g) => g.session.session_id)).toEqual(['coord']);
+    expect(out[0]!.groups[0]!.children.map((c) => c.session_id)).toEqual(['child']);
+    expect(out[1]!.groups.map((g) => g.session.session_id)).toEqual(['solo']);
+  });
+
+  test('a section left with no group is dropped', () => {
+    const out = groupSectionsByCoordinator([
+      { id: 'running', sessions: [child] },
+      { id: 'done', sessions: [coord] },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(['running']);
   });
 });

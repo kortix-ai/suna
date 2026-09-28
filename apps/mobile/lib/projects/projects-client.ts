@@ -93,7 +93,7 @@ export {
   updateExperimentalFeature,
 } from '@kortix/sdk';
 
-// ── Dev (web parity: customize/sections/dev-view) ─────────────────────────────
+// ── Dev ───────────────────────────────────────────────────────────────────────
 // inviteRepoCollaborator / isManagedGithubProject re-exported above.
 
 // ── Project sessions (one branch + sandbox per row; web-aligned) ────────────
