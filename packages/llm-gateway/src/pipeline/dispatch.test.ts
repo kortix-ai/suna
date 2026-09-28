@@ -231,6 +231,23 @@ describe('dispatch: one attempt plan', () => {
     expect(sent.map((s) => s.host)).toEqual(['provider-a', 'g-byok']);
   });
 
+  // Incident 2026-09-28: a ChatGPT-plan model (billing 'none', like BYOK) hit
+  // its usage limit, and the fallback chain the project set for it (managed
+  // models) never ran. A chain the project chose is consent to its billing.
+  test('a fallback chain the project chose runs after a BYOK primary fails, Kortix-billed or not', async () => {
+    const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
+    const { run, sent } = harness((_s, index) => (index === 0 ? status(429) : ok()), {
+      resolveCandidates: async () => [upstream('glm-managed')],
+    });
+    const outcome = await run({
+      model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['glm-5.3-flash'],
+      fallbackOn: 'any-error', fallbackChosenByProject: true,
+    });
+    expect(sent.map((s) => s.host)).toEqual(['provider-a', 'glm-managed']);
+    expect(outcome.model).toBe('glm-5.3-flash');
+    expect(outcome.response?.status).toBe(200);
+  });
+
   test('a client that left stops the plan', async () => {
     const client = new AbortController();
     const { run, sent } = harness(
