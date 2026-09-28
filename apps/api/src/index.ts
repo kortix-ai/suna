@@ -83,6 +83,7 @@ import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
 import { compressResponse } from './middleware/compress';
 import { upstreamTiming } from './middleware/upstream-timing';
+import { requestCompletedLevel } from './middleware/request-log-level';
 import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
@@ -433,7 +434,9 @@ app.use('*', async (c, next) => {
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
-    const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
+    // A 5xx is a failure; a successful response is info even when it is slow
+    // (see request-log-level.ts).
+    const level = requestCompletedLevel(status, duration);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
