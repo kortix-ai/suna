@@ -471,6 +471,38 @@ export function bindAppViewerSession(userId: string): void {
   });
 }
 
+async function passwordAccessResponse(
+  request: Request,
+  app: AppAccessRow,
+  secret: string,
+  localHttp: boolean,
+): Promise<Response> {
+  const form = await request.formData().catch(() => null);
+  const password = String(form?.get('password') ?? '');
+  if (app.accessPasswordHash && await Bun.password.verify(password, app.accessPasswordHash)) {
+    const session = createAppAccessToken({
+      appId: app.appId,
+      kind: 'password',
+      revision: app.accessRevision,
+      expiresAt: new Date(Date.now() + 8 * 60 * 60_000),
+    }, secret);
+    const location = safeAppReturnTo(String(form?.get('return_to') ?? '/'));
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location,
+        'set-cookie': appAccessCookie(session, 8 * 60 * 60, localHttp),
+      },
+    });
+  }
+  return appAccessResponse(
+    request,
+    app,
+    true,
+    safeAppReturnTo(String(form?.get('return_to') ?? '/')),
+  );
+}
+
 export async function authorizeAppRequest(
   request: Request,
   url: URL,
@@ -541,30 +573,7 @@ export async function authorizeAppRequest(
   }
 
   if (app.accessMode === 'password' && request.method === 'POST' && url.pathname === '/_kortix/access/password') {
-    const form = await request.formData().catch(() => null);
-    const password = String(form?.get('password') ?? '');
-    if (app.accessPasswordHash && await Bun.password.verify(password, app.accessPasswordHash)) {
-      const session = createAppAccessToken({
-        appId: app.appId,
-        kind: 'password',
-        revision: app.accessRevision,
-        expiresAt: new Date(Date.now() + 8 * 60 * 60_000),
-      }, secret);
-      const location = safeAppReturnTo(String(form?.get('return_to') ?? '/'));
-      return new Response(null, {
-        status: 303,
-        headers: {
-          location,
-          'set-cookie': appAccessCookie(session, 8 * 60 * 60, localHttp),
-        },
-      });
-    }
-    return appAccessResponse(
-      request,
-      app,
-      true,
-      safeAppReturnTo(String(form?.get('return_to') ?? '/')),
-    );
+    return passwordAccessResponse(request, app, secret, localHttp);
   }
   return appAccessResponse(request, app);
 }
