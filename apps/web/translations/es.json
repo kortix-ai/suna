@@ -1150,6 +1150,10 @@
         "config_releases": {
           "name": "Versiones de configuración",
           "description": "Ejecuta las sesiones con la configuración de agente actual de la rama base, servida en solo lectura, para que un agente, skill o herramienta fusionado llegue a cada sesión en curso. Desactivado, cada sesión lee su propia carpeta de configuración del workspace."
+        },
+        "mcp": {
+          "name": "Servidor MCP",
+          "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
         }
       }
     },

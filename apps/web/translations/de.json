@@ -1150,6 +1150,10 @@
         "config_releases": {
           "name": "Config-Releases",
           "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
+        },
+        "mcp": {
+          "name": "MCP-Server",
+          "description": "Verbinde Claude, ChatGPT, Cursor, Codex oder einen anderen MCP-Client per OAuth mit diesem Projekt. Der Client meldet sich als du an und ruft Kortix mit deinen Berechtigungen auf. Die URL findest du unter „MCP verbinden“ im Workspace-Menü."
         }
       }
     },
