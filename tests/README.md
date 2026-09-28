@@ -77,7 +77,7 @@ re-triggers an open pull request without a push. A plain pull request into
 run blocks nothing — `main` and `staging` require no status check — and a red
 run comments on the offending commit with the failing lane names. A cancelled
 run means a newer commit superseded it. Deployed-target runs are separate:
-`deploy-preview.yml` (`--target-full` against a preview origin) and
+`deploy-preview.yml` (`--target-full` against a preview origin, on dispatch only) and
 `tests-release.yml` (`--target-*-full` against deployed staging, whose
 `full suite + quality gates` job is the only required check in the repository).
 

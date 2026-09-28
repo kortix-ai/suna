@@ -85,3 +85,34 @@ export const SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND =
   ` && echo '{"autoupdate":false}' > ${SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH}` +
   ` && chown kortix:kortix ${SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH}` +
   ` && chmod 0644 ${SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH}`;
+
+/** The image-baked managed `kortix-*` skill overlay the daemon overlays at boot. */
+export const SANDBOX_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills';
+
+/**
+ * Where a box records which runtime assets it is running.
+ *
+ * Same constant as the daemon's `DEFAULT_STATE_PATH`
+ * (apps/kortix-sandbox-agent-server/src/runtime-assets.ts);
+ * `platform-binaries.test.ts` asserts the two spellings still agree.
+ */
+export const SANDBOX_RUNTIME_ASSETS_STATE_PATH = '/opt/kortix/runtime-assets-state.json';
+
+/**
+ * Bake the bookkeeping at IMAGE BUILD, not at first reconcile.
+ *
+ * Baking the CLI, the daemon and the skill overlay is only half of "this box
+ * is current". Until this file exists the box answers `runtime.running` with
+ * nulls, so the control plane cannot tell a fresh box from a months-old one —
+ * measured at ~140 s on a cold preview box (boot 23:41:53, first pass complete
+ * 23:44:15). And the pass that closes the window is not free: with no recorded
+ * overlay hash the skills check cannot short-circuit, so every cold box
+ * downloads an overlay it already carries and hashes ~210 MB of binaries to
+ * learn that nothing changed.
+ *
+ * The verb runs the daemon binary the image just baked, so the digests,
+ * the sizes and the mtimes describe the files that are actually there, and
+ * the overlay hash comes from the daemon's own `overlayHash` rather than a
+ * second implementation. It fails the build when an artifact is missing.
+ */
+export const SANDBOX_RUNTIME_ASSETS_STATE_COMMAND = 'kortix-agent bake-runtime-assets-state';

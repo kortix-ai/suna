@@ -30,8 +30,6 @@
     "lint": "bun scripts/lint-migrations.ts && bun scripts/squawk-lint.ts"
   },
   "dependencies": {
-    "dotenv": "^16",
-    "dotenv-expand": "^12",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "node-pg-migrate": "^8",

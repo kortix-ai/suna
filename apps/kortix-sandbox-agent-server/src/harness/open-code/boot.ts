@@ -45,6 +45,7 @@ import {
   convergeRuntimeAssetsAtTurnEnd,
   scheduleRuntimeAssetsReconcile,
 } from '../../runtime-assets'
+import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import {
   flattenOpencodeError,
@@ -86,7 +87,7 @@ import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { startStaticWebServer } from '../../static-web'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
-import { configureSessionTokenHealth, noteControlPlaneResponse } from '../../session-token-health'
+import { noteControlPlaneResponse } from '../../session-token-health'
 import type { HarnessBootContext } from '../harness'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
@@ -220,11 +221,6 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   const opencode = harness.native
   const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
   const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
-  // The 401-streak circuit breaker (session-token-health.ts): once the API has
-  // told this box, repeatedly, that its session token is dead, stop calling
-  // home and exit — exitCode 0 so the entrypoint supervisor treats it as a
-  // clean stop, never a crash to relaunch or count against a rollback budget.
-  configureSessionTokenHealth(() => shutdown({ reason: 'session-token-dead', exitCode: 0 }))
   // Hand the convergence machinery this session's live runtime, once.
   //
   // Two things need it. opencode convergence restarts opencode, so it goes
@@ -679,6 +675,13 @@ function runtimeReadyTail(
   scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
   scheduleConvergenceAfterReady(opencode, cfg, bootMark)
+  // the runtime-convergence contract (PR #7785), Rule 3: convergence must keep running
+  // for as long as this box is alive, not only once at boot. Both readiness
+  // exits call `runtimeReadyTail` (this function's own doc, above), including
+  // warm-fork adoption, so this always wires the CURRENT opencode/cfg;
+  // `wireRuntimeTruth`'s ticker is idempotent (a second call here — a second
+  // adoption on the same process — does not stack a second interval).
+  wireRuntimeTruth(cfg, opencode)
 }
 
 async function startSessionRuntime(

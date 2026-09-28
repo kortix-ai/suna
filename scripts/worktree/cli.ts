@@ -5,7 +5,7 @@
  * Interactive: run `pnpm worktree` for a menu, or `pnpm worktree create` for a
  * guided wizard. Non-interactive (CI/scripts):
  *
- *   pnpm worktree create --name <feat> [--branch b] [--from HEAD] [--db] [--no-start] [--yes]
+ *   pnpm worktree create --name <feat> [--branch b] [--from main] [--db] [--no-start] [--yes]
  *   pnpm worktree start <feat> [--billing] [--stripe]
  *   pnpm worktree stop|status <feat>
  *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
@@ -19,7 +19,7 @@
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
-  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs, removeWorktree,
+  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, freshBase, worktreeAddArgs, removeWorktree,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
@@ -366,7 +366,9 @@ async function cmdCreate(a: Args) {
   const root = repoRoot();
   const wtPath = defaultWorktreePath(root, name);
   const branch = (typeof a.flags.branch === 'string' && a.flags.branch) || name;
-  const from = (typeof a.flags.from === 'string' && a.flags.from) || 'HEAD';
+  // `main` (the default) resolves to a freshly fetched origin/main, never the
+  // primary checkout's possibly stale local main.
+  const from = freshBase(root, (typeof a.flags.from === 'string' && a.flags.from) || 'main');
 
   if (!branchExists(root, branch)) {
     const conflict = branchConflict(root, branch);

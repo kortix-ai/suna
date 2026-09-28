@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   accountIdFromJwt,
   applyRefresh,
+  isPermanentRefreshRejection,
   needsRefresh,
   parseCodexAuth,
+  refreshErrorCode,
   tokenStillValid,
 } from './codex-core';
 
@@ -83,5 +85,49 @@ describe('accountIdFromJwt', () => {
   });
   test('returns undefined for a non-jwt', () => {
     expect(accountIdFromJwt('garbage')).toBeUndefined();
+  });
+});
+
+// Measured against https://auth.openai.com/oauth/token on 2026-09-25: an
+// unknown refresh token answers 401 with this body; an empty one answers 400
+// `empty_string` (our request was malformed, the login is not dead).
+describe('refreshErrorCode', () => {
+  test('reads the OpenAI error object', () => {
+    expect(refreshErrorCode({ error: {
+      message: 'Could not validate your refresh token. Please try signing in again.',
+      type: 'invalid_request_error', param: null, code: 'invalid_refresh_token',
+    } })).toBe('invalid_refresh_token');
+  });
+
+  test('reads an RFC 6749 error string', () => {
+    expect(refreshErrorCode({ error: 'invalid_grant', error_description: 'Unknown or invalid refresh token.' })).toBe('invalid_grant');
+  });
+
+  test('is undefined for any other body', () => {
+    expect(refreshErrorCode(null)).toBeUndefined();
+    expect(refreshErrorCode('Bad Gateway')).toBeUndefined();
+    expect(refreshErrorCode({ error: { message: 'no code' } })).toBeUndefined();
+  });
+});
+
+describe('isPermanentRefreshRejection', () => {
+  test('a 401 means the login is not accepted any more, whatever the code', () => {
+    expect(isPermanentRefreshRejection(401, 'invalid_refresh_token')).toBe(true);
+    expect(isPermanentRefreshRejection(401, undefined)).toBe(true);
+  });
+
+  test('a 400 or 403 is permanent only with a dead-token code', () => {
+    for (const code of ['invalid_grant', 'invalid_refresh_token', 'refresh_token_expired', 'refresh_token_reused', 'refresh_token_invalidated']) {
+      expect(isPermanentRefreshRejection(400, code)).toBe(true);
+      expect(isPermanentRefreshRejection(403, code)).toBe(true);
+    }
+    expect(isPermanentRefreshRejection(400, 'empty_string')).toBe(false);
+    expect(isPermanentRefreshRejection(403, undefined)).toBe(false);
+  });
+
+  test('rate limits, timeouts and server errors are transient', () => {
+    for (const status of [408, 425, 429, 500, 502, 503, 504]) {
+      expect(isPermanentRefreshRejection(status, 'invalid_grant')).toBe(false);
+    }
   });
 });

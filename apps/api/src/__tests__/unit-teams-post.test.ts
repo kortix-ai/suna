@@ -14,12 +14,14 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 const rows: Array<{ platform: string; channelId: string; projectId: string; workspaceId: string; channelName: string | null; channelType: string | null }> = [];
 const sent: Array<{ conversationId: string; tenantId?: string; kind: 'card' | 'text' }> = [];
 let cardOk = true;
+let storedServiceUrl: string | null = 'https://smba.trafficmanager.net/emea/';
 
 describe('postToTeamsConversation', () => {
   beforeEach(() => {
     rows.length = 0;
     sent.length = 0;
     cardOk = true;
+    storedServiceUrl = 'https://smba.trafficmanager.net/emea/';
     rows.push({
       platform: 'teams',
       channelId: '19:mine@thread.tacv2',
@@ -83,6 +85,30 @@ describe('postToTeamsConversation', () => {
     expect(sent.map((s) => s.kind)).toEqual(['card', 'text']);
   });
 
+  // Every send into a conversation (proactive posts, file uploads) resolves
+  // the address here, so nothing but the id comes from the caller.
+  test('resolves a bound conversation to the server-side address: stored service URL, tenant and type from the binding', async () => {
+    const { resolveTeamsProjectConversation } = await import('../channels/teams/post');
+    const res = await resolveTeamsProjectConversation('p1', '19:mine@thread.tacv2');
+    expect(res).toEqual({
+      ok: true,
+      ref: {
+        serviceUrl: 'https://smba.trafficmanager.net/emea/',
+        conversationId: '19:mine@thread.tacv2',
+        tenantId: 'tenant-1',
+        projectId: 'p1',
+      },
+      conversationType: 'channel',
+    });
+  });
+
+  test('resolves nothing for another project, and 409 until an inbound activity stored a service URL', async () => {
+    const { resolveTeamsProjectConversation } = await import('../channels/teams/post');
+    expect(await resolveTeamsProjectConversation('p1', '19:someone-elses@thread.tacv2')).toMatchObject({ ok: false, status: 404 });
+    storedServiceUrl = null;
+    expect(await resolveTeamsProjectConversation('p1', '19:mine@thread.tacv2')).toMatchObject({ ok: false, status: 409 });
+  });
+
   test('lists only the project own conversations as targets', async () => {
     const { listTeamsPostTargets } = await import('../channels/teams/post');
     const targets = await listTeamsPostTargets('p1');
@@ -130,7 +156,7 @@ mock.module('@kortix/db', () => ({
 }));
 
 mock.module('../channels/install-store', () => ({
-  loadTeamsServiceUrlForProject: async () => 'https://smba.trafficmanager.net/emea/',
+  loadTeamsServiceUrlForProject: async () => storedServiceUrl,
 }));
 
 mock.module('../channels/teams-api', () => ({

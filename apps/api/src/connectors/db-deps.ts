@@ -25,6 +25,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { bindSlackThreadToSession } from '../channels/slack/binding';
 import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
@@ -751,6 +752,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Session metadata is user-writable, so it is not a trusted routing source
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
+    bindSlackThread: (input) => bindSlackThreadToSession(input),
     loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
       const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);

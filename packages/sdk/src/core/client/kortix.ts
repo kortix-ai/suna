@@ -1250,6 +1250,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
       proxyUrl: (url?: string) =>
         proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
+      /**
+       * The AUTHENTICATED backend proxy URL for a given sandbox port of THIS
+       * session's runtime: `${backendUrl}/p/{externalId}/{port}` — no browser
+       * preview-origin rewriting. This is the URL a local port-forward proxy
+       * dials with the caller's own bearer token (see `getSandboxUrlForExternalId`).
+       * Use `previewUrl()`/`proxyUrl()` instead for a browser tab.
+       */
+      sandboxPortUrl: (port: number) =>
+        getSandboxUrlForExternalId(requireReady('sandboxPortUrl').sandboxId, port),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure

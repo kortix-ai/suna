@@ -394,6 +394,17 @@ export async function runPrePromptEnvSync(
     userId,
   });
   try {
+    // NOT R2 material, on purpose — `command-env-sync.test.ts` ("Refused
+    // BEFORE the grant re-mint — one switch never half-applies") pins this:
+    // `remintGrant` re-points the session token's connector/CLI grant, a real
+    // DB mutation, and it must never even START when `syncEnv` (which pushes
+    // THIS agent's secret grant to the box) has failed — applying the grant
+    // re-mint for an agent whose env was never actually established on the
+    // sandbox is exactly the half-applied switch this ordering exists to
+    // prevent. A first pass at this file ran the two concurrently as a
+    // latency win; the invariant test caught it (`remintGrant` fired even
+    // though `syncEnv` threw) and it was reverted. Sequential is correct
+    // here, not merely unoptimized.
     await deps.syncEnv({
       projectId: record.projectId,
       sessionId: record.sessionId,
