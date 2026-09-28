@@ -13,7 +13,9 @@
  * Read-only, no fixtures, no sandboxes.
  */
 import { flow } from '../core/flow';
+import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
+import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
 import type { CreatedProject, FlowContext } from '../core/types';
 
 async function createProjectPat(ctx: FlowContext, label: string) {
@@ -400,6 +402,18 @@ flow(
 // are proved in apps/kortix-sandbox-agent-server/src/__tests__/runtime-convergence.test.ts,
 // and the comparison and the memo in
 // apps/api/src/runtime-assets/__tests__/running-assets.test.ts.
+//
+// TEST DEFECT, fixed here: on a deployed target, `env.target !== 'local'` takes
+// `ctx.fixtures.project()` with no `seed`/`managedGit` down the SAME
+// database-only branch (`tests/src/fixtures/world.ts` `createProject`,
+// `canCreateDatabaseProject && (... || (!opts?.seed && !opts?.managedGit))`),
+// so its `repo_url` was unreachable from the real box exactly like the local
+// case above — every gate run hit `repo_materialization_failed` and burned the
+// full 600s wait. `bootBox` now takes a `{ seed: true }` project (real managed
+// Git repo, starter seeded), the same fixture `SESS-30` uses for the same
+// reason. The start-wait is also wrapped with
+// `markSessionReadinessTimeoutRetryable`, so a genuine transient boot timeout
+// gets the session-runtime retry class instead of failing the gate outright.
 
 /** What a box says it is RUNNING — the health `runtime.running` block. */
 interface RunningAssets {
@@ -423,26 +437,32 @@ interface BootedBox {
 /** Boot a session to `ready` and return its box's addresses. */
 async function bootBox(ctx: FlowContext, project: CreatedProject): Promise<BootedBox> {
   const session = await ctx.fixtures.session(project);
-  const started = await waitFor(
-    async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
-          params: { projectId: project.id, sessionId: session.id },
-          query: { wait_ms: '8000' },
-          timeoutMs: 25_000,
-        });
-      if (r.statusCode >= 500) return null;
-      r.status(200);
-      return r.json<any>();
-    },
-    {
-      until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-      timeoutMs: 600_000,
-      intervalMs: 3_000,
-      description: `session runtime ready for ${session.id}`,
-    },
-  );
+  let started: any;
+  try {
+    started = await waitFor(
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post('/v1/projects/:projectId/sessions/:sessionId/start', {}, {
+            params: { projectId: project.id, sessionId: session.id },
+            query: { wait_ms: '8000' },
+            timeoutMs: 25_000,
+          });
+        if (r.statusCode >= 500) return null;
+        r.status(200);
+        return r.json<any>();
+      },
+      {
+        until: (s) => s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
+        timeoutMs: 600_000,
+        intervalMs: 3_000,
+        description: `session runtime ready for ${session.id}`,
+        retryOnError: isKe2eRetryableError,
+      },
+    );
+  } catch (error) {
+    throw markSessionReadinessTimeoutRetryable(error, session.id);
+  }
   const sandboxId = String(started.sandbox.external_id ?? started.sandbox.externalId);
   const box = (suffix: string) => `/v1/p/${sandboxId}/8000${suffix}`;
   return {
@@ -500,7 +520,10 @@ flow(
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    // `seed: true`: a database-only project's `repo_url` cannot be cloned by a
+    // real box (it boots to `repo_materialization_failed` and never reaches
+    // `ready` — see the note above), so `bootBox` needs a real, clonable repo.
+    const project = await ctx.fixtures.project({ seed: true });
     let booted: BootedBox;
     let running: RunningAssets;
 
@@ -553,7 +576,8 @@ flow(
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.project();
+    // `seed: true`: same reason as RTA-5 — `bootBox` needs a real, clonable repo.
+    const project = await ctx.fixtures.project({ seed: true });
     let booted: BootedBox;
     let conversationId = '';
     let before: RunningAssets;
@@ -645,6 +669,134 @@ flow(
           `a current box must not be changed by sending prompts: ${JSON.stringify(before)} → ${JSON.stringify(after)}`,
         );
       }
+    });
+  },
+);
+
+// ── RTA-7 — content-addressed chunks ───────────────────────────────────────
+//
+// A changed CLI used to cost every box a fresh ~105 MB, of which ~90 MB
+// provably did not change: that prefix is the embedded Bun runtime, identical
+// in every `bun --compile` output. Measured at 1 MiB fixed chunks on real
+// linux-x64 builds — 100 of 102 chunks shared between two CLI builds that
+// differ only in their version stamp (98.0%), and 89 of 102 between the CLI
+// and the daemon (87.3%) — the latter only when one Bun compiled both, which
+// the shipped API image does not do today (two pins, 0 of 111 shared measured
+// on a deployed preview). That is why the sharing step below is a soft check.
+//
+// These two routes are a TRANSFER optimization and nothing else, which is the
+// property this flow exists to pin. The whole-file digest on `RTA-1` stays the
+// authority; a box assembles, verifies against it, and falls back to the full
+// `RTA-3` download on any doubt. So the contract here is narrow: name the same
+// bytes the digest manifest names, serve a chunk under its own digest, and
+// answer 404 rather than guess.
+flow(
+  'RTA-7',
+  {
+    domain: 'runtime-assets',
+    routes: [
+      'GET /v1/runtime-assets/chunk/:sha256',
+      'GET /v1/runtime-assets/chunks/:component',
+      'GET /v1/runtime-assets/manifest',
+      'POST /v1/projects/:projectId/cli-token',
+    ],
+  },
+  async (ctx) => {
+    const projectPat = await createProjectPat(ctx, 'runtime-assets-chunks-pat');
+
+    await ctx.step('ANON cannot read a chunk manifest or a chunk', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/runtime-assets/chunks/cli')).status(401);
+      (
+        await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/runtime-assets/chunk/0000000000000000000000000000000000000000000000000000000000000000')
+      ).status(401);
+    });
+
+    await ctx.step('the chunk manifest names the same bytes the digest manifest does', async () => {
+      const manifest = await projectPat.get('/v1/runtime-assets/manifest');
+      manifest.status(200);
+      const digests = manifest.json<{ cli_sha256: string | null; cli_size: number | null }>();
+      const chunks = await projectPat.get('/v1/runtime-assets/chunks/cli');
+      if (digests.cli_sha256 === null) {
+        // A checkout that never built apps/cli/dist/kortix. The honest answer
+        // is a 404, exactly as `RTA-3` gives for the binary itself.
+        chunks.status(404);
+        return;
+      }
+      chunks.status(200);
+      const body = chunks.json<{ sha256: string; size: number; chunk_size: number; chunks: string[] }>();
+      if (body.sha256 !== digests.cli_sha256) {
+        throw new Error(
+          `the chunk manifest describes other bytes than the digest manifest: ${body.sha256} vs ${digests.cli_sha256}`,
+        );
+      }
+      if (body.size !== digests.cli_size) {
+        throw new Error(`chunk manifest size ${body.size} must equal cli_size ${digests.cli_size}`);
+      }
+      // Offsets are implied, so the count IS the layout. A manifest whose
+      // arithmetic does not hold would have a box allocate the wrong buffer.
+      const expected = Math.ceil(body.size / body.chunk_size);
+      if (body.chunks.length !== expected) {
+        throw new Error(`${body.chunks.length} chunks for ${body.size} bytes; expected ${expected}`);
+      }
+      if (!body.chunks.every((c) => /^[0-9a-f]{64}$/.test(c))) {
+        throw new Error('every chunk must be named by a sha256');
+      }
+    });
+
+    await ctx.step('a chunk is served under its own digest, at its own length', async () => {
+      const chunks = await projectPat.get('/v1/runtime-assets/chunks/cli');
+      if (chunks.statusCode === 404) return;
+      chunks.status(200);
+      const body = chunks.json<{ size: number; chunk_size: number; chunks: string[] }>();
+      const digest = body.chunks[0]!;
+      const r = await projectPat.get(`/v1/runtime-assets/chunk/${digest}`);
+      r.status(200);
+      // The name IS the content, so the ETag is the path.
+      if (r.header('etag') !== `"${digest}"`) {
+        throw new Error(`ETag ${r.header('etag')} must be the requested digest`);
+      }
+      const length = Math.min(body.chunk_size, body.size);
+      if (r.header('content-length') !== String(length)) {
+        throw new Error(`Content-Length ${r.header('content-length')} must be ${length}`);
+      }
+    });
+
+    // ONE INDEX, BOTH BINARIES — asserted as the CONTRACT, not as an overlap.
+    //
+    // An earlier version of this step required the two to share a chunk, on the
+    // reasoning that ~90 MB of each is the same embedded Bun runtime. That is
+    // true of two binaries compiled by the SAME Bun and false of what we ship:
+    // `apps/api/Dockerfile` builds the daemon on `SANDBOX_AGENT_BUN_VERSION`
+    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.2), so they
+    // embed different runtimes. Measured on a deployed preview: 0 of 111 chunks
+    // shared, first MiB already different. Requiring overlap would have pinned a
+    // build coincidence rather than a contract — and would go red on a green
+    // deploy. What the route actually promises is that ONE index answers for
+    // BOTH components, which is what this asserts.
+    await ctx.step('ONE index answers for both binaries', async () => {
+      const cli = await projectPat.get('/v1/runtime-assets/chunks/cli');
+      const agent = await projectPat.get('/v1/runtime-assets/chunks/agent');
+      if (cli.statusCode === 404 || agent.statusCode === 404) return;
+      for (const [name, res] of [['cli', cli], ['agent', agent]] as const) {
+        const first = res.json<{ chunks: string[] }>().chunks[0]!;
+        const r = await projectPat.get(`/v1/runtime-assets/chunk/${first}`);
+        if (r.statusCode !== 200) {
+          throw new Error(`the ${name} chunk index and the chunk route disagree: ${r.statusCode}`);
+        }
+        // The caller never says which component it wants; the digest is enough.
+        if (r.header('etag') !== `"${first}"`) {
+          throw new Error(`ETag ${r.header('etag')} must be the requested digest`);
+        }
+      }
+    });
+
+    await ctx.step('a chunk this deploy does not carry is a 404, never a guess', async () => {
+      const r = await projectPat.get(
+        '/v1/runtime-assets/chunk/1111111111111111111111111111111111111111111111111111111111111111',
+      );
+      r.status(404);
     });
   },
 );

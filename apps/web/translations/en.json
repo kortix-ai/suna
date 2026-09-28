@@ -1,6 +1,10 @@
 {
   "repositoryChange": {
     "changing": "Changing…",
+    "searchBranches": "Search branches…",
+    "loadingBranches": "Loading branches…",
+    "noBranches": "No matching branch.",
+    "moreBranches": "{count} more. Type to filter.",
     "title": "Change repository",
     "manifestRequirement": "The new repository needs {manifest} on its default branch. Stop active sessions and close open change requests first.",
     "verifyAgain": "Verify GitHub again",
@@ -62,6 +66,7 @@
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
+    "reconnectChatGpt": "Reconnect ChatGPT",
     "noChatGptAccounts": "No ChatGPT accounts yet",
     "oauthCreationDescription": "Sign in with your ChatGPT Plus or Pro account. Kortix stores the login encrypted and never shows it.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -613,6 +618,10 @@
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
+        },
+        "mcp": {
+          "name": "MCP server",
+          "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
         },
         "agentmail_email": {
           "name": "AgentMail Email",
@@ -1504,6 +1513,7 @@
       "createIn": "Create a project in {account}",
       "logOut": "Log out",
       "downloadApp": "Download app",
+      "connectMcp": "Connect MCP",
       "accountSettings": "Account settings",
       "settings": "Settings",
       "find": "Find a project…",
@@ -19205,7 +19215,12 @@
       "text5176d59f25fd": "Resolved session config release",
       "text273c48dbf3b9": "Registered push notification device",
       "textbb666ddf7a57": "Removed push notification device",
-      "text397ab5aecbbf": "Relayed session permission request"
+      "text397ab5aecbbf": "Relayed session permission request",
+      "text3ec6c235548a": "Read MCP server metadata",
+      "text7740934de920": "Registered an OAuth client",
+      "textcd36423ea12a": "Called the MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20254,5 +20269,25 @@
     "connectFailed": "Could not connect the account. Try again.",
     "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
     "ownerMeta": "Your account"
+  },
+  "connectMcp": {
+    "title": "Connect Kortix over MCP",
+    "description": "Add this URL to Claude, ChatGPT, Cursor, Codex or any MCP client. The client asks you to sign in to Kortix the first time. Nothing to install.",
+    "urlLabel": "MCP URL",
+    "addToClient": "Add it to your client",
+    "other": "Other",
+    "claudeSteps": "In Claude (web or desktop), open Settings → Connectors → Add custom connector, paste the URL, and sign in.",
+    "claudeCodeHint": "Then run /mcp in Claude Code and sign in.",
+    "otherHint": "ChatGPT (developer mode), VS Code, Windsurf and other clients: add a remote MCP server with the URL above, or this JSON.",
+    "addToCursor": "Add to Cursor",
+    "signInOnFirstUse": "Cursor asks you to sign in to Kortix on first use.",
+    "docs": "Docs",
+    "done": "Done",
+    "copy": "Copy"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Unverified app",
+    "unverifiedBody": "{client} registered itself with Kortix. Kortix has not verified who runs it. Allow it only if you are connecting it yourself right now.",
+    "redirectsTo": "Sends you back to"
   }
 }

@@ -43,6 +43,8 @@ import { type AttachStatus, type RunAttachResult, runAttach } from './features/a
 import { CustomizeScreen } from './features/customize/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { HelpOverlay } from './features/help/index.ts';
+import { type LinkRow, LinksOverlay } from './features/links/index.ts';
+import { PortsOverlay, type UsePortsResult } from './features/ports/index.ts';
 import { ReviewScreen } from './features/review/index.ts';
 import { SessionView } from './features/session/index.ts';
 import { focusHints } from './features/session/session-view.tsx';
@@ -79,6 +81,37 @@ export function focusOrder(route: Route, showSidebar: boolean, terminalOpen: boo
   return order;
 }
 
+/**
+ * What `Alt+T` does. The panel is a shell INSIDE the open session's sandbox,
+ * so with no session there is nothing to open: focus must not move to a
+ * region that does not render, or every later key goes to a panel that is
+ * not there — `Alt+X` cannot close it and `Ctrl+C` never quits, which reads
+ * as a hung app. Pure so the rule is testable without a renderer.
+ */
+export function terminalToggle(
+  open: boolean,
+  sessionId: string | null,
+): { open: boolean; focus: Focus | null; toast: string | null } {
+  if (open) return { open: false, focus: 'composer', toast: null };
+  if (!sessionId) {
+    return {
+      open: false,
+      focus: null,
+      toast: 'Open a session first — the terminal runs inside its sandbox (Ctrl+N creates one).',
+    };
+  }
+  return { open: true, focus: 'terminal', toast: null };
+}
+
+/**
+ * Whether the sidebar column is drawn: hidden by the user (`Alt+B`,
+ * `--no-sidebar`) or squeezed out by a narrow terminal. Pure so both rules are
+ * asserted without a renderer.
+ */
+export function sidebarVisible(width: number, hidden: boolean): boolean {
+  return !hidden && width >= SIDEBAR_MIN_COLUMNS;
+}
+
 export function nextFocus(current: Focus, order: Focus[], step: 1 | -1): Focus {
   const index = order.indexOf(current);
   if (index < 0) return order[0] as Focus;
@@ -94,10 +127,16 @@ export interface AppProps {
   accountId?: string | null;
   /** Pre-selected session, from `KORTIX_SESSION_ID`. */
   initialSessionId?: string | null;
+  /** `--terminal`: open the sandbox terminal panel at boot, focused. Needs a session. */
+  initialTerminalOpen?: boolean;
+  /** `--no-sidebar`: start with the sidebar hidden. `Alt+B` brings it back. */
+  initialSidebarHidden?: boolean;
   /** Tear the renderer down and leave. `src/main.tsx` owns the real exit. */
   onQuit: () => void;
   /** `Ctrl+H`. `src/main.tsx` remounts the app on the new host. */
   onSwitchHost?: () => void;
+  /** A boot-time workaround (a dead default project) to show once. */
+  bootNotice?: string | null;
   /** Test seam for attach mode. Production uses the real `runAttach`. */
   attachImpl?: typeof runAttach;
 }
@@ -107,8 +146,11 @@ export function App({
   projectId: initialProjectId,
   accountId: initialAccountId = null,
   initialSessionId = null,
+  initialTerminalOpen = false,
+  initialSidebarHidden = false,
   onQuit,
   onSwitchHost,
+  bootNotice = null,
   attachImpl = runAttach,
 }: AppProps) {
   // A SIGWINCH re-renders through this hook, and the re-render is what
@@ -118,8 +160,12 @@ export function App({
 
   const [route, setRoute] = useState<Route>('session');
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [focus, setFocus] = useState<Focus>(initialSessionId ? 'composer' : 'sidebar');
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const bootTerminal = initialTerminalOpen && Boolean(initialSessionId);
+  const [focus, setFocus] = useState<Focus>(
+    bootTerminal ? 'terminal' : initialSessionId ? 'composer' : 'sidebar',
+  );
+  const [terminalOpen, setTerminalOpen] = useState(bootTerminal);
+  const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden);
   const [quitArmed, setQuitArmed] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [accountId, setAccountId] = useState<string | null>(
@@ -131,9 +177,14 @@ export function App({
   );
   const [attachStatus, setAttachStatus] = useState<AttachStatus | null>(null);
   const [attaching, setAttaching] = useState(false);
+  // Hoisted from `SessionView`'s `usePorts()` — see the note on `onMetrics`
+  // just below for why overlays live at the root and state flows up to it.
+  const [portsApi, setPortsApi] = useState<UsePortsResult | null>(null);
+  const onPortsApi = useCallback((api: UsePortsResult) => setPortsApi(api), []);
+  const [links, setLinks] = useState<LinkRow[]>([]);
 
   const wide = dimensions.width >= SPLIT_MIN_COLUMNS;
-  const showSidebar = dimensions.width >= SIDEBAR_MIN_COLUMNS;
+  const showSidebar = sidebarVisible(dimensions.width, sidebarHidden);
   const order = useMemo(
     () => focusOrder(route, showSidebar, terminalOpen),
     [route, showSidebar, terminalOpen],
@@ -142,6 +193,16 @@ export function App({
   useEffect(() => {
     if (!order.includes(focus)) setFocus(order[0] as Focus);
   }, [order, focus]);
+
+  // A stale ports API (from the previous session's `SessionView` instance)
+  // must never answer for the new one — the new instance re-hoists its own
+  // within a render or two, but this closes the gap. `sessionId` is a pure
+  // re-run trigger, never read in the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies(sessionId): trigger-only dependency, not read in the body.
+  useEffect(() => {
+    setPortsApi(null);
+    setLinks([]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!quitArmed) return;
@@ -152,6 +213,12 @@ export function App({
   const pushToast = useCallback((message: string, kind: ToastKind = 'info') => {
     setToast((current) => ({ message, kind, seq: (current?.seq ?? 0) + 1 }));
   }, []);
+
+  // Once, at boot: the note also went to stderr, but the alternate screen hides
+  // that until the app exits.
+  useEffect(() => {
+    if (bootNotice) pushToast(bootNotice, 'error');
+  }, [bootNotice, pushToast]);
 
   // The session list is already in the query cache for the sidebar; reading it
   // here for the header title and the switcher costs no extra request.
@@ -168,17 +235,22 @@ export function App({
     setFocus('composer');
   }, []);
 
-  const toggleTerminal = useCallback(() => {
-    setTerminalOpen((open) => {
-      if (open) {
-        setFocus((current) => (current === 'terminal' ? 'composer' : current));
-        return false;
-      }
-      setRoute('session');
-      setFocus('terminal');
-      return true;
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden((hidden) => {
+      // Showing it again also focuses it: that is what the key is for.
+      if (hidden) setFocus('sidebar');
+      return !hidden;
     });
   }, []);
+
+  const toggleTerminal = useCallback(() => {
+    const decision = terminalToggle(terminalOpen, sessionId);
+    if (decision.toast) pushToast(decision.toast, 'error');
+    if (decision.open === terminalOpen) return;
+    if (decision.open) setRoute('session');
+    setTerminalOpen(decision.open);
+    setFocus((current) => decision.focus ?? current);
+  }, [terminalOpen, sessionId, pushToast]);
 
   const createSession = useCallback(async () => {
     if (!projectId) {
@@ -273,7 +345,12 @@ export function App({
         return setFocus((current) => nextFocus(current, order, action.step));
       case 'toggle-terminal':
         return toggleTerminal();
+      case 'toggle-sidebar':
+        return toggleSidebar();
       case 'overlay':
+        if (action.overlay === 'ports' && !portsApi) {
+          return pushToast('Open a session first.', 'error');
+        }
         return setOverlay(action.overlay);
       case 'new-session':
         return void createSession();
@@ -296,11 +373,15 @@ export function App({
 
   const sidebarHeight = Math.max(dimensions.height - 1, 3);
   const mainWidth = Math.max(dimensions.width - (showSidebar ? SIDEBAR_WIDTH : 0), 20);
+  const forwardedPorts = (portsApi?.rows ?? [])
+    .filter((row) => row.state === 'forwarding')
+    .map((row) => row.sandboxPort);
+  const portsHint = forwardedPorts.length ? `⇄ ${forwardedPorts.join(', ')} · ` : '';
   const hints = attaching
     ? 'opencode has the terminal…'
     : quitArmed
       ? 'Press Ctrl+C again to quit'
-      : `${focusHints(focus)} · ? help`;
+      : `${portsHint}${focusHints(focus)}${sidebarHidden ? ' · Alt+B sidebar' : ''} · ? help`;
 
   return (
     <box
@@ -356,6 +437,7 @@ export function App({
 
         {route === 'session' && projectId && sessionId ? (
           <SessionView
+            host={host}
             projectId={projectId}
             sessionId={sessionId}
             title={title}
@@ -373,6 +455,8 @@ export function App({
             }}
             onCommand={runCommand}
             onToast={pushToast}
+            onPortsApi={onPortsApi}
+            onLinks={setLinks}
           />
         ) : null}
 
@@ -457,6 +541,20 @@ export function App({
             }
           }}
           onClose={() => setOverlay(null)}
+        />
+      ) : null}
+
+      {overlay === 'links' ? (
+        <LinksOverlay rows={links} onClose={() => setOverlay(null)} onToast={pushToast} />
+      ) : null}
+
+      {overlay === 'ports' && portsApi ? (
+        <PortsOverlay
+          rows={portsApi.rows}
+          onToggle={portsApi.toggle}
+          onAdd={portsApi.addManual}
+          onClose={() => setOverlay(null)}
+          onToast={pushToast}
         />
       ) : null}
     </box>

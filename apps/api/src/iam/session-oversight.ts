@@ -87,18 +87,61 @@ const TTL_MS = (() => {
   return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 15_000;
 })();
 
-// A policy flip clears this memo on the writing replica
-// (`invalidateSessionOversight`). Other replicas, and role changes, converge
-// within one TTL window: the same posture as the rest of IAM.
-const oversightMemo = ttlMemo({
-  ttlMs: TTL_MS,
-  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
-  loader: resolveOversight,
-});
+/** A cache of "does this user hold oversight in this account" verdicts. */
+export interface SessionOversightCache {
+  get: (userId: string, accountId: string) => Promise<boolean>;
+  clear: () => void;
+}
 
-/** Drop every cached verdict. Called after the policy flips. */
+/**
+ * A cache, not a module singleton, so a test can hold two — standing in for
+ * two API replicas — and prove a stale GRANT is never served between them.
+ * See session-oversight.test.ts.
+ *
+ * Prod runs 4+ API replicas. A policy flip only clears the memo on the
+ * replica that served the PATCH (`invalidateSessionOversight`); every other
+ * replica is never told. Caching a GRANT ("oversight is on") would therefore
+ * let a revoked admin keep opening a member's private session on any replica
+ * that had already cached it, for up to the rest of `TTL_MS` — a fail-OPEN
+ * authorization window.
+ *
+ * `shouldCache` closes that window outright rather than narrowing it: a
+ * GRANT is never cached at all, so every check that would grant access
+ * re-reads the database, on every replica, every time. Only a DENIAL is
+ * cached — a stale "oversight is off" merely refuses an admin a few seconds
+ * longer, which is safe. This is cheap because the policy is off in almost
+ * every account (`resolveOversight` already short-circuits that case to one
+ * indexed read), and this whole cache is only consulted on the "ordinary
+ * visibility refused" fallback path, never on every session read.
+ */
+export function createSessionOversightCache(
+  loader: (userId: string, accountId: string) => Promise<boolean> = resolveOversight,
+  opts: { ttlMs?: number; enableInTests?: boolean } = {},
+): SessionOversightCache {
+  const memo = ttlMemo({
+    ttlMs: opts.ttlMs ?? TTL_MS,
+    keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
+    loader,
+    shouldCache: (granted: boolean) => granted === false,
+    enableInTests: opts.enableInTests,
+  });
+  return {
+    get: (userId, accountId) => memo(userId, accountId),
+    clear: () => memo.clear(),
+  };
+}
+
+const oversightCache = createSessionOversightCache();
+
+/**
+ * Drop every cached DENIAL. Called after the policy flips (both directions,
+ * for symmetry), so a replica that had cached "off" grants access on its very
+ * next check right after an owner turns oversight on — a UX nicety, not a
+ * security requirement: a GRANT is never cached in the first place, so
+ * turning oversight OFF needs no propagation to take effect everywhere.
+ */
 export function invalidateSessionOversight(): void {
-  oversightMemo.clear();
+  oversightCache.clear();
 }
 
 /**
@@ -109,7 +152,7 @@ export function invalidateSessionOversight(): void {
 export async function hasAccountSessionOversight(userId: string, accountId: string): Promise<boolean> {
   if (!userId || !accountId) return false;
   try {
-    return await oversightMemo(userId, accountId);
+    return await oversightCache.get(userId, accountId);
   } catch (err) {
     console.warn('[session-oversight] lookup failed; denying oversight', {
       accountId,

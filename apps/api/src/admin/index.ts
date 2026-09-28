@@ -21,6 +21,10 @@ import { MAX_ACCOUNT_SESSION_LIMIT, setAccountSessionLimit } from './account-ses
 import { analyticsApp } from './analytics';
 import { isUuid } from '../shared/validate';
 import { readJsonObject } from '../shared/http-body';
+import { errorSqlstate } from '../shared/error-cause';
+
+/** SQLSTATE Postgres raises when `statement_timeout` cancels a query. */
+const STATEMENT_TIMEOUT_SQLSTATE = '57014';
 
 export const adminApp = makeOpenApiApp<AppEnv>();
 
@@ -34,6 +38,41 @@ export function adminErrorMessage(e: unknown): string {
   const message = err?.message || String(e);
   const cause = err?.cause?.message;
   return cause && !message.includes(cause) ? `${message} — cause: ${cause}` : message;
+}
+
+/**
+ * Stable code the API returns (HTTP 503) when the admin accounts-list query
+ * (`accounts LEFT JOIN credit_accounts`, ordered/paginated) cannot complete
+ * inside the database statement budget — in practice a `statement_timeout`
+ * (SQLSTATE 57014). Before `idx_accounts_created_at` existed, `accounts` had
+ * only its primary key, so the planner could not drive the `ORDER BY
+ * created_at` from an index and instead Hash-Joined full sequential scans of
+ * `accounts` and `credit_accounts` (234.5k rows, prod 2026-09-27) and sorted
+ * the whole result before applying `LIMIT` — measured on prod at
+ * 25013/25019/25056 ms against the 25s budget (2026-09-27T01:21-01:22Z). The
+ * unguarded catch below echoed `adminErrorMessage(e)` — which deliberately
+ * includes the raw `Failed query: select …` text for OTHER admin errors — into
+ * the 500 body, leaking the query (including
+ * `"kortix"."credit_accounts"."balance_precise"`) to the browser. This is an
+ * EXPECTED capacity state, not a defect, so `makeRequest` in
+ * `packages/sdk/src/core/http/api-client.ts` classifies a 503 carrying this
+ * code as SILENT to `onError` (Sentry). Must stay in sync with
+ * `ACCOUNTS_LIST_UNAVAILABLE_CODE` there. Mirrors `ANALYTICS_UNAVAILABLE_CODE`
+ * in `apps/api/src/admin/analytics.ts` (#7770 / KRTX-423).
+ */
+export const ACCOUNTS_LIST_UNAVAILABLE_CODE = 'accounts_list_unavailable';
+
+/** User-facing sentence for the typed 503 above. Never contains SQL or a table name. */
+const ACCOUNTS_LIST_UNAVAILABLE_MESSAGE =
+  'The accounts list is temporarily unavailable. Try again in a moment.';
+
+function accountsListUnavailableBody(): Record<string, unknown> {
+  return {
+    error: true,
+    code: ACCOUNTS_LIST_UNAVAILABLE_CODE,
+    message: ACCOUNTS_LIST_UNAVAILABLE_MESSAGE,
+    status: 503,
+  };
 }
 
 // Every admin route requires a logged-in platform admin.
@@ -73,6 +112,7 @@ adminApp.openapi(
     responses: {
       200: json(z.record(z.string(), z.any()), 'Accounts page'),
       500: json(z.record(z.string(), z.any()), 'Server error'),
+      503: json(z.record(z.string(), z.any()), 'Accounts list temporarily unavailable'),
       ...errors(401, 403),
     },
   }),
@@ -159,58 +199,80 @@ adminApp.openapi(
     const sortCol =
       sortBy === 'balance' ? creditAccounts.balance : sortBy === 'name' ? accounts.name : accounts.createdAt;
 
-    const rows = await db
-      .select({
-        accountId: accounts.accountId,
-        name: accounts.name,
-        createdAt: accounts.createdAt,
-        balance: creditAccounts.balance,
-        expiringCredits: creditAccounts.expiringCredits,
-        nonExpiringCredits: creditAccounts.nonExpiringCredits,
-        dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
-        tier: creditAccounts.tier,
-        paymentStatus: creditAccounts.paymentStatus,
-        provider: creditAccounts.provider,
-        planType: creditAccounts.planType,
-        stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-        // Read by resolveBillingFromRow's per-seat self-heal (a live seat
-        // subscription outranks a stale non-paid `tier`). Not rendered.
-        stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
-        // Read by resolveBillingFromRow's session-limit override. Not rendered
-        // either, but the resolver takes ONE row and answers the WHOLE billing
-        // question from it — handing it a partial row silently mis-answers the
-        // parts this projection does not happen to render today.
-        maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
-        billingModel: creditAccounts.billingModel,
-        seatCount: creditAccounts.seatCount,
-        trialStatus: creditAccounts.trialStatus,
-        trialTier: creditAccounts.trialTier,
-        trialSeats: creditAccounts.trialSeats,
-        trialStartedAt: creditAccounts.trialStartedAt,
-        trialEndsAt: creditAccounts.trialEndsAt,
-        trialNote: creditAccounts.trialNote,
-        managedModelsOverride: creditAccounts.managedModelsOverride,
-        demoEnterprise: creditAccounts.demoEnterprise,
-        enterpriseEntitled: creditAccounts.enterpriseEntitled,
-        // Same reason as maxConcurrentSessions above: the resolver reads the
-        // JSONB overrides FIRST, so a projection without them reports the
-        // legacy columns' answer for an account whose real answer expired.
-        entitlementOverrides: creditAccounts.entitlementOverrides,
-        ownerEmail,
-        memberCount,
-      })
-      .from(accounts)
-      .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-      .where(where)
-      .orderBy(dir(sortCol))
-      .limit(limit)
-      .offset(offset);
+    // Both reads run inside their own guard: `accounts LEFT JOIN
+    // credit_accounts` ordered/paginated (or counted) is the query that hit
+    // the 25s request-path statement_timeout on prod (57014) — see
+    // `ACCOUNTS_LIST_UNAVAILABLE_CODE` above for the full incident. That is an
+    // EXPECTED capacity state, not a defect, so it gets a typed 503 instead of
+    // falling into the outer catch's `adminErrorMessage(e)`, which
+    // deliberately includes the raw `Failed query: select …` text for other
+    // (genuine) admin errors.
+    const queryResult = await (async () => {
+      try {
+        const rows = await db
+          .select({
+            accountId: accounts.accountId,
+            name: accounts.name,
+            createdAt: accounts.createdAt,
+            balance: creditAccounts.balance,
+            expiringCredits: creditAccounts.expiringCredits,
+            nonExpiringCredits: creditAccounts.nonExpiringCredits,
+            dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
+            tier: creditAccounts.tier,
+            paymentStatus: creditAccounts.paymentStatus,
+            provider: creditAccounts.provider,
+            planType: creditAccounts.planType,
+            stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
+            // Read by resolveBillingFromRow's per-seat self-heal (a live seat
+            // subscription outranks a stale non-paid `tier`). Not rendered.
+            stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
+            // Read by resolveBillingFromRow's session-limit override. Not rendered
+            // either, but the resolver takes ONE row and answers the WHOLE billing
+            // question from it — handing it a partial row silently mis-answers the
+            // parts this projection does not happen to render today.
+            maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
+            billingModel: creditAccounts.billingModel,
+            seatCount: creditAccounts.seatCount,
+            trialStatus: creditAccounts.trialStatus,
+            trialTier: creditAccounts.trialTier,
+            trialSeats: creditAccounts.trialSeats,
+            trialStartedAt: creditAccounts.trialStartedAt,
+            trialEndsAt: creditAccounts.trialEndsAt,
+            trialNote: creditAccounts.trialNote,
+            managedModelsOverride: creditAccounts.managedModelsOverride,
+            demoEnterprise: creditAccounts.demoEnterprise,
+            enterpriseEntitled: creditAccounts.enterpriseEntitled,
+            // Same reason as maxConcurrentSessions above: the resolver reads the
+            // JSONB overrides FIRST, so a projection without them reports the
+            // legacy columns' answer for an account whose real answer expired.
+            entitlementOverrides: creditAccounts.entitlementOverrides,
+            ownerEmail,
+            memberCount,
+          })
+          .from(accounts)
+          .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+          .where(where)
+          .orderBy(dir(sortCol))
+          .limit(limit)
+          .offset(offset);
 
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(accounts)
-      .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
-      .where(where);
+        const [{ total }] = await db
+          .select({ total: sql<number>`count(*)::int` })
+          .from(accounts)
+          .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+          .where(where);
+
+        return { ok: true as const, rows, total };
+      } catch (error) {
+        if (errorSqlstate(error) === STATEMENT_TIMEOUT_SQLSTATE) {
+          console.error('[admin/accounts] list query failed — returning typed unavailability:', error);
+          return { ok: false as const };
+        }
+        throw error;
+      }
+    })();
+    if (!queryResult.ok) return c.json(accountsListUnavailableBody(), 503);
+    const { rows, total } = queryResult;
 
     const now = Date.now();
     const list = rows.map((r) => {

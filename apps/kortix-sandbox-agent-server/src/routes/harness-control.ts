@@ -7,6 +7,7 @@ import type { HarnessService } from '../harness/harness'
 import { createHealthRouter } from './health'
 import { createRefreshRouter } from './refresh'
 import { createConfigRouter } from './config'
+import { createCatalogRouter } from './catalog'
 import { createAbortRouter } from './abort'
 import { createEnvRouter } from './env'
 import { createPartRouter } from './part'
@@ -38,8 +39,9 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   mount('/health', createHealthRouter(context, harness.diagnostics, control.convergeConfig ? ['config.release.v1'] : []))
   mount('/refresh', createRefreshRouter(context.cfg, control))
   mount('/config', createConfigRouter(context.cfg, control))
+  mount('/catalog', createCatalogRouter(context.cfg, control))
   mount('/abort', createAbortRouter(context.cfg, control))
-  mount('/part', createPartRouter(queries.attachments))
+  mount('/part', createPartRouter(context.cfg, queries.attachments))
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))
   mount('/diag', createDiagRouter(context, harness.diagnostics))
   if (context.projectEnv) mount('/env', createEnvRouter(context.cfg, control))

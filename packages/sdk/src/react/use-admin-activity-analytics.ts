@@ -118,6 +118,13 @@ export function clampAdminAnalyticsDays(days?: number): number {
 // operator leaves open. One minute of staleness beats a refetch storm.
 const ANALYTICS_STALE_TIME_MS = 60_000;
 
+// An admin dashboard has a manual refresh button; it must not auto-retry.
+// These aggregates scan the platform-wide credit ledger and can each take tens
+// of seconds, so React Query's default 3 retries would hammer the database for
+// minutes after one slow response (measured: GET /admin/analytics/usage at
+// 25s before a statement_timeout). A failure shows the page's own ErrorState.
+const ANALYTICS_RETRY = false;
+
 /**
  * Daily platform activity + DAU/WAU/MAU for the trailing `days` UTC days.
  *
@@ -137,6 +144,7 @@ export function useAdminActivityAnalytics(days: number = ADMIN_ANALYTICS_DEFAULT
       return response.data!;
     },
     staleTime: ANALYTICS_STALE_TIME_MS,
+    retry: ANALYTICS_RETRY,
     placeholderData: (previousData) => previousData,
   });
 }
@@ -154,6 +162,7 @@ export function useAdminUsageAnalytics(days: number = ADMIN_ANALYTICS_DEFAULT_DA
       return response.data!;
     },
     staleTime: ANALYTICS_STALE_TIME_MS,
+    retry: ANALYTICS_RETRY,
     placeholderData: (previousData) => previousData,
   });
 }

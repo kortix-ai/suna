@@ -45,22 +45,4 @@ function isAppPath(pathname) {
   );
 }
 
-/**
- * The history index Back may traverse to, or -1 for none.
- *
- * History traversal does not fire will-navigate, so the gate never sees it: an
- * unchecked Back onto github.com or the window's first about:blank would load
- * that page inside the app window. Back takes the previous entry only when
- * `loadsInApp` accepts its URL.
- *
- * @param {string[]} urls every history entry, oldest first
- * @param {number} activeIndex the current entry
- * @param {(url: string) => boolean} loadsInApp the navigation gate
- */
-function backIndex(urls, activeIndex, loadsInApp) {
-  const index = activeIndex - 1;
-  if (index < 0 || index >= urls.length) return -1;
-  return loadsInApp(urls[index]) ? index : -1;
-}
-
-module.exports = { APP_PATH_PREFIXES, backIndex, isAppPath, isPreviewHost };
+module.exports = { APP_PATH_PREFIXES, isAppPath, isPreviewHost };

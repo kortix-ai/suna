@@ -227,13 +227,14 @@ no build step required:
 ## Entry points
 
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.
-Three others exist, each for a reason that fits in one sentence:
+Four others exist, each for a reason that fits in one sentence:
 
-| Entry                    | Why it can't live at root   |
-| ------------------------ | --------------------------- |
-| `@kortix/sdk/react`      | React is a peer dependency  |
-| `@kortix/sdk/server`     | imports `node:async_hooks`  |
-| `@kortix/sdk/internal/*` | unsupported, outside semver |
+| Entry                         | Why it is separate                                         |
+| ----------------------------- | ---------------------------------------------------------- |
+| `@kortix/sdk/react`           | React is a peer dependency                                 |
+| `@kortix/sdk/server`          | imports `node:async_hooks`                                 |
+| `@kortix/sdk/wire-message-id` | the wire-id clock alone, one file with no imports (also at root) |
+| `@kortix/sdk/internal/*`      | unsupported, outside semver                                |
 
 Install the optional peers before you use the React entry:
 
@@ -243,7 +244,7 @@ npm install @kortix/sdk react @tanstack/react-query
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 `@deprecated`. Import from the root instead — see **Entry points** below for
-the three that are real, and **API-MAP.md**'s Stability table for the full
+the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
@@ -371,17 +372,25 @@ reuse the successful upload; an explicit `attachmentId` supports caller-managed 
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
-Projects can opt into `session_transcript_history` in Settings → Feature flags. `useSession`
-then reads saved messages from the platform database while `/start` continues. It uses the
-server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
-The flag is off by default. Missing or rejected history falls back to the existing runtime path.
-See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
-and local verification.
+`session_transcript_history` is on by default; a project can turn it off in Settings →
+Feature flags. `useSession` reads saved messages from the platform database while `/start`
+continues. It uses the server-validated OpenCode root and lets the live read reconcile the
+saved messages by ID. Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
 `messages`, and `none` when nothing can show until the runtime answers. A host renders
 placeholder rows on `loading` and its boot screen only on `none`.
+`useSession().conversationEmpty` is true when the saved copy proves the conversation empty
+(a complete read of the runtime found no messages), no turn ended since, and nothing is open
+or queued. A host renders the composer then, not a boot screen.
+
+A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
+userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
+into it by message ID. `createPersistedQueryCache` does the same for accounts, projects and
+the paged session list. Both are per user and bounded; clear both on sign-out. Session
+states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
+`sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -703,8 +712,9 @@ provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are three, plus one internal.** Everything framework-free lives at the
-root; the other two exist because each carries a dependency the root cannot.
+**There are four, plus one internal.** Everything framework-free lives at the
+root. `react` and `server` exist because each carries a dependency the root
+cannot; `wire-message-id` exists so a server can load one module, not the barrel.
 That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
@@ -712,6 +722,7 @@ That is the whole map — learn it once.
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:

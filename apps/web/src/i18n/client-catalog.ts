@@ -52,10 +52,6 @@ function importCatalog(locale: Locale): Promise<{ default: unknown }> {
   return Promise.reject(new Error('loadClientCatalog runs in the browser only'));
 }
 
-export function getLoadedCatalog(locale: Locale): MessageTree | undefined {
-  return loaded.get(locale);
-}
-
 export function loadClientCatalog(locale: Locale): Promise<MessageTree> {
   const ready = loaded.get(locale);
   if (ready) return Promise.resolve(ready);

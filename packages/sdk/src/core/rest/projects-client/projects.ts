@@ -50,7 +50,8 @@ export type FeatureFlagKey =
   | 'pooled_provider_secrets'
   | 'pi_harness'
   | 'config_releases'
-  | 'agent_principal';
+  | 'agent_principal'
+  | 'mcp';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -75,6 +76,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pi_harness',
   'config_releases',
   'agent_principal',
+  'mcp',
 ] as const;
 
 /**

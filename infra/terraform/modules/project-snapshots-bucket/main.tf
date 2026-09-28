@@ -1,7 +1,7 @@
 # ── Project snapshot object store ─────────────────────────────────────────────
 #
-# One private bucket per environment for the S3 config provider
-# (docs/runbooks/project-snapshot-s3.md). The API's leader worker publishes two
+# One private bucket per environment for the S3 config provider.
+# The API's leader worker publishes two
 # immutable objects per (repo, commit) under
 #   <prefix><owner>/<repo>/<sha>/<repo-id>/project-snapshot-v2/{manifest.json,
 #   <sha256>.tree.tar.gz, <sha256>.blobs.pack}

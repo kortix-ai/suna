@@ -14,6 +14,7 @@ import Loading from '@/components/ui/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
+import { needsReconnection } from '@/features/workspace/customize/sections/view/account-secret-access';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { keysForSession, normalizePoolSelection, type ProviderPoolDrafts, sessionPersonalUser } from './provider-pool-draft';
@@ -92,6 +93,9 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
         <Checkbox checked={selected.includes(secret.secret_id)} disabled={disabled || readOnly || (!selected.includes(secret.secret_id) && selected.length >= 10)}
           onCheckedChange={(checked) => onChange(checked === true ? [...selected, secret.secret_id] : selected.filter((value) => value !== secret.secret_id))} />
         <span className="text-foreground min-w-0 break-words">{secret.label}</span>
+        {providerId === 'codex' && needsReconnection(secret) && (
+          <span className="text-muted-foreground ml-auto shrink-0 text-xs">{t('needsReconnection')}</span>
+        )}
       </label>)}
     </div>
     {selected.length >= 10 && <p className="text-muted-foreground text-xs" role="status">{t('selectionLimit')}</p>}

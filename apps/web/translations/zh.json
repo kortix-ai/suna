@@ -1,6 +1,10 @@
 {
   "repositoryChange": {
     "changing": "正在更改…",
+    "searchBranches": "搜索分支…",
+    "loadingBranches": "正在加载分支…",
+    "noBranches": "没有匹配的分支。",
+    "moreBranches": "还有 {count} 个。输入以筛选。",
     "title": "更改仓库",
     "manifestRequirement": "新仓库的默认分支需要包含 {manifest}。请先停止活动会话并关闭未完成的变更请求。",
     "verifyAgain": "重新验证 GitHub",
@@ -62,6 +66,7 @@
     "manageChatGptAccounts": "管理 ChatGPT 账户",
     "connect": "连接",
     "connectChatGpt": "连接 ChatGPT",
+    "reconnectChatGpt": "重新连接 ChatGPT",
     "noChatGptAccounts": "还没有 ChatGPT 账户",
     "oauthCreationDescription": "使用您的 ChatGPT Plus 或 Pro 账户登录。Kortix 会加密保存登录信息，且从不显示。",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -613,6 +618,10 @@
         "config_releases": {
           "name": "配置发布",
           "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"
+        },
+        "mcp": {
+          "name": "MCP 服务器",
+          "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
         },
         "agentmail_email": {
           "name": "AgentMail 邮件",
@@ -1504,6 +1513,7 @@
       "createIn": "在 {account} 中创建项目",
       "logOut": "退出登录",
       "downloadApp": "下载应用",
+      "connectMcp": "连接 MCP",
       "accountSettings": "账户设置",
       "settings": "设置",
       "find": "查找项目…",
@@ -19192,7 +19202,12 @@
       "text5176d59f25fd": "已解析会话配置发布",
       "text273c48dbf3b9": "已注册推送通知设备",
       "textbb666ddf7a57": "已移除推送通知设备",
-      "text397ab5aecbbf": "已转发会话权限请求"
+      "text397ab5aecbbf": "已转发会话权限请求",
+      "text3ec6c235548a": "读取了 MCP 服务器元数据",
+      "text7740934de920": "注册了 OAuth 客户端",
+      "textcd36423ea12a": "调用了 MCP 服务器",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20254,5 +20269,25 @@
     "connectFailed": "无法连接账户，请重试。",
     "sharePrivateDescription": "选择还有谁可以使用你的账户。它会变为共享账户，项目的连接管理员也可以管理它。",
     "ownerMeta": "你的账户"
+  },
+  "connectMcp": {
+    "title": "通过 MCP 连接 Kortix",
+    "description": "将此 URL 添加到 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端。首次使用时，客户端会请你登录 Kortix。无需安装。",
+    "urlLabel": "MCP URL",
+    "addToClient": "添加到你的客户端",
+    "other": "其他",
+    "claudeSteps": "在 Claude（网页版或桌面版）中打开 设置 → 连接器 → 添加自定义连接器，粘贴 URL 并登录。",
+    "claudeCodeHint": "然后在 Claude Code 中运行 /mcp 并登录。",
+    "otherHint": "ChatGPT（开发者模式）、VS Code、Windsurf 等客户端：使用上方 URL 添加远程 MCP 服务器，或使用此 JSON。",
+    "addToCursor": "添加到 Cursor",
+    "signInOnFirstUse": "首次使用时，Cursor 会请你登录 Kortix。",
+    "docs": "文档",
+    "done": "完成",
+    "copy": "复制"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "未验证的应用",
+    "unverifiedBody": "{client} 自行在 Kortix 注册。Kortix 尚未验证其运营方。仅当你正在亲自连接它时才允许。",
+    "redirectsTo": "完成后返回至"
   }
 }

@@ -67,7 +67,7 @@ describe('headerless session surfaces carry the sidebar opener', () => {
   // It was five until 2026-09-24. The fifth held a session created before a
   // repository replacement on a "starting" loader while `/start` refused it.
   // `/start` no longer refuses such a session, so the branch is gone with the
-  // policy (docs/specs/config-releases.md, "Repository replacement").
+  // policy.
   test('every SessionStartingLoader on this route is wrapped', () => {
     const sites = allIndexesOf('<SessionStartingLoader');
     expect(sites.length).toBe(4);

@@ -1,5 +1,5 @@
 /**
- * Pure decision of spec docs/specs/2026-09-22-agents-as-principals.md §2.1:
+ * Pure decision:
  *
  *   effective(agent, action) = action ∈ kortix_permissions
  *                            ∧ action ∈ ceiling(agent)

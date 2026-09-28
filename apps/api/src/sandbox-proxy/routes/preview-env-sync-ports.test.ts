@@ -76,6 +76,7 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // timeout on every prompt. This suite is about the env-sync gate beside it.
   convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
+  convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},

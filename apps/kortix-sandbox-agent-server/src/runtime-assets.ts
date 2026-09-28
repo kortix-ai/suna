@@ -4,19 +4,23 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   stat,
   writeFile,
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import type { Config } from './config'
 import { resolveHarness, type HarnessAssetsCompatibilityResult } from './harness/harness'
+import { noteControlPlaneResponse } from './session-token-health'
 import type {
   HarnessAssetOutcome,
   HarnessAssetsService,
 } from './harness/assets'
 import { logger } from './logger'
+import { fetchArtifactByChunks } from './runtime-asset-chunks'
 import { withReleaseStoreLock } from './boot-config'
 
 /**
@@ -32,6 +36,18 @@ export function runtimeAssetsActivity(): string | null {
 }
 function setRuntimeAssetsActivity(label: string | null): void {
   runtimeAssetsActivityLabel = label
+}
+
+/**
+ * DEF-C: "the CLI cannot be updated on this box" is logged at `error` once per
+ * process instead of on every reconcile — the whole point is to stop an
+ * unwatchable failure from hiding behind its own repetition.
+ */
+let cliUpdateBlockedLogged = false
+
+/** Test seam: one bun process runs every daemon test file. */
+export function resetCliUpdateBlockedNoticeForTests(): void {
+  cliUpdateBlockedLogged = false
 }
 
 /**
@@ -59,6 +75,32 @@ function setRuntimeAssetsActivity(label: string | null): void {
 
 /** The binary every in-sandbox agent invokes as `kortix`. */
 const DEFAULT_CLI_PATH = '/usr/local/bin/kortix'
+
+/**
+ * DEF-C 2026-09-26 — the writable PATH fallback for a box whose
+ * `/usr/local/bin` is not, and never will be, writable by `kortix`.
+ *
+ * The shipped image now bakes `/usr/local/bin` kortix-owned
+ * (`SANDBOX_CLI_OWNERSHIP_COMMAND`, packages/shared/src/sandbox/
+ * platform-binaries.ts) and `replaceCli`'s own `sudo -n chown` escalation
+ * heals an older snapshot in place — but a box already running an image from
+ * before either of those existed, and that a Platinum suspend/resume never
+ * reboots from a fresh image, gets neither: measured on a real box created
+ * 2026-08-25, `CLI replace failed {"err":"...EACCES..."}` on every single
+ * reconcile, forever, escalation included.
+ *
+ * `$HOME/.local/bin` needs no escalation at all: it is the daemon's OWN home
+ * directory (`useradd --create-home`, every image, always), and
+ * `apps/sandbox/entrypoint.sh`'s `KORTIX_PATH` already puts it FIRST on PATH,
+ * ahead of `/usr/local/bin` — so a binary installed here immediately shadows
+ * the baked one for every later `kortix` invocation, on old boxes and new
+ * ones alike. `apps/cli`'s own self-update already relies on this exact path
+ * for a non-sandbox install (apps/cli/src/commands/update.ts).
+ */
+function cliPathFallback(): string {
+  return join(process.env.HOME || homedir() || '/home/kortix', '.local', 'bin', 'kortix')
+}
+
 /** Image-baked managed-skill overlay root; created here when the image had none. */
 const DEFAULT_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
 /** Digest bookkeeping, so a converged box never re-hashes a 100 MB binary. */
@@ -196,6 +238,14 @@ export interface RuntimeAssetsOptions {
   assets?: HarnessAssetsService
   /** Runs a candidate binary before it replaces a working one. See {@link ExecProbe}. */
   execProbe?: ExecProbe
+  /**
+   * DEF-C: the writable PATH fallback tried when `cliPath`'s directory is not
+   * writable (and the daemon's own escalation cannot fix that). Defaults to
+   * {@link cliPathFallback}; injectable for tests.
+   */
+  cliFallbackPath?: string
+  /** Test seam for `replaceCli`'s directory-unlock escalation. See `ReplaceCliDeps.unlockDir`. */
+  unlockCliDir?: (dir: string) => Promise<boolean>
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */
@@ -229,6 +279,14 @@ interface RuntimeAssetsState {
   cli_sha256?: string
   cli_size?: number
   cli_mtime_ms?: number
+  /**
+   * DEF-C: which path the digest cache above describes. Absent means the
+   * primary `cliPath` (`/usr/local/bin/kortix`), as it always did before this
+   * field existed. Once a box has ever installed to the PATH fallback, PATH
+   * resolves there first — the RUNNING CLI is the fallback file — so the next
+   * reconcile must hash and replace that one, not a stale or absent primary.
+   */
+  cli_path?: string
   managed_skills_hash?: string
   /** Highest manifest epoch this box has converged to. See the epoch guard. */
   build?: number
@@ -308,6 +366,129 @@ async function writeState(path: string, state: RuntimeAssetsState): Promise<void
   }
 }
 
+/**
+ * Read a baked overlay back off disk as the file list {@link overlayHash} takes.
+ *
+ * Byte-for-byte the shape `managedSkillOverlayFiles()` produces in the API:
+ * paths relative to the overlay root, sorted with `localeCompare`. Both sides
+ * must agree or the hash this module records would never match the one the
+ * manifest advertises, and every box would re-download an overlay it already
+ * has.
+ */
+async function readOverlayFromDisk(dir: string): Promise<OverlayFile[]> {
+  let entries: string[]
+  try {
+    entries = (await readdir(dir, { recursive: true })) as string[]
+  } catch {
+    return []
+  }
+  const files: OverlayFile[] = []
+  for (const rel of [...entries].sort((a, b) => a.localeCompare(b))) {
+    // Read directly rather than stat-then-read: a directory answers EISDIR and
+    // an unreadable entry answers its own errno, so the filter costs nothing
+    // and there is no window between the check and the use (CodeQL
+    // js/file-system-race).
+    const content = await readFile(join(dir, rel), 'utf8').catch(() => null)
+    if (content === null) continue
+    files.push({ path: rel, content })
+  }
+  return files
+}
+
+/** What {@link bakeRuntimeAssetsState} may be pointed at. Defaults are the image paths. */
+export interface BakeRuntimeAssetsStateOptions {
+  cliPath?: string
+  agentPath?: string
+  managedSkillsDir?: string
+  statePath?: string
+  /**
+   * The OpenCode release this image installs. Omitted reads it from the
+   * symlink every image definition creates
+   * ({@link DEFAULT_OPENCODE_CURRENT_LINK}); unreadable leaves the field
+   * unset rather than guessed, and the first pass fills it in.
+   */
+  opencodeVersion?: string
+}
+
+/** The launcher symlink all three image definitions point at their OpenCode. */
+const DEFAULT_OPENCODE_CURRENT_LINK = '/opt/kortix/opencode.current'
+
+/** `opencode --version` prints a bare version, so the binary can be asked. */
+async function bakedOpencodeVersion(path: string): Promise<string | undefined> {
+  try {
+    const proc = Bun.spawn([path, '--version'], { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
+    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+    if (code !== 0) return undefined
+    const version = out.trim()
+    return /^\d+\.\d+\.\d+/.test(version) ? version : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * IMAGE BUILD ONLY. State which runtime assets this image carries.
+ *
+ * THE DEFECT THIS FIXES. Baking the CLI, the daemon and the skill overlay into
+ * an image is only half of "this box is current". The other half is the box
+ * being able to SAY so: `runtime-assets-state.json` was written by a completed
+ * reconcile and by nothing else, so a freshly booted box answered
+ * `runtime.running` with nulls — every digest unknown — until its first pass
+ * finished. Measured on a cold preview box: boot 23:41:53, first pass complete
+ * 23:44:15, a ~140 s window in which the control plane could not tell a current
+ * box from a months-old one. Worse, the pass was not free: with no recorded
+ * hash the overlay check could not short-circuit, so every cold box downloaded
+ * an overlay it already had, and hashed ~210 MB of binaries to learn nothing.
+ *
+ * Running it at image build rather than at boot is the whole point. The mtimes
+ * recorded here are the ones the files will still have on every box that starts
+ * from this image, so {@link localDigest} answers from the cache and the first
+ * reconcile reads the manifest and stops.
+ *
+ * FAILS LOUD, unlike every other write in this module. Everything else here is
+ * best-effort because a live box must survive a bad API; this runs in `docker
+ * build`, where a missing artifact means the image is wrong and shipping it
+ * would put a confident lie on every box it starts.
+ */
+export async function bakeRuntimeAssetsState(
+  options: BakeRuntimeAssetsStateOptions = {},
+): Promise<RuntimeAssetsState> {
+  const cliPath = options.cliPath ?? DEFAULT_CLI_PATH
+  const agentPath = options.agentPath ?? DEFAULT_AGENT_BAKED_PATH
+  const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
+  const statePath = options.statePath ?? DEFAULT_STATE_PATH
+
+  const cli = await localDigest(cliPath, {})
+  if (!cli) throw new Error(`bake-runtime-assets-state: no kortix CLI at ${cliPath}`)
+  const agent = await localDigest(agentPath, {})
+  if (!agent) throw new Error(`bake-runtime-assets-state: no kortix-agent at ${agentPath}`)
+  const overlay = await readOverlayFromDisk(skillsDir)
+  if (overlay.length === 0) {
+    throw new Error(`bake-runtime-assets-state: no managed-skill overlay at ${skillsDir}`)
+  }
+
+  const state: RuntimeAssetsState = {
+    cli_path: cliPath,
+    cli_sha256: cli.sha,
+    cli_size: cli.size,
+    cli_mtime_ms: cli.mtimeMs,
+    agent_path: agentPath,
+    agent_sha256: agent.sha,
+    agent_size: agent.size,
+    agent_mtime_ms: agent.mtimeMs,
+    managed_skills_hash: overlayHash(overlay),
+  }
+  const opencode =
+    options.opencodeVersion ?? (await bakedOpencodeVersion(DEFAULT_OPENCODE_CURRENT_LINK))
+  if (opencode) state.opencode_version = opencode
+  // `build` is deliberately absent. It records the highest manifest epoch this
+  // box has READ, and an image build reads no manifest. Claiming one would arm
+  // the epoch guard against an API that is legitimately older than the image.
+  await mkdir(dirname(statePath), { recursive: true })
+  await writeFile(statePath, `${JSON.stringify(state)}\n`, 'utf8')
+  return state
+}
+
 interface LocalDigest {
   sha: string
   size: number
@@ -356,7 +537,7 @@ async function localCliSha(cliPath: string, state: RuntimeAssetsState): Promise<
  * baked into the image is the next increment and lands here, in one place, on
  * purpose.
  */
-function verifyArtifact(bytes: Buffer, expectedSha: string): boolean {
+function verifyArtifact(bytes: Uint8Array, expectedSha: string): boolean {
   return createHash('sha256').update(bytes).digest('hex') === expectedSha
 }
 
@@ -489,7 +670,7 @@ export interface ReplaceCliDeps {
 export async function replaceCli(
   cliPath: string,
   expectedSha: string,
-  body: ArrayBuffer,
+  body: Uint8Array,
   deps: ReplaceCliDeps = {},
 ): Promise<'updated' | 'failed' | 'unrunnable'> {
   // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
@@ -497,7 +678,7 @@ export async function replaceCli(
   // hash-while-streaming pipeline is more machinery than the numbers justify:
   // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
   // transient, and the reconcile runs at most once per session start.
-  const bytes = Buffer.from(body)
+  const bytes = body
   // Verify BEFORE touching the filesystem: a digest mismatch must not even
   // create a temp file, and it must not be mistaken for a permission problem.
   if (!verifyArtifact(bytes, expectedSha)) {
@@ -631,7 +812,7 @@ async function resolveRunningAgentPath(options: RuntimeAssetsOptions): Promise<s
 async function stageAgentBinary(
   stateDir: string,
   expectedSha: string,
-  body: ArrayBuffer,
+  body: Uint8Array,
   execProbe: ExecProbe,
 ): Promise<'staged' | 'failed' | 'unrunnable'> {
   const nextPath = join(stateDir, 'agent.next')
@@ -644,7 +825,7 @@ async function stageAgentBinary(
   const tmpShaPath = `${tmpPath}.sha256`
   try {
     await mkdir(stateDir, { recursive: true })
-    const bytes = Buffer.from(body)
+    const bytes = body
     await writeFile(tmpPath, bytes)
     if (!verifyArtifact(bytes, expectedSha)) {
       logger.warn('[runtime-assets] agent download digest mismatch — nothing staged', {
@@ -742,6 +923,8 @@ async function fetchJson<T>(
     signal: AbortSignal.timeout(timeoutMs),
   })
   if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    noteControlPlaneResponse(res.status, body)
     logger.warn('[runtime-assets] non-ok response', { url, status: res.status })
     return null
   }
@@ -752,6 +935,75 @@ async function fetchJson<T>(
  * One reconcile pass. Returns what happened for each half so callers (and tests)
  * can assert on it. NEVER throws.
  */
+/** A downloaded artifact, or the HTTP status that stopped it. */
+type ArtifactFetch = { bytes: Buffer } | { status: number }
+
+/**
+ * Get one artifact's bytes: chunked when this box can supply most of them,
+ * a plain download otherwise.
+ *
+ * The chunk path is a transfer optimization and never a second install path —
+ * it returns bytes or nothing, and the caller runs the SAME `verifyArtifact`
+ * over the result either way. That is deliberate: one place decides whether
+ * bytes are allowed near something that will be executed.
+ */
+async function fetchArtifact(
+  fetchImpl: typeof fetch,
+  base: string,
+  token: string,
+  component: 'agent' | 'cli',
+  expectedSha: string,
+  url: string,
+  localSources: string[],
+): Promise<ArtifactFetch> {
+  const chunked = await fetchArtifactByChunks({
+    fetchImpl,
+    base,
+    token,
+    component,
+    expectedSha,
+    localSources,
+    timeoutMs: DOWNLOAD_TIMEOUT_MS,
+  }).catch((err) => {
+    // Never fatal. The full download below is the path this one is trying to
+    // save, and it is still there.
+    logger.warn('[runtime-assets] chunked fetch failed; falling back to the full download', {
+      component,
+      err: String(err),
+    })
+    return null
+  })
+  if (chunked) return { bytes: chunked }
+  const res = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  })
+  if (!res.ok) return { status: res.status }
+  return { bytes: Buffer.from(await res.arrayBuffer()) }
+}
+
+/**
+ * Every binary this box already holds — the chunk store.
+ *
+ * There is no chunk cache on disk and there should not be one: ~90 MB of both
+ * the CLI and the daemon is the same embedded Bun runtime, so the files the
+ * box RUNS already carry almost everything a new build needs. They are always
+ * current, never stale, and cost no extra disk. Missing entries are skipped by
+ * the indexer, so listing a path that may not exist is free.
+ */
+async function chunkStoreSources(
+  cliPath: string,
+  options: RuntimeAssetsOptions,
+): Promise<string[]> {
+  const stateDir = agentStateDirOf(options)
+  return [
+    cliPath,
+    await resolveRunningAgentPath(options),
+    agentBakedPathOf(options),
+    join(stateDir, 'agent.current'),
+  ]
+}
+
 export async function reconcileRuntimeAssets(
   options: RuntimeAssetsOptions = {},
 ): Promise<RuntimeAssetsResult> {
@@ -831,39 +1083,103 @@ export async function reconcileRuntimeAssets(
   // ── CLI ────────────────────────────────────────────────────────────────────
   if (cliSha) {
     try {
-      const local = await localCliSha(cliPath, state)
+      // DEF-C: once this box has ever fallen back, PATH already resolves
+      // `kortix` to the fallback file (it precedes the primary path on PATH)
+      // — so that is the running CLI, and the one this pass must hash and
+      // replace. A box that has never fallen back reads the primary, exactly
+      // as before this field existed.
+      const effectiveCliPath =
+        state.cli_path && state.cli_path !== cliPath ? state.cli_path : cliPath
+      const local = await localCliSha(effectiveCliPath, state)
       if (local && local.sha === cliSha) {
         cli = 'current'
         nextState.cli_sha256 = local.sha
         nextState.cli_size = local.size
         nextState.cli_mtime_ms = local.mtimeMs
+        nextState.cli_path = effectiveCliPath
       } else {
-        const res = await fetchImpl(resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`), {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-        })
-        if (!res.ok) {
-          logger.warn('[runtime-assets] CLI download non-ok', { status: res.status })
+        const fetched = await fetchArtifact(
+          fetchImpl,
+          base,
+          token,
+          'cli',
+          cliSha,
+          resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`),
+          await chunkStoreSources(effectiveCliPath, options),
+        )
+        if (!('bytes' in fetched)) {
+          logger.warn('[runtime-assets] CLI download non-ok', { status: fetched.status })
           cli = 'failed'
         } else {
-          const replaced = await replaceCli(cliPath, cliSha, await res.arrayBuffer(), {
-            execProbe,
-          })
-          if (replaced === 'unrunnable') {
-            cli = 'failed'
-            reasons.cli = 'the downloaded CLI did not run on this box'
-          } else {
-            cli = replaced
-          }
-          if (cli === 'updated') {
-            const stats = await stat(cliPath).catch(() => null)
-            nextState.cli_sha256 = cliSha
-            nextState.cli_size = stats?.size
-            nextState.cli_mtime_ms = stats ? Math.trunc(stats.mtimeMs) : undefined
-            logger.info('[runtime-assets] kortix CLI updated from the API', {
-              version: cliVersion,
-              sha256: cliSha.slice(0, 12),
+          const body = fetched.bytes
+          // Verify ONCE, before any location is even chosen: a digest that
+          // does not match the manifest is wrong everywhere, and retrying the
+          // identical bytes at a second path would not just waste a hash of a
+          // ~100 MB buffer — DEF-C's own tests found it reaching this box's
+          // REAL `$HOME/.local/bin` in a case that has nothing to do with a
+          // permission problem at all.
+          if (!verifyArtifact(body, cliSha)) {
+            logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
+              expected: cliSha,
             })
+            cli = 'failed'
+          } else {
+            let replaced = await replaceCli(cliPath, cliSha, body, {
+              execProbe,
+              unlockDir: options.unlockCliDir,
+            })
+            let installedPath = cliPath
+            // The artifact is verified-good, so a `failed` here is
+            // specifically "nowhere on the primary path is writable" — the
+            // daemon's own escalation (sudoOwnDir) already tried and lost. A
+            // box already on the fallback (`effectiveCliPath !== cliPath`)
+            // has no reason to retry the primary at all.
+            if (replaced === 'failed' && effectiveCliPath === cliPath) {
+              const fallbackPath = options.cliFallbackPath ?? cliPathFallback()
+              await mkdir(dirname(fallbackPath), { recursive: true }).catch(() => {})
+              const fallbackReplaced = await replaceCli(fallbackPath, cliSha, body, { execProbe })
+              if (fallbackReplaced === 'updated') {
+                logger.warn(
+                  '[runtime-assets] /usr/local/bin is not writable on this box; installed the CLI to its PATH fallback instead',
+                  { path: fallbackPath },
+                )
+                replaced = fallbackReplaced
+                installedPath = fallbackPath
+              } else if (fallbackReplaced === 'unrunnable') {
+                replaced = fallbackReplaced
+              } else {
+                // Neither location works. This box can never update its CLI
+                // by itself — say so LOUDLY, once per process, instead of the
+                // defect this fixes: the identical warn line, forever, that
+                // nobody is watching for.
+                if (!cliUpdateBlockedLogged) {
+                  cliUpdateBlockedLogged = true
+                  logger.error(
+                    '[runtime-assets] kortix CLI cannot be updated on this box: neither /usr/local/bin nor its PATH fallback is writable',
+                    { primary: cliPath, fallback: fallbackPath },
+                  )
+                }
+                reasons.cli = 'cannot be updated: neither /usr/local/bin nor its PATH fallback is writable'
+              }
+            }
+            if (replaced === 'unrunnable') {
+              cli = 'failed'
+              reasons.cli = 'the downloaded CLI did not run on this box'
+            } else {
+              cli = replaced
+            }
+            if (cli === 'updated') {
+              const stats = await stat(installedPath).catch(() => null)
+              nextState.cli_sha256 = cliSha
+              nextState.cli_size = stats?.size
+              nextState.cli_mtime_ms = stats ? Math.trunc(stats.mtimeMs) : undefined
+              nextState.cli_path = installedPath
+              logger.info('[runtime-assets] kortix CLI updated from the API', {
+                version: cliVersion,
+                sha256: cliSha.slice(0, 12),
+                path: installedPath,
+              })
+            }
           }
         }
       }
@@ -999,22 +1315,24 @@ export async function reconcileRuntimeAssets(
           // at the resolved path to compare against. Both mean "cannot prove
           // this box is current", and staging is the safe answer to that: the
           // supervisor verifies the artifact again before it installs it.
-          const res = await fetchImpl(
+          const fetched = await fetchArtifact(
+            fetchImpl,
+            base,
+            token,
+            'agent',
+            expectedSha,
             resolveArtifactUrl(apiRoot, component?.path, `${base}/agent`),
-            {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-            },
+            await chunkStoreSources(cliPath, options),
           )
-          if (!res.ok) {
-            logger.warn('[runtime-assets] agent download non-ok', { status: res.status })
+          if (!('bytes' in fetched)) {
+            logger.warn('[runtime-assets] agent download non-ok', { status: fetched.status })
             agent = 'failed'
-            reasons.agent = `agent download returned ${res.status}`
+            reasons.agent = `agent download returned ${fetched.status}`
           } else {
             const stagedOutcome = await stageAgentBinary(
               stateDir,
               expectedSha,
-              await res.arrayBuffer(),
+              fetched.bytes,
               execProbe,
             )
             if (stagedOutcome === 'unrunnable') {
@@ -1300,6 +1618,45 @@ export async function applyStagedAssetsIfIdle(
 let inFlight: Promise<RuntimeAssetsResult> | null = null
 
 /**
+ * How long a fully-converged pass is trusted before the NEXT call-site trigger
+ * (boot, `/kortix/refresh`, idle) is allowed to run another one.
+ *
+ * 2026-09-27: a respawn-heavy box (see `env-sync-skip-decision.ts` for why
+ * respawns were happening far more than once per session) fired this reconcile
+ * on every single respawn — every one of them re-fetching the manifest and
+ * re-hashing the local CLI/skills, competing for the box's network and CPU
+ * during the exact window a live turn was also trying to start. Manifest
+ * digests are memoized for the life of THIS process and cannot change without
+ * a new deploy (`manifest.ts`'s header), so re-checking within seconds of a
+ * pass that already fully converged can never find anything new — it is pure
+ * cost. This does not weaken the self-heal: a pass that left any component
+ * `'failed'` is NOT "fully converged" and is retried on the very next trigger.
+ */
+const RECONCILE_COOLDOWN_MS = 60_000
+
+/** True when the last completed pass converged every component (nothing
+ *  `'failed'`) within `RECONCILE_COOLDOWN_MS`. Exported for the cooldown's own
+ *  unit test — see `runtime-assets-reconcile-cooldown.test.ts`. */
+export function recentlyFullyConverged(): boolean {
+  if (!lastConvergence.at) return false
+  const ageMs = Date.now() - Date.parse(lastConvergence.at)
+  if (!(ageMs >= 0 && ageMs < RECONCILE_COOLDOWN_MS)) return false
+  return !Object.values(lastConvergence.components).some((outcome) => outcome === 'failed')
+}
+
+/** Test seam: let a suite pretend the cooldown has elapsed without a real
+ *  clock wait, and start each case from a clean slate. */
+export function __resetReconcileCooldownForTests(): void {
+  lastConvergence = { build: null, at: null, components: {}, agentSwapPending: false, pinned: false, running: NO_RUNNING_ASSETS }
+}
+
+/** Test seam: backdate the last-convergence timestamp without a real clock
+ *  wait, so the cooldown's expiry can be exercised deterministically. */
+export function __setConvergenceTimestampForTests(iso: string): void {
+  lastConvergence = { ...lastConvergence, at: iso }
+}
+
+/**
  * Fire-and-forget entry point for the boot/refresh/adopt call sites. Returns
  * immediately; the pass runs detached and swallows everything.
  */
@@ -1308,6 +1665,7 @@ export function ensureLatestKortixAssets(
   opts: { atIdleBoundary?: boolean } = {},
 ): void {
   if (inFlight) return
+  if (recentlyFullyConverged()) return
   inFlight = reconcileRuntimeAssets({ configDir, assets: swapConfig?.assets })
   void inFlight
     .finally(() => {
@@ -1458,6 +1816,24 @@ export interface RunningRuntimeAssets {
   opencode_version: string | null
   /** Highest manifest epoch this box has converged to, from DISK. */
   build: number | null
+  /**
+   * Managed model ids this box currently believes are servable — the cheap
+   * freshness signal for the third convergeable "asset": the gateway model
+   * catalog. Unlike the fields above this is NOT read from the persisted
+   * state file (nothing here writes it there); it comes live from the
+   * opencode harness's in-process cache, via the optional `catalogSnapshot`
+   * hook on `runtimeConvergenceReport`. Null on a harness with no such
+   * concept (pi) or a box that has never confirmed a live fetch.
+   */
+  managed_model_ids: string[] | null
+  /**
+   * Why this box is not (or was not, last time it tried) confirmed against
+   * the control plane's live managed lineup. Null when the last attempt
+   * succeeded, or on a harness with no such concept. See
+   * `lifecycle.ts`'s `managedCatalogFallbackReason` for the NO-SILENT-
+   * STALENESS reasoning this exists for.
+   */
+  managed_catalog_fallback_reason: string | null
 }
 
 const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
@@ -1468,6 +1844,8 @@ const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
   staged_agent_sha256: null,
   opencode_version: null,
   build: null,
+  managed_model_ids: null,
+  managed_catalog_fallback_reason: null,
 }
 
 function str(value: unknown): string | null {
@@ -1492,6 +1870,12 @@ export async function runningRuntimeAssets(
     staged_agent_sha256: str(state.staged_agent_sha256),
     opencode_version: str(state.opencode_version),
     build: typeof state.build === 'number' && Number.isFinite(state.build) ? state.build : null,
+    // Never on disk — overlaid live by `runtimeConvergenceReport`'s
+    // `catalogSnapshot` hook. A direct caller of this function alone (there is
+    // none in production; `boot.ts`'s health reads always go through
+    // `runtimeConvergenceReport`) gets the safe "unconfirmed" default.
+    managed_model_ids: null,
+    managed_catalog_fallback_reason: null,
   }
 }
 
@@ -1540,6 +1924,18 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
 export async function runtimeConvergenceReport(
   stateDir: string = process.env.KORTIX_AGENT_STATE_DIR ?? DEFAULT_AGENT_STATE_DIR,
   statePath: string = DEFAULT_STATE_PATH,
+  /**
+   * The opencode harness's live catalog signal, injected rather than imported
+   * here directly: this module serves every harness (pi included), and
+   * `harness/open-code/lifecycle.ts` is opencode-specific — importing it here
+   * would put a gateway-model concept into a module that has none. The
+   * default answers "unconfirmed" for any caller that supplies nothing, which
+   * is exactly what a harness with no such concept should report.
+   */
+  catalogSnapshot: () => { ids: string[] | null; fallbackReason: string | null } = () => ({
+    ids: null,
+    fallbackReason: null,
+  }),
 ): Promise<RuntimeConvergenceReport> {
   // `running` is read from DISK on every call, for the same reason the rollback
   // latch is: it must survive this process. A daemon that restarted seconds ago
@@ -1567,7 +1963,16 @@ export async function runtimeConvergenceReport(
     harnessPinned,
     runningRuntimeAssets(statePath),
   ])
-  return { ...lastConvergence, pinned: agentPinned || harnessLatched, running }
+  const snap = catalogSnapshot()
+  return {
+    ...lastConvergence,
+    pinned: agentPinned || harnessLatched,
+    running: {
+      ...running,
+      managed_model_ids: snap.ids,
+      managed_catalog_fallback_reason: snap.fallbackReason,
+    },
+  }
 }
 
 export function resetRuntimeConvergenceReportForTests(): void {

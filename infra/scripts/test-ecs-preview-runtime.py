@@ -150,8 +150,9 @@ class PreviewApproval(unittest.TestCase):
         self.assertIn("needs: [authorize, build-api, build-gateway, build-web]", deploy)
         self.assertIn("Revalidate exact preview approval", deploy)
         self.assertIn("admin|maintain|write) ;;", deploy)
-        self.assertIn('[ "$current" = "$COMMIT" ] || {', deploy)
-        self.assertIn('[[ " $labels " == *" preview "* ]] || {', deploy)
+        self.assertIn('[ "$current" = "$COMMIT" ] || supersede', deploy)
+        self.assertIn('[[ " $labels " == *" preview "* ]] || supersede', deploy)
+        self.assertIn('git/ref/heads/${BRANCH}', deploy)
 
     def test_the_sandbox_refuses_to_run_any_other_sha(self):
         # OLD: `[ "$api_commit" = "$COMMIT" ]` polled the deployed ALB.
@@ -220,15 +221,26 @@ class PreviewBuildIsolation(unittest.TestCase):
     def test_the_preview_pipeline_holds_no_cloud_or_delivery_identity(self):
         # OLD: the deploy and teardown jobs assumed
         # arn:aws:iam::…:role/kortix-gha-preview-deploy through OIDC. The
-        # sandbox runtime needs no AWS identity, so the workflow must not
-        # request one, and the disconnected ECS path must stay disconnected.
-        self.assertNotIn("aws-actions/configure-aws-credentials", WORKFLOW)
-        self.assertNotIn("id-token: write", WORKFLOW)
+        # sandbox runtime needs no AWS identity, so the OLD ECS delivery path
+        # must stay disconnected, and it never used Vercel or Argo CD.
         self.assertNotIn("ecs-preview.sh", WORKFLOW)
         self.assertNotIn("Vercel", WORKFLOW)
         self.assertNotIn("VERCEL_", WORKFLOW)
         self.assertNotIn("Argo CD", WORKFLOW)
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
+        # NEW (2026-09, aws-env migration): the default-branch-only jobs below
+        # (never the PR-code build-* jobs) hold an OIDC token to read
+        # DAYTONA_API_KEY/MORPH_API_KEY from kortix-preview-env through
+        # .github/actions/aws-env — never a direct role assumption. The
+        # invariant this test guards is narrower than "no identity anywhere":
+        # a job that checks out or compiles pull request code must never hold
+        # one. tests/unit/aws-env-action.test.ts pins the same rule for every
+        # job whose checkout ref is the PR head SHA.
+        for name in BUILD_JOBS:
+            section = job(name)
+            self.assertNotIn("aws-actions/configure-aws-credentials", section)
+            self.assertNotIn("id-token", section)
+            self.assertNotIn("aws-env", section)
 
 
 class PreviewRuntimeIsolation(unittest.TestCase):
@@ -500,19 +512,19 @@ class PreviewTeardown(unittest.TestCase):
         # NOT gated on the suite: a failing flow still leaves a working
         # environment, and a hostname left pointing at the previous sandbox —
         # or at nothing — is worse than a red flow.
-        self.assertIn("if: always() && needs.authorize.outputs.public_worker != ''", deploy)
+        # !cancelled(), not always(): a superseded run cancels itself and must
+        # not re-point the hostname.
+        self.assertIn("if: ${{ !cancelled() && needs.authorize.outputs.public_worker != '' }}", deploy)
         self.assertIn('dir="infra/cloudflare/workers/${WORKER}"', deploy)
         self.assertIn('wrangler@4 deploy --var "TARGET_ORIGIN:${target}"', deploy)
         self.assertIn(
             "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
         )
-        # Making every labelled preview persistent turned the --target-full gate
-        # OFF by default, because runTests defaults off once branchEnv is set.
-        # The suite must still run when the label goes on; only a redeploy from a
-        # push skips it, so pushes stay fast without losing the gate.
+        # The label deploys and does not test (2026-09-28: five concurrent
+        # label suites rate-limited each other for ~80 min each). Only an
+        # explicit dispatch runs --target-full against a preview.
         self.assertIn(
-            "PREVIEW_RUN_TESTS: ${{ (github.event.action == 'labeled' || "
-            "github.event_name == 'workflow_dispatch') && '1' || '0' }}",
+            "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
             job("deploy"),
         )
 
@@ -525,13 +537,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertNotIn("github.event.action == 'closed'", teardown)
         self.assertIn("github.event.label.name == 'preview'", teardown)
 
-    def test_the_nightly_sweep_deletes_only_unapproved_sandboxes(self):
+    def test_the_hourly_sweep_deletes_only_unapproved_sandboxes(self):
         # OLD: MAX_ACTIVE_PREVIEWS=20 and PREVIEW_MAX_AGE_HOURS=72 bounded a
         # shared cluster; "preserving its preview" kept the live PR's service.
         # NEW: the bound is one sandbox per open, labeled PR at its current head
         # SHA, plus provider-side archive and delete after seven days.
         self.assertIn("bun tests/bin/sandbox-preview.ts reconcile", job("reconcile"))
-        self.assertIn('cron: "17 6 * * *"', WORKFLOW)
+        self.assertIn('cron: "17 * * * *"', WORKFLOW)
         reconcile_action = cli_action("reconcile")
         self.assertIn(
             "reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames })",

@@ -101,6 +101,59 @@ function isWebhookIngressRequest(request, url) {
   );
 }
 
+// CORS preflights answered at the edge. A browser caches a preflight per URL,
+// so every new project, session or query string paid a full origin round trip
+// (0.24–1.0 s measured 2026-09-27) before the real request could start. The
+// API's CORS policy is one middleware on every route (apps/api/src/middleware/
+// cors.ts), so its answer depends only on the host, the Origin and the
+// requested method + headers. The first preflight per key still goes to the
+// API, which stays the only source of the policy; its answer is kept here for
+// the same 10 minutes the API grants browsers. A refusal is never kept.
+const PREFLIGHT_EDGE_TTL_SECONDS = 600;
+
+function edgeCache() {
+  return typeof caches !== 'undefined' && caches?.default ? caches.default : null;
+}
+
+function preflightCacheKey(request, url) {
+  const origin = request.headers.get('Origin');
+  const method = request.headers.get('Access-Control-Request-Method');
+  if (request.method !== 'OPTIONS' || !origin || !method) return null;
+  const headers = (request.headers.get('Access-Control-Request-Headers') || '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  const key = new URL(`https://${url.hostname}/__kortix_preflight__`);
+  key.searchParams.set('origin', origin);
+  key.searchParams.set('method', method.toUpperCase());
+  key.searchParams.set('headers', headers);
+  return new Request(key.toString(), { method: 'GET' });
+}
+
+async function cachedPreflight(key) {
+  const cache = edgeCache();
+  if (!cache || !key) return null;
+  const hit = await cache.match(key).catch(() => undefined);
+  if (!hit) return null;
+  const response = new Response(null, { status: hit.status, headers: hit.headers });
+  response.headers.delete('Cache-Control');
+  response.headers.set('X-Kortix-Preflight', 'edge');
+  return addSecurityHeaders(response);
+}
+
+async function keepPreflight(key, request, response) {
+  const cache = edgeCache();
+  if (!cache || !key) return;
+  const origin = request.headers.get('Origin');
+  if (response.status !== 204 && response.status !== 200) return;
+  if (response.headers.get('Access-Control-Allow-Origin') !== origin) return;
+  const stored = new Response(null, { status: response.status, headers: response.headers });
+  stored.headers.set('Cache-Control', `public, max-age=${PREFLIGHT_EDGE_TTL_SECONDS}`);
+  await cache.put(key, stored).catch(() => {});
+}
+
 async function readMaintenanceConfig(env) {
   if (env.MAINTENANCE_LEVEL_OVERRIDE === 'blocking') {
     return {
@@ -285,7 +338,13 @@ export default {
       );
     }
 
-    const maintenance = await readMaintenanceConfig(env);
+    const preflightKey = isGateway ? null : preflightCacheKey(request, url);
+    const edgePreflight = await cachedPreflight(preflightKey);
+    if (edgePreflight) return edgePreflight;
+
+    // Blocking maintenance refuses writes only, so a read never waits on the
+    // maintenance state (a Vercel round trip on every edge-cache miss).
+    const maintenance = isReadOnlyRequest(request) ? null : await readMaintenanceConfig(env);
     const isMaintenanceConfigWrite =
       !isGateway &&
       request.method === 'PUT' &&
@@ -350,6 +409,7 @@ export default {
     if (response.status === 101 || response.webSocket) {
       return response;
     }
+    if (preflightKey) await keepPreflight(preflightKey, request, response);
     const newResponse = new Response(response.body, response);
     newResponse.headers.set('X-Backend', active);
     newResponse.headers.set('X-Backend-Service', isGateway ? 'gateway' : 'api');

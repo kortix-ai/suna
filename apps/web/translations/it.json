@@ -1,6 +1,10 @@
 {
   "repositoryChange": {
     "changing": "Modifica in corso…",
+    "searchBranches": "Cerca branch…",
+    "loadingBranches": "Caricamento dei branch…",
+    "noBranches": "Nessun branch corrispondente.",
+    "moreBranches": "Altri {count}. Digita per filtrare.",
     "title": "Cambia repository",
     "manifestRequirement": "Il nuovo repository deve contenere {manifest} nel branch predefinito. Prima interrompi le sessioni attive e chiudi le richieste di modifica aperte.",
     "verifyAgain": "Verifica di nuovo GitHub",
@@ -62,6 +66,7 @@
     "manageChatGptAccounts": "Gestisci account ChatGPT",
     "connect": "Connetti",
     "connectChatGpt": "Connetti ChatGPT",
+    "reconnectChatGpt": "Riconnetti ChatGPT",
     "noChatGptAccounts": "Nessun account ChatGPT",
     "oauthCreationDescription": "Accedi con il tuo account ChatGPT Plus o Pro. Kortix conserva l’accesso crittografato e non lo mostra mai.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -613,6 +618,10 @@
         "config_releases": {
           "name": "Release di configurazione",
           "description": "Esegue le sessioni con la configurazione agente corrente del branch di base, servita in sola lettura, così un agente, skill o strumento unito raggiunge ogni sessione attiva. Disattivato, una sessione legge la propria cartella di configurazione nel workspace."
+        },
+        "mcp": {
+          "name": "Server MCP",
+          "description": "Collega Claude, ChatGPT, Cursor, Codex o qualsiasi client MCP a questo progetto tramite OAuth. Il client accede a tuo nome e chiama Kortix con i tuoi permessi. Trovi l’URL in Connetti MCP, nel menu dello spazio di lavoro."
         },
         "agentmail_email": {
           "name": "Email AgentMail",
@@ -1504,6 +1513,7 @@
       "createIn": "Crea un progetto in {account}",
       "logOut": "Esci",
       "downloadApp": "Scarica l'app",
+      "connectMcp": "Connetti MCP",
       "accountSettings": "Impostazioni account",
       "settings": "Impostazioni",
       "find": "Trova uno progetto…",
@@ -19192,7 +19202,12 @@
       "text5176d59f25fd": "Release di configurazione della sessione risolta",
       "text273c48dbf3b9": "Dispositivo per notifiche push registrato",
       "textbb666ddf7a57": "Dispositivo per notifiche push rimosso",
-      "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata"
+      "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata",
+      "text3ec6c235548a": "Metadati del server MCP letti",
+      "text7740934de920": "Client OAuth registrato",
+      "textcd36423ea12a": "Server MCP chiamato",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20254,5 +20269,25 @@
     "connectFailed": "Impossibile collegare l’account. Riprova.",
     "sharePrivateDescription": "Scegli chi altro può usare il tuo account. Diventa un account condiviso, che possono gestire anche i gestori delle connessioni del progetto.",
     "ownerMeta": "Il tuo account"
+  },
+  "connectMcp": {
+    "title": "Connetti Kortix tramite MCP",
+    "description": "Aggiungi questo URL a Claude, ChatGPT, Cursor, Codex o a qualsiasi client MCP. La prima volta il client ti chiede di accedere a Kortix. Niente da installare.",
+    "urlLabel": "URL MCP",
+    "addToClient": "Aggiungilo al tuo client",
+    "other": "Altro",
+    "claudeSteps": "In Claude (web o desktop), apri Impostazioni → Connettori → Aggiungi connettore personalizzato, incolla l’URL e accedi.",
+    "claudeCodeHint": "Poi esegui /mcp in Claude Code e accedi.",
+    "otherHint": "ChatGPT (modalità sviluppatore), VS Code, Windsurf e altri client: aggiungi un server MCP remoto con l’URL qui sopra, oppure questo JSON.",
+    "addToCursor": "Aggiungi a Cursor",
+    "signInOnFirstUse": "Cursor ti chiede di accedere a Kortix al primo utilizzo.",
+    "docs": "Documentazione",
+    "done": "Fatto",
+    "copy": "Copia"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "App non verificata",
+    "unverifiedBody": "{client} si è registrata da sola su Kortix. Kortix non ha verificato chi la gestisce. Consentila solo se la stai collegando tu in questo momento.",
+    "redirectsTo": "Ti rimanda a"
   }
 }

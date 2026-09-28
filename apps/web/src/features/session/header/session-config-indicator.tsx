@@ -220,7 +220,7 @@ export function SessionConfigIndicator({
 
 /**
  * How loud the fallback chip is. `destructive` is the loud error treatment the
- * spec recommends (docs/specs/config-releases.md, open decision 1). Set it to
+ * spec recommends. Set it to
  * `secondary` for a quiet notice; nothing else changes.
  */
 const FALLBACK_CHIP_VARIANT: NonNullable<VariantProps<typeof badgeVariants>['variant']> =

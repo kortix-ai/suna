@@ -21,13 +21,15 @@ a given import path is:
 
 | Tier | Entries | Guarantee |
 |---|---|---|
-| Stable | `.`, `./react`, `./server` | semver |
+| Stable | `.`, `./react`, `./server`, `./wire-message-id` | semver |
 | Deprecated | the 20 legacy subpaths | works; removed on the next major |
 | Internal | `./internal/*` | **no guarantee**, may change in any release |
 
 `.` is the canonical entry — everything framework-free lives there. `./react`
 and `./server` exist because React is a peer dependency and `./server` statically
-imports `node:async_hooks`, respectively. The 20 legacy subpaths
+imports `node:async_hooks`, respectively. `./wire-message-id` is the wire
+message-id clock module alone — it has no imports, so a server loads it without
+the root barrel; the root exports the same names. The 20 legacy subpaths
 (`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
 the zustand stores, …) are `@deprecated` aliases that still resolve — import from
 the root instead. That the root really does cover all of them is asserted by

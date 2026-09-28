@@ -101,7 +101,7 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | --- | --- | --- |
 | `--name <n>` / positional `<n>` | — (required) | Worktree name → branch name + slot identity. |
 | `--branch <b>` | `<n>` | Branch to use. A local branch is checked out; a branch that exists only as `origin/<b>` (run `git fetch` first) is checked out tracking it; otherwise it is created from `--from`. |
-| `--from <ref>` | `HEAD` | Base ref for a newly created branch. Must carry current `packages/db/migrations` (see above). |
+| `--from <ref>` | `main` | Base ref for a newly created branch. `main` means a freshly fetched `origin/main`, never the primary checkout's local `main`, which is often hundreds of commits behind. The new branch has no upstream, so push it with `git push -u origin <branch>`. Must carry current `packages/db/migrations` (see above). |
 | `--db` / `--with-db` / `--isolated-db` | off | Opt into the old full isolated Supabase project (`kortix-wt-<n>`) with its own containers/volumes/migrations. |
 | `--no-db` / `--shared-db` | on | Explicitly use the default shared primary Supabase DB. |
 | `--no-start` | off | **Provision only, don't boot servers.** Use this for agent/CI runs. |

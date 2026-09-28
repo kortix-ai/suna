@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { ACCOUNT_SCOPED_SETTINGS_TABS, isSettingsTabAllowed } from './settings-panel';
+import { ACCOUNT_SCOPED_SETTINGS_TABS, isSettingsTabAllowed } from './settings-panel-body';
 import { DEFAULT_SETTINGS_TAB } from './settings-tabs';
 import {
   resolveSettingsExitPath,

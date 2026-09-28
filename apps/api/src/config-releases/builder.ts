@@ -1,5 +1,5 @@
 /**
- * Config release builder (docs/specs/config-releases.md, "Release builder").
+ * Config release builder.
  *
  * A config release is one config archive plus one compiled governance. The
  * archive is keyed by the config tree ID, so every commit and every variant
@@ -34,7 +34,7 @@ const HEX40 = /^[0-9a-f]{40}$/;
  * Always `follow-base`: a session runs the base branch's CURRENT config
  * release. One member on purpose — there is no per-session config policy, and
  * a session's own edits under `/workspace` reach a box only once they are
- * pushed to the base branch (docs/specs/config-releases.md, "Feature flag").
+ * pushed to the base branch.
  */
 export type ConfigMode = 'follow-base';
 
@@ -294,7 +294,7 @@ export interface BuildConfigReleaseOptions {
  * fresh build instead. Retention rides the publish because that is the only
  * moment a project gains an archive — no cron, no worker, no leader election.
  * A prune failure is never allowed to fail a publish; the next publish retries
- * it (docs/specs/config-releases.md, "Retention").
+ * it.
  */
 export async function storeConfigArchive(
   store: ConfigArchiveStore,
