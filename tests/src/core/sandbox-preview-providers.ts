@@ -32,6 +32,8 @@ import {
   waitForWarmSandbox,
 } from './platinum-ci';
 import {
+  PREVIEW_SUITE_PID_PATH,
+  PREVIEW_SUITE_SUPERSEDED,
   PreviewInfrastructureError,
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
@@ -530,7 +532,15 @@ export interface SandboxPreviewSuiteInput {
   sandboxId: string;
   platinum: { apiUrl: string; apiKey: string };
   branchEnv?: string;
+  /**
+   * Asked about once a minute while the suite runs. True stops the suite and
+   * returns PREVIEW_SUITE_SUPERSEDED, releasing the deploy lock for the newer
+   * commit's redeploy instead of holding it for the rest of a ~40 min run.
+   */
+  superseded?: () => Promise<boolean>;
 }
+
+const SUPERSEDE_CHECK_MS = 60_000;
 
 /**
  * Run `pnpm test -- --target-full` inside the preview sandbox the deploy step
@@ -565,10 +575,24 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
       throw new Error(`Platinum preview suite launch failed: ${launch.stderr ?? ''}`);
     }
     launched = true;
+    let lastSupersedeCheck = Date.now();
     const exitCode = await observePlatinumWorker({
       startedAt: Date.now(),
       timeoutMs: PREVIEW_TIMEOUT_MS,
       checkExitCode: async () => {
+        if (input.superseded && Date.now() - lastSupersedeCheck >= SUPERSEDE_CHECK_MS) {
+          lastSupersedeCheck = Date.now();
+          // A failed lookup keeps the suite running: only a positive answer stops it.
+          if (await input.superseded().catch(() => false)) {
+            // The PID file exists only while the suite runs (its EXIT trap removes it).
+            await execPlatinum(api, input.sandboxId, [
+              'bash',
+              '-lc',
+              `pid="$(cat ${PREVIEW_SUITE_PID_PATH} 2>/dev/null)" && [ -n "$pid" ] && kill -TERM -- "-$pid" 2>/dev/null; true`,
+            ]);
+            return PREVIEW_SUITE_SUPERSEDED;
+          }
+        }
         const status = await statPlatinum(api, input.sandboxId, statusPath, 1);
         if (!status) return null;
         const bytes = await api.read(input.sandboxId, statusPath, undefined, undefined, 1);
@@ -583,6 +607,7 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
       readLog: (offset, limit) =>
         api.read(input.sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
     });
+    if (exitCode === PREVIEW_SUITE_SUPERSEDED) return exitCode;
     await downloadPlatinumArtifacts(api, input.sandboxId, input.root).catch((error) => {
       console.warn(`[sandbox-preview] Platinum result download failed: ${String(error)}`);
     });

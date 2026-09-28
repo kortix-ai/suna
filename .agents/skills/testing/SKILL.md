@@ -66,7 +66,7 @@ Do not replace this package contract with a separate CI workflow.
 
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
-Local browser runs use two Playwright workers. CI browser shards use one worker.
+Browser runs use two Playwright workers, locally and in each CI shard.
 
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release

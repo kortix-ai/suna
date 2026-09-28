@@ -130,6 +130,14 @@ describe('preview-sticky-comment.sh', () => {
     expect(r.body).toContain('## Preview environment - live; tests did not finish');
   });
 
+  it('says a superseded suite stopped for the newer commit, never that it failed or passed', () => {
+    const r = run({ SUITE_OUTCOME: 'superseded' });
+
+    expect(r.body).toContain('## Preview environment - live; suite superseded');
+    expect(r.body).toContain('stopped before it finished');
+    expect(r.body).not.toMatch(/tested|tests failed/);
+  });
+
   it('never fails the job when GitHub rejects the comment', () => {
     const r = run({}, { write: 'fail' });
 

@@ -23,20 +23,18 @@ const environmentProtectionPassword = process.env.WEB_PROTECTION_PASSWORD;
 // `e2e/helpers/deployment-bypass.ts` for the full incident.
 const vercelBypass = deploymentBypassSecret();
 
-export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
+export function resolveBrowserWorkers(value: string | undefined): number {
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
-  // CI: one worker per browser shard. Chosen when lanes ran in a 6 vCPU /
-  // 12 GiB Daytona guest (removed 2026-08-26), to keep cold Next.js route
-  // compilation under its memory limit. Lanes now run on 8 vCPU / 32 GB
-  // Blacksmith runners and parallelism comes from the four shards in
-  // `tests.yml`. Two local workers keep cold compilation below the full-suite
-  // deadline on development Macs.
-  if (ci) return 1;
+  // Two workers everywhere. CI ran one per shard while lanes lived in a
+  // 6 vCPU / 12 GiB Daytona guest (removed 2026-08-26), to keep cold Next.js
+  // route compilation under its memory limit. The shards now run on 8 vCPU /
+  // 32 GB Blacksmith runners, and one worker spent ~85% of the slowest shard's
+  // wall clock (browser-3: 17 tests, 7.0 min of 9.8, 2026-09-28).
   return 2;
 }
 
-const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(process.env.CI));
+const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS);
 
 export interface GrepFilters {
   grep?: RegExp;

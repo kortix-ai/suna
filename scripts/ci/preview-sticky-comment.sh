@@ -53,6 +53,12 @@ else
       # shellcheck disable=SC2016
       result='`pnpm test -- --target-full` passed.'
       ;;
+    superseded)
+      title='## Preview environment - live; suite superseded'
+      # shellcheck disable=SC2016 # literal backticks are Markdown
+      result='A newer commit (or removing the `preview` label) superseded this commit, so the suite stopped and released the preview for the redeploy.'
+      report='stopped before it finished'
+      ;;
     failure)
       title='## Preview environment - live; tests failed'
       result='The preview stays available for diagnosis. Open the report and the workflow log.'

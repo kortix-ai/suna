@@ -599,7 +599,7 @@ jobs:
           SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
           DEPLOY_OUTCOME: ${{ steps.preview.outcome }}
           SUITE: ${{ steps.preview.outputs.suite }}
-          SUITE_OUTCOME: ${{ steps.suite.outcome || 'cancelled' }}
+          SUITE_OUTCOME: ${{ steps.suite.outputs.superseded == '1' && 'superseded' || steps.suite.outcome || 'cancelled' }}
         run: bash scripts/ci/preview-sticky-comment.sh
       - uses: actions/upload-artifact@v7
         if: always()
