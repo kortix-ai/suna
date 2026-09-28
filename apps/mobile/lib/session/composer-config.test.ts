@@ -6,7 +6,7 @@ import {
   composerChip,
   pickerSections,
   homeAgentName,
-  pickableAgents,
+  threadAgents,
   showsPickerSearch,
   nearestStop,
   stopOffset,
@@ -99,23 +99,22 @@ describe('thinking level names', () => {
 });
 
 describe('agents', () => {
-  const agent = (name: string, mode: 'primary' | 'subagent' | 'all', hidden = false) => ({ name, mode, hidden });
-
-  test('pickable = primary or all, not hidden, not disabled', () => {
-    const list = [agent('kortix', 'primary'), agent('explore', 'subagent'), agent('plan', 'all'), agent('ghost', 'primary', true)];
-    expect(pickableAgents([...list, agent('build', 'primary'), agent('engineering', 'primary')]).map((a) => a.name)).toEqual(['kortix', 'engineering']);
-  });
-
-  test('project config agents: a missing mode is "all" (OpenCode default); `enabled: false` is out', () => {
-    // `/projects/:id/detail` of a local project, 2026-09-21, plus the two edge rows.
-    const config = [
-      { name: 'harness-reflector', mode: 'primary', enabled: true },
-      { name: 'kortix', mode: 'primary', enabled: true },
-      { name: 'session-reviewer', mode: 'subagent', enabled: true },
-      { name: 'no-mode', mode: null },
-      { name: 'off', mode: 'primary', enabled: false },
-    ];
-    expect(pickableAgents(config).map((a) => a.name)).toEqual(['harness-reflector', 'kortix', 'no-mode']);
+  test('thread agents: the project config roster, default first, no runtime built-ins', () => {
+    const config = {
+      default_agent: 'kortix',
+      open_code_default_agent: 'kortix',
+      agents: [
+        { name: 'engineering', path: 'a', description: 'Eng', mode: 'primary' },
+        { name: 'explore', path: 'b', description: null, mode: 'subagent' },
+        { name: 'no-mode', path: 'c', description: null, mode: null },
+        { name: 'kortix', path: 'd', description: 'K', mode: 'primary' },
+      ],
+    } as unknown as Parameters<typeof threadAgents>[0];
+    expect(threadAgents(config)).toEqual([
+      { name: 'kortix', description: 'K', mode: 'primary', options: {} },
+      { name: 'engineering', description: 'Eng', mode: 'primary', options: {} },
+      { name: 'no-mode', description: undefined, mode: 'all', options: {} },
+    ]);
   });
 
   test('home agent: the pick, else the project default, else the last used; only a pickable one', () => {
