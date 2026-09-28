@@ -2,6 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { reconcileRuntimeWakeCandidate } from './runtime-wake-maintenance';
 
 describe('reconcileRuntimeWakeCandidate', () => {
+  test('records a removed observation before preserving the runtime', async () => {
+    const events: string[] = [];
+    await reconcileRuntimeWakeCandidate({
+      claim: async () => true,
+      getStatus: async () => 'removed',
+      stop: async () => { events.push('stop'); },
+      markChecked: async () => { events.push('checked'); },
+      markStopped: async () => { events.push('stopped'); },
+      markRemoved: async () => { events.push('observation'); events.push('preserve'); },
+    });
+    expect(events).toEqual(['observation', 'preserve']);
+  });
   test('stops a provider VM that started after its wake claim failed', async () => {
     const events: string[] = [];
     const result = await reconcileRuntimeWakeCandidate({
