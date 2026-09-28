@@ -343,7 +343,7 @@ If `dockerd` stops, restart it with `sudo dockerd >/var/log/dockerd.log 2>&1 &`.
 
 | Provider | Behavior |
 | -------- | -------- |
-| Platinum | Bakes the guest kernel's full module tree into the template (`kernel_modules: container`). The build fails with a clear error on a Platinum API that does not confirm the profile. |
+| Platinum | Bakes the guest kernel's full module tree into the template (`kernel_modules: container`). A Platinum API that predates the profile builds the template without it and the build log shows a warning; the next image rebuild picks the profile up. |
 | Daytona  | Runs nested Docker without a module profile. |
 | E2B      | Not supported. The build fails with `container_runtime is not supported on E2B`. |
 

@@ -212,24 +212,24 @@ interface PlatinumTemplate {
  * kortix.yaml `container_runtime: true` → Platinum `kernel_modules: "container"`
  * on /v1/templates/from-build: the rootfs gets the full guest kernel module
  * tree, so dockerd can use bridge + overlay + netfilter. An API older than the
- * field strips it and builds a template dockerd cannot use; `verify` turns the
- * missing echo into a deterministic (non-retryable) build failure.
+ * field strips it, and it cannot cancel the build it queued (DELETE answers 409
+ * build_in_progress). So a missing echo is a build-log warning, not a failure:
+ * the template builds as before, without the modules, and the next identity
+ * change (any runtime-layer bump) rebuilds it on the upgraded API.
  */
 export function fromBuildKernelModules(input: Pick<BuildableTemplate, 'snapshotName' | 'containerRuntime'>): {
   body: { kernel_modules?: 'container' };
-  verify: (registered: PlatinumTemplate) => void;
+  missing: (registered: PlatinumTemplate) => string | null;
 } {
-  if (!input.containerRuntime) return { body: {}, verify: () => {} };
+  if (!input.containerRuntime) return { body: {}, missing: () => null };
   return {
     body: { kernel_modules: 'container' },
-    verify: (registered) => {
-      if (registered.kernel_modules === 'container') return;
-      throw new Error(
-        `Platinum template ${input.snapshotName}: container_runtime needs a Platinum API that accepts ` +
-          'kernel_modules on /v1/templates/from-build, and this one did not confirm it. ' +
-          'Upgrade Platinum, or remove container_runtime from the sandbox template.',
-      );
-    },
+    missing: (registered) =>
+      registered.kernel_modules === 'container'
+        ? null
+        : `WARNING: Platinum template ${input.snapshotName}: container_runtime was requested, but this ` +
+          'Platinum API did not confirm kernel_modules on /v1/templates/from-build. The template builds ' +
+          'without the container kernel modules; dockerd will not get bridge networking until Platinum is upgraded.',
   };
 }
 
@@ -717,12 +717,10 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
       // poll THAT id (never the truncated name list) — see waitForActive.
       const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
-      try {
-        kernelModules.verify(registered);
-      } catch (err) {
-        // Do not let the old API finish a build that cannot run Docker.
-        await this.client.json(`/v1/templates/${externalId}`, { method: 'DELETE' }).catch(() => {});
-        throw err;
+      const kernelModulesWarning = kernelModules.missing(registered);
+      if (kernelModulesWarning) {
+        console.warn(`[snapshots] ${kernelModulesWarning}`);
+        tap?.onLine?.(kernelModulesWarning);
       }
       await waitForActive(input.snapshotName, tap, externalId, this.client);
       // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
