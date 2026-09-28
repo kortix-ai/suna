@@ -5,7 +5,13 @@ import { auth, errors, json } from '../../openapi';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubToken } from '../git-backends';
-import { commitFile, createRepo, getFileSha } from '../github';
+import {
+  addRepositoryToInstallation,
+  commitFiles,
+  createRepo,
+} from '../github';
+import { GitHubPersonalAccountCreateUnsupportedError } from '../lib/github-create-errors';
+import { resolveGitHubUserToken } from '../lib/github-user-token';
 import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -294,6 +300,35 @@ projectsApp.openapi(
       install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
     }, 409);
   }
+  // A PERSONAL owner needs `POST /user/repos`, which GitHub refuses for an App
+  // installation token and accepts for a USER access token. Use the caller's
+  // stored one; without it, ask for authorization instead of failing upstream.
+  // An organization keeps the installation token, which is narrower and needs
+  // no human.
+  let createAuth = githubAuth.auth;
+  if (githubAuth.auth.ownerType === 'User') {
+    const ownerLogin = githubAuth.auth.owner ?? githubAuth.installation.ownerLogin;
+    const userToken = await resolveGitHubUserToken({
+      accountId: scope.accountId,
+      userId: scope.userId,
+      ownerLogin,
+    });
+    if (!userToken) {
+      return c.json({
+        error:
+          `Authorize Kortix on GitHub as ${ownerLogin} to create a repository in that personal account. ` +
+          'You can also create the repository on GitHub and import it.',
+        code: 'github_user_authorization_required',
+        owner_login: ownerLogin,
+      }, 409);
+    }
+    createAuth = {
+      token: userToken.token,
+      source: 'user_token',
+      owner: ownerLogin,
+      ownerType: 'User',
+    };
+  }
 
   // create-repo always provisions a fresh GitHub repo, so block before we
   // create anything upstream — a straight count, no idempotent re-link.
@@ -312,22 +347,16 @@ projectsApp.openapi(
         isPrivate,
         description: description ?? undefined,
         autoInit: true,
-        auth: githubAuth.auth,
+        auth: createAuth,
       });
     } catch (error) {
       lastRepoError = error;
       if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
-      if (
-        githubAuth.auth.source === 'app_installation' &&
-        githubAuth.auth.ownerType === 'User' &&
-        typeof error === 'object' && error !== null &&
-        'status' in error && error.status === 403 &&
-        'path' in error && error.path === '/user/repos'
-      ) {
-        return c.json({
-          error: 'github_personal_installation_create_unsupported',
-          message: 'GitHub App installations cannot create repositories under personal accounts. Create a repository on GitHub and import it, or connect an organization installation.',
-        }, 409);
+      // A personal owner on an installation token: `createRepo` refuses before
+      // it calls GitHub. Deterministic for this owner, so it is a 409 the
+      // client can branch on, not the retryable 502 an upstream fault gets.
+      if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
+        return c.json({ error: error.message, code: error.code }, 409);
       }
       return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
     }
@@ -343,13 +372,36 @@ projectsApp.openapi(
     );
   }
 
+  // An installation with `repository_selection: 'selected'` cannot see a
+  // repository created a second ago, and the starter commits below run on the
+  // installation token. Grant it access first, with the same user token that
+  // created the repository. `all` needs nothing.
+  if (createAuth.source === 'user_token' && githubAuth.installation.repositorySelection === 'selected') {
+    try {
+      await addRepositoryToInstallation({
+        installationId: githubAuth.installation.installationId,
+        repositoryId: repo.id,
+        auth: createAuth,
+      });
+    } catch (error) {
+      // The repository exists but Kortix cannot write to it, so there is no
+      // usable project to hand back. Say which step failed.
+      return c.json({
+        error:
+          `Created ${repo.full_name}, but could not give Kortix access to it: ` +
+          `${(error as Error).message || 'GitHub refused the request'}. ` +
+          'Grant the Kortix app access to that repository on GitHub, then import it.',
+        code: 'github_installation_repository_grant_failed',
+      }, 502);
+    }
+  }
+
   const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
   const defaultBranch = repo.default_branch || 'main';
 
   // Commit the Kortix starter into the fresh repo so users land with a
-  // working project shape on first session boot. GitHub's Contents API
-  // updates the branch tip on every write, so these must be sequential.
-  // A partial starter is not a usable project.
+  // working project shape on first session boot. A partial starter is not a
+  // usable project, so it lands as one commit or not at all.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
   const starter = sourceItemId
     ? (await buildProjectSeedFilesFromItem({
@@ -364,27 +416,22 @@ projectsApp.openapi(
     repoFullName: repo.full_name,
     template: starterTemplate,
   });
-  for (const file of starter) {
-    try {
-      // README.md exists already from `auto_init: true` — upsert via sha.
-      const existingSha = file.path === 'README.md'
-        ? await getFileSha({ owner: ownerLogin, repo: repoSlug, path: file.path, branch: defaultBranch, auth: githubAuth.auth })
-        : null;
-      await commitFile({
-        owner: ownerLogin,
-        repo: repoSlug,
-        path: file.path,
-        content: file.content,
-        message: `chore: scaffold ${file.path}`,
-        branch: defaultBranch,
-        existingSha: existingSha ?? undefined,
-        auth: githubAuth.auth,
-      });
-    } catch (err) {
-      const message = (err as Error).message || 'Failed to scaffold starter file';
-      console.warn(`[projects/create-repo] Failed to scaffold ${file.path} into ${repo.full_name}:`, message);
-      return c.json({ error: `Failed to scaffold starter file ${file.path}: ${message}` }, 502);
-    }
+  // One commit for the whole starter (`commitFiles`): ~180 files, one tree,
+  // five requests. A per-file Contents-API loop ran past the 25 s request
+  // deadline. The tree overwrites the `auto_init` README in the same commit.
+  try {
+    await commitFiles({
+      owner: ownerLogin,
+      repo: repoSlug,
+      branch: defaultBranch,
+      files: starter.map((file) => ({ path: file.path, content: file.content })),
+      message: 'chore: scaffold the Kortix starter',
+      auth: githubAuth.auth,
+    });
+  } catch (err) {
+    const message = (err as Error).message || 'Failed to scaffold the starter';
+    console.warn(`[projects/create-repo] Failed to scaffold the starter into ${repo.full_name}:`, message);
+    return c.json({ error: `Failed to scaffold the starter: ${message}` }, 502);
   }
 
   const icon = normalizeProjectIcon(body.icon);
@@ -396,7 +443,11 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-    managed: true,
+    // The repository is the account's, reached through the account's own
+    // installation — not the Kortix managed-git backend. `managed: true` made
+    // the mirror clone it with the managed-org PAT (503 git_mirror_unavailable)
+    // and made project deletion delete the user's repository.
+    managed: false,
     // The starter just committed above (buildStarterFiles) ships kortix.yaml
     // (kortix_version 2) — record that path so it's never stale from birth.
     manifestPath: 'kortix.yaml',

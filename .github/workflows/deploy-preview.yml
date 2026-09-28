@@ -342,13 +342,14 @@ jobs:
       # the sandbox is reused instead of replaced, so its URL survives every
       # push and stays bookmarkable until the label comes off or the branch is
       # deleted. See previewSandboxIdentity in tests/src/core.
-      # Every run here is an explicit request (label added, or dispatch), so
-      # every run deploys AND runs --target-full against the preview. A push
-      # never starts a run. The label is rare by policy: the development box
-      # is the pre-merge gate (AGENTS.md "Default delivery"). On 2026-09-28,
-      # when every PR carried the label, five suites ran at once and
-      # rate-limited each other on the one preview GitHub App.
-      PREVIEW_RUN_TESTS: '1'
+      # The label deploys (~7 min) and never runs the deployed suite. Only an
+      # explicit dispatch (`gh workflow run deploy-preview.yml -f pr_number=N`)
+      # runs --target-full (40-80 min: real sandboxes, managed repos, Stripe)
+      # against the preview. The `test` label runs the ~9 min local suite; the
+      # prod release gate runs --target-full against staging. On 2026-09-28
+      # five label suites ran at once and rate-limited each other on the one
+      # preview GitHub App.
+      PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
       PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}
       PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}
       PREVIEW_PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}

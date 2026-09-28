@@ -106,7 +106,17 @@ export function isGitHubIpAllowListRefusal(error: unknown): boolean {
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
-type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
+/**
+ * `user_token` is a GitHub App USER access token. It exists for one reason:
+ * `POST /user/repos` accepts it and refuses an installation token, so a
+ * repository under a PERSONAL owner can only be created with one.
+ */
+type GitHubAuthSource =
+  | 'app_installation'
+  | 'pat'
+  | 'managed'
+  | 'project_credential'
+  | 'user_token';
 
 export interface GitHubAuthContext {
   token: string;
@@ -174,7 +184,14 @@ export async function ghFetch<T>(
       githubRetryAfterSeconds(res.status, res.headers, detail) ?? undefined,
     );
   }
-  return res.json() as Promise<T>;
+  // GitHub answers 204 with no body for several endpoints (repository delete,
+  // adding a repository to an installation). `res.json()` on an empty body
+  // throws `SyntaxError: Unexpected end of JSON input` AFTER the call has
+  // already succeeded, so the caller sees a failure that did not happen.
+  if (res.status === 204 || res.status === 205) return undefined as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export async function ghFetchAllPages<T>(

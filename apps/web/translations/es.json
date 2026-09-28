@@ -239,7 +239,8 @@
       "actionCreate": "Crear un repositorio nuevo",
       "actionImport": "Importar un repositorio existente",
       "ownerTypePersonal": "Cuenta personal",
-      "ownerTypeOrg": "Organización"
+      "ownerTypeOrg": "Organización",
+      "createPersonalAuthorize": "Kortix solicitará tu autorización en GitHub la primera vez que crees un repositorio en una cuenta personal."
     }
   },
   "projectHome": {

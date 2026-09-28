@@ -239,7 +239,8 @@
       "actionCreate": "Créer un nouveau dépôt",
       "actionImport": "Importer un dépôt existant",
       "ownerTypePersonal": "Compte personnel",
-      "ownerTypeOrg": "Organisation"
+      "ownerTypeOrg": "Organisation",
+      "createPersonalAuthorize": "Kortix demande votre autorisation à GitHub la première fois que vous créez un dépôt dans un compte personnel."
     }
   },
   "projectHome": {

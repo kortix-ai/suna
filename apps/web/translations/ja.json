@@ -239,7 +239,8 @@
       "actionCreate": "新しいリポジトリを作成",
       "actionImport": "既存のリポジトリをインポート",
       "ownerTypePersonal": "個人アカウント",
-      "ownerTypeOrg": "組織"
+      "ownerTypeOrg": "組織",
+      "createPersonalAuthorize": "個人アカウントにリポジトリを初めて作成するとき、Kortix は GitHub で認可を求めます。"
     }
   },
   "projectHome": {
