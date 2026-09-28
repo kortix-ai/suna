@@ -1,4 +1,6 @@
 /** One project: read, detail, and update. */
+import { serializeProject } from '../lib/project-serializer';
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -19,11 +21,7 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
 import { AnyObject, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import {
-  normalizeString,
-  serializeProject,
-  serializeProjectGitConnection,
-} from '../lib/serializers';
+import { serializeProjectGitConnection } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { allowStaleMirrorReads } from '../git/mirror';
 import { resolveFeatureFlag } from '../../feature-flags/registry';

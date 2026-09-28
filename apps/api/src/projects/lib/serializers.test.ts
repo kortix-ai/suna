@@ -1,11 +1,12 @@
-import { describe, expect, test } from 'bun:test';
-
+import { serializeProject } from './project-serializer';
 import {
   type SecretAgentGrantConfig,
   buildSecretView,
   secretDeliveryBlockedReason,
-  serializeProject,
-} from './serializers';
+} from './secret-views';
+import { describe, expect, test } from 'bun:test';
+
+
 
 // `metadata` is nullable: packages/db/src/schema/kortix.ts:330 declares
 // jsonb('metadata').default({}) with NO .notNull(), which is why

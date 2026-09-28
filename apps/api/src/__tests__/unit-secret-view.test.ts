@@ -5,8 +5,9 @@
  * The only remaining per-user nuance is the personal ("mine") override, used
  * today by the CODEX_AUTH_JSON per-user provider login.
  */
+import { buildSecretView } from '../projects/lib/secret-views';
 import { describe, expect, test } from 'bun:test';
-import { buildSecretView } from '../projects/lib/serializers';
+
 
 const OTHER = 'u-other';
 

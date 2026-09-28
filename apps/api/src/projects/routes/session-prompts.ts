@@ -1,4 +1,5 @@
 /** Session prompt queue: enqueue, list, remove, retry, and hold. */
+import { normalizeString } from '../lib/validators';
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { auth, errors, json } from '../../openapi';
@@ -10,7 +11,7 @@ import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-sco
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
-import { normalizeString } from '../lib/serializers';
+
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import {

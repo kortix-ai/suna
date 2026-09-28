@@ -1,4 +1,5 @@
 /** Project credentials: project-scoped CLI tokens and the BYO git credential. */
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -21,7 +22,7 @@ import {
   upsertProjectGitConnection,
   upsertProjectGitCredential,
 } from '../lib/git';
-import { normalizeString, serializeProjectGitConnection } from '../lib/serializers';
+import { serializeProjectGitConnection } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────

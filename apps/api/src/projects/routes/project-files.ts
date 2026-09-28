@@ -1,4 +1,5 @@
 /** A project's repository contents: files, archive, search, history, branches, commits, and diffs. */
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -23,7 +24,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { normalizeString } from '../lib/serializers';
+
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');

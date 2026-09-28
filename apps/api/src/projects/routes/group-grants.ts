@@ -3,6 +3,7 @@
  * role, detach it, and read the project's grants with member counts.
  */
 
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import {
@@ -25,7 +26,7 @@ import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
-import { normalizeString } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 

@@ -1,3 +1,4 @@
+import { serializeProject } from '../lib/project-serializer';
 import { createRoute, z } from '@hono/zod-openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
@@ -5,7 +6,7 @@ import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { projectsApp, ProjectSchema } from '../lib/app';
 import { RepositoryChangedError, RepositoryManifestMissingError, RepositorySecretCopyError, RepositoryValidationError, replaceProjectRepository } from '../lib/repository-replacement';
-import { serializeProject, serializeProjectGitConnection } from '../lib/serializers';
+import { serializeProjectGitConnection } from '../lib/serializers';
 
 const Body = z.object({
   repo_url: z.string().url(),

@@ -2,6 +2,8 @@
  * Projects: list, create, managed-git status, and provision. Imported first by
  * ../index.ts: its first statement registers the global `/*` auth middleware.
  */
+import { serializeProject } from '../lib/project-serializer';
+import { deriveProjectName, normalizeRepoUrl, normalizeString } from '../lib/validators';
 import { projectRoleGrants } from '../../iam/read-models';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize, listAccessible } from '../../iam';
 import { actorOf } from '../../iam/actor';
@@ -24,12 +26,7 @@ import {
   resolveGitHubImport,
 } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
-import {
-  deriveProjectName,
-  normalizeRepoUrl,
-  normalizeString,
-  serializeProject,
-} from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 
 projectsApp.use('/*', supabaseAuth);

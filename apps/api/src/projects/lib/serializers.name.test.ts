@@ -1,5 +1,6 @@
+import { PROJECT_NAME_MAX_LENGTH, clampProjectName } from './validators';
 import { describe, expect, test } from 'bun:test';
-import { PROJECT_NAME_MAX_LENGTH, clampProjectName } from './serializers';
+
 
 describe('clampProjectName', () => {
   test('returns short names unchanged', () => {

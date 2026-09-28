@@ -1,3 +1,5 @@
+import { serializeProject } from '../projects/lib/project-serializer';
+import { buildSecretView } from '../projects/lib/secret-views';
 import { describe, expect, test } from 'bun:test';
 import {
   ProjectSchema,
@@ -8,7 +10,7 @@ import {
 } from '@kortix/api-contract';
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
-import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
+import { serializeSession } from '../projects/lib/serializers';
 import { serializeSandboxRow } from '../projects/routes/shared';
 
 const NOW = new Date('2026-07-01T12:00:00.000Z');

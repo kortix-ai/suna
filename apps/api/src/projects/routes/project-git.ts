@@ -1,4 +1,6 @@
 /** Project git access: sandbox git token, git connection, and collaborator invites. */
+import { serializeProject } from '../lib/project-serializer';
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { buildDenialError } from '../../iam/denial-message';
@@ -16,7 +18,7 @@ import {
   resolveProjectGitConnection,
   resolveProjectUpstream,
 } from '../lib/git';
-import { normalizeString, serializeProject } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 
 // POST /v1/projects/:projectId/git-token

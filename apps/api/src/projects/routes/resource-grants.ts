@@ -3,6 +3,7 @@
  * member or group. A resource with >=1 grant is visible only to grantees.
  */
 
+import { normalizeString } from '../lib/validators';
 import { SessionScopeSchema } from '@kortix/api-contract';
 import {
   PROJECT_ACTIONS,
@@ -24,7 +25,7 @@ import { and, eq, inArray, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { normalizeString } from '../lib/serializers';
+
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';

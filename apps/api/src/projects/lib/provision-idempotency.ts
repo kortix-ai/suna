@@ -1,9 +1,11 @@
+import { serializeProject } from './project-serializer';
+import { normalizeString } from './validators';
 import { db } from '../../shared/db';
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import type { ProjectRole } from '../access';
 import { readManagedRepoSeedState } from '../managed-repo-seed';
-import { normalizeString, serializeProject } from './serializers';
+
 import type { ProjectRow } from './serializers';
 
 /**

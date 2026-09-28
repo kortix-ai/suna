@@ -11,6 +11,8 @@
  * .kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md
  * for the agent-facing flow.
  */
+import { CODEX_AUTH_JSON_SECRET_NAME } from '../lib/secret-views';
+import { normalizeString } from '../lib/validators';
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -25,7 +27,7 @@ import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed }
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseConnectorConnectOwner } from '../lib/connection-access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 
 function frontendBase(): string {

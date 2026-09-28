@@ -1,3 +1,4 @@
+import { deriveKortixApiRoot, normalizeString } from './validators';
 import { randomUUID } from 'node:crypto';
 import {
   projectSessionConnectorBindings,
@@ -55,7 +56,7 @@ import {
   repositoryAccessFromLoadedAgents,
   legacyReadWorkspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch , resolveCommitSha } from '../git';
+import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { validateNativeOpencodeModelRef } from './session-model-change';
@@ -88,8 +89,6 @@ import {
   type ProjectRow,
   type ProjectSessionRow,
   type RequestAuditContext,
-  deriveKortixApiRoot,
-  normalizeString,
 } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
 import { isUuid } from '../../shared/validate';

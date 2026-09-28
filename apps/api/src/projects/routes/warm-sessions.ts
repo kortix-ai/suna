@@ -3,6 +3,7 @@
  * the deprecated claim that predates it. See ../lib/warm-sessions.ts.
  */
 
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -14,7 +15,7 @@ import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
-import { normalizeString, requestAuditContext, serializeSession } from '../lib/serializers';
+import { requestAuditContext, serializeSession } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { createProjectSession } from '../lib/sessions';

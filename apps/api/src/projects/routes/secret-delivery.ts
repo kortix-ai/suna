@@ -1,4 +1,5 @@
 /** Secret delivery strategy: `PUT /:projectId/secrets/:identifier/strategy`. */
+import { isSystemProjectSecretName, loadSecretViewsForUser } from '../lib/secret-views';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -20,7 +21,7 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { isSystemProjectSecretName, loadSecretViewsForUser } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import {
   SecretWriteResultSchema,

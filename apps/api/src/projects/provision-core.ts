@@ -14,6 +14,8 @@
  * response shape is a contract (the CLI and `@kortix/sdk` depend on it) and
  * must not change. The streaming route (next) is the only real consumer.
  */
+import { serializeProject } from './lib/project-serializer';
+import { PROJECT_NAME_MAX_LENGTH, normalizeString } from './lib/validators';
 import {
   defaultManagedProviderId,
   getBackend,
@@ -72,7 +74,7 @@ import {
 } from './lib/provision-idempotency';
 import { normalizeProjectGlyph } from './lib/project-glyph';
 import { normalizeProjectIcon } from './lib/project-icon';
-import { PROJECT_NAME_MAX_LENGTH, normalizeString, serializeProject } from './lib/serializers';
+
 import { readJsonObject } from '../shared/http-body';
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';

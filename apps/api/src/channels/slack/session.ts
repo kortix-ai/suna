@@ -1,3 +1,4 @@
+import { normalizeString } from '../../projects/lib/validators';
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -9,7 +10,7 @@ import {
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
-import { normalizeString } from '../../projects/lib/serializers';
+
 import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './agent-picker';

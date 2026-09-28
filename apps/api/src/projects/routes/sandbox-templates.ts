@@ -1,4 +1,5 @@
 /** Project sandbox templates: list, create, update, delete, and build. */
+import { serializeTemplate } from '../../snapshots/serializers';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -19,7 +20,7 @@ import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { allowStaleMirrorReads } from '../git/mirror';
-import { serializeTemplate } from '../lib/serializers';
+
 import { templateProviderObservation } from '../lib/template-provider-observation';
 import { readJsonObject } from '../../shared/http-body';
 

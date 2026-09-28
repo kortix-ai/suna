@@ -1,4 +1,6 @@
 /** Project sandboxes and snapshots: status, health, rebuild, and fix-with-agent. */
+import { serializeBuildSummary, serializeTemplate } from '../../snapshots/serializers';
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -21,12 +23,7 @@ import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SnapshotSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { allowStaleMirrorReads } from '../git/mirror';
-import {
-  normalizeString,
-  requestAuditContext,
-  serializeBuildSummary,
-  serializeTemplate,
-} from '../lib/serializers';
+import { requestAuditContext } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';

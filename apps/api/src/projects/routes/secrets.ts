@@ -1,4 +1,11 @@
 /** Project secrets: list, create, delete, personal values, and sandbox sync. */
+import {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  type SecretAgentGrantConfig,
+  isSystemProjectSecretName,
+  loadSecretViewsForUser,
+} from '../lib/secret-views';
+import { normalizeString } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -33,13 +40,7 @@ import {
 } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import {
-  CODEX_AUTH_JSON_SECRET_NAME,
-  isSystemProjectSecretName,
-  loadSecretViewsForUser,
-  normalizeString,
-  type SecretAgentGrantConfig,
-} from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import {
   SecretWriteResultSchema,

@@ -3,6 +3,7 @@
  * the per-session "needs input" summary, and the resolve endpoint.
  */
 
+import { normalizeString, parseBoundedPositiveInt } from '../lib/validators';
 import { approvalPreviewReviewable } from '../../connectors/args-preview';
 import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -16,10 +17,7 @@ import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-auth
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { isUuid } from '../../shared/validate';
 import { AnyObject, OkSchema, projectsApp } from '../lib/app';
-import {
-  normalizeString,
-  parseBoundedPositiveInt,
-} from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';

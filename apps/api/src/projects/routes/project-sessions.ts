@@ -3,6 +3,7 @@
  * Invariant: session_id == sandbox_id == git branch name.
  */
 
+import { hasOwn, normalizeString } from '../lib/validators';
 import {
   SESSION_SHARING_OWNER_ONLY_ERROR,
   SHARING_SELF_LOCKOUT_ERROR,
@@ -22,12 +23,7 @@ import { projectSessions } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
-import {
-  hasOwn,
-  normalizeString,
-  requestAuditContext,
-  serializeSession,
-} from '../lib/serializers';
+import { requestAuditContext, serializeSession } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';

@@ -4,6 +4,7 @@
 // items only this pass — change requests and connector/tunnel approvals are folded
 // in by adapters later.
 
+import { normalizeString } from '../lib/validators';
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -16,7 +17,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { normalizeString } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import { isAdaptedId } from '../review-adapters';
 import {

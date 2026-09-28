@@ -1,44 +1,30 @@
+import type { ProjectSession } from '@kortix/api-contract';
 import type {
-  Project,
-  ProjectSession,
-  Secret,
-  SecretDeliveryBlockedReason,
-  SecretDeliveryStrategy,
-} from '@kortix/api-contract';
-import {
-  type accountGithubInstallations,
-  type projectGitConnections,
-  type projectGitCredentials,
-  projectSecrets,
-  type projectSessions,
-  type projects,
+  projectGitConnections,
+  projectGitCredentials,
+  projectSessions,
+  projects,
 } from '@kortix/db';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { normalizeAuditClientSource } from '../../shared/audit-client-source';
-import { type SandboxProviderName, config } from '../../config';
-import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
-import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
-import { requestClientIp } from '../../shared/client-ip';
-import { normalizeJsonObject } from '../../shared/json';
-import { db } from '../../shared/db';
-import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
-  type SnapshotErrorCategory,
-  classifySnapshotError,
-  describeSnapshotError,
-} from '../../snapshots/error-classify';
-import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
-import type { ProjectRole } from '../access';
-import type { ProjectConfigSummary } from '../git/types';
-import { type GitHubRepo, isGithubAppConfigured } from '../github';
-import { parseGitHubRepoUrl } from './git';
+  type SecretGrant,
+  mayManageSessionSharing,
+  visibilityToIntent,
+} from '../../connectors/share';
+import { normalizeAuditClientSource } from '../../shared/audit-client-source';
+import { requestClientIp } from '../../shared/client-ip';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
-import { normalizeProjectGlyph } from './project-glyph';
-import { normalizeProjectIcon } from './project-icon';
-import { proxyGitUrl } from './sessions';
+import { hasOwn } from './validators';
 
-export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
+export * from './secret-views';
+export * from './validators';
+export { serializeBuildSummary, serializeTemplate } from '../../snapshots/serializers';
+export { serializeProject, publicProjectMetadata } from './project-serializer';
+export {
+  serializeGitHubRepo,
+  serializeGitHubInstallation,
+  serializeGitHubInstallations,
+} from './github-serializers';
 
 export type ProjectRow = typeof projects.$inferSelect;
 
@@ -60,8 +46,6 @@ export type RequestAuditContext = {
 // sandbox reaper) can import them without this heavy serializer graph. Re-exported
 // here for the existing import sites. See session-status.ts for the index note.
 export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './session-status';
-
-export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
 /**
  * Session-metadata keys the LIST response omits.
@@ -89,9 +73,7 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'remote_branch',
 ] as const;
 
-function trimSessionMetadataForList(
-  metadata: Record<string, unknown>,
-): Record<string, unknown> {
+function trimSessionMetadataForList(metadata: Record<string, unknown>): Record<string, unknown> {
   let trimmed: Record<string, unknown> | null = null;
   for (const key of LIST_OMITTED_SESSION_METADATA_KEYS) {
     if (!hasOwn(metadata, key)) continue;
@@ -228,89 +210,11 @@ export function serializeSession(
  * viewer may manage its sharing (account owner/admin, or a project manager).
  */
 
-function dashboardBaseUrl(): string {
-  return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-}
-
 /** True when a GitHub repo-create error is a name collision (HTTP 422). On
  *  POST /user/repos a 422 is, in practice, always "name already exists". */
-
 export function isRepoNameTakenError(error: unknown): boolean {
   const m = ((error as Error)?.message ?? '').toLowerCase();
   return m.includes('already exists') || m.includes('name already') || m.includes('(422)');
-}
-
-export function serializeProject(
-  row: ProjectRow,
-  access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole },
-): Project {
-  return {
-    project_id: row.projectId,
-    account_id: row.accountId,
-    name: row.name,
-    repo_url: row.repoUrl,
-    // Runtime clients clone and push only through the Kortix Git proxy. The
-    // upstream origin and its credential remain server-side.
-    git_origin_url: proxyGitUrl(row.projectId),
-    default_branch: row.defaultBranch,
-    manifest_path: row.manifestPath,
-    status: row.status,
-    metadata: publicProjectMetadata(row.metadata),
-    // Per-project emoji, stored in metadata (no migration — same mechanism as
-    // default_sandbox_provider below and metadata.onboarding_completed_at).
-    // Re-validated on read so a value written before the validator existed, or
-    // written directly to the DB, can never reach the UI unchecked.
-    icon: normalizeProjectIcon((row.metadata as Record<string, unknown> | null | undefined)?.icon),
-    icon_glyph: normalizeProjectGlyph(
-      (row.metadata as Record<string, unknown> | null | undefined)?.icon_glyph,
-    ),
-    last_opened_at: row.lastOpenedAt?.toISOString() ?? null,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-    project_role: access?.projectRole ?? null,
-    effective_project_role: access?.effectiveRole ?? null,
-    dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
-    // Feature flags (Settings → Feature flags) — `experimental` is the effective
-    // on/off map; `experimental_features` is the self-describing catalog the UI
-    // renders from. Both wire names are historical and STABLE; do not rename
-    // them. SoT = ../../feature-flags/registry.
-    experimental: resolveFeatureFlags(row.metadata),
-    experimental_features: buildFeatureFlagCatalog(row.metadata),
-    // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
-    // is the current pin (null = follow the platform default/distribution);
-    // `available_sandbox_providers` is the enabled set the picker offers
-    // (ALLOWED ∩ has-API-key) — the web client renders + validates against the SAME
-    // set the backend enforces, without a separate (billing-gated) providers route.
-    // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
-    // create path (which ignores a disabled/removed pin and falls back), so the
-    // picker never shows a value with no matching option.
-    default_sandbox_provider: ((): SandboxProviderName | null => {
-      const pin = (row.metadata as Record<string, unknown> | null | undefined)
-        ?.default_sandbox_provider;
-      if (
-        typeof pin !== 'string' ||
-        !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
-      ) {
-        return null;
-      }
-
-      const provider = pin as SandboxProviderName;
-      return config.isProviderEnabled(provider) ? provider : null;
-    })(),
-    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
-      config.isProviderEnabled(p),
-    ),
-  };
-}
-
-export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
-  if (!metadata || typeof metadata !== 'object') return {};
-  const source = metadata as Record<string, unknown>;
-  if (!source.git || typeof source.git !== 'object') return source;
-  const git = source.git as Record<string, unknown>;
-  if (!Object.hasOwn(git, 'fast_boot')) return source;
-  const { fast_boot: _fastBoot, ...publicGit } = git;
-  return { ...source, git: publicGit };
 }
 
 export function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {
@@ -345,20 +249,6 @@ export function serializeProjectGitConnection(row: ProjectGitConnectionRow | nul
   };
 }
 
-export function serializeGitHubRepo(repo: GitHubRepo) {
-  return {
-    id: String(repo.id),
-    name: repo.name,
-    full_name: repo.full_name,
-    private: repo.private,
-    html_url: repo.html_url,
-    clone_url: repo.clone_url,
-    ssh_url: repo.ssh_url,
-    default_branch: repo.default_branch,
-    description: repo.description,
-  };
-}
-
 export function requestAuditContext(c: Context): RequestAuditContext {
   return {
     method: c.req.method,
@@ -369,428 +259,11 @@ export function requestAuditContext(c: Context): RequestAuditContext {
   };
 }
 
-export type SecretRow = typeof projectSecrets.$inferSelect;
-
-/**
- * The slice of a loaded `ProjectConfigSummary` the agent-grant axis needs. A
- * `Pick`, so a route hands the whole loaded config straight through.
- */
-export type SecretAgentGrantConfig = Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'>;
-
-/** Grant membership. Case-insensitive, mirroring `listAdmits` in
- *  ../../secrets/strategy.ts — a hand-written `secrets:` list in kortix.yaml may
- *  use any case, and the two answers must agree. */
-function grantAdmits(list: string[], identifier: string): boolean {
-  const target = identifier.toUpperCase();
-  return list.some((entry) => entry.toUpperCase() === target);
-}
-
-/**
- * Can any agent receive this secret? Returns the block reason, or null.
- *
- * `resolveSecretDelivery` (../../secrets/strategy.ts) hands an `egress`/`broker`
- * secret to a session only when some agent's `secrets:` list is an explicit
- * ARRAY naming this IDENTIFIER. `'all'` and an absent list both withhold it as
- * `agent_grant_unscoped`, so neither counts as a grant here. Matching is by
- * identifier, never by the env-var `name` — several identifiers may share one
- * name.
- *
- * The tri-state forbids guessing, so read `agent_discovery` for what
- * `resolveConfigAgents` (../git/config.ts) actually means by it:
- *
- *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
- *                  it declared no `agents:` at all (or there is no manifest).
- *                  `grantFromLoadedAgents` then resolves to a null grant, which
- *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
- *                  ever receive this secret. A native `.opencode` agent does not
- *                  rescue it — grants come only from manifest specs.
- *   `declarative`, agents non-empty — the manifest parsed and its declarations
- *                  are the complete grant set. CERTAIN either way.
- *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
- *                  a manifest that FAILED to parse (specs empty, errors present)
- *                  or one whose agents are all disabled. Report null.
- *
- * Getting this backwards would be worse than useless in both directions: silent
- * on the commonest broken setup (no `agents:` block), and crying wolf on a
- * manifest we merely failed to read.
- */
-export function secretDeliveryBlockedReason(
-  identifier: string,
-  strategy: SecretDeliveryStrategy,
-  config: SecretAgentGrantConfig | null | undefined,
-): SecretDeliveryBlockedReason | null {
-  if (strategy !== 'egress' && strategy !== 'broker') return null;
-  if (!config) return null;
-  if (config.agent_discovery === 'opencode') return 'no_agent_grant';
-  // Anything other than the two known modes is a config we do not understand —
-  // including a partial object from a caller that resolved only part of it.
-  if (config.agent_discovery !== 'declarative') return null;
-  const agents = config.agents;
-  if (!Array.isArray(agents) || agents.length === 0) return null;
-  const granted = agents.some((agent) => {
-    const env = agent.scope?.env;
-    return Array.isArray(env) && grantAdmits(env, identifier);
-  });
-  return granted ? null : 'no_agent_grant';
-}
-
-/**
- * The view of one project secret (one IDENTIFIER): the shared/project row
- * merged with the requesting member's own private override (used today only by
- * the CODEX_AUTH_JSON per-user provider login), plus which one wins at runtime.
- * Authorization is centralized on the agent grant (by identifier — see
- * agentMayUseEnv); every project member with read access sees every secret —
- * there is no per-secret member/group sharing and no resource-side agent
- * allow-list.
- */
-
-export function buildSecretView(input: {
-  identifier: string;
-  name: string;
-  shared?: SecretRow;
-  personal?: SecretRow;
-  canManageShared: boolean;
-  /** The project's loaded config, for the agent-grant axis. Omit it and every
-   *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
-  agentGrants?: SecretAgentGrantConfig | null;
-}): Secret {
-  const { identifier, name, shared, personal, canManageShared } = input;
-  const system = isSystemProjectSecretName(name);
-  const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
-  const mineActive = Boolean(personal?.active);
-  const effectiveSource: 'mine' | 'shared' | 'none' =
-    personal && mineActive ? 'mine' : shared ? 'shared' : 'none';
-  const deliveryRow = shared ?? personal;
-  const strategy = deliveryRow?.strategy ?? 'runtime';
-  const requiresRotation =
-    strategy !== 'runtime' &&
-    (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
-  const backend = deliveryRow?.egressPolicy?.backend;
-  const legacyConsumer =
-    strategy === 'runtime'
-      ? 'sandbox'
-      : strategy === 'denied'
-        ? null
-        : strategy === 'egress'
-          ? 'network'
-          : backend === 'llm_gateway'
-            ? 'llm_gateway'
-            : backend === 'connector'
-              ? 'connector'
-              : backend === 'git_proxy'
-                ? 'git_proxy'
-                : backend === 'kortix_fetch'
-                  ? 'http_broker'
-                  : null;
-  const storedConsumer =
-    strategy === 'denied'
-      ? null
-      : deliveryRow?.scope === 'connector'
-        ? 'connector'
-        : (deliveryRow?.consumer ?? legacyConsumer);
-  const consumer = storedConsumer;
-  return {
-    identifier,
-    name,
-    project_id: (shared ?? personal)!.projectId,
-    secret_id: shared?.secretId ?? null,
-    created_by: shared?.createdBy ?? null,
-    created_at: (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,
-    updated_at: (shared?.updatedAt ?? personal?.updatedAt)?.toISOString() ?? null,
-    system,
-    readonly: system,
-    purpose: isGitAuth ? 'git_auth' : null,
-    can_rotate: isGitAuth,
-    managed_by: isGitAuth ? 'project_secret' : null,
-    // Is a shared project value set at all.
-    configured: Boolean(shared),
-    // MY private override (value never returned), and whether I'm using it.
-    mine: personal
-      ? { active: personal.active, updated_at: personal.updatedAt.toISOString() }
-      : null,
-    // What actually gets injected into my sessions for this identifier.
-    effective_source: effectiveSource,
-    // Members manage only their own override; managers also manage the shared row.
-    can_manage_shared: canManageShared && !system,
-    strategy,
-    consumer,
-    delivery_status:
-      (strategy === 'runtime' && consumer === 'sandbox') ||
-      (strategy === 'broker' && consumer === 'llm_gateway') ||
-      (strategy === 'broker' && consumer === 'git_proxy') ||
-      (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' && consumer === 'network') ||
-      consumer === 'connector'
-        ? 'available'
-        : strategy === 'denied'
-          ? 'disabled'
-          : 'unavailable',
-    // Two axes, deliberately not folded together. `delivery_status` answers
-    // "does this deployment support the mode" and stays 'available' on a missing
-    // grant, because the CLI, the SDK and the web chip all key off that meaning.
-    // The grant axis is per-project and lives here.
-    delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
-    // Always true since the exposure/usage model: one mechanism serves every
-    // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
-    // the wire because published SDK and CLI versions still read it — an absent
-    // field reads as "unknown" to them, a `false` would falsely disable the UI.
-    network_boundary_available: true,
-    egress_policy: deliveryRow?.egressPolicy ?? null,
-    strategy_locked: deliveryRow?.strategyLocked ?? false,
-    last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
-    requires_rotation: requiresRotation,
-  };
-}
-
-/**
- * Load every secret IDENTIFIER in a project as the per-user view (shared + my
- * own override merged). Used by the secrets list + returned after a write.
- */
-
-export async function loadSecretViewsForUser(input: {
-  projectId: string;
-  /** Whose personal overrides merge in; null = shared rows only (an
-   *  agent-principal session with no on-behalf-of human, spec 2026-09-22 §2.3). */
-  userId: string | null;
-  canManageShared: boolean;
-  /** The project's loaded config. Callers that have already read it pass it so
-   *  every row reports the agent-grant axis; omitting it reports null. */
-  agentGrants?: SecretAgentGrantConfig | null;
-}): Promise<ReturnType<typeof buildSecretView>[]> {
-  // NAMED, not positional: an `unknown`-typed argument in a positional slot
-  // silently swallowed the `agentGrants` a call site passed there, and
-  // typechecked while doing it.
-  const { projectId, userId, canManageShared, agentGrants } = input;
-  const rows = await db
-    .select()
-    .from(projectSecrets)
-    .where(
-      and(
-        eq(projectSecrets.projectId, projectId),
-        userId
-          ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
-          : isNull(projectSecrets.ownerUserId),
-      ),
-    )
-    .orderBy(desc(projectSecrets.updatedAt));
-
-  const byIdentifier = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
-  for (const row of rows) {
-    const slot = byIdentifier.get(row.identifier) ?? {};
-    if (row.ownerUserId === null) slot.shared = row;
-    else slot.personal = row;
-    byIdentifier.set(row.identifier, slot);
-  }
-
-  return [...byIdentifier.entries()].map(([identifier, slot]) =>
-    buildSecretView({
-      identifier,
-      name: (slot.shared ?? slot.personal)!.name,
-      shared: slot.shared,
-      personal: slot.personal,
-      canManageShared,
-      agentGrants,
-    }),
-  );
-}
-
-export function isSystemProjectSecretName(name: string): boolean {
-  return name.toUpperCase().startsWith('KORTIX_');
-}
-
 export function serializeSessionSandboxConfig(
   configValue: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
   const config = { ...(configValue ?? {}) };
+  // biome-ignore lint/performance/noDelete: The key must be absent from the public response, not undefined.
   delete config.serviceKey;
   return config;
-}
-
-export function serializeGitHubInstallation(
-  row: typeof accountGithubInstallations.$inferSelect | null,
-  accountId: string,
-  installUrl: string | null,
-) {
-  const installed = Boolean(row);
-  const metadata = normalizeJsonObject(row?.metadata);
-  // GitHub backing is App-only: a per-account App installation is required
-  // whenever the App is configured and this account hasn't installed it yet.
-  const requiresInstallation = isGithubAppConfigured() && !installed;
-  return {
-    account_id: accountId,
-    installation_row_id: row?.installationRowId ?? null,
-    installed,
-    configured: isGithubAppConfigured(),
-    requires_installation: requiresInstallation,
-    install_url: installed ? null : installUrl,
-    installation_id: row?.installationId ?? null,
-    owner_login: row?.ownerLogin ?? null,
-    owner_type: row?.ownerType ?? null,
-    repository_selection: row?.repositorySelection ?? null,
-    permissions: row?.permissions ?? {},
-    installation_url: normalizeString(metadata.html_url),
-    updated_at: row?.updatedAt.toISOString() ?? null,
-  };
-}
-
-/**
- * Account connections only. The instance backend ("Kortix managed") used to
- * be injected here as a synthetic entry, which made one instance-global
- * credential look like this account's own GitHub connection.
- */
-export function serializeGitHubInstallations(
-  rows: Array<typeof accountGithubInstallations.$inferSelect>,
-  accountId: string,
-  installUrl: string | null,
-) {
-  const primary = rows[0] ?? null;
-  const base = serializeGitHubInstallation(primary, accountId, installUrl);
-  return {
-    ...base,
-    installed: rows.length > 0,
-    requires_installation: isGithubAppConfigured() && rows.length === 0,
-    install_url: installUrl,
-    installations: rows.map((row) => serializeGitHubInstallation(row, accountId, null)),
-  };
-}
-
-export function normalizeString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-export function normalizeBoolean(value: unknown): boolean | null {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-  }
-  return null;
-}
-
-export function normalizeRepoUrl(value: unknown): string | null {
-  const repoUrl = normalizeString(value);
-  if (!repoUrl) return null;
-  const normalized = repoUrl.replace(/\/+$/, '');
-  if (/^http:\/\//i.test(normalized)) {
-    throw new Error('repo_url must use HTTPS or git@github.com SSH');
-  }
-  if (!parseGitHubRepoUrl(normalized)) {
-    throw new Error('repo_url must be a GitHub repository URL');
-  }
-  return normalized;
-}
-
-export function hasOwn(body: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(body, key);
-}
-
-export function deriveKortixApiRoot(kortixUrl: string): string {
-  return (kortixUrl || 'https://api.kortix.com')
-    .replace(/\/+$/, '')
-    .replace(/\/v1\/router$/, '')
-    .replace(/\/v1$/, '');
-}
-
-// Display cap for user-supplied project names. Well under the projects.name
-// varchar(255) column so every write path (provision, GitHub link, PAT link)
-// fits the schema even after a linked repo's derived name is substituted.
-export const PROJECT_NAME_MAX_LENGTH = 120;
-
-export function clampProjectName(name: string): string {
-  return name.length > PROJECT_NAME_MAX_LENGTH
-    ? name.slice(0, PROJECT_NAME_MAX_LENGTH).trimEnd()
-    : name;
-}
-
-export function deriveProjectName(repoUrl: string): string {
-  const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
-  const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
-  if (!tail) return 'Untitled Project';
-  return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {
-  // errorCategory is a free-form column; older rows predate the classifier.
-  const category = (b.errorCategory ??
-    (b.error ? classifySnapshotError(b.error) : null)) as SnapshotErrorCategory | null;
-  return {
-    build_id: b.buildId,
-    slug: b.slug,
-    /**
-     * The TEMPLATE this build was for. `slug` may be a build-log pseudo-slug
-     * (`default-warm`) that names no template; clients that want to act on a build
-     * — rebuild it, boot a session on it — must use this, never `slug`.
-     */
-    template_slug: templateSlugFromBuildSlug(b.slug),
-    snapshot_name: b.snapshotName,
-    content_hash: b.contentHash,
-    status: b.status,
-    error: b.error,
-    error_category: category,
-    /**
-     * Whether an in-sandbox agent could plausibly fix this by editing the repo.
-     * Server-derived so the UI can't drift from what the API will accept: infra
-     * failures (quota, provider, timeout) are not repo-editable, and a fix session
-     * can't even boot when the snapshot it needs is the thing that failed.
-     */
-    fixable_by_agent: category ? describeSnapshotError(category).fixableByAgent : false,
-    source: b.source,
-    provider: b.provider,
-    started_at: b.startedAt.toISOString(),
-    finished_at: b.finishedAt?.toISOString() ?? null,
-  };
-}
-
-export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
-  return {
-    template_id: t.templateId,
-    slug: t.slug,
-    name: t.name,
-    is_default: t.isDefault,
-    source: t.source,
-    provider: t.provider,
-    has_dockerfile: t.hasDockerfile,
-    has_image: t.hasImage,
-    image: t.image,
-    dockerfile_path: t.dockerfilePath,
-    entrypoint: t.entrypoint,
-    cpu: t.cpu,
-    memory_gb: t.memoryGb,
-    disk_gb: t.diskGb,
-    snapshot_name: t.snapshotName,
-    content_hash: t.contentHash,
-    built_from_commit: t.builtFromCommit,
-    daytona_state: t.daytonaState,
-    provider_state: t.providerState,
-    ready: t.ready,
-    ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
-  };
-}
-
-const PROJECT_ROLES = ['manager', 'member'] as const;
-
-export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
-
-export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
-  return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
-}
-
-/**
- * Parse a bounded positive integer query parameter, or report why it is invalid.
- * Shared by every paged read route (transcript, voice transcript, approvals).
- */
-export function parseBoundedPositiveInt(
-  raw: string | undefined,
-  fallback: number,
-  min: number,
-  max: number,
-  label: string,
-): { ok: true; value: number } | { ok: false; error: string } {
-  if (raw === undefined || raw === '') return { ok: true, value: fallback };
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < min || value > max) {
-    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
-  }
-  return { ok: true, value };
 }

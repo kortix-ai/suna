@@ -1,4 +1,6 @@
 /** Create a project from a repository: link an existing GitHub repo, or create a new one. */
+import { serializeProject } from '../lib/project-serializer';
+import { deriveProjectName, normalizeString } from '../lib/validators';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
@@ -27,13 +29,7 @@ import {
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
-import {
-  deriveProjectName,
-  isRepoNameTakenError,
-  normalizeString,
-  serializeProject,
-  serializeProjectGitConnection,
-} from '../lib/serializers';
+import { isRepoNameTakenError, serializeProjectGitConnection } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { getCatalogItemDetail } from '../../marketplace/catalog';
 

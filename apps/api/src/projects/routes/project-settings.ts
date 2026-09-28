@@ -1,4 +1,5 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
+import { serializeProject } from '../lib/project-serializer';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { buildDenialError } from '../../iam/denial-message';
@@ -15,7 +16,7 @@ import {
   SandboxProviderTransitionStateSchema,
   projectsApp,
 } from '../lib/app';
-import { serializeProject } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';

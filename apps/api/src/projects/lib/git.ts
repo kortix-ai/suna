@@ -1,3 +1,5 @@
+import { PROJECT_GIT_AUTH_SECRET_NAME } from './secret-views';
+import { normalizeString } from './validators';
 import { auth } from '../../openapi';
 import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
@@ -33,7 +35,7 @@ import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/actor';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from './serializers';
+import type { ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
 import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {

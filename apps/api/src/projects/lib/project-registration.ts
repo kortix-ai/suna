@@ -1,3 +1,4 @@
+import { clampProjectName, deriveProjectName } from './validators';
 import {
   type accountGithubInstallations,
   projectGitConnections,
@@ -10,7 +11,7 @@ import { grantProjectRole } from './access';
 import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
 import { encryptProjectSecret } from '../secrets';
-import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
+import type { ProjectRow } from './serializers';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 

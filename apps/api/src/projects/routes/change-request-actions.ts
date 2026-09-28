@@ -1,4 +1,5 @@
 /** Change request resolution: merge, close, and reopen. */
+import { normalizeString } from '../lib/validators';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -17,8 +18,8 @@ import { kickPiPackageBundle } from '../../pi-packages/bundle';
 import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 import {
-  invalidateProjectMirror,
   MergeConflictError,
+  invalidateProjectMirror,
   mergeBranches,
   readManifestFromRepo,
 } from '../git';
@@ -26,7 +27,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
-import { normalizeString } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 
 // POST /v1/projects/:projectId/change-requests/:crId/merge

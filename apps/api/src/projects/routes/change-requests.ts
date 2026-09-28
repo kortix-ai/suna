@@ -1,4 +1,5 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
+import { normalizeString } from '../lib/validators';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -32,7 +33,7 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
-import { normalizeString } from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 import { continueSession } from '../session-lifecycle';
 import { refreshCrTips } from './shared';

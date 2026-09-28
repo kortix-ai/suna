@@ -1,3 +1,4 @@
+import { normalizeString } from './validators';
 import { normalizeProjectRole } from '../../iam/roles';
 import {
   isSessionTargetVisibleToCaller,
@@ -44,7 +45,7 @@ import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
 import { getAccountMembership } from './git';
-import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
+import type { ProjectRow, ProjectSessionRow } from './serializers';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
 import {
   isRepositoryProjectAction,

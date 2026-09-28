@@ -11,13 +11,14 @@
  *   GET /v1/projects/git/backend/repositories  — self-host operator only
  */
 
+import { serializeGitHubRepo } from '../lib/github-serializers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { isSelfHostOperator } from '../../shared/platform-roles';
 import { resolveGitBackend } from '../../platform/services/managed-git-backend';
 import { createInstallationToken, listOwnerRepositories } from '../github';
 import { projectsApp } from '../lib/app';
-import { serializeGitHubRepo } from '../lib/serializers';
+
 
 const GitBackendSchema = z
   .object({

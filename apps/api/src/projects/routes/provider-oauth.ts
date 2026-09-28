@@ -1,4 +1,6 @@
 /** LLM provider OAuth device flow (ChatGPT subscription via Codex): start, poll, status, disconnect. */
+import { CODEX_AUTH_JSON_SECRET_NAME, loadSecretViewsForUser } from '../lib/secret-views';
+import { normalizeString } from '../lib/validators';
 import { parseSharingIntent } from '../../connectors/share';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -27,11 +29,7 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import {
-  CODEX_AUTH_JSON_SECRET_NAME,
-  loadSecretViewsForUser,
-  normalizeString,
-} from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────

@@ -43,6 +43,7 @@
  * all a first paint needs.
  */
 
+import { parseBoundedPositiveInt } from '../lib/validators';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -61,7 +62,7 @@ import {
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../lib/serializers';
-import { parseBoundedPositiveInt } from '../lib/serializers';
+
 import { isUuid } from '../../shared/validate';
 import { readSessionAuditActions } from '../lib/session-audit-read';
 import { serializePrompt } from '../lib/session-prompt-view';

@@ -1,4 +1,9 @@
 /** Account GitHub App installations: read, list, link, and unlink. */
+import {
+  serializeGitHubInstallation,
+  serializeGitHubInstallations,
+} from '../lib/github-serializers';
+import { normalizeString } from '../lib/validators';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
@@ -23,11 +28,7 @@ import {
   getAccountGitHubInstallation,
   listAccountGitHubInstallations,
 } from '../lib/git';
-import {
-  normalizeString,
-  serializeGitHubInstallation,
-  serializeGitHubInstallations,
-} from '../lib/serializers';
+
 import { readJsonObject } from '../../shared/http-body';
 
 // GET /v1/projects/github/installation?account_id=...

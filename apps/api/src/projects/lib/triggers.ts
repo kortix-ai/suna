@@ -1,3 +1,4 @@
+import { deriveKortixApiRoot, normalizeBoolean, normalizeString } from './validators';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
@@ -58,13 +59,7 @@ import {
   loadTriggerSessionAccessMap,
 } from '../trigger-session-access';
 import { drainMonitorEvents } from './monitor-observer';
-import {
-  type ProjectRow,
-  type RequestAuditContext,
-  deriveKortixApiRoot,
-  normalizeBoolean,
-  normalizeString,
-} from './serializers';
+import type { ProjectRow, RequestAuditContext } from './serializers';
 import { isPlainObject } from '../../shared/json';
 
 /**
