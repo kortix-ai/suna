@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   canonicalManagedModelId,
   isRetiredManagedModelId,
+  LEGACY_MANAGED_IDS,
   type ManagedModel,
   parseManagedModels,
+  resolveLegacyIdChain,
   resolvePlatformDefaultModelId,
   retiredManagedModelReplacement,
 } from './managed-models';
@@ -189,6 +191,55 @@ describe('isRetiredManagedModelId', () => {
 describe('deepseek-v4-flash-0731 declares deepseek-v4.1-flash as its successor', () => {
   test('canonicalManagedModelId resolves it', () => {
     expect(canonicalManagedModelId('deepseek-v4-flash-0731')).toBe('deepseek-v4.1-flash');
+  });
+
+  // deepseek-v4-flash-0731 is ITSELF the one-hop target of two older aliases —
+  // a single lookup would leave morph-dsv4flash/deepseek-v4-flash pointing at
+  // a now-also-retired id. canonicalManagedModelId must follow the full chain.
+  test('a two-hop alias (morph-dsv4flash / deepseek-v4-flash) resolves through it, not to it', () => {
+    expect(canonicalManagedModelId('morph-dsv4flash')).toBe('deepseek-v4.1-flash');
+    expect(canonicalManagedModelId('deepseek-v4-flash')).toBe('deepseek-v4.1-flash');
+  });
+});
+
+// The guard against this exact class of bug recurring: someone retires a
+// model that is itself the declared successor of an older alias, and does not
+// revisit that alias. Every entry in the map must resolve — however many hops
+// it takes — to something that is NOT ALSO retired.
+describe('every LEGACY_MANAGED_IDS chain resolves off of a retired id', () => {
+  for (const alias of Object.keys(LEGACY_MANAGED_IDS)) {
+    test(`"${alias}" -> ... -> a non-retired id`, () => {
+      const resolved = canonicalManagedModelId(alias);
+      expect(isRetiredManagedModelId(resolved)).toBe(false);
+      // Idempotent: a true fixed point, not an intermediate hop left behind
+      // by the bound or a cycle guard.
+      expect(canonicalManagedModelId(resolved)).toBe(resolved);
+    });
+  }
+});
+
+describe('resolveLegacyIdChain is bounded and cycle-safe (synthetic tables — the real map is never mutated)', () => {
+  test('a direct cycle stops instead of looping forever', () => {
+    const cyclic = { a: 'b', b: 'a' };
+    // Enters the cycle at 'a' -> 'b' -> 'a' (seen) -> stops at 'b'.
+    expect(resolveLegacyIdChain('a', cyclic)).toBe('b');
+  });
+
+  test('a self-referencing entry stops immediately', () => {
+    expect(resolveLegacyIdChain('a', { a: 'a' })).toBe('a');
+  });
+
+  test('a chain longer than the hop bound stops rather than hanging', () => {
+    const long: Record<string, string> = {};
+    for (let i = 0; i < 20; i++) long[`chain-${i}`] = `chain-${i + 1}`;
+    const resolved = resolveLegacyIdChain('chain-0', long, 8);
+    expect(resolved).not.toBe('chain-20'); // never reaches the true (unbounded) end
+    expect(resolved.startsWith('chain-')).toBe(true); // stopped mid-chain, not a wrong answer
+  });
+
+  test('a chain within the bound fully resolves', () => {
+    const short = { a: 'b', b: 'c', c: 'd' };
+    expect(resolveLegacyIdChain('a', short, 8)).toBe('d');
   });
 });
 

@@ -504,25 +504,29 @@ describe('resolveCandidates — managed model tier gating', () => {
     });
   });
 
-  // `morph-dsv4flash` is a legacy alias whose OWN declared successor
-  // (`deepseek-v4-flash-0731`, managed-models.ts's LEGACY_MANAGED_IDS) is
-  // itself now retired — `toWireModel` normalizes the request to that
-  // still-retired id, and the "current replacement" it names one hop further
-  // is `deepseek-v4.1-flash`. (A direct request for `deepseek-v4-flash-0731`
-  // is normalized straight through to `deepseek-v4.1-flash` by `toWireModel`
-  // before resolution ever runs — see effective.test.ts — so it never even
-  // reaches this branch; that IS the fix working, transparently.)
-  test('a retired managed model with a declared successor names it in the message', async () => {
-    knownManagedModelId = 'deepseek-v4-flash-0731';
-    runtimeManagedModel = undefined;
+  // `morph-dsv4flash`'s declared successor (`deepseek-v4-flash-0731`,
+  // managed-models.ts's LEGACY_MANAGED_IDS) is itself now retired, in favor of
+  // `deepseek-v4.1-flash`. `toWireModel`/`canonicalManagedModelId` resolve the
+  // WHOLE chain (2026-09-28's transitive-resolution fix, managed-models.test.ts),
+  // so `effectiveModel` here is already `deepseek-v4.1-flash` by the time
+  // resolution runs — this never reaches `model_retired` at all. It just
+  // works, transparently, the instant `deepseek-v4.1-flash` is servable.
+  test('a two-hop legacy alias resolves transparently through its retired intermediate to the final replacement — no error at all', async () => {
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
 
-    await expect(resolveCandidates(principal(), 'morph-dsv4flash')).rejects.toMatchObject({
-      name: 'GatewayResolutionError',
-      code: 'model_retired',
-      message:
-        'The "deepseek-v4-flash-0731" model was retired from Kortix\'s managed lineup. Use "deepseek-v4.1-flash" instead.',
-    });
+    const candidates = await resolveCandidates(p, 'morph-dsv4flash');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed' });
   });
+
+  // The id-level guard (managed-models.test.ts's "every LEGACY_MANAGED_IDS
+  // chain resolves off of a retired id") is what makes the branch below
+  // structurally unreachable for any DECLARED chain: canonicalManagedModelId
+  // is idempotent on its own output, so `effectiveModel` here is always
+  // already the fully-resolved fixed point. It stays defensive code for a
+  // chain that ever exceeds CANONICAL_CHAIN_MAX_HOPS (managed-models.ts).
 });
 
 describe('resolveCandidates — codex + unknown provider', () => {
