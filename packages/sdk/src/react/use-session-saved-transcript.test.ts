@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
@@ -75,12 +75,16 @@ function envelope(saved: boolean) {
   };
 }
 
-function bundle(pin: string | null, saved: boolean) {
+function bundle(
+  pin: string | null,
+  saved: boolean,
+  legs: { turn?: Record<string, unknown>; queue?: Record<string, unknown> } = {},
+) {
   return {
     observed_at: '2026-09-25T00:00:00Z',
     session: row(pin),
-    turn: { known: false, reason: 'test' },
-    queue: { known: false, reason: 'test' },
+    turn: legs.turn ?? { known: false, reason: 'test' },
+    queue: legs.queue ?? { known: false, reason: 'test' },
     transcript: { known: true, requested: true, ...envelope(saved) },
     config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
     models: { known: false, reason: 'test' },
@@ -234,4 +238,55 @@ test('while the saved-history flag is unknown, a copy is not ruled out', async (
   serve({ flagUnknown: true, snapshot: async () => Response.json(bundle(ROOT, false)) });
   await mount({ enabled: true });
   expect(current().savedTranscript).toBe('loading');
+});
+
+describe('an empty conversation', () => {
+  // The server's saved copy proves the conversation empty: a complete read of
+  // the runtime found no messages. With no turn ever and nothing queued there
+  // is nothing to wait for, so a host opens it on its composer.
+  const neverRan = { turn: { known: true, turns: [] }, queue: { known: true, prompts: [], held: false } };
+  const provenEmpty = () =>
+    Response.json({ ...envelope(true), message_count: 0, total: 0, messages: [] });
+
+  test('a saved copy that proves it empty, no turn ever and nothing queued is an empty conversation', async () => {
+    serve({ snapshot: async () => Response.json(bundle(ROOT, false, neverRan)), history: async () => provenEmpty(), historyFlag: true });
+    await mount({ enabled: true });
+    expect(current().savedTranscript).toBe('none');
+    expect(current().conversationEmpty).toBe(true);
+  });
+
+  test('no saved copy is not an empty conversation, even with no turn on record', async () => {
+    // What an older session with history looks like before its first wake:
+    // its turns may predate the turn record.
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, false, neverRan)),
+      history: async () => Response.json(envelope(false)),
+      historyFlag: true,
+    });
+    await mount({ enabled: true });
+    expect(current().savedTranscript).toBe('none');
+    expect(current().conversationEmpty).toBe(false);
+  });
+
+  test('a turn that ended outranks an empty saved copy', async () => {
+    const ended = {
+      ...neverRan,
+      turn: {
+        known: true,
+        turns: [],
+        last_ended: { turn_token: 'tok_1', message_id: null, end_reason: 'completed', ended_at: '2026-09-25T00:00:00Z' },
+      },
+    };
+    serve({ snapshot: async () => Response.json(bundle(ROOT, false, ended)), history: async () => provenEmpty(), historyFlag: true });
+    await mount({ enabled: true });
+    expect(current().conversationEmpty).toBe(false);
+  });
+
+  test('an unanswered turn record is an unknown, never an empty, and never the boot screen', async () => {
+    serve({ snapshot: async () => Response.json(bundle(ROOT, false)), history: async () => provenEmpty(), historyFlag: true });
+    await mount({ enabled: true });
+    expect(current().conversationEmpty).toBe(false);
+    // The composer may be one read away: placeholder rows, not a boot screen.
+    expect(current().savedTranscript).toBe('loading');
+  });
 });

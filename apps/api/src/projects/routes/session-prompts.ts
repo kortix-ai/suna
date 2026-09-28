@@ -5,6 +5,7 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { promptModelOverride } from '../lib/prompt-model';
 import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -207,12 +208,12 @@ projectsApp.openapi(
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
     const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
+    // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
+    // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
+    // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
     const overrides = {
       agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
-      model:
-        model && typeof model.providerID === 'string' && typeof model.modelID === 'string'
-          ? { providerID: model.providerID, modelID: model.modelID }
-          : null,
+      model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
       variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
       directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
     };

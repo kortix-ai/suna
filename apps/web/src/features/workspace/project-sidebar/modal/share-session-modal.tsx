@@ -33,10 +33,11 @@ import {
   LockIcon as LockSolid,
   UsersIcon as UsersSolid,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { SessionPublicLinkSection } from './session-public-link-section';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
+import { refreshAfterShare } from './share-session-cache';
 
 /**
  * The three options, worded from the EDITOR's seat.
@@ -158,6 +159,7 @@ export function ShareSessionModal({
   });
   const oversightOn = oversightQuery.data?.enabled === true;
 
+  const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: () => {
       if (!isSharingComplete(sharing)) {
@@ -167,6 +169,8 @@ export function ShareSessionModal({
     },
     onSuccess: () => {
       successToast(tI18nHardcoded.raw('i18nComplete.textd8b630796604'));
+      // A share can switch the session's provider keys (share-session-cache.ts).
+      void refreshAfterShare(queryClient, projectId, session!.session_id);
       onSaved?.();
       onOpenChange(false);
     },

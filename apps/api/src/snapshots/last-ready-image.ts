@@ -10,7 +10,7 @@
  *
  * THE RULE. An image is a CACHE, not the truth. The daemon converges on this
  * deploy's runtime assets at boot and again on every resume/restart
- * (`apps/kortix-sandbox-agent-server/src/runtime-assets.ts`, poked by
+ * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts`, poked by
  * `projects/lib/sandbox-runtime-refresh.ts`), so a box booted from the PREVIOUS
  * ready image ends up serving the same CLI, skills and daemon as one booted
  * from the new image — it just pays a convergence pass (seconds, up to ~1 min

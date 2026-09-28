@@ -106,6 +106,25 @@ disk = 20
     expect(issues.every((i) => i.severity !== 'error')).toBe(true);
   });
 
+  test('container_runtime accepts a boolean and rejects anything else', () => {
+    const ok = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile.dev"
+container_runtime = true
+`);
+    expect(ok.valid).toBe(true);
+    const bad = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile.dev"
+container_runtime = "yes"
+`);
+    expect(bad.errorPaths).toContain('sandbox.templates[0].container_runtime');
+  });
+
   test('rejects entries with both image AND dockerfile', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
