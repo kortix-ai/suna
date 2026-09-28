@@ -55,20 +55,20 @@ const TRANSCRIPT_OPTIONS = [
   {
     key: 'assistantMetadata',
     id: 'opt-metadata',
-    title: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadata',
-    description: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadataDescription',
+    titleKey: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadata',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line131JsxTextAssistantMetadataDescription',
   },
   {
     key: 'toolDetails',
     id: 'opt-tools',
-    title: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetails',
-    description: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetailsDescription',
+    titleKey: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetails',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line145JsxTextToolCallDetailsDescription',
   },
   {
     key: 'thinking',
     id: 'opt-thinking',
-    title: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoning',
-    description: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoningDescription',
+    titleKey: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoning',
+    descriptionKey: 'componentsSessionExportTranscriptModal.line159JsxTextThinkingReasoningDescription',
   },
 ] as const;
 
@@ -215,12 +215,12 @@ export function ExportTranscriptModal({
 
         <ModalBody>
           <FieldGroup className="gap-4">
-            {TRANSCRIPT_OPTIONS.map(({ key, id, title, description }) => (
+            {TRANSCRIPT_OPTIONS.map(({ key, id, titleKey, descriptionKey }) => (
               <TranscriptOptionToggle
                 key={key}
                 id={id}
-                label={tHardcodedUi.raw(title)}
-                description={tHardcodedUi.raw(description)}
+                label={tHardcodedUi.raw(titleKey)}
+                description={tHardcodedUi.raw(descriptionKey)}
                 checked={options[key]}
                 onToggle={() => toggleOption(key)}
               />
