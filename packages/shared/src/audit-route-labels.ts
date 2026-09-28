@@ -342,6 +342,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/oauth/authorize': { action: 'oauth.authorization.start', title: 'Started OAuth authorization' },
   'POST /v1/oauth/authorize/consent': { action: 'oauth.consent.answer', title: 'Submitted OAuth consent' },
   'GET /v1/oauth/authorize/consent/:requestId': { action: 'oauth.consent_request.read', title: 'Viewed OAuth consent request' },
+  'GET /v1/oauth/grants': { action: 'oauth.grant.list', title: 'Listed connected apps' },
+  'DELETE /v1/oauth/grants/:clientId': { action: 'oauth.grant.revoke', title: 'Revoked a connected app' },
   'POST /v1/oauth/register': { action: 'oauth.client.register', title: 'Registered an OAuth client' },
   'POST /v1/oauth/revoke': { action: 'oauth.token.revoke', title: 'Revoked an OAuth token' },
   'POST /v1/oauth/token': { action: 'oauth.token.create', title: 'Issued an OAuth token' },

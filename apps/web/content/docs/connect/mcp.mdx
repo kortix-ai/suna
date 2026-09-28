@@ -48,8 +48,15 @@ does it without configuration:
 5. The client exchanges the code for a `kortix_oat_` access token (1 hour) and
    a refresh token (30 days, rotated on use).
 
-Kortix has no page yet that lists or revokes the MCP clients you approved.
-Removing the server from the client stops it from using your tokens.
+### Revoke a client
+
+**Settings → API keys → Connected apps** lists every app you approved, across
+all your accounts: its name, where it signs in, and when it was last active. A
+self-registered MCP client is marked **Unverified app**. **Revoke access**
+deletes your approval and revokes its tokens: its next request fails, and it
+must ask you again. From a terminal: `kortix tokens apps ls` and
+`kortix tokens apps rm <client-id>`. Both work only from a browser session or a
+personal access token, never from an app's own token.
 
 ### Personal access token
 
@@ -70,7 +77,7 @@ settings, then send it as a header:
 | `send_message` | Queues a message for a session and starts the session if it is stopped. |
 | `read_session` | Returns a session's status, whether a turn is `running`, and its latest messages with each tool call's input and output. `wait_seconds` (up to 45) waits for the running turn to end. |
 | `list_sessions` | Lists the sessions you can see in a project (`project_id`): id, title, status, agent, owner. |
-| `run_command` | Runs a bash command in a session's sandbox and returns stdout, stderr and the exit code. |
+| `run_command` | Runs a bash command in a session's sandbox and returns stdout, stderr and the exit code. A long command returns a `job_id` to keep waiting on. |
 | `read_file` | Reads a file from a session's sandbox (`session_id`), or from a project's git repository (`project_id`). Images return as images. |
 | `write_file` | Writes a file in a session's sandbox and creates its parent directories. |
 | `list_files` | Lists one directory of a session's sandbox (`session_id`), or every file of a project's repository under a path (`project_id`). |
@@ -93,12 +100,14 @@ do. Relative paths resolve under `/workspace`, the session's git checkout. A
 stopped sandbox starts on the first call. The `kortix` CLI in the sandbox is
 signed in as the session.
 
-One tool call answers within 55 seconds. `run_command` stops a command after
-45 seconds. Start longer work in the background and read its log later:
-
-```bash
-nohup npm test > /tmp/test.log 2>&1 &
-```
+A command can run for minutes. One tool call answers within about 55 seconds;
+when the command is still running then, `run_command` returns `status: running`,
+a `job_id`, and the output so far. Call `run_command` with that `job_id` to keep
+waiting, or with `cancel: true` to stop it. `timeout_seconds` (default 600,
+maximum 86400) stops a command that runs too long, with exit code `124`. Output
+is kept in `~/.cache/kortix-mcp/jobs/<job_id>/` in the sandbox; a tool result
+shows the last 24,000 bytes of each stream. A sandbox that stops takes its
+running commands with it.
 
 The server is stateless: it answers `POST` with JSON, and `GET` and `DELETE`
 with `405`.

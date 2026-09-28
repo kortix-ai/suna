@@ -1282,6 +1282,24 @@
         "blocked": "New sessions can’t start on this",
         "ready": "Ready for new sessions"
       }
+    },
+    "connectedApps": {
+      "title": "Connected apps",
+      "description": "Apps you signed in to with Kortix, such as MCP clients. Each acts as you until you revoke it.",
+      "emptyTitle": "No connected apps",
+      "emptyDescription": "Apps you approve with Sign in with Kortix, such as Claude, Cursor or Codex over MCP, show here.",
+      "loadFailed": "Could not load connected apps",
+      "retry": "Retry",
+      "unverified": "Unverified app",
+      "lastActive": "Active {time}",
+      "approved": "Approved {time}",
+      "revokeApp": "Revoke access",
+      "actionsFor": "Actions for {name}",
+      "revokeTitle": "Revoke this app?",
+      "revokeDescription": "{name} loses access to your Kortix account at once. To use it again, you approve it again.",
+      "revoke": "Revoke",
+      "revoked": "App access revoked",
+      "revokeFailed": "Could not revoke the app"
     }
   },
   "triggers": {
@@ -19218,7 +19236,9 @@
       "text7740934de920": "Registered an OAuth client",
       "textcd36423ea12a": "Called the MCP server",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Listed connected apps",
+      "text37698a37f9d2": "Revoked a connected app"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -87,6 +87,16 @@ interface ServiceAccount {
   disabled_at?: string | null;
 }
 
+/** One row of `GET /oauth/grants`. */
+interface ConnectedApp {
+  client_id: string;
+  name: string;
+  self_registered: boolean;
+  redirect_hosts: string[];
+  granted_at: string | null;
+  last_active_at: string | null;
+}
+
 const HELP = help`Usage: kortix tokens <subcommand> [options]
 
 Non-interactive credentials for this account. Reads need token.read. Every
@@ -110,6 +120,12 @@ Service accounts — act as THEMSELVES, with no inherited access:
                                             deleting and re-creating).
   service-accounts rm <id> [-y]             Delete permanently.
 
+Connected apps — apps you approved with "Sign in with Kortix" (MCP clients
+such as Claude Code or Cursor). Yours, across every account:
+  apps ls [--json]                  List them.
+  apps rm <client-id> [-y]          Revoke one: its tokens stop working at
+                                    once, and it must ask you again.
+
 A new service account holds NO permissions. Grant it one with
 \`kortix access grant --service-account <id> --role <key>\`.
 
@@ -128,6 +144,7 @@ Examples:
   kortix tokens ls --mine
   kortix tokens new ci-deploy --expires 90d
   kortix tokens new laptop --project 1a2b… --expires 2027-01-01
+  kortix tokens apps ls
   kortix tokens service-accounts new nightly-reporter --description "Cron"
   kortix access grant --service-account <id> --role member --project 1a2b…
 `;
@@ -237,6 +254,56 @@ export async function runTokens(argv: string[]): Promise<number> {
           process.stdout.write(`  ${C.dim}project  ${C.reset}${token.project_id}\n`);
         }
         return 0;
+      }
+
+      case 'apps': {
+        const action = positional[0] ?? 'ls';
+        if (action === 'ls' || action === 'list') {
+          const { grants } = await ctx.client.get<{ grants: ConnectedApp[] }>('/oauth/grants');
+          if (json) {
+            emitJson(grants);
+            return 0;
+          }
+          if (grants.length === 0) {
+            process.stdout.write(`\n  ${C.dim}No connected apps.${C.reset}\n\n`);
+            return 0;
+          }
+          const nameW = Math.max(...grants.map((g) => g.name.length), 4);
+          process.stdout.write('\n');
+          process.stdout.write(`  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`);
+          for (const g of grants) {
+            const name = g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name;
+            process.stdout.write(
+              `  ${pad(name, nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
+                `${pad((g.last_active_at ?? g.granted_at ?? '-').slice(0, 10), 11)}   ${C.faded}${g.client_id}${C.reset}\n`,
+            );
+          }
+          process.stdout.write(`\n  ${C.dim}${grants.length} app${grants.length === 1 ? '' : 's'}${C.reset}\n\n`);
+          return 0;
+        }
+        if (action === 'rm' || action === 'revoke') {
+          const clientId = positional[1];
+          if (!clientId) return missing('a client id (see `kortix tokens apps ls`)');
+          if (!yes) {
+            const ok = await confirm(
+              `Revoke ${C.bold}${clientId}${C.reset}? It loses access to your account at once.`,
+              false,
+              { onEndOfInput: false },
+            );
+            if (!ok) {
+              process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+              return 0;
+            }
+          }
+          const r = await ctx.client.delete<{ revoked_tokens: number }>(`/oauth/grants/${encodeURIComponent(clientId)}`);
+          if (json) {
+            emitJson(r);
+            return 0;
+          }
+          process.stdout.write(`${status.ok(`Revoked ${C.bold}${clientId}${C.reset} (${r.revoked_tokens} live token${r.revoked_tokens === 1 ? '' : 's'})`)}\n`);
+          return 0;
+        }
+        return fail(`Unknown \`tokens apps\` action "${action}". Use ls or rm.`);
       }
 
       case 'rm':

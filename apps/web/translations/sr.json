@@ -1282,6 +1282,24 @@
         "blocked": "Нове сесије не могу да се покрену на овоме",
         "ready": "Спремно за нове сесије"
       }
+    },
+    "connectedApps": {
+      "title": "Povezane aplikacije",
+      "description": "Aplikacije u koje si se prijavio preko Kortixa, kao što su MCP klijenti. Svaka radi u tvoje ime dok je ne opozoveš.",
+      "emptyTitle": "Nema povezanih aplikacija",
+      "emptyDescription": "Ovde se prikazuju aplikacije koje odobriš preko Prijave sa Kortixom, kao što su Claude, Cursor ili Codex preko MCP-a.",
+      "loadFailed": "Povezane aplikacije nisu mogle da se učitaju",
+      "retry": "Pokušaj ponovo",
+      "unverified": "Neverifikovana aplikacija",
+      "lastActive": "Aktivna {time}",
+      "approved": "Odobrena {time}",
+      "revokeApp": "Opozovi pristup",
+      "actionsFor": "Radnje za {name}",
+      "revokeTitle": "Opozvati ovu aplikaciju?",
+      "revokeDescription": "{name} odmah gubi pristup tvom Kortix nalogu. Da bi je ponovo koristio, ponovo je odobri.",
+      "revoke": "Opozovi",
+      "revoked": "Pristup aplikacije je opozvan",
+      "revokeFailed": "Aplikacija nije mogla da se opozove"
     }
   },
   "triggers": {
@@ -19205,7 +19223,9 @@
       "text7740934de920": "Registrovan OAuth klijent",
       "textcd36423ea12a": "Pozvan MCP server",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Prikazane povezane aplikacije",
+      "text37698a37f9d2": "Opozvana povezana aplikacija"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
