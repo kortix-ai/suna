@@ -41,9 +41,11 @@ function ChatGptSignInFinishing({ label }: { label: string }) {
 }
 
 /**
- * One ChatGPT device authorization at a time. A newer start or a cancel bumps
- * the generation, so a stale poll never updates a later dialog. Failures stay
- * in `error` for the dialog to show; they are not only toasts.
+ * One ChatGPT device authorization at a time. A newer start, a cancel, or a
+ * reset bumps the generation, so a stale poll never updates a later dialog.
+ * Failures stay in `error` for the dialog to show; they are not only toasts.
+ * Only `reset` and a new start clear what the dialog shows: a closing dialog
+ * fades out with its last content instead of flashing its idle state.
  */
 function useChatGptAuthorization(projectId: string | undefined) {
   const generation = useRef(0);
@@ -53,7 +55,8 @@ function useChatGptAuthorization(projectId: string | undefined) {
   /** ChatGPT confirmed the sign-in; the account list is catching up. */
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cancel = useCallback(() => {
+  const cancel = useCallback(() => { generation.current++; }, []);
+  const reset = useCallback(() => {
     generation.current++;
     setWaiting(false); setFinishing(false); setChallenge(null); setError(null);
   }, []);
@@ -102,7 +105,7 @@ function useChatGptAuthorization(projectId: string | undefined) {
       return null;
     }
   }, [projectId]);
-  return { challenge, waiting, finishing, error, authorize, cancel };
+  return { challenge, waiting, finishing, error, authorize, cancel, reset };
 }
 
 /**
@@ -134,6 +137,9 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
   const [value, setValue] = useState('');
   const [rotating, setRotating] = useState<AccountSecretResource | null>(null);
   const [reconnecting, setReconnecting] = useState<AccountSecretResource | null>(null);
+  // Keeps the account's name through the exit animation, which runs after `reconnecting` clears.
+  const [reconnectLabel, setReconnectLabel] = useState('');
+  if (reconnecting && reconnecting.label !== reconnectLabel) setReconnectLabel(reconnecting.label);
   const [sharing, setSharing] = useState<AccountSecretResource | null>(null);
   // New connections are private to their creator: sharing is opt-in.
   const [createMode, setCreateMode] = useState<ConnectionAccessChoice>('private');
@@ -178,19 +184,18 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     }, authMessages);
     if (!credential) return;
     await finishConnection().catch(() => {});
-    authorization.cancel();
-    setCreating(false); setLabel('');
+    setCreating(false);
     successToast(t('accountConnected'));
   };
   const reconnectOAuth = async (secret: AccountSecretResource) => {
     const credential = await authorization.authorize({ resourceId: secret.secret_id }, authMessages);
     if (!credential) return;
     await finishConnection().catch(() => {});
-    authorization.cancel();
     setReconnecting(null);
     successToast(t('accountReconnected'));
   };
   const openReconnect = (secret: AccountSecretResource) => {
+    authorization.reset();
     setReconnecting(secret);
     // Reconnect has nothing to fill in: go straight to the device code.
     void reconnectOAuth(secret);
@@ -238,7 +243,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
     setSelectedMembers(NO_MEMBERS);
     setLabel(defaultLabel());
     save.reset();
-    authorization.cancel();
+    authorization.reset();
     setCreating(true);
   };
   const accessLine = (secret: AccountSecretResource) => {
@@ -340,7 +345,7 @@ export function AccountSecretResourcesPanel({ accountId, projectId, providerId, 
 
       {oauth && <Modal open={reconnecting !== null} onOpenChange={(open) => { if (!open && !authorization.finishing) closeReconnect(); }}>
         <ModalContent className="lg:max-w-md">
-          <ModalHeader><ModalTitle>{t('reconnectTitle', { label: reconnecting?.label ?? '' })}</ModalTitle>
+          <ModalHeader><ModalTitle>{t('reconnectTitle', { label: reconnectLabel })}</ModalTitle>
             <ModalDescription>{t('reconnectDescription')}</ModalDescription></ModalHeader>
           <ModalBody className="space-y-3">
             {authorization.error && <p role="alert" className="text-destructive text-sm">{authorization.error}</p>}
