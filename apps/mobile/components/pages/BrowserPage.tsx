@@ -242,7 +242,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               startInLoadingState
               renderLoading={() => (
                 <View className="absolute inset-0 items-center justify-center bg-background">
-                  <KortixLoader size="large" />
+                  <KortixLoader size="small" />
                 </View>
               )}
               contentInset={{ bottom: toolbarInset }}

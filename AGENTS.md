@@ -239,7 +239,11 @@ in before any non-trivial change. **Do not create a branch by reflex.**
    --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
    only when the work needs migrations, destructive data work, schema drift, or
    independent auth/storage state. See the **worktree** skill.
-3. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
+3. **Never switch a worktree you did not create.** It belongs to one session and
+   its canonical branch. The pre-commit hook refuses a commit on any other branch
+   there (`scripts/check-worktree-branch.sh`). A throwaway probe branch goes in a
+   private `git worktree add` in your scratchpad.
+4. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
    and investigating. Do not park feature work there.
 
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
@@ -255,38 +259,59 @@ Only the canonical branch does.
 Carve-outs where you just proceed: read-only investigation and questions, and
 trivial single-file typo/comment fixes on the current branch.
 
-## Default delivery: share by preview, merge to `main` only when told
+## Default delivery: verify in your box, self-merge to `main`, verify on dev
 
 `main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
-It is not a save point, and it is not how you show someone your work.
+It is not a save point.
+
+**The development machine does the work. CI does not.** Every test, preview,
+and demo for a change runs in your own box: the worktree's local stack, the
+local test suite, and agent-browser against the local web app. A pull request
+into `main` runs **no** GitHub Actions job and is mergeable the moment it opens.
+Nothing runs automatically before the merge. A person can ask for CI on one PR,
+in the rare case they want it, by adding a label: `test` runs the six `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
+Never add a label by default or from automation. CI otherwise runs in two places:
+
+| Where | What runs | Blocks? |
+|---|---|---|
+| Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
+| Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
+| Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
+| Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
-2. Open a **draft PR against `main` on the first commit** and apply the
-   `preview` label. Follow the **contributing** skill: it fills the PR template,
-   finds the preview origin, records the demo video with agent-browser, and
-   attaches it with `gh pr edit --attach`. Every PR body carries that video.
-   The `preview` label builds a complete self-host preview for the branch — its
-   own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
-   work is shared and reviewed internally. **Sharing never requires merging.**
-   The `preview` label also runs the six-lane `Tests` suite on the PR.
-3. Run the relevant local unit, type, integration, and end-to-end checks with
-   real inputs and outputs. **CI does not run the local suite on a PR into
-   `main`** — run it yourself (narrowest command first, then `pnpm test`), or
-   add the `test` label to get the six CI lanes (~8 min, no push needed). Keep
-   the PR green as you go, not at the end.
+2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
+   command first, then `pnpm test`. Start the worktree's stack
+   (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
+   HTTP route, the real CLI process, or the page with agent-browser. There is
+   no CI lane to catch what you skip.
+3. Open the PR against `main` and follow the **contributing** skill: it fills
+   the PR template and attaches the demo video you recorded against your local
+   stack. Do not add `test` or `preview` unless you need that one explicit run.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
-5. **Never merge to `main` without the user's explicit approval of that merge.**
-   Not "the task is done", not "the checks are green" — the user says merge.
-   The only machine-enforced rule is that every change reaches `main` and
-   `staging` through a pull request — no required approvals, no required status
-   checks, no bypass actors. Anyone may merge their own PR. The discipline is
-   yours, not the ruleset's, so the bar is what you verified, not what CI let
-   through.
+5. **Self-merge to `main` when the change is verified. Do not wait for the
+   user's approval.** Speed matters: a verified change that sits unmerged is
+   waste. Verified means all of these are true:
+   - the relevant local checks ran with real inputs and outputs (rule 2), and
+     they passed;
+   - the PR is mergeable (no conflict);
+   - rule 6 holds when the change touches a client-facing runtime contract.
+   A failing check blocks the merge until you fix it or state why it is
+   unrelated (for example, the same test fails on `main`). Squash-merge
+   (`gh pr merge <pr> --squash`), then finish rules 7 and 8. A merge is not
+   the end of the work: dev verification is still yours.
+   The only machine-enforced rule on `main` and `staging` is that every change
+   arrives through a pull request — no required approvals, no required status
+   checks, no bypass actors. The bar is what you verified.
+   **The release gates do not change.** Merging into `staging` or `prod`,
+   running Promote to Production, and moving the `:stable` tag each need the
+   user's explicit approval (the **kortix-release** skill).
 6. **A change to a client-facing runtime contract** — the `@kortix/sdk` public
    surface, session/thread transport, the streaming protocol — merges only after
-   the whole objective ran on its own preview origin through a real session.
-   Green tests are not the bar. Someone used it.
+   the whole objective ran through a real session on your local stack, and runs
+   again on dev after the merge (rule 8). Green tests are not the bar. Someone
+   used it.
 7. After the merge, wait for the **Live on dev** comment on your pull request.
    Deploy Dev posts it when `/health` on every surface it changed serves the
    deployed commit, with the time since merge; "Not live on dev yet" names the
@@ -297,18 +322,23 @@ It is not a save point, and it is not how you show someone your work.
    `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
    checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
    `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit and names the failing lanes — read it.
+   A red run comments on the commit. The comment names the failing lanes and
+   every commit since the last green run, because merges land faster than the
+   suite and the red commit is often not the culprit. The author whose commit
+   broke `main` fixes forward. If `main` is still red 1 hour after the comment,
+   anyone may revert the culprit PR. `main` never blocks a merge or a deploy on
+   a red run.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
    API contracts. For web behavior, drive the deployed UI and assert its network
    request plus visible result.
 
-Preview verification, local verification, and dev verification are all required.
-A local pass does not replace the preview origin, and a dev smoke test does not
-replace focused local tests. Record the branch, PR, preview origin, merge SHA,
-deploy run, deployed SHA evidence, and the exact dev command or interaction in
-the final response.
+Local verification and dev verification are both required. A local pass does
+not replace dev, and a dev smoke test does not replace focused local tests.
+Record the branch, PR, local commands and output, merge SHA, deploy run,
+deployed SHA evidence, and the exact dev command or interaction in the final
+response.
 
 ## Architecture: `@kortix/sdk` is the source of truth
 
@@ -457,7 +487,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   file against its own fresh migrated database. A skipped DB suite fails.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
-- Local browser runs use two Playwright workers. CI browser shards use one.
+- Browser runs use two Playwright workers, locally and in each CI shard.
 - `pnpm test -- --packages-only` runs every app/package test and publish check.
 - `pnpm test -- --full` adds browser journeys and every app/package test. It
   starts the deterministic local stack.
@@ -471,6 +501,9 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
+- Run the suite in your box before merging into `main`: the narrowest relevant
+  command first, then `pnpm test`. A pull request into `main` runs no CI job
+  unless a person adds `test` or `preview`. Your machine is the pre-merge gate.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
   || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
   GitHub-hosted label is the kill switch back to GitHub-hosted runners.
@@ -482,44 +515,26 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   browser shard buys nothing and the concurrency settings in
   `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
-  prestart Supabase first. Do not add CI-only test logic. (The Platinum/Daytona
-  sandbox-worker path was removed on 2026-08-26; only `deploy-preview.yml` still
-  uses a cloud sandbox.)
-- The suite runs on every push to `main`, on a pull request into `staging`, on a
-  pull request labelled `test` or `preview`, and on manual dispatch. The label
-  re-triggers an open pull request without a push. A plain pull request into
-  `main` skips it, and its check shows as skipped. A push-to-`main` run
-  blocks nothing: a red run comments the failing lanes on the commit, a cancelled
-  run means a newer commit superseded it. A pull request into `prod` runs
+  prestart Supabase first. Do not add CI-only test logic.
+- The six lanes run on every push to `main`, on a pull request into `staging`,
+  once when a person adds the `test` label to a pull request, and on manual
+  dispatch. Nothing else. A push-to-`main` run blocks nothing: a
+  red run comments the failing lanes on the commit, and a cancelled run means a
+  newer commit superseded it. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
-- Run the suite locally before merging into `main`: the narrowest relevant
-  command first, then `pnpm test`. The old per-pull-request gate cost ~11 min
-  median and 68 min worst case and gated nothing, because `main` and `staging`
-  require no status check.
+- `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
+  label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
+  into `main`, and pins both label gates to the label-added event.
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
-- The `preview` label creates one full self-host preview in a persistent warm
-  Platinum sandbox. Previews run on Platinum only: the preview host and every
-  session inside it. A Platinum failure fails the preview; there is no Daytona
-  fallback. Daytona code remains only to delete previews created before
-  2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
-  frontend, Mailpit, and HTTPS origin.
-- The sticky pull request comment links the origin as soon as the stack serves
-  the commit ("live; tests running"). Preview CI then runs
-  `pnpm test -- --target-full` against that origin as a separate step and
-  updates the comment with the result and its `/_tests/` HTML report.
-- A push to a `preview`-labelled branch redeploys its environment in place; the
-  label stays. Removing the label or deleting the branch tears it down. Closing
-  the pull request does not. A daily reconciler deletes environments whose
-  branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
-  `reconcile`).
-- Preview warm images contain dependencies and Docker layers only. They never
-  contain a database or runtime secret.
-- Preview Mailpit handles authentication and invite email. The dedicated
-  preview GitHub App runs the managed repository and CLI push flows. OAuth
-  initiation is the only allowed preview browser exclusion.
+- The `preview` label is not part of the development flow. Adding it deploys a
+  Platinum self-host environment for the PR (~7 min), once, and runs no tests.
+  A push does not redeploy. Only `gh workflow run deploy-preview.yml -f
+  pr_number=<N>` runs `--target-full` against a preview (40–80 min). Its mechanics are
+  in the **contributing** skill (`references/preview-environments.md`). Run a
+  preview of your change on your worktree's local stack by default.
 
 ### Product flow source of truth
 

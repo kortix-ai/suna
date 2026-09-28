@@ -1,7 +1,7 @@
 /**
  * Headless regular auth — /v1/auth/* (apps/api/src/auth/headless.ts + index.ts).
- * Sign-up, password sign-in, refresh, magic link, OTP verify, social start,
- * password reset/update, user, sign-out — all through the Kortix API against
+ * Public client config, sign-up, password sign-in, refresh, magic link, OTP
+ * verify, social start, password reset/update, user, sign-out — all through the Kortix API against
  * the local GoTrue. Maps to spec AUTH-3..AUTH-6.
  */
 import { flow } from "../core/flow";
@@ -13,12 +13,28 @@ flow(
   "AUTH-3",
   {
     domain: "auth",
-    routes: ["POST /v1/auth/signup", "POST /v1/auth/sign-in/password", "POST /v1/auth/refresh", "GET /v1/auth/user", "POST /v1/auth/sign-out"],
+    routes: ["GET /v1/auth/client-config", "POST /v1/auth/signup", "POST /v1/auth/sign-in/password", "POST /v1/auth/refresh", "GET /v1/auth/user", "POST /v1/auth/sign-out"],
   },
   async (ctx) => {
     const email = `${ctx.fixtures.name("headless")}@example.test`.toLowerCase();
     let access = "";
     let refresh = "";
+    await ctx.step("client-config (ANON) → 200 with the public sign-in values only, never the service role key", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/auth/client-config");
+      r.status(200).body().exists("$.supabase_url");
+      const body = r.json<Record<string, unknown>>();
+      const nullableString = (v: unknown) => v === null || typeof v === "string";
+      const nullableList = (v: unknown) => v === null || (Array.isArray(v) && v.every((x) => typeof x === "string"));
+      if (typeof body.supabase_url !== "string" || !/^https?:\/\//.test(body.supabase_url)) throw new Error("supabase_url is not an http(s) URL");
+      if (!nullableString(body.supabase_anon_key) || !nullableString(body.frontend_url)) throw new Error("anon key / frontend_url must be string or null");
+      if (!nullableList(body.auth_methods) || !nullableList(body.auth_providers)) throw new Error("auth lists must be string[] or null");
+      const keys = Object.keys(body).sort();
+      if (keys.join() !== "auth_methods,auth_providers,frontend_url,supabase_anon_key,supabase_url") throw new Error(`unexpected fields: ${keys.join()}`);
+      const anon = ctx.env.supabaseAnonKey;
+      if (anon && body.supabase_anon_key !== null && body.supabase_anon_key !== anon) throw new Error("supabase_anon_key is not the deployment's anon key");
+      const serviceRole = ctx.env.supabaseServiceRoleKey;
+      if (serviceRole && r.text().includes(serviceRole)) throw new Error("client-config leaked the service role key");
+    });
     await ctx.step("signup → 200 with a user; a session unless email confirmation is required", async () => {
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/auth/signup", { email, password });
       r.status(200).body().exists("$.user").exists("$.requires_email_confirmation");

@@ -82,8 +82,36 @@ if [ -n "$new_docs" ]; then
   exit 1
 fi
 
+# Translation catalogs keep their key order (apps/web/scripts/i18n-catalogs.mjs).
+# A conflict resolution that rebuilt them reordered every catalog twice
+# (2026-09-22, and #7337 on 2026-09-28), and CI only saw it after the merge to
+# main. A merge commit may take either parent's order. The check reads the
+# working tree. Set I18N_REORDER=1 for an intentional reorder.
+if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
+  && git diff --cached --name-only | grep -qE '^apps/web/translations/[^/]+\.json$'; then
+  i18n_bases="--base=HEAD"
+  git rev-parse --verify --quiet MERGE_HEAD >/dev/null && i18n_bases="$i18n_bases --base=MERGE_HEAD"
+  if ! i18n_out=$(node apps/web/scripts/i18n-catalogs.mjs check $i18n_bases 2>&1); then
+    printf '%s\n' "$i18n_out" >&2
+    echo "pre-commit: set I18N_REORDER=1 only when the reorder is intentional." >&2
+    exit 1
+  fi
+fi
+
+# A `pnpm worktree` checkout commits only on its own branch (AGENTS.md).
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
+
 # (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
 
 # (4) Backstop: block any remaining unencrypted, committable .env.
-exec $DX ext precommit
+#
+# `dotenvx protect`, not the deprecated `ext precommit` (dotenvx 2.29.0 prints
+# "[DEPRECATED] dotenvx precommit. fix: run [dotenvx protect]" and points here).
+# The deprecated check also flags `apps/api/scripts/test.env`, which is
+# plaintext ON PURPOSE with fake values — read its header: the unit suite runs
+# off it with no decryption key, and encrypting it hands CI
+# `SUPABASE_URL=encrypted:…`. `protect` guards the `.env*` files that hold real
+# secrets and leaves that one alone, so the guard keeps its job and stops
+# refusing a file the repo is required to keep readable.
+exec $DX protect

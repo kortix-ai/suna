@@ -171,6 +171,3 @@ export function formatRelative(
 
 /** @alias formatRelative */
 export const formatRelativeTime = formatRelative;
-
-/** @alias formatRelative */
-export const formatRelativeDate = formatRelative;

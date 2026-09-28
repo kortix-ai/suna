@@ -71,3 +71,16 @@ test('omits an endpoint when its live price exceeds the gateway cap', async () =
   });
   expect(quoted['glm-5.3-flash']?.map((route) => route.route)).toEqual(['coreweave/nvfp4']);
 });
+
+test('keeps an endpoint whose live price equals the gateway cap', async () => {
+  // 0.0000033 * 1e6 is 3.3000000000000003 in float math; the cap is 3.3.
+  const quoted = await refreshManagedPricingRoutes([], 1.2, false, {
+    baseUrl: 'https://openrouter.test/api/v1', apiKey: 'test-key',
+    fetchImpl: async (url) => Response.json({ data: { endpoints: String(url).includes('kimi-k3') ? [
+      { tag: 'fireworks/us', pricing: { prompt: '0.0000033', input_cache_read: '0.00000033', completion: '0.0000165' } },
+    ] : [] } }),
+  });
+  expect(quoted['kimi-k3']).toEqual([
+    { route: 'fireworks/us', role: 'eligible', input: 3.96, cacheRead: 0.396, output: 19.8 },
+  ]);
+});

@@ -112,10 +112,10 @@ describe('local test runner', () => {
     );
   });
 
-  it('uses one CI browser worker and preserves explicit concurrency', () => {
-    expect(resolveBrowserWorkers(undefined, true)).toBe(1);
-    expect(resolveBrowserWorkers(undefined, false)).toBe(2);
-    expect(resolveBrowserWorkers('2', true)).toBe(2);
+  it('uses two browser workers in CI and locally, and preserves explicit concurrency', () => {
+    expect(resolveBrowserWorkers(undefined)).toBe(2);
+    expect(resolveBrowserWorkers('1')).toBe(1);
+    expect(resolveBrowserWorkers('3')).toBe(3);
   });
 
   it('runs app and package tests without starting the product stack', () => {

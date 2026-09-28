@@ -155,7 +155,15 @@ export async function ensureProjectChannelBinding(
 export async function resolveOauthProject(
   teamId: string,
   channelId: string | undefined,
+  threadTs?: string,
 ): Promise<ProjectResolution> {
+  // A reply in a thread bound to a session runs in that session's project,
+  // before the channel decides: a web session that DMs someone, or posts in a
+  // channel no project owns, must get the reply back, not a project picker.
+  if (threadTs) {
+    const thread = await findChatThread({ platform: 'slack', workspaceId: teamId, threadId: threadTs });
+    if (thread) return { kind: 'project', projectId: thread.projectId };
+  }
   if (channelId) {
     const [binding] = await db
       .select({ projectId: chatChannelBindings.projectId })

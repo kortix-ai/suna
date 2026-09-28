@@ -6,6 +6,7 @@ import { loadTeamsBotCredentials } from '../install-store';
 import { provenTeamsTenants } from './inbound';
 import { sendActivity, sendCard } from '../teams-api';
 import { buildNoticeCard } from './cards';
+import { resolveTeamsProjectConversation } from './post';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { botConnectorToken, graphToken } from '../teams-auth';
 import type { TeamsActivity, TeamsConversationRef } from './types';
@@ -20,13 +21,13 @@ const ALLOWED_DOWNLOAD_HOST =
  * Bot Framework attachment hosts — the only hosts that may receive the bot
  * connector token on the DOWNLOAD path.
  *
- * Deliberately narrower than `ALLOWED_SERVICE_HOST` (teams-service-url.ts),
- * which also allows `azurewebsites.net`, a customer-registrable namespace.
- * The download url is caller-supplied, so reusing the broad list let anyone
- * with project read point the proxy at their own `*.azurewebsites.net` host
- * and capture the bot connector token (CWE-918). `*.trafficmanager.net` is the
- * same class — any Azure customer can name a Traffic Manager profile — so only
- * the Teams connector's own profile, `smba.trafficmanager.net`, is accepted.
+ * The download url is caller-supplied, so a customer-registrable namespace
+ * here lets anyone with project read point the proxy at a host of their own
+ * and capture the bot connector token (CWE-918). `*.azurewebsites.net` is one
+ * (any Azure customer can register an app there), and `*.trafficmanager.net`
+ * is the same class — any Azure customer can name a Traffic Manager profile —
+ * so only the Teams connector's own profile, `smba.trafficmanager.net`, is
+ * accepted. `ALLOWED_SERVICE_HOST` (teams-service-url.ts) excludes both too.
  */
 const ALLOWED_BOT_ATTACHMENT_HOST = /(^smba\.trafficmanager\.net|(^|\.)botframework\.com|(^|\.)botframework\.us)$/i;
 
@@ -109,13 +110,16 @@ export async function downloadTeamsFile(
 }
 
 export interface TeamsUploadArgs {
-  serviceUrl: string;
+  /** A conversation bound to the project. Its service URL and tenant come from the server, never the caller. */
   conversationId: string;
   botId?: string;
   filename: string;
   contentBase64: string;
   description?: string;
-  /** Where the file goes. Absent = personal (the pre-existing consent-card path). */
+  /**
+   * Where the file goes, when the binding does not record it. The binding's
+   * own type wins. Absent both = personal (the consent-card path).
+   */
   conversationType?: 'personal' | 'groupChat' | 'channel';
   /** The team's Microsoft 365 group id (channels only) — the drive the file is uploaded to. */
   teamGroupId?: string;
@@ -133,6 +137,12 @@ const IMAGE_TYPES: Record<string, string> = {
   gif: 'image/gif',
   webp: 'image/webp',
 };
+
+const UPLOAD_SCOPES = new Set(['personal', 'groupChat', 'channel']);
+
+function uploadScope(stored: string | null): TeamsUploadArgs['conversationType'] | null {
+  return stored && UPLOAD_SCOPES.has(stored) ? (stored as TeamsUploadArgs['conversationType']) : null;
+}
 
 function imageContentType(filename: string): string | null {
   const ext = filename.toLowerCase().split('.').pop() ?? '';
@@ -153,20 +163,11 @@ export async function initiateTeamsUpload(
   projectId: string,
   args: TeamsUploadArgs,
 ): Promise<TeamsUploadResult | FileProxyError> {
-  if (!args.serviceUrl || !args.conversationId || !args.filename || !args.contentBase64) {
+  const conversationId = args.conversationId?.trim();
+  if (!conversationId || !args.filename || !args.contentBase64) {
     return {
       ok: false,
-      error: 'serviceUrl, conversationId, filename and content_base64 are required',
-      status: 400,
-    };
-  }
-  // F-7: the caller-supplied serviceUrl must be a trusted Microsoft Bot Framework
-  // endpoint, otherwise the bot connector token would be leaked to an arbitrary
-  // host when the consent card is posted. Reject before persisting.
-  if (!assertValidTeamsServiceUrl(args.serviceUrl)) {
-    return {
-      ok: false,
-      error: 'serviceUrl must be an https Microsoft Bot Framework endpoint',
+      error: 'conversation_id, filename and content_base64 are required',
       status: 400,
     };
   }
@@ -180,13 +181,19 @@ export async function initiateTeamsUpload(
     };
   }
 
-  const ref: TeamsConversationRef = {
-    serviceUrl: args.serviceUrl,
-    conversationId: args.conversationId,
-    botId: args.botId,
-    projectId,
-  };
-  const scope = args.conversationType ?? 'personal';
+  // The address is the SERVER's: a conversation bound to this project, at the
+  // service URL its inbound activities stored. The route used to take
+  // `service_url` from the request body, and the allowlist accepted
+  // `*.azurewebsites.net`, so a caller with connector-write could have the
+  // bot's token sent to a host of their own, and post into any conversation
+  // the bot reaches (F-7, CWE-862).
+  const conversation = await resolveTeamsProjectConversation(projectId, conversationId);
+  if (!conversation.ok) return conversation;
+  if (!assertValidTeamsServiceUrl(conversation.ref.serviceUrl)) {
+    return { ok: false, error: 'The stored Teams service URL is not a Microsoft Bot Framework endpoint', status: 409 };
+  }
+  const ref: TeamsConversationRef = { ...conversation.ref, botId: args.botId };
+  const scope = uploadScope(conversation.conversationType) ?? args.conversationType ?? 'personal';
 
   // An IMAGE is shown inline first, in every scope — the way Slack shows one.
   //
@@ -237,8 +244,8 @@ export async function initiateTeamsUpload(
   await db.insert(teamsPendingUploads).values({
     uploadId,
     projectId,
-    serviceUrl: args.serviceUrl,
-    conversationId: args.conversationId,
+    serviceUrl: ref.serviceUrl,
+    conversationId: ref.conversationId,
     botId: args.botId ?? null,
     filename: args.filename,
     contentType: null,

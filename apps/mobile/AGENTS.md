@@ -246,6 +246,15 @@ Loading state is always `@/components/ui/skeleton`'s `<Skeleton>` (a
 (`@/components/kortix/kortix-loader`). Never an icon spun with `animate-spin`,
 never React Native's `ActivityIndicator`.
 
+Size (KRTX-559): `<KortixLoader />` defaults to `small` (20 pt), and that is
+the loader for every list, page, sheet, file preview, web view, and button.
+Only two surfaces pass a bigger preset, because there the loader is the whole
+screen's content: the boot screens (`app/index.tsx`, `app/welcome.tsx`,
+`app/+not-found.tsx`) use `large` (80 pt, the width of the native splash
+mark), and `SessionConnecting` uses `medium` (40 pt). There is no `xlarge`.
+`components/kortix/kortix-loader-size.test.ts` fails on any other preset.
+`customSize` stays for inline status glyphs in rows and tool cards.
+
 One loader per surface, one visible at a time (KRTX-244):
 
 - Boot: the native splash is the loader. It hides when the start route has

@@ -73,6 +73,10 @@ export function connectorCallToReviewItem(
       request_digest: ex.requestDigest,
       risk: ex.risk,
       ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
+      // Same gate as the args: the agent's description can quote the payload.
+      ...(includeArgsPreview && typeof summary.approval_context === 'string'
+        ? { approval_context: summary.approval_context }
+        : {}),
       args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
       args_preview_authorized: includeArgsPreview,
     },

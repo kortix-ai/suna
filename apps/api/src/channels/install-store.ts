@@ -589,6 +589,10 @@ export async function loadSlackBotUserIdForProject(projectId: string): Promise<s
   return readSecret(projectId, SLACK_BOT_USER_ID);
 }
 
+export async function loadSlackTeamIdForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, SLACK_TEAM_ID);
+}
+
 export async function loadSlackTeamNameForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_TEAM_NAME);
 }

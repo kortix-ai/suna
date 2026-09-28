@@ -69,6 +69,15 @@ describe('runtime artifact contract', () => {
     expect(services).toContain("['Apps runtime', 'apps/kortix-app-runtime/build.sh']");
   });
 
+  // A Kortix session sandbox has no Go toolchain. Worktree creation failed on
+  // the Apps runtime build and blocked every factory worker (2026-09-28).
+  test('a missing go toolchain skips only the Apps runtime build', () => {
+    const services = readFileSync(join(LIB_DIR, 'services.ts'), 'utf8');
+    const goGuard = services.indexOf("if (!which('go'))");
+    expect(goGuard).toBeGreaterThan(services.indexOf('for (const [label, filter] of packageBuilds)'));
+    expect(goGuard).toBeLessThan(services.indexOf("run(['bash', script]"));
+  });
+
   // `pnpm --filter <name>` that matches nothing prints "No projects matched" and
   // exits 0. The sandbox agent was renamed to `kortixd` and its filter was not,
   // so worktrees stopped building the daemon without a single failure: a pinned

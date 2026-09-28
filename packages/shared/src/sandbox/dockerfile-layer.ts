@@ -49,7 +49,10 @@ import {
 } from './shell-tools';
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
   SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
 } from './platform-binaries';
 
 /**
@@ -88,7 +91,7 @@ export const KORTIX_USER_PATH_DIRS =
 
 /**
  * Live project secrets on tmpfs. The kortix-agent daemon writes this file
- * (apps/kortix-sandbox-agent-server/src/agent-env-file.ts `AGENT_ENV_SH`).
+ * (apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts `AGENT_ENV_SH`).
  */
 export const KORTIX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
 
@@ -237,6 +240,14 @@ export interface KortixToolchainLayerOpts {
    * alters boot semantics for the warm-seed paths too and wants its own rollout.
    */
   isSharedDefault?: boolean;
+  /**
+   * kortix.yaml `container_runtime: true`. The provider bakes the guest
+   * kernel's full module tree (Platinum `kernel_modules: container`); the guest
+   * kernel loads bridge/overlay/netfilter on demand through /sbin/modprobe, so
+   * the image needs kmod. The marker env makes the entrypoint start dockerd at
+   * boot. Unset renders the layer byte-identical to before.
+   */
+  containerRuntime?: boolean;
 }
 
 
@@ -283,6 +294,17 @@ export interface KortixArtifactLayerOpts {
    * instead of the daemon's minimal fallback. Optional; omit to skip.
    */
   catalogPath?: string;
+  /**
+   * Build-context path to the staged managed `kortix-*` skill overlay, baked
+   * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
+   *
+   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * place: the meta image passed a path, the standard layer had no field at
+   * all, and every ordinary session sandbox — dev, prod and preview alike —
+   * booted with nothing to overlay and downloaded the whole overlay on its
+   * first reconcile.
+   */
+  managedSkillsPath: string;
 }
 
 export interface BuildLayeredDockerfileOpts
@@ -416,6 +438,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     opencodeWarmupScriptPath,
     opencodeConfigPath,
     isSharedDefault,
+    containerRuntime,
   } = opts;
 
   return [
@@ -465,6 +488,15 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
     '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    ...(containerRuntime
+      ? [
+          'RUN apt-get update && apt-get install -y --no-install-recommends kmod \\',
+          '    && rm -rf /var/lib/apt/lists/* \\',
+          '    && (getent group docker >/dev/null || groupadd --system docker) \\',
+          '    && usermod -aG docker kortix',
+          'ENV KORTIX_CONTAINER_RUNTIME=1',
+        ]
+      : []),
     'ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\',
     `    PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
     'USER kortix',
@@ -749,6 +781,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     machineDocPath,
     slackCliPath,
     catalogPath,
+    managedSkillsPath,
   } = opts;
 
   return [
@@ -781,6 +814,17 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `    && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\`,
     `    && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\`,
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
+    '',
+    // The overlay arrives ALREADY kortix-owned, below the `chown -R` above: a
+    // recursive chown in a later layer rewrites every inode it touches and
+    // forces overlayfs to copy the whole tree up again (see platform-binaries.ts).
+    `COPY --chown=kortix:kortix ${managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}`,
+    // Then state what this image carries, with the daemon that is now on disk.
+    // Only the ~500 B bookkeeping file is chowned here, and the daemon must be
+    // able to REWRITE it in place: `writeState` writes the path, it does not
+    // rename into the directory.
+    `RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\`,
+    `    && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}`,
     '',
     // Web-terminal login shells: keep the Kortix tool dirs on PATH on Debian
     // bases and load project secrets. Written here, still as root, and in the
@@ -851,6 +895,8 @@ export interface SandboxTemplate {
   image?: string;
   /** Hardware spec (cpu/memory/disk). GPUs are intentionally not supported. */
   spec: SandboxSpec;
+  /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
+  containerRuntime?: boolean;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1014,6 +1060,7 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     dockerfile: sanitizedDockerfile || undefined,
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
+    ...(row.container_runtime === true ? { containerRuntime: true } : {}),
   };
 }
 

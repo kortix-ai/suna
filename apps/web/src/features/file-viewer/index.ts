@@ -20,5 +20,6 @@ export type {
 } from './file-source';
 export { HtmlPreview } from './html-preview';
 export { PreviewFitProvider, isUsableIntrinsicSize } from './preview-fit';
+export { SaveAsPdfButton } from './save-as-pdf-button';
 export { framePolicy, getFileCategory, getLanguageFromExt } from './preview-policy';
 export type { FileCategory, FrameContent, FramePolicy } from './preview-policy';

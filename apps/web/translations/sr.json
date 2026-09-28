@@ -46,6 +46,7 @@
     "deleteAccount": "Обриши налог",
     "connectAccount": "Повежи налог",
     "oauthWaiting": "Чека се овлашћење…",
+    "oauthFinishing": "Пријава је успела. Налог се чува…",
     "oauthExpired": "Време за овлашћење је истекло. Покушајте поново.",
     "oauthPrivateDescription": "Користите свој ChatGPT Plus или Pro план у овом пројекту. Нови налози су приватни док их не поделите.",
     "chatGptSubscription": "ChatGPT претплата",
@@ -53,6 +54,7 @@
     "manageChatGptAccounts": "Управљајте ChatGPT налозима",
     "connect": "Повежи",
     "connectChatGpt": "Повежи ChatGPT",
+    "reconnectChatGpt": "Поново повежи ChatGPT",
     "noChatGptAccounts": "Још нема ChatGPT налога",
     "oauthCreationDescription": "Пријавите се својим ChatGPT Plus или Pro налогом. Kortix чува пријаву шифровану и никада је не приказује.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -237,7 +239,8 @@
       "actionCreate": "Направи нови репозиторијум",
       "actionImport": "Увези постојећи репозиторијум",
       "ownerTypePersonal": "Лични налог",
-      "ownerTypeOrg": "Организација"
+      "ownerTypeOrg": "Организација",
+      "createPersonalAuthorize": "Kortix će prvi put zatražiti vašu autorizaciju na GitHubu kada kreirate repozitorijum na ličnom nalogu."
     }
   },
   "projectHome": {
@@ -1063,6 +1066,24 @@
         "empty": "Још нема евидентираних изградњи. Подразумевани шаблон платформе се гради једном глобално, а прилагођени шаблони при првој употреби."
       }
     },
+    "connectedApps": {
+      "title": "Povezane aplikacije",
+      "description": "Aplikacije u koje si se prijavio preko Kortixa, kao što su MCP klijenti. Svaka radi u tvoje ime dok je ne opozoveš.",
+      "emptyTitle": "Nema povezanih aplikacija",
+      "emptyDescription": "Ovde se prikazuju aplikacije koje odobriš preko Prijave sa Kortixom, kao što su Claude, Cursor ili Codex preko MCP-a.",
+      "loadFailed": "Povezane aplikacije nisu mogle da se učitaju",
+      "retry": "Pokušaj ponovo",
+      "unverified": "Neverifikovana aplikacija",
+      "lastActive": "Aktivna {time}",
+      "approved": "Odobrena {time}",
+      "revokeApp": "Opozovi pristup",
+      "actionsFor": "Radnje za {name}",
+      "revokeTitle": "Opozvati ovu aplikaciju?",
+      "revokeDescription": "{name} odmah gubi pristup tvom Kortix nalogu. Da bi je ponovo koristio, ponovo je odobri.",
+      "revoke": "Opozovi",
+      "revoked": "Pristup aplikacije je opozvan",
+      "revokeFailed": "Aplikacija nije mogla da se opozove"
+    },
     "featureFlags": {
       "stability": {
         "experimental": "Експериментално",
@@ -1150,6 +1171,10 @@
         "config_releases": {
           "name": "Издања конфигурације",
           "description": "Покрећите сесије са тренутном конфигурацијом агента са основне гране, послуженом само за читање, тако да спојени агент, вештина или алат стигне до сваке покренуте сесије. Када је искључено, сесија чита сопствену фасциклу конфигурације у радном простору."
+        },
+        "mcp": {
+          "name": "MCP server",
+          "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
         }
       }
     },
@@ -1410,7 +1435,7 @@
     "upgradePlan": "Надогради план",
     "sessionList": {
       "loadError": "Учитавање сесија није успело",
-      "empty": "Још нема сесија",
+      "empty": "Сесије које покренеш ће се појавити овде",
       "noMatches": "Ниједна сесија не одговара активним филтерима.",
       "actions": "Радње сесије",
       "actionsFor": "Радње за {title}",
@@ -1446,6 +1471,7 @@
       "createAccount": "Направите налог…",
       "settings": "Подешавања",
       "downloadApp": "Преузми апликацију",
+      "connectMcp": "Poveži MCP",
       "logOut": "Одјави се",
       "find": "Пронађи пројекат…",
       "accountSettings": "Подешавања налога",
@@ -2758,6 +2784,21 @@
       }
     }
   },
+  "firstChat": {
+    "title": "Твоје прво ћаскање са Kortix-ом",
+    "greeting": "Добро дошли, {name}. Ја сам Kortix.",
+    "greetingNoName": "Добро дошли. Ја сам Kortix.",
+    "intro": "Донеси ми било шта: задатак, ток рада или идеју која још није сасвим јасна. Смислићемо то заједно.",
+    "question": "Одакле желиш да почнеш?",
+    "recommendTools": "Preporuči alate",
+    "updateMemory": "Ажурирај меморију пројекта",
+    "placeholder": "Реци Kortix-у на чему радиш",
+    "toolsPrompt": "Препоручи ми алате и конекторе који одговарају мом току рада. Ако ти затреба, прво ме питај на чему радим.",
+    "memoryPrompt": "Упознај се са тим како радим. Постављај ми по једно кратко питање о мојој улози, на чему радим, алатима које користим и како волим да радим. Сачувај моје одговоре у меморију пројекта да будуће сесије крену са тим информацијама.",
+    "inviteTeammate": "Pozovi kolegu",
+    "connectSlack": "Poveži Slack",
+    "slackConnected": "Slack povezan"
+  },
   "announcements": {
     "memories": {
       "title": "Представљамо успомене",
@@ -3578,7 +3619,7 @@
       "openRow1Title": "Отворени извор",
       "openRow1Body": "Једна од највећих отворених платформи АИ-за-рад. Прочитајте сваки ред — ништа није црна кутија.",
       "openRow2Title": "Било који модел, ваши кључеви",
-      "openRow2Body": "Понесите било ког добављача, или претплату Claude, ChatGPT или Цурсор коју већ плаћате.",
+      "openRow2Body": "Понесите било ког добављача, или претплату ChatGPT коју већ плаћате.",
       "openRow3Title": " Самостални домаћин било где",
       "openRow3Body": "Управљани облак, ваш ВПЦ, он-прем, чак и са ваздушним размаком. Ништа не телефонира кући.",
       "openRow4Title": "Развој цело друштво",
@@ -9996,6 +10037,9 @@
       "text0e47f09a748f": "Увећај",
       "text0e498a7ede47": "Омогућено: {value0}",
       "text0e52f6b9d025": "Markdown",
+      "text4cab70e9226b": "Сачувај као PDF",
+      "textce87352f1102": "Ова датотека је превелика да би се сачувала као PDF. Уместо тога преузмите Markdown датотеку.",
+      "text3b0c86f182b0": "Није могуће припремити PDF.",
       "text0e570ca6fabe": "Извор",
       "text0e613afafe9e": "Шта се никада не мења",
       "text0e66373f45dc": "Ознака",
@@ -10294,7 +10338,6 @@
       "text1785635529d1": "Обезбеди на захтев",
       "text178880c99bfa": "Једнократна миграција базе при сваком издању",
       "text1797cd1f264b": "Ваша ChatGPT претплата",
-      "text17b2d4b0499f": "Средњи ризик",
       "text17c982d8eb68": "Подешавања окидача",
       "text17ca81a2d026": "Sandbox је права Linux машина на којој модел може да покрене било шта. Зато у њу не стављамо ваше акредитиве. Sandbox носи тачно један Kortix токен, ограничен на пројекат, а сваки одлазни позив састављамо са наше стране зида.",
       "text17ccfa5b681e": "Одржавање",
@@ -11934,7 +11977,6 @@
       "text467065a16a2e": "Текстуална област",
       "text467d579386a6": "Агент никад не прелази овлашћења човека",
       "text46800e585f61": "Проследите DOCX URL помоћу",
-      "text4682a7f79721": "Висок ризик",
       "text46866b323e0b": "Оно што агент треба да сачува урезује се у грану сесије и предлаже за враћање у main. Спајање је подразумевано забрањено за агенте; администратор може да додели project.cr.merge у kortix.yaml, а само проширење те дозволе је проверена измена.",
       "text469ad0b25e29": "И даље у „Attributes & Claims“, кликните на „Add a group claim“.",
       "text469bcc02c9f9": "Сваки порт хоста, аутоматски додељен поново ако је већ заузет",
@@ -14652,7 +14694,6 @@
       "text93d6bb239aae": "Без политике = закључана врата: Cloudflare свима одбија приступ док не постоји бар једна Allow политика. Ово је најчешћи узрок поруке „SSO redirects but access is denied“.",
       "text93d6de7104f0": "Уклони икону",
       "text93dcf1d1d25e": "викенди",
-      "text93e404732659": "Покрените сесију да бисте задали први задатак овом пројекту.",
       "text93f4b14c9e2b": "Нема активних обавештења",
       "text93f5222a6e5c": "- Ескалирај само оно што захтева човека",
       "text93fbaf02beca": "01 · Изолација",
@@ -14999,7 +15040,7 @@
       "text9d48410d14d3": "Enterprise функција",
       "text9d4b2eae7c42": "Испоручена подразумевана вредност је попустљива — радња се извршава осим ако не кажете другачије. За продајни пројекат прво подесите излазне радње на „Питај“, а деструктивне на „Блокирај“. Ово вам говоримо уместо да претпоставимо да је безбеднија подразумевана вредност изабрана уместо вас.",
       "text9d53e28e9e39": "Приступ по пројектима наведен је у одељку Projects на овој страници.",
-      "text9d54b2fd9149": "Користите било ког провајдера или претплату за ChatGPT, Claude или Cursor коју већ плаћате. Модел је конфигурација у вашем репозиторијуму, а не одлука коју доноси провајдер.",
+      "text9d54b2fd9149": "Користите било ког провајдера или претплату за ChatGPT коју већ плаћате. Модел је конфигурација у вашем репозиторијуму, а не одлука коју доноси провајдер.",
       "text9d5adef979f7": "Наслеђено",
       "text9d6304b7f8dc": "Управљање идентитетом → Конфигурација",
       "text9d74727714db": "Одбачено",
@@ -16002,7 +16043,6 @@
       "textba05a1dd202f": "Померајте границе значења open AGI-ја: потпуно аутономна когнитивна бића као дигиталне колеге.",
       "textba0e4962bc0f": "size-3.5 shrink-0",
       "textba0e4afa9340": "Симбол",
-      "textba13e1e74457": "Низак ризик",
       "textba1eac1c3fa4": "Налози са најмање једном започетом сесијом",
       "textba24f124cec0": "Сазнајте више.",
       "textba34a96f2969": "Последње ажурирање:",
@@ -18692,6 +18732,7 @@
       "texta23bbd5b005e": "Проверен CORS приступ прегледу sandbox-а",
       "textaf6efe6ab19e": "Проверена ажурност конфигурације агента сесије",
       "text24ce0e45fb23": "Проверена е-пошта за пријаву",
+      "textef01adfb4372": "Прочитана конфигурација пријаве",
       "text4fde9c00516c": "Проверена улазна тачка sandbox-а",
       "text412f891b55a9": "Git репозиторијум клониран или преузет",
       "text1fd8295dda82": "Захтев за измену затворен",
@@ -19182,7 +19223,22 @@
       "text5176d59f25fd": "Издање конфигурације сесије разрешено",
       "text273c48dbf3b9": "Регистрован уређај за пусх обавештења",
       "textbb666ddf7a57": "Уклоњен уређај за пусх обавештења",
-      "text397ab5aecbbf": "Захтев за дозволу сесије прослеђен"
+      "text397ab5aecbbf": "Захтев за дозволу сесије прослеђен",
+      "text3ec6c235548a": "Pročitani metapodaci MCP servera",
+      "text7740934de920": "Registrovan OAuth klijent",
+      "textcd36423ea12a": "Pozvan MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Prikazane povezane aplikacije",
+      "text37698a37f9d2": "Opozvana povezana aplikacija",
+      "text8c8fb214b592": "GitHub je autorizovan kao korisnik",
+      "text4192bb1e9ee5": "Излистани подсетници сесије",
+      "texteee2410ea3db": "Креиран подсетник сесије",
+      "text33954223cc7e": "Подсетник сесије укључен или искључен",
+      "textb7ece0360b75": "Обрисан подсетник сесије",
+      "text9dcde51d9ff2": "Опис агента",
+      "textfa0db737cb09": "Написао агент, није проверено. Конектор прима параметре испод.",
+      "text2edf70730233": "Порука агенту (опционо)"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -19225,108 +19281,53 @@
     "skip": "Прескочи",
     "skipForNow": "Прескочи за сада",
     "progress": "Напредак подешавања",
-    "demo": {
-      "title": "Закажите 20-минутни позив за подешавање",
-      "description": "Проведите неколико усмерених минута са тимом да подесите свој командни центар."
-    },
-    "kickoff": {
-      "tools": " Повезао сам и ове алате: {count}. Користи их ако могу да помогну.",
-      "noDomain": "Завршио сам подешавање пројекта.{toolsClause} Представи се, објасни шта можеш да урадиш и питај ми за шта ми прво треба помоћ.",
-      "withDomain": "Завршио сам подешавање пројекта за {domain}. Истражи компанију и реци ми шта си пронашао.{toolsClause} Затим ме питај за шта ми прво треба помоћ."
-    },
-    "company": {
-      "title": "Реците нам нешто о својој компанији",
-      "description": "Ваш агент користи домен да истражи вашу компанију. Ништа се не дели јавно.",
-      "continue": "Настави",
-      "skipSurvey": "Прескочи упитник",
-      "domain": "Домен компаније",
-      "invalidDomain": "Унесите исправну везу, као што је acme.com или https://acme.com"
-    },
-    "tools": {
-      "title": "Повежите своје алате",
-      "description": "Изаберите апликације које користите и овде их овластите. Ваш агент може да чита, пише и извршава радње у свему што повежете.",
-      "continue": "Настави",
-      "skipForNow": "Прескочи за сада",
-      "searchPlaceholder": "Претражите више од 3.000 апликација…",
-      "notConfiguredTitle": "Везе са апликацијама нису подешене у овој инсталацији",
-      "notConfiguredDescription": "Можете да наставите и касније повежете алате у одељку Конектори.",
-      "noMatches": "Нема резултата за „{query}“.",
-      "trySearch": "Покушајте са претрагом.",
-      "addConnection": "Додај везу са апликацијом {app}",
-      "connected": "Повезано",
-      "loadMore": "Учитај још",
-      "addApp": "Додај: {app}",
-      "appFallback": "апликација",
-      "connectionDescription": "Направите везу пре овлашћивања. Можете да додате више веза за исту апликацију.",
-      "categories": {
-        "email": "Е-пошта",
-        "aiAgents": "АИ агенти",
-        "developerTools": "Алати за програмере",
-        "scheduling": "Заказивање и резервације",
-        "notes": "Белешке",
-        "spreadsheets": "Табеле",
-        "artificialIntelligence": "Вештачка интелигенција",
-        "socialMedia": "Друштвене мреже",
-        "fileStorage": "Управљање и складиштење датотека",
-        "documents": "Документи",
-        "crm": "CRM",
-        "projectManagement": "Управљање пројектима",
-        "productivity": "Продуктивност",
-        "analytics": "Аналитика",
-        "webScraping": "АИ прикупљање података са веба",
-        "videoAudio": "Видео и аудио",
-        "teamChat": "Тимско ћаскање",
-        "onlineCourses": "Онлајн курсеви",
-        "taskManagement": "Управљање задацима",
-        "design": "Слике и дизајн",
-        "databases": "Базе података",
-        "newsLifestyle": "Вести и стил живота",
-        "ecommerce": "Е-трговина",
-        "signatures": "Потписи"
+    "work": {
+      "title": "Čime se uglavnom baviš?",
+      "description": "Kortix ovo koristi da ti predloži prve zadatke.",
+      "ariaLabel": "Čime se baviš",
+      "noteLabel": "Reci nam u nekoliko reči",
+      "notePlaceholder": "Na primer, istraživanje ili zapošljavanje",
+      "continue": "Nastavi",
+      "options": {
+        "founder": "Vođenje kompanije",
+        "engineering": "Inženjering",
+        "product_design": "Proizvod i dizajn",
+        "sales": "Prodaja",
+        "marketing": "Marketing",
+        "finance_ops": "Operacije",
+        "support": "Podrška i uspeh korisnika",
+        "other": "Nešto drugo"
       }
     },
-    "slack": {
-      "title": "Додајте Kortix у Slack",
-      "description": "Помените свог агента, покрените задатке и примајте резултате у каналу.",
-      "continue": "Настави",
-      "notNow": "Не сада",
-      "connected": "Повезано са Slack-ом",
-      "installMethod": "Начин инсталације Slack-а",
-      "add": "Додај у Slack",
-      "addDescription": "Један клик, без подешавања",
-      "custom": "Користи прилагођену Slack апликацију",
-      "customDescription": "За самостално хостоване радне просторе или када управљана инсталација није доступна",
-      "waiting": "Чека се одобрење у Slack-у…",
-      "waitingDescription": "Завршите инсталацију у Slack прозору. Kortix проверава везу сваких 2,5 секунди.",
-      "bringOwn": "Користите своју Slack апликацију",
-      "bringOwnDescription": "За самосталне инсталације или инсталације ограничене на радни простор.",
-      "closeCustom": "Затвори подешавање прилагођене Slack апликације"
+    "apps": {
+      "title": "Koje aplikacije koristiš?",
+      "description": "Klikni na aplikaciju da je povežeš. Više možeš dodati bilo kada.",
+      "ariaLabel": "Aplikacije",
+      "searchPlaceholder": "Pretraži aplikacije ili kategorije",
+      "clearSearch": "Obriši pretragu",
+      "connectApp": "Poveži {app}",
+      "appConnected": "{app} je povezan",
+      "connectedCount": "Povezano: {count}",
+      "noMatches": "Nijedna aplikacija ne odgovara upitu „{query}“",
+      "notConfiguredTitle": "Aplikacije ovde nisu podešene",
+      "notConfiguredDescription": "Ova instalacija nema katalog aplikacija. Konektore možeš dodati kasnije u Podešavanjima.",
+      "continue": "Nastavi"
     },
     "plan": {
-      "title": "Како желите да покрећете свог агента?",
-      "descriptionConnected": "Модел је повезан. Додајте другог добављача или надоградите за више опција.",
-      "descriptionDisconnected": "Вашем агенту је потребан модел. Ништа се не покреће док не наставите.",
-      "seePlans": "Прикажи планове",
-      "addKey": "Додај кључ",
-      "continue": "Настави",
-      "modelAccess": "Приступ моделу",
-      "useKortix": "Користи Kortix моделе",
-      "useKortixDescription": "Тренутни приступ, виша ограничења и без подешавања",
-      "connectAnother": "Повежи другог добављача",
-      "bringKey": "Користи свој API кључ",
-      "providerDescription": "Anthropic, OpenAI или други добављач",
-      "keepCurrent": "Задржи тренутни модел",
-      "decideLater": "Одлучи касније",
-      "keepCurrentDescription": "Настави са повезаним моделом",
-      "decideLaterDescription": "Уређивач ће вас питати када први пут пошаљете задатак"
-    },
-    "done": {
-      "title": "Ваш командни центар је активан",
-      "descriptionWithTools": "Повезани алати: {count}. Отварање покреће ваш први разговор са Kortix-ом.",
-      "description": "Отварање покреће ваш први разговор са Kortix-ом.",
-      "openProject": "Отвори пројекат",
-      "firstMessage": "Ваша прва порука",
-      "bookCall": "Закажите 20-минутни позив за подешавање са Марком"
+      "title": "Koje modele Kortix treba da koristi?",
+      "description": "Ovo možeš promeniti bilo kada u Podešavanjima.",
+      "seePlans": "Pogledaj planove",
+      "open": "Otvori radni prostor",
+      "addKey": "Dodaj ključ",
+      "modelAccess": "Pristup modelima",
+      "useKortix": "Kortix modeli",
+      "recommended": "Preporučeno",
+      "useKortixDescription": "Spremno odmah. Troši kredite tvog plana.",
+      "useKortixNeedsPlan": "Potreban je Kortix plan ili krediti.",
+      "bringKey": "Moj API ključ",
+      "providerDescription": "Anthropic, OpenAI ili drugi provajder.",
+      "keyConnected": "Ključ je povezan.",
+      "decideLater": "Odluči kasnije"
     }
   },
   "commandPalette": {
@@ -20300,5 +20301,25 @@
     "connectFailed": "Налог није могао да се повеже. Покушајте поново.",
     "sharePrivateDescription": "Изаберите ко још може да користи ваш налог. Он постаје дељени налог, којим могу да управљају и управљачи веза пројекта.",
     "ownerMeta": "Ваш налог"
+  },
+  "connectMcp": {
+    "title": "Poveži Kortix preko MCP-a",
+    "description": "Dodaj ovaj URL u Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent. Prvi put klijent traži da se prijaviš u Kortix. Ništa se ne instalira.",
+    "urlLabel": "MCP URL",
+    "addToClient": "Dodaj ga u svoj klijent",
+    "other": "Ostalo",
+    "claudeSteps": "U Claude-u (veb ili desktop) otvori Podešavanja → Konektori → Dodaj prilagođeni konektor, nalepi URL i prijavi se.",
+    "claudeCodeHint": "Zatim pokreni /mcp u Claude Code-u i prijavi se.",
+    "otherHint": "ChatGPT (režim za programere), VS Code, Windsurf i drugi klijenti: dodaj udaljeni MCP server sa URL-om iznad ili ovim JSON-om.",
+    "addToCursor": "Dodaj u Cursor",
+    "signInOnFirstUse": "Cursor traži prijavu u Kortix pri prvom korišćenju.",
+    "docs": "Dokumentacija",
+    "done": "Gotovo",
+    "copy": "Kopiraj"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Neverifikovana aplikacija",
+    "unverifiedBody": "{client} se sama registrovala u Kortix-u. Kortix nije proverio ko je pokreće. Dozvoli je samo ako je upravo ti povezuješ.",
+    "redirectsTo": "Vraća te na"
   }
 }

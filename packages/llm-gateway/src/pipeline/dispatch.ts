@@ -30,10 +30,14 @@ import { publicUpstreamError, shownModel, shownProvider } from './public-identit
  * 2. The next candidate of the same model: the next pool key after a 429, or
  *    the next provider when the candidates opted into `failover`.
  * 3. The first candidate of the next fallback model, when the failure matches
- *    `fallbackOn`. A BYOK request never falls back to a Kortix-billed model.
+ *    `fallbackOn`. A BYOK request (an own key or ChatGPT plan, billing `none`)
+ *    falls back to a Kortix-billed model only when the project chose that chain
+ *    and `admitCharge` confirms the account can pay; a platform-supplied chain
+ *    never turns it into a Kortix charge.
  *
- * A client that left stops the plan. The final failure is returned unchanged
- * for the caller to present.
+ * A plan can start at a fallback model: the caller passes `unavailable` when the
+ * routed model had no usable upstream. A client that left stops the plan. The
+ * final failure is returned unchanged for the caller to present.
  */
 
 export interface DispatchPlan {
@@ -42,8 +46,20 @@ export interface DispatchPlan {
   candidates: readonly UpstreamDescriptor[];
   fallbackModels?: readonly string[];
   fallbackOn?: ModelFallbackCondition;
+  /**
+   * The project set `fallbackModels` itself (Customize → Gateway → Routing), so
+   * its Kortix-billed models may serve a BYOK request. False for the platform's
+   * inherited route.
+   */
+  fallbackChosenByProject?: boolean;
   /** Generation defaults for a model. Applied per attempt, so a fallback model gets its own. */
   defaultsFor?: (model: string) => ModelGenerationDefaults | undefined;
+  /**
+   * The routed model when it had no usable upstream and the plan starts at one
+   * of its fallback models (`model`). Its failure is recorded first, and
+   * fallback models are labelled against it.
+   */
+  unavailable?: { model: string; failure: GatewayAttemptFailure };
 }
 
 export interface DispatchContext {
@@ -54,6 +70,12 @@ export interface DispatchContext {
   /** Resolves a fallback model's candidates. Called only when the plan reaches that model. */
   resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (secretId: string, seconds: number) => Promise<void>;
+  /**
+   * Whether the account can pay for a Kortix-billed fallback of a BYOK request.
+   * The caller's wallet gate ran for the BYOK model alone, which bills nothing.
+   * Without it, a BYOK request never reaches a Kortix-billed model.
+   */
+  admitCharge?: () => Promise<boolean>;
 }
 
 interface DispatchProgress {
@@ -198,13 +220,15 @@ function peerTakesOver(head: UpstreamDescriptor, candidate: UpstreamDescriptor, 
   return isPoolPeer(head, candidate) && failure.status === 429;
 }
 
-function fallbackTakesOver(on: ModelFallbackCondition, failure: Failure): boolean {
+/** Whether a fallback chain retrying on `on` moves past a failure with this status. */
+export function fallbackTakesOver(on: ModelFallbackCondition, failure: { status?: number }): boolean {
   if (on === 'any-error') return true;
   const { status } = failure;
   return status === undefined || status >= 500 || LIMIT_STATUSES.has(status);
 }
 
-function fallbackModelsOf(plan: DispatchPlan): string[] {
+/** The plan's fallback models in order: deduplicated, without the routed model, at most eight. */
+export function fallbackModelsOf(plan: Pick<DispatchPlan, 'model' | 'fallbackModels'>): string[] {
   const models = (plan.fallbackModels ?? []).filter(
     (model, index, all) =>
       typeof model === 'string' && model.length > 0 && model !== plan.model && all.indexOf(model) === index,
@@ -215,6 +239,44 @@ function fallbackModelsOf(plan: DispatchPlan): string[] {
 function errorText(error: unknown): string {
   if (error instanceof UpstreamHttpError) return `${error.message} ${error.body}`;
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A fallback model's candidates, as a request whose own model failed may use
+ * them. A BYOK request reaches a Kortix-billed candidate only through a chain
+ * the project chose, and only after `admitCharge` confirms the account can pay.
+ */
+export async function fallbackCandidates(
+  model: string,
+  input: {
+    /** The request's own model is an own key or ChatGPT plan (billing `none`). */
+    byok: boolean;
+    chosenByProject: boolean;
+    resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
+    admitCharge?: () => Promise<boolean>;
+    logger: GatewayLogger;
+    requestId: string;
+  },
+): Promise<UpstreamDescriptor[]> {
+  const { logger, requestId } = input;
+  let resolved: UpstreamDescriptor[];
+  try {
+    resolved = await input.resolveCandidates(model);
+  } catch (error) {
+    logger.warn(`[gateway] ${requestId}: fallback model ${model} is unavailable: ${errorText(error).slice(0, 300)}`);
+    return [];
+  }
+  if (!input.byok) return resolved;
+  const own = resolved.filter((candidate) => candidate.billingMode === 'none');
+  if (own.length === resolved.length) return resolved;
+  if (input.chosenByProject && input.admitCharge && (await input.admitCharge())) return resolved;
+  if (!own.length) {
+    const why = input.chosenByProject
+      ? 'the wallet gate did not admit a Kortix-billed model'
+      : 'a BYOK request does not fall back to a Kortix-billed model';
+    logger.warn(`[gateway] ${requestId}: fallback model ${model} skipped: ${why}`);
+  }
+  return own;
 }
 
 function retryAfterOf(failure: Failure): string | null | undefined {
@@ -255,8 +317,9 @@ export async function dispatch(
       : null;
   body = null;
 
-  const attemptFailures: GatewayAttemptFailure[] = [];
-  const candidatesTried: string[] = [];
+  const { unavailable } = plan;
+  const attemptFailures: GatewayAttemptFailure[] = unavailable ? [unavailable.failure] : [];
+  const candidatesTried: string[] = unavailable ? [`${unavailable.model}:${unavailable.failure.code}`] : [];
   let attempts = 0;
   let earliestPoolRetryAt = Infinity;
 
@@ -264,7 +327,7 @@ export async function dispatch(
     const { descriptor } = attempt;
     return [
       shownProvider(descriptor),
-      attempt.model !== plan.model ? attempt.model : null,
+      attempt.model !== (unavailable?.model ?? plan.model) ? attempt.model : null,
       descriptor.poolSecretId ?? null,
       attempt.profile ? descriptor.resolvedModel : null,
     ].filter(Boolean).join(':');
@@ -361,26 +424,15 @@ export async function dispatch(
     };
   };
 
-  const resolveFallback = async (fallbackModel: string): Promise<readonly UpstreamDescriptor[]> => {
-    let resolved: UpstreamDescriptor[];
-    try {
-      resolved = await ctx.resolveCandidates(fallbackModel);
-    } catch (error) {
-      logger.warn(
-        `[gateway] ${requestId}: fallback model ${fallbackModel} is unavailable: ${errorText(error).slice(0, 300)}`,
-      );
-      return [];
-    }
-    // A failed BYOK request must fail as BYOK; it never becomes a Kortix charge.
-    if (primary.billingMode !== 'none') return resolved;
-    const byok = resolved.filter((candidate) => candidate.billingMode === 'none');
-    if (resolved.length > byok.length && !byok.length) {
-      logger.warn(
-        `[gateway] ${requestId}: fallback model ${fallbackModel} skipped: a BYOK request does not fall back to a Kortix-billed model`,
-      );
-    }
-    return byok;
-  };
+  const resolveFallback = (fallbackModel: string): Promise<readonly UpstreamDescriptor[]> =>
+    fallbackCandidates(fallbackModel, {
+      byok: primary.billingMode === 'none',
+      chosenByProject: Boolean(plan.fallbackChosenByProject),
+      resolveCandidates: ctx.resolveCandidates,
+      admitCharge: ctx.admitCharge,
+      logger,
+      requestId,
+    });
 
   const nextAttempt = async (failure: Failure): Promise<Attempt | null> => {
     if (!retained) return null;

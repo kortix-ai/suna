@@ -165,6 +165,14 @@ export async function loadFullHistory(
   }
 }
 
+/** True while a mounted session page holds this session on `sandboxUrl`. */
+export function isLiveSessionOn(sessionId: string, sandboxUrl: string): boolean {
+  for (const entry of liveSessions) {
+    if (entry.sessionId === sessionId && entry.sandboxUrl === sandboxUrl) return true;
+  }
+  return false;
+}
+
 /** True while at least one mounted session page holds this session. */
 export function isLiveSession(sessionId: string): boolean {
   for (const entry of liveSessions) {

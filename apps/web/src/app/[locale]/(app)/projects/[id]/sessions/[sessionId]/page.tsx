@@ -574,7 +574,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.
   const previousRepositoryHistoryAvailable = hasTranscript && usesPreviousRepository;
-  const surface = { newSessionHint: handoff.newSessionHint, hasTranscript, hasPendingFirstPrompt };
+  const surface = {
+    newSessionHint: handoff.newSessionHint,
+    hasTranscript,
+    hasPendingFirstPrompt,
+    conversationEmpty: session.conversationEmpty,
+  };
   const overlay = resolveSessionOverlay({ ...surface, shellShowsFirstPrompt });
   // WHICH overlay is settled above; this decides whether it may COVER the chat.
   //

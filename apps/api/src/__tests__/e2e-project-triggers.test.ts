@@ -224,7 +224,14 @@ mock.module("../snapshots/builder", () => ({
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: 'kortix-org',
     repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'trigger-project',
@@ -627,7 +634,12 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realTriggerExecutionStore = await import('../projects/trigger-execution-store');
 mock.module('../projects/trigger-execution-store', () => ({
+  ...realTriggerExecutionStore,
   claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
     const due = runtimeRows
       .filter(

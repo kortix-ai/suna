@@ -14,6 +14,13 @@ export interface AccountSecretResource {
   strategy: SecretDeliveryStrategy;
   active: boolean;
   cooldown_until: string | null;
+  /**
+   * When the stored login first stopped working (the provider rejected its
+   * refresh, or it cannot be read), as an ISO timestamp; `null` while it works.
+   * The account stays usable and selected; reconnecting it clears the mark.
+   * Absent from APIs older than this field.
+   */
+  needs_reauth_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

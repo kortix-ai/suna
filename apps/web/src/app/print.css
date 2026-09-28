@@ -265,3 +265,196 @@
 [data-print-only] {
   display: none;
 }
+
+/*
+ * Save as PDF — a markdown file as a document (`file-viewer/print-document.ts`).
+ *
+ * The rendered file is mounted as a hidden last child of <body>. While that
+ * print is active, <html> carries `data-print-document-active`: every other
+ * child of <body> — the app, the file-viewer portal, toasts — is removed from
+ * the page, and the document prints alone in the light tokens pinned above.
+ *
+ * The markup is plain HTML from the markdown pipeline (`markdown-pdf.ts`), with
+ * no utility classes, so each element is styled here. The values mirror the
+ * preview's `UnifiedMarkdown` components class for class (`mt-10` is
+ * `calc(var(--spacing) * 10)`), so paper reads like the screen. Tables, code
+ * blocks and page breaks already get the paper rules above.
+ */
+
+[data-print-document] {
+  display: none;
+}
+
+@media print {
+  html[data-print-document-active] body > :not([data-print-document]) {
+    display: none !important;
+  }
+
+  html[data-print-document-active] body > [data-print-document] {
+    display: block !important;
+    color: var(--foreground);
+    font-family: var(--font-sans), ui-sans-serif, sans-serif;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: 1.625;
+    overflow-wrap: anywhere;
+  }
+
+  [data-print-document] > :first-child {
+    margin-top: 0;
+  }
+
+  [data-print-document] :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--foreground);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  [data-print-document] h1 {
+    font-size: var(--text-xl);
+    margin: calc(var(--spacing) * 10) 0 calc(var(--spacing) * 4);
+  }
+
+  [data-print-document] h2 {
+    font-size: var(--text-xl);
+    margin: calc(var(--spacing) * 8) 0 calc(var(--spacing) * 3);
+  }
+
+  [data-print-document] :is(h3, h4) {
+    font-size: var(--text-lg);
+    margin: calc(var(--spacing) * 6) 0 calc(var(--spacing) * 2);
+  }
+
+  [data-print-document] :is(h5, h6) {
+    font-size: var(--text-base);
+    margin: calc(var(--spacing) * 4) 0 calc(var(--spacing) * 1);
+  }
+
+  [data-print-document] :is(p, ul, ol) {
+    margin: calc(var(--spacing) * 4) 0;
+  }
+
+  [data-print-document] :is(ul, ol) {
+    padding-left: calc(var(--spacing) * 6);
+  }
+
+  [data-print-document] ul {
+    list-style: disc;
+  }
+
+  [data-print-document] ol {
+    list-style: decimal;
+  }
+
+  [data-print-document] li + li {
+    margin-top: calc(var(--spacing) * 1);
+  }
+
+  [data-print-document] li :is(p, ul, ol) {
+    margin: calc(var(--spacing) * 1) 0;
+  }
+
+  [data-print-document] li::marker {
+    color: var(--muted-foreground);
+  }
+
+  [data-print-document] ul.contains-task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  [data-print-document] .task-list-item input {
+    margin: 0 calc(var(--spacing) * 2) 0 0;
+    vertical-align: middle;
+  }
+
+  [data-print-document] a {
+    color: var(--kortix-blue);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--kortix-blue) 40%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  [data-print-document] blockquote {
+    margin: calc(var(--spacing) * 5) 0;
+    padding-left: calc(var(--spacing) * 6);
+    border-left: 2px solid var(--border);
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+
+  [data-print-document] hr {
+    margin: calc(var(--spacing) * 6) 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  [data-print-document] :not(pre) > code {
+    padding: 0 calc(var(--spacing) * 1);
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--muted);
+    font-size: 0.875em;
+  }
+
+  [data-print-document] pre {
+    margin: calc(var(--spacing) * 5) 0;
+    padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
+    border-radius: calc(var(--radius) - 2px);
+  }
+
+  [data-print-document] pre code {
+    background: none;
+  }
+
+  [data-print-document] table {
+    margin: calc(var(--spacing) * 5) 0;
+  }
+
+  [data-print-document] th {
+    background: var(--muted);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  [data-print-document] td {
+    font-weight: 400;
+  }
+
+  /* Frontmatter prints as a key/value table, like the preview's card. */
+  [data-print-document] [data-print-frontmatter] th {
+    width: 30%;
+    background: none;
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  [data-print-document] img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /*
+   * Math prints as MathML, which every current engine lays out natively. The
+   * KaTeX HTML twin needs KaTeX's stylesheet and fonts, which a file-viewer
+   * page may never have loaded — without them it prints as scrambled glyphs.
+   */
+  [data-print-document] .katex-html {
+    display: none !important;
+  }
+
+  [data-print-document] .katex .katex-mathml {
+    position: static;
+    clip: auto;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    padding: 0;
+    border: 0;
+  }
+
+  [data-print-document] .katex-display {
+    display: block;
+    margin: calc(var(--spacing) * 5) 0;
+    text-align: center;
+  }
+}

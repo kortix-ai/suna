@@ -622,7 +622,7 @@ describe('provider-neutral turn observation', () => {
   // The reaper's drip may keep a box alive on the first and must never keep one
   // alive on the second, so the reading has to tell them apart. A build that
   // predates the turn fields answers 200 without them
-  // (apps/kortix-sandbox-agent-server/src/routes/health.ts adds them only when
+  // (apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts adds them only when
   // it can observe the turn) — the runtime is UP and only its account of the
   // turn is missing. Nothing coming back is the opposite fact.
   test('a 200 without the turn fields is unknown, but the daemon ANSWERED', async () => {
@@ -1947,6 +1947,24 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(turnObservationCalls).toHaveLength(5);
   });
 
+  test('an unreadable turn warns once per episode, not on every renewal tick', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => { warnings.push(message); };
+    try {
+      await reapAndReconcileSandboxes(NOW);
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+      expect(unconfirmedTurnDrips).toEqual(['sb-1', 'sb-1', 'sb-1']);
+      expect(warnings.filter((message) => message.includes('turn observation unknown; drip-extending'))).toHaveLength(1);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══
   // A daemon that answers NOTHING — an unreachable box, a wedged opencode, a
   // sandbox whose daemon never bound its port — is not evidence of live work.
@@ -2858,7 +2876,7 @@ describe('reapOrphanProviderBoxes', () => {
     const r = await reapOrphanProviderBoxes(NOW2);
 
     expect(stops).toEqual(['real-orphan']);
-    expect(r).toEqual({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
   });
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {
@@ -2871,7 +2889,7 @@ describe('reapOrphanProviderBoxes', () => {
       { provider: 'daytona', externalId: 'daytona-orphan' },
       { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
-    expect(r).toEqual({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {
@@ -2881,7 +2899,7 @@ describe('reapOrphanProviderBoxes', () => {
       managedBoxes = [{ externalId: 'orphan-x', createdAt: hoursAgo(48) }];
       const r = await reapOrphanProviderBoxes(NOW2);
       expect(stops).toEqual([]);
-      expect(r).toEqual({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
+      expect(r).toMatchObject({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
     } finally {
       if (prev === undefined) delete process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
       else process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = prev;

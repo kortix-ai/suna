@@ -1,3 +1,4 @@
+import { isSelectableAgent } from '@kortix/sdk';
 import type { Agent } from '@kortix/sdk/react';
 
 /**
@@ -59,7 +60,8 @@ export interface ComposerAgentResolution {
 }
 
 /**
- * The agents a composer may offer: visible, and not a subagent.
+ * The agents a composer may offer: the SDK's `isSelectableAgent` rule, the
+ * same rule every agent picker on web and mobile applies.
  *
  * Subagents are dispatched BY an agent, never picked as the one to prompt, and
  * `AgentSelector` has always filtered them out of the list. They are filtered
@@ -69,7 +71,7 @@ export interface ComposerAgentResolution {
  */
 export function composerSelectableAgents(agents: Agent[] | undefined): Agent[] {
   if (!Array.isArray(agents)) return [];
-  return agents.filter((a) => !a.hidden && a.mode !== 'subagent');
+  return agents.filter(isSelectableAgent);
 }
 
 export function resolveComposerAgent(input: {
