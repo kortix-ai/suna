@@ -832,7 +832,7 @@ test.describe('30 — pooled provider secrets', () => {
       await expect(failureRow.getByText(suggestion, { exact: true })).toBeVisible();
       // The diagnostics sit behind the row's disclosure.
       await failureRow.getByText(message, { exact: true }).click();
-      await expect(failureRow.getByText(/provider_reauth_required/)).toBeVisible();
+      await expect(failureRow.getByText(/^provider_reauth_required · /)).toBeVisible();
       const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
       if (await welcome.isVisible().catch(() => false)) await welcome.getByRole('button', { name: 'Dismiss' }).click();
       // The action reads the session's own ChatGPT selection before it shows.
