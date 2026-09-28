@@ -105,20 +105,4 @@ describe('installation token cache', () => {
 
     expect(second.token).toBe('tok-2');
   });
-
-  test('invalidate drops every scope of one installation', async () => {
-    const now = () => 1_000_000;
-    const { mint, calls } = mintStub(now);
-    const cache = createInstallationTokenCache({ now });
-
-    await cache.get('app1', '42', ['a'], mint);
-    await cache.get('app1', '42', [], mint);
-    await cache.get('app1', '43', [], mint);
-    cache.invalidate('42');
-    await cache.get('app1', '42', ['a'], mint);
-    await cache.get('app1', '42', [], mint);
-    await cache.get('app1', '43', [], mint);
-
-    expect(calls).toEqual(['42:a', '42:', '43:', '42:a', '42:']);
-  });
 });

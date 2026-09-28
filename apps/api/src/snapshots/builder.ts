@@ -1272,10 +1272,6 @@ const piWorkerImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>()
 const PI_WORKER_IMAGE_READY_TTL_MS = 5 * 60_000;
 const piWorkerImageReady = new Map<string, { at: number; result: EnsureSandboxImageResult }>();
 
-export function __resetPiWorkerImageReadyCacheForTests(): void {
-  piWorkerImageReady.clear();
-}
-
 /**
  * The shared pi worker image — the meta image's shape exactly, but smaller in
  * every way that matters: node plus a fetch-and-exec boot script, no daemon,

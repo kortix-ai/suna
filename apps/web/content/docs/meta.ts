@@ -27,6 +27,7 @@ export default defineMeta({
     'feature-flags',
     'host',
     'cli',
+    'mcp',
     'tui',
     'sdk',
     'backend',

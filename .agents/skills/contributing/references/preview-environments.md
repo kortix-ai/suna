@@ -56,9 +56,12 @@ also gives the test state:
 - It is built on `preview-auth-email.sh <origin> <email> <since-epoch>`, which reads the
   newest auth email from Mailpit. It prints the verify link, or the 6-digit code when the
   email has no link. Use that script alone for a non-browser flow.
-- Billing is on with Stripe test mode. A new account is free tier, and its agents answer with
-  the faux model provider. For real model output, subscribe with a Stripe test card
-  (`4242 4242 4242 4242`) or connect a BYOK key.
+- Billing is on with Stripe test mode. A new account is free tier: `models: []` on
+  `/model-picker`, no managed models, no usable turn. Run
+  `preview-subscribe.sh <origin> <agent-browser-session>` right after `preview-sign-in.sh` to
+  subscribe it to `pro` and unlock the managed lineup — the same test-mode Stripe subscribe
+  `GW-MANAGED-1` already drives against every preview, automated so a demo doesn't need a
+  human to click through Stripe Checkout. Connecting a BYOK key instead also works.
 - OAuth sign-in is not available on a preview.
 
 ## Lifecycle

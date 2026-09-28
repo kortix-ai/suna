@@ -11,7 +11,6 @@ const WEB_SRC = join(import.meta.dir, '..');
 const DEPLOYMENT_AWARE_SURFACES = [
   'features/marketing/download/terminal-block.tsx',
   'features/session/session-terminal-connect-bar.tsx',
-  'features/workspace/customize/sections/view/dev-view.tsx',
   'features/workspace/customize/sections/view/git-view.tsx',
 ];
 

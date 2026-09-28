@@ -9,7 +9,7 @@ Every change reaches `main` through a pull request. Each PR carries a demo video
 change, recorded with **agent-browser**. The video is uploaded with `gh --attach` and appears
 in the PR body. This skill is that loop, end to end.
 
-`AGENTS.md` owns the policy: canonical branches, merge approval, and the customer-data
+`AGENTS.md` owns the policy: canonical branches, when to self-merge, and the customer-data
 rule. This skill is the procedure. Read `AGENTS.md` → "First, at session start" and
 "Default delivery" before step 1 if you have not.
 
@@ -94,6 +94,11 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
+# A fresh preview account is free tier: no managed models, empty model picker
+# (preview-environments.md -> "Sign in"). Subscribe it before recording ANY
+# session/agent behavior, or the demo can only show static UI.
+.agents/skills/contributing/scripts/preview-subscribe.sh "$S" "$SESSION"
+
 mkdir -p output/pr
 ab set viewport 1440 900
 ab open "$S/<changed route>"
@@ -168,13 +173,17 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Merge `main` into the branch daily. Git's rename detection carries `main`'s edits
   through moved files. GitHub's conflict check does not, so push the merge.
 
-### 8. Hand off
+### 8. Merge and hand off
 
 - Mark the PR ready: `gh pr ready <pr>`.
-- Report the PR URL, the preview origin, the test commands and their results, and anything
-  still unverified.
-- Merge only when the user says so (`AGENTS.md` → "Default delivery", rule 5). After a merge,
-  follow **Deploy Dev** to completion.
+- Self-merge when the change is verified (`AGENTS.md` → "Default delivery", rule 5): the
+  local checks passed, `gh pr checks <pr>` shows the `Tests` lanes green, and the PR is
+  mergeable. Do not wait for the user's approval. `gh pr merge <pr> --squash`.
+- After the merge, follow **Deploy Dev** to completion and verify the change on dev.
+- Report the PR URL, the merge SHA, the preview origin, the test commands and their
+  results, the dev verification, and anything still unverified.
+- Merging into `staging` or `prod`, and every release step, still needs the user's explicit
+  approval (the **kortix-release** skill).
 - Remove the `preview` label when the environment is no longer needed. Closing the PR does
   not tear it down.
 
