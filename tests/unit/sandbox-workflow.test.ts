@@ -375,7 +375,10 @@ describe('the preview status tells the truth about the suite', () => {
     // The early comment never carries a suite outcome; the final one reads the
     // suite step's own outcome.
     expect(previewWorkflow.slice(early, suite)).toContain('SUITE_OUTCOME: ""');
-    expect(previewWorkflow.slice(final)).toContain("SUITE_OUTCOME: ${{ steps.suite.outcome || 'cancelled' }}");
+    // A suite a newer commit superseded reports that, not a failure.
+    expect(previewWorkflow.slice(final)).toContain(
+      "SUITE_OUTCOME: ${{ steps.suite.outputs.superseded == '1' && 'superseded' || steps.suite.outcome || 'cancelled' }}",
+    );
     expect(previewWorkflow.match(/bash scripts\/ci\/preview-sticky-comment\.sh/g)).toHaveLength(2);
     // The deployment status describes the deploy, never the suite.
     expect(previewWorkflow.slice(status, early)).not.toMatch(/target-full|tested/i);

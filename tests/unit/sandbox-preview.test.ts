@@ -3,8 +3,11 @@ import {
   PREVIEW_SUITE_REFUSED,
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
+  PREVIEW_SUITE_PID_PATH,
+  PREVIEW_SUITE_SUPERSEDED,
   buildPreviewSuiteScript,
   previewLockfileHash,
+  previewSuiteSuperseded,
   previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
@@ -158,6 +161,22 @@ describe('provider-neutral preview lifecycle', () => {
     expect(suite).toContain('/workspace/kortix-test-results.tar.gz');
     expect(statusPath).not.toBe(previewDeploymentStatusPath('1234', '1'));
     expect(() => buildPreviewSuiteScript({ prNumber: 6998, sha: 'nope', statusPath })).toThrow('invalid Git SHA');
+    // The PID is written only while the lock is held and removed on exit, so a
+    // superseding runner never signals a finished suite's recycled PID.
+    const pidWrite = suite.indexOf(`> '${PREVIEW_SUITE_PID_PATH}'`);
+    expect(pidWrite).toBeGreaterThan(suite.indexOf('flock -x 9'));
+    expect(pidWrite).toBeLessThan(suite.indexOf('pnpm test -- --target-full'));
+    expect(suite).toContain(`rm -f '${PREVIEW_SUITE_PID_PATH}'`);
+    expect(PREVIEW_SUITE_SUPERSEDED).not.toBe(PREVIEW_SUITE_REFUSED);
+  });
+
+  it('treats a moved head, a closed pull request, or a removed label as superseded', () => {
+    const sha = 'a'.repeat(40);
+    const open = { state: 'open', head: { sha }, labels: [{ name: 'preview' }] };
+    expect(previewSuiteSuperseded(open, sha)).toBe(false);
+    expect(previewSuiteSuperseded({ ...open, head: { sha: 'b'.repeat(40) } }, sha)).toBe(true);
+    expect(previewSuiteSuperseded({ ...open, state: 'closed' }, sha)).toBe(true);
+    expect(previewSuiteSuperseded({ ...open, labels: [{ name: 'test' }] }, sha)).toBe(true);
   });
 
   it('keeps a branch environment serving through the three ways it went dark', () => {
