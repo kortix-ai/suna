@@ -53,3 +53,13 @@ describe('film assets', () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe('film route', () => {
+  // A production build 500s every /presentations/<x> page with
+  // DYNAMIC_SERVER_USAGE when the tree is not generated per locale: the
+  // middleware rewrites unprefixed URLs onto /en/… (dev.kortix.com, 2026-09-29).
+  test('the presentations tree is generated per locale', () => {
+    const layout = readFileSync(join(import.meta.dir, '../../layout.tsx'), 'utf8');
+    expect(layout).toContain('export const generateStaticParams = localeStaticParams');
+  });
+});

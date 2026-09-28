@@ -100,7 +100,7 @@ export function Connectors() {
           <div className="text-center">
             <Headline lead="Any model." rest="Your keys." f={f} at={196} />
             <p className="text-muted-foreground mt-5 text-xl" style={rise(f, 236)}>
-              Or the ChatGPT, Claude or Cursor subscription you already pay for.
+              Or the ChatGPT subscription you already pay for.
             </p>
           </div>
         </div>
