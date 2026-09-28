@@ -33,6 +33,7 @@ export interface LocalTestPlan {
     | 'target-full'
     | 'target-api-full'
     | 'target-browser-full'
+    | 'latency'
     | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
@@ -101,6 +102,13 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApiFullOnly = args.includes('--target-api-full');
   const targetBrowserFullOnly = args.includes('--target-browser-full');
+  // §5 of the turn-latency spec (PR #7840): `pnpm test -- --latency --target <origin>`.
+  // Deliberately NOT one of DEPLOYED_TARGET_MODES below — that preflight pins
+  // staging.kortix.com by hostname (resolveTargetSmokeConfig), but this lane's
+  // whole point is to run against an arbitrary deployed origin (dev today,
+  // preview or staging tomorrow). tests/bin/latency-bench.ts owns its own
+  // minimal target validation and health probe instead.
+  const latencyOnly = args.includes('--latency');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   const modes = [
@@ -114,10 +122,11 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     targetFull,
     targetApiFullOnly,
     targetBrowserFullOnly,
+    latencyOnly,
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
+      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, or --latency',
     );
   }
   if (browserShardArgs.length > 1) {
@@ -198,6 +207,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     name: 'package-quality',
     command: ['bun', 'tests/bin/package-quality.ts'],
   };
+  // Everything except the mode flag itself passes straight through, so
+  // `--target <origin>`, `--iterations N`, etc. reach the binary untouched —
+  // it owns its own arg parsing, matching how `flowArgs` treats `--id`/`--domain`.
+  const latencyArgs = args.filter((arg) => arg !== '--latency');
+  const latency: LocalTestLane = {
+    name: 'latency',
+    command: ['bun', 'tests/bin/latency-bench.ts', ...latencyArgs],
+  };
   const targetApi: LocalTestLane = {
     name: 'target-api-smoke',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--smoke'],
@@ -263,6 +280,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   if (targetSmoke) {
     const lanes = [targetApi, targetBrowser];
     return { mode: 'target', lanes, stages: [lanes] };
+  }
+  if (latencyOnly) {
+    return { mode: 'latency', lanes: [latency], stages: [[latency]] };
   }
   if (targetApiFullOnly) {
     return { mode: 'target-api-full', lanes: [targetApiFull], stages: [[targetApiFull]] };

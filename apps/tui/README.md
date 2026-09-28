@@ -15,6 +15,12 @@ this file is the longer operator's guide.
 ```bash
 kortix login            # writes ~/.config/kortix/config.json
 kortix tui              # first run: "Install now? [Y/n]" — experimental
+kortix t                # same thing, short
+kortixt                 # one word — installed beside `kortix`; bind it to a key
+
+# A cloud engineering desk in one keystroke: a fresh session in one project,
+# the project's agent (or --agent <name>), the sandbox shell open and focused.
+kortixt --project <project-id> --new --terminal
 ```
 
 `kortix tui` is a **launcher**, not the app. The `kortix` binary does not carry
@@ -22,6 +28,11 @@ the TUI: `@opentui/core` dlopen's an ~19 MB native library per platform and
 pulls React in with it, which is 14–21 MB of every `kortix` download for a
 command most people never run. So the TUI ships as its own release asset,
 `kortix-tui`, built by the same job.
+
+After a CLI update the launcher updates the TUI on its own: no prompt, one
+line on stderr, and the old version directories are removed. When the release
+did not change the binary (the published `.sha256` matches an installed copy)
+nothing is downloaded — the copy is reused in place.
 
 On the first run the launcher asks, downloads the `kortix-tui` matching this
 CLI's version from the same GitHub release, verifies it against the release's
@@ -114,6 +125,7 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | `KORTIX_SESSION_ID` | Open this session at boot. |
 | `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
 | `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
+| `KORTIX_TUI_AUTO_FORWARD` | `0` disables auto-forwarding a sandbox port the moment it's noticed (see [Ports](#ports)). Default: on. |
 
 ## Screens
 
@@ -127,6 +139,74 @@ except `KORTIX_TOKEN`, which the CLI reads too (see Troubleshooting).
 | Account | `Alt+U` | Members, invites, roles, and the billing readout. |
 | Help | `?` | Every binding below, generated from the keymap. |
 | Switcher | `Ctrl+P` | Filter over every session and project. |
+| Ports | `Alt+P` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). |
+| Links | `Alt+L` | Every URL in the transcript or on the terminal screen, wrapped ones rejoined. See [Links](#links). |
+
+## Ports
+
+VS Code-style local port forwarding: a sandbox port a session's agent
+mentions (`http://localhost:3000`, a bare `127.0.0.1:5173`, a `0.0.0.0:PORT`
+banner) is auto-forwarded to the same local port — or the next free one — the
+moment it's noticed in the transcript or the terminal panel's output. A toast
+confirms it: `Forwarded localhost:3000 → sandbox:3000`. Set
+`KORTIX_TUI_AUTO_FORWARD=0` to turn this off and forward only by hand.
+
+Detection ignores ports 1-1023 except 80 and 443 (a sandboxed dev server
+essentially never binds a privileged port; treating a `host:port`-shaped match
+there as a false positive is safer than flooding the panel with noise) and the
+sandbox's own SSH (22) and OpenCode control (8000) ports.
+
+`Alt+P` opens the panel — one row per port, its state (forwarding / stopped /
+error), and its local URL when forwarding:
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, `g`/`G` | Move the selection. |
+| `Enter` | Forward the selected port, or stop forwarding it. |
+| `o` | Open `http://localhost:<port>` in the browser. |
+| `y` | Copy the local forwarded URL to the clipboard. |
+| `a` | Add a sandbox port to forward, by number — regardless of auto-forward. |
+| `Esc` | Close the panel. Open forwards keep running. |
+
+The status bar shows `⇄ 3000, 5173` while any port is forwarding. Forwards are
+per session: they close when the session view unmounts or the session changes,
+same as the CLI's `kortix sessions forward <session-id> --port <sandbox>[:<local>]`
+(see `apps/cli/README.md`) — the panel reuses that exact engine
+(`@kortix/cli/src/port-forward.ts`) rather than a second implementation.
+
+## Links
+
+The terminal panel is a VT emulator drawn into cells, so the host terminal
+cannot click inside it: a URL longer than the panel wraps across rows, and
+Ghostty or iTerm2 sees several unrelated rows, never one link. An OAuth
+sign-in URL a CLI prints (`codex login`, `gh auth login`) is the common case.
+
+`Alt+L` opens the Links panel — every `http(s)://` URL in the transcript
+(assistant text and tool output) and on the terminal screen right now,
+wrapped rows rejoined, newest first:
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, `g`/`G` | Move the selection. |
+| `Enter` / `o` | Open the selected URL in the browser (`open` / `xdg-open`). |
+| `y` | Copy the selected URL to the clipboard. |
+| `Esc` | Close the panel. |
+
+`Alt+L` works while the terminal panel is focused, so the URL a CLI just
+printed is one chord away. Only `http:` and `https:` URLs are opened.
+
+## Mouse, selection and copying
+
+The TUI does not take the mouse. Your terminal's own text selection,
+copy-on-select and `Cmd`/`Ctrl`+click on a URL therefore keep working inside
+it, exactly as in a plain shell; in Ghostty that means drag to select and the
+selection is on the clipboard. Nothing in the app needs a click. `kortix tui
+--mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
+then Shift+drag is the way to select natively in most terminals.
+
+The sidebar can be hidden: `Alt+B` toggles it, `kortix tui --no-sidebar`
+(`KORTIX_TUI_SIDEBAR=0`) starts without it. `Ctrl+P` still switches sessions
+and projects while it is hidden, and the status bar shows `Alt+B sidebar`.
 
 ## Keys
 
@@ -145,6 +225,9 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Ctrl+p` | Open the session switcher. |
 | `Ctrl+n` | Create a session in this project and open it. |
 | `Alt+t` | Toggle the terminal panel. |
+| `Alt+b` | Hide or show the sidebar. Ctrl+P still switches sessions while it is hidden. |
+| `Alt+l` | Open the Links panel: every URL in the transcript and on the terminal screen, wrapped ones rejoined. Enter opens one in the browser. |
+| `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |
 | `Alt+r` | Open the review screen. |
 | `Alt+a` | Open the apps screen. |
@@ -205,7 +288,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Alt+y` | Copy `kortix sessions connect <id>` to the clipboard. |
 | `Alt+x` | Close the terminal panel. |
 | `Alt+Enter` | Reconnect the terminal now. |
-| `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab and Alt+T still move focus and toggle the panel. |
+| `any other key` | Every other key goes to the remote shell, Ctrl+C included. Quit the TUI with Ctrl+Q; Tab, Alt+T, Alt+P and Alt+L still move focus, toggle the panel, and open the Ports and Links panels. |
 
 ### Files
 
@@ -324,6 +407,25 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `Shift+Tab` | Previous form field. |
 | `Enter` | Submit the form. |
 | `Esc` | Leave the form, the confirm, or the screen. |
+| `Ctrl+c / Ctrl+q` | Quit from the login screen at once. There is no app behind it to arm. |
+
+### Ports panel
+
+| Keys | Action |
+| --- | --- |
+| `Enter` | Forward the selected port, or stop forwarding it. |
+| `o` | Open `http://localhost:<port>` in the browser. |
+| `y` | Copy the local forwarded URL to the clipboard. |
+| `a` | Add a sandbox port to forward, by number. |
+| `Esc` | Close the Ports panel. Open forwards keep running. |
+
+### Links panel
+
+| Keys | Action |
+| --- | --- |
+| `Enter / o` | Open the selected URL in the browser. |
+| `y` | Copy the selected URL to the clipboard. |
+| `Esc` | Close the Links panel. |
 
 ### Lists, pickers and dialogs
 
@@ -337,7 +439,7 @@ Regenerate this section with `pnpm --filter @kortix/tui keymap`.
 | `PgUp` | Page up. |
 | `Enter` | Open the row. |
 
-_143 bindings._
+_155 bindings._
 
 ## Tests
 
@@ -469,8 +571,9 @@ boot and drops to the login screen with this line; the fix is
   `arm64`/`x64` Bun is the usual cause.
 - **`Ctrl+C` does nothing inside the terminal panel.** That is deliberate: the
   shell owns `Ctrl+C`, and a shell without it is not a shell. Leave the TUI with
-  `Ctrl+Q`, or `Alt+X` to close the panel first. `Tab`, `Shift+Tab`, `Alt+T` and
-  `Ctrl+Q` are the only four chords the app keeps while the shell has focus.
+  `Ctrl+Q`, or `Alt+X` to close the panel first. `Tab`, `Shift+Tab`, `Alt+T`,
+  `Alt+P` and `Ctrl+Q` are the only five chords the app keeps while the shell
+  has focus.
 - **A session sits on `provisioning` for minutes.** A cold sandbox boot is
   minutes, not seconds. The header prints the live `/start` stage; the terminal
   panel and the files screen wait for `ready` rather than failing.

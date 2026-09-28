@@ -142,6 +142,8 @@ describe('OAuth authorization request persistence + consent', () => {
       scope: 'profile kortix',
       scopes: ['profile', 'kortix'],
       remembered: false,
+      self_registered: false,
+      redirect_to: 'client.example',
     });
   });
 

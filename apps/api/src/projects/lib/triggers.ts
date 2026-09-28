@@ -22,7 +22,6 @@ import {
   enqueueContinueSessionCommand,
   resolveAgentRunAttribution,
   resolveProjectAutomationActor,
-  sessionBackpressureState,
 } from '../session-lifecycle';
 import {
   type TriggerExecutionRow,
@@ -169,10 +168,6 @@ export function webhookPayload(c: Context, rawBody: string) {
       forwarded_for: c.req.header('x-forwarded-for') ?? null,
     },
   };
-}
-
-export async function triggerBackpressureState(accountId: string, projectId: string) {
-  return sessionBackpressureState(accountId, projectId);
 }
 
 // POST /v1/webhooks/projects/:projectId/:slug

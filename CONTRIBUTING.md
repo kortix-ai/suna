@@ -36,8 +36,10 @@ Tools every contributor needs:
 5. **Record a demo video** of the change with agent-browser, on the PR's preview origin.
 6. **Attach it** with `gh pr edit <pr> --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
    `gh` uploads the video and puts a player in the PR body.
-7. **Hand off.** Mark the PR ready. Merge to `main` only on explicit approval, because
-   `main` deploys to dev for the whole team.
+7. **Merge.** Mark the PR ready and squash-merge it to `main` when it is verified: the
+   local checks passed and the `Tests` lanes are green. No approval is needed for `main`.
+   `main` deploys to dev for the whole team, so verify the change on dev after the merge.
+   Merging into `staging` or `prod`, and every release step, still needs explicit approval.
 
 The skill covers each step with its commands and completion check.
 
@@ -45,7 +47,7 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `preview` | Deploys a full self-host environment for the branch: its own PostgreSQL, Supabase, API, gateway, frontend, Mailpit, and HTTPS origin. Runs `pnpm test -- --target-full` against it and the six-lane `Tests` suite. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
+| `preview` | Deploys a full self-host environment for the branch: its own PostgreSQL, Supabase, API, gateway, frontend, Mailpit, and HTTPS origin. Runs the six-lane `Tests` suite. It does not run `--target-full`: `gh workflow run deploy-preview.yml -f pr_number=<N>` does. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
 | `test` | Runs the six-lane `Tests` suite (~8 min) without a push. |
 | `i18n-reorder` | Allows an intentional key reorder in the translation catalogs. |
 
@@ -213,7 +215,7 @@ ordinary development stack before either command.
 | --- | --- |
 | `main`, no label | `ci.yml`, security and compliance scans, migration checks. `Tests` shows as skipped. |
 | `main` + `test` | the above + the six-lane `Tests` suite (`core`, `browser-1`…`4`, `packages`) |
-| `main` + `preview` | the above + the preview deploy and `--target-full` against it |
+| `main` + `preview` | the above + the preview deploy (`--target-full` only on dispatch) |
 | `staging` | the no-label checks + `Tests`, always |
 | `prod` | `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |
 

@@ -112,10 +112,10 @@ describe('local test runner', () => {
     );
   });
 
-  it('uses one CI browser worker and preserves explicit concurrency', () => {
-    expect(resolveBrowserWorkers(undefined, true)).toBe(1);
-    expect(resolveBrowserWorkers(undefined, false)).toBe(2);
-    expect(resolveBrowserWorkers('2', true)).toBe(2);
+  it('uses two browser workers in CI and locally, and preserves explicit concurrency', () => {
+    expect(resolveBrowserWorkers(undefined)).toBe(2);
+    expect(resolveBrowserWorkers('1')).toBe(1);
+    expect(resolveBrowserWorkers('3')).toBe(3);
   });
 
   it('runs app and package tests without starting the product stack', () => {
@@ -300,6 +300,28 @@ describe('local test runner', () => {
     expect(() => buildLocalTestPlan(['--target-full', '--target-api-full'])).toThrow(
       'choose only one',
     );
+  });
+
+  it('runs the turn-latency benchmark alone and forwards --target through untouched', () => {
+    const plan = buildLocalTestPlan(['--latency', '--target', 'https://dev-api.kortix.com']);
+
+    expect(plan.mode).toBe('latency');
+    expect(plan.lanes).toEqual([
+      {
+        name: 'latency',
+        command: [
+          'bun',
+          'tests/bin/latency-bench.ts',
+          '--target',
+          'https://dev-api.kortix.com',
+        ],
+      },
+    ]);
+    expect(plan.stages).toEqual([[plan.lanes[0]]]);
+  });
+
+  it('rejects --latency combined with another mode', () => {
+    expect(() => buildLocalTestPlan(['--latency', '--sdk-only'])).toThrow('choose only one');
   });
 
   it('retries a cold local web route until it is ready', async () => {

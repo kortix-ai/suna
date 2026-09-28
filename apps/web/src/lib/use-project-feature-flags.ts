@@ -44,6 +44,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const configReleases = useFeatureFlag(projectId, 'config_releases');
   const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
+  const mcp = useFeatureFlag(projectId, 'mcp');
 
   return {
     flags: {
@@ -64,8 +65,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pi_harness: piHarness.enabled,
       config_releases: configReleases.enabled,
       agent_principal: agentPrincipal.enabled,
+      mcp: mcp.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: agentPrincipal.isLoading,
+    isLoading: mcp.isLoading,
   };
 }

@@ -212,17 +212,6 @@ function githubAppPrivateKey() {
   return resolveAppIdentity()?.privateKey ?? null;
 }
 
-/**
- * The slug an operator configured, on whichever source owns the identity.
- * It is a FALLBACK: `resolveGitHubAppSlug()` derives the live slug from
- * `GET /app` and only reads this when derivation fails. Production ran for
- * months with `KORTIX_GITHUB_APP_SLUG=kortix-private-repo-access` while the
- * App's real slug was `kortix-managed`, so every install URL 404ed.
- */
-export function configuredGitHubAppSlug() {
-  return resolveAppIdentity()?.configuredSlug ?? null;
-}
-
 export function isGithubAppConfigured() {
   return resolveAppIdentity() !== null;
 }
@@ -841,16 +830,6 @@ export async function createInstallationToken(
 }
 
 const installationTokens = createInstallationTokenCache();
-
-/** Drop cached tokens of one installation (after an uninstall or a 401). */
-export function invalidateInstallationTokens(installationId: string) {
-  installationTokens.invalidate(installationId.trim());
-}
-
-/** Test seam: forget every cached installation token. */
-export function clearInstallationTokenCacheForTests() {
-  installationTokens.clear();
-}
 
 export async function listInstallationRepositories(
   installationId: string,

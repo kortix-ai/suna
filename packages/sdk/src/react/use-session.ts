@@ -82,11 +82,11 @@ import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
-import { resolveSavedTranscript } from '../core/session-sync/saved-transcript';
+import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
-import { useSessionWorking } from './use-session-working';
+import { useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
 import { useVisibleAgents } from './use-visible-agents';
 
@@ -1173,6 +1173,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     () => messagesBeforeRewind(sync.messages, restRewind),
     [sync.messages, restRewind],
   );
+  // The server's turn record (shared `/turn` cache entry, no extra request) and
+  // the saved copy's proof of an empty conversation. Read before 5a: while the
+  // proof waits for the turn record, the host must not paint its boot screen.
+  const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
+  const turnRead = typeof turnOutcome.atMs === 'number';
+  const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
+  const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
   // 5a. Can this session show its saved conversation before the computer
   // wakes? A host paints placeholder rows while the answer is `loading` and
   // its boot screen only on `none` — see `core/session-sync/saved-transcript`.
@@ -1190,6 +1197,21 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
           : 'absent',
     mirror: sync.mirrorState,
     root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
+    emptyAwaitingTurnRead: emptyProvenForRoot && !turnRead,
+  });
+  // 5a'. And is there anything to wait for at all? The saved copy can prove
+  // the conversation empty (a complete read of the runtime found nothing); the
+  // turn record says whether a turn ended since, and the projection whether
+  // one is open or queued. A proven-empty session opens on its composer.
+  const conversationEmpty = isEmptyConversation({
+    savedEmptyRoot,
+    rootSessionId: ocSessionId,
+    turnRead,
+    hasEndedTurn: turnOutcome.last_ended != null,
+    hasOpenOrQueuedTurn:
+      working.state === 'working' ||
+      working.pendingDelivery === true ||
+      working.serverOpenTurnToken !== null,
   });
 
   useEffect(() => {
@@ -1622,6 +1644,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      * never `none`.
      */
     savedTranscript,
+    /**
+     * The server's saved copy proves this session's conversation empty (a
+     * complete read of its runtime found no messages), no turn ended since,
+     * and nothing is open or queued. Open it on its empty conversation (the
+     * composer), never on a boot screen. `false` while any of those reads is
+     * in flight, and for a project that keeps no saved history.
+     */
+    conversationEmpty,
     isError: terminal || !!startError || !!runtimeSessionError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,

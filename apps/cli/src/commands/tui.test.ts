@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { argvForInvocation } from '../invocation.ts';
 
 import { stripAnsi } from '../style.ts';
 import { EXPERIMENTAL_NOTICE, type TuiDeps, parseTuiFlags, runTui, tuiChildEnv } from './tui.ts';
@@ -40,6 +41,8 @@ function harness(
       return '/home/ada/.kortix/tui';
     },
     version: () => '1.2.3',
+    locateSession: overrides.locateSession ?? (async () => null),
+    installedVersions: overrides.installedVersions ?? (() => []),
     isInteractive: () => true,
     ask: async (question) => {
       asked.push(question);
@@ -66,6 +69,15 @@ function harness(
   };
 }
 
+describe('kortixt — the one-word door', () => {
+  test('a binary invoked as kortixt runs the tui command with the same arguments', async () => {
+    expect(argvForInvocation('kortixt', ['--new'])).toEqual(['t', '--new']);
+    expect(argvForInvocation('/usr/local/bin/kortixt', [])).toEqual(['t']);
+    expect(argvForInvocation('kortix', ['sessions', 'ls'])).toEqual(['sessions', 'ls']);
+    expect(argvForInvocation('/Users/x/.local/bin/kortix-dev', ['t'])).toEqual(['t']);
+  });
+});
+
 describe('kortix tui — flags', () => {
   test('parses every flag and leaves nothing behind', () => {
     expect(
@@ -74,6 +86,10 @@ describe('kortix tui — flags', () => {
       help: false,
       install: true,
       uninstall: false,
+      newSession: false,
+      terminal: false,
+      noSidebar: false,
+      mouse: false,
       host: 'cloud',
       project: 'p1',
       session: 's1',
@@ -85,9 +101,40 @@ describe('kortix tui — flags', () => {
       help: false,
       install: false,
       uninstall: false,
+      newSession: false,
+      terminal: false,
+      noSidebar: false,
+      mouse: false,
       project: 'p2',
       session: 's2',
     });
+  });
+
+  test('--new, --agent and --terminal are the kortixt desk flags, and travel as env', () => {
+    const flags = parseTuiFlags([
+      '--project',
+      'p1',
+      '--new',
+      '--agent',
+      'engineering',
+      '--terminal',
+    ]);
+    expect(flags).toMatchObject({ newSession: true, agent: 'engineering', terminal: true });
+    const env = tuiChildEnv(flags, {});
+    expect(env).toEqual({
+      KORTIX_PROJECT_ID: 'p1',
+      KORTIX_TUI_NEW: '1',
+      KORTIX_TUI_AGENT: 'engineering',
+      KORTIX_TUI_TERMINAL: '1',
+    });
+    expect(tuiChildEnv(parseTuiFlags([]), {})).toEqual({});
+  });
+
+  test('--no-sidebar and --mouse travel as env too', () => {
+    const flags = parseTuiFlags(['--no-sidebar', '--mouse']);
+    expect(flags).toMatchObject({ noSidebar: true, mouse: true });
+    expect(tuiChildEnv(flags, {})).toEqual({ KORTIX_TUI_SIDEBAR: '0', KORTIX_TUI_MOUSE: '1' });
+    expect(parseTuiFlags([])).toMatchObject({ noSidebar: false, mouse: false });
   });
 
   test('-h and --help both ask for help; --uninstall is its own verb', () => {
@@ -153,6 +200,36 @@ describe('kortix tui — help and argument errors', () => {
   });
 });
 
+describe('kortix tui — --session without --project', () => {
+  test('locates the project (and host) that holds the session and passes both on', async () => {
+    const h = harness({
+      locateSession: async (id, hostArg) =>
+        id === 's9' && hostArg === undefined ? { projectId: 'p9', hostName: 'other' } : null,
+    });
+    expect(await runTui(['--session', 's9'], h.deps)).toBe(0);
+    expect(h.ran[0]?.env.KORTIX_PROJECT_ID).toBe('p9');
+    expect(h.ran[0]?.env.KORTIX_SESSION_ID).toBe('s9');
+    expect(h.ran[0]?.env.KORTIX_TUI_HOST).toBe('other');
+  });
+  test('a session nobody can find exits 1 with the CLI message and runs nothing', async () => {
+    const h = harness({ locateSession: async () => null });
+    expect(await runTui(['--session', 'ghost'], h.deps)).toBe(1);
+    expect(h.ran).toEqual([]);
+    expect(stripAnsi(h.err.join(''))).toContain('was not found on any host');
+  });
+  test('an explicit --project skips the locator', async () => {
+    let asked = 0;
+    const h = harness({
+      locateSession: async () => {
+        asked += 1;
+        return null;
+      },
+    });
+    expect(await runTui(['--session', 's1', '--project', 'p1'], h.deps)).toBe(0);
+    expect(asked).toBe(0);
+  });
+});
+
 describe('kortix tui — launching the installed binary', () => {
   test('the cached binary runs with the flags in its environment', async () => {
     const h = harness();
@@ -213,6 +290,31 @@ describe('kortix tui — first run installs the binary', () => {
     expect(h.asked[0]).toContain('1.2.3');
     expect(h.downloads).toEqual(['1.2.3']);
     expect(h.ran[0]?.bin).toBe('/home/ada/.kortix/tui/1.2.3/kortix-tui');
+  });
+
+  test('an upgrade never asks: an older version on disk means the user already said yes', async () => {
+    const h = harness({ findBin: () => null, installedVersions: () => ['1.2.2', 'dev'] });
+    expect(await runTui([], h.deps)).toBe(0);
+    expect(h.asked).toEqual([]);
+    expect(h.downloads).toEqual(['1.2.3']);
+    expect(stripAnsi(h.err.join(''))).toContain('Updating kortix-tui v1.2.2 → v1.2.3');
+    expect(h.ran[0]?.bin).toBe('/home/ada/.kortix/tui/1.2.3/kortix-tui');
+  });
+
+  test('only a local dev build on disk is still a first install, so it asks', async () => {
+    const h = harness({ findBin: () => null, installedVersions: () => ['dev'] });
+    expect(await runTui([], h.deps)).toBe(0);
+    expect(h.asked).toHaveLength(1);
+  });
+
+  test('an upgrade off a terminal proceeds too — nothing to ask', async () => {
+    const h = harness({
+      findBin: () => null,
+      installedVersions: () => ['1.2.2'],
+      isInteractive: () => false,
+    });
+    expect(await runTui([], h.deps)).toBe(0);
+    expect(h.downloads).toEqual(['1.2.3']);
   });
 
   test('answering no installs nothing, runs nothing, and exits 0', async () => {

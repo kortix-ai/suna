@@ -192,6 +192,7 @@ export {
   type StartSessionWithPromptAdapters,
   type UseSessionPromptsResult,
 } from './use-session-prompts';
+export { readSessionAudit } from './use-session-audit';
 export { useSessionWorkingStore } from '../browser/stores/session-working-store';
 export {
   useSessionTurnOutcome,
