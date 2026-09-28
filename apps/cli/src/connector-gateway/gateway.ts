@@ -268,6 +268,31 @@ export async function mintSecretLink(opts: {
   });
 }
 
+/**
+ * Store secret value(s) the caller already HAS — e.g. a key the human pasted in
+ * chat. Same route as `kortix secrets set`; the API applies the caller's
+ * secret-write permission. `connector` keeps the value server-side.
+ */
+export async function setSecrets(opts: {
+  values: Record<string, string>;
+  scope?: 'runtime' | 'connector';
+  projectOverride?: string;
+}): Promise<string[]> {
+  const entries = Object.entries(opts.values);
+  if (entries.length === 0) throw new CliError('at least one NAME: value pair is required', 'USAGE');
+  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  const saved: string[] = [];
+  for (const [name, value] of entries) {
+    await client.post(`/projects/${projectId}/secrets`, {
+      name,
+      value,
+      ...(opts.scope === 'connector' ? { strategy: 'broker', consumer: 'connector' } : {}),
+    });
+    saved.push(name.toUpperCase());
+  }
+  return saved;
+}
+
 export type BrokerMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
 export interface BrokerCallResult {
