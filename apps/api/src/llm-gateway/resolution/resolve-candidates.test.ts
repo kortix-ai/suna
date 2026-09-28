@@ -186,6 +186,19 @@ beforeEach(() => {
 });
 
 describe('resolveCandidates — selected account key pool', () => {
+  test.each([
+    [false, undefined, 'provider_not_connected'],
+    [true, 11, 'provider_pool_rate_limited'],
+  ] as const)('selected BYOK pool coolingDown=%s refuses with %s', async (coolingDown, retryAfterSeconds, code) => {
+    pooledEnabled = true;
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    resolvedSecrets = [{ identifier: 'legacy', value: 'legacy-value' }];
+    pooledSecrets = { configured: true, coolingDown, retryAfterSeconds, secrets: [] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6'))
+      .rejects.toMatchObject({ code, retryAfterSeconds });
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+
   test('the flag preserves legacy keys until enabled, then selects only granted pool keys', async () => {
     catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
     resolvedSecrets = [{ identifier: 'legacy', value: 'legacy-value' }];
@@ -449,6 +462,16 @@ describe('resolveCandidates — BYOK billing', () => {
 });
 
 describe('resolveCandidates — managed model tier gating', () => {
+  test('managed descriptor is returned unchanged without reading project keys', async () => {
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+    const candidates = await resolveCandidates(principal(), 'glm-5.3-flash');
+    expect(candidates).toEqual([{
+      provider: 'kortix-managed', kind: 'bedrock', baseUrl: 'https://managed.test',
+      apiKey: 'm', billingMode: 'credits', markup: 1, resolvedModel: 'glm-5.3-flash',
+    }]);
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+
   test('freeModelsOnly principal throws plan_upgrade_required before any tier lookup', async () => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
 
@@ -549,6 +572,30 @@ describe('resolveCandidates — managed model tier gating', () => {
 });
 
 describe('resolveCandidates — codex + unknown provider', () => {
+  test.each([
+    [false, undefined, 'provider_not_connected'],
+    [true, 13, 'provider_pool_rate_limited'],
+  ] as const)('selected Codex pool coolingDown=%s refuses with %s', async (coolingDown, retryAfterSeconds, code) => {
+    pooledEnabled = true;
+    codexCredential = { access: 'legacy-token' };
+    pooledSecrets = { configured: true, coolingDown, retryAfterSeconds, secrets: [] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5'))
+      .rejects.toMatchObject({ code, retryAfterSeconds });
+    expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  test('selected Codex account descriptor retains its credential and pool references', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'selected', label: 'Selected', value: JSON.stringify({ openai: { access: 'oauth-token' } }) },
+    ] };
+    expect(await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5')).toEqual([{
+      provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test',
+      apiKey: 'oauth-token', billingMode: 'none', markup: 0, resolvedModel: 'codex/gpt-5.5',
+      credentialRef: 'selected', poolSecretId: 'selected',
+    }]);
+  });
+
   test('a shared project gateway key never borrows its creator’s personal ChatGPT account', async () => {
     pooledEnabled = true;
     codexCredential = { access: 'legacy-token' };

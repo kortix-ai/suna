@@ -420,6 +420,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
+    /** Store this user's GitHub authorization — needed to create a repository
+     *  in a personal GitHub account. */
+    storeUserToken: P.storeGitHubUserToken,
   };
 
   /**

@@ -15,7 +15,7 @@ describe('session overrides — nothing the viewer cannot change', () => {
   test('the Secrets row is dropped on a settled project.secret.read denial', () => {
     expect(code).toContain('useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ)');
     expect(code).toContain('const secretsDenied = !secretRead.isLoading && !secretRead.allowed;');
-    expect(code).toContain("if (!secretsDenied) list.push({\n      id: 'secrets',");
+    expect(code).toContain('if (!secretsDenied) list.push(secretsRow(');
   });
 
   test('with only read-only rows left, the gear is not rendered', () => {

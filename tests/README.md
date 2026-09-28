@@ -69,17 +69,20 @@ Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
 Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
 `E2E_GREP='27 — desktop parity'`.
 
+The pre-merge gate is the developer's machine: run `pnpm test` (and `--full` for
+browser-visible changes) before you merge into `main`. A pull request into
+`main` runs no GitHub Actions job unless a person adds the `test` label (six
+lanes, once) or the `preview` label (below).
+
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
-It runs on every push to `main`, on a pull request into `staging`, on a pull
-request labelled `test` or `preview`, and on manual dispatch. The label
-re-triggers an open pull request without a push. A plain pull request into
-`main` does not run it; its check shows as skipped. The push-to-`main`
-run blocks nothing — `main` and `staging` require no status check — and a red
-run comments on the offending commit with the failing lane names. A cancelled
-run means a newer commit superseded it. Deployed-target runs are separate:
-`deploy-preview.yml` (`--target-full` against a preview origin, on dispatch only) and
-`tests-release.yml` (`--target-*-full` against deployed staging, whose
-`full suite + quality gates` job is the only required check in the repository).
+It runs on every push to `main`, on a pull request into `staging`, once when a
+person adds the `test` label to a pull request, and on manual dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
+and a red run comments on the offending commit with the failing lane names. A
+cancelled run means a newer commit superseded it. Deployed-target runs are
+separate: `deploy-preview.yml` (`--target-full` against a preview origin, on
+dispatch only; the `preview` label deploys without it) and `tests-release.yml` (`--target-*-full` against deployed
+staging, whose `full suite + quality gates` job is the only required check in
+the repository).
 
 The run is six lanes in parallel, each natively on one Blacksmith runner
 (`CI_RUNNER_L`, 8 vCPU / 32 GB). Core and
@@ -120,7 +123,7 @@ Add the `preview` label to a same-repository pull request into `main`.
    when Platinum infrastructure fails.
 5. The sandbox generates the standard `kortix self-host` Compose distribution.
 6. One overlay adds Caddy, Mailpit, the report mount, and loopback PostgreSQL.
-7. The sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
+7. On a dispatch only, the sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
 8. The workflow posts the preview URL and `/_tests/` report URL to the pull
    request. It also creates a GitHub Deployment for `preview/pr-<number>`.
 
@@ -139,8 +142,8 @@ exclusions and all other browser journey exclusions fail the preview test.
 Use **Run workflow** to select `platinum` or `daytona` explicitly for one
 provider proof. A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
-A push to a labelled branch redeploys its environment in place, and the label
-stays. Removing the label or deleting the branch deletes the sandbox; closing
+A push to a labelled branch starts nothing; re-add the label to deploy the new
+head. The label never runs the suite (step 7); a dispatch does. Removing the label or deleting the branch deletes the sandbox; closing
 the pull request does not. A scheduled reconciler deletes environments whose
 branch no longer exists.
 

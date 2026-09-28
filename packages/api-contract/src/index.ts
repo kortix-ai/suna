@@ -67,7 +67,6 @@ export const FeatureFlagMapSchema = z.object({
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
   agent_principal: z.boolean(),
-  mcp: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

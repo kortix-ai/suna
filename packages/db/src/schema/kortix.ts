@@ -399,7 +399,49 @@ export const accountGithubInstallations = kortixSchema.table(
       table.accountId,
       table.installationId,
     ),
+    // One connection per (account, owner). A reconnect mints a NEW installation
+    // id for the same owner, so the index above admits the retired row too —
+    // both render as `github.com/<owner>` and a create could pick the dead one
+    // (prod, 2026-09-25). Built by
+    // 20260925164209388_github_installations_one_per_owner_index.concurrent.ts.
+    uniqueIndex('uniq_account_github_installations_owner').on(
+      table.accountId,
+      table.ownerLogin,
+    ),
     index('idx_account_github_installations_owner').on(table.ownerLogin),
+  ],
+);
+
+/**
+ * One GitHub App USER access token per (account, user).
+ *
+ * GitHub refuses `POST /user/repos` from an App installation token, so a
+ * personal account can only get a new repository through a user access token
+ * (it is on GitHub's "endpoints available for user access tokens" list). The
+ * token is the user's own credential: encrypted at rest with the account-salted
+ * envelope, never returned to a browser, and deleted with the connection.
+ *
+ * `expires_at` and `refresh_value_enc` are null unless the App is configured to
+ * expire user tokens.
+ */
+export const accountGithubUserTokens = kortixSchema.table(
+  'account_github_user_tokens',
+  {
+    tokenRowId: uuid('token_row_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    githubLogin: varchar('github_login', { length: 255 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    refreshValueEnc: text('refresh_value_enc'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_account_github_user_tokens_account_user').on(table.accountId, table.userId),
+    index('idx_account_github_user_tokens_account').on(table.accountId),
   ],
 );
 
@@ -2430,6 +2472,11 @@ export const sandboxTemplates = kortixSchema.table(
     cpu: integer('cpu'),
     memoryGb: integer('memory_gb'),
     diskGb: integer('disk_gb'),
+    /**
+     * kortix.yaml `container_runtime: true`: the image carries the guest
+     * kernel's full module tree and starts dockerd at boot.
+     */
+    containerRuntime: boolean('container_runtime').default(false).notNull(),
 
     // ─── Live state (cached; provider is source of truth) ──────────────────
     /** Content hash of the template inputs — the snapshot identity. */
