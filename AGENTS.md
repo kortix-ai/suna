@@ -269,12 +269,12 @@ and demo for a change runs in your own box: the worktree's local stack, the
 local test suite, and agent-browser against the local web app. A pull request
 into `main` runs **no** GitHub Actions job and is mergeable the moment it opens.
 Nothing runs automatically before the merge. A person can ask for CI on one PR,
-in the rare case they want it, by adding a label: `test` runs the six `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum and then runs `pnpm test -- --target-full` against it, once. A push never re-runs either: re-add the label.
+in the rare case they want it, by adding a label: `test` runs the six `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum once (~7 min), with no test run. A push never re-runs either: re-add the label.
 Never add a label by default or from automation. CI otherwise runs in two places:
 
 | Where | What runs | Blocks? |
 |---|---|---|
-| Pull request into `main` | nothing, unless a person adds `test` or `preview` (one run) | no |
+| Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
 | Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
@@ -530,8 +530,9 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
 - The `preview` label is not part of the development flow. Adding it deploys a
-  Platinum self-host environment for the PR and then runs `--target-full`
-  against it (~50–90 min), once. A push does not redeploy. Its mechanics are
+  Platinum self-host environment for the PR (~7 min), once, and runs no tests.
+  A push does not redeploy. Only `gh workflow run deploy-preview.yml -f
+  pr_number=<N>` runs `--target-full` against a preview (40–80 min). Its mechanics are
   in the **contributing** skill (`references/preview-environments.md`). Run a
   preview of your change on your worktree's local stack by default.
 
