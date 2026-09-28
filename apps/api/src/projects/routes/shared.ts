@@ -3,7 +3,7 @@ import type {
   SessionStartFailure,
   SessionStartResult,
 } from '@kortix/api-contract';
-import { changeRequests, sessionSandboxes } from '@kortix/db';
+import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
@@ -40,10 +40,12 @@ import {
   markInPlaceRuntimeRecoveryAccepted,
   parkEstablishedRuntime,
   preserveEstablishedRuntime,
+  retireRefusedRuntime,
   retireUnmaterializedRuntime,
   runtimeLossVerdict,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import { sessionHoldsTurnAuthority } from '../session-lifecycle/inbox-admission';
 import {
   type StartCallLog,
   createStartCallLog,
@@ -913,7 +915,11 @@ export function sessionStartFailureFromSandbox(
   };
 }
 
-async function preserveEstablishedRuntimeOnOpen(
+// Exported ONLY for `preserve-established-runtime-on-open.test.ts`, which pins
+// the four (five) existing populations this helper still serves untouched —
+// admission refusal is deliberately NOT among them any more; see
+// `replaceRefusedRuntimeOnOpen` below.
+export async function preserveEstablishedRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
   visible: {
     row: {
@@ -987,6 +993,162 @@ async function preserveEstablishedRuntimeOnOpen(
     opencode_session_id: null,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: RUNTIME_IDENTITY_UNAVAILABLE,
+  };
+}
+
+/** How many times ONE session's box may be replaced for a failed Rule 4
+ *  admission check inside {@link ADMISSION_REPLACE_WINDOW_MS}. 3 per 15
+ *  minutes: enough for a transient admission miss — a slow catalog probe, a
+ *  momentary git-mirror hiccup — to self-heal on a fresh box; too few to spin
+ *  forever on a systemic failure (a broken image, a missing boot-time
+ *  credential) that a fresh box cannot fix either. */
+export const ADMISSION_REPLACE_MAX_PER_WINDOW = 3;
+export const ADMISSION_REPLACE_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Bounds admission-triggered replacement so it cannot loop forever on one
+ * session (Rule 4's replacement must terminate, even against a box that will
+ * never pass admission).
+ *
+ * The counter lives on `project_sessions.metadata`, never on the sandbox row:
+ * {@link retireRefusedRuntime} DELETES the sandbox row, so the session — the
+ * durable identity that survives every replacement — is the only place that
+ * can count them across replacements.
+ *
+ * Computed entirely in SQL against the row's value at write time, never a
+ * value this process read earlier and would write back — see the learning
+ * "never write back a JSONB column you read earlier: merge in SQL".
+ */
+export async function claimAdmissionReplacementBudget(
+  sessionId: string,
+  now: Date = new Date(),
+): Promise<{ allowed: boolean; count: number }> {
+  const cutoffIso = new Date(now.getTime() - ADMISSION_REPLACE_WINDOW_MS).toISOString();
+  const nowIso = now.toISOString();
+  const [updated] = await db
+    .update(projectSessions)
+    .set({
+      metadata: sql`jsonb_set(
+        jsonb_set(
+          coalesce(${projectSessions.metadata}, '{}'::jsonb),
+          '{runtimeAdmissionReplaceCount}',
+          to_jsonb((
+            CASE
+              WHEN ${projectSessions.metadata}->>'runtimeAdmissionReplacedAt' IS NULL
+                OR (${projectSessions.metadata}->>'runtimeAdmissionReplacedAt')::timestamptz < ${cutoffIso}::timestamptz
+              THEN 1
+              ELSE coalesce((${projectSessions.metadata}->>'runtimeAdmissionReplaceCount')::int, 0) + 1
+            END
+          )::int)
+        ),
+        '{runtimeAdmissionReplacedAt}',
+        to_jsonb(${nowIso}::text)
+      )`,
+      updatedAt: now,
+    })
+    .where(eq(projectSessions.sessionId, sessionId))
+    .returning({ metadata: projectSessions.metadata });
+  const count = Number(
+    (updated?.metadata as Record<string, unknown> | undefined)?.runtimeAdmissionReplaceCount ?? 0,
+  );
+  return { allowed: count > 0 && count <= ADMISSION_REPLACE_MAX_PER_WINDOW, count };
+}
+
+/**
+ * Rule 4's actual replacement: "before a box is handed to a session, it must
+ * prove its runtime identity… A box that fails admission is replaced, not
+ * used." An admission refusal is a FIFTH, different population from the four
+ * `preserveEstablishedRuntimeOnOpen` already serves (a stalled provision, a
+ * failed wake, a failed boot, a real provider removal) — none of those boxes
+ * are known-bad-but-servable the way a refused-admission box is — so it gets
+ * its own path instead of a flag on that helper.
+ *
+ * The box is retired (`retireRefusedRuntime`) and a fresh one is allocated on
+ * the SAME session (`allocateRuntimeOnOpen`), bounded by
+ * `claimAdmissionReplacementBudget` so a session whose fresh box also fails
+ * admission cannot replace forever. Never returns `stage:'failed'` with
+ * `RUNTIME_IDENTITY_UNAVAILABLE` — that constant is what the web renders as
+ * "This session's computer was lost", and a deliberate platform replacement is
+ * not a loss.
+ *
+ * Collaborators are injected (same shape as `admitRunningSandbox`'s and
+ * `guaranteeCurrentRuntimeOnOpen`'s `deps` parameter) purely for testability;
+ * every real call site uses the defaults.
+ */
+export async function replaceRefusedRuntimeOnOpen(
+  loaded: { row: ProjectRow; userId: string },
+  visible: {
+    row: {
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      metadata?: Record<string, unknown> | null;
+    };
+  },
+  projectId: string,
+  sessionId: string,
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+  deps: {
+    claimBudget?: typeof claimAdmissionReplacementBudget;
+    retire?: typeof retireRefusedRuntime;
+    allocate?: typeof allocateRuntimeOnOpen;
+  } = {},
+): Promise<SessionStartResult> {
+  const claimBudget = deps.claimBudget ?? claimAdmissionReplacementBudget;
+  const retire = deps.retire ?? retireRefusedRuntime;
+  const allocate = deps.allocate ?? allocateRuntimeOnOpen;
+
+  const budget = await claimBudget(sessionId);
+  if (!budget.allowed) {
+    return {
+      stage: 'failed',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      runtime_url: row.externalId ? sessionRuntimeUrlPath(row.externalId) : undefined,
+      reason: 'runtime_admission_replace_exhausted',
+      failure: {
+        category: 'sandbox-provider',
+        message: `This session's runtime failed admission and was replaced ${budget.count} times in ${Math.round(ADMISSION_REPLACE_WINDOW_MS / 60_000)} minutes. An operator must inspect it before it opens again.`,
+        retryable: false,
+        evidence: {
+          check: reason,
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: budget.count,
+          next_retry_at: null,
+        },
+      },
+    };
+  }
+
+  const retired = await retire(row, reason);
+  if (!retired) {
+    // A live turn, a lost claim race, or a provider stop that genuinely
+    // failed — transient by construction. The client polls /start again and
+    // admission (and this replacement) is re-evaluated from scratch, exactly
+    // like every other retriable stage in this file.
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      runtime_url: row.externalId ? sessionRuntimeUrlPath(row.externalId) : undefined,
+      reason,
+    };
+  }
+
+  await allocate(loaded, visible.row, projectId, sessionId);
+  return {
+    stage: 'provisioning',
+    agent_name: visible.row.agentName ?? 'default',
+    retriable: true,
+    sandbox: null,
+    opencode_session_id: null,
+    reason,
   };
 }
 
@@ -1686,16 +1848,21 @@ async function runOpenSession(args: {
     // moment this ships). ENFORCEMENT — actually replacing the box — is a
     // separate, deliberate opt-in: see `runtimeAdmissionEnforced`.
     if (!admission.admitted && runtimeAdmissionEnforced()) {
-      log.did('reconciled');
-      return preserveEstablishedRuntimeOnOpen(
-        loaded,
-        visible,
-        projectId,
-        sessionId,
-        row,
-        `runtime_admission_refused:${admission.failedCheck}`,
-        'runtime_admission_refused',
-      );
+      // Rule 5: never pull a box out from under a live turn. Exactly like
+      // `guaranteeCurrentRuntimeOnOpen`'s own `defer_turn_running` above — fall
+      // through unchanged and let the next open re-check admission once the
+      // turn ends, instead of replacing (or parking) a serving box.
+      if (!sessionHoldsTurnAuthority(row)) {
+        log.did('provisioned');
+        return replaceRefusedRuntimeOnOpen(
+          loaded,
+          visible,
+          projectId,
+          sessionId,
+          row,
+          `runtime_admission_refused:${admission.failedCheck}`,
+        );
+      }
     }
   }
 
