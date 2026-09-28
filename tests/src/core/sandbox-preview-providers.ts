@@ -402,7 +402,7 @@ export async function deployPlatinumPreview(
             auto_archive_days: identity.autoArchiveDays,
             auto_delete_days: identity.autoDeleteDays,
             cpu: 8,
-            ram_mb: 16_384,
+            ram_mb: PREVIEW_HOST_RAM_MB,
             disk_gb: 50,
             expose: [{ port: 8080, public: true }],
             metadata: {
