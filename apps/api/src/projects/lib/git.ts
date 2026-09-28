@@ -16,7 +16,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { bindAuditPrincipal } from '../../shared/audit-scope';
 import { accountGithubInstallationStates, accountGithubInstallations, accountTokens, readStoredAgentGrant, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import type { AgentGrant } from '@kortix/db';
-import { and, asc, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
+import { and, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
 import {
