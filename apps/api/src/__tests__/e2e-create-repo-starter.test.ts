@@ -62,6 +62,7 @@ const BASE_STARTER_PATHS = [
 ];
 
 let repoCreateCalls: any[];
+let personalRepoCreateRefused: boolean;
 let fileShaCalls: any[];
 let commitCalls: any[];
 /** One entry per `commitFiles` call — the starter must land as ONE commit. */
@@ -107,6 +108,7 @@ function resetState() {
   setTestAuth();
   for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
+  personalRepoCreateRefused = false;
   fileShaCalls = [];
   commitCalls = [];
   commitBatches = [];
@@ -316,6 +318,12 @@ mock.module('../projects/github', () => ({
   },
   createRepo: async (input: any) => {
     repoCreateCalls.push(input);
+    if (personalRepoCreateRefused) {
+      const error = new Error('GitHub /user/repos failed (403): Resource not accessible by integration') as Error & { status: number; path: string };
+      error.status = 403;
+      error.path = '/user/repos';
+      throw error;
+    }
     return {
       id: 7,
       name: 'company-os',
@@ -664,6 +672,28 @@ function createApp() {
 
 describe('create-repo starter scaffold contract', () => {
   beforeEach(() => resetState());
+
+  // GitHub refuses `POST /user/repos` for an App installation token. A personal
+  // owner with no stored user authorization is asked to authorize — an
+  // actionable 409 the web client answers with the GitHub popup — before any
+  // call reaches GitHub, so no raw GitHub error and no half-created project.
+  test('a personal owner without GitHub user authorization gets an actionable 409, not a raw GitHub error', async () => {
+    installationRows[0]!.ownerType = 'User';
+    personalRepoCreateRefused = true;
+    const res = await createApp().request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'demo', installation_id: '42' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'github_user_authorization_required',
+      owner_login: 'kortix-org',
+    });
+    expect(repoCreateCalls).toHaveLength(0);
+    expect(insertedProject).toBeNull();
+  });
 
   test('builds exactly the minimal starter scaffold', () => {
     const files = buildStarterFiles({

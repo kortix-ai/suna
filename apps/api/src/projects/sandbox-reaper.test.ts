@@ -1947,6 +1947,24 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(turnObservationCalls).toHaveLength(5);
   });
 
+  test('an unreadable turn warns once per episode, not on every renewal tick', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message: string) => { warnings.push(message); };
+    try {
+      await reapAndReconcileSandboxes(NOW);
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+      await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+      expect(unconfirmedTurnDrips).toEqual(['sb-1', 'sb-1', 'sb-1']);
+      expect(warnings.filter((message) => message.includes('turn observation unknown; drip-extending'))).toHaveLength(1);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══
   // A daemon that answers NOTHING — an unreachable box, a wedged opencode, a
   // sandbox whose daemon never bound its port — is not evidence of live work.

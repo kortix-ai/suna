@@ -27,7 +27,7 @@ import type { AuditRouteLabel } from './audit-labels';
 // biome-ignore format: one route per line, so a diff names exactly the route that changed
 export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | string>> = {
   'GET /.well-known/oauth-authorization-server': { action: 'oauth.server_metadata.read', title: 'Read OAuth server metadata' },
-  'GET /.well-known/oauth-protected-resource/v1/projects/:projectId/mcp': { action: 'mcp.resource_metadata.read', title: 'Read MCP server metadata' },
+  'GET /.well-known/oauth-protected-resource/v1/mcp': { action: 'mcp.resource_metadata.read', title: 'Read MCP server metadata' },
   'GET /health': { action: 'system.health.read', title: 'Checked API health' },
   'GET /health/live': { action: 'system.health.liveness.read', title: 'Checked API liveness' },
   'GET /health/ready': { action: 'system.health.readiness.read', title: 'Checked API readiness' },
@@ -333,6 +333,9 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/marketplace/sources': { action: 'marketplace.source.list', title: 'Listed marketplace sources' },
   'POST /v1/marketplace/sources': { action: 'marketplace.source.create', title: 'Added marketplace source' },
   'DELETE /v1/marketplace/sources/:id': { action: 'marketplace.source.delete', title: 'Removed marketplace source' },
+  'DELETE /v1/mcp': 'POST /v1/mcp',
+  'GET /v1/mcp': 'POST /v1/mcp',
+  'POST /v1/mcp': { action: 'mcp.request', title: 'Called the MCP server' },
   'POST /v1/notifications/device-token': { action: 'notification.device_token.register', title: 'Registered push notification device' },
   'DELETE /v1/notifications/device-token/:token': { action: 'notification.device_token.delete', title: 'Removed push notification device' },
   'GET /v1/oauth/.well-known/oauth-authorization-server': 'GET /.well-known/oauth-authorization-server',
@@ -528,9 +531,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/marketplace/install-session': { action: 'marketplace.install.start', title: 'Started marketplace install' },
   'GET /v1/projects/:projectId/model-access': { action: 'model.access.read', title: 'Viewed model access' },
   'PUT /v1/projects/:projectId/model-access': { action: 'model.access.update', title: 'Updated model access' },
-  'DELETE /v1/projects/:projectId/mcp': 'POST /v1/projects/:projectId/mcp',
-  'GET /v1/projects/:projectId/mcp': 'POST /v1/projects/:projectId/mcp',
-  'POST /v1/projects/:projectId/mcp': { action: 'mcp.request', title: 'Called the MCP server' },
   'DELETE /v1/projects/:projectId/model-defaults': { action: 'model.default.delete', title: 'Deleted model defaults' },
   'GET /v1/projects/:projectId/model-defaults': { action: 'model.default.read', title: 'Viewed model defaults' },
   'PUT /v1/projects/:projectId/model-defaults': { action: 'model.default.update', title: 'Updated model defaults' },

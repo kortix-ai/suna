@@ -66,6 +66,7 @@ const EXEMPT_PREFIXES = [
   '/v1/billing/webhooks', // Stripe webhook processing (observed >60s, legit)
   '/v1/billing/revenuecat', // RevenueCat sync — batch reconcile, legit-long
   '/v1/admin', // operator maintenance endpoints — deliberate long ops
+  '/v1/mcp', // MCP server — bounds itself at 55 s (waits for turns, runs commands)
 ];
 
 // Path fragments for streaming or legitimately long *synchronous* endpoints
