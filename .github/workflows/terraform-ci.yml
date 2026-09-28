@@ -6,8 +6,9 @@ name: Terraform CI
 # variable TF_PLAN_ROLE_ARN is set, so it can't fail before that role is provisioned.
 
 on:
+  # A pull request into `main` runs no CI. Release pull requests are the gate.
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform-ci.yml"
