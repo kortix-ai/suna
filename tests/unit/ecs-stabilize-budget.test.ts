@@ -453,7 +453,7 @@ describe('ECS rollout --wait-for serving', () => {
 
 describe('ECS rollout: only the registered revision counts', () => {
   // Dev API, 2026-09-28: the new tasks crashed, the circuit breaker rolled the
-  // service back to the previous revision, and five deploys still printed
+  // service back to the previous revision, and four deploys still printed
   // "rollout SERVING" on that previous revision and passed.
   const fast = { ECS_STABILIZE_TIMEOUT_SECONDS: '60', ECS_STABILIZE_POLL_SECONDS: '1' };
 

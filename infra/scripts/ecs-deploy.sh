@@ -346,7 +346,7 @@ new_revision_serving() {
 # revision: the circuit breaker rolled back, or another roll superseded this
 # one. A rollback deployment reaches COMPLETED with every task RUNNING, so a
 # check that reads only the PRIMARY deployment accepts it as success (dev API,
-# 2026-09-28: five deploys reported SERVING on the old revision). Every failure
+# 2026-09-28: four deploys reported SERVING on the old revision). Every failure
 # path prints diagnostics, including the stopped tasks of $4.
 wait_for_stable_rollout() {
   local budget="$1" delay="$2" mode="${3:-stable}" expected_td="${4:-}"
