@@ -293,23 +293,9 @@ test('a file within the chunk budget still goes up in one upload', async () => {
   expect(routes).toEqual(['/file/upload', '/file/rename']);
 });
 
-// A chunk the runtime rejects must abort the whole write, not leave a
-// truncated file that later reads as a corrupt attachment.
-test('a failed chunk aborts the write', async () => {
-  await expect(
-    writeRuntimePromptFile(
-      { ...input, bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES * 2) },
-      async (_externalId, _port, _access, _method, route) => {
-        if (route === '/file/append') return new Response(null, { status: 503 });
-        return Response.json(true);
-      },
-      () => 'fixed',
-    ),
-  ).rejects.toThrow(/append failed \(503\)/);
-});
-
-// A chunk that fails mid-way must not leave a truncated temp file behind.
-test('a failed chunked upload deletes its partial temp file', async () => {
+// A chunk the runtime rejects aborts the whole write and deletes the partial
+// temp file, so no truncated file later reads as a corrupt attachment.
+test('a failed chunk aborts the write and deletes its partial temp file', async () => {
   const calls: string[] = [];
   await expect(
     writeRuntimePromptFile(

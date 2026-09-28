@@ -1,6 +1,5 @@
 /**
- * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (spec
- * docs/specs/2026-07-05-agent-first-config-unification.md §2.2, redirected
+ * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (redirected
  * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
  * ONLY: connectors/secrets/skills/kortix_permissions/repository_access/enabled. OpenCode
  * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
@@ -298,8 +297,7 @@ export function applyDefaultAgentV2(
  * Refuses outright on a v1 manifest — the full v2 field space (permission
  * trees, per-field governance) has no v1 representation to fall back to;
  * the caller degrades in the UI instead of ever reaching this function for
- * a v1 project (see docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.7 — v2-only feature).
+ * a v1 project.
  */
 export function applyAgentBlockV2(
   manifest: ParsedManifest,

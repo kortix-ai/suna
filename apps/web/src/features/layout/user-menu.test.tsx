@@ -108,9 +108,8 @@ describe('user menu settings entry points', () => {
   /**
    * The rows must NAVIGATE, not poke the store.
    *
-   * `UserMenu`'s only mount is the app header
-   * (`features/layout/app-header.tsx:108`), rendered only by
-   * `app/[locale]/(app)/accounts/layout.tsx:26`. `SettingsPanel` has exactly two mounts
+   * `UserMenu`'s only mount was the app header, rendered only under the
+   * `/accounts` tree; both are deleted now. `SettingsPanel` has exactly two mounts
    * (`project-layout/project-shell.tsx:195`,
    * `workspace/settings/standalone-settings-route.tsx:113`) and neither is in
    * the `/accounts` tree. So `openSettings(tab)` from here set `open: true`

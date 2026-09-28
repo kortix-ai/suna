@@ -38,8 +38,8 @@ import type { OutcomeTone } from './outcome-types';
  * change than this row justifies.
  *
  * Colour lives HERE and nowhere else on the card — the status chip stays a
- * neutral `Badge variant="kortix"`. That split is the reference row's
- * (`changes-view.tsx`), and it is why the card needs no raw palette class:
+ * neutral `Badge variant="kortix"`. That split is the design system's
+ * tinted-icon-tile row, and it is why the card needs no raw palette class:
  * `Badge`'s own `success`/`warning` variants bake `emerald-*`/`amber-*`, which
  * the design system bans in feature code.
  */

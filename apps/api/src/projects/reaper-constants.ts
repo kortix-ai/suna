@@ -7,6 +7,20 @@
 export const REAP_BATCH_SIZE = 100;
 export const REAP_CONCURRENCY = 6;
 
+/**
+ * How old an accepted turn record must be before "no assistant message, root
+ * idle" counts as an ORPHANED PROMPT rather than a turn that is merely starting.
+ *
+ * The daemon's `turn_orphaned_prompt` is a statement about the messages on
+ * record, and for a few moments after OpenCode ACKs a prompt those messages look
+ * identical to a dropped one: the user message exists, nothing has answered it,
+ * and `/session/status` has not flipped busy yet. Redelivering into that window
+ * runs the prompt twice. 30s is far past that window — a root that is genuinely
+ * working reports busy, which is `inFlight: true` and never reaches here — and
+ * still well inside one reaper pass, so it costs a dropped prompt nothing.
+ */
+export const ORPHANED_PROMPT_MIN_AGE_MS = 30_000;
+
 export function positiveEnvInt(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;

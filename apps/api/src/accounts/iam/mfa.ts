@@ -14,7 +14,8 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, readBody } from './helpers';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 iamRouter.openapi(
   createRoute({
@@ -153,7 +154,7 @@ iamRouter.openapi(
   // flipping strict mode. Avoids inventing a new role action.
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   // `enabled` is REQUIRED (not optional): the old `z.boolean().optional()` +
   // `body.enabled === true` meant `{}` or `{"enabled":null}` silently DISABLED
   // account MFA — a footgun on a security toggle. Mirror the super-admin

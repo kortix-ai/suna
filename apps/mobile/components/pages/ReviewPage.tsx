@@ -348,9 +348,9 @@ export function ReviewPage({
       <ReviewDetailSheet
         ref={sheetRef}
         projectId={projectId}
+        // The selection stays after close: clearing it would empty the sheet
+        // while it animates away.
         item={selected}
-        // The selection stays: clearing it would empty the sheet while it closes.
-        onDismiss={() => {}}
         onOpenSession={onOpenSession}
       />
     </View>

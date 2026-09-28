@@ -1,0 +1,79 @@
+---
+title: MCP server
+description: Connect Claude, ChatGPT, Cursor, Codex or any MCP client to a Kortix project over OAuth. Nothing to install.
+---
+
+> **Experimental.** The MCP server is a [feature flag](/docs/feature-flags), off
+> by default. Its tools and URLs can change without a deprecation.
+
+Every Kortix project has a hosted MCP server at:
+
+```text
+https://api.kortix.com/v1/projects/<project_id>/mcp
+```
+
+Add that URL to an MCP client. The first call asks you to sign in to Kortix in
+the browser. After that, the client acts as you, with your permissions, and the
+project in the URL is its default project. There is nothing to install.
+
+## Turn it on
+
+1. Open **Settings → Feature flags** in the project and switch **MCP server**
+   on. You need `project.customize.write`.
+2. Open the workspace menu (the project name, top left) and select
+   **Connect MCP**. The dialog shows this project's URL and the steps for each
+   client.
+
+While the flag is off, the endpoint answers `403` with
+`{ error, code: "feature_disabled", feature: "mcp" }`, and **Connect MCP** does
+not appear in the menu.
+
+## Add it to a client
+
+| Client | Steps |
+| --- | --- |
+| Claude (web, desktop) | **Settings → Connectors → Add custom connector**, paste the URL, sign in. |
+| Claude Code | `claude mcp add --transport http kortix <url>`, then run `/mcp` and sign in. |
+| Cursor | The **Add to Cursor** button in the dialog, or `{"url": "<url>"}` under `mcpServers` in `mcp.json`. |
+| Codex | `codex mcp add kortix --url <url>`, then `codex mcp login kortix`. |
+| Others | Add a remote (Streamable HTTP) MCP server with the URL. |
+
+## Sign-in
+
+The server uses the OAuth 2.1 flow the MCP specification defines. A client
+does it without configuration:
+
+1. A call without a token answers `401` with
+   `WWW-Authenticate: Bearer resource_metadata="…", scope="kortix"`.
+2. The client reads the RFC 9728 document at
+   `/.well-known/oauth-protected-resource/v1/projects/<project_id>/mcp`. It names
+   Kortix as the authorization server.
+3. The client registers itself at `POST /v1/oauth/register` (RFC 7591). It gets
+   a public client that authenticates with PKCE alone.
+4. You approve the client on the Kortix consent screen. A self-registered
+   client is marked **Unverified app**, with the host it sends you back to.
+   Approve it only when you are connecting it yourself.
+5. The client exchanges the code for a `kortix_oat_` access token (1 hour) and
+   a refresh token (30 days, rotated on use).
+
+Kortix has no page yet that lists or revokes the MCP clients you approved.
+Removing the server from the client stops it from using your tokens.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `start_session` | Starts a session in the project with a first prompt. Returns the `session_id`. |
+| `send_message` | Queues a message for a session and starts the session if it is stopped. |
+| `read_session` | Returns a session's status and a compact transcript of its latest messages. |
+| `search_api` | Searches the Kortix API routes by keyword. |
+| `describe_api` | Returns one route's parameters, request body and response schema. |
+| `call_api` | Calls any `/v1/` route as you. `{projectId}` in the path means the connection's project. |
+
+`search_api`, `describe_api` and `call_api` cover everything the web app and the
+[CLI](/docs/cli) do, because both are clients of the same API. `call_api`
+refuses `/v1/oauth/*` and MCP paths. Each call passes the same authorization
+and audit as a request from the web app.
+
+The server is stateless: it answers `POST` with JSON, and `GET` and `DELETE`
+with `405`.

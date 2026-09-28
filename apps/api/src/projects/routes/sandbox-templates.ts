@@ -18,8 +18,10 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { serializeTemplate } from '../lib/serializers';
 import { templateProviderObservation } from '../lib/template-provider-observation';
+import { readJsonObject } from '../../shared/http-body';
 
 // ─── Template CRUD ─────────────────────────────────────────────────────────
 // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-
@@ -47,6 +49,8 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // A page view: serve the warm git mirror, refresh it behind the response.
+  allowStaleMirrorReads();
   const project = await loadGitProject(loaded);
   const observation = templateProviderObservation(loaded.row.metadata);
   try {
@@ -91,8 +95,7 @@ projectsApp.openapi(
   // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  let body: Record<string, unknown> = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+  const body = await readJsonObject(c);
 
   const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
   if (!slug || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) {
@@ -180,8 +183,7 @@ projectsApp.openapi(
   // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  let body: Record<string, unknown> = {};
-  try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
+  const body = await readJsonObject(c);
 
   const patch = {
     name: typeof body.name === 'string' ? body.name.trim() : undefined,

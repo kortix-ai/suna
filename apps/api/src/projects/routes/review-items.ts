@@ -2,7 +2,7 @@
 // Per-project human-in-the-loop inbox. Agents submit outputs / decisions /
 // batches for review; humans approve, reject, request changes, or answer. Native
 // items only this pass — change requests and connector/tunnel approvals are folded
-// in by adapters later. See docs/REVIEW_CENTER_DESIGN.md.
+// in by adapters later.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions } from '@kortix/db';
@@ -16,7 +16,8 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { mayResolveApproval } from '../lib/approval-authority';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { isAdaptedId } from '../review-adapters';
 import {
   type ReviewSegment,
@@ -207,7 +208,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Human gate: submitting a reviewable needs project.review.submit. Every
@@ -302,7 +303,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const reviewItemId = c.req.param('reviewItemId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -357,7 +358,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(

@@ -69,8 +69,7 @@ export function parseShimRules(raw: string | undefined): ShimBrokerRule[] {
     // `on_echo: 'block'`, because a provider edge owned some destinations and
     // arming here would have run a TLS-terminating proxy in a guest that was
     // not supposed to have one. Nothing is edge-owned any more — the shim is
-    // the one mechanism on every provider (docs/specs/
-    // 2026-08-19-secrets-exposure-usage-model.md §4) — so honouring a stale
+    // the one mechanism on every provider — so honouring a stale
     // `block` from an older API would leave the session with NO relay and
     // every request leaving with a worthless handle.
     if (item.delivery !== 'network') continue

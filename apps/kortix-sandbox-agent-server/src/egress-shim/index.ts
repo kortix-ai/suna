@@ -109,10 +109,9 @@ function installSystemTrust(certPem: string): boolean {
 }
 
 /**
- * The env an agent's clients need. Measured per runtime — see
- * docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7.6, which found the earlier assumption
- * (that this needed an LD_PRELOAD shim) was wrong and a handful of variables is
- * enough.
+ * The env an agent's clients need. Measured per runtime, which found the
+ * earlier assumption (that this needed an LD_PRELOAD shim) was wrong and a
+ * handful of variables is enough.
  *
  *   curl / bun fetch / git   honour `https_proxy` unaided
  *   node fetch (undici)      ignores it WITHOUT `NODE_USE_ENV_PROXY=1`
@@ -215,14 +214,6 @@ export function egressShimPort(env: NodeJS.ProcessEnv = process.env): number {
 // CI lane timed out at exactly that on 2026-08-25).
 let sessionCa: ReturnType<typeof createEphemeralCa> | null = null
 let sessionCaSeed: string | null = null
-
-/** Test seam: reset the module singletons. */
-export function __resetEgressShimForTests(): void {
-  started = null
-  armedSignature = null
-  sessionCa = null
-  sessionCaSeed = null
-}
 
 /** Stop the listener and drop the in-memory CA key. Safe to call with no shim. */
 export function stopEgressShim(): void {

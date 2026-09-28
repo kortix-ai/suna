@@ -154,7 +154,7 @@ describe('MarkdownCode — inline code', () => {
   test('the chip sits ON the line — no vertical-align, no flex box', () => {
     // Both knocked it out of the sentence. `align-middle` centres the box on
     // the parent's baseline plus half its x-height, and the chip is
-    // `text-[0.8rem]` inside `text-base` prose — so the chip's own baseline
+    // `text-[0.8rem]` inside `text-sm` prose — so the chip's own baseline
     // landed below the surrounding text and it read as sagging. `inline-flex`
     // makes the chip atomic: it takes its height from the flex line box
     // (`code { line-height: 1.2 }`) instead of the glyphs, and a long URL can
@@ -163,6 +163,28 @@ describe('MarkdownCode — inline code', () => {
       expect(chipClass(markup)).not.toContain('align-');
       expect(chipClass(markup)).not.toContain('inline-flex');
       expect(chipClass(markup)).not.toContain('text-center');
+    }
+  });
+
+  test('every chip keeps 0.8rem in body text and scales with a heading', () => {
+    // Plain, hex, URL, and file-path chips share one size rule. In body text
+    // the chip stays `0.8rem`. Inside `h1`–`h6` it is `0.9em` of the heading,
+    // so a code span in a title is not body-sized text in a large line.
+    const markups = [
+      render({ children: 'npm run dev' }),
+      render({ children: '#0ea5e9' }),
+      render({ children: 'https://example.com/docs' }),
+      render({ children: '/workspace/src/index.ts' }),
+    ];
+
+    for (const markup of markups) {
+      // The static renderer escapes `&` in the heading variant as `&amp;`.
+      const chip = markup.match(/<(?:code|a)\b[^>]*\bclass="([^"]*)"/)?.[1] ?? '';
+      const classes = chip.replaceAll('&amp;', '&').split(/\s+/);
+
+      expect(classes).toContain('text-[0.8rem]');
+      expect(classes).toContain('[:is(h1,h2,h3,h4,h5,h6)_&]:text-[0.9em]');
+      expect(classes.filter((c) => c.startsWith('text-[0.8rem]'))).toHaveLength(1);
     }
   });
 

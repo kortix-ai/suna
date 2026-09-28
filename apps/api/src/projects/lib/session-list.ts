@@ -41,7 +41,7 @@ import { db } from '../../shared/db';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
 import type { ProjectRole } from '../access';
 import {
@@ -102,12 +102,25 @@ export async function loadProjectSessionInventory(input: {
   limit?: number;
   /** Opaque cursor from a previous page's `nextCursor`. */
   cursor?: string | null;
+  /** Use conversation activity for projects whose imported sessions retain historical dates. */
+  orderByActivity?: boolean;
 }): Promise<ProjectSessionInventory> {
   // A cursor is sealed to (project, viewer): it carries the scan position, which
   // can name a row this viewer may not see. See `encodeSessionCursor`.
   const cursorScope: SessionCursorScope = {
     projectId: input.projectId,
     viewerId: input.userId,
+    ordering: input.orderByActivity ? 'activity' : undefined,
+  };
+  const sortAt = input.orderByActivity
+    ? sql<Date>`date_trunc('milliseconds', coalesce((${projectSessions.metadata}->>'last_activity_at')::timestamptz, ${projectSessions.updatedAt}))`
+    : sql<Date>`${projectSessions.updatedAt}`;
+  const rowSortAt = (row: ProjectSessionRow): Date => {
+    if (!input.orderByActivity) return row.updatedAt;
+    const raw = row.metadata?.last_activity_at;
+    if (typeof raw !== 'string') return row.updatedAt;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? row.updatedAt : parsed;
   };
 
   const limit = Math.min(
@@ -183,21 +196,21 @@ export async function loadProjectSessionInventory(input: {
         and(
           eq(projectSessions.projectId, input.projectId),
           eq(projectSessions.accountId, input.accountId),
-          // Keyset: strictly after the cursor row in `(updated_at DESC,
-          // session_id DESC)`. Written as the expanded OR rather than a row
-          // constructor so the planner keeps using the composite index.
+          // Keyset: strictly after the cursor row in `(sort_at DESC,
+          // session_id DESC)`. Ordinary projects use the updated_at index;
+          // opted-in imports use their historical conversation activity.
           cursor
             ? or(
-                lt(projectSessions.updatedAt, cursor.updatedAt),
+                lt(sortAt, cursor.updatedAt.toISOString()),
                 and(
-                  eq(projectSessions.updatedAt, cursor.updatedAt),
+                  eq(sortAt, cursor.updatedAt.toISOString()),
                   lt(projectSessions.sessionId, cursor.sessionId),
                 ),
               )
             : undefined,
         ),
       )
-      .orderBy(desc(projectSessions.updatedAt), desc(projectSessions.sessionId))
+      .orderBy(desc(sortAt), desc(projectSessions.sessionId))
       .limit(chunkSize);
 
     if (chunk.length === 0) {
@@ -257,7 +270,7 @@ export async function loadProjectSessionInventory(input: {
       if (items.length >= limit) break;
       items.push(item);
       scannedRows.push(item.row);
-      nextCursor = cursorForRow(item.row, cursorScope);
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(item.row), sessionId: item.row.sessionId }, cursorScope);
     }
 
     // Did the page fill before we reached the end of this chunk? Then the rows
@@ -268,8 +281,8 @@ export async function loadProjectSessionInventory(input: {
     // would drop its tail permanently.
     if (items.length < limit) {
       const lastChunkRow = chunk[chunk.length - 1]!;
-      nextCursor = cursorForRow(lastChunkRow, cursorScope);
-      cursor = { updatedAt: lastChunkRow.updatedAt, sessionId: lastChunkRow.sessionId };
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId }, cursorScope);
+      cursor = { updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId };
       if (chunk.length < chunkSize) {
         exhausted = true;
         break;

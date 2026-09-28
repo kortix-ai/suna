@@ -151,7 +151,7 @@ describe("ke2e local profile", () => {
   it("parses the Supabase CLI environment without evaluating shell text", () => {
     expect(
       parseSupabaseEnvironment(
-        'API_URL="http://127.0.0.1:54321"\nMAILPIT_URL="http://127.0.0.1:54324"\nANON_KEY="anon"\nSERVICE_ROLE_KEY="service"\nJWT_SECRET="jwt-secret"\nDB_URL="postgres://local"\n',
+        'API_URL="http://127.0.0.1:54321"\nMAILPIT_URL="http://127.0.0.1:54324"\nANON_KEY="anon"\nSERVICE_ROLE_KEY="service"\nJWT_SECRET="jwt-secret"\nDB_URL="postgres://local"\nS3_PROTOCOL_ACCESS_KEY_ID="s3-id"\nS3_PROTOCOL_ACCESS_KEY_SECRET="s3-secret"\n',
       ),
       ).toEqual({
         API_URL: "http://127.0.0.1:54321",
@@ -160,6 +160,11 @@ describe("ke2e local profile", () => {
       SERVICE_ROLE_KEY: "service",
       JWT_SECRET: "jwt-secret",
       DB_URL: "postgres://local",
+      // The API's object store writes config archives through Supabase
+      // Storage's S3 protocol endpoint; the deterministic profile hands it
+      // this pair.
+      S3_PROTOCOL_ACCESS_KEY_ID: "s3-id",
+      S3_PROTOCOL_ACCESS_KEY_SECRET: "s3-secret",
     });
   });
 

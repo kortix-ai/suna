@@ -6,6 +6,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { type ResolvedSession, loadSessionForChat } from './sessions-chat.ts';
@@ -178,10 +179,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n\n${APPROVE_HELP}`);
     return 2;
   }
-  if (always && reject) {
-    process.stderr.write(`${status.err('--always and --reject are mutually exclusive.')}\n`);
-    return 2;
-  }
+  if (always && reject) return fail('--always and --reject are mutually exclusive.');
   const target = parseTarget(rest, APPROVE_HELP);
   if (!target) return 2;
 
@@ -307,10 +305,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
       answers = JSON.parse(answersJson);
     } else {
       if (request && request.questions.length > 1) {
-        process.stderr.write(
-          `${status.err('This request carries several questions — pass --answers with a string[][] payload.')}\n`,
-        );
-        return 2;
+        return fail('This request carries several questions — pass --answers with a string[][] payload.');
       }
       // OpenCode accepts the displayed option labels as the canonical answers.
       const info = request?.questions[0];
@@ -399,8 +394,7 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
     };
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   const positional = rest.filter((a) => !a.startsWith('-'));
@@ -416,10 +410,7 @@ export async function runSessionsConnectorApprovals(argv: string[]): Promise<num
   }
   const executionId = positional[2];
   if ((sub === 'approve' || sub === 'deny') && !executionId) {
-    process.stderr.write(
-      `${status.err(`\`approvals ${sub}\` needs an execution id (see \`sessions approvals ${sessionId} ls\`).`)}\n`,
-    );
-    return 2;
+    return fail(`\`approvals ${sub}\` needs an execution id (see \`sessions approvals ${sessionId} ls\`).`);
   }
 
   const located = await locateSessionAnywhere(

@@ -3,6 +3,8 @@ import { deadLetterCause } from './dead-letter-cause';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { currentInstanceId } from '../instance-scope';
 import { logger } from '../../lib/logger';
+import { extendSandboxDeadline } from '../sandbox-deadline';
+import { promptRetryGraceMs } from '../sandbox-deadline-policy';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
@@ -74,7 +76,7 @@ export function withRemintedWireId(id: string): SQL {
     coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
 }
 
-export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
+function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
   return {
     body: command.body,
     requestingPrincipalType: command.requestingPrincipalType,
@@ -549,7 +551,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
  * never matches it, and a pod that dies mid-create leaves the idempotency key
  * answering `pending` for ever.
  */
-export function buildCreateSessionCommandValues(
+function buildCreateSessionCommandValues(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },
   now: Date,
@@ -919,7 +921,7 @@ const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
 /** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
 export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
 
-export function runtimeUnreachableRetries(payload: unknown): number {
+function runtimeUnreachableRetries(payload: unknown): number {
   const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
     ?.runtimeUnreachableRetries;
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
@@ -1011,6 +1013,20 @@ export async function parkPromptForUnreachableRuntime(
     backoff_ms: backoff,
     error,
   });
+  // This prompt is the reason the box must stay up for the next attempt — see
+  // promptRetryGraceMs. A no-op for a box the reaper already stopped
+  // (extendSandboxDeadline only touches 'active'/'provisioning' rows); that
+  // box waits for the ordinary wake-on-retry path instead. Best-effort: losing
+  // this write costs the box one grant, never the park itself.
+  if (opts.sessionId) {
+    await extendSandboxDeadline({ sessionId: opts.sessionId }, promptRetryGraceMs()).catch((err) =>
+      logger.warn('[session-lifecycle] failed to extend sandbox deadline for a parked prompt', {
+        command_id: lease.commandId,
+        session_id: opts.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
   return { parked: true, retries };
 }
 

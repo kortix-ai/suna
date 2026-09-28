@@ -28,6 +28,8 @@ import {
 } from '@/features/file-viewer';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
+import { useFileRefresh } from '@/features/files/hooks/use-file-refresh';
+import { useContentRevision } from '@/features/file-viewer/use-content-revision';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
@@ -40,6 +42,7 @@ import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { FileViewer, isSvg } from './file-viewer';
 import {
   PanelWidthButton,
+  RefreshButton,
   type ShareContext,
   ViewerActions,
   type ViewerCopy,
@@ -54,6 +57,9 @@ import {
 // same process, as this component's render tests need to. Reading through
 // `getState()` for both snapshots sidesteps that — same live value, same
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
+/** The toolbar's Refresh control, as both toolbars take it. */
+type ViewerRefresh = { onRefresh: () => void; refreshing: boolean };
+
 const getSandboxAliveSnapshot = () => {
   const s = useRuntimeConnectionStore.getState();
   return s.status === 'connected' && s.healthy === true;
@@ -75,6 +81,7 @@ function PreviewShell({
   onClose,
   onPresent,
   copy,
+  refresh,
   children,
 }: {
   /** The display name shown in the toolbar text — a human title when one
@@ -99,6 +106,8 @@ function PreviewShell({
    *  binary-image branch, copying the picture itself. Omitted everywhere else,
    *  which promotes `Copy link` to the split button's primary. */
   copy?: ViewerCopy;
+  /** Re-reads the file on demand. See `RefreshButton`. */
+  refresh: ViewerRefresh;
   children: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -131,6 +140,7 @@ function PreviewShell({
               </Button>
             </Hint>
           )}
+          <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
           <ViewerActions
             copy={copy}
             shareContext={shareContext}
@@ -323,7 +333,17 @@ export function FilePreview({
 
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
-  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+  const { data, isLoading, isError, error, dataUpdatedAt } = useFileContent(path, {
+    enabled: !rich,
+  });
+
+  // The agent's turn end refetches this file (the SDK invalidates the workspace
+  // file caches), so text updates in place. Refresh is the manual safety net.
+  // An HTML page reloads on every refetch, not only on changed markup: the
+  // stylesheets and scripts it points at are separate files.
+  const { refresh: onRefresh, refreshing, reloadKey } = useFileRefresh(path);
+  const refresh: ViewerRefresh = { onRefresh, refreshing };
+  const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
   // A readiness 503 means the sandbox is parked or booting — a pending state,
   // never a failure. `useFileContent` keeps polling while this is true, so the
@@ -360,6 +380,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
       >
         <FileSourceProvider value={workspaceFileSource}>
           {/* Inside the source provider, not around it: a renderer that
@@ -378,6 +399,7 @@ export function FilePreview({
           >
             <FileContentRenderer
               filePath={path}
+              reloadKey={reloadKey}
               showHeader={false}
               className="h-full"
               fitOnOpen={isPdf}
@@ -398,6 +420,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
       >
         <Centered>
           <Loading />
@@ -415,6 +438,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
       >
         <Centered>
           {sandboxWaking ? (
@@ -450,6 +474,7 @@ export function FilePreview({
         path={path}
         onClose={onClose}
         onPresent={onPresent}
+        refresh={refresh}
         copy={
           isImage && canCopyImages()
             ? {
@@ -494,6 +519,8 @@ export function FilePreview({
       path={path}
       shareContext={shareContext}
       onClose={onClose}
+      refresh={refresh}
+      reloadKey={`${fetchRevision}-${reloadKey}`}
     />
   );
 }

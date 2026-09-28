@@ -15,7 +15,7 @@ import {
   SettingsPanelShell,
   type SettingsPanelShellProps,
   type SettingsTabAllowedParams,
-} from './settings-panel';
+} from './settings-panel-body';
 import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from './settings-tabs';
 import type { RailItem } from './type';
 
@@ -214,7 +214,7 @@ describe('SettingsPanelShell — desktop rail', () => {
  * plain `rounded-none` or `max-w-none` loses to both.
  */
 describe('SettingsPanelView — the dialog frame', () => {
-  const SOURCE = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8')
+  const SOURCE = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
@@ -245,7 +245,7 @@ describe('SettingsPanelView — the dialog frame', () => {
 });
 
 test('mobile Settings navigation has a zoom-safe first row on macOS', () => {
-  const source = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8');
+  const source = readFileSync(join(import.meta.dir, 'settings-panel-body.tsx'), 'utf8');
   const css = readFileSync(join(import.meta.dir, '../../../app/globals.css'), 'utf8');
   expect(source).toContain('kx-settings-mobile-titlebar');
   expect(source).toContain('kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2');

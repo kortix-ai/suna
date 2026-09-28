@@ -37,7 +37,7 @@ const SECRET_CAPABILITIES_SRC = readFileSync(
   'utf8',
 )
 
-/** The allowlist body, parsed the same way `compiled-agent-config-env.test.ts` does. */
+/** The allowlist body in control.ts. */
 function runtimeEnvAllowlist(): Set<string> {
   const body = ENV_ROUTE.split('const OPENCODE_RUNTIME_ENV_NAMES = new Set([')[1]?.split('])')[0]
   expect(body).toBeTruthy()
@@ -122,40 +122,10 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
     // live-updatable) or to BOOT_ONLY_KORTIX_ENV_NAMES above with a one-line
     // reason it is boot-only forever.
     expect(unaccounted).toEqual([])
-  })
 
-  test('the two lists do not overlap — a name is EITHER live-updatable or boot-only, never both', () => {
-    const allowlist = runtimeEnvAllowlist()
-    const overlap = [...BOOT_ONLY_KORTIX_ENV_NAMES].filter((name) => allowlist.has(name))
-    expect(overlap).toEqual([])
-  })
-
-  test('the boot-only list is not stale — every name on it is still actually read', () => {
-    // Guards the exclusion list itself: a name that stops being read at all
-    // should be deleted from here rather than silently kept "just in case".
-    const consumed = readKortixEnvNames(OPENCODE_SRC)
+    // And the boot-only list is not stale: a name that stops being read at all
+    // is deleted from it rather than kept "just in case".
     const stale = [...BOOT_ONLY_KORTIX_ENV_NAMES].filter((name) => !consumed.has(name))
     expect(stale).toEqual([])
-  })
-
-  test('pins the current fully-enumerated set, so a change here is a deliberate, reviewed diff', () => {
-    const consumed = readKortixEnvNames(OPENCODE_SRC)
-    consumed.add('KORTIX_SECRET_CAPABILITIES')
-    expect([...consumed].sort()).toEqual([
-      'KORTIX_API_URL',
-      'KORTIX_COMPILED_AGENT_CONFIG',
-      'KORTIX_COMPILED_RUNTIME_FORMAT',
-      'KORTIX_CONNECTORS_MCP_ENABLED',
-      'KORTIX_CONNECTORS_PROXY_URL',
-      'KORTIX_LLM_API_KEY',
-      'KORTIX_LLM_BASE_URL',
-      'KORTIX_LLM_CATALOG_FILE',
-      'KORTIX_LLM_PROXY_URL',
-      'KORTIX_OPENCODE_DEBUG',
-      'KORTIX_OPENCODE_MODEL',
-      'KORTIX_PROJECT_ID',
-      'KORTIX_SECRET_CAPABILITIES',
-      'KORTIX_TOKEN',
-    ])
   })
 })

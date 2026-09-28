@@ -7,6 +7,7 @@ import {
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
+  fail,
 } from "../command-helpers.ts";
 import { kortixFromAuth } from "../api/sdk.ts";
 import { C, help, status } from "../style.ts";
@@ -167,8 +168,7 @@ export async function runSessionsScope(argv: string[]): Promise<number> {
   try {
     command = parseScopeCommand(argv);
   } catch (error) {
-    process.stderr.write(`${status.err((error as Error).message)}\n`);
-    return 2;
+    return fail((error as Error).message);
   }
   if (command === "help") {
     process.stdout.write(HELP);

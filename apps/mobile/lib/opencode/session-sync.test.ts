@@ -14,6 +14,7 @@ const {
   DETACHED_SESSION_LIMIT,
   EMPTY_SNAPSHOT,
   getEmptySnapshot,
+  loadFullHistory,
   noopSubscribe,
   reconcileLiveSession,
   reconcileLiveSessions,
@@ -183,5 +184,78 @@ describe('live session registry', () => {
     two();
     // s1 is now the newest detached session; s2 falls off.
     expect(Object.keys(useSyncStore.getState().messages).sort()).toEqual(['s1', 's3', 's4']);
+  });
+});
+
+describe('loadFullHistory', () => {
+  beforeEach(() => resetLiveSessionsForTest());
+
+  /** A controller with `pages` older pages left; `failAt` rejects that call (1-based). */
+  function pagedController(pages: number, failAt?: number) {
+    let left = pages;
+    let calls = 0;
+    return {
+      get calls() {
+        return calls;
+      },
+      reconcile: () => Promise.resolve(),
+      getSnapshot: () => ({ freshness: 'fresh' as const, hasOlder: left > 0, isLoadingOlder: false }),
+      loadOlder: () => {
+        calls += 1;
+        if (calls === failAt) return Promise.reject(new Error('offline'));
+        left -= 1;
+        return Promise.resolve();
+      },
+    };
+  }
+
+  test('loads every older page, then reports complete', async () => {
+    const c = pagedController(3);
+    registerLiveSession({ sessionId: 's', sandboxUrl: 'https://box', controller: c });
+    expect(await loadFullHistory('s')).toEqual({ complete: true });
+    expect(c.calls).toBe(3);
+  });
+
+  test('no older history: complete without a request', async () => {
+    const c = pagedController(0);
+    registerLiveSession({ sessionId: 's', sandboxUrl: 'https://box', controller: c });
+    expect(await loadFullHistory('s')).toEqual({ complete: true });
+    expect(c.calls).toBe(0);
+  });
+
+  test('stops at the page bound and reports incomplete', async () => {
+    const c = pagedController(5);
+    registerLiveSession({ sessionId: 's', sandboxUrl: 'https://box', controller: c });
+    expect(await loadFullHistory('s', 2)).toEqual({ complete: false });
+    expect(c.calls).toBe(2);
+  });
+
+  test('a failed page reports incomplete', async () => {
+    const c = pagedController(3, 2);
+    registerLiveSession({ sessionId: 's', sandboxUrl: 'https://box', controller: c });
+    expect(await loadFullHistory('s')).toEqual({ complete: false });
+  });
+
+  test('a snapshot that throws after the last page: incomplete, never a rejection', async () => {
+    let reads = 0;
+    registerLiveSession({
+      sessionId: 's',
+      sandboxUrl: 'https://box',
+      controller: {
+        reconcile: () => Promise.resolve(),
+        loadOlder: () => Promise.resolve(),
+        // hasOlder until the page bound, then the final read throws.
+        getSnapshot: () => {
+          reads += 1;
+          if (reads > 2) throw new Error('destroyed');
+          return { freshness: 'fresh' as const, hasOlder: true, isLoadingOlder: false };
+        },
+      },
+    });
+    expect(await loadFullHistory('s', 2)).toEqual({ complete: false });
+  });
+
+  test('no mounted controller: unknown, reported incomplete', async () => {
+    expect(await loadFullHistory('nobody')).toEqual({ complete: false });
   });
 });

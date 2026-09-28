@@ -80,6 +80,10 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
       return `${actionText} is outside agent ${C.bold}${agent}${C.reset}'s role — ask an admin to raise agent ${agent}'s role`;
     case 'agent_human_only_action':
       return `${actionText} is reserved for people — a human must do this`;
+    case 'agent_session_forbidden':
+      // A route that refuses every agent session outright (e.g. granting a
+      // secret to an agent). No kortix_permissions entry unlocks it.
+      return 'agent sessions cannot do this — a person with project access must do this';
     case 'agent_scope_insufficient':
       return (
         `add ${actionText} to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +

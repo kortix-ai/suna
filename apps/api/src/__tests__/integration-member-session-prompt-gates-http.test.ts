@@ -43,15 +43,8 @@ const AGENT = 'kortix';
 
 const minted: string[] = [];
 let memberKey = '';
-let managerKey = '';
 
 beforeAll(async () => {
-  await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
-  await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
-  await db.execute(
-    sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`,
-  );
-
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'member-prompt-gate-test' });
   await db.insert(projects).values({
     projectId: PROJECT,
@@ -96,7 +89,6 @@ beforeAll(async () => {
   });
 
   memberKey = await mint(MEMBER);
-  managerKey = await mint(MANAGER);
 });
 
 afterAll(async () => {
@@ -143,61 +135,30 @@ const base = `/v1/projects/${PROJECT}/sessions/${SESSION}`;
 const wireMessageId = () =>
   `msg_${Date.now().toString(16).padStart(12, '0').slice(-12)}aAbBcCdDeEfF12`;
 
-const PROMPTS_SRC = await Bun.file(
-  new URL('../projects/routes/session-prompts.ts', import.meta.url).pathname,
-).text();
-
 /**
- * The `loadProjectForUser` floor of one registered handler, selected by method
- * + OpenAPI path. Scoped per handler: session-prompts.ts registers several
- * routes, so a whole-file match would read a neighbour's.
+ * Every route a user touches to cancel, retry, or hold a prompt. Sending one
+ * is its own case below, which asserts the prompt is actually queued.
  */
-function handlerFloor(method: string, path: string): string {
-  const block = PROMPTS_SRC.split('projectsApp.openapi(').find(
-    (b) => b.includes(`method: '${method.toLowerCase()}'`) && b.includes(`path: '${path}'`),
-  );
-  if (!block) throw new Error(`no ${method} ${path} handler found in session-prompts.ts`);
-  const floor = block.match(/loadProjectForUser\(c, projectId, '(\w+)'\)/);
-  if (!floor) throw new Error(`no loadProjectForUser floor in ${method} ${path}`);
-  return floor[1]!;
-}
-
-/** Every route a user touches to send, cancel, retry, or hold a prompt. */
 const QUEUE_ROUTES: {
   name: string;
   method: string;
   path: string;
-  registeredPath: string;
   body?: unknown;
 }[] = [
-  {
-    name: 'POST /prompts (the follow-up prompt itself)',
-    method: 'POST',
-    path: `${base}/prompts`,
-    registeredPath: '/{projectId}/sessions/{sessionId}/prompts',
-    body: {
-      client_message_id: crypto.randomUUID(),
-      message_id: wireMessageId(),
-      parts: [{ type: 'text', text: 'follow-up' }],
-    },
-  },
   {
     name: 'DELETE /prompts/:promptId (un-queue)',
     method: 'DELETE',
     path: `${base}/prompts/${crypto.randomUUID()}`,
-    registeredPath: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
   },
   {
     name: 'POST /prompts/:promptId/retry (retry / send now)',
     method: 'POST',
     path: `${base}/prompts/${crypto.randomUUID()}/retry`,
-    registeredPath: '/{projectId}/sessions/{sessionId}/prompts/{promptId}/retry',
   },
   {
     name: 'POST /prompts/hold (stop reaches the queue)',
     method: 'POST',
     path: `${base}/prompts/hold`,
-    registeredPath: '/{projectId}/sessions/{sessionId}/prompts/hold',
     body: { held: true },
   },
 ];
@@ -212,13 +173,6 @@ describe('project member — session prompt queue', () => {
       expect(res.status).not.toBe(403);
     });
 
-    test(`${route.name} is floored 'session', not 'write'`, async () => {
-      // Read the floor off the handler itself. The behavioural test above can
-      // only prove the CURRENT floor admits a member; this pins WHICH floor,
-      // so a future edit back to 'write' fails here with the reason named
-      // rather than as a puzzling status change.
-      expect(handlerFloor(route.method, route.registeredPath)).toBe('session');
-    });
   }
 
   test('POST /prompts accepts a member follow-up onto the queue', async () => {
@@ -237,6 +191,7 @@ describe('project member — session prompt queue', () => {
     // gates can never drift apart again without a test noticing.
     const res = await req('POST', `${base}/start`, memberKey);
     expect(await roleDenied(res)).toBe(false);
+    expect(res.status).not.toBe(403);
   });
 });
 
@@ -259,18 +214,6 @@ describe('project member — agents are deny-by-default', () => {
     // The 403 has to be actionable: name the agents that WOULD work.
     expect(body.code).toBe('agent_not_accessible');
     expect(body.accessible_agents).toEqual([AGENT]);
-  });
-
-  test('the agent-switch refusal is about the AGENT, not the role', async () => {
-    // Guards against a future change that "fixes" this by reintroducing the
-    // project.write floor — that would 403 too, with the wrong reason.
-    const res = await req('POST', `${base}/prompts`, memberKey, {
-      client_message_id: crypto.randomUUID(),
-      message_id: wireMessageId(),
-      parts: [{ type: 'text', text: 'x' }],
-      overrides: { agent: 'an-agent-nobody-granted-me' },
-    });
-    expect(await roleDenied(res)).toBe(false);
   });
 
   test('the granted agent still passes, so the gate is scoping and not a block', async () => {

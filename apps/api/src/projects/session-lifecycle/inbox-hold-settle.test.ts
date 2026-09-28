@@ -1,12 +1,7 @@
-import { describe, expect, test } from 'bun:test';
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { describe, expect, mock, test } from 'bun:test';
 import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
 import type { PlacementTipMessage } from './forwarded-placement';
-import {
-  type HoldSettleDeps,
-  settleInboxHoldAfterStop,
-  stopPausedOnWireScope,
-} from './inbox-hold-settle';
+import { type HoldSettleDeps, settleInboxHoldAfterStop } from './inbox-hold-settle';
 
 const id = (ms: number, tail: string) =>
   `msg_${((BigInt(ms) * WIRE_ID_TIME_SCALE + BigInt(1)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}${tail}`;
@@ -36,11 +31,21 @@ function fakeDeps(over: Partial<HoldSettleDeps> & { claimed?: number[]; tips?: a
   let now = 0;
   const claimedSeq = [...(over.claimed ?? [0])];
   const tips = [...(over.tips ?? [[]])];
-  const calls: Record<string, unknown[][]> = { abort: [], remove: [], hold: [], close: [], closeTurn: [] };
+  const calls: Record<string, unknown[][]> = {
+    abort: [],
+    remove: [],
+    hold: [],
+    close: [],
+    closeTurn: [],
+    readTip: [],
+  };
   const deps: HoldSettleDeps = {
     countClaimed: async () => (claimedSeq.length > 1 ? claimedSeq.shift()! : claimedSeq[0]),
     listStopPaused: async () => [],
-    readTip: async () => (tips.length > 1 ? tips.shift()! : tips[0]),
+    readTip: async (...a) => {
+      calls.readTip.push(a);
+      return tips.length > 1 ? tips.shift()! : tips[0];
+    },
     abort: async (...a) => { calls.abort.push(a); return true; },
     removeMessage: async (...a) => { calls.remove.push(a); return true; },
     holdAsQueued: async (...a) => { calls.hold.push(a); },
@@ -64,6 +69,7 @@ describe('settleInboxHoldAfterStop', () => {
     const { deps, calls } = fakeDeps({});
     const out = await settleInboxHoldAfterStop('s', deps);
     expect(out.heldBack).toBe(0);
+    expect(calls.readTip).toHaveLength(0);
     expect(calls.abort).toHaveLength(0);
   });
 
@@ -97,6 +103,8 @@ describe('settleInboxHoldAfterStop', () => {
     expect(calls.hold).toEqual([['c2']]);
     expect(calls.closeTurn).toEqual([['s', u2]]);
     expect(calls.abort).toHaveLength(0);
+    // Not closed as delivered: the release then POSTs it for the first time.
+    expect(calls.close).toHaveLength(0);
   });
 
   test('a forwarded prompt the aborted step READ closes as delivered (runs with the next send)', async () => {
@@ -151,56 +159,28 @@ describe('settleInboxHoldAfterStop', () => {
     expect(calls.hold).toHaveLength(0);
     expect(calls.close).toHaveLength(0);
   });
-
-  test('a released Stop delivers a held-back prompt exactly once', async () => {
-    // The whole point of holding it back: after this settle the row is an
-    // ordinary queued+held row and OpenCode no longer holds a copy — so the
-    // release POSTs the prompt for the first and only time.
-    const tip = tipOf([{ id: u1, role: 'user' }, { id: u2, role: 'user' }]);
-    const { deps, calls } = fakeDeps({
-      tips: [tip],
-      listStopPaused: async () => [{ commandId: 'c2', wireIds: [u2] }],
-    });
-    const out = await settleInboxHoldAfterStop('s', deps);
-    expect(out.heldBack).toBe(1);
-    // Exactly one copy taken out, exactly one row re-queued, nothing closed as
-    // delivered (which would have made the release a no-op instead).
-    expect(calls.remove).toEqual([['s', u2]]);
-    expect(calls.hold).toEqual([['c2']]);
-    expect(calls.close).toHaveLength(0);
-  });
 });
 
 /**
- * The predicate `listStopPaused` runs. Every behavioural test above stubs
- * `listStopPaused`, so the live query was the one part of this module nothing
- * could catch regressing — and it HAD regressed: it excluded
- * `result.held = 'true'`, which is the exact marker `holdInboxPrompts` writes
- * on every forwarded row a Stop pauses, moments before this settle starts.
+ * The settle's re-abort is part of the Stop the user pressed. It reaches
+ * OpenCode without passing the sandbox proxy that stamps `UserStop`, and it
+ * usually reaches OpenCode FIRST: the hold route starts it before the client
+ * sends its own abort. An unstamped re-abort closed the user's own turn as
+ * `failed` with a bare `MessageAbortedError`, and the web showed "This turn
+ * stopped before it finished. No reason was reported." (prod 2026-09-25).
  */
-describe('stopPausedOnWireScope', () => {
-  const compiled = () => {
-    const q = new PgDialect().sqlToQuery(stopPausedOnWireScope('ses-1')!);
-    return { sql: q.sql.replace(/\s+/g, ' ').trim(), params: q.params };
-  };
+describe('the settle re-abort is a requested stop', () => {
+  const aborts: Array<[string, unknown]> = [];
+  mock.module('./abort-runtime-turn', () => ({
+    abortRuntimeTurn: async (sessionId: string, opts?: unknown) => {
+      aborts.push([sessionId, opts]);
+      return true;
+    },
+  }));
 
-  test('does NOT exclude a row the Stop just marked held', () => {
-    // The row this whole module exists for. Excluding it is what made the
-    // release re-POST a prompt OpenCode still held, and the user saw the same
-    // prompt twice.
-    expect(compiled().sql).not.toContain("'held'");
-  });
-
-  test('selects only this session\'s composer prompts that went out recently', () => {
-    const { sql, params } = compiled();
-    // The inbox scope: this session, `continue_session`, and a client message
-    // id (which is what separates a composer prompt from an automation one).
-    expect(params).toContain('ses-1');
-    expect(params).toContain('continue_session');
-    expect(sql).toContain("->>'clientMessageId'");
-    // On the wire, both ways a POST that landed is recorded.
-    expect(sql).toContain("IN ('forwarded', 'delivered')");
-    // Recent only — an old delivered row is history, not a Stop's business.
-    expect(sql).toContain("interval '10 minutes'");
+  test('the live abort stamps UserStop on the open turn before it aborts', async () => {
+    const { liveHoldSettleDeps } = await import('./inbox-hold-settle');
+    expect(await liveHoldSettleDeps.abort('ses-1')).toBe(true);
+    expect(aborts).toEqual([['ses-1', { requestedStop: true }]]);
   });
 });

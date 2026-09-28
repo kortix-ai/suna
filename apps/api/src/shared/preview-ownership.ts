@@ -23,9 +23,10 @@ import {
 import { authorize } from '../iam';
 import { actorForUser } from '../iam/actor';
 import { hasAccountSessionOversight } from '../iam/session-oversight';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
+import { isUuid } from './validate';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -218,8 +219,6 @@ function cacheKey(previewSandboxId: string, userId: string): string {
   return `${previewSandboxId}:${userId}`;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Resolve the real session sandbox uuid + owning account/project from a
  * `previewSandboxId`, which can be either a uuid (sandboxId / externalId) or
@@ -234,7 +233,7 @@ async function resolveSandboxRef(
     projectId: sessionSandboxes.projectId,
   };
 
-  const idCondition = UUID_RE.test(previewSandboxId)
+  const idCondition = isUuid(previewSandboxId)
     ? or(
         eq(sessionSandboxes.externalId, previewSandboxId),
         eq(sessionSandboxes.sandboxId, previewSandboxId),
@@ -321,6 +320,38 @@ async function isAccountMember(userId: string, accountId: string): Promise<boole
   return !!row;
 }
 
+/**
+ * Is `userId` actually an agent service account belonging to this account?
+ *
+ * `project_sessions.created_by` is not always a human. A trigger/automation
+ * run attributes its session to the agent's standing-identity service account
+ * (`resolveAgentRunAttribution` -> `ensureAgentServiceAccount`,
+ * session-lifecycle/actor.ts) — a first-class non-human IAM principal that
+ * lives in `service_accounts`, never in `account_members`. Before this check
+ * existed, `isAccountMember` answered false for every one of those ids
+ * unconditionally, so `resolvePreviewUserContext` returned null, the signed
+ * `X-Kortix-User-Context` header was never attached, and the daemon's
+ * transcript-mirror capture (and every other signed OpenCode proxy call
+ * attributed to that session) 401'd on EVERY turn, forever — PROD 76h window:
+ * 23,380 capture failures across 37 projects, 72% of sessions with no saved
+ * transcript. A disabled SA is refused: a revoked/deleted agent identity must
+ * not keep reading a session's transcript.
+ */
+async function isAccountServiceAccount(userId: string, accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ serviceAccountId: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.serviceAccountId, userId),
+        eq(serviceAccounts.accountId, accountId),
+        eq(serviceAccounts.status, 'active'),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 async function computeEntry(
   previewSandboxId: string,
   userId: string,
@@ -348,7 +379,10 @@ async function computeEntry(
     };
   }
 
-  const member = platformAdmin || (await isAccountMember(userId, ref.accountId));
+  const member =
+    platformAdmin ||
+    (await isAccountMember(userId, ref.accountId)) ||
+    (await isAccountServiceAccount(userId, ref.accountId));
   if (!member) {
     return { allowed: false, payload: null, expiresAt };
   }

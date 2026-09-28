@@ -99,8 +99,7 @@ export interface CreateSandboxOpts {
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
    *
-   * `monitor` is the per-project monitor box (docs/specs/2026-08-12-monitors.md
-   * D3): the SAME image and the SAME agent port as a session, running the
+   * `monitor` is the per-project monitor box: the SAME image and the SAME agent port as a session, running the
    * daemon in monitor mode instead of opencode. It differs from a session only
    * in lifecycle (`autoStopInterval: 0` → persistent) and in having no
    * `session_sandboxes` row.
@@ -257,6 +256,18 @@ export interface SandboxExecOptions {
   timeoutMs: number;
 }
 
+export interface SandboxStartOptions {
+  /**
+   * Called while start() waits on provider-side work that legitimately
+   * outlasts a plain start: today a Platinum restore from cold storage, which
+   * takes minutes under load. A caller holding a time-boxed claim on the start
+   * (a wake or restart lease) renews it here, so the claim does not lapse and
+   * hand the box to cleanup while it is still coming up. Called at most every
+   * 30 s, only while that work is observed in progress; a throw is ignored.
+   */
+  onProgress?: () => Promise<void>;
+}
+
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
@@ -291,7 +302,7 @@ export interface SandboxProvider {
     externalTemplateId: string,
     opts: CreateSandboxOpts,
   ): Promise<ProvisionResult>;
-  start(externalId: string): Promise<void>;
+  start(externalId: string, opts?: SandboxStartOptions): Promise<void>;
   /**
    * Renew the provider-native lifecycle deadline for a sandbox that Kortix has
    * already confirmed is running and whose `session_sandboxes.deadline_at` is

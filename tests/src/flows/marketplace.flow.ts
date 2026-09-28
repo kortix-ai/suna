@@ -3,7 +3,7 @@
  * catalog.ts), mounted at /v1/marketplace — a READ-ONLY browse of the
  * installable-item catalog (skills/agents/projects/templates), distinct from
  * the per-project install engine deleted by the marketplace-as-projects
- * rewrite (docs/specs/2026-07-13-marketplace-as-projects.md). `/items*` and
+ * rewrite. `/items*` and
  * `/marketplaces*` are fully public; `/sources` (the "Add a marketplace"
  * config) requires auth to read and admin to mutate — except a curated
  * FEATURED address, which any signed-in user may add (see the route's own
@@ -196,6 +196,21 @@ flow(
         });
       r.status(403);
     });
+    await ctx.step(
+      'POST OWNER, FEATURED address with a wrong-typed field and no JSON content-type → 400, no source created',
+      async () => {
+        // No JSON content-type, so the route validator does not run. The
+        // handler parses the body with the same schema and rejects it.
+        for (const extra of ['"sparsePaths":[1]', '"sparsePaths":"docs"', '"gitRef":7', '"label":{}']) {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .post('/v1/marketplace/sources', `{"address":${JSON.stringify(FEATURED_ADDRESS)},${extra}}`, {
+              raw: true,
+            });
+          r.status(400).body().has('$.error', 'Invalid marketplace source');
+        }
+      },
+    );
     await ctx.step('DELETE ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)

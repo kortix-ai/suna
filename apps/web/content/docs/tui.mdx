@@ -22,6 +22,12 @@ Files, Review, Apps, Customize and Account screens.
 ```sh
 kortix login          # writes ~/.config/kortix/config.json
 kortix tui            # first run: "Install now? [Y/n]"
+kortix t              # the short spelling
+kortixt               # one word, installed beside kortix — bind it to a key
+
+# One keystroke to a cloud engineering desk: a new session in the project,
+# with its default agent (or --agent <name>), the sandbox shell open.
+kortixt --project <project-id> --new --terminal
 ```
 
 `kortix tui` signs in with the host you are already on, so there is nothing to
@@ -32,7 +38,9 @@ configure. It is a **launcher**: the TUI itself is a second binary,
 The first `kortix tui` asks before downloading. It fetches the `kortix-tui`
 build that matches this CLI's version from the same GitHub release the `kortix`
 binary came from, checks it against the release's `.sha256`, and stores it in
-`~/.kortix/tui/<version>/`. That takes a few seconds once per CLI version; every
+`~/.kortix/tui/<version>/`. After a CLI update the TUI updates itself with no
+prompt, reuses the installed copy when the release did not change it, and
+removes the old versions. That takes a few seconds once per CLI version; every
 later run execs the cached copy. A `kortix` that cannot reach GitHub, or a
 platform with no published build, is the one case where you build your own —
 see `KORTIX_TUI_BIN` below.
@@ -84,6 +92,7 @@ and a stale one left exported in a shell outranks `kortix login` for both.
 | `KORTIX_SESSION_ID` | Open this session at boot. |
 | `KORTIX_CONFIG_FILE` | Read hosts from this file instead of `~/.config/kortix/config.json`. |
 | `KORTIX_TUI_THEME` | `dark` or `light`. Otherwise `COLORFGBG` decides, defaulting to dark. |
+| `KORTIX_TUI_AUTO_FORWARD` | `0` disables auto-forwarding a sandbox port the moment it's noticed (see [Ports](#ports)). Default: on. |
 | `KORTIX_TUI_BIN` | Run this `kortix-tui` binary instead of a managed one. Nothing is downloaded and no version is checked. |
 | `KORTIX_TUI_HOST` | The configured host to open, by name. `kortix tui --host <name>` sets it, and it outranks `KORTIX_API_KEY` / `KORTIX_TOKEN`. |
 
@@ -121,14 +130,16 @@ variable at all.
 | Customize | `Alt+C` | Agents · Skills · Secrets · Triggers · Connectors. |
 | Account | `Alt+U` | Members, invites, roles, and the billing readout. |
 | Terminal | `Alt+T` | A real shell in the session's sandbox, beside the transcript. |
+| Ports | `Alt+P` | Sandbox ports noticed in the transcript/terminal, and every local forward. See [Ports](#ports). |
+| Links | `Alt+L` | Every URL in the transcript or on the terminal screen, wrapped ones rejoined. See [Links](#links). |
 | Switcher | `Ctrl+P` | One filter over every session and project. |
 | Help | `?` | Every binding, generated from the keymap. |
 
 ## Keys
 
-`?` prints the full table — 143 bindings across twelve scopes — generated from
-the app's own keymap, so a binding that is not in the overlay does not exist.
-These are the ones that work anywhere:
+`?` prints the full table — 155 bindings across fourteen scopes — generated
+from the app's own keymap, so a binding that is not in the overlay does not
+exist. These are the ones that work anywhere:
 
 
 | Keys | Action |
@@ -140,6 +151,9 @@ These are the ones that work anywhere:
 | `Ctrl+p` | Open the session switcher. |
 | `Ctrl+n` | Create a session in this project and open it. |
 | `Alt+t` | Toggle the terminal panel. |
+| `Alt+b` | Hide or show the sidebar. Ctrl+P still switches sessions while it is hidden. |
+| `Alt+l` | Open the Links panel: every URL in the transcript and on the terminal screen, wrapped ones rejoined. Enter opens one in the browser. |
+| `Alt+p` | Open the Ports panel: sandbox ports detected in output, and every local forward. |
 | `Alt+f` | Open the files screen. |
 | `Alt+r` | Open the review screen. |
 | `Alt+a` | Open the apps screen. |
@@ -160,7 +174,65 @@ Two terminal facts shape that table:
   is the portable newline and always works.
 
 Inside the terminal panel the shell keeps every key, `Ctrl+C` included. Only
-`Tab`, `Shift+Tab`, `Alt+T` and `Ctrl+Q` stay the app's.
+`Tab`, `Shift+Tab`, `Alt+T`, `Alt+P`, `Alt+L` and `Ctrl+Q` stay the app's.
+
+## Ports
+
+VS Code-style local port forwarding: a sandbox port a session's agent mentions
+(`http://localhost:3000`, a bare `127.0.0.1:5173`, a `0.0.0.0:PORT` banner) is
+auto-forwarded to the same local port — or the next free one — the moment it's
+noticed in the transcript or the terminal panel's output. A toast confirms it:
+`Forwarded localhost:3000 → sandbox:3000`. Set `KORTIX_TUI_AUTO_FORWARD=0` to
+turn this off and forward only by hand.
+
+Detection ignores ports 1-1023 except 80 and 443, and the sandbox's own SSH
+(22) and OpenCode control (8000) ports.
+
+`Alt+P` opens the panel: one row per port, its state (forwarding / stopped /
+error), and its local URL when forwarding. `Enter` toggles the selected port,
+`o` opens `http://localhost:<port>` in the browser, `y` copies the local URL,
+`a` adds a port by number regardless of auto-forward, and `Esc` closes the
+panel without stopping anything. The status bar shows `⇄ 3000, 5173` while any
+port is forwarding.
+
+Forwards are per session: they close when the session view unmounts or the
+session changes. The panel reuses the exact same engine as
+[`kortix sessions forward`](/docs/cli#reference) — one implementation, two
+front ends.
+
+## Links
+
+The terminal panel is a VT emulator drawn into cells, so the host terminal
+cannot click inside it: a URL longer than the panel wraps across rows, and
+Ghostty or iTerm2 sees several unrelated rows, never one link. An OAuth
+sign-in URL a CLI prints (`codex login`, `gh auth login`) is the common case.
+
+`Alt+L` opens the Links panel — every `http(s)://` URL in the transcript
+(assistant text and tool output) and on the terminal screen right now,
+wrapped rows rejoined, newest first:
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, `g`/`G` | Move the selection. |
+| `Enter` / `o` | Open the selected URL in the browser (`open` / `xdg-open`). |
+| `y` | Copy the selected URL to the clipboard. |
+| `Esc` | Close the panel. |
+
+`Alt+L` works while the terminal panel is focused, so the URL a CLI just
+printed is one chord away. Only `http:` and `https:` URLs are opened.
+
+## Mouse, selection and copying
+
+The TUI does not take the mouse. Your terminal's own text selection,
+copy-on-select and `Cmd`/`Ctrl`+click on a URL therefore keep working inside
+it, exactly as in a plain shell; in Ghostty that means drag to select and the
+selection is on the clipboard. Nothing in the app needs a click. `kortix tui
+--mouse` (`KORTIX_TUI_MOUSE=1`) gives the mouse to the app instead, and
+then Shift+drag is the way to select natively in most terminals.
+
+The sidebar can be hidden: `Alt+B` toggles it, `kortix tui --no-sidebar`
+(`KORTIX_TUI_SIDEBAR=0`) starts without it. `Ctrl+P` still switches sessions
+and projects while it is hidden, and the status bar shows `Alt+B sidebar`.
 
 ## Attach mode
 

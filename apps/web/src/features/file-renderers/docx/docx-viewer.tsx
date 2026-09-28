@@ -19,7 +19,6 @@ import {
   DotsThreeIcon as Ellipsis,
   GitDiffIcon as FileDiff,
   ChatIcon as MessageSquare,
-  SidebarSimpleIcon as PanelLeft,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -60,6 +59,7 @@ import {
   createDocxCommentCardRenderer,
   createDocxTrackedChangeCardRenderer,
 } from './docx-annotation-card';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 // react-docx loads its wasm inside a `blob:`-URL Web Worker, where a
 // root-relative path (`/_next/static/media/docx_wasm_bg.*.wasm`) fails to parse

@@ -1,11 +1,13 @@
-import type { SessionConfigState } from '@kortix/sdk';
+import type { SessionConfigRelease, SessionConfigState, SessionReloadResult } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
   CONFIG_FRESHNESS_STALE_TIME_MS,
+  fallbackCopyKeys,
   reloadNotAppliedCopy,
+  reloadResultTone,
   sessionConfigNotice,
 } from './use-session-config-freshness';
 
@@ -95,6 +97,197 @@ describe('sessionConfigNotice', () => {
   });
 });
 
+const release = (over: Partial<SessionConfigRelease>): SessionConfigRelease => ({
+  mode: 'follow-base',
+  source: 'release',
+  running_release_id: 'r'.repeat(64),
+  desired_release_id: 'r'.repeat(64),
+  proven: true,
+  fallback_reason: null,
+  failed_release_id: null,
+  ...over,
+});
+
+describe('sessionConfigNotice with a config release block', () => {
+  test('current: the running release is the desired release, nothing renders', () => {
+    expect(sessionConfigNotice(state({ stale: false, release: release({}) }))).toEqual({
+      kind: 'hidden',
+    });
+  });
+
+  test('update available: stale true keeps the existing stale notice', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: true,
+          release: release({ desired_release_id: 'd'.repeat(64) }),
+        }),
+      ),
+    ).toEqual({ kind: 'stale', running: 'aaaaaaaaaaaaaaaa', latest: 'aaaaaaaaaaaaaaaa' });
+  });
+
+  test('update available without etags names the two release IDs, shortened', () => {
+    // A capable daemon decides `stale` by release ID. The etags can be null.
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: true,
+          running_etag: null,
+          latest_etag: null,
+          release: release({
+            running_release_id: '0123456789abcdef'.repeat(4),
+            desired_release_id: 'fedcba9876543210'.repeat(4),
+          }),
+        }),
+      ),
+    ).toEqual({ kind: 'stale', running: '0123456789ab', latest: 'fedcba987654' });
+  });
+
+  test('a session that edited its own config gets no notice of its own', () => {
+    // `/workspace` is not a config source. A session edits `.kortix/opencode`
+    // there, but those edits reach the session only once they are pushed to the
+    // base branch, after which the ordinary `stale` notice offers the reload.
+    // Silence is the only correct answer for a current session.
+    for (const source of ['release', 'image-default'] as const) {
+      expect(sessionConfigNotice(state({ stale: false, release: release({ source }) }))).toEqual({
+        kind: 'hidden',
+      });
+    }
+  });
+
+  test('fallback: a set fallback_reason shows the reason and what serves now', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: true,
+          release: release({
+            running_release_id: '0123456789abcdef'.repeat(4),
+            desired_release_id: 'fedcba9876543210'.repeat(4),
+            failed_release_id: 'fedcba9876543210'.repeat(4),
+            fallback_reason: 'GET /agent did not list the default agent within 90 s',
+          }),
+        }),
+      ),
+    ).toEqual({
+      kind: 'fallback',
+      reason: 'GET /agent did not list the default agent within 90 s',
+      source: 'release',
+      servingReleaseId: '0123456789ab',
+      failedReleaseId: 'fedcba987654',
+    });
+  });
+
+  test('fallback wins over stale', () => {
+    // After a failed convergence the running release differs from the desired
+    // one, so `stale` is true. Offering "update available" would retry a
+    // release that just failed; the reason is the useful answer.
+    expect(
+      sessionConfigNotice(
+        state({ stale: true, release: release({ fallback_reason: 'extract failed' }) }),
+      ).kind,
+    ).toBe('fallback');
+  });
+
+  test('fallback to the image default names no release', () => {
+    expect(
+      sessionConfigNotice(
+        state({
+          stale: null,
+          release: release({
+            source: 'image-default',
+            running_release_id: null,
+            failed_release_id: null,
+            fallback_reason: 'no config dir on the base branch',
+          }),
+        }),
+      ),
+    ).toEqual({
+      kind: 'fallback',
+      reason: 'no config dir on the base branch',
+      source: 'image-default',
+      servingReleaseId: null,
+      failedReleaseId: null,
+    });
+  });
+
+  test('an empty fallback_reason is not a fallback', () => {
+    expect(
+      sessionConfigNotice(state({ stale: false, release: release({ fallback_reason: '' }) })).kind,
+    ).toBe('hidden');
+  });
+
+  test('a response without release renders exactly as before for every legacy combination', () => {
+    for (const stale of [true, false, null] as const) {
+      const legacy = state({ stale });
+      expect('release' in legacy).toBe(false);
+      expect(sessionConfigNotice(legacy).kind).toBe(stale === true ? 'stale' : 'hidden');
+    }
+  });
+});
+
+describe('reloadResultTone', () => {
+  const result = (over: Partial<SessionReloadResult>): SessionReloadResult => ({
+    applied: true,
+    previous_etag: null,
+    etag: null,
+    repo_refreshed: false,
+    commit_sha: null,
+    detail: 'Reloaded.',
+    ...over,
+  });
+
+  test('a clean reload is a success', () => {
+    expect(reloadResultTone(result({}))).toBe('success');
+    expect(reloadResultTone(result({ release: release({}) }))).toBe('success');
+  });
+
+  test('kept-yours and unknown agent files stay warnings', () => {
+    expect(reloadResultTone(result({ agent_files: 'kept-yours' }))).toBe('warning');
+    expect(reloadResultTone(result({ agent_files: 'unknown' }))).toBe('warning');
+  });
+
+  test('a reload that ended on a fallback is an error, never a success', () => {
+    expect(
+      reloadResultTone(result({ release: release({ fallback_reason: 'proven check failed' }) })),
+    ).toBe('error');
+  });
+
+  test('a not-applied reload with no known outcome is a warning', () => {
+    expect(reloadResultTone(result({ applied: false }))).toBe('warning');
+    expect(reloadResultTone(result({ applied: false, agent_files: 'not-requested' }))).toBe(
+      'warning',
+    );
+  });
+
+  // Verified in the browser on a real box 2026-09-24 (session 423fe876): the
+  // header's "Reload config" answered
+  //   "Reload didn't apply. Try again in a moment."
+  // for release_outcome 'unchanged' / agent_files 'already-current'. Nothing
+  // needed doing, so nothing is wrong, and telling a user to retry a
+  // successful no-op is the warning the server side already refuses to raise
+  // (`reloadNeedsAttention`, apps/api/.../session-reload.ts).
+  test('nothing needed doing is a success, not a warning', () => {
+    expect(reloadResultTone(result({ applied: false, agent_files: 'already-current' }))).toBe(
+      'success',
+    );
+    expect(reloadResultTone(result({ applied: false, agent_files: 'not-applicable' }))).toBe(
+      'success',
+    );
+  });
+
+  test('a fallback still wins over a no-op', () => {
+    expect(
+      reloadResultTone(
+        result({
+          applied: false,
+          agent_files: 'already-current',
+          release: release({ fallback_reason: 'proven check failed' }),
+        }),
+      ),
+    ).toBe('error');
+  });
+});
+
 describe('reloadNotAppliedCopy', () => {
   test('every known reason becomes a sentence, not the reason itself', () => {
     // Deliberately not asserting the copy avoids the reason as a SUBSTRING —
@@ -127,6 +320,13 @@ describe('reloadNotAppliedCopy', () => {
     expect(reloadNotAppliedCopy(undefined)).toBe("Reload didn't apply. Try again in a moment.");
   });
 
+  // The server renamed this reason to 'already current' (session-reload.ts
+  // `reloadFromRelease`), so the 'agent config unchanged' case stopped
+  // matching and the no-op fell through to the retry copy.
+  test("the server's 'already current' reason is a sentence, not the retry copy", () => {
+    expect(reloadNotAppliedCopy('already current')).toBe('Already running the latest config.');
+  });
+
   test('"unchanged" reads as success, because it is', () => {
     expect(reloadNotAppliedCopy('agent config unchanged')).toBe(
       'Already running the latest config.',
@@ -142,9 +342,19 @@ describe('reloadNotAppliedCopy', () => {
 const HOOK_SOURCE = readFileSync(join(import.meta.dir, 'use-session-config-freshness.ts'), 'utf8');
 
 describe('useReloadSessionConfig — the costly mistakes', () => {
-  test('the web reload is config-only and cannot refresh workspace files', () => {
+  test('the web reload does BOTH halves: the running config and the checkout', () => {
+    // A reload that converged the config and left /workspace behind was the
+    // confusion this control exists to remove: the files a person reads there
+    // no longer match the config the session runs. The pull is `--ff-only` on
+    // the session's own branch, so it can discard nothing.
     const body = HOOK_SOURCE.split('const mutation = useMutation({')[1]?.split('\n  });')[0];
-    expect(body).toContain('refresh_repo: false');
+    expect(body).toContain('refresh_repo: true');
+    expect(body).not.toContain('refresh_repo: false');
+  });
+
+  test('a reload that applied nothing still shows the server sentence, which names the checkout', () => {
+    const body = HOOK_SOURCE.split('const mutation = useMutation({')[1]?.split('\n  });')[0];
+    expect(body).toContain('warningToast(reloadNotAppliedCopy(result.reason), { description: result.detail })');
   });
 
   test('the reload mutation never retries', () => {
@@ -188,5 +398,31 @@ describe('the freshness answer expires fast enough to be re-asked on focus', () 
     // Each check drops the project's git-mirror TTL, recompiles the manifest and
     // reaches into the sandbox. Zero would make focus a hot path.
     expect(CONFIG_FRESHNESS_STALE_TIME_MS).toBeGreaterThanOrEqual(10_000);
+  });
+});
+
+describe('fallbackCopyKeys', () => {
+  const en = JSON.parse(readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'))
+    .hardcodedUi.i18nComplete as Record<string, string>;
+
+  test('the image default is named as the platform default config, never "an earlier config"', () => {
+    const keys = fallbackCopyKeys('image-default');
+    expect(en[keys.runs]).toBe(
+      'The platform default config runs this session. The failed config is not retried until the base branch changes.',
+    );
+    expect(en[keys.toast]).toBe('The new agent config failed to load. The platform default config runs this session.');
+  });
+
+  test('a release keeps the earlier-config copy', () => {
+    const keys = fallbackCopyKeys('release');
+    expect(en[keys.runs]).toContain('An earlier config runs this session.');
+    expect(en[keys.toast]).toContain('An earlier config still runs this session.');
+  });
+
+  test('there is no copy for a workspace config source — `/workspace` is not one', () => {
+    // The narrowed `SessionConfigRelease['source']` makes the state unreachable
+    // at compile time, so the source is the only place a reintroduction shows.
+    expect(HOOK_SOURCE).not.toContain('session-files');
+    expect(HOOK_SOURCE).not.toContain("'workspace'");
   });
 });

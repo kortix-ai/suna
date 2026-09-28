@@ -260,8 +260,7 @@ connectors:
   });
 });
 
-// `per_user` (each member brings their own) was removed 2026-07-05
-// (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) — `shared`
+// `per_user` (each member brings their own) was removed 2026-07-05 — `shared`
 // is now the only mode, for every provider, including pipedream (whose
 // default used to be `per_user`).
 describe('connectors: — credential mode', () => {

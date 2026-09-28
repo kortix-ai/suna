@@ -16,20 +16,28 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *                            dependency, so it cannot live at the root.
  *  - `@kortix/sdk/server`  — Node-only (`node:async_hooks`) per-request config
  *                            isolation, for route handlers and RSC.
- *  - `@kortix/sdk/internal/idb-sync-cache` — the ONE internal module apps/web
- *                            legitimately needs: sign-out must clear the
- *                            per-user cached session transcripts out of
- *                            IndexedDB, and that cache is browser-only, so it
- *                            cannot be re-exported from the isomorphic root.
- *                            The four zustand stores next to it stay
- *                            forbidden — apps/web production code uses none of
- *                            them, and it should stay that way.
+ *  - `@kortix/sdk/internal/*` — three browser-only internal modules apps/web
+ *                            must share with the SDK. None of them can be
+ *                            re-exported from the isomorphic root:
+ *      - `idb-sync-cache`    sign-out clears the per-user cached session
+ *                            transcripts out of IndexedDB.
+ *      - `diagnostics-store` the SDK event stream writes LSP diagnostics into
+ *                            this zustand store; the file viewer reads it
+ *                            through the `@/stores/diagnostics-store` shim.
+ *      - `managed-storage`   the SDK registers its disposable caches here;
+ *                            quota reclaim and the boot prune go through the
+ *                            `@/lib/storage/managed-storage` shim.
+ *                            Each is imported in exactly one file, with an
+ *                            inline eslint disable. The other four zustand
+ *                            stores under `internal/` stay forbidden.
  */
 const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
   '@kortix/sdk/react',
   '@kortix/sdk/server',
   '@kortix/sdk/internal/idb-sync-cache',
+  '@kortix/sdk/internal/diagnostics-store',
+  '@kortix/sdk/internal/managed-storage',
 ]);
 
 const FORBIDDEN_IMPORTS = [

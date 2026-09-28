@@ -151,6 +151,7 @@ flow(
     routes: [
       "GET /v1/projects/:projectId/sandbox-health",
       "GET /v1/projects/:projectId/sandbox-templates",
+      "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",
     ],
   },
   async (ctx) => {
@@ -166,6 +167,19 @@ flow(
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/sandbox-templates", { params: { projectId: p.id } });
       r.status(200).body().exists("$.items");
+    });
+    await ctx.step("PATCH unknown template with a scalar body → 404, not a 500", async () => {
+      // No JSON content-type, so the route schema does not run. The handler
+      // reads a scalar body as {} and reaches the template lookup.
+      for (const body of ['"x"', "42"]) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch("/v1/projects/:projectId/sandbox-templates/:templateId", body, {
+            params: { projectId: p.id, templateId: RANDOM_UUID },
+            raw: true,
+          });
+        r.status(404);
+      }
     });
     await ctx.step("ANON sandbox-health → 401", async () => {
       const r = await ctx.client

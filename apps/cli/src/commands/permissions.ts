@@ -1,4 +1,13 @@
-import { emitJson, resolveAccountContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { splitHelp } from '../command-argv.ts';
+import {
+  emitJson,
+  resolveAccountContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+  fail,
+  missing,
+} from '../command-helpers.ts';
 import { SCOPE_TYPES, iamBase, type IamPermission } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -38,20 +47,10 @@ Examples:
 `;
 
 export async function runPermissions(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
@@ -61,14 +60,12 @@ export async function runPermissions(argv: string[]): Promise<number> {
     f.host = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
   if (f.scope && !(SCOPE_TYPES as readonly string[]).includes(f.scope)) {
-    process.stderr.write(`${status.err(`--scope must be one of ${SCOPE_TYPES.join(', ')}`)}\n`);
-    return 2;
+    return fail(`--scope must be one of ${SCOPE_TYPES.join(', ')}`);
   }
 
   const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
@@ -113,10 +110,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
 
       case 'show': {
         const action = positional[0];
-        if (!action) {
-          process.stderr.write(`${status.err('Pass an action key (see `kortix permissions ls`).')}\n`);
-          return 2;
-        }
+        if (!action) return missing('an action key (see `kortix permissions ls`)');
         const permissions = await load(ctx.client, ctx.accountId, f.scope);
         const hit = permissions.find((p) => p.action === action);
         if (!hit) {

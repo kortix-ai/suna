@@ -5,8 +5,7 @@
  * so the act endpoint can route a verdict back to the right source.
  *
  * This pass adapts Change Requests for VISIBILITY (read-only in the inbox); the
- * act dispatch (merge/close) routes through the existing CR flow. See
- * docs/REVIEW_CENTER_DESIGN.md.
+ * act dispatch (merge/close) routes through the existing CR flow.
  */
 
 import type { changeRequests, connectorCalls } from '@kortix/db';

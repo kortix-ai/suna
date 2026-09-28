@@ -73,7 +73,7 @@ export function buildDenialError(action: string, reason?: string, messageOverrid
     });
   }
   const message = messageOverride ?? denialReasonMessage(action, reason) ?? humanizePermissionDenial(action);
-  // Spec docs/specs/2026-09-22-agents-as-principals.md §4: every 403 from
+  // Every 403 from
   // `authorize` names its verdict reason (`code`) and the `action`. The body
   // keeps the global error handler's `{error, message, status}` shape and adds
   // the two fields, so a client that reads `message` is unchanged. The CLI

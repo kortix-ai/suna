@@ -27,21 +27,27 @@ function isWord(ch: string | undefined): boolean {
 }
 
 /**
- * Case-folds the way a non-unicode `/i` regex compares characters: upper-case
- * a character only when that yields exactly one code unit. Same length as the
- * input, so indexes carry over.
+ * Case-folds the way a non-unicode `/i` regex compares characters (see
+ * `canonical`). Same length as the input, so indexes carry over.
  */
 function fold(s: string): string {
   let out = '';
-  for (const ch of s) {
-    if (ch.length !== 1) {
-      out += ch;
-      continue;
-    }
-    const upper = ch.toUpperCase();
-    out += upper.length === 1 ? upper : ch;
-  }
+  for (const ch of s) out += ch.length === 1 ? String.fromCharCode(canonical(ch.charCodeAt(0))) : ch;
   return out;
+}
+
+/**
+ * The spec's Canonicalize for a non-unicode `/i` regex, on one code unit:
+ * upper-case it when that yields one code unit, but never map a non-ASCII
+ * character to an ASCII one: U+017F LATIN SMALL LETTER LONG S does not match
+ * `s`, and U+0131 LATIN SMALL LETTER DOTLESS I does not match `i`.
+ */
+function canonical(code: number): number {
+  if (code < 128) return code >= 97 && code <= 122 ? code - 32 : code;
+  const upper = String.fromCharCode(code).toUpperCase();
+  if (upper.length !== 1) return code;
+  const folded = upper.charCodeAt(0);
+  return folded < 128 ? code : folded;
 }
 
 /** `s.replace(/\/+$/, '')` */
@@ -327,4 +333,92 @@ export function stripErrorPrefixes(s: string): string {
     i++;
   }
   return out;
+}
+
+
+/**
+ * `s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')` when `image`, else
+ * `s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')`. The regexes rescanned the rest
+ * of the text for every opener whose `]` or `)` never came: 48k `![a](` took
+ * 4.1 s. Each `]` and `)` search here starts where the last one stopped.
+ */
+function replaceMarkdownLinks(s: string, image: boolean): string {
+  const opener = image ? '![' : '[';
+  let out = '';
+  let copied = 0;
+  let nextClose = -2;
+  let nextParen = -2;
+  for (let at = s.indexOf(opener); at !== -1; ) {
+    const labelStart = at + opener.length;
+    if (nextClose < labelStart) nextClose = s.indexOf(']', labelStart);
+    // No `]` after this opener means none after a later one either.
+    if (nextClose === -1) break;
+    const close = nextClose;
+    if (s[close + 1] !== '(') {
+      // Every opener before `close` reaches the same `]`: skip past it.
+      at = s.indexOf(opener, close + 1);
+      continue;
+    }
+    if (nextParen < close + 2) nextParen = s.indexOf(')', close + 2);
+    if (nextParen === -1) break;
+    out += s.slice(copied, at) + (image ? ' ' : s.slice(labelStart, close));
+    copied = nextParen + 1;
+    at = s.indexOf(opener, copied);
+  }
+  return out + s.slice(copied);
+}
+
+/** `s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')`: each markdown image becomes a space. */
+export function stripMarkdownImages(s: string): string {
+  return replaceMarkdownLinks(s, true);
+}
+
+/** `s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')`: each markdown link becomes its text. */
+export function unwrapMarkdownLinks(s: string): string {
+  return replaceMarkdownLinks(s, false);
+}
+
+/** `http://` or `https://` at `at`, ignoring ASCII case. */
+function httpAt(s: string, at: number): boolean {
+  const scheme = s.slice(at, at + 8).toLowerCase();
+  return scheme.startsWith('http://') || scheme.startsWith('https://');
+}
+
+/**
+ * Capture of `new RegExp(`${escaped url}\\s*:\\s*([^]*?)(?=\\s+https?:\\/\\/|$)`, 'i')`,
+ * or null: the error after the first `url:` in the text, up to the next
+ * whitespace run that a URL follows. The regex retried a whitespace run from
+ * every position inside it: 240k spaces took 21.9 s.
+ */
+export function urlError(s: string, url: string): string | null {
+  const text = fold(s);
+  const needle = fold(url);
+  const n = s.length;
+  const skipWs = (from: number) => {
+    let i = from;
+    while (i < n && isWs(s[i])) i++;
+    return i;
+  };
+  for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+    const colon = skipWs(at + needle.length);
+    if (s[colon] !== ':') continue;
+    const start = skipWs(colon + 1);
+    for (let i = start; i < n; ) {
+      if (!isWs(s[i])) {
+        i++;
+        continue;
+      }
+      // Every position in a whitespace run has the same lookahead: judge it once.
+      const runEnd = skipWs(i);
+      if (httpAt(s, runEnd)) return s.slice(start, i);
+      i = runEnd;
+    }
+    return s.slice(start);
+  }
+  return null;
+}
+
+/** Test support: `fold` itself, for the canonicalization test. */
+export function foldForTest(s: string): string {
+  return fold(s);
 }

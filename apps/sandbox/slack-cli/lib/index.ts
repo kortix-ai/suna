@@ -14,4 +14,10 @@ export {
   kortixSessionId,
   kortixWorkspace,
 } from './env';
-export { kortixGet, kortixPost, kortixDelete, kortixConnectorCall } from './api';
+export {
+  kortixGet,
+  kortixPost,
+  kortixDelete,
+  kortixDownload,
+  kortixConnectorCall,
+} from './api';

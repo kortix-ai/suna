@@ -88,6 +88,8 @@ const STARTS: Record<string, string> = {
   startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
   startTmpReaper: 'not a worker: local tmp directories only',
+  startConfigBaseMoveBroadcast:
+    'not a worker: one LISTEN connection, event-driven, no timer and no tick',
 };
 
 function sourceFiles(dir: string): string[] {

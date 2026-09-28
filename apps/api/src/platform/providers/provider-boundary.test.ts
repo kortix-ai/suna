@@ -7,13 +7,12 @@ const GENERIC_DATA_PATHS = [
   'sandbox-proxy/backend.ts',
   'sandbox-proxy/routes/preview.ts',
   'sandbox-proxy/routes/public-share.ts',
-  'platform/sandbox-env.ts',
   'projects/lib/sandbox-daemon-ready.ts',
   'projects/lib/sandbox-env-sync.ts',
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
   // Egress-enforced delivery. There is ONE mechanism for every provider
-  // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4) and no verdict to
+  // and no verdict to
   // read: the guest holds a handle and the broker route substitutes the value.
   // A name comparison anywhere in here reintroduces the split that used to make
   // a provider silently lose a feature it already had for free.

@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 import { dockerAvailable } from './docker-available';
-import { connectReadOnly, migrationNamesInRunOrder, readMigrationStatus } from './migration-status';
+import { withReadOnly } from './catalog';
+import { migrationNamesInRunOrder, readMigrationStatus } from './migration-status';
 
 /**
  * `migrate.ts status` must write nothing, including when a pending migration's
@@ -134,15 +135,12 @@ describe.skipIf(!dockerAvailable)('migrate status is read-only — real PostgreS
 
   test('the status session refuses a write even when a caller asks for READ WRITE', async () => {
     const url = await createDatabase('read_only_session');
-    const client = await connectReadOnly(url);
-    try {
+    await withReadOnly(url, async (client) => {
       expect((await client.query('SHOW default_transaction_read_only')).rows[0])
         .toEqual({ default_transaction_read_only: 'on' });
       await expect(client.query('CREATE TABLE public.must_not_exist (id integer)'))
         .rejects.toThrow(/read-only transaction/);
-    } finally {
-      await client.end();
-    }
+    });
     expect(await query<{ t: string | null }>(url, "select to_regclass('public.must_not_exist')::text as t"))
       .toEqual([{ t: null }]);
   });
@@ -150,13 +148,10 @@ describe.skipIf(!dockerAvailable)('migrate status is read-only — real PostgreS
   test('a URL options= parameter that turns read-only off is corrected before any read', async () => {
     const url = new URL(await createDatabase('options_override'));
     url.searchParams.set('options', '-c default_transaction_read_only=off');
-    const client = await connectReadOnly(url.toString());
-    try {
+    await withReadOnly(url.toString(), async (client) => {
       expect((await client.query('SHOW default_transaction_read_only')).rows[0])
         .toEqual({ default_transaction_read_only: 'on' });
-    } finally {
-      await client.end();
-    }
+    });
   });
 
   test('the real CLI lists pending migrations on an empty database and writes nothing', async () => {

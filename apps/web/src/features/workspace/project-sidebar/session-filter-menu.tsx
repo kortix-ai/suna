@@ -29,6 +29,7 @@ import {
   matchesOwnerFilters,
   resolveAccessFacetOptions,
   resolveOwnerFacetOptions,
+  resolvePageFacetVisibility,
   UNKNOWN_OWNER_KEY,
   type SessionAccessFilter,
 } from '@/features/workspace/project-sessions/session-owner-filters';
@@ -387,9 +388,13 @@ export function SessionFilterMenu({
         activeAccess,
       )
     : [];
-  // One person is not a filter worth offering; one access kind is not either.
-  const showOwnerFacet = ownerOptions.length > 1 || activeOwners.length > 0;
-  const showAccessFacet = accessOptions.length > 1 || activeAccess.length > 0;
+  // Presence comes from every session, counts from the other facets: a pick in
+  // one facet must not remove another facet's row from the open menu.
+  const pageFacetVisibility = pageFacets
+    ? resolvePageFacetVisibility(sessions, activeOwners, activeAccess)
+    : { owner: false, access: false };
+  const showOwnerFacet = pageFacetVisibility.owner;
+  const showAccessFacet = pageFacetVisibility.access;
   const showFiltersSection =
     statusOptions.length > 0 || sourceOptions.length > 0 || showOwnerFacet || showAccessFacet;
   const hasActiveFacets =

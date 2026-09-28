@@ -1,5 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { backendApi } from '../core/http/api-client';
+/**
+ * Admin system-status hooks. The API removed `/v1/admin/system-status`. These
+ * hooks stay exported until the next major and fail with `ENDPOINT_RETIRED`
+ * without sending a request.
+ */
+import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 export interface MaintenanceNotice {
   enabled: boolean;
@@ -40,74 +44,14 @@ export interface UpdateTechnicalIssueRequest {
   severity?: 'degraded' | 'outage' | 'maintenance' | null;
 }
 
-export const useSystemStatus = () => {
-  return useQuery<SystemStatus>({
-    queryKey: ['admin-system-status'],
-    queryFn: async () => {
-      const response = await backendApi.get<SystemStatus>('/admin/system-status');
-      if (response.error) {
-        throw response.error;
-      }
-      return response.data || {
-        maintenance_notice: { enabled: false },
-        technical_issue: { enabled: false },
-      };
-    },
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
-  });
-};
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+export const useSystemStatus = () => useRetiredQuery<SystemStatus>('useSystemStatus', ['admin-system-status']);
 
-export const useUpdateMaintenanceNotice = () => {
-  const queryClient = useQueryClient();
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+export const useUpdateMaintenanceNotice = () => useRetiredMutation<SystemStatus | undefined, UpdateMaintenanceRequest>('useUpdateMaintenanceNotice');
 
-  return useMutation({
-    mutationFn: async (data: UpdateMaintenanceRequest) => {
-      const response = await backendApi.put<SystemStatus>('/admin/system-status/maintenance', data);
-      if (response.error) {
-        throw response.error;
-      }
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-system-status'] });
-      queryClient.invalidateQueries({ queryKey: ['system-status'] });
-    },
-  });
-};
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+export const useUpdateTechnicalIssue = () => useRetiredMutation<SystemStatus | undefined, UpdateTechnicalIssueRequest>('useUpdateTechnicalIssue');
 
-export const useUpdateTechnicalIssue = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: UpdateTechnicalIssueRequest) => {
-      const response = await backendApi.put<SystemStatus>('/admin/system-status/technical-issue', data);
-      if (response.error) {
-        throw response.error;
-      }
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-system-status'] });
-      queryClient.invalidateQueries({ queryKey: ['system-status'] });
-    },
-  });
-};
-
-export const useClearSystemStatus = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      const response = await backendApi.delete<SystemStatus>('/admin/system-status');
-      if (response.error) {
-        throw response.error;
-      }
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-system-status'] });
-      queryClient.invalidateQueries({ queryKey: ['system-status'] });
-    },
-  });
-};
+/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+export const useClearSystemStatus = () => useRetiredMutation<SystemStatus | undefined, void>('useClearSystemStatus');

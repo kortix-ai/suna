@@ -9,8 +9,6 @@
  * (./monitor-box.ts) is a thin store that executes what these return — the same
  * split ./trigger-runtime-catalog-core.ts uses, and the reason the decision
  * matrix is unit-testable without mocking a database.
- *
- * Spec: docs/specs/2026-08-12-monitors.md.
  */
 
 import { createHash } from 'node:crypto';

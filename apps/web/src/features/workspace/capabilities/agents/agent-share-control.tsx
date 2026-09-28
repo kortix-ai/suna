@@ -26,7 +26,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { getProjectDetail, listProjectResourceGrants } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { ShareNetworkIcon, UsersIcon } from '@phosphor-icons/react';
+import { ShareNetworkIcon, UsersIcon, UsersThreeIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -102,6 +102,8 @@ export function AgentShareControl({
               >
                 {g.principal_type === 'group' ? (
                   <EntityAvatar icon={UsersIcon} size="sm" className="rounded-full" />
+                ) : g.principal_type === 'project' ? (
+                  <EntityAvatar icon={UsersThreeIcon} size="sm" className="rounded-full" />
                 ) : (
                   <UserAvatar email={g.principal_label} size="sm" />
                 )}

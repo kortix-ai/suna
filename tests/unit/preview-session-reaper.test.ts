@@ -6,6 +6,7 @@ import {
   isPreviewSessionSandbox,
   poolCannotFit,
   previewHostNames,
+  selectIdlePreviewHosts,
   selectPreviewSessionsForTeardown,
   selectStalePreviewSessions,
   summarizePoolUsage,
@@ -50,6 +51,15 @@ function host(name: string, owner: 'kortix-preview' | 'kortix-branch-env', state
 }
 
 describe('preview session selection', () => {
+  it('database-owned boxes survive org-wide idle cleanup but retain exact-owner teardown', () => {
+    const box = session('owned', { owner: 'kortix-preview-pr-7', idleHours: 24 });
+    box.metadata!['kortix.managed'] = `v2-${'a'.repeat(64)}`;
+    expect(selectStalePreviewSessions([box], {
+      liveHostNames: new Set(['kortix-preview-pr-7']), nowMs: NOW,
+    })).toEqual([]);
+    expect(selectPreviewSessionsForTeardown([box], ['kortix-preview-pr-7'])).toEqual(['owned']);
+    expect(selectPreviewSessionsForTeardown([box], ['kortix-preview-pr-8'])).toEqual([]);
+  });
   it('only ever selects preview session boxes, never hosts or other environments', () => {
     expect(isPreviewSessionSandbox(session('a'))).toBe(true);
     expect(isPreviewSessionSandbox(session('dev', { env: 'dev' }))).toBe(false);
@@ -79,6 +89,38 @@ describe('preview session selection', () => {
     expect(selectPreviewSessionsForTeardown(listing, ['kortix-preview-pr-7'])).toEqual(['mine-1']);
     expect(selectPreviewSessionsForTeardown(listing, [])).toEqual([]);
     expect(selectPreviewSessionsForTeardown(listing, [''])).toEqual([]);
+  });
+
+  it('after a suite on a branch environment, stops only the boxes created since it began', () => {
+    const before = session('human', { owner: 'kortix-env-x', idleHours: 2 });
+    const during = session('suite', { owner: 'kortix-env-x', idleHours: 0 });
+    const since = NOW - 3_600_000;
+    expect(selectPreviewSessionsForTeardown([before, during], ['kortix-env-x'], since)).toEqual(['suite']);
+    expect(selectPreviewSessionsForTeardown([before, during], ['kortix-env-x'])).toEqual(['human', 'suite']);
+  });
+
+  it('stops hosts of closed pull requests and hosts idle past the limit, never on an empty PR listing', () => {
+    const at = (name: string, pr: string, idleHours: number, state = 'running') => ({
+      ...host(name, 'kortix-branch-env', state),
+      id: name,
+      lastActivityAt: hoursAgo(idleHours),
+      metadata: { owner: 'kortix-branch-env', pr_number: pr },
+    });
+    const listing = [
+      at('kortix-env-open-busy', '10', 0.5),
+      at('kortix-env-open-idle', '11', 4),
+      at('kortix-env-merged', '12', 0.5),
+      at('kortix-env-stopped', '13', 9, 'stopped'),
+      session('not-a-host', { idleHours: 9 }),
+    ];
+    const open = new Set([10, 11, 13]);
+    expect(selectIdlePreviewHosts(listing, { openPullRequests: open, nowMs: NOW }).sort()).toEqual([
+      'kortix-env-merged',
+      'kortix-env-open-idle',
+    ]);
+    expect(selectIdlePreviewHosts(listing, { openPullRequests: new Set(), nowMs: NOW })).toEqual([
+      'kortix-env-open-idle',
+    ]);
   });
 
   it('the sweep stops boxes whose host is gone and boxes idle past the limit', () => {

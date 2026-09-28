@@ -19,6 +19,7 @@ import {
   runWithContext,
   setContextField,
 } from './lib/request-context';
+import { apiRegion, databaseRegion } from './lib/deployment-region';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -53,6 +54,7 @@ import { authRouter } from './auth';
 import { headlessAuthRouter } from './auth/headless';
 import { authEmailHookApp } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
+import { notificationsApp } from './notifications/routes';
 import {
   emailWebhookApp,
   slackIdentityApp,
@@ -84,7 +86,8 @@ import { upstreamTiming } from './middleware/upstream-timing';
 import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
-import { oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { createMcpApp } from './mcp';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
@@ -96,7 +99,12 @@ import {
   stopProjectTriggerScheduler,
 } from './projects';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
-import { GitOperationError, isGitOperationError, isTransientGitMirrorError } from './projects/git/mirror';
+import {
+  GIT_MIRROR_UNAVAILABLE_CODE,
+  isRemotePushPolicyRejection,
+  isTransientGitMirrorError,
+  pushPolicyWarning,
+} from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import {
   startProviderTransitionWorker,
@@ -109,7 +117,7 @@ import {
 } from './projects/suna-migration/suna-migration-worker';
 import { router } from './router';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
+import { runtimeAssetsApp, runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
@@ -162,6 +170,8 @@ import {
   tunnelApp,
   wsHandlers as tunnelWsHandlers,
 } from './tunnel';
+import { isUuid } from './shared/validate';
+import { readJsonObject } from './shared/http-body';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -226,7 +236,6 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new OpenAPIHono();
-const UUID_PATH_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -291,12 +300,12 @@ app.use('*', async (c, next) => {
     // Auto-extract common resource IDs from URL patterns for logs/traces.
     const path = c.req.path;
     const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (projectSessionMatch && UUID_PATH_SEGMENT_RE.test(projectSessionMatch[1])) {
+    if (projectSessionMatch && isUuid(projectSessionMatch[1])) {
       setContextField('projectId', projectSessionMatch[1]);
       setContextField('sessionId', projectSessionMatch[2]);
     } else {
       const projectMatch = path.match(/\/projects\/([^/]+)/);
-      if (projectMatch && UUID_PATH_SEGMENT_RE.test(projectMatch[1])) {
+      if (projectMatch && isUuid(projectMatch[1])) {
         setContextField('projectId', projectMatch[1]);
       }
     }
@@ -498,8 +507,21 @@ const HealthSchema = z
     instance: z.string(),
     scheduler_leader: z.boolean(),
     trigger_scheduler: z.record(z.string(), z.unknown()),
+    // Best-effort deployment topology, resolved once at import time (see
+    // lib/deployment-region.ts). the turn-latency spec (PR #7840)'s own baseline
+    // turned out to be dominated by a us-west-2 API against a us-east-2
+    // database, not by the code path — this lets `pnpm test -- --latency`
+    // report WHERE the two halves live instead of just a duration. Neither
+    // field is sensitive: an AWS region name, never a host, user, or secret.
+    region: z.string().nullable(),
+    database_region: z.string().nullable(),
   })
   .openapi('Health');
+
+// Resolved once: neither AWS_REGION nor DATABASE_URL changes for the life of
+// the process, so there is no reason to re-parse it on every /health poll.
+const API_REGION = apiRegion();
+const DATABASE_REGION = databaseRegion(config.DATABASE_URL);
 
 const healthHandler = (c: any) =>
   c.json({
@@ -513,6 +535,8 @@ const healthHandler = (c: any) =>
     instance: API_INSTANCE,
     scheduler_leader: isLeader(),
     trigger_scheduler: getTriggerSchedulerHealth(),
+    region: API_REGION,
+    database_region: DATABASE_REGION,
   });
 
 app.openapi(
@@ -620,6 +644,17 @@ function hasInternalObservabilityAuth(c: any): boolean {
 // edges that route only /v1/*.
 app.get('/.well-known/oauth-authorization-server', (c) => {
   return c.json(oauthAuthorizationServerMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+
+// RFC 9728 protected-resource metadata for a project's MCP endpoint — what an
+// MCP client reads after the endpoint's 401 challenge to find the authorization
+// server above.
+app.get('/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp', (c) => {
+  const projectId = c.req.param('projectId');
+  if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
+  return c.json(mcpProtectedResourceMetadata(projectId, new URL(c.req.url).origin), 200, {
     'cache-control': 'public, max-age=3600',
   });
 });
@@ -765,7 +800,7 @@ app.openapi(
       return c.json({ error: 'Admin access required' }, 403);
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-    const body = await c.req.json().catch(() => ({}));
+    const body = await readJsonObject(c);
     const maintenanceConfig = {
       ...DEFAULT_MAINTENANCE,
       ...body,
@@ -933,6 +968,7 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
 // Auth for the platform routes that need an identity. Scoped to these exact
 // paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.
@@ -953,6 +989,8 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
+// Before projectsApp: the MCP route answers its own 401 with an OAuth challenge.
+app.route('/v1/projects', createMcpApp(dispatchInProcess));
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
@@ -1191,10 +1229,38 @@ app.onError((err, c) => {
     return c.json(
       {
         error: true,
+        // A stable code lets the SDK/frontend classify this transient 503 as
+        // an EXPECTED, retryable degradation (silent to Sentry) instead of an
+        // opaque `ApiError` — the API-side classification alone only de-noises
+        // the API's OWN Sentry; the 503 response crosses into the FRONTEND
+        // Sentry (a separate app) via `handleApiError`. See
+        // `projects/git/mirror.ts`'s `GIT_MIRROR_UNAVAILABLE_CODE`.
+        code: GIT_MIRROR_UNAVAILABLE_CODE,
         message: 'git mirror is temporarily unavailable',
         status: 503,
       },
       503,
+    );
+  }
+
+  // A push the REMOTE rejected by policy — branch protection, repository rules,
+  // a server-side hook — is a PERMANENT, user-actionable outcome: retrying the
+  // same commit is rejected again and the mirror retry cannot help. It must NOT
+  // page Sentry as an opaque server error (prod Better Stack pattern
+  // `5e505349…`: `push declined due to repository rule violations`). This is the
+  // single backstop for every commit path that lets the error propagate here;
+  // the agent-config route additionally maps it to a typed 409 at the call site.
+  if (isRemotePushPolicyRejection(err)) {
+    const warning = pushPolicyWarning(method, err);
+    appLogger.warn(warning.message, warning.fields);
+    return c.json(
+      {
+        error: true,
+        message: 'the repository rejected the push because of its branch protection or repository rules',
+        status: 409,
+        code: 'repository_push_rejected',
+      },
+      409,
     );
   }
 
@@ -1533,6 +1599,29 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // Fill the Composio catalogue snapshot, the hidden-toolkit list, the toolkit
+  // metadata and the first discovery page in the background, so the first
+  // Customize → Connectors view on a fresh replica reads memory instead of
+  // waiting ~2 s on Composio round trips. Not awaited: boot never waits on a
+  // third party.
+  void import('./connectors/composio')
+    .then((composio) => composio.warmComposioDiscovery())
+    .catch(() => {});
+  // Every api process must learn that a base branch moved, not just the one
+  // that handled the push — otherwise the turn-start gate answers `current`
+  // from a memo resolved before it (shared/pg-broadcast.ts). Awaited because it
+  // is one connection and it must be in place before the first turn; it never
+  // rejects, and a failure degrades to the memo's TTL.
+  await import('./shared/pg-broadcast').then(async (m) => {
+    const listening = await m.startConfigBaseMoveBroadcast();
+    if (!listening) return;
+    const { useDesiredInvalidationTransport } = await import('./projects/lib/turn-start-convergence');
+    useDesiredInvalidationTransport(m.configBaseMoveTransport());
+    // A base move announced by another process also ends this process's
+    // stale-while-revalidate window for page views (projects/git/mirror.ts).
+    const { invalidateProjectMirror } = await import('./projects/git/mirror');
+    m.configBaseMoveTransport().subscribe(invalidateProjectMirror);
+  });
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -1637,6 +1726,9 @@ async function bootServices() {
     // Absent binaries are a legitimate state (a checkout that never built one);
     // the route reports that per component. Nothing to do here.
   });
+  // Same reasoning, same shape, for the chunk index: it reads the same ~200 MB
+  // and would otherwise be built inside the first converging box's request.
+  void warmRuntimeChunkIndex();
 }
 
 // Graceful shutdown
@@ -1656,6 +1748,9 @@ async function shutdown(signal: string) {
   stopAccessControlCache();
   stopTmpReaper();
   stopSessionLifecycleWorker();
+  await import('./shared/pg-broadcast')
+    .then((m) => m.stopConfigBaseMoveBroadcast())
+    .catch(() => {});
   // Flush observability data before exit. The audit queue is drained here
   // because audit rows are buffered off the request path — without this, the
   // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
@@ -1710,6 +1805,16 @@ import {
  * outside Hono names its entrypoint class so its row says what it was.
  * `unit-audit-boundary-wiring.test.ts` fails if a branch escapes it.
  */
+// MCP tool calls (./mcp) re-enter the API as ordinary requests: through the
+// audit boundary and this dispatcher, never around them. There is no socket,
+// so nothing to time out and nothing to upgrade.
+const IN_PROCESS_SERVER = { timeout() {}, upgrade: () => false };
+async function dispatchInProcess(req: Request): Promise<Response> {
+  const url = getRequestUrl(req, config.PORT);
+  const response = await runInboundAudit(req, url, () => dispatchInbound(req, url, IN_PROCESS_SERVER));
+  return response ?? new Response(null, { status: 500 });
+}
+
 async function dispatchInbound(
   req: Request,
   url: URL,
@@ -1811,10 +1916,7 @@ async function dispatchInbound(
 
     const tunnelId = url.searchParams.get('tunnelId');
 
-    if (
-      !tunnelId ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
-    ) {
+    if (!isUuid(tunnelId)) {
       return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
@@ -1839,8 +1941,8 @@ async function dispatchInbound(
     // Include the source address so an unauthenticated attacker who learns a
     // tunnelId cannot consume the real machine's reconnect budget.
     const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-    const { clientIpFromHeaders } = await import('./shared/client-ip');
-    const clientIp = clientIpFromHeaders((name) => req.headers.get(name)) ?? 'unknown';
+    const { clientKeyFromHeaders } = await import('./shared/client-ip');
+    const clientIp = clientKeyFromHeaders((name) => req.headers.get(name));
     const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
     if (!wsIpRateCheck.allowed) {
       return new Response(

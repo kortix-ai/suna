@@ -420,6 +420,31 @@ flow(
       unauth.status(401);
     });
 
+    await ctx.step("revoke a live access token → it answers 401 and its refresh token → 400 invalid_grant", async () => {
+      const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      auth.status(302);
+      const rid = new URL(auth.header("location")!).searchParams.get("request_id")!;
+      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
+      ok.status(200);
+      const pairCode = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+      const pair = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/oauth/token",
+        form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code: pairCode, redirect_uri: redirectUri, code_verifier: verifier }),
+      );
+      pair.status(200);
+      const { access_token: access, refresh_token: refresh } = pair.json<any>();
+      const live = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } });
+      live.status(200);
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/revoke", form({ client_id: clientId, client_secret: secret, token: access }));
+      r.status(200).body().has("$.revoked", true);
+      const dead = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } });
+      dead.status(401);
+      const orphan = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: refresh }));
+      orphan.status(400).body().has("$.error", "invalid_grant");
+    });
+
     await ctx.step("cleanup: delete the client", async () => {
       const del = await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/:accountId/iam/oauth-clients/:clientId", { params: { accountId: team.id, clientId } });
       del.status(200);

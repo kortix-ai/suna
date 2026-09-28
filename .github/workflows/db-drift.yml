@@ -5,10 +5,9 @@ name: DB Drift Sentinel
 # A non-empty diff means someone changed a real database by hand without a
 # migration — the exact failure this whole system exists to prevent.
 #
-# REQUIRES a read-only connection string in repo secrets:
-#   DEV_DB_URL   (and PROD_DB_URL once prod is cut over — add it to the matrix)
-# The job self-skips if the secret for an environment is absent, so it is safe
-# to merge before the secrets are configured.
+# The live connection string is DATABASE_URL of the environment's runtime blob
+# in AWS Secrets Manager (kortix-<env>-env), read through
+# .github/actions/aws-env. The read fails closed if the key is absent.
 
 on:
   schedule:
@@ -22,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
 
 jobs:
   drift:
@@ -45,8 +45,19 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-      LIVE_DB_URL: ${{ matrix.env == 'prod' && secrets.PROD_DATABASE_URL || secrets.DEV_DATABASE_URL }}
     steps:
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            LIVE_DB_URL=kortix-${{ matrix.env }}-env:DATABASE_URL
       - name: Skip if this environment is not configured
         id: gate
         run: |
@@ -121,8 +132,19 @@ jobs:
           --health-retries 20
     env:
       CANONICAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
-      LIVE_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
     steps:
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            LIVE_DB_URL=kortix-prod-env:DATABASE_URL
       - name: Skip if prod is not configured
         id: gate
         run: |

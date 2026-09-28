@@ -19,7 +19,7 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 // PUT /v1/projects/:projectId/access/:userId
 // POST /v1/projects/:projectId/access/invite
@@ -50,7 +50,7 @@ projectsApp.openapi(
   // Inviting a member grants project access — members.manage, not plain write.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
   const role = parseAssignableProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);

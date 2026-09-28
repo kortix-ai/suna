@@ -4,7 +4,7 @@
  *
  * A tile closes the sheet, and the source opens when the sheet has gone
  * (`onDismiss`) — never two overlays at once, and no native chooser in
- * between. `children` render under the tiles (the thread's AutoContinue row);
+ * between. `children` render under the tiles (the thread's Recent files row);
  * they close the sheet the same way through `closeThen`.
  *
  * Layout is `PickerSheet`'s: 16pt sides, 4pt under the handle, 16pt between

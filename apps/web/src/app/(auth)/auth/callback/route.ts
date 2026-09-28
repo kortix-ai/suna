@@ -165,8 +165,7 @@ export async function GET(request: NextRequest) {
         // email travels through the redirect (query param or short-lived
         // cookie set before the IdP hop), compare it to data.user.email here
         // and carry a "You signed in as {actual_email}" notice through to the
-        // redirect instead of proceeding silently. See docs/ENTRA_SSO_SCIM_SETUP.md
-        // "Known behaviors & caveats".
+        // redirect instead of proceeding silently.
         // Determine if this is a new user (for analytics tracking)
         const createdAt = new Date(data.user.created_at).getTime();
         const now = Date.now();

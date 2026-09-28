@@ -61,7 +61,11 @@ describe('findConflictMarkers', () => {
 });
 
 describe('the repository', () => {
-  it('has no tracked file carrying an unresolved conflict marker', () => {
+  // 30 s, not vitest's 5 s default: this reads every tracked file (~9,100 of
+  // them, videos and wasm included). Measured on one laptop: 2.6 s with a warm
+  // page cache, 9.1 s cold. A budget that flips with the disk cache is a false
+  // red on a scan that must never be skipped.
+  it('has no tracked file carrying an unresolved conflict marker', { timeout: 30_000 }, () => {
     const tracked = execFileSync('git', ['ls-files', '-z'], {
       cwd: REPO_ROOT,
       maxBuffer: 64 * 1024 * 1024,

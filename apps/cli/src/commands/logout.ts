@@ -1,5 +1,7 @@
 import { authFileLocation, clearAuth } from '../api/auth.ts';
 import { activeHostName, getHost } from '../api/config.ts';
+import { takeFlags } from '../command-argv.ts';
+import { takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix logout [options]
@@ -14,41 +16,9 @@ Options:
   -h, --help        Show this help.
 `;
 
-interface LogoutFlags {
-  host?: string;
-  help: boolean;
-}
-
-function parseFlags(argv: string[]): LogoutFlags {
-  const f: LogoutFlags = { help: false };
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help') f.help = true;
-    else if (a === '--host') {
-      const next = argv[i + 1];
-      if (!next) throw new Error('--host requires a value');
-      f.host = next;
-      i += 1;
-    } else {
-      throw new Error(`unknown option "${a}"`);
-    }
-  }
-  return f;
-}
-
 export async function runLogout(argv: string[]): Promise<number> {
-  let flags: LogoutFlags;
-  try {
-    flags = parseFlags(argv);
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${HELP}`);
-    return 2;
-  }
-  if (flags.help) {
-    process.stdout.write(HELP);
-    return 0;
-  }
-
+  const flags = takeFlags(argv, HELP, (rest) => ({ host: takeFlagValue(rest, ['--host']) }));
+  if (typeof flags === 'number') return flags;
   return performLogout(flags.host);
 }
 

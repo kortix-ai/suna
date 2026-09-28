@@ -592,3 +592,41 @@ describe('UnifiedMarkdown — document variant', () => {
     expect(html).not.toContain('streamdown:');
   });
 });
+
+describe('UnifiedMarkdown setup links in tables', () => {
+  const link = (id: string) => `https://app.example.test/connect/ksl_${id}0000000000`;
+
+  test('an App | Link table of connect links renders as a stack of cards, not a table', () => {
+    const md = [
+      '| App | Link |',
+      '| --- | --- |',
+      `| HubSpot | [Connect HubSpot](${link('hubspot')}) |`,
+      `| Canva | [Connect Canva](${link('canva')}) |`,
+      '',
+    ].join('\n');
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={md} />));
+    expect(html).not.toContain('<table');
+    expect(html.match(/data-testid="outcome-card-external"/g)?.length).toBe(2);
+    expect(html).toContain('Connect HubSpot');
+  });
+
+  test('a table with a reason column stays a table, and its link is an inline chip', () => {
+    const md = [
+      '| App | Why | Link |',
+      '| --- | --- | --- |',
+      `| HubSpot | Read last quarter's closed deals for the revenue report | [Connect](${link('hubspot')}) |`,
+      '',
+    ].join('\n');
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="agent" content={md} />));
+    expect(html).toContain('<table');
+    expect(html).toContain('data-testid="setup-link-chip-connector"');
+    expect(html).not.toContain('data-testid="outcome-card-external"');
+  });
+
+  test('untrusted content keeps the table and plain links', () => {
+    const md = ['| App | Link |', '| --- | --- |', `| HubSpot | ${link('hubspot')} |`, ''].join('\n');
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown trust="untrusted" content={md} />));
+    expect(html).toContain('<table');
+    expect(html).not.toContain('setup-link-chip');
+  });
+});

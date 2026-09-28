@@ -1,16 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 
 const MIN_INTERNAL_TOKEN_LENGTH = 24;
-const KNOWN_WEAK_TOKENS = new Set([
-  'test',
-  'secret',
-  'changeme',
-  'change-me',
-  'password',
-  'internal',
-  'token',
-  'default',
-]);
 
 /**
  * Constant-time check of the internal control-plane bearer token.
@@ -53,8 +43,8 @@ export function matchesInternalToken(
  * infra-level change, tracked there). This does not reject a weak token —
  * only a real mTLS/HMAC upgrade should ever do that, and this repo has no
  * mechanism to safely block a running deployment from serving traffic — it
- * just surfaces a loud, cheap boot-time signal so a trivial/default/guessable
- * `GATEWAY_INTERNAL_TOKEN` doesn't sit unnoticed in a production config.
+ * just surfaces a loud, cheap boot-time signal so a short
+ * `GATEWAY_INTERNAL_TOKEN` entry doesn't sit unnoticed in a production config.
  */
 export function weakInternalTokenWarnings(tokensCsv: string | undefined): string[] {
   if (!tokensCsv) return [];
@@ -68,12 +58,6 @@ export function weakInternalTokenWarnings(tokensCsv: string | undefined): string
     if (token.length < MIN_INTERNAL_TOKEN_LENGTH) {
       warnings.push(
         `GATEWAY_INTERNAL_TOKEN entry is only ${token.length} chars (want >= ${MIN_INTERNAL_TOKEN_LENGTH}) — a short static bearer token is brute-forceable.`,
-      );
-      continue;
-    }
-    if (KNOWN_WEAK_TOKENS.has(token.toLowerCase())) {
-      warnings.push(
-        'GATEWAY_INTERNAL_TOKEN entry matches a known-weak/default value — rotate it to a random secret.',
       );
     }
   }

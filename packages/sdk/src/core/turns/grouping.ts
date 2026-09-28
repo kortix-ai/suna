@@ -8,14 +8,10 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
-import type { MessageWithPartsLike, PartLike, PartWithMessage, ToolPartLike, TurnLike } from './types';
+import type { MessageInfoLike, MessageWithPartsLike, PartLike, PartWithMessage, ToolPartLike, TurnLike } from './types';
 import { isTextPart, isToolPart } from './parts';
-import {
-  WIRE_ID_CLOCK_TOLERANCE,
-  absoluteWireIdClockAt,
-  unwrapWireIdClock,
-  wireIdClock,
-} from '../session/wire-message-id';
+import { WIRE_ID_CLOCK_TOLERANCE, wireIdClock } from '../session/wire-message-id';
+import { absoluteWireIdClockAt, unwrapWireIdClock } from '../session/wire-id-unwrap';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -87,8 +83,6 @@ interface TextPartLike extends PartLike {
  * against the newest timestamp in the list being sorted — the stub is the
  * newest thing the user did — or, compared pairwise, against the current clock.
  */
-const WIRE_DISPLAY_ID = /^msg_[0-9a-f]{12}/;
-
 type DisplayOrdered = { info: { id: string; time?: { created?: number } } };
 
 /** The absolute id clock a placed message is ordered by. */
@@ -104,7 +98,7 @@ function placedDisplayClock(message: DisplayOrdered, untimedAnchor: bigint): big
 
 /** `0` for a message the server has placed, `1` for one only this tab knows. */
 function displaySegment(id: string): 0 | 1 {
-  return WIRE_DISPLAY_ID.test(id) ? 0 : 1;
+  return wireIdClock(id) === null ? 1 : 0;
 }
 
 function compareIds(a: string, b: string): number {
@@ -203,6 +197,13 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
 
   // Second pass: link assistant messages via parentID or sequential
   let lastTurn: TurnLike<M> | null = null;
+  // Assistant messages that precede every loaded prompt, in display order.
+  // Those that name a parent are the tail of a turn whose prompt the loaded
+  // window did not reach (a long run); each run of them becomes a `partial`
+  // turn. Those that name none (a session-init failure) keep their contract:
+  // the first turn, or a synthetic turn when no prompt is loaded at all.
+  const partialTurns: TurnLike<M>[] = [];
+  const leadingParentless: M[] = [];
   for (const msg of messages) {
     if (msg.info.role === 'user') {
       lastTurn = turnsByUserMsgId.get(msg.info.id) ?? null;
@@ -246,22 +247,74 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
       continue;
     }
 
-    // Orphan assistant message that precedes every user message in the
-    // session (e.g. a session-init failure with no parentID). Attaching to
-    // the LAST turn would surface its error under an unrelated, much later
-    // user prompt. Attach to the FIRST turn instead so it renders at its
-    // real chronological position — or create a synthetic turn if no user
-    // messages exist at all.
-    if (turns.length > 0) {
-      turns[0].assistantMessages.unshift(msg);
+    // An orphan that precedes every loaded prompt. Collected in display order
+    // and placed after the loop. Prepending each one as it arrived reversed a
+    // whole run: a long automated turn opened on its newest step, with every
+    // earlier step above it, filed under whatever later prompt was loaded.
+    if (assistantMsg.parentID) {
+      const current = partialTurns[partialTurns.length - 1];
+      if (current && current.userMessage.info.id === assistantMsg.parentID) {
+        current.assistantMessages.push(msg);
+      } else {
+        partialTurns.push({
+          userMessage: unloadedPrompt(assistantMsg.parentID, msg),
+          assistantMessages: [msg],
+          partial: true,
+        });
+      }
       continue;
     }
-
-    const syntheticTurn: TurnLike<M> = { userMessage: msg, assistantMessages: [] };
-    turns.push(syntheticTurn);
+    leadingParentless.push(msg);
   }
 
-  return turns;
+  // A parentless orphan (e.g. a session-init failure) attaches to the FIRST
+  // turn, so it renders at its real chronological position instead of under
+  // an unrelated, much later prompt; with no prompt loaded it opens a
+  // synthetic turn of its own.
+  if (leadingParentless.length > 0) {
+    const first = turns[0] ?? partialTurns[0];
+    if (first) {
+      first.assistantMessages.unshift(...leadingParentless);
+    } else {
+      const [opening, ...rest] = leadingParentless;
+      turns.push({ userMessage: opening, assistantMessages: rest });
+    }
+  }
+
+  return partialTurns.length > 0 ? [...partialTurns, ...turns] : turns;
+}
+
+/**
+ * Stand-ins for prompts the loaded window does not include, by session, id,
+ * and the first reply's creation time. Grouping runs on every transcript
+ * update, and hosts' stable-turn caches compare messages by reference, so the
+ * same window must hand back the same object. Bounded: the oldest entry goes.
+ */
+const unloadedPrompts = new Map<string, MessageWithPartsLike>();
+const UNLOADED_PROMPT_LIMIT = 256;
+
+/** The stand-in for an unloaded prompt: its id, the `user` role, no parts. */
+function unloadedPrompt<M extends MessageWithPartsLike>(parentID: string, firstReply: M): M {
+  const info = firstReply.info as MessageInfoLike & { sessionID?: string };
+  const created = info.time?.created;
+  const key = `${info.sessionID ?? ''}|${parentID}|${created ?? ''}`;
+  const cached = unloadedPrompts.get(key);
+  if (cached) return cached as M;
+  const prompt = {
+    info: {
+      id: parentID,
+      role: 'user',
+      ...(info.sessionID ? { sessionID: info.sessionID } : {}),
+      ...(typeof created === 'number' ? { time: { created } } : {}),
+    },
+    parts: [],
+  } as MessageWithPartsLike;
+  if (unloadedPrompts.size >= UNLOADED_PROMPT_LIMIT) {
+    const oldest = unloadedPrompts.keys().next().value;
+    if (oldest !== undefined) unloadedPrompts.delete(oldest);
+  }
+  unloadedPrompts.set(key, prompt);
+  return prompt as M;
 }
 
 // ============================================================================

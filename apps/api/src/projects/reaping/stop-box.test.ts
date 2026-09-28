@@ -128,35 +128,41 @@ describe('stopExpiredBox — pre-stop abort', () => {
     expect(applyStoppedCalls[0]?.stopReason).toBe('deadline_expired');
   });
 
-  test('a timed-out/failed abort still stops the box (best-effort, never a gate)', async () => {
-    abortFetchImpl = async () => {
-      throw new DOMException('The operation timed out.', 'TimeoutError');
-    };
+  // The abort is best-effort, never a gate: every way it can fail still stops
+  // the box. The same helper runs before the manual stop
+  // (session-lifecycle/stop.ts), so this table is its one owner.
+  test.each([
+    {
+      name: 'a timed-out abort',
+      setup: () => {
+        abortFetchImpl = async () => {
+          throw new DOMException('The operation timed out.', 'TimeoutError');
+        };
+      },
+      aborts: 1,
+    },
+    {
+      name: 'a non-2xx abort response',
+      setup: () => {
+        abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
+      },
+      aborts: 1,
+    },
+    {
+      name: 'no service key on record (no fetch at all)',
+      setup: () => {
+        abortServiceKey = null;
+      },
+      aborts: 0,
+    },
+  ])('$name still stops the box', async ({ setup, aborts }) => {
+    setup();
 
     const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
     expect(outcome).toBe('stopped');
-    expect(abortFetchCalls).toHaveLength(1);
-    expect(callOrder).toEqual(['abort', 'provider.stop']);
-    expect(providerStopCalls).toEqual(['ext-1']);
-  });
-
-  test('a non-2xx abort response still stops the box', async () => {
-    abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
-
-    const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
-
-    expect(outcome).toBe('stopped');
-    expect(callOrder).toEqual(['abort', 'provider.stop']);
-  });
-
-  test('no service key on record skips the fetch entirely and still stops', async () => {
-    abortServiceKey = null;
-
-    const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
-
-    expect(outcome).toBe('stopped');
-    expect(abortFetchCalls).toEqual([]);
+    expect(abortFetchCalls).toHaveLength(aborts);
+    expect(callOrder).toEqual([...(aborts ? ['abort'] : []), 'provider.stop']);
     expect(providerStopCalls).toEqual(['ext-1']);
   });
 

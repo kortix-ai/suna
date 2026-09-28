@@ -9,8 +9,9 @@ import {
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { guardSession, guardSessionSharing, sessionAccessDenied } from '../lib/session-access';
-import { UUID_V4_REGEX, readBody } from '../lib/serializers';
-import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
+import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -34,7 +35,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -70,7 +71,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -95,6 +96,7 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
+      200: json(z.any(), 'The live transcript share this session already has'),
       201: json(z.any(), 'Public share'),
       ...errors(400, 403, 404, 409),
     },
@@ -102,9 +104,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Minting, not revoking: a public share link is unauthenticated, so this is
@@ -114,7 +116,7 @@ projectsApp.openapi(
     if (!guard.ok) return sessionAccessDenied(c, guard);
     const visible = guard.session;
     if (
-      await sessionHasMemberConnectorBinding({
+      await sessionHasPersonalConnectorBinding({
         accountId: visible.row.accountId,
         projectId,
         sessionId,
@@ -136,7 +138,9 @@ projectsApp.openapi(
       userId: loaded.userId,
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as any);
-    return c.json({ share: result.share }, 201);
+    // A transcript share is one live link per session: minting again returns
+    // the live link with 200 instead of a second one.
+    return c.json({ share: result.share }, result.created ? 201 : 200);
   },
 );
 
@@ -161,7 +165,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const shareId = c.req.param('shareId');
-    if (!UUID_V4_REGEX.test(sessionId) || !UUID_V4_REGEX.test(shareId)) {
+    if (!isUuid(sessionId) || !isUuid(shareId)) {
       return c.json({ error: 'Invalid id' }, 400);
     }
 

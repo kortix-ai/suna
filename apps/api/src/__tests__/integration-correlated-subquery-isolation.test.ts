@@ -152,5 +152,43 @@ describe('correlated reads stay on their own row', () => {
     const record = await loadSandbox(`sbx_iso_c_${run}`.toLowerCase());
     expect(record?.sessionId).toBe(session);
     expect(record?.agentName).toBe(`iso-c-${run}`);
+    // The canonical provider id, never the lowercased request: every gate
+    // after this one keys on it.
+    expect(record?.externalId).toBe(`SBX_ISO_C_${run}`);
+  });
+
+  // A failed provision can leave older rows on the same provider id. The
+  // proxy must route to the row that owns the box now.
+  test('loadSandbox prefers the active row over a more recently touched failed row', async () => {
+    const [projectA] = projectsForTest as [ProjectRow];
+    const failedSession = await insertSession({
+      project: projectA,
+      agentName: `iso-failed-${run}`,
+      status: 'running',
+    });
+    const liveSession = await insertSession({
+      project: projectA,
+      agentName: `iso-live-${run}`,
+      status: 'running',
+    });
+    await insertSandbox({
+      project: projectA,
+      sessionId: liveSession,
+      externalId: `sbx_iso_shared_${run}`,
+      status: 'active',
+    });
+    await insertSandbox({
+      project: projectA,
+      sessionId: failedSession,
+      externalId: `sbx_iso_shared_${run}`,
+      status: 'error',
+    });
+    await db.execute(sql`
+      update kortix.session_sandboxes set updated_at = now() + interval '1 minute'
+       where session_id = ${failedSession}`);
+
+    const record = await loadSandbox(`sbx_iso_shared_${run}`);
+    expect(record?.sessionId).toBe(liveSession);
+    expect(record?.status).toBe('active');
   });
 });

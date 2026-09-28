@@ -6,8 +6,8 @@
  *     project (skills/agents/tools/kortix.yaml), then opens a CR.
  *
  * The deterministic install/lock/update/remove engine (registry-lock.json,
- * dependency resolution, hash-based update detection) has been removed — see
- * docs/specs/2026-07-13-marketplace-as-projects.md. Adding a marketplace item
+ * dependency resolution, hash-based update detection) has been removed.
+ * Adding a marketplace item
  * to an existing project is now always an agent import; no file is ever
  * committed without the agent reading + wiring it in first.
  */
@@ -26,7 +26,8 @@ import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
-import { readBody, requestAuditContext } from '../lib/serializers';
+import { requestAuditContext } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
 
@@ -89,8 +90,8 @@ async function handleMarketplaceInstallSession(c: any) {
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'marketplace');
   if (gate) return gate;
 
-  const body = await readBody(c);
-  const id = typeof body?.id === 'string' ? body.id.trim() : '';
+  const body = await readJsonObject(c);
+  const id = typeof body.id === 'string' ? body.id.trim() : '';
   if (!id) return c.json({ error: 'id is required' }, 400);
 
   const entry = await getCatalogEntry(id);

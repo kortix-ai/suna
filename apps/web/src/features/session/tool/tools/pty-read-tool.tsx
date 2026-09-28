@@ -16,6 +16,7 @@ import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useTranslations } from '@/i18n/use-translations';
 import { stripAnsi } from '@/ui';
+import { ptyOutputBlock } from '@kortix/shared/tool-output';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
@@ -63,8 +64,8 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
   const output = partOutput(part);
 
   const parsed = useMemo(() => {
-    const match = output.match(/<pty_output\s+([^>]*)>([\s\S]*?)<\/pty_output>/);
-    if (!match) {
+    const block = ptyOutputBlock(output);
+    if (!block) {
       const content = stripAnsi(output);
       return {
         id: '',
@@ -77,8 +78,8 @@ export function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps)
       };
     }
 
-    const attrs = match[1];
-    const rawContent = match[2];
+    const attrs = block.attrs;
+    const rawContent = block.body;
 
     const idMatch = attrs.match(/id="([^"]+)"/);
     const statusMatch = attrs.match(/status="([^"]+)"/);

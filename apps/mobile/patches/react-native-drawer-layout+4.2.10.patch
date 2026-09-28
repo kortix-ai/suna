@@ -1,42 +1,67 @@
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-index 263fb16..932a178 100644
+index 263fb16..6499cf5 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
 +++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-@@ -45,6 +45,7 @@ export function Drawer({
+@@ -2,7 +2,7 @@
+ 
+ import * as React from 'react';
+ import { I18nManager, Keyboard, Platform, StatusBar, StyleSheet, useWindowDimensions } from 'react-native';
+-import Animated, { interpolate, ReduceMotion, runOnJS, useAnimatedProps, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring } from 'react-native-reanimated';
++import Animated, { Easing, interpolate, ReduceMotion, runOnJS, useAnimatedProps, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+ import useLatestCallback from 'use-latest-callback';
+ import { DrawerGestureContext } from "../utils/DrawerGestureContext.js";
+ import { DrawerProgressContext } from "../utils/DrawerProgressContext.js";
+@@ -45,6 +45,8 @@ export function Drawer({
    swipeEdgeWidth = SWIPE_EDGE_WIDTH,
    swipeMinDistance = SWIPE_MIN_DISTANCE,
    swipeMinVelocity = SWIPE_MIN_VELOCITY,
 +  closeSpringConfig,
++  openSpringConfig,
    renderDrawerContent,
    children,
    style
-@@ -137,9 +138,9 @@ export function Drawer({
+@@ -135,20 +137,30 @@ export function Drawer({
+     }
+     touchStartX.value = 0;
      touchX.value = 0;
-     translationX.value = withSpring(translateX, {
+-    translationX.value = withSpring(translateX, {
++    const spring = open ? openSpringConfig : closeSpringConfig;
++    const onEnd = finished => runOnJS(onAnimationEnd)(open, finished);
++    // A toggle without gesture velocity (a tap, `open={…}`, the overlay) runs
++    // the config's timed curve; a swipe release keeps the spring and its
++    // finger velocity.
++    const timing = velocity === undefined && spring ? spring.timing : undefined;
++    translationX.value = timing ? withTiming(translateX, {
++      duration: timing.duration,
++      easing: Easing.bezier(timing.easing[0], timing.easing[1], timing.easing[2], timing.easing[3]),
++      reduceMotion: ReduceMotion.Never
++    }, onEnd) : withSpring(translateX, {
        velocity,
 -      stiffness: 1000,
 -      damping: 500,
 -      mass: 3,
-+      stiffness: !open && closeSpringConfig ? closeSpringConfig.stiffness : 1000,
-+      damping: !open && closeSpringConfig ? closeSpringConfig.damping : 500,
-+      mass: !open && closeSpringConfig ? closeSpringConfig.mass : 3,
++      stiffness: spring ? spring.stiffness : 1000,
++      damping: spring ? spring.damping : 500,
++      mass: spring ? spring.mass : 3,
        overshootClamping: true,
        reduceMotion: ReduceMotion.Never
-     }, finished => runOnJS(onAnimationEnd)(open, finished));
-@@ -148,7 +149,7 @@ export function Drawer({
+-    }, finished => runOnJS(onAnimationEnd)(open, finished));
++    }, onEnd);
+     if (open) {
+       runOnJS(onOpen)();
      } else {
        runOnJS(onClose)();
      }
 -  }, [getDrawerTranslationX, onAnimationEnd, onAnimationStart, onClose, onOpen, touchStartX, touchX, translationX]);
-+  }, [closeSpringConfig, getDrawerTranslationX, onAnimationEnd, onAnimationStart, onClose, onOpen, touchStartX, touchX, translationX]);
++  }, [closeSpringConfig, openSpringConfig, getDrawerTranslationX, onAnimationEnd, onAnimationStart, onClose, onOpen, touchStartX, touchX, translationX]);
    const hasDrawerWidth = drawerWidth > 0;
    const previousHasDrawerWidthRef = React.useRef(hasDrawerWidth);
    const isHidden = useSharedValue(!isOpen && !hasDrawerWidth);
 diff --git a/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts b/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts
-index 7d5764a..f1a1d40 100644
+index 7d5764a..f0f91af 100644
 --- a/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts
 +++ b/node_modules/react-native-drawer-layout/lib/typescript/src/types.d.ts
-@@ -123,6 +123,16 @@ export type DrawerProps = {
+@@ -123,6 +123,29 @@ export type DrawerProps = {
       * This is not supported on Web.
       */
      swipeMinVelocity?: number;
@@ -49,60 +74,147 @@ index 7d5764a..f1a1d40 100644
 +        stiffness: number;
 +        damping: number;
 +        mass: number;
++        timing?: {
++            duration: number;
++            easing: readonly [number, number, number, number];
++        };
++    };
++    openSpringConfig?: {
++        stiffness: number;
++        damping: number;
++        mass: number;
++        timing?: {
++            duration: number;
++            easing: readonly [number, number, number, number];
++        };
 +    };
      /**
       * Function to modify the pan gesture handler via RNGH properties API.
       */
 diff --git a/node_modules/react-native-drawer-layout/src/types.tsx b/node_modules/react-native-drawer-layout/src/types.tsx
-index 069c88b..601da17 100644
+index 069c88b..aaddc77 100644
 --- a/node_modules/react-native-drawer-layout/src/types.tsx
 +++ b/node_modules/react-native-drawer-layout/src/types.tsx
-@@ -142,6 +142,15 @@ export type DrawerProps = {
+@@ -142,6 +142,37 @@ export type DrawerProps = {
     */
    swipeMinVelocity?: number;
  
 +  /**
 +   * Spring for the close animation (hamburger, `open={false}`, or a swipe
-+   * release that closes). Defaults to the open spring
++   * release that closes), and optional `timing` as for `openSpringConfig`.
++   * Defaults to the library spring
 +   * (`stiffness: 1000, damping: 500, mass: 3`).
 +   * Kortix patch (patches/react-native-drawer-layout+4.2.10.patch).
 +   * This is not supported on Web.
 +   */
-+  closeSpringConfig?: { stiffness: number; damping: number; mass: number };
++  closeSpringConfig?: {
++    stiffness: number;
++    damping: number;
++    mass: number;
++    timing?: { duration: number; easing: readonly [number, number, number, number] };
++  };
++
++  /**
++   * Spring for the open animation (menu button, `open={true}`, or a swipe
++   * release that opens). Defaults to the library spring
++   * (`stiffness: 1000, damping: 500, mass: 3`).
++   * `timing`: a toggle without gesture velocity (a tap, `open={…}`, the
++   * overlay) runs this timed cubic-bezier curve instead of the spring.
++   * Kortix patch (patches/react-native-drawer-layout+4.2.10.patch).
++   * This is not supported on Web.
++   */
++  openSpringConfig?: {
++    stiffness: number;
++    damping: number;
++    mass: number;
++    timing?: { duration: number; easing: readonly [number, number, number, number] };
++  };
 +
    /**
     * Function to modify the pan gesture handler via RNGH properties API.
     */
 diff --git a/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx b/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
-index e91f2a8..3dbcc44 100644
+index e91f2a8..11b3ec0 100644
 --- a/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
 +++ b/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
-@@ -71,6 +71,7 @@ export function Drawer({
+@@ -9,6 +9,7 @@ import {
+   type ViewProps,
+ } from 'react-native';
+ import Animated, {
++  Easing,
+   interpolate,
+   ReduceMotion,
+   runOnJS,
+@@ -17,6 +18,7 @@ import Animated, {
+   useDerivedValue,
+   useSharedValue,
+   withSpring,
++  withTiming,
+ } from 'react-native-reanimated';
+ import useLatestCallback from 'use-latest-callback';
+ 
+@@ -71,6 +73,8 @@ export function Drawer({
    swipeEdgeWidth = SWIPE_EDGE_WIDTH,
    swipeMinDistance = SWIPE_MIN_DISTANCE,
    swipeMinVelocity = SWIPE_MIN_VELOCITY,
 +  closeSpringConfig,
++  openSpringConfig,
    renderDrawerContent,
    children,
    style,
-@@ -193,9 +194,9 @@ export function Drawer({
-         translateX,
-         {
-           velocity,
+@@ -189,18 +193,34 @@ export function Drawer({
+ 
+       touchStartX.value = 0;
+       touchX.value = 0;
+-      translationX.value = withSpring(
+-        translateX,
+-        {
+-          velocity,
 -          stiffness: 1000,
 -          damping: 500,
 -          mass: 3,
-+          stiffness: !open && closeSpringConfig ? closeSpringConfig.stiffness : 1000,
-+          damping: !open && closeSpringConfig ? closeSpringConfig.damping : 500,
-+          mass: !open && closeSpringConfig ? closeSpringConfig.mass : 3,
-           overshootClamping: true,
-           reduceMotion: ReduceMotion.Never,
-         },
-@@ -209,6 +210,7 @@ export function Drawer({
+-          overshootClamping: true,
+-          reduceMotion: ReduceMotion.Never,
+-        },
+-        (finished) => runOnJS(onAnimationEnd)(open, finished)
+-      );
++      const spring = open ? openSpringConfig : closeSpringConfig;
++      const onEnd = (finished?: boolean) => runOnJS(onAnimationEnd)(open, finished);
++      // A toggle without gesture velocity (a tap, `open={…}`, the overlay) runs
++      // the config's timed curve; a swipe release keeps the spring and its
++      // finger velocity.
++      const timing = velocity === undefined && spring ? spring.timing : undefined;
++      translationX.value = timing
++        ? withTiming(
++            translateX,
++            {
++              duration: timing.duration,
++              easing: Easing.bezier(timing.easing[0], timing.easing[1], timing.easing[2], timing.easing[3]),
++              reduceMotion: ReduceMotion.Never,
++            },
++            onEnd
++          )
++        : withSpring(
++            translateX,
++            {
++              velocity,
++              stiffness: spring ? spring.stiffness : 1000,
++              damping: spring ? spring.damping : 500,
++              mass: spring ? spring.mass : 3,
++              overshootClamping: true,
++              reduceMotion: ReduceMotion.Never,
++            },
++            onEnd
++          );
+ 
+       if (open) {
+         runOnJS(onOpen)();
+@@ -209,6 +229,8 @@ export function Drawer({
        }
      },
      [
 +      closeSpringConfig,
++      openSpringConfig,
        getDrawerTranslationX,
        onAnimationEnd,
        onAnimationStart,

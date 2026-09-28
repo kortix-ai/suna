@@ -1,6 +1,6 @@
 // Admin-issued trial lifecycle: grant, revoke, expiry sweep.
 //
-// Resolution semantics live in effective-tier.ts (the trial is a lazy overlay,
+// Resolution semantics live in resolve-billing.ts (the trial is a lazy overlay,
 // never a `tier` write). This module owns the WRITES: the admin routes call
 // grantTrial/revokeTrial, the billing cron calls sweepExpiredTrials, and the
 // Stripe webhook flips an active trial to 'converted' when a real subscription

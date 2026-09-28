@@ -212,14 +212,6 @@
   will-change: opacity;
 }
 
-.dmx-spiral-snake-3 {
-  animation: dmx-spiral-snake calc(0.78 * var(--dmx-cycle) * var(--dmx-speed, 1)) linear infinite;
-  animation-delay: calc(
-    var(--dmx-spiral-order, 0) * 0.038 * var(--dmx-cycle) * var(--dmx-speed, 1)
-  );
-  will-change: opacity;
-}
-
 .dmx-center-ripple-3 {
   animation: dmx-center-origin-ripple calc(0.82 * var(--dmx-cycle) * var(--dmx-speed, 1))
     ease-in-out infinite;
@@ -1229,7 +1221,6 @@
   .dmx-path-3,
   .dmx-diagonal-alt-sweep,
   .dmx-spiral-snake,
-  .dmx-spiral-snake-3,
   .dmx-center-ripple-3,
   .dmx-snake-path-3,
   .dmx-frame-chase-3,

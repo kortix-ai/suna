@@ -131,6 +131,19 @@ export interface ProjectSecretsResponse {
   manifest_path?: string;
   /** Error string when manifest_status === 'error'. */
   manifest_error?: string;
+  /**
+   * The calling agent's own secrets grant; `null` for a caller that is not an
+   * agent session (absent on older servers). `items` is filtered by it, so a
+   * declared name missing from `items` may be set but not granted.
+   */
+  agent_scope?: ProjectSecretsAgentScope | null;
+}
+
+/** An agent session's secrets grant, as `GET /projects/:id/secrets` reports it. */
+export interface ProjectSecretsAgentScope {
+  agent: string;
+  /** `'all'`, or the secret identifiers the agent may receive. */
+  secrets: 'all' | string[];
 }
 
 export async function listProjectSecrets(projectId: string) {

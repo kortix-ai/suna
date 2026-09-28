@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { findSessionAttachments, type MessageWithParts, type Part } from '@kortix/sdk';
+import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
@@ -8,6 +9,7 @@ import {
   emitJson,
   locateSessionAnywhere,
   resolveProjectContext,
+  shortId,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -932,7 +934,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
           ? `${act.working ? C.yellow : C.faded}${act.summary}${C.reset}`
           : `${C.faded}—${C.reset}`
         : `${C.faded}${s.status}${C.reset}`;
-    const age = relAge(act?.last_at ?? s.updated_at);
+    const age = formatRelative(act?.last_at ?? s.updated_at, { maxRelativeDays: null });
     process.stdout.write(
       `  ${dot} ${C.dim}${id}${C.reset}  ${pad(label, labelW)}  ${doing}  ${C.faded}${age}${C.reset}\n`,
     );
@@ -1129,19 +1131,6 @@ function countByStatus(sessions: ProjectSession[]): Record<string, number> {
   return out;
 }
 
-function shortId(id: string): string {
-  return id.split('-')[0] ?? id;
-}
-
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
-
-function relAge(iso: string): string {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }

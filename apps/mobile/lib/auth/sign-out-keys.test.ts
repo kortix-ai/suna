@@ -3,9 +3,14 @@ import { describe, expect, test } from 'bun:test';
 import { keysToClear } from './sign-out-keys';
 
 describe('keysToClear', () => {
-  test('keeps theme, language and onboarding preferences', () => {
+  test('keeps theme, language, push registration and onboarding preferences', () => {
     expect(
-      keysToClear(['@theme_preference', '@kortix_language', '@onboarding_completed_user1'])
+      keysToClear([
+        '@theme_preference',
+        '@kortix_language',
+        '@push_registration',
+        '@onboarding_completed_user1',
+      ])
     ).toEqual([]);
   });
 

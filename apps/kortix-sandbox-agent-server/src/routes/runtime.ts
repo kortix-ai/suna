@@ -11,7 +11,7 @@ import type { HarnessActionResult, HarnessQueryService, HarnessReadResult } from
 export const DEFAULT_MESSAGE_PAGE = 20
 export const MAX_MESSAGE_PAGE = 200
 /** Heartbeat cadence on `/events`. Three of these fit in a 60 s client budget. */
-export const EVENT_HEARTBEAT_MS = 15_000
+const EVENT_HEARTBEAT_MS = 15_000
 export const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 function bearerToken(header: string | undefined): string | null {

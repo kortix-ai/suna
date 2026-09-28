@@ -12,8 +12,7 @@
  * branch stayed capability-based: dropping `if (providerName === 'e2b') return
  * null;` into the mode resolver left the entire repo suite green while the
  * feature disappeared for E2B. There is no branch left to corrupt — one
- * mechanism serves every provider (docs/specs/
- * 2026-08-19-secrets-exposure-usage-model.md §4) — so what is pinned now is the
+ * mechanism serves every provider — so what is pinned now is the
  * absence: no provider may grow a credential edge of its own again.
  */
 import { describe, expect, test } from 'bun:test';

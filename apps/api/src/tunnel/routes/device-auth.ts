@@ -12,7 +12,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { clientIpFromHeaders } from '../../shared/client-ip';
+import { requestClientKey } from '../../shared/client-ip';
 import { createHash } from 'node:crypto';
 import { eq, and, gt } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
@@ -31,6 +31,7 @@ import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, requireUserCredential } from './auth';
 import { isValidCapability } from '../core/scope-validator';
 import { reconcileComputerConnectors } from '../../connectors/sync';
+import { readJsonObject } from '../../shared/http-body';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 
@@ -58,21 +59,14 @@ const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
 /** Permissive device-auth request row shape, as persisted + serialized. */
 const DeviceAuthRowSchema = z.record(z.string(), z.any());
 
-// Trusted-proxy rule (shared/client-ip.ts). `cf-connecting-ip`, `x-real-ip`
-// and the leftmost X-Forwarded-For entry are all caller-written on an origin
-// that is not behind the proxy that sets them.
-function clientRateLimitKey(c: any): string {
-  return clientIpFromHeaders((name) => c.req.header(name)) ?? 'unknown';
-}
-
 function devicePollRateLimitKey(c: any, secret: string): string {
   const secretId = createHash('sha256').update(secret).digest('hex').slice(0, 16);
-  return `${clientRateLimitKey(c)}:${secretId}`;
+  return `${requestClientKey(c)}:${secretId}`;
 }
 
 function checkDeviceAuthResolutionRateLimit(c: any, endpoint: string) {
   const userId = (c.get('userId') as string | undefined) ?? 'anonymous';
-  const key = `${userId}:${clientRateLimitKey(c)}`;
+  const key = `${userId}:${requestClientKey(c)}`;
   return tunnelRateLimiter.check(endpoint, key);
 }
 
@@ -115,7 +109,7 @@ export function createDeviceAuthPublicRouter() {
       },
     }),
     async (c: any) => {
-      const ip = clientRateLimitKey(c);
+      const ip = requestClientKey(c);
       const globalRl = tunnelRateLimiter.check('deviceAuthCreateGlobal', 'global');
       if (!globalRl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: globalRl.retryAfterMs }, 429);
@@ -125,7 +119,7 @@ export function createDeviceAuthPublicRouter() {
         return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
       }
 
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
       const machineHostname = (body.machineHostname as string)?.slice(0, 255) || null;
 
       // Generate code + secret. The human code has a unique index, so retry
@@ -333,7 +327,7 @@ export function createDeviceAuthRouter() {
       }
       const { accountId } = await getTunnelOwnerContext(c);
       const code = c.req.param('code');
-      const body = await c.req.json().catch(() => ({}));
+      const body = await readJsonObject(c);
 
       const [row] = await db
         .select()

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { clientIpFromHeaders } from './client-ip';
+import { Hono } from 'hono';
+import { clientIpFromHeaders, clientKeyFromHeaders, requestClientIp, requestClientKey } from './client-ip';
 
 function headers(values: Record<string, string>) {
   return (name: string) => values[name.toLowerCase()] ?? null;
@@ -38,5 +39,25 @@ describe('clientIpFromHeaders — trusted-proxy rule', () => {
     );
     expect(clientIpFromHeaders(headers({ 'x-real-ip': '198.51.100.9' }), 2)).toBe('198.51.100.9');
     expect(clientIpFromHeaders(headers({}), 2)).toBeNull();
+  });
+});
+
+describe('bucket key vs stored address', () => {
+  test('clientKeyFromHeaders returns the address, or unknown when no header is set', () => {
+    expect(clientKeyFromHeaders(headers({ 'x-forwarded-for': '192.0.2.1, 203.0.113.9, 198.51.100.7' }))).toBe(
+      '203.0.113.9',
+    );
+    expect(clientKeyFromHeaders(headers({}))).toBe('unknown');
+  });
+
+  test('requestClientKey falls back to unknown; requestClientIp stays null', async () => {
+    const app = new Hono();
+    app.get('/', (c) => c.json({ key: requestClientKey(c), ip: requestClientIp(c) }));
+    const bare = await (await app.request('/')).json();
+    expect(bare).toEqual({ key: 'unknown', ip: null });
+    const withHeader = await (
+      await app.request('/', { headers: { 'x-forwarded-for': '192.0.2.1, 203.0.113.9, 198.51.100.7' } })
+    ).json();
+    expect(withHeader).toEqual({ key: '203.0.113.9', ip: '203.0.113.9' });
   });
 });

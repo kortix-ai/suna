@@ -16,7 +16,7 @@ import {
   runLegacyRuntimeBootstrap,
   type LegacyBootstrapRow,
 } from '../src/projects/lib/legacy-runtime-bootstrap-wiring';
-import { classifyDaemonHealth } from '../src/projects/lib/legacy-runtime-bootstrap';
+import { classifyDaemonHealth, describeLegacyBootstrapRetry } from '../src/projects/lib/legacy-runtime-bootstrap';
 
 function args() {
   const out: { sessions: string[]; running: boolean; limit: number; force: boolean; dryRun: boolean } = {
@@ -80,9 +80,21 @@ async function main() {
     const label = `${r.sessionId} ${r.provider}/${r.externalId} status=${r.status}`;
     if (opts.dryRun) {
       const deps = buildLegacyBootstrapDeps(row);
-      const c = classifyDaemonHealth(await deps.fetchHealth());
-      const status = c.klass === 'legacy' ? await deps.fetchOpencodeStatus() : null;
-      console.log(`[sweep] ${label} → ${c.klass} build=${c.runtimeBuild ?? '-'} opencode=${c.opencode ?? '-'}${c.klass === 'legacy' ? ` idle=${status ? Object.keys(status).length === 0 : 'unknown'}` : ''}`);
+      const expected = await deps.expectedRunningAssets?.();
+      const c = classifyDaemonHealth(await deps.fetchHealth(), expected ?? undefined);
+      const needsRepair = c.klass === 'legacy' || c.klass === 'stale';
+      const status = needsRepair ? await deps.fetchOpencodeStatus() : null;
+      const manifestBuild = needsRepair ? await deps.manifestBuild() : null;
+      const retry = needsRepair ? describeLegacyBootstrapRetry(row.metadata, manifestBuild, Date.now()) : null;
+      console.log(
+        `[sweep] ${label} → ${c.klass}` +
+          (c.detail.length > 0 ? ` [${c.detail.join(' | ')}]` : '') +
+          ` build=${c.runtimeBuild ?? '-'} opencode=${c.opencode ?? '-'}` +
+          (c.klass === 'blocked' ? ' — NEVER repaired automatically, needs an operator' : '') +
+          (needsRepair
+            ? ` idle=${status ? Object.keys(status).length === 0 : 'unknown'} attempts=${retry?.attempts ?? 0} retry_status=${retry?.status ?? '-'} next_retry_at=${retry?.nextRetryAt ?? '-'}${retry?.lastError ? ` last_error="${retry.lastError}"` : ''}`
+            : ''),
+      );
       continue;
     }
     const started = Date.now();

@@ -110,8 +110,9 @@ const FAKE_MANAGED_MODEL = {
 describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the self-host default)', () => {
   test('the managed registry is empty — the single choke point every consumer reads through', () => {
     expect(RUNTIME_MANAGED_MODELS).toEqual([]);
-    expect(isRuntimeManagedModelId('claude-sonnet-4.6')).toBe(false);
-    expect(getRuntimeManagedModel('claude-sonnet-4.6')).toBeUndefined();
+    // A bundled managed id: the lookups miss because the registry is empty.
+    expect(isRuntimeManagedModelId('deepseek-v4.1-flash')).toBe(false);
+    expect(getRuntimeManagedModel('deepseek-v4.1-flash')).toBeUndefined();
   });
 
   test('the served model catalog carries no managed models and no synthetic AUTO', () => {
@@ -120,7 +121,6 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     expect(anonymous).toEqual({});
     const full = gatewayModelCatalog('proj');
     expect(full.auto).toBeUndefined();
-    expect(full['claude-sonnet-4.6']).toBeUndefined();
     expect(full['glm-5.3-flash']).toBeUndefined();
   });
 

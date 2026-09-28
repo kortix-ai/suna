@@ -82,8 +82,7 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_OPENCODE_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
 (agent prompt, model, permission policy), `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
-pi-only: `KORTIX_PI_STATE_DIR`, `KORTIX_PI_MODEL_MODE=faux` +
-`KORTIX_PI_FAUX_SCRIPT` (tests and benches: a scripted provider, no network).
+pi-only: `KORTIX_PI_STATE_DIR`.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
@@ -94,10 +93,61 @@ or a workspace tool's path, with the longest matching pattern winning and `*`
 the weakest. A pattern map is never collapsed to its `*` entry, and a `deny`
 outranks an earlier "always" reply on the same tool.
 
+### Extensions
+
+pi's own extension system runs every extension. The root `Agent` lives inside
+pi-coding-agent's `AgentSession` (`pi/extensions/host.ts`), which owns the
+loader, the real `ExtensionRunner`, tool wrapping, `input` and
+`before_agent_start` on each prompt, extension commands, and `/skill:` and
+prompt-template expansion. A package from https://pi.dev/packages runs
+unmodified: Kortix writes no per-extension code. Kortix keeps the model (the
+gateway provider is registered with pi's `ModelRuntime` only to pass its auth
+check), the tools, the wire, and the permission policy, which runs BEFORE any
+extension `tool_call` handler. pi's compaction and auto-retry are off: the
+transcript and the product own them.
+
+Three sources, in pi's own scopes:
+
+| Source | Declared in | Installed in |
+|---|---|---|
+| system (every session) | `<agentDir>/settings.json` `packages`; `agentDir` = `KORTIX_PI_AGENT_DIR`, default `/opt/kortix/pi-agent` | `<agentDir>/npm`, when the image is built |
+| project | kortix.yaml `harnesses.pi.packages` → `KORTIX_PI_PACKAGES` | npm sources: built once per package list by the API (apps/api/src/pi-packages, on change-request merge) as a PRE-BUILT bundle — one self-contained, minified ESM file per extension (deps inlined; pi's own modules read `globalThis.__kortixPiHost`) plus the package's own files minus the code that file inlined, type declarations, source maps and the root README/CHANGELOG — and the installed `node_modules` as a fallback. The daemon starts the download with the service (beside the repo clone), unpacks to `<KORTIX_PI_PACKAGES_DIR>/<digest>` (outside the repo) and imports each extension natively: no jiti, no install (`extensions/prebuilt.ts`). A package with no pre-built form, one whose file throws on import, or an entry with its own `extensions` filter loads from the fallback (`KORTIX_PI_PACKAGES_FALLBACK_URL`, fetched only then) through pi's loader |
+| repo-local | `<workspace>/.pi/extensions/*.ts`, or a repo-relative path in `harnesses.pi.packages` | the repo itself |
+
+A project entry for the same package overrides the system one. Nothing installs
+at boot. pi installs a missing package on load (13.2 s for two packages,
+measured), so `installedPackages()` drops an npm source that is not on disk at
+its pinned version, refuses repository sources, and reports each drop under
+`extensions.failed` in `[pi] runtime ready`. A package's extension loads through
+pi's jiti loader. In the compiled daemon, pi supplies `typebox` and the
+`@earendil-works/pi-*` peers as virtual modules: a compiled probe loaded a
+TypeScript package importing both in 24 ms, and its tool ran.
+
+In-process extensions are `InlineExtension`s (`{ name, factory }`): `subagents`,
+and the hidden `kortix-turn`, which adds a prompt's `system` field for that turn.
+Child sessions have no `AgentSession`; the runtime routes their tool, context and
+provider hooks to the same runner. `ctx.ui` has no UI bound (`hasUI` is false):
+tools and events work, TUI-only rendering does nothing.
+
+`subagents` is OpenCode's `task` tool: input `{ description, prompt,
+subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
+(set while the child runs), output `task_id: <id>` + `<task_result>`. Each call
+runs an in-process pi agent in a child session (`parentID` = root), with its
+own wire transcript served by `/session`, `/session/:id`,
+`/session/:id/message`, `/session/:root/children`, the state document and
+`/kortix/opencode/messages/:id`, and persisted in the root's dump so `task_id`
+resumes it after a restart. Types: `general` (all workspace tools), `explore`
+(`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
+or `all`. A child gets no `task` (no nesting) and no `question`. Several task
+calls in one message run concurrently; a batch that includes any other tool
+stays sequential. A child session is read-only (prompts to it answer 501).
+A child's calls are checked against the subagent's own rules and the session's
+rules; a `deny` from either wins, so delegating never unlocks a denied call.
+
 Not supported by pi today (answered honestly, never silently): session rewind
 (`/session/:id/revert`, 501 `feature_not_supported`), slash commands
-(`/session/:id/command`), summarize/compaction, subagent sessions, MCP/connector
-tools, todo tools, warm-seed capture. `/kortix/health` reports `harness: 'pi'`
+(`/session/:id/command`), summarize/compaction, MCP/connector tools, todo
+tools, warm-seed capture, `ctx.ui` prompts from extensions. `/kortix/health` reports `harness: 'pi'`
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.
 
@@ -111,6 +161,28 @@ harness. Both `open-code/boot.ts` and `pi/boot.ts` call
 boot acquires the workspace. `boot-state.ts` (host) carries the outcome:
 `configProvider` (reported in `/kortix/health` as `config_provider`) and
 `deferredHistoryBackfill`.
+
+## OpenCode instance guard
+
+OpenCode builds its per-directory services on first use and caches the result
+forever, including an interrupted build. A Stop during the first turn of a
+fresh instance can therefore break every later turn on the box.
+`open-code/instance-guard.ts` prevents that in 3 steps:
+
+1. **Warm.** The daemon requests `/experimental/tool/ids`, `/agent`, `/skill`,
+   `/config/providers` and `/mcp` when the event stream connects and after
+   every instance dispose. Loop-starting requests through the proxy wait for
+   this warm-up, for 20 s at most.
+2. **Heal.** After any aborted turn the daemon probes the same endpoints. Two
+   503 answers in a row trigger `POST /instance/dispose` and a new warm-up.
+3. **Recover.** A root turn that aborted before any output, with no stop
+   request recorded, is a victim. The daemon disposes the instance, then
+   re-prompts once through `turn-auto-resume.ts`. When that is not possible,
+   the turn end carries the cause `RuntimeAbortedTurn`.
+
+Every daemon path that aborts an OpenCode turn calls
+`noteOpencodeStopRequested` first. A new abort path must do the same, or its
+stops read as victims.
 
 ## Native features remain available
 

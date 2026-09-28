@@ -28,9 +28,9 @@ import {
   deriveProjectName,
   normalizeRepoUrl,
   normalizeString,
-  readBody,
   serializeProject,
 } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -131,7 +131,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const scope = await resolveProjectAccount(c, body);
   // IAM-gated. Engine consults super-admin bypass, direct + group
   // policies, and legacy owner/admin bridges (in non-strict mode).

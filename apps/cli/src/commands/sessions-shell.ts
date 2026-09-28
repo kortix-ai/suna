@@ -9,7 +9,7 @@ import {
 
 import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
 
@@ -79,8 +79,7 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
     projectArg = takeFlagValue(rest, ['--project']);
     hostArg = takeFlagValue(rest, ['--host']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const wantNew = takeFlagBool(rest, ['--new']);
   const json = takeFlagBool(rest, ['--json']);
@@ -98,10 +97,7 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
       json,
     });
   }
-  if (positional.length > 1) {
-    process.stderr.write(`${status.err('Pass at most one session id.')}\n`);
-    return 2;
-  }
+  if (positional.length > 1) return fail('Pass at most one session id.');
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     process.stderr.write(`${status.err('sessions shell requires an interactive terminal.')}\n`);
@@ -155,10 +151,7 @@ async function runShellPty(args: {
   opts: CtxOpts;
   json: boolean;
 }): Promise<number> {
-  if (args.sub === 'kill' && !args.ptyId) {
-    process.stderr.write(`${status.err('`shell kill` needs a pty id (see `shell ls`).')}\n`);
-    return 2;
-  }
+  if (args.sub === 'kill' && !args.ptyId) return fail('`shell kill` needs a pty id (see `shell ls`).');
   const sessionId = await resolveRunningSessionId(
     args.sessionArg,
     args.opts,

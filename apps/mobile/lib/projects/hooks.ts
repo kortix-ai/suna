@@ -4,8 +4,19 @@
  */
 
 import { useMemo, useRef } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
+import {
+  createdSessionListRow,
+  upsertIntoSessionCache,
+  writeSessionLists,
+} from '@/lib/session/session-cache-write';
 import {
   nextProjectSessionsPollWindow,
   projectSessionsPollInterval,
@@ -15,7 +26,6 @@ import {
   archiveProject,
   buildSandboxTemplate,
   closeChangeRequest,
-  createAccount,
   connectSlack,
   createProjectSession,
   createProjectTrigger,
@@ -44,12 +54,9 @@ import {
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
-  linkRepository,
   listAccounts,
   listChangeRequests,
   listConnectors,
-  listGitHubInstallations,
-  listGitHubRepositories,
   listPipedreamApps,
   listProjectAccess,
   listProjectBranches,
@@ -63,7 +70,6 @@ import {
   mergeChangeRequest,
   openChangeRequest,
   patchChangeRequest,
-  provisionProject,
   readProjectFile,
   reopenChangeRequest,
   setPersonalProjectSecret,
@@ -90,11 +96,9 @@ import {
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
-  type ProvisionProjectInput,
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
-import { invalidateAfterProjectCreation } from './project-mutation-cache';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
@@ -118,6 +122,9 @@ export const projectKeys = {
    */
   projectSessionsPaged: (projectId: string | null | undefined) =>
     ['project-sessions', projectId, 'paged'] as const,
+  /** A session's public shares (KRTX-248: the transcript link). */
+  sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
@@ -162,13 +169,32 @@ export const projectKeys = {
     ['pipedream-apps', projectId, q] as const,
   pipedreamAppMeta: (projectId: string | null | undefined, slug: string | null | undefined) =>
     ['pipedream-app-meta', projectId, slug] as const,
-  githubInstallations: (accountId: string | null | undefined) =>
-    ['github-installations', accountId] as const,
-  githubRepositories: (
-    accountId: string | null | undefined,
-    installationId: string | null | undefined
-  ) => ['github-repositories', accountId, installationId] as const,
 };
+
+/**
+ * Both cached shapes of a project's session list, for a write that must reach
+ * every reader (lib/session/session-cache-write): the flat first page (the
+ * thread's lookups) and the paged list (the drawer, the Sessions page).
+ */
+export function sessionListKeys(projectId: string) {
+  return [
+    projectKeys.projectSessions(projectId),
+    projectKeys.projectSessionsPaged(projectId),
+  ] as const;
+}
+
+/**
+ * A created session, in the cached lists now: the top of page one, or in
+ * place where a refetch already brought it. A 202 (create only queued) is not
+ * a row and waits for the refetch.
+ */
+export function listCreatedSession(queryClient: QueryClient, projectId: string, created: unknown) {
+  const row = createdSessionListRow(created, projectId);
+  if (!row) return;
+  writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+    upsertIntoSessionCache(cached, row)
+  );
+}
 
 export function useAccounts(enabled = true) {
   return useQuery({
@@ -176,16 +202,6 @@ export function useAccounts(enabled = true) {
     queryFn: listAccounts,
     enabled,
     staleTime: 60_000,
-  });
-}
-
-export function useCreateAccount() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) => createAccount(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    },
   });
 }
 
@@ -491,7 +507,10 @@ export function useCreateProjectSession(projectId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateProjectSessionInput) => createProjectSession(projectId!, input),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // The drawer and the Sessions page list it the moment the POST answers;
+      // the refetch below then replaces it with the list's own row.
+      if (projectId) listCreatedSession(queryClient, projectId, created);
       queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
     },
   });
@@ -504,50 +523,6 @@ export function useArchiveProject() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-  });
-}
-
-export function useProvisionProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    // Wrapped: TanStack v5 calls mutationFn(variables, context), and the
-    // context must not land in provisionProject's ApiClientOptions.
-    mutationFn: (input: ProvisionProjectInput) => provisionProject(input),
-    onSuccess: () => {
-      invalidateAfterProjectCreation(queryClient);
-    },
-  });
-}
-
-export function useLinkRepository() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: linkRepository,
-    onSuccess: () => {
-      invalidateAfterProjectCreation(queryClient);
-    },
-  });
-}
-
-export function useGitHubInstallations(accountId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.githubInstallations(accountId),
-    queryFn: () => listGitHubInstallations(accountId!),
-    enabled: enabled && !!accountId,
-    staleTime: 0,
-  });
-}
-
-export function useGitHubRepositories(
-  accountId: string | null,
-  installationId: string | null,
-  enabled: boolean
-) {
-  return useQuery({
-    queryKey: projectKeys.githubRepositories(accountId, installationId),
-    queryFn: () => listGitHubRepositories(accountId!, installationId),
-    enabled: enabled && !!accountId && !!installationId,
-    staleTime: 30_000,
   });
 }
 

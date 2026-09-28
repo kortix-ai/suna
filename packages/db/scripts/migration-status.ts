@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
-import pg from 'pg';
+import { readDatabase } from './catalog';
 
 /**
  * `migrate.ts status`: which migrations has this database not applied yet?
@@ -17,11 +17,10 @@ import pg from 'pg';
  *    itself through `pgm.db.query()` (the batched `.concurrent.ts` data passes)
  *    executes and commits.
  *
- * So `status` lists the migration files, reads the ledger inside a read-only
- * transaction on a read-only session, and compares the two. It writes nothing.
+ * So `status` lists the migration files, reads the ledger through
+ * `catalog.ts` (a read-only session and a read-only transaction), and
+ * compares the two. It writes nothing.
  */
-
-export const LEDGER_TABLE = 'kortix_migrations.pgmigrations';
 
 /**
  * node-pg-migrate's timestamp key for a file name (`getNumericPrefix`): a
@@ -96,83 +95,12 @@ export function planMigrationStatus(
   return { pending: fileNames.filter((name) => !applied.has(name)) };
 }
 
-/** Throws unless a `SHOW` answered `on`. */
-export function assertReadOnlySetting(setting: string, value: string | undefined): void {
-  if (value !== 'on') {
-    throw new Error(
-      `migrate status refuses to run: ${setting} is ${JSON.stringify(value ?? null)}, not "on". ` +
-        'The status path must read the ledger on a read-only session.',
-    );
-  }
-}
-
-/**
- * A `pg.Client` whose session defaults every transaction to READ ONLY.
- *
- * The setting travels as a startup parameter. `pg` lets an `options=` query
- * parameter in the URL replace it, and a connection pooler can drop it, so the
- * session is checked after connect: when it is not read-only, a session `SET`
- * is tried once; when it is still not read-only, the client is closed and the
- * call throws. Nothing is queried before the check passes.
- */
-export async function connectReadOnly(databaseUrl: string): Promise<pg.Client> {
-  const client = new pg.Client({
-    connectionString: databaseUrl,
-    options: '-c default_transaction_read_only=on',
-  });
-  await client.connect();
-  try {
-    const show = async () =>
-      (await client.query<{ default_transaction_read_only: string }>(
-        'SHOW default_transaction_read_only',
-      )).rows[0]?.default_transaction_read_only;
-    let value = await show();
-    if (value !== 'on') {
-      await client.query('SET default_transaction_read_only = on');
-      value = await show();
-    }
-    assertReadOnlySetting('default_transaction_read_only', value);
-    return client;
-  } catch (error) {
-    await client.end().catch(() => {});
-    throw error;
-  }
-}
-
-/**
- * Applied migration names in run order, read inside `BEGIN READ ONLY` … `ROLLBACK`
- * on a `connectReadOnly` session. An absent ledger table reads as empty: it is
- * never created here.
- */
-export async function readLedgerReadOnly(databaseUrl: string): Promise<string[]> {
-  const client = await connectReadOnly(databaseUrl);
-  try {
-    await client.query('BEGIN READ ONLY');
-    try {
-      const txn = await client.query<{ transaction_read_only: string }>('SHOW transaction_read_only');
-      assertReadOnlySetting('transaction_read_only', txn.rows[0]?.transaction_read_only);
-      const exists = await client.query<{ exists: boolean }>(
-        `SELECT to_regclass('${LEDGER_TABLE}') IS NOT NULL AS exists`,
-      );
-      if (!exists.rows[0]?.exists) return [];
-      const ledger = await client.query<{ name: string }>(
-        `SELECT name FROM ${LEDGER_TABLE} ORDER BY run_on, id`,
-      );
-      return ledger.rows.map((row) => row.name);
-    } finally {
-      await client.query('ROLLBACK');
-    }
-  } finally {
-    await client.end();
-  }
-}
-
 export async function readMigrationStatus(options: {
   databaseUrl: string;
   migrationsDir: string;
   checkOrder: boolean;
 }): Promise<MigrationStatusPlan> {
   const fileNames = migrationNamesInRunOrder(options.migrationsDir);
-  const ledgerNames = await readLedgerReadOnly(options.databaseUrl);
-  return planMigrationStatus(fileNames, ledgerNames, { checkOrder: options.checkOrder });
+  const { ledger } = await readDatabase(options.databaseUrl);
+  return planMigrationStatus(fileNames, ledger, { checkOrder: options.checkOrder });
 }

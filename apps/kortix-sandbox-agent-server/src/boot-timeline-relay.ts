@@ -1,5 +1,6 @@
 import { logger } from './logger'
 import type { BootMark } from './boot-state'
+import { sandboxRelayContext } from './relay-context'
 
 /**
  * Relays the in-guest boot timeline to the control plane, once, when a
@@ -50,14 +51,10 @@ export function __resetBootTimelineRelayForTests(): void {
 }
 
 async function doRelay(timeline: BootMark[]): Promise<void> {
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  // The API accepts this session-bound credential for daemon lifecycle events.
-  const token = (process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return
+  const ctx = sandboxRelayContext()
+  if (!ctx) return
   if (timeline.length === 0) return
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const { sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/platform/boot-timeline`
   try {
     const res = await fetch(url, {

@@ -3,11 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrationNamesInDirectory } from './early-applied-migration-repair';
-import {
-  assertReadOnlySetting,
-  migrationNamesInRunOrder,
-  planMigrationStatus,
-} from './migration-status';
+import { migrationNamesInRunOrder, planMigrationStatus } from './migration-status';
 
 const scriptsDir = import.meta.dir;
 const migrationsDir = join(scriptsDir, '..', 'migrations');
@@ -69,20 +65,10 @@ describe('migrationNamesInRunOrder', () => {
   });
 });
 
-describe('assertReadOnlySetting', () => {
-  test('passes only on "on"', () => {
-    expect(() => assertReadOnlySetting('default_transaction_read_only', 'on')).not.toThrow();
-    for (const value of ['off', '', undefined]) {
-      expect(() => assertReadOnlySetting('default_transaction_read_only', value)).toThrow(
-        /refuses to run: default_transaction_read_only/,
-      );
-    }
-  });
-});
-
 describe('the status path never reaches the migration runner', () => {
   const migrate = readFileSync(join(scriptsDir, 'migrate.ts'), 'utf8');
   const status = readFileSync(join(scriptsDir, 'migration-status.ts'), 'utf8');
+  const catalog = readFileSync(join(scriptsDir, 'catalog.ts'), 'utf8');
 
   test('migrate.ts status reads the ledger through migration-status.ts', () => {
     const statusCase = migrate.slice(migrate.indexOf("case 'status':"), migrate.indexOf('default:'));
@@ -94,7 +80,8 @@ describe('the status path never reaches the migration runner', () => {
     expect(migrate).not.toMatch(/dryRun\s*:/);
   });
 
-  test('migration-status.ts does not import node-pg-migrate', () => {
+  test('migration-status.ts and the catalog.ts reader do not import node-pg-migrate', () => {
     expect(status).not.toMatch(/from 'node-pg-migrate'/);
+    expect(catalog).not.toMatch(/from 'node-pg-migrate'/);
   });
 });

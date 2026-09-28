@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   composerModelLabel,
   effectiveComposerModel,
+  isModelUnavailable,
   selectComposerModel,
 } from './composer-model';
 
@@ -25,5 +26,24 @@ describe('composer model pill', () => {
     expect(effectiveComposerModel(null, 'claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
     expect(effectiveComposerModel('gpt-5', 'claude-sonnet-4-6')).toBe('gpt-5');
     expect(effectiveComposerModel(null, undefined)).toBeNull();
+  });
+});
+
+describe('model availability (KRTX-251)', () => {
+  test('the catalog loaded and offers no model: unavailable', () => {
+    expect(isModelUnavailable({ hasCatalog: true, loading: false, modelCount: 0 })).toBe(true);
+  });
+
+  test('the catalog is still loading: not unavailable, the send is not blocked', () => {
+    expect(isModelUnavailable({ hasCatalog: false, loading: true, modelCount: 0 })).toBe(false);
+    expect(isModelUnavailable({ hasCatalog: true, loading: true, modelCount: 0 })).toBe(false);
+  });
+
+  test('the gateway is disabled (no catalog): not unavailable', () => {
+    expect(isModelUnavailable({ hasCatalog: false, loading: false, modelCount: 0 })).toBe(false);
+  });
+
+  test('at least one model: available', () => {
+    expect(isModelUnavailable({ hasCatalog: true, loading: false, modelCount: 3 })).toBe(false);
   });
 });

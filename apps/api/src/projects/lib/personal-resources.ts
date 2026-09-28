@@ -1,6 +1,5 @@
 /**
- * Personal resources of an agent session — spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.3.
+ * Personal resources of an agent session.
  *
  * A resource owned by one human (a member-owned connector connection, a
  * personal project-secret override, a personal provider key, that human's own
@@ -29,6 +28,7 @@ import type { AgentGrant } from '@kortix/db';
 import { loadTokenBinding, type Actor } from '../../iam/actor';
 import { agentPrincipalModeFor, isGovernedAgentGrant, loadAgentPrincipalFlag } from '../../iam/agent-principal';
 import { db } from '../../shared/db';
+import type { ConnectionAgentPrincipalReach } from './connection-access';
 import type { Context } from 'hono';
 import { getRequestOnBehalfOf, resolveSessionOnBehalfOf } from './on-behalf-of';
 
@@ -210,7 +210,7 @@ export async function tokenAgentPrincipalScope(input: {
 export async function requestAgentPrincipalReach(
   c: Context,
   actor?: Actor | null,
-): Promise<{ onBehalfOfUserId: string | null; visibility: PersonalSessionVisibility | null } | null> {
+): Promise<ConnectionAgentPrincipalReach | null> {
   const resolvedActor = actor ?? ((c.get('actor') as Actor | undefined) ?? null);
   const scope = actorPersonalScope(resolvedActor, getRequestOnBehalfOf(c));
   if (!scope.agentPrincipal) return null;

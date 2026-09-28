@@ -16,8 +16,6 @@
  * is always project-wide visible; the only access gate is the agent-side
  * `[[agents]].connectors` grant (iam/agent-scope.ts). This file keeps the
  * generic pure helpers + session DB helpers only.
- *
- * See docs/specs/connector.md §6.
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
@@ -127,7 +125,6 @@ export async function resolveShareSubject(userId: string): Promise<ShareSubject>
  * `private` visibility (owner only) instead of modelling it as restricted+owner.
  * The dashboard's SharingIntent maps: project→project, private→private,
  * members→restricted+grants (empty members collapses back to private).
- * See docs/specs/iam.md.
  */
 
 export type SessionVisibility = 'private' | 'project' | 'restricted';

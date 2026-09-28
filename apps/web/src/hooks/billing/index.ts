@@ -69,17 +69,6 @@ export {
 } from './use-tier-configurations';
 
 // =============================================================================
-// ADMIN HOOKS - For admin dashboard
-// =============================================================================
-
-export {
-  useAdjustCredits,
-  useAdminUserTransactions,
-  useProcessRefund,
-  useUserBillingSummary,
-} from './use-admin-billing';
-
-// =============================================================================
 // TYPE EXPORTS
 // =============================================================================
 

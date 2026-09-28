@@ -32,8 +32,8 @@ import { join } from 'node:path';
  *                 the CLI and worker hosts that have no React at all.
  *  - `./server` — imports `node:async_hooks`. The root barrel is
  *                 `isomorphic-core` tier, which forbids every `node:` import.
- *  - the five zustand stores (and their un-prefixed `@deprecated` aliases) —
- *                 `browser-only` tier. `zustand` is a forbidden import in
+ *  - the `./internal/*` modules (and the un-prefixed `@deprecated` aliases of
+ *                 the stores) — `browser-only` tier. `zustand` is a forbidden import in
  *                 `isomorphic-core`, so re-exporting these from root would
  *                 break the framework-free tripwire in `index.isomorphic.test.ts`
  *                 and drag zustand into every consumer's bundle. These are
@@ -48,6 +48,8 @@ const NOT_ROOT_REACHABLE = new Set([
   './internal/sandbox-connection-store',
   './internal/opencode-pending-store',
   './internal/idb-sync-cache',
+  './internal/diagnostics-store',
+  './internal/managed-storage',
   './sync-store',
   './server-store',
   './sandbox-connection-store',

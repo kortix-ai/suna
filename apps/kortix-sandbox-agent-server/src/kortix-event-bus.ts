@@ -156,13 +156,6 @@ export class KortixEventBus {
       },
     }
   }
-
-  /** Tests only. */
-  __resetForTests(): void {
-    this.seq = 0
-    this.ring = []
-    this.listeners.clear()
-  }
 }
 
 // ---------------------------------------------------------------------------

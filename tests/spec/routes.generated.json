@@ -1,10 +1,14 @@
 {
   "generatedAt": "static",
-  "count": 675,
+  "count": 688,
   "routes": [
     {
       "method": "GET",
       "path": "/.well-known/oauth-authorization-server"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp"
     },
     {
       "method": "GET",
@@ -1219,6 +1223,14 @@
       "path": "/v1/marketplace/sources/:id"
     },
     {
+      "method": "POST",
+      "path": "/v1/notifications/device-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/device-token/:token"
+    },
+    {
       "method": "GET",
       "path": "/v1/oauth/.well-known/oauth-authorization-server"
     },
@@ -1233,6 +1245,10 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/register"
     },
     {
       "method": "POST",
@@ -1699,6 +1715,10 @@
       "path": "/v1/projects/:projectId/commits/:sha/diff"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/config-archives/:configTreeId"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/connect-requests"
     },
@@ -1773,6 +1793,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/revoke"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/share"
     },
     {
       "method": "GET",
@@ -1949,6 +1973,18 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/mcp"
     },
     {
       "method": "GET",
@@ -2163,6 +2199,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/config-release"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
     },
@@ -2332,6 +2372,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/turn-permission"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/turn-question"
     },
     {
@@ -2457,6 +2501,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunk/:sha256"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunks/:component"
     },
     {
       "method": "GET",

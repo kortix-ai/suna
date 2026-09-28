@@ -14,15 +14,18 @@ import {
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
   isExpectedCompactionNoModelMessage,
+  isExpectedNextRecoveryBailoutNoise,
   isExtensionRejectedObjectNoise,
   isExtensionSource,
   isFailedToSendMessageNoise,
   isFirefoxReactSchedulerReentryNoise,
   isFramelessNetworkErrorNoise,
+  isGitMirrorUnavailableNoiseMessage,
   isInjectedAppSource,
   isInjectedScriptSendMessageNoise,
   isInpageJsNoErrorMessageNoise,
   isInpageWalletStreamNoise,
+  isIosWebViewInjectedStackOverflowNoise,
   isIOSWebViewWebKitBridgeNoise,
   isKnownBrowserNoiseMessage,
   isLikelyDomMutationNoise,
@@ -37,6 +40,7 @@ import {
   isPaperShaderImageUniformNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
@@ -51,8 +55,10 @@ import {
   isUndefinedVariableThirdPartyNoise,
   isUnresolvableStackOverflowNoise,
   isUserscriptManagerNoise,
+  isVercelLiveFeedbackNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
+  shouldIgnoreSentryNoiseEvent,
 } from './browser-error-noise.ts';
 
 test('matches the Safari runtime.sendMessage tab-not-found noise', () => {
@@ -872,7 +878,7 @@ test('suppresses storage-disabled WebView null.getItem TypeErrors (V8 + JSC)', (
 // unhandledrejection — never reached a React error boundary), release
 // `c330eda4d96e7aee557618254a86df7d16ba5d9b` (v0.12.0), request URLs
 // `https://kortix.com/auth` (first occurrence) and
-// `https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf` (second
+// `https://kortix.com/projects/00000000-0000-4000-8000-000000000001` (second
 // occurrence, referer `https://accounts.google.com/` post-Google OAuth), Chrome
 // 151.0.0.0 on Windows. Stack trace: NONE — `call_site_file`/`call_site_function`
 // are null, `call_stack_hash` is null, no frames at all.
@@ -949,7 +955,7 @@ test('suppresses the Supabase TOKEN_EXPIRED Sentry event via the beforeSend gate
   // (post-Google-OAuth redirect), referer `https://accounts.google.com/`.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/c5a6e2f5-8880-4c30-bbbf-40fbcc1a1fbf' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000001' },
       exception: {
         values: [
           {
@@ -1666,7 +1672,7 @@ test('suppresses the injectedScript.bundle.js sendMessage Sentry event via the b
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688',
+          url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000002%2Fthread%2F00000000-0000-4000-8000-000000000003',
         },
         exception: {
           values: [
@@ -1688,7 +1694,7 @@ test('does NOT suppress a real first-party sendMessage that throws from an apps/
   // regression; the negative guard MUST preserve it so the call site can be fixed.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      request: { url: 'https://kortix.com/projects/00000000/some-page' },
       exception: {
         values: [
           {
@@ -1719,7 +1725,7 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
   //       function `u`
   //     app:///injectedScript.bundle.js function `n` colno 84147
   //   mechanism: auto.browser.global_handlers.onunhandledrejection
-  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688
+  //   request URL: https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000002%2Fthread%2F00000000-0000-4000-8000-000000000003
   //   better-stack pattern: 95a70e668e9fbeb0c139131ac78db4aff62d5ab3675ed376666f9526c2cbb02c
   assert.equal(
     isInjectedScriptSendMessageNoise({
@@ -1737,7 +1743,7 @@ test('pins the production Better Stack pattern 95a70e66…', () => {
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?redirect=%2Fprojects%2Fd9ba943c-b6d3-4c6d-a312-fe8ef4b5c7da%2Fthread%2F694c3093-afa7-4440-9e05-7a15dbf98688',
+        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000002%2Fthread%2F00000000-0000-4000-8000-000000000003',
       },
       exception: {
         values: [
@@ -1914,7 +1920,7 @@ test('does NOT suppress a real first-party widgetId that throws from an apps/web
   // regression; the negative guard MUST preserve it so the call site can be fixed.
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/d9ba943c/some-page' },
+      request: { url: 'https://kortix.com/projects/00000000/some-page' },
       exception: {
         values: [
           {
@@ -2288,7 +2294,7 @@ test('does NOT suppress a same-shaped message reading a different property', () 
 const CLIENT_REQUEST_TIMEOUT_EVENTS = [
   // The exact assigned occurrence — endpoint varies per call, so match the
   // SDK's `Request timed out after <N>s: ` prefix, not the full URL.
-  'Request timed out after 30s: /projects/24e99500-c925-481a-bc88-5b89dba4d965/sessions/88488045-8cd7-4c6b-ad0f-2b56a4c9cb25/audit',
+  'Request timed out after 30s: /projects/00000000-0000-4000-8000-000000000004/sessions/00000000-0000-4000-8000-000000000005/audit',
   // The budget is configurable per call; the seconds value is not load-bearing.
   'Request timed out after 60s: /accounts',
   // The ApiError-class-prefixed wrapper.
@@ -2537,6 +2543,97 @@ test('does NOT suppress a real 5xx server ApiError', () => {
       shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
       false,
       `expected real server error "${value}" to keep reporting`,
+    );
+  }
+});
+
+// Regression for Better Stack frontend pattern `b4d05df2…`
+// (`ApiError: git mirror is temporarily unavailable`) on session starts:
+// `POST /v1/projects/:id/sessions` cold-clones the project's private git
+// mirror; a transient GitHub-edge/credential blip yields `fatal: repository
+// '<url>' not found`, which the API's `isTransientGitMirrorError` classifies as
+// EXPECTED and retryable. The API answers a clean 503 + `Retry-After` with
+// `code: 'git_mirror_unavailable'` and de-noises it from the API's OWN Sentry,
+// but the 503 crosses into the FRONTEND Sentry as an `ApiError(status: 503)`
+// (app 2346967 — a separate app). `handleApiError` skips `captureException`
+// for `status === 503 && isGitMirrorUnavailableNoiseMessage(message)`; these
+// checks are the telemetry-side backstop for leak paths (ClientErrorBoundary /
+// route-error / app-error / onunhandledrejection).
+const GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS = [
+  // The exact API body message.
+  'git mirror is temporarily unavailable',
+  // The ApiError-class-prefixed wrapper.
+  'ApiError: git mirror is temporarily unavailable',
+  // Unhandled-rejection leak paths preserving the message.
+  'Unhandled promise rejection: git mirror is temporarily unavailable',
+  'Unhandled promise rejection: ApiError: git mirror is temporarily unavailable',
+];
+
+test('classifies every transient git-mirror 503 message as expected noise', () => {
+  for (const message of GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS) {
+    assert.equal(
+      isGitMirrorUnavailableNoiseMessage(message),
+      true,
+      `expected "${message}" to be classified as a git-mirror 503`,
+    );
+  }
+});
+
+test('suppresses a transient git-mirror 503 Sentry event regardless of capture path', () => {
+  for (const value of GIT_MIRROR_UNAVAILABLE_NOISE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/38irc0p4wwe9z.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    );
+  }
+});
+
+test('suppresses a transient git-mirror 503 unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Unhandled promise rejection: ApiError: git mirror is temporarily unavailable',
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a generic 503 message that is not the git-mirror wording', () => {
+  // A generic 503 (`HTTP 503: Service Unavailable`, `sandbox waking up`,
+  // `sandbox provider is temporarily unavailable`) must keep reporting — only
+  // the exact git-mirror message the API's `isTransientGitMirrorError` branch
+  // emits is classified as noise.
+  for (const value of [
+    'HTTP 503: Service Unavailable',
+    'Service Unavailable',
+    'sandbox waking up',
+    'sandbox provider is temporarily unavailable',
+    'git mirror is permanently unavailable',
+    'git mirror unavailable',
+    'git mirror is temporarily unavailable.',
+    'A git mirror is temporarily unavailable',
+  ]) {
+    assert.equal(
+      isGitMirrorUnavailableNoiseMessage(value),
+      false,
+      `expected generic git-mirror message "${value}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected generic git-mirror Sentry event "${value}" to keep reporting`,
     );
   }
 });
@@ -3573,7 +3670,7 @@ test('suppresses the post-0.10.13 Sentry 10.x "No error message" placeholder eve
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F038ce7cd-c239-47eb-9ad3-83f2e5345aa6%2Fthread%2F75e8053d-85f9-4f18-a6e5-2ac4f0600e44',
+        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000006%2Fthread%2F00000000-0000-4000-8000-000000000007',
       },
       exception: {
         values: [
@@ -3608,7 +3705,7 @@ test('suppresses the sibling post-0.10.13 pattern 19ee7c2f… (different dpl, sa
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F59aa5850-de1d-4e56-81fb-34d532146f01%2Fthread%2F2149cad0-e79e-4d38-84ac-273364cfb434',
+        url: 'https://kortix.com/auth?redirect=%2Fprojects%2F00000000-0000-4000-8000-000000000008%2Fthread%2F00000000-0000-4000-8000-000000000009',
       },
       exception: {
         values: [
@@ -4528,7 +4625,7 @@ test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT pr
 // `JSON.parse(undefined)` regression throws inside an app chunk (or a
 // de-minified `apps/web/src/…` frame) and is never matched.
 const USERSCRIPT_MANAGER_FRAME =
-  'app:///userscript.html?name=YoutubeDL.user.js&id=303c1708-e3a7-42b9-bdd1-9c21ea14f6b4';
+  'app:///userscript.html?name=YoutubeDL.user.js&id=00000000-0000-4000-8000-000000000010';
 
 const USERSCRIPT_MANAGER_FRAMES: Array<{ filename: unknown; function: unknown }> = [
   { filename: USERSCRIPT_MANAGER_FRAME, function: '?' },
@@ -4824,8 +4921,8 @@ test('does NOT suppress the Android bridge message with NO bridge frame (conserv
 // library's own internal `getDocumentStateOrThrow` / `getDocumentState`
 // helpers throw `<Interaction|Selection> state not found for document:
 // <docId>`. Both Better Stack patterns are the SAME doc id
-// (`doc-1785904808253-gbsixyvii`), same Safari 26.5 session
-// (`be897489-001b-4ca4-b9ca-a1aa770c4082`), same minified chunk
+// (`doc-0000000000000-synthetic`), same Safari 26.5 session
+// (`00000000-0000-4000-8000-000000000011`), same minified chunk
 // `17631.2j-4o95.js`, last 2026-08-05 04:40:45 UTC (POST-v0.12.3), UNCAUGHT
 // (`handled:false`, mechanism `addEventListener`), NO first-party
 // `apps/web/src/…` frame. 28 occurrences (interaction) + 2 occurrences
@@ -4840,12 +4937,12 @@ test('does NOT suppress the Android bridge message with NO bridge frame (conserv
 // The exact interaction-state message from the production event (pattern
 // 6d6fa794…, 28 occurrences).
 const DOCUMENT_STATE_INTERACTION_MESSAGE =
-  'Interaction state not found for document: doc-1785904808253-gbsixyvii';
+  'Interaction state not found for document: doc-0000000000000-synthetic';
 
 // The exact selection-state message from the production event (pattern
 // a954c7e7…, 2 occurrences, SAME doc id).
 const DOCUMENT_STATE_SELECTION_MESSAGE =
-  'Selection state not found for document: doc-1785904808253-gbsixyvii';
+  'Selection state not found for document: doc-0000000000000-synthetic';
 
 // Pattern 6d6fa794 — the production stack frames (oldest-first → throwing
 // frame last): the entry `r` in chunk `13jg6.ewllp.z.js`, then the editor
@@ -4870,7 +4967,7 @@ const DOCUMENT_STATE_SELECTION_FRAMES = [
 // co-worker session page.
 const DOCUMENT_STATE_INTERACTION_EVENT = {
   request: {
-    url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+    url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000012/sessions/00000000-0000-4000-8000-000000000011',
   },
   exception: {
     values: [
@@ -5126,7 +5223,7 @@ test('suppresses the assigned editor re-render-loop React #185 Sentry events via
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/projects/e1d956a3-0221-48ac-8060-5343a86e47dc/sessions/be897489-001b-4ca4-b9ca-a1aa770c4082',
+          url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000012/sessions/00000000-0000-4000-8000-000000000011',
         },
         exception: {
           values: [
@@ -6205,6 +6302,213 @@ test('does NOT suppress a real first-party RangeError recursion with a resolved 
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow
+// (Better Stack patterns
+// 101e1671b389e89e5e2a0f555ea7626e4c83a8ed8495e90fc1a2ac0cfa389f87 and
+// d842945607c935d2d4c85dddf54ffc596f9120137f59257cd293a961908a403b,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 1 occurrence each / 0 identified users, last
+// 2026-09-25 20:01:22 UTC / 20:00:30 UTC, release `a9378b74…`, one anonymous
+// Google Search App 436 session on iOS (iPhone) 27.0.0 with Google Translate
+// active. The stack is a tight mutual recursion of Closure-minified functions
+// (`Ok`/`Qk`) at one document line; EVERY frame's filename is the in-page
+// document source `app:///projects/<project_id>/sessions/<session_id>` — no
+// `_next` chunk frame and no resolved `apps/web/src/…` frame. The sibling
+// shape of the frameless iOS-WebKit stack overflow above.
+// ---------------------------------------------------------------------------
+
+// The exact production frame shape, with synthetic ids (never real prod ids).
+const IOS_WEBVIEW_INLINE_SOURCE = 'app:///projects/test-project-id/sessions/test-session-id';
+const IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 226, colno: 408, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 198, colno: 237, in_app: true },
+  { function: '?', filename: IOS_WEBVIEW_INLINE_SOURCE, lineno: 190, colno: 41, in_app: true },
+];
+
+test('classifies the iOS-WebView in-document inline-script stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with in-document inline frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the Sentry beforeSend gate', () => {
+  // The exact production event shape: `auto.browser.global_handlers.onerror`
+  // with every frame on the in-page document source, and the request url path
+  // equal to the frame path.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/test-project-id/sessions/test-session-id' },
+      exception: {
+        values: [
+          {
+            value: 'RangeError: Maximum call stack size exceeded.',
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('keeps reporting an asset frame or an in-document frame from a different page path', () => {
+  // A loaded `.js` asset on the `app:///` origin is a real script, not inline
+  // code executed in the document.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: [
+        { function: 'boot', filename: 'app:///assets/index-abc123.js', lineno: 1, colno: 2 },
+      ],
+    }),
+    false,
+  );
+  // An in-document frame whose path is NOT the page path is another document
+  // context (embed, iframe), not this page's injected script.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      requestUrl: 'https://kortix.com/projects/other-project/sessions/other-session',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/other-project/sessions/other-session' },
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            stacktrace: { frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('suppresses the iOS-WebView in-document stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_INLINE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a stack overflow that carries a bundle or first-party frame', () => {
+  const bundleFrame = {
+    function: 'e',
+    filename: 'app:///_next/static/chunks/main-abc123.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const nextLiveFrame = {
+    function: 'te',
+    filename: 'app:///_next-live/feedback/913.f924585152f5e22503e7.js',
+    lineno: 1,
+    colno: 2,
+  };
+  const firstPartyFrame = {
+    function: 'deepRecurse',
+    filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    lineno: 3,
+    colno: 4,
+  };
+  for (const frames of [
+    [bundleFrame],
+    [nextLiveFrame],
+    [firstPartyFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, bundleFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, nextLiveFrame],
+    [...IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES, firstPartyFrame],
+  ]) {
+    // This class's OWN guard always declines a bundle / `_next-live` / first-
+    // party frame — assert that independent of every other rule.
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames,
+      }),
+      false,
+      `expected real recursion with frames ${JSON.stringify(frames)} to keep reporting`,
+    );
+    // At the full Sentry-gate dispatch level, a `_next-live/feedback/…` frame
+    // with no first-party frame is independently dropped by the (pre-existing,
+    // message-agnostic) `isVercelLiveFeedbackNoise` rule — the Vercel toolbar's
+    // reserved source path is never actionable app code, regardless of message.
+    // That is a DIFFERENT rule than this one; it does not mean this class's own
+    // guard failed to preserve the frame.
+    const isVercelFeedbackFrame = frames.some((frame) =>
+      /^app:\/\/\/_next-live\/feedback\//.test(String(frame.filename ?? '')),
+    );
+    const hasFirstPartyFrame = frames.some((frame) =>
+      String(frame.filename ?? '').includes('apps/web/src/'),
+    );
+    const expectedDispatchVerdict = isVercelFeedbackFrame && !hasFirstPartyFrame;
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Maximum call stack size exceeded.',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      expectedDispatchVerdict,
+      `expected Sentry gate verdict ${expectedDispatchVerdict} for frames ${JSON.stringify(frames)}`,
+    );
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///_next/static/chunks/main-abc123.js',
+    }),
+    false,
+  );
+});
+
+test('does NOT treat an unrelated message from the same in-document source as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+  // Prefix-only, not the canonical message.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
@@ -6458,7 +6762,7 @@ test('suppresses the inpage.js "No error message" Sentry event via the beforeSen
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F9c64dfec-6272-45c0-b61b-5bd0c4826ef8%2Fthread%2F9a4057da-1f55-41a2-9fe9-cd7d52c99674',
+        url: 'https://kortix.com/auth?expired=true&returnUrl=%2Fprojects%2F00000000-0000-4000-8000-000000000013%2Fthread%2F00000000-0000-4000-8000-000000000014',
       },
       exception: {
         values: [
@@ -6742,7 +7046,7 @@ test('suppresses the assigned @embedpdf tiling React #185 Sentry event via the b
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/c4d70885-ce86-4283-b373-bc2fbcd92b85/sessions/917c2468-11bf-4cf0-92e6-20d17fa58e77',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000015/sessions/00000000-0000-4000-8000-000000000016',
       },
       exception: {
         values: [
@@ -6993,7 +7297,7 @@ test('suppresses both @embedpdf tiling tile-destructure Sentry events via the be
     assert.equal(
       shouldIgnoreSentryBrowserNoise({
         request: {
-          url: 'https://kortix.com/projects/7254bee8-0000-0000-0000-000000000000/sessions/bd1306e9-0000-0000-0000-000000000000',
+          url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000017/sessions/00000000-0000-4000-8000-000000000018',
         },
         exception: {
           values: [
@@ -7203,7 +7507,7 @@ test('suppresses the assigned Firefox React #327 Sentry event via the beforeSend
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/3cdc1df5-01e6-492d-b2ab-d81bb8c42fa2/sessions/c102f5de-1b6b-4baf-8cd6-cdd11855330f',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000019/sessions/00000000-0000-4000-8000-000000000020',
       },
       exception: {
         values: [
@@ -8145,7 +8449,7 @@ test('suppresses the post-OAuth OperationError popErrorScope Sentry event (secon
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/198b319d-b710-4443-a797-d813ba16f07a',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000021',
       },
       exception: {
         values: [
@@ -8227,6 +8531,131 @@ test('does NOT suppress the OperationError popErrorScope rejection when any reso
       `expected attributable OperationError popErrorScope rejection from ${JSON.stringify(frames)} to keep reporting`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// SECOND production shape (KRTX-227 / KRTX-228): the SAME browser-internal
+// `OperationError: Instance dropped in popErrorScope` message arrives WITH a
+// stack. The only WebGPU code on the site is the three.js renderer behind the
+// public `/a1o` landing page's `<Canvas>` (`three@0.185.1`,
+// `apps/web/src/app/[locale]/a1o/die-scene.tsx`). The GPU device is dropped
+// (device loss / tab teardown / page navigation) between the error-scope push
+// and pop, so the browser rejects `popErrorScope()` and three.js surfaces the
+// rejection uncaught from its pipeline cache. The stack is entirely minified
+// three.js bundle frames in
+// `app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js` (pipeline helpers
+// `createRenderPipeline` / `_getRenderPipeline`), with NO resolved first-party
+// `apps/web/src/…` frame. Better Stack patterns `a44862f6…` (KRTX-228) and
+// `93f6cf89…` (KRTX-227), ~42-43 occurrences over ~11 h, 0 identified users,
+// release `52c2174f…`, request URL `https://kortix.com/`, Chrome, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (`handled:false` —
+// UNCAUGHT). The fix adds a positive three.js-WebGPU-pipeline anchor; the
+// first-party negative guard is unchanged.
+// ---------------------------------------------------------------------------
+
+// The exact minified three.js renderer frames from the production event.
+const THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES = [
+  { filename: 'app:///_next/static/immutable/chunks/1t2z4o9r-gb3e.js', function: 'n' },
+  { filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js', function: 'e' },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'dV._animationLoop',
+  },
+  { filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js', function: 'Te._renderScene' },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'Te._renderObjects',
+  },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'd4._getRenderPipeline',
+  },
+  {
+    filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+    function: 'vz.createRenderPipeline',
+  },
+];
+
+test('suppresses the stack-bearing three.js WebGPU renderer popErrorScope noise (KRTX-228 prod shape)', () => {
+  // Gate #1: fails without the new positive anchor (the minified frames would
+  // fall through to negative guard #2 and keep reporting).
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES,
+    }),
+    true,
+  );
+});
+
+test('suppresses the WebGPU renderer popErrorScope Sentry event via the beforeSend gate', () => {
+  // The exact production shape: type `OperationError`, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (uncaught), the
+  // minified three.js renderer stack, no first-party frame.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: OPERATION_ERROR_POP_ERROR_SCOPE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onunhandledrejection',
+              handled: false,
+            },
+            stacktrace: { frames: THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress the WebGPU renderer popErrorScope shape when a first-party frame is present', () => {
+  // A resolved `apps/web/src/…` frame alongside the renderer frames means our
+  // own code is in the rejection path → actionable; guard #1 wins over the
+  // positive anchor.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [
+        ...THREE_WEBGPU_RENDERER_POP_ERROR_SCOPE_FRAMES,
+        { filename: 'apps/web/src/app/[locale]/a1o/die-scene.tsx', function: 'DieScene' },
+      ],
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a non-bundle createRenderPipeline stack (guard #2 unchanged)', () => {
+  // The anchor requires an `app:///_next/static/…` bundle frame; a
+  // `createRenderPipeline` function in an external URL is not the three.js
+  // anchor, so guard #2 keeps this attributable event reporting.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [{ filename: 'https://cdn.example.com/lib.js', function: 'lib.createRenderPipeline' }],
+    }),
+    false,
+  );
+});
+
+test('suppresses a single anchored WebGPU pipeline frame (minimal stack)', () => {
+  // One bundle frame whose method is a three.js pipeline helper is enough to
+  // classify the WebGPU error-scope shape.
+  assert.equal(
+    isOperationErrorPopErrorScopeNoise({
+      message: OPERATION_ERROR_POP_ERROR_SCOPE,
+      frames: [
+        {
+          filename: 'app:///_next/static/immutable/chunks/1lmxku8mlk4v9.js',
+          function: 'vz.createRenderPipeline',
+        },
+      ],
+    }),
+    true,
+  );
 });
 
 test('does NOT suppress a non-matching message (suffix variant)', () => {
@@ -8338,7 +8767,7 @@ test('suppresses the frameless network error Sentry event via the beforeSend gat
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/66f6788a-0000-0000-0000-000000000000/sessions/d16b4555-0000-0000-0000-000000000000',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000022/sessions/00000000-0000-4000-8000-000000000023',
       },
       exception: {
         values: [
@@ -8698,6 +9127,157 @@ test('does NOT suppress the "Connection closed by server." wording (over-match g
 });
 
 // ---------------------------------------------------------------------------
+// React error #412 — "Connection closed." (RSC / Flight stream close)
+//
+// KRTX-240, Better Stack pattern
+// 3d9e3dd115f302ff96fa4bee9b54beed839db71851ea5b0ad7660778023ec6a7, Kortix
+// Frontend prod (application_id 2346967). React's minified prod error #412 is
+// `Connection closed.` (see React's error-codes map) — the SAME canonical close
+// string a client-side transport library throws, emitted by React's Flight
+// client in `close()` when an RSC stream ends with chunks still pending
+// (ReactFlightClient: `reportGlobalError(weakResponse, new Error('Connection
+// closed.'))`). In a Next.js App Router client this is the RSC/flight response
+// stream closing early — an aborted navigation/prefetch, a network blip, or the
+// server ending the stream. It is a transient, self-healing browser/transport
+// condition, never an app defect. 6 occurrences over 6 days (first
+// 2026-09-17, last 2026-09-23), 0 identified users (anonymous), all Firefox,
+// across the marketing/`/auth`/`/projects/start` routes, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT). The single
+// stack frame is the minified React chunk
+// `app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js` function `n` — NO
+// resolved first-party `apps/web/src/…` frame. React's formatted prod message
+// is canonical (only the deep-link URL varies), so anchoring on the
+// `Minified React error #412;` prefix is specific; the negative guard preserves
+// a real first-party `throw new Error('Connection closed.')` regression.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event: React's formatted prod
+// error #412 (`Connection closed.`). Only the deep-link URL is React's own.
+const REACT_412_CONNECTION_CLOSED_MESSAGE =
+  'Minified React error #412; visit https://react.dev/errors/412 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+// The single production stack frame: the minified React chunk that React's
+// Flight client throws from. Sentry's sourcemap resolution did NOT rewrite this
+// to a first-party `apps/web/src/…` path, so the negative guard does not fire.
+const REACT_412_PROD_FRAMES = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js',
+    function: 'n',
+    lineno: 1,
+    colno: 1,
+    in_app: true,
+  },
+];
+
+test('classifies the React error #412 "Connection closed." RSC-stream noise (exact prod shape)', () => {
+  assert.equal(
+    isConnectionClosedNoise({
+      message: REACT_412_CONNECTION_CLOSED_MESSAGE,
+      frames: REACT_412_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: REACT_412_CONNECTION_CLOSED_MESSAGE,
+            stacktrace: { frames: REACT_412_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses React error #412 through all three capture-path wrappers', () => {
+  // `stripErrorWrappers` + the bare-`Error: ` strip must classify the SAME
+  // underlying message regardless of which capture path delivered it.
+  for (const message of [
+    REACT_412_CONNECTION_CLOSED_MESSAGE,
+    `Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+    `Unhandled promise rejection: Error: ${REACT_412_CONNECTION_CLOSED_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: REACT_412_PROD_FRAMES }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: message, stacktrace: { frames: REACT_412_PROD_FRAMES } }],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('classifies the frameless React error #412 variant as noise (message alone is specific)', () => {
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames: [] }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE }],
+      },
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React error #412 when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code threw the close →
+  // actionable; the negative guard MUST preserve it.
+  const frames = [
+    { filename: 'app:///_next/static/immutable/chunks/2_v90_5tqfcy7.js', function: 'n' },
+    { filename: 'apps/web/src/lib/rsc/stream.ts', function: 'onClose' },
+  ];
+  assert.equal(
+    isConnectionClosedNoise({ message: REACT_412_CONNECTION_CLOSED_MESSAGE, frames }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: REACT_412_CONNECTION_CLOSED_MESSAGE, stacktrace: { frames } }],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded React error number (over-match guard)', () => {
+  // `\b` after `#412` means `#4120` (and any other number) must keep reporting.
+  for (const message of [
+    'Minified React error #4120; visit https://react.dev/errors/4120 for the full message.',
+    'Minified React error #41; visit https://react.dev/errors/41 for the full message.',
+  ]) {
+    assert.equal(
+      isConnectionClosedNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      false,
+      `expected Sentry event "${message}" to keep reporting`,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Canvas `getImageData` out-of-memory noise (BS b4b43847…)
 // ---------------------------------------------------------------------------
 
@@ -8969,7 +9549,7 @@ test('suppresses the Firefox DOM-mutation prod event via the Sentry beforeSend g
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/be079cac-091c-4857-8b3f-f7982027b27c/sessions/f3d44320-846b-4dd3-be26-18d9ca05c931',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000024/sessions/00000000-0000-4000-8000-000000000025',
       },
       exception: {
         values: [
@@ -9063,6 +9643,165 @@ test('does NOT suppress a near-worded Firefox DOM message (over-match guard)', (
       `expected near-worded "${message}" to keep reporting`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// Vercel Live Feedback toolbar (`vercel-live-feedback`) `_next-live/feedback/…`
+// instrumentation noise (Better Stack pattern
+// b81e1f084e007841cfb868f8a45299ce4888e8b1f4e9194f261fb4acea3eaa47, Kortix
+// Frontend prod, application_id 2346967). Vercel injects its Live Feedback
+// toolbar as the deployment-scoped chunk
+// `app:///_next-live/feedback/instrument.<id>.js?dpl=dpl_…` (Vercel's reserved
+// `_next-live/` path, NOT a first-party `apps/web/src/…` source). Its own
+// `addEventListener` handler (function `s`) calls
+// `window.parent.removeEventListener(...)` to detach the listener; when
+// `window.parent` is `null` the engine throws the canonical null-deref
+// TypeError — SpiderMonkey/Firefox wording `can't access property
+// "removeEventListener", window.parent is null`, V8 wording `Cannot read
+// properties of null (reading 'removeEventListener')`, JSC wording `null is not
+// an object (evaluating 'window.parent.removeEventListener')`. 1 occurrence /
+// 0 identified users, first 2026-09-24 19:57:42 UTC, release
+// `4f496426b67b2cbb2e6f5b0c66749a5763bb1196`, request URL a co-worker session
+// page, Firefox 155 on macOS, mechanism
+// `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, handled:false).
+// Stack frames: `n` in `app:///_next/static/immutable/chunks/3vyqedzurxshp.js`
+// (scheduling frame) + `s` in the `_next-live/feedback/instrument.<id>.js`
+// chunk (THE THROW SITE). Breadcrumbs show a `ui.click` on
+// `vercel-live-feedback` immediately before the throw. The matcher anchors on
+// the `_next-live/feedback/` frame source (engine-agnostic) with a first-party
+// negative guard.
+// ---------------------------------------------------------------------------
+
+// The exact exception value from the production event (SpiderMonkey/Firefox
+// wording). The other engine wordings differ, which is why the matcher anchors
+// on the frame source rather than the message.
+const VERCEL_LIVE_FEEDBACK_MESSAGE =
+  'can\'t access property "removeEventListener", window.parent is null';
+
+// The Vercel Live Feedback toolbar throw-site chunk (the reserved
+// `_next-live/feedback/` path). The `<id>` hash and the (duplicated) `?dpl=`
+// deploy query are the production event's own values, kept verbatim.
+const VERCEL_LIVE_FEEDBACK_FRAME =
+  'app:///_next-live/feedback/instrument.edc1868bf1eb68ebda97.js?dpl=dpl_EAgzEi6pn7FBntVjwigWXg13i3Gn?dpl=dpl_EAgzEi6pn7FBntVjwigWXg13i3Gn';
+
+// The two production stack frames: the first-party bundle chunk that scheduled
+// the listener (`n`), then the Vercel Live Feedback toolbar throw site (`s`).
+// NO de-minified first-party `apps/web/src/…` frame, so the negative guard does
+// not fire.
+const VERCEL_LIVE_FEEDBACK_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: 'app:///_next/static/immutable/chunks/3vyqedzurxshp.js', function: 'n' },
+  { filename: VERCEL_LIVE_FEEDBACK_FRAME, function: 's' },
+];
+
+test('classifies the Vercel Live Feedback `window.parent` null-deref prod event as noise', () => {
+  assert.equal(
+    isVercelLiveFeedbackNoise({ frames: VERCEL_LIVE_FEEDBACK_PROD_FRAMES }),
+    true,
+    'expected the `_next-live/feedback/` throw site to classify as noise',
+  );
+  // The runtime gate anchors on the window.onerror `filename` instead of frames.
+  assert.equal(
+    isVercelLiveFeedbackNoise({ filename: VERCEL_LIVE_FEEDBACK_FRAME }),
+    true,
+    'expected the `_next-live/feedback/` filename to classify as noise',
+  );
+  // The https origin variant (a non-`app://` browser bundle origin).
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      filename: 'https://kortix.com/_next-live/feedback/instrument.abc123.js?dpl=dpl_x',
+    }),
+    true,
+    'expected the https `_next-live/feedback/` filename to classify as noise',
+  );
+});
+
+test('suppresses the Vercel Live Feedback prod event via the Sentry beforeSend gate', () => {
+  // Reproduces the exact production event: BS pattern b81e1f08…, release
+  // 4f496426…, request URL a co-worker session page, mechanism
+  // `auto.browser.browserapierrors.addEventListener` (UNCAUGHT, handled:false).
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects/x/sessions/y' },
+      exception: {
+        values: [
+          {
+            value: VERCEL_LIVE_FEEDBACK_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.browserapierrors.addEventListener',
+              handled: false,
+            },
+            stacktrace: { frames: VERCEL_LIVE_FEEDBACK_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the Vercel Live Feedback prod event via the runtime gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: VERCEL_LIVE_FEEDBACK_MESSAGE,
+      filename: VERCEL_LIVE_FEEDBACK_FRAME,
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress a first-party `window.parent` null-deref (negative guard)', () => {
+  // A real first-party `window.parent.removeEventListener` regression
+  // de-minifies to `apps/web/src/…` and must keep reporting, even when a
+  // Vercel toolbar frame is coincidentally present in the stack.
+  const firstPartyFrame = 'app:///_next/static/chunks/apps/web/src/features/foo.tsx';
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      frames: [{ filename: firstPartyFrame, function: 'n' }, ...VERCEL_LIVE_FEEDBACK_PROD_FRAMES],
+    }),
+    false,
+    'expected a resolved first-party frame to keep the event reporting',
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: VERCEL_LIVE_FEEDBACK_MESSAGE,
+            stacktrace: {
+              frames: [
+                { filename: firstPartyFrame, function: 'n' },
+                ...VERCEL_LIVE_FEEDBACK_PROD_FRAMES,
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected the Sentry gate to keep a first-party-framed event reporting',
+  );
+});
+
+test('does NOT suppress unrelated frames (over-match guard)', () => {
+  // No `_next-live/feedback/` frame → never matched, even with the exact
+  // `window.parent` message.
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      frames: [
+        { filename: 'app:///_next/static/immutable/chunks/3vyqedzurxshp.js', function: 'n' },
+      ],
+    }),
+    false,
+  );
+  assert.equal(isVercelLiveFeedbackNoise({ filename: '<anonymous>' }), false);
+  assert.equal(isVercelLiveFeedbackNoise({}), false);
+  // A same-origin `_next/static/` chunk is NOT a `_next-live/` frame.
+  assert.equal(
+    isVercelLiveFeedbackNoise({
+      filename: 'app:///_next/static/chunks/webpack-abc.js',
+    }),
+    false,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -9396,7 +10135,7 @@ test('classifies the production Failed to send message transport noise (exact pr
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/834686a1-bf0c-4bd5-87ea-b2679288e191/sessions/54f7abe9-cad8-4b46-bd04-de8f1723dfd1',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000026/sessions/00000000-0000-4000-8000-000000000027',
       },
       exception: {
         values: [
@@ -9637,7 +10376,7 @@ test('classifies the production Cannot redefine property: webdriver noise (exact
   );
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000028' },
       exception: {
         values: [
           {
@@ -9699,7 +10438,7 @@ test('classifies the frameless Cannot redefine property: webdriver variant as no
   );
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000028' },
       exception: {
         values: [{ value: REDEFINE_WEBDRIVER_MESSAGE, stacktrace: { frames: [] } }],
       },
@@ -9709,7 +10448,7 @@ test('classifies the frameless Cannot redefine property: webdriver variant as no
   // Also when the stacktrace key is omitted entirely (frames default to []).
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
-      request: { url: 'https://kortix.com/projects/61df2bc0-2a20-43cf-b666-0b636fb82904' },
+      request: { url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000028' },
       exception: {
         values: [{ value: REDEFINE_WEBDRIVER_MESSAGE }],
       },
@@ -9879,6 +10618,214 @@ test('classifies the Cannot redefine property: webdriver noise via the runtime g
 });
 
 // ---------------------------------------------------------------------------
+// Injected EVM/Web3 wallet-provider `Cannot redefine property: <provider>`
+// noise (BS 3b46e257…, `browser-extension` class)
+// ---------------------------------------------------------------------------
+
+// The exact raw exception value from the production event.
+const REDEFINE_WALLET_PROVIDER_MESSAGE = 'Cannot redefine property: ethereum';
+
+// The production-shaped frames: an injected wallet/userscript script (here a
+// browser-extension content script) with NO resolved first-party
+// `apps/web/src/…` source, so the negative guard does NOT fire.
+const REDEFINE_WALLET_PROVIDER_PROD_FRAMES: Array<{ filename: unknown; function: unknown }> = [
+  { filename: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/inpage.js', function: 'y' },
+  { filename: '<anonymous>', function: 'Object.defineProperty' },
+];
+
+// The canonical capture-path forms: raw, `TypeError:` prefix, and stacked
+// `Unhandled promise rejection: TypeError:` prefix. All strip to the same
+// underlying message via `stripErrorWrappers`.
+const REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS = [
+  REDEFINE_WALLET_PROVIDER_MESSAGE,
+  `TypeError: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+  `Unhandled promise rejection: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+  `Unhandled promise rejection: TypeError: ${REDEFINE_WALLET_PROVIDER_MESSAGE}`,
+];
+
+test('classifies the Cannot redefine property: ethereum noise (injected wallet provider)', () => {
+  assert.equal(
+    isRedefineInjectedWalletNoise({
+      message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+      frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: REDEFINE_WALLET_PROVIDER_MESSAGE,
+            mechanism: {
+              type: 'auto.browser.global_handlers.onerror',
+              handled: false,
+            },
+            stacktrace: { frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('classifies every injected-wallet provider sibling (ethereum/solana/web3/tronWeb)', () => {
+  // The property set MUST stay in sync with the `browser-extension` noise
+  // class definition in the software-factory-infra-sweep source
+  // (`Cannot redefine property: (ethereum|solana|web3|tronWeb)`).
+  for (const provider of ['ethereum', 'solana', 'web3', 'tronWeb']) {
+    const message = `Cannot redefine property: ${provider}`;
+    assert.equal(
+      isRedefineInjectedWalletNoise({ message, frames: [] }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message, stacktrace: { frames: [] } }] },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Cannot redefine property: ethereum noise through all capture-path wrappers', () => {
+  for (const message of REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({
+        message,
+        frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES,
+      }),
+      true,
+      `expected "${message}" to be noise`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: { frames: REDEFINE_WALLET_PROVIDER_PROD_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event "${message}" to be noise`,
+    );
+  }
+});
+
+test('suppresses the Cannot redefine property: ethereum noise via the runtime (window.onerror) gate', () => {
+  for (const message of REDEFINE_WALLET_PROVIDER_CAPTURE_FORMS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    );
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: '<anonymous>' }),
+      true,
+      `expected runtime gate to suppress "${message}" from an <anonymous> filename`,
+    );
+    // The class fixture's call site is the userscript-manager wrapper page;
+    // the userscript matcher already drops it, and the message matcher covers
+    // the frameless variant.
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: 'app:///userscript.html' }),
+      true,
+      `expected runtime gate to suppress "${message}" from a userscript frame`,
+    );
+  }
+});
+
+test('does NOT suppress Cannot redefine property: ethereum when a first-party frame is present (real regression)', () => {
+  // A resolved `apps/web/src/…` frame means our own code called
+  // `Object.defineProperty` on a non-configurable property → a real first-party
+  // regression; the negative guard MUST preserve it.
+  for (const frames of [
+    [{ filename: 'apps/web/src/lib/wallet-provider.ts', function: 'installProvider' }],
+    [
+      { filename: 'app:///_next/static/chunks/main.js', function: 'f' },
+      { filename: 'app:///apps/web/src/lib/wallet-provider.ts', function: 'installProvider' },
+    ],
+  ]) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({
+        message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+        frames,
+      }),
+      false,
+      `expected first-party defineProperty throw from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [{ value: REDEFINE_WALLET_PROVIDER_MESSAGE, stacktrace: { frames } }],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting first-party defineProperty throw from ${JSON.stringify(frames)}`,
+    );
+  }
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: REDEFINE_WALLET_PROVIDER_MESSAGE,
+      filename: 'apps/web/src/lib/wallet-provider.ts',
+    }),
+    false,
+  );
+});
+
+test('does NOT suppress a near-worded Cannot redefine property message (over-match guard)', () => {
+  // Only the exact injected-wallet provider names are matched; any other
+  // `Cannot redefine property: <X>` keeps reporting so the matcher does not
+  // over-match a real first-party `defineProperty` regression. `webdriver` is
+  // handled by the sibling matcher, not this one.
+  for (const message of [
+    'Cannot redefine property: foo',
+    'Cannot redefine property: Money',
+    'Cannot redefine property: webdriver',
+    'Cannot redefine property: ethereum_extra',
+    'Cannot set property: ethereum',
+    'Cannot redefine ethereum',
+  ]) {
+    assert.equal(
+      isRedefineInjectedWalletNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('classifies the legacy safari-extension:// protocol as a browser-extension source', () => {
+  // The `browser-extension` class matches a `*-extension://` URL. The legacy
+  // Safari scheme is distinct from `safari-web-extension://`; `startsWith
+  // ('extension://')` does not match it, so it needs its own prefix entry.
+  assert.equal(
+    isExtensionSource('safari-extension://com.example.ext/content.js'),
+    true,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'boom',
+            stacktrace: {
+              frames: [{ filename: 'safari-extension://com.example.ext/content.js' }],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Transient fetch-abort `signal timed out` noise (BS 73e683c3…)
 // ---------------------------------------------------------------------------
 
@@ -9910,7 +10857,7 @@ test('classifies the production signal timed out noise (frameless, exact prod sh
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000029/sessions/00000000-0000-4000-8000-000000000030',
       },
       exception: {
         values: [
@@ -9932,7 +10879,7 @@ test('classifies the production signal timed out noise (frameless, exact prod sh
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       request: {
-        url: 'https://kortix.com/projects/6c60bc35-4371-46a0-bf49-6f82ea9fd878/sessions/c0111ad4-06bc-428b-a27a-df5ecdc0e0fa',
+        url: 'https://kortix.com/projects/00000000-0000-4000-8000-000000000029/sessions/00000000-0000-4000-8000-000000000030',
       },
       exception: {
         values: [
@@ -10927,4 +11874,117 @@ test('cross-matcher isolation: the WebGL-unsupported matcher does NOT match the 
     }),
     false,
   );
+});
+
+// React error #419 ("The server could not finish this Suspense boundary") is
+// React's recoverable-client-render report. Next.js sets the abandoned
+// boundary's reason on `error.digest`; a 404 / HTTP-error or redirect digest is
+// an expected user state, a hash digest is a real server-render failure.
+const REACT_419_MESSAGE =
+  'Minified React error #419; visit https://react.dev/errors/419 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.';
+
+test('classifies React #419 with a Next.js 404 digest as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+    true,
+  );
+});
+
+test('reports React #419 for a server error boundary', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: 'NEXT_HTTP_ERROR_FALLBACK;500' }),
+    false,
+  );
+  const error = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;500',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error }), false);
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(
+      { exception: { values: [{ value: REACT_419_MESSAGE }] } },
+      { originalException: error },
+    ),
+    false,
+  );
+});
+
+test('classifies React #419 with an unminified server-render message as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({
+      message:
+        'The server could not finish this Suspense boundary, likely due to an error during server rendering.',
+      digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+    }),
+    true,
+  );
+});
+
+test('classifies React #419 with a Next.js redirect digest as expected recovery noise', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({
+      message: REACT_419_MESSAGE,
+      digest: 'NEXT_REDIRECT;replace;/projects;307;',
+    }),
+    true,
+  );
+});
+
+test('does NOT suppress React #419 without a digest (a real server-render failure)', () => {
+  assert.equal(
+    isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest: undefined }),
+    false,
+  );
+});
+
+test('does NOT suppress React #419 with a hash digest (a real server-render failure)', () => {
+  for (const digest of ['1a2b3c4d', 'NEXT_DYNAMIC_NO_SSR_CODE', 'BAILOUT_TO_CLIENT_SIDE_RENDERING']) {
+    assert.equal(
+      isExpectedNextRecoveryBailoutNoise({ message: REACT_419_MESSAGE, digest }),
+      false,
+      `expected digest ${digest} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT suppress a non-#419 error that happens to carry a 404 digest', () => {
+  for (const message of [
+    'TypeError: Cannot read properties of undefined (reading "x")',
+    'Minified React error #418; visit https://react.dev/errors/418',
+  ]) {
+    assert.equal(
+      isExpectedNextRecoveryBailoutNoise({ message, digest: 'NEXT_HTTP_ERROR_FALLBACK;404' }),
+      false,
+      `expected "${message}" to keep reporting`,
+    );
+  }
+});
+
+test('suppresses a 404-boundary React #419 from the window.onerror runtime guard', () => {
+  const notFoundError = Object.assign(new Error(REACT_419_MESSAGE), {
+    digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+  });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error: notFoundError }), true);
+});
+
+test('does NOT suppress a hash-digest React #419 from the window.onerror runtime guard', () => {
+  const realError = Object.assign(new Error(REACT_419_MESSAGE), { digest: 'deadbeef01' });
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ error: realError }), false);
+});
+
+test('suppresses a 404-boundary React #419 through the Sentry beforeSend hint', () => {
+  const event = {
+    exception: { values: [{ value: REACT_419_MESSAGE }] },
+    request: { url: 'https://kortix.com/dashboard' },
+  };
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent(event, {
+      originalException: Object.assign(new Error(REACT_419_MESSAGE), {
+        digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+      }),
+    }),
+    true,
+  );
+  // Same event without the hint (the digest is not in the serialised event) must
+  // keep reporting so a real server-render failure is never hidden.
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), false);
 });

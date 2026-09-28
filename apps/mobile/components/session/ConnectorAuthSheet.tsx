@@ -12,9 +12,9 @@
  * now) and the close-then-open dismiss dance (`useHandoffDismiss`,
  * `handoff-sheet.ts`).
  *
- * Continue tries the project's own Pipedream connect flow first — the same
+ * Continue tries the project's own Pipedream connect flow first — the
  * `pipedreamConnect`/`pipedreamFinalize` round trip
- * `components/pages/ConnectorsPage.tsx` already uses, which mints a URL that
+ * (`lib/projects/projects-client.ts`), which mints a URL that
  * supports a `kortix://` redirect (`WebBrowser.openAuthSessionAsync` auto-
  * dismisses on it) — and falls back to the agent's own `connect_url` (a
  * `/connect/<token>` public web page with no redirect support, so it opens
@@ -54,8 +54,8 @@ const TILE_SIZE = 56;
 
 // App deep links so the connect browser auto-dismisses back to the app
 // (`openAuthSessionAsync` returns when it sees this scheme) instead of
-// stranding the user on Pipedream's web success page — same scheme
-// `ConnectorsPage.tsx` uses for its own connect flow.
+// stranding the user on Pipedream's web success page. `kortix://connectors`
+// is a browser-return root (`isBrowserReturnPath`, `lib/session/connect-model.ts`).
 const CONNECT_RETURN_URL = 'kortix://connectors';
 const CONNECT_SUCCESS_URI = 'kortix://connectors/success';
 const CONNECT_ERROR_URI = 'kortix://connectors/error';
@@ -92,7 +92,7 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
         });
         if (started.connectUrl) {
           // `openAuthSessionAsync` auto-dismisses once Pipedream redirects to
-          // our scheme, the same contract `ConnectorsPage.tsx` relies on.
+          // our scheme.
           const result = await WebBrowser.openAuthSessionAsync(
             started.connectUrl,
             CONNECT_RETURN_URL,

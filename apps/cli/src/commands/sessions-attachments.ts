@@ -9,6 +9,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { readSavedTranscript } from './sessions-chat.ts';
@@ -86,18 +87,14 @@ export async function runSessionsAttachments(argv: string[]): Promise<number> {
     all = takeFlagBool(rest, ['--all']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
   if (positional.length !== 1) {
     process.stderr.write(`${status.err('Pass exactly one session id.')}\n\n${ATTACHMENTS_HELP}\n`);
     return 2;
   }
-  if (downloadId && all) {
-    process.stderr.write(`${status.err('Pass --download <id> or --all, not both.')}\n`);
-    return 2;
-  }
+  if (downloadId && all) return fail('Pass --download <id> or --all, not both.');
   const sessionId = positional[0]!;
   const opts: CtxOpts = { projectArg, hostArg };
 

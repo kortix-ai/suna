@@ -235,6 +235,9 @@ beforeEach(() => {
 });
 
 describe('drainSessionLifecycleQueue — instance scope', () => {
+  // Which rows count as ANOTHER instance's is `sandboxBelongsToThisInstance`
+  // (projects/instance-scope.test.ts). What the drain does with the answer is
+  // this table: release a foreign row, execute everything else.
   test('a command whose sandbox belongs to ANOTHER instance is released, not executed', async () => {
     cfg.KORTIX_INSTANCE_ID = 'wt-a';
     ownerMetadataBySession = new Map([[SESSION_ID, { instanceId: 'primary' }]]);
@@ -258,63 +261,48 @@ describe('drainSessionLifecycleQueue — instance scope', () => {
     expect(result).toMatchObject({ claimed: 1, released: 1, succeeded: 0, failed: 0, queued: 0 });
   });
 
-  test('a command whose sandbox carries the SAME instance id is executed', async () => {
-    cfg.KORTIX_INSTANCE_ID = 'wt-a';
-    ownerMetadataBySession = new Map([[SESSION_ID, { instanceId: 'wt-a' }]]);
-
-    const result = await drainSessionLifecycleQueue({ limit: 10 });
-
-    expect(releases).toEqual([]);
-    expect(capturedBodies).toHaveLength(1);
-    expect(failedCalls).toEqual([]);
-    expect(result.released).toBe(0);
-  });
-
-  test('a command whose sandbox row carries NO instance id (legacy row) is executed', async () => {
-    cfg.KORTIX_INSTANCE_ID = 'wt-a';
-    ownerMetadataBySession = new Map([[SESSION_ID, {}]]);
-
-    await drainSessionLifecycleQueue({ limit: 10 });
-
-    expect(releases).toEqual([]);
-    expect(capturedBodies).toHaveLength(1);
-  });
-
   test('a session with no sandbox row yet is executed (nothing to be foreign to)', async () => {
     cfg.KORTIX_INSTANCE_ID = 'wt-a';
     ownerMetadataBySession = new Map();
 
-    await drainSessionLifecycleQueue({ limit: 10 });
-
-    expect(releases).toEqual([]);
-    expect(capturedBodies).toHaveLength(1);
-  });
-
-  test('KORTIX_INSTANCE_ID unset → no lookup at all, foreign-looking rows execute (prod no-op)', async () => {
-    ownerMetadataBySession = new Map([[SESSION_ID, { instanceId: 'primary' }]]);
-
     const result = await drainSessionLifecycleQueue({ limit: 10 });
 
-    expect(ownerLookups).toEqual([]);
+    expect(ownerLookups).toEqual([[SESSION_ID]]);
     expect(releases).toEqual([]);
     expect(capturedBodies).toHaveLength(1);
     expect(result.released).toBe(0);
   });
 
-  test('a create_session command (no session yet) is never scoped', async () => {
-    cfg.KORTIX_INSTANCE_ID = 'wt-a';
-    claimed = [
-      row({
-        commandId: 'cmd-create',
-        commandType: 'create_session',
-        sessionId: null,
-        payload: { source: 'ui', body: {} } as unknown as SessionLifecycleCommandRow['payload'],
-      }),
-    ];
+  // Deployed replicas have no instance scope, and a create has no session yet:
+  // neither may pay for an owner lookup.
+  test.each([
+    {
+      name: 'KORTIX_INSTANCE_ID unset: a foreign-looking row executes (prod no-op)',
+      instanceId: undefined,
+      claim: () => row(),
+      executes: true,
+    },
+    {
+      name: 'a create_session command (no session yet) is never scoped',
+      instanceId: 'wt-a',
+      claim: () =>
+        row({
+          commandId: 'cmd-create',
+          commandType: 'create_session',
+          sessionId: null,
+          payload: { source: 'ui', body: {} } as unknown as SessionLifecycleCommandRow['payload'],
+        }),
+      executes: false,
+    },
+  ])('$name', async ({ instanceId, claim, executes }) => {
+    if (instanceId) cfg.KORTIX_INSTANCE_ID = instanceId;
+    ownerMetadataBySession = new Map([[SESSION_ID, { instanceId: 'primary' }]]);
+    claimed = [claim()];
 
     await drainSessionLifecycleQueue({ limit: 10 });
 
     expect(ownerLookups).toEqual([]);
     expect(releases).toEqual([]);
+    if (executes) expect(capturedBodies).toHaveLength(1);
   });
 });

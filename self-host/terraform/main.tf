@@ -5,8 +5,7 @@
 # real work (EC2 instance, durable EBS data volume, security group, Elastic
 # IP, optional Route53 records, and a configurable-schedule snapshot policy),
 # then hands off to the exact same `kortix self-host init` / `start` any
-# self-host user runs by hand — see ../README.md and
-# docs/runbooks/self-hosting.md in the main repo for the full picture.
+# self-host user runs by hand — see ../README.md for the full picture.
 #
 #   cd self-host/terraform
 #   cp terraform.tfvars.example terraform.tfvars   # fill in your values

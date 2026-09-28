@@ -32,13 +32,13 @@ import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   MagnifyingGlassIcon,
   NavigationArrowIcon,
-  SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
 import { WorkspaceSwitcher } from './workspace-switcher';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';

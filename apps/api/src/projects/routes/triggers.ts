@@ -13,7 +13,8 @@ import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/session-access';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
-import { readBody, requestAuditContext } from '../lib/serializers';
+import { requestAuditContext } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 import {
   draftToSpec,
   fireGitTrigger,
@@ -124,7 +125,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Specific IAM gate so the audit trail records the precise action.
@@ -238,7 +239,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -290,7 +291,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const slug = c.req.param('slug');
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(

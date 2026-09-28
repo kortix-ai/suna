@@ -10,13 +10,17 @@
  * sibling of the composer), so `run`'s closures over its own props are
  * unaffected by the *modal* dismissing — only `pendingRef` distinguishes the
  * two kinds of dismiss.
+ *
+ * `onCancel` (optional) fires from the same `onDismiss` when the dismiss did
+ * NOT follow Continue — "Not now", a swipe, the backdrop — so a caller that
+ * closed its own sheet to show this one can bring it back.
  */
 import * as React from 'react';
 
 import type { SheetRef } from '@/components/kortix/sheet';
 import { haptics } from '@/lib/haptics';
 
-export function useHandoffDismiss(run: () => void | Promise<void>) {
+export function useHandoffDismiss(run: () => void | Promise<void>, onCancel?: () => void) {
   // Set only by Continue, read (and cleared) once by `handleDismiss`.
   const pendingRef = React.useRef(false);
 
@@ -32,10 +36,13 @@ export function useHandoffDismiss(run: () => void | Promise<void>) {
   );
 
   const handleDismiss = React.useCallback(async () => {
-    if (!pendingRef.current) return;
+    if (!pendingRef.current) {
+      onCancel?.();
+      return;
+    }
     pendingRef.current = false;
     await run();
-  }, [run]);
+  }, [run, onCancel]);
 
   return { requestContinue, handleDismiss };
 }

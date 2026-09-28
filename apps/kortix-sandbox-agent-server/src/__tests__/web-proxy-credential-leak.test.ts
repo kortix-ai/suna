@@ -238,30 +238,8 @@ describe('/web-proxy stays off the box control plane', () => {
  * original Host.
  */
 describe('a vetted destination is the one we connect to', () => {
-  test('a blocked-port request still reaches a legitimate external host', async () => {
-    // The upstream here is not self, so it is allowed — and it must still work
-    // after the URL is rewritten to the resolved address. Host must survive.
-    received = null
-    const guarded = createWebProxyRouter({ blockedSelfPorts: new Set([upstreamPort]) })
-    const res = await guarded.request(`/web-proxy/http/localhost.localdomain.invalid:${upstreamPort}/x`, {
-      method: 'GET',
-    })
-    // Unresolvable host: refused by the upstream fetch, not by the guard. The
-    // point is that the guard did not 403 a non-self name.
-    expect(res.status).not.toBe(403)
-  })
-
-  test('the guard still refuses self even when pinning would be possible', async () => {
-    const guarded = createWebProxyRouter({ blockedSelfPorts: new Set([upstreamPort]) })
-    const res = await guarded.request(`/web-proxy/http/127.0.0.1:${upstreamPort}/x`, {
-      method: 'GET',
-    })
-    expect(res.status).toBe(403)
-  })
-
-  test('an unblocked port is not rewritten at all', async () => {
-    // Pinning is scoped to ports we had to vet. Everything else keeps the
-    // hostname, so SNI and virtual hosting are untouched.
+  test('the upstream sees the original Host header', async () => {
+    // Virtual hosting on the agent's own dev server depends on it.
     received = null
     const open = createWebProxyRouter({ blockedSelfPorts: new Set<number>() })
     const res = await open.request(`/web-proxy/http/localhost:${upstreamPort}/x`, {

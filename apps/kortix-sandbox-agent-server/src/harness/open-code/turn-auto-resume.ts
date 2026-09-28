@@ -79,8 +79,27 @@ const PERMANENT_ERROR_NAMES = new Set(['MessageAbortedError', 'ProviderAuthError
 // OpenRouter's mid-stream "Upstream idle timeout exceeded" (the exact prod
 // failure this feature exists for), which arrives as an UnknownError whose
 // message is sometimes JSON-quoted.
+//
+// `stream ended (without|before)` covers an upstream stream cut before its
+// terminal frame. A factory worker turn ended with "Stream ended without
+// finish_reason" and was never resumed, so its sandbox idled and stopped.
+// Verbatim variants in shipped bundles: "Stream ended without finish_reason",
+// "<Provider> stream ended without a finish reason / a stop reason",
+// "... stream ended before message_stop / a terminal response event"
+// (@earendil-works/pi-ai 0.85.1, whose own utils/retry.js retries "ended
+// without"); "OpenAI Chat stream ended without finish_reason" (OpenCode
+// 2.0.15, classification `incomplete-stream`); "SSE stream ended without a
+// data event"; "The model stream ended without a finish chunk" (ai 7.x
+// NoOutputGeneratedError). `other side closed` is undici's SocketError text
+// for a peer that closed the socket mid-response.
+//
+// A stream cut mid data-line surfaces as a JSON parse error of the partial
+// chunk ("JSON parsing failed: Text: {\"id\":\"chatcmpl…", "JSON Parse error:
+// Unable to parse JSON string"). A gateway availability error reads "<model>
+// is temporarily unavailable"; Bun's fetch timeout reads "The operation timed
+// out". All four were prod turn-enders with no resume.
 const TRANSIENT_MESSAGE =
-  /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|gateway.?time.?out|stream (closed|error|disconnected)|terminated/i;
+  /upstream idle timeout|connection (reset|closed|error)|econnreset|econnrefused|etimedout|socket hang ?up|fetch failed|premature close|network error|overloaded|empty completion|upstream_stream_error|internal server error|bad gateway|service unavailable|temporarily unavailable|gateway.?time.?out|timed out|stream (closed|error|disconnected)|stream ended (without|before)|other side closed|terminated|json pars(e|ing)|unable to parse json/i;
 
 /** Is this turn failure a transient provider/stream error worth one more try? */
 export function isTransientTurnError(error?: OpencodeTurnError): boolean {
@@ -113,6 +132,26 @@ function resumePrompt(error: OpencodeTurnError): string {
   );
 }
 
+/**
+ * The prompt for a turn the runtime itself aborted before it reached the model
+ * (see instance-guard.ts). Nothing ran, so there is nothing to check or redo.
+ */
+const RUNTIME_FAULT_PROMPT =
+  '[auto-recovery] The runtime stopped your previous turn before it started, because of an internal fault that ' +
+  'is now repaired. Nothing from that turn ran. Answer the request above.';
+
+/** The instance is healed before a runtime-fault resume; wait only briefly. */
+const RUNTIME_FAULT_BACKOFF_MS = 500;
+
+export interface MaybeResumeOptions {
+  /**
+   * `runtime-fault`: the turn aborted before it reached the model while nobody
+   * asked for a stop, and the instance was healed (instance-guard.ts). Resumed
+   * although `MessageAbortedError` is otherwise never resumed.
+   */
+  cause?: 'runtime-fault';
+}
+
 export interface TurnAutoResumerDeps {
   opencode: Pick<Opencode, 'getInternalUrl'>;
   cfg: Pick<Config, 'workspace'>;
@@ -131,7 +170,7 @@ export interface TurnAutoResumer {
    * the error is not resumable (permanent error, subagent session, budget
    * exhausted, resume delivery failed) — the caller relays it exactly as before.
    */
-  maybeResume(opencodeSessionId: string, error?: OpencodeTurnError): Promise<boolean>;
+  maybeResume(opencodeSessionId: string, error?: OpencodeTurnError, opts?: MaybeResumeOptions): Promise<boolean>;
 }
 
 interface LastMessageView {
@@ -202,14 +241,14 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     }
   }
 
-  async function deliverResume(sessionId: string, error: OpencodeTurnError): Promise<boolean> {
+  async function deliverResume(sessionId: string, text: string): Promise<boolean> {
     try {
       const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(deps.cfg.workspace)}`;
       // No `model` — the session continues on whatever model it was already using.
       const res = await fetchImpl(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parts: [{ type: 'text', text: resumePrompt(error) }] }),
+        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
         signal: AbortSignal.timeout(15_000),
       });
       return res.ok;
@@ -218,9 +257,14 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     }
   }
 
-  async function maybeResume(sessionId: string, error?: OpencodeTurnError): Promise<boolean> {
+  async function maybeResume(
+    sessionId: string,
+    error?: OpencodeTurnError,
+    opts: MaybeResumeOptions = {},
+  ): Promise<boolean> {
     if (!enabled()) return false;
-    if (!error || !isTransientTurnError(error)) return false;
+    const runtimeFault = opts.cause === 'runtime-fault';
+    if (!error || (!runtimeFault && !isTransientTurnError(error))) return false;
     if (!(await deps.isRoot(sessionId))) return false;
 
     // T22: the error may already have a staged revert sitting on it — the
@@ -244,9 +288,12 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
       return false;
     }
 
-    const backoffMs = BACKOFF_MS[Math.min(attemptIndex, BACKOFF_MS.length - 1)] ?? 5_000;
-    logger.info('[turn-auto-resume] transient turn error — resuming after backoff', {
+    const backoffMs = runtimeFault
+      ? RUNTIME_FAULT_BACKOFF_MS
+      : (BACKOFF_MS[Math.min(attemptIndex, BACKOFF_MS.length - 1)] ?? 5_000);
+    logger.info('[turn-auto-resume] turn error — resuming after backoff', {
       sessionId,
+      cause: runtimeFault ? 'runtime-fault' : 'transient',
       attempt: attemptIndex + 1,
       backoffMs,
       errorName: error.name,
@@ -285,7 +332,7 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
       return false;
     }
 
-    const delivered = await deliverResume(sessionId, error);
+    const delivered = await deliverResume(sessionId, runtimeFault ? RUNTIME_FAULT_PROMPT : resumePrompt(error));
     if (!delivered) {
       logger.warn('[turn-auto-resume] resume prompt delivery failed — surfacing error', {
         sessionId,

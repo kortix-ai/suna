@@ -26,7 +26,7 @@
  * ## The shape
  *
  *   deployed   {env}-p{port}-{sandbox-label}.{previewBaseDomain}
- *              dev-p8081-sbx-01m0g4hxcm32bx5r1gpyzdyc1h.p.kortix.com
+ *              dev-p8081-sbx-01aaaaaaaaaaaaaaaaaaaaaaaa.p.kortix.com
  *   local      p{port}-{sandbox-label}.localhost:{apiPort}
  *
  * The env prefix is what lets dev, staging and prod share one wildcard

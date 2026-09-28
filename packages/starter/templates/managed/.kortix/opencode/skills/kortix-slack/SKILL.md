@@ -1,6 +1,6 @@
 ---
 name: kortix-slack
-description: How to CONNECT Slack (one command — `kortix channels connect`, prints a one-click install link) and how to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the user asks to connect/set up Slack, when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), or when the user asks how to do anything in Slack.
+description: How to CONNECT Slack (one command — `kortix channels connect`, prints a one-click install link) and how to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the user asks to connect/set up Slack, when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), when this session messages someone in Slack and needs their reply to come back (thread binding, `slack bind-thread`), or when the user asks how to do anything in Slack.
 ---
 
 <skill name="slack">
@@ -15,6 +15,44 @@ The `slack` CLI is on `$PATH` and **just works** — every call runs through the
 
 Everything else (`slack history`, `slack react`, `slack send --file`, `slack search`, …) is for when the task explicitly asks for it.
 </overview>
+
+<thread-binding>
+### A reply comes back to you ONLY if its thread is bound to THIS session
+
+Every Slack thread routes to exactly one Kortix session. A human reply in a thread goes to the session that thread is bound to. A reply in an **unbound** thread starts a **new** session: the user answers, and you never see it.
+
+**`slack send --channel` binds for you.** When this session posts with `--channel` (a DM, a channel, a reply in a thread), the platform binds that thread to this session. The command output tells you the result:
+
+```sh
+slack send --channel U0123ABCD --text "Can you approve the deploy?"
+# {"ok": true, "ts": "1700000000.000100", "channel": "D0123ABCD",
+#  "thread_binding": {"bound": true, "thread_ts": "1700000000.000100", "session_id": "<this session>"}}
+```
+
+**Every `slack send --channel` prints `thread_binding`. Read it whenever you expect an answer.** Anything but `bound: true` carries a `hint` with the next command. Act on it:
+
+| `thread_binding` | Meaning | What to do |
+| --- | --- | --- |
+| `bound: true` | Replies in this thread come back to this session as your next turn. | Tell the user you asked in Slack, then end the turn. Do not poll. |
+| `bound: false`, `reason: thread_bound_to_another_session`, `owner_session_id` | Another session of this project owns the thread. Replies go there, not here. | To take it over: `slack bind-thread --channel <channel> --thread <thread_ts> --force`. Otherwise post a NEW top-level message (`slack send --channel <id>` without `--thread`). |
+| `bound: false`, `reason: thread_owned_by_another_user` / `thread_owned_by_another_project` | Another person's session, or another project, owns the thread. `--force` cannot move it. | Post a NEW top-level message. |
+| `bound: false`, `reason: workspace_unknown` / `bind_failed` | The bind was not written. Replies will start a new session. | Run `slack bind-thread --channel <channel> --thread <thread_ts>` once. If it fails, tell the user replies will not reach this session. |
+| `bound: false`, `reason: top_level_file` | A top-level `--file` post has no thread to bind. | Post a text message with `slack send --channel` if you expect a reply. |
+| `bound: "unknown"`, `reason: not_reported` | The API did not report a binding. | Run `slack bind-thread --channel <channel> --thread <thread_ts>` and read its result. |
+
+### `slack bind-thread` — check or bind a thread explicitly
+
+`slack bind-thread --channel <id> --thread <ts>` binds a thread this session did not start (for example a thread a human started), and doubles as the check "is this thread mine?":
+
+- `{"ok": true, "bound": true, "session_id": "<this session>"}` — the thread is yours (already, or now).
+- exit 1, `status: 409` — another session owns the thread; the error names it. **The default never takes a thread over.**
+- `--force` moves the thread to this session: `{"bound": true, "rebound_from": "<old session>"}`. It works only when both sessions belong to the same project and were started by the same user. Otherwise it fails with `status: 403` (`THREAD_OWNED_BY_ANOTHER_USER` / `THREAD_OWNED_BY_ANOTHER_PROJECT`). After a move, replies stop reaching the old session — use `--force` only when the user wants this session to own the conversation.
+
+Rules:
+- **Tell the human to reply IN THE THREAD.** A top-level message in the DM or channel is a new thread and starts a new session.
+- **`slack send --file --thread <ts>` binds that thread; a top-level `--file` post binds nothing.**
+- **Answer a bound reply with `slack send "<answer>"`.** The reply opened a Slack turn in this session, so the plain answer form works.
+</thread-binding>
 
 <connecting>
 ### "Connect my Slack" = ONE command. Nothing else.
@@ -135,29 +173,17 @@ slack send "It was api@a3f1 — the new auth middleware drops the trace header o
 </live-stream>
 
 <keeping-the-stream-alive>
-### The ~5-minute idle timeout (READ THIS — it's the #1 cause of false "errors")
+### A live run has no idle timeout — silence only hurts the user
 
-Slack enforces a **hard ~5-minute idle timeout** on a streaming turn. The clock is **idle time since the last stream update**, not total turn length — and it is **not bypassable** from Slack's side. Every `slack step` you emit is a stream update that **resets the timer to zero**. If more than ~5 minutes pass with *no* update, Slack kills the turn and paints a red **error** in the thread — even though your agent is alive and working fine. The work usually still completes in the background; the user just sees a scary "failed" state. (Same root cause as a finished plan block getting stuck on "in_progress" — the stream got severed before the final `slack send`.)
+The plan block is a posted message the server **edits in place**. It is not an open stream, so Slack cannot auto-fail it. A long, silent step (a build, a test suite, a `task`/subagent) does not paint an error and does not end your run. The server closes a thread on its own only when your run has **ended** and no `slack send` reached the thread within 30 minutes. That thread then shows "This run ended without a reply."
 
-The platform runs a **safety-net heartbeat** (a watchdog touches any quiet-but-alive stream every ~3 min so Slack doesn't auto-fail it). Treat that as a backstop, **not** an excuse to go silent: it only paints a generic "Working on it…" tick, it doesn't help if the watchdog is down/lagging, and a wall of nothing for minutes is bad UX. **You keeping the stream warm with real checkpoints is still the primary fix.**
+**Do not run heartbeat loops** (`while sleep …; do slack step …; done`). They buy nothing, and a loop left running after `slack send` is a leak.
 
-**So: a turn doesn't fail because the work is slow. It fails when it goes quiet. Don't go quiet.**
+A wall of nothing for ten minutes is still bad UX:
 
-### Rules to never trip it
-
-- **Never go >~4 minutes without a `slack step`.** Treat 4 min as your budget; post before you spend it. A step is cheap — emitting one extra is free, tripping the timeout is not.
-- **Before any long-running operation, post a step first.** Anything that can take minutes — `git clone`, `pnpm install`, a test suite, a build, `pnpm preview`, deep web research, a big LLM call, a `task`/subagent — gets a `slack step` *immediately before* you start it, so the timer is fresh going in.
-- **Break long single operations into narrated phases.** Don't do "clone + install + typecheck + test" as one silent 12-minute block. Step between each: `slack step "Installing deps"` → `slack step "Running typecheck"` → `slack step "Running tests"`. Each one resets the clock *and* reads better.
-- **For a genuinely long single command (one >4-min step with nothing to narrate),** stream a heartbeat from a background loop so the timer keeps resetting while it runs:
-  ```sh
-  # keep the Slack stream warm during a long blocking command
-  ( while sleep 200; do slack step "Still working… (running tests)"; done ) &
-  HB=$!
-  pnpm test            # the long thing
-  kill "$HB" 2>/dev/null   # stop the heartbeat as soon as it returns
-  ```
-  Kill the heartbeat the instant the command returns, and **never leave a heartbeat running after `slack send`** (steps after send drop silently, and a stray background loop is a leak — see the "stop long-running processes before you finish" rule).
-- **It's idle-time, not call-count.** Ten steps in one minute then six minutes of silence still trips it. Spacing is what matters, not volume — but err toward more frequent updates on long tasks; it's the single biggest reliability win.
+- **Post a step before anything slow** — `git clone`, `pnpm install`, a test suite, a build, `pnpm preview`, deep research, a big LLM call, a `task`/subagent — so the thread shows what you are waiting on.
+- **Narrate long work in phases.** `slack step "Installing deps"` → `slack step "Running typecheck"` → `slack step "Running tests"` reads better than one silent 12-minute block.
+- **Space steps at real phase boundaries.** Ten steps in two seconds add noise, not information.
 </keeping-the-stream-alive>
 
 <final-answer>
@@ -380,8 +406,11 @@ slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
 ### React to a message
 
 ```sh
-slack react --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "white_check_mark"
+slack react   --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "white_check_mark"
+slack unreact --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "eyes"   # remove one you added
 ```
+
+A "seen it" reaction (`eyes`, `hourglass`, `thinking_face`, …) is temporary. The platform already marks the message ⏳ while you work, so you rarely need one. If you add one, remove it with `slack unreact` right after `slack send`. A marker left behind reads as "still working" forever.
 
 ### Post to a different channel (announcements, cross-posts)
 
@@ -429,6 +458,7 @@ Full help: `slack help`.
 - **`slack send --file` does NOT finalize the stream.** It posts a separate file message. Follow it with a regular `slack send "..."` to close the turn.
 - **`$SLACK_CHANNEL_ID`, `$SLACK_THREAD_TS`, `$SLACK_TRIGGER_TS` are pre-injected on Slack turns.** Use them — don't hard-code IDs.
 - **Stay in the thread.** Unless the task explicitly says "post in #channel-X", everything goes in the originating thread. Cross-posting to other channels needs a real reason (incident broadcast, scheduled digest).
+- **Clean up your temporary reactions.** An `eyes` (or other "working") reaction you added stays on the message until you `slack unreact` it. Remove it once you have replied.
 - **The user can hit Stop.** A red Stop button sits under the plan block; the user can click it any time. If you see the turn end abruptly, that's why — don't retry automatically.
 </gotchas>
 

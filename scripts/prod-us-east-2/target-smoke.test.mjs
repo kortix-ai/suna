@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const targetSmoke = readFileSync(
@@ -13,12 +13,6 @@ const targetSmokeProgram = readFileSync(
 const frontendSmoke = readFileSync(
   new URL("./frontend-auth-smoke.sh", import.meta.url),
   "utf8",
-);
-const nestedE2ePackage = JSON.parse(
-  readFileSync(
-    new URL("../../tests/e2e/package.json", import.meta.url),
-    "utf8",
-  ),
 );
 const shadowWorkflow = readFileSync(
   new URL(
@@ -107,8 +101,8 @@ test("frontend smoke removes and counts password-recovery flow state", () => {
 
 test("frontend smoke uses one Playwright installation", () => {
   assert.equal(
-    nestedE2ePackage.devDependencies?.["@playwright/test"],
-    undefined,
+    existsSync(new URL("../../tests/e2e/package.json", import.meta.url)),
+    false,
   );
 });
 

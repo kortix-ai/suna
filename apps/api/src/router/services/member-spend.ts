@@ -46,40 +46,6 @@ export async function getSandboxMemberCapStatus(
   };
 }
 
-export async function applyActorSpend(
-  sandboxId: string,
-  userId: string,
-  cents: number,
-): Promise<void> {
-  if (cents <= 0) return;
-
-  const [ownerRow] = await db
-    .select({ ownerPeriodStart: creditAccounts.lastRenewalPeriodStart })
-    .from(sandboxes)
-    .leftJoin(creditAccounts, eq(creditAccounts.accountId, sandboxes.accountId))
-    .where(eq(sandboxes.sandboxId, sandboxId))
-    .limit(1);
-  const ownerPeriodStart =
-    typeof ownerRow?.ownerPeriodStart === 'number' ? ownerRow.ownerPeriodStart : null;
-
-  await db
-    .update(sandboxMembers)
-    .set({
-      currentPeriodCents: sql`CASE
-        WHEN ${sandboxMembers.currentPeriodStart} IS DISTINCT FROM ${ownerPeriodStart}
-          THEN ${cents}
-        ELSE ${sandboxMembers.currentPeriodCents} + ${cents}
-      END`,
-      currentPeriodStart: ownerPeriodStart,
-    })
-    .where(
-    and(
-        eq(sandboxMembers.sandboxId, sandboxId),
-        eq(sandboxMembers.userId, userId),
-      ),
-    );
-}
-
 export async function reserveActorSpend(
   sandboxId: string,
   userId: string,

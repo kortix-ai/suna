@@ -346,6 +346,22 @@ describe('kortix connectors — capability-page parity', () => {
     expect(calls).toEqual([]);
   });
 
+  test.each([
+    [['--mine', '--owner', 'project'], '--mine cannot be combined with --owner or --owner-id'],
+    [['--owner', 'everyone'], '--owner must be project, agent, member, subject, or external'],
+    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a project connection'],
+    [['--metadata', 'not-json'], '--metadata must be valid JSON'],
+  ])('connections add %p exits 2 before any request', async (flags, message) => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'connections', 'add', 'gmail', 'Inbox', ...flags, '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain(message);
+    expect(calls).toEqual([]);
+  });
+
   test('accounts tables what --account accepts, shared/private, default first', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT], config);
