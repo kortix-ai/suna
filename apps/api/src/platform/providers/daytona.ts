@@ -5,7 +5,7 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
@@ -22,7 +22,7 @@ import {
   assertWorkloadCredential,
   providerAutoStopBackstopMinutes,
   sandboxWorkloadType,
-} from './index';
+} from './contract';
 import { classifyDaytonaState } from './daytona-state';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
@@ -107,7 +107,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxWorkloadType,
-} from './index';
+} from './contract';
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
 // is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
