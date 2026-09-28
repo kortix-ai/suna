@@ -10,6 +10,7 @@ import { unwrap } from './shared';
 // Share / Unshare Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useShareSession() {
   const queryClient = useQueryClient();
 
@@ -34,6 +35,7 @@ export function useShareSession() {
   });
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useUnshareSession() {
   const queryClient = useQueryClient();
 

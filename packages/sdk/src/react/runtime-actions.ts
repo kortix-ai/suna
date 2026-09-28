@@ -52,12 +52,14 @@ export function readRuntimeTextFile(path: string): Promise<string | FileContent>
   return getClient().file.read({ path }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function getRuntimeProviderAuthMethods(): Promise<
   Record<string, ProviderAuthMethod[]>
 > {
   return getClient().provider.auth().then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function authorizeRuntimeProvider(
   providerID: string,
   method: number,
@@ -65,6 +67,7 @@ export function authorizeRuntimeProvider(
   return getClient().provider.oauth.authorize({ providerID, method }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function completeRuntimeProviderOAuth(
   providerID: string,
   method?: number,
@@ -77,6 +80,7 @@ export function completeRuntimeProviderOAuth(
   }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function setRuntimeProviderApiKey(
   providerID: string,
   key: string,
@@ -87,14 +91,17 @@ export function setRuntimeProviderApiKey(
   }).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function getRuntimeConfig(): Promise<Config> {
   return getClient().global.config.get().then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function updateRuntimeConfig(config: Config): Promise<Config> {
   return getClient().global.config.update({ config } as never).then(unwrapRuntimeResult);
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export async function refreshRuntimeConfiguration(): Promise<void> {
   unwrapRuntimeResult(await getClient().global.dispose());
 }
