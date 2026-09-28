@@ -38,6 +38,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerCopyMenu } from '@/features/file-renderers/shared/viewer-copy-menu';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
@@ -740,27 +741,31 @@ export function CsvViewer({
             <Spinner className="size-4" />
           </div>
         ) : (
-          <glide.DataEditor
-            ref={search ? gridRef : undefined}
-            key={zoom}
-            columns={columns}
-            rows={parsed.rows.length}
-            getCellContent={getCellContent}
-            rowMarkers="number"
-            rowSelectionMode="multi"
-            gridSelection={search ? gridSelection : undefined}
-            onGridSelectionChange={search ? handleGridSelectionChange : undefined}
-            scrollToActiveCell={search}
-            keybindings={{ search: true }}
-            smoothScrollX
-            smoothScrollY
-            getCellsForSelection
-            width="100%"
-            height="100%"
-            theme={theme}
-            rowHeight={scale(34)}
-            headerHeight={scale(36)}
-          />
+          <ViewerCopyMenu onCopy={() => void gridRef.current?.emit('copy')}>
+            <div className="h-full">
+              <glide.DataEditor
+                ref={gridRef}
+                key={zoom}
+                columns={columns}
+                rows={parsed.rows.length}
+                getCellContent={getCellContent}
+                rowMarkers="number"
+                rowSelectionMode="multi"
+                gridSelection={search ? gridSelection : undefined}
+                onGridSelectionChange={search ? handleGridSelectionChange : undefined}
+                scrollToActiveCell={search}
+                keybindings={{ search: true }}
+                smoothScrollX
+                smoothScrollY
+                getCellsForSelection
+                width="100%"
+                height="100%"
+                theme={theme}
+                rowHeight={scale(34)}
+                headerHeight={scale(36)}
+              />
+            </div>
+          </ViewerCopyMenu>
         )}
       </div>
     </div>
