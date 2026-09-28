@@ -305,6 +305,12 @@ USER kortix
 # Warm jiti's cache for the pi system packages with the daemon itself; a package
 # that fails to load fails the build. Same step as `piSystemPackageWarmLines`.
 RUN if [ -f /opt/kortix/pi-agent/settings.json ]; then /usr/local/bin/kortix-agent warm-pi-packages; fi
+# State what this image carries, so a box booted from it can answer "which
+# bytes am I running" on its FIRST health read and its first reconcile is a
+# no-op. Runs as `kortix`, so the file it writes is the one the daemon later
+# rewrites in place. See packages/shared/src/sandbox/platform-binaries.ts —
+# asserted on all three image definitions.
+RUN /usr/local/bin/kortix-agent bake-runtime-assets-state
 WORKDIR /workspace
 
 EXPOSE 8000

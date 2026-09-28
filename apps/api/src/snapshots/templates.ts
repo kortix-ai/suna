@@ -233,7 +233,12 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // (kortixShellProfileRun). Debian's /etc/profile resets PATH in the web
 // terminal's `bash -l`, so pnpm/uv/bun tools (opencode) were not found on
 // Debian-based custom templates; terminals also never loaded project secrets.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v48';
+// v49: bake /opt/kortix/managed-skills into EVERY image (only the meta image
+// carried it) and write /opt/kortix/runtime-assets-state.json at image build.
+// Without both, a cold box answered `runtime.running` with nulls until its
+// first reconcile finished — ~140 s on a preview box — and paid a full overlay
+// download plus a ~210 MB re-hash to get there.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

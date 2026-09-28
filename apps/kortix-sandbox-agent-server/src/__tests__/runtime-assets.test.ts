@@ -4,9 +4,11 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  bakeRuntimeAssetsState,
   overlayHash,
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
+  runningRuntimeAssets,
 } from '../runtime-assets'
 
 const API_URL = 'https://api.test.invalid'
@@ -349,5 +351,107 @@ describe('reconcileRuntimeAssets', () => {
 
     expect(result.cli).toBe('updated')
     expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+  })
+})
+
+// ── The image bake ─────────────────────────────────────────────────────────
+//
+// A sandbox image that carries the current CLI, daemon and skill overlay still
+// cannot SAY so: `/opt/kortix/runtime-assets-state.json` is written only by a
+// completed reconcile, so a freshly booted box answers `runtime.running` with
+// nulls until its first pass finishes — measured at ~140 s on a cold preview
+// box. Baking the bytes without the bookkeeping fixes half the defect. These
+// tests pin both halves: the bake states exactly what is on disk, and the pass
+// that follows it downloads nothing.
+describe('bakeRuntimeAssetsState', () => {
+  // The API serves the overlay PATH-SORTED (`managedSkillOverlayFiles`), and a
+  // bake reads it back off disk the same way. `SKILL_FILES` above is declared
+  // in hash-vector order, not sorted order, so the bake's hash is this one.
+  const BAKED_SKILL_FILES = [...SKILL_FILES].sort((a, b) => a.path.localeCompare(b.path))
+  const BAKED_SKILLS_HASH = overlayHash(BAKED_SKILL_FILES)
+
+  async function bakedImage() {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
+    await Bun.write(join(ws.root, 'bin', 'kortix-agent'), 'AGENT-BYTES')
+    for (const file of SKILL_FILES) await Bun.write(join(ws.skillsDir, file.path), file.content)
+    return ws
+  }
+
+  test('states the digests of the files the image actually carries', async () => {
+    const ws = await bakedImage()
+
+    const state = await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath: join(ws.root, 'bin', 'kortix-agent'),
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      opencodeVersion: '1.18.23',
+    })
+
+    const onDisk = JSON.parse(await readFile(ws.statePath, 'utf8'))
+    expect(onDisk).toEqual(state)
+    expect(state.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+    expect(state.cli_path).toBe(ws.cliPath)
+    expect(state.agent_sha256).toBe(sha('AGENT-BYTES'))
+    expect(state.agent_path).toBe(join(ws.root, 'bin', 'kortix-agent'))
+    expect(state.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
+    expect(state.opencode_version).toBe('1.18.23')
+    // `build` is the epoch of a manifest this box READ. An image build reads
+    // none, so claiming one would let the epoch guard refuse a legitimate API.
+    expect(state.build).toBeUndefined()
+  })
+
+  test('the first reconcile on a baked box is a no-op: manifest only, nothing downloaded', async () => {
+    const ws = await bakedImage()
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath: join(ws.root, 'bin', 'kortix-agent'),
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      opencodeVersion: '1.18.23',
+    })
+
+    const stub = stubFetch({
+      cliBody: 'NEW-CLI-BYTES',
+      skillsHash: BAKED_SKILLS_HASH,
+      skillFiles: BAKED_SKILL_FILES,
+    })
+    const result = await run(ws, stub)
+
+    expect(result).toMatchObject({ cli: 'current', skills: 'current' })
+    expect(stub.calls).toEqual([`${API_URL}/v1/runtime-assets/manifest`])
+  })
+
+  test('a box states which bytes it runs before any reconcile has happened', async () => {
+    const ws = await bakedImage()
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath: join(ws.root, 'bin', 'kortix-agent'),
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      opencodeVersion: '1.18.23',
+    })
+
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+    expect(running.agent_sha256).toBe(sha('AGENT-BYTES'))
+    expect(running.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
+    expect(running.opencode_version).toBe('1.18.23')
+  })
+
+  test('a missing baked asset fails the image build instead of shipping a lie', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
+
+    await expect(
+      bakeRuntimeAssetsState({
+        cliPath: ws.cliPath,
+        agentPath: join(ws.root, 'bin', 'kortix-agent'),
+        managedSkillsDir: ws.skillsDir,
+        statePath: ws.statePath,
+      }),
+    ).rejects.toThrow(/kortix-agent/)
   })
 })
