@@ -36,6 +36,7 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
+import { repointRetiredSessionModel } from '../../llm-gateway/resolution/session-model-repoint';
 import { auth, json } from '../../openapi';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
@@ -631,6 +632,7 @@ export async function buildSessionSandboxEnvVars(input: {
     .select({
       secretsAllowlist: projectSessions.secretsAllowlist,
       createdBy: projectSessions.createdBy,
+      metadata: projectSessions.metadata,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
@@ -662,6 +664,26 @@ export async function buildSessionSandboxEnvVars(input: {
     accountId: input.accountId,
     legacyUserId: sessionPolicyRow?.createdBy ?? input.userId,
   });
+
+  // A session's stored model pin outlives any single boot — the runtime
+  // managed lineup can rotate past it while the session sits open. Re-point
+  // it here, at this ONE chokepoint every provisioning path (create, restart,
+  // open/ensure) already shares, before the box boots on a dead id. No-op for
+  // native mode (no gateway, no managed catalog) and for the overwhelming
+  // common case (a still-servable or non-managed pin) — see
+  // llm-gateway/resolution/session-model-repoint.ts.
+  let opencodeModel = input.opencodeModel ?? null;
+  if (input.llmGatewayEnabled && opencodeModel) {
+    opencodeModel = await repointRetiredSessionModel(opencodeModel, {
+      projectId: input.projectId,
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      userId: secretsPrincipalUserId ?? input.userId,
+      agentName: input.agentName,
+      freeModelsOnly: !(await accountMayUseManagedModels(input.accountId)),
+      metadata: sessionPolicyRow?.metadata ?? null,
+    });
+  }
 
   let runtimeSecrets: {
     env: Record<string, string>;
@@ -765,9 +787,10 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       // Concrete session model after explicit → agent → project → account →
-      // platform resolution. The sandbox uses it for the first OpenCode turn
-      // and as the session's OpenCode config default.
-      opencodeModel: input.opencodeModel,
+      // platform resolution — re-pointed above when the runtime lineup
+      // retired it. The sandbox uses it for the first OpenCode turn and as
+      // the session's OpenCode config default.
+      opencodeModel,
       compiledAgentConfig,
       harness,
       piPackages: manifestPackages,

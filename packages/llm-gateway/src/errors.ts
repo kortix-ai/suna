@@ -89,6 +89,7 @@ export type NoUpstreamReasonCode =
   | 'model_not_found'
   | 'model_disabled_on_deployment'
   | 'model_disabled'
+  | 'model_retired'
   | 'provider_disabled'
   | 'plan_upgrade_required'
   | 'provider_not_connected'

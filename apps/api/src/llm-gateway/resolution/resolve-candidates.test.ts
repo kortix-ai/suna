@@ -486,6 +486,47 @@ describe('resolveCandidates — managed model tier gating', () => {
       code: 'model_disabled_on_deployment',
     });
   });
+
+  // The evidence case (2026-09-28 sweep): a session pinned to an id the
+  // BUNDLED catalog still knows about only because it's in RETIRED_MANAGED_
+  // MODEL_IDS — never in RUNTIME_MANAGED_MODELS — must not collapse into the
+  // same "disabled on this deployment" message. Nothing is disabled; the id
+  // is gone. `grok-4.6` has no declared successor (managed-models.ts's
+  // LEGACY_MANAGED_IDS) — the message says so, without inventing one.
+  test('a retired managed model with no declared successor throws model_retired, distinct from model_disabled_on_deployment', async () => {
+    knownManagedModelId = 'grok-4.6';
+    runtimeManagedModel = undefined;
+
+    await expect(resolveCandidates(principal(), 'grok-4.6')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_retired',
+      message: 'The "grok-4.6" model was retired from Kortix\'s managed lineup.',
+    });
+  });
+
+  // `morph-dsv4flash`'s declared successor (`deepseek-v4-flash-0731`,
+  // managed-models.ts's LEGACY_MANAGED_IDS) is itself now retired, in favor of
+  // `deepseek-v4.1-flash`. `toWireModel`/`canonicalManagedModelId` resolve the
+  // WHOLE chain (2026-09-28's transitive-resolution fix, managed-models.test.ts),
+  // so `effectiveModel` here is already `deepseek-v4.1-flash` by the time
+  // resolution runs — this never reaches `model_retired` at all. It just
+  // works, transparently, the instant `deepseek-v4.1-flash` is servable.
+  test('a two-hop legacy alias resolves transparently through its retired intermediate to the final replacement — no error at all', async () => {
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+    const p = principal();
+    tierByAccount[p.accountId] = 'pro';
+
+    const candidates = await resolveCandidates(p, 'morph-dsv4flash');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed' });
+  });
+
+  // The id-level guard (managed-models.test.ts's "every LEGACY_MANAGED_IDS
+  // chain resolves off of a retired id") is what makes the branch below
+  // structurally unreachable for any DECLARED chain: canonicalManagedModelId
+  // is idempotent on its own output, so `effectiveModel` here is always
+  // already the fully-resolved fixed point. It stays defensive code for a
+  // chain that ever exceeds CANONICAL_CHAIN_MAX_HOPS (managed-models.ts).
 });
 
 describe('resolveCandidates — codex + unknown provider', () => {
