@@ -82,7 +82,6 @@ harnessFlow(
     const firstMarker = `RUN9_TURN_ONE_${Date.now()}`;
 
     await ctx.step('start a long first turn', async () => {
-      await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length === 0, 'an idle session');
       await sendPrompt(
         ctx,
         projectId,
@@ -213,7 +212,6 @@ harnessFlow(
 
     const originalMarker = `SESS23_ORIGINAL_${Date.now()}`;
     await ctx.step('start a long-running turn that will still be live at stop time', async () => {
-      await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length === 0, 'an idle session');
       await sendPrompt(
         ctx,
         projectId,

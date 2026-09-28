@@ -90,8 +90,9 @@ export interface BootedSession {
 }
 
 /**
- * Create a session on `harness`, wait for its runtime, and prove the box runs
- * that harness.
+ * Create a session on `harness`, wait for its runtime, prove the box runs
+ * that harness, and wait until the boot prompt's turn has ended, so the flow
+ * starts from an idle session and every turn it observes is its own.
  *
  * The body runs INSIDE a `ctx.step`: request capture is scoped to a step, and
  * boot is the most expensive and most failure-prone part of every flow here.
@@ -112,6 +113,21 @@ export async function bootSession(
     const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
     const sandboxId = sandboxIdOf(started);
     await assertRuntimeHarness(ctx, sandboxId, harness);
+    await waitFor(
+      async () => ({
+        turn: await readTurn(ctx, project.id, session.id),
+        transcript: await readTranscript(ctx, project.id, session.id),
+      }),
+      {
+        until: ({ turn, transcript }) =>
+          turn.turns.length === 0 &&
+          transcript.messages.some((m) => m.role === 'assistant' && (Boolean(m.completed) || Boolean(m.error))),
+        timeoutMs: 240_000,
+        intervalMs: 2_000,
+        description: `the boot prompt's turn to end in session ${session.id}`,
+        retryOnError: isKe2eRetryableError,
+      },
+    );
     return { projectId: project.id, sessionId: session.id, sandboxId };
   });
 }
@@ -408,30 +424,39 @@ export async function watchSessionEvents(
 }
 
 /**
- * Every `delta` string (in stream order) and every `text` string in a frame's
- * JSON. A reply streams as deltas that can split any token, so a marker is
- * found in the joined deltas or in one full `text`, never reliably in a frame.
+ * The text of every assistant reply part the stream carried: for each part,
+ * its last full `text` and its deltas joined in stream order (pi puts only
+ * deltas on the stream). User parts do not count, and neither do control
+ * frames: the inbox echoes the prompt text, marker included.
  */
-export function streamedText(frames: SseFrame[]): { deltas: string; texts: string[] } {
-  let deltas = '';
-  const texts: string[] = [];
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) return value.forEach(walk);
-    if (!value || typeof value !== 'object') return;
-    for (const [key, child] of Object.entries(value)) {
-      if (key === 'delta' && typeof child === 'string') deltas += child;
-      else if (key === 'text' && typeof child === 'string') texts.push(child);
-      else walk(child);
-    }
+export function streamedReplies(frames: SseFrame[]): string[] {
+  const assistant = new Set<string>();
+  const parts = new Map<string, { messageId: string; text: string; deltas: string }>();
+  const part = (id: string, messageId: string) => {
+    const known = parts.get(id) ?? { messageId, text: '', deltas: '' };
+    parts.set(id, known);
+    return known;
   };
   for (const frame of frames) {
+    let data: any;
     try {
-      walk(JSON.parse(frame.data));
+      data = JSON.parse(frame.data);
     } catch {
-      // A non-JSON frame carries no reply text.
+      continue;
+    }
+    if (data?.channel !== 'runtime') continue;
+    const body = data.payload ?? {};
+    if (data.type === 'message.updated' && body.info?.role === 'assistant' && body.info.id) {
+      assistant.add(body.info.id);
+    } else if (data.type === 'message.part.updated' && body.part?.id && typeof body.part.text === 'string') {
+      part(body.part.id, body.part.messageID).text = body.part.text;
+    } else if (data.type === 'message.part.delta' && body.partID && typeof body.delta === 'string') {
+      part(body.partID, body.messageID).deltas += body.delta;
     }
   }
-  return { deltas, texts };
+  return [...parts.values()]
+    .filter((p) => assistant.has(p.messageId))
+    .flatMap((p) => [p.text, p.deltas]);
 }
 
 /** The root conversation the server pinned for this session (`opencode_session_id`). */

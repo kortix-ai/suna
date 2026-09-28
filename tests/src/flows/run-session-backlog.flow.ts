@@ -37,7 +37,7 @@ import {
   runtimePath,
   sandboxIdOf,
   sendPrompt,
-  streamedText,
+  streamedReplies,
   waitForAssistantText,
   waitForSessionReady,
   waitForTurn,
@@ -374,24 +374,17 @@ harnessFlow(
     const { projectId, sessionId } = await bootSession(ctx, harness);
     const marker = `RUN3_STREAM_${Date.now()}`;
     await ctx.step('GET .../events streams the reply text and the turn state after a prompt', async () => {
-      const frames = await watchSessionEvents(
+      await watchSessionEvents(
         ctx,
         projectId,
         sessionId,
         async () => {
           await sendPrompt(ctx, projectId, sessionId, echo(marker));
         },
-        (seen) => {
-          const text = streamedText(seen);
-          return (
-            seen.some((frame) => frame.event === 'kortix.control.turn') &&
-            (text.deltas.includes(marker) || text.texts.some((t) => t.includes(marker)))
-          );
-        },
+        (seen) =>
+          seen.some((frame) => frame.event === 'kortix.control.turn') &&
+          streamedReplies(seen).some((text) => text.includes(marker)),
       );
-      if (!frames.some((frame) => frame.event.startsWith('message.'))) {
-        throw new Error('the stream carried the reply but no message.* runtime frame');
-      }
     });
   },
 );
