@@ -89,11 +89,10 @@ fi
 # working tree. Set I18N_REORDER=1 for an intentional reorder.
 if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
   && git diff --cached --name-only | grep -qE '^apps/web/translations/[^/]+\.json$'; then
-  i18n_check="node apps/web/scripts/i18n-catalogs.mjs check"
-  if ! $i18n_check --base=HEAD >/dev/null 2>&1 \
-    && ! { git rev-parse --verify --quiet MERGE_HEAD >/dev/null \
-      && $i18n_check --base=MERGE_HEAD >/dev/null 2>&1; }; then
-    $i18n_check --base=HEAD >&2 || true
+  i18n_bases="--base=HEAD"
+  git rev-parse --verify --quiet MERGE_HEAD >/dev/null && i18n_bases="$i18n_bases --base=MERGE_HEAD"
+  if ! i18n_out=$(node apps/web/scripts/i18n-catalogs.mjs check $i18n_bases 2>&1); then
+    printf '%s\n' "$i18n_out" >&2
     echo "pre-commit: set I18N_REORDER=1 only when the reorder is intentional." >&2
     exit 1
   fi

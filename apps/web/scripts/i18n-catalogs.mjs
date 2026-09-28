@@ -363,8 +363,11 @@ function firstDifferentLine(a, b) {
 }
 
 function runCheck(flags) {
-  const base = flags.get('base')?.at(-1);
-  if (base) verifyRevision(base);
+  // A catalog passes when it keeps the order of any one base: a merge commit
+  // (`.githooks/pre-commit` passes HEAD and MERGE_HEAD) may take either
+  // parent's order, file by file.
+  const bases = flags.get('base') ?? [];
+  for (const base of bases) verifyRevision(base);
   let failed = false;
   let anyReordered = false;
   for (const file of catalogFiles) {
@@ -380,9 +383,12 @@ function runCheck(flags) {
       );
     }
     let reordered = 0;
-    if (base) {
-      const before = readAt(base, file);
-      const changes = before === undefined ? [] : findKeyOrderChanges(before, value);
+    if (bases.length > 0) {
+      const byBase = bases.map((base) => {
+        const before = readAt(base, file);
+        return { base, changes: before === undefined ? [] : findKeyOrderChanges(before, value) };
+      });
+      const { base, changes } = byBase.find(({ changes }) => changes.length === 0) ?? byBase[0];
       reordered = changes.length;
       if (changes.length > 0) {
         problems.push(`  reorders ${changes.length} object(s) it shares with ${base}:`);
@@ -405,7 +411,7 @@ function runCheck(flags) {
   }
   if (anyReordered) {
     // In CI the base is the test merge's first parent; name the branch instead.
-    const from = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : base;
+    const from = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : bases[0];
     console.log(
       [
         '',
