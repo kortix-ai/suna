@@ -36,7 +36,6 @@ import {
 } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { createAccountToken } from '../src/repositories/account-tokens';
-import { createExecutorClient } from '../../../packages/executor-sdk/src/index';
 import { ApiError, createKortix } from '@kortix/sdk';
 
 const ROOT = resolve(import.meta.dir, '../../..');
@@ -375,26 +374,6 @@ async function driveExistingSessionGrantRefresh(): Promise<void> {
   }
 }
 
-async function driveExecutorCompatibilityAdapter(): Promise<void> {
-  const client = createExecutorClient({
-    apiUrl: API,
-    token: agentToken,
-    projectId,
-  });
-  const catalog = await client.connectors();
-  check(
-    'deprecated Executor adapter live catalog uses the agent token',
-    catalog.some((connector) => connector.slug === FIXTURE_SLUG),
-  );
-  const called = await client.call<{ args?: { q?: string } }>(FIXTURE_SLUG, 'get', {
-    q: 'executor-adapter-agent-token',
-  });
-  check(
-    'deprecated Executor adapter remaps a live call through @kortix/sdk',
-    called.ok === true && called.data?.args?.q === 'executor-adapter-agent-token',
-  );
-}
-
 async function driveMcp(): Promise<void> {
   const proc = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, 'connectors', 'mcp'],
@@ -529,7 +508,6 @@ async function commandMatrix(): Promise<void> {
   await seedCallableAction();
   await driveExistingSessionGrantRefresh();
   await driveConnectorSdk();
-  await driveExecutorCompatibilityAdapter();
   const inheritedCatalog = await expectCli(
     'unconfigured session scope inherits the active project connection',
     ['connectors', 'ls', '--session', sessionId],

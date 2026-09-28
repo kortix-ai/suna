@@ -61,6 +61,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
@@ -74,13 +75,14 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   DownloadSimple,
   SignOutIcon as LogOut,
+  PlugsConnectedIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -112,6 +114,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // The exact key the account list reads, for the create-account seed below.
   const accountsQueryKey = useAccountsQueryKey();
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
+  const [connectMcpOpen, setConnectMcpOpen] = useState(false);
+  // Experimental: the row and the hosted MCP endpoint both follow the project's `mcp` flag.
+  const mcpEnabled = useFeatureFlag(projectId, 'mcp').enabled;
   const { data: adminRole } = useAdminRole();
   // Self-host hides the row for non-admins when account creation is restricted
   // — admins are exempt (see `isAccountCreationRestricted()` /
@@ -302,6 +307,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </Link>
               </DropdownMenuItem>
 
+              {mcpEnabled && (
+                <DropdownMenuItem
+                  onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
+                  size="sm"
+                >
+                  <PlugsConnectedIcon />
+                  {t('workspace.connectMcp')}
+                </DropdownMenuItem>
+              )}
+
               <ThemeSubmenu />
 
               <HelpSubmenu onClose={() => setMenuOpen(false)} />
@@ -322,6 +337,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
+
+      <ConnectMcpModal projectId={projectId} open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
 
       <CreateAccountModal
         open={createAccountOpen}

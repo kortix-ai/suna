@@ -224,8 +224,9 @@ function unavailable(
 }
 
 /** The saved transcript, through the same sanitizer as a live read. The
- *  mirror already drops tool inputs/outputs; `compactMessage` keeps only role,
- *  text, tool name + status, file name + mime, and the reasoning flag. */
+ *  mirror keeps tool calls 1:1; `compactMessage` keeps only role, text, tool
+ *  name + status, file name + mime, and the reasoning flag, so a public share
+ *  never shows a tool's input or output. */
 function fromMirror(
   mirror: MirrorSnapshot,
   reason: string,

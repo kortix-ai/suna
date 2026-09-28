@@ -131,7 +131,7 @@ test('catalog entries carry the accounts this caller may run the connector as, d
         accounts: [
           {
             connection_id: 'conn-personal',
-            label: 'markokraemer.mail@gmail.com',
+            label: 'user@example.com',
             owner_type: 'member',
             is_default: false,
           },

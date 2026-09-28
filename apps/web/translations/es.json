@@ -53,6 +53,7 @@
     "manageChatGptAccounts": "Administrar cuentas de ChatGPT",
     "connect": "Conectar",
     "connectChatGpt": "Conectar ChatGPT",
+    "reconnectChatGpt": "Reconectar ChatGPT",
     "noChatGptAccounts": "Aún no hay cuentas de ChatGPT",
     "oauthCreationDescription": "Inicia sesión con tu cuenta ChatGPT Plus o Pro. Kortix guarda el inicio de sesión cifrado y nunca lo muestra.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -1150,6 +1151,10 @@
         "config_releases": {
           "name": "Versiones de configuración",
           "description": "Ejecuta las sesiones con la configuración de agente actual de la rama base, servida en solo lectura, para que un agente, skill o herramienta fusionado llegue a cada sesión en curso. Desactivado, cada sesión lee su propia carpeta de configuración del workspace."
+        },
+        "mcp": {
+          "name": "Servidor MCP",
+          "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
         }
       }
     },
@@ -1446,6 +1451,7 @@
       "createAccount": "Crear una cuenta…",
       "settings": "Ajustes",
       "downloadApp": "Descargar aplicación",
+      "connectMcp": "Conectar MCP",
       "logOut": "Cerrar sesión",
       "find": "Buscar un proyecto…",
       "accountSettings": "Configuración de la cuenta",
@@ -19182,7 +19188,12 @@
       "text5176d59f25fd": "Versión de configuración de la sesión resuelta",
       "text273c48dbf3b9": "Dispositivo de notificaciones push registrado",
       "textbb666ddf7a57": "Dispositivo de notificaciones push eliminado",
-      "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida"
+      "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida",
+      "text3ec6c235548a": "Metadatos del servidor MCP leídos",
+      "text7740934de920": "Cliente OAuth registrado",
+      "textcd36423ea12a": "Servidor MCP llamado",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20300,5 +20311,25 @@
     "connectFailed": "No se pudo conectar la cuenta. Inténtalo de nuevo.",
     "sharePrivateDescription": "Elige quién más puede usar tu cuenta. Pasa a ser una cuenta compartida, que también pueden gestionar quienes gestionan las conexiones del proyecto.",
     "ownerMeta": "Tu cuenta"
+  },
+  "connectMcp": {
+    "title": "Conectar Kortix por MCP",
+    "description": "Añade esta URL a Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP. La primera vez, el cliente te pide iniciar sesión en Kortix. No hay nada que instalar.",
+    "urlLabel": "URL de MCP",
+    "addToClient": "Añádelo a tu cliente",
+    "other": "Otro",
+    "claudeSteps": "En Claude (web o escritorio), abre Configuración → Conectores → Añadir conector personalizado, pega la URL e inicia sesión.",
+    "claudeCodeHint": "Después ejecuta /mcp en Claude Code e inicia sesión.",
+    "otherHint": "ChatGPT (modo desarrollador), VS Code, Windsurf y otros clientes: añade un servidor MCP remoto con la URL de arriba o con este JSON.",
+    "addToCursor": "Añadir a Cursor",
+    "signInOnFirstUse": "Cursor te pide iniciar sesión en Kortix la primera vez.",
+    "docs": "Documentación",
+    "done": "Listo",
+    "copy": "Copiar"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "App no verificada",
+    "unverifiedBody": "{client} se registró sola en Kortix. Kortix no ha verificado quién la gestiona. Permítela solo si la estás conectando tú mismo ahora.",
+    "redirectsTo": "Te devuelve a"
   }
 }

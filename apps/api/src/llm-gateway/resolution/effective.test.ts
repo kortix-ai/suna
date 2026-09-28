@@ -70,14 +70,22 @@ describe('toWireModel / toOpencodeModelRef', () => {
   test('maps stored Morph-prefixed managed ids to the new Kortix ids', () => {
     expect(toWireModel('morph-dsv41flash')).toBe('deepseek-v4.1-flash');
     expect(toWireModel('kortix/morph-kimik3')).toBe('kimi-k3');
-    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe('kortix/kimi-k3-fast');
-    expect(toWireModel('morph-dsv4flash')).toBe('deepseek-v4-flash-0731');
-    expect(toWireModel('deepseek-v4-flash')).toBe('deepseek-v4-flash-0731');
+    // kimi-k3-fast (morph-kimik3-fast's one-hop target) was itself retired in
+    // favor of kimi-k3 — canonicalManagedModelId follows the full chain, so
+    // this resolves two hops, not one. Was 'kortix/kimi-k3-fast' before
+    // 2026-09-28's chain-resolution fix.
+    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe('kortix/kimi-k3');
+    // deepseek-v4-flash-0731 (morph-dsv4flash's and deepseek-v4-flash's
+    // one-hop target) was itself retired in favor of deepseek-v4.1-flash —
+    // same two-hop resolution. Was 'deepseek-v4-flash-0731' before.
+    expect(toWireModel('morph-dsv4flash')).toBe('deepseek-v4.1-flash');
+    expect(toWireModel('deepseek-v4-flash')).toBe('deepseek-v4.1-flash');
   });
 
   test('puts every gateway model under the kortix OpenCode provider', () => {
     expect(toOpencodeModelRef('glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
-    expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash-0731');
+    // Was 'kortix/deepseek-v4-flash-0731' before the chain fix — see above.
+    expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4.1-flash');
     expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
     expect(toOpencodeModelRef('kortix/glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
     expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe(

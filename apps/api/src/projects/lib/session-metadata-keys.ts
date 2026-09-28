@@ -17,9 +17,12 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
   'deletedAt',
   'deletedBy',
-  // Model pin (`opencode_model` body field and `PUT …/model`).
+  // Model pin (`opencode_model` body field and `PUT …/model`). `_repointed_from`
+  // is stamped only by session-model-repoint.ts, when a retired managed id gets
+  // moved to a servable one at boot — a client value here would forge history.
   'opencode_model',
   'opencode_model_source',
+  'opencode_model_repointed_from',
   // Invocation and trigger attribution. `on_behalf_of` minting, the audit
   // origin, and keyed-trigger routing (`trigger_session_key`) read these.
   'source',

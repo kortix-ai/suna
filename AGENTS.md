@@ -255,7 +255,7 @@ Only the canonical branch does.
 Carve-outs where you just proceed: read-only investigation and questions, and
 trivial single-file typo/comment fixes on the current branch.
 
-## Default delivery: share by preview, merge to `main` only when told
+## Default delivery: share by preview, self-merge to `main` when verified
 
 `main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
 It is not a save point, and it is not how you show someone your work.
@@ -276,13 +276,25 @@ It is not a save point, and it is not how you show someone your work.
    the PR green as you go, not at the end.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
-5. **Never merge to `main` without the user's explicit approval of that merge.**
-   Not "the task is done", not "the checks are green" — the user says merge.
+5. **Self-merge to `main` when the change is verified. Do not wait for the
+   user's approval.** Speed matters: a verified change that sits unmerged is
+   waste. Verified means all of these are true:
+   - the relevant local checks ran with real inputs and outputs (rule 3), and
+     they passed;
+   - the PR is mergeable, and the `Tests` lanes are green (the `preview` or
+     `test` label runs them);
+   - rule 6 holds when the change touches a client-facing runtime contract.
+   A failing or skipped check blocks the merge until you fix it or state why it
+   is unrelated (for example, the same test fails on `main`). Squash-merge
+   (`gh pr merge <pr> --squash`), then finish rules 7 and 8. A merge is not
+   the end of the work: dev verification is still yours.
    The only machine-enforced rule is that every change reaches `main` and
    `staging` through a pull request — no required approvals, no required status
-   checks, no bypass actors. Anyone may merge their own PR. The discipline is
-   yours, not the ruleset's, so the bar is what you verified, not what CI let
-   through.
+   checks, no bypass actors. The discipline is yours, not the ruleset's, so the
+   bar is what you verified, not what CI let through.
+   **The release gates do not change.** Merging into `staging` or `prod`,
+   running Promote to Production, and moving the `:stable` tag each need the
+   user's explicit approval (the **kortix-release** skill).
 6. **A change to a client-facing runtime contract** — the `@kortix/sdk` public
    surface, session/thread transport, the streaming protocol — merges only after
    the whole objective ran on its own preview origin through a real session.
@@ -457,7 +469,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   file against its own fresh migrated database. A skipped DB suite fails.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
-- Local browser runs use two Playwright workers. CI browser shards use one.
+- Browser runs use two Playwright workers, locally and in each CI shard.
 - `pnpm test -- --packages-only` runs every app/package test and publish check.
 - `pnpm test -- --full` adds browser journeys and every app/package test. It
   starts the deterministic local stack.
@@ -506,15 +518,25 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   fallback. Daytona code remains only to delete previews created before
   2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
   frontend, Mailpit, and HTTPS origin.
-- The sticky pull request comment links the origin as soon as the stack serves
-  the commit ("live; tests running"). Preview CI then runs
-  `pnpm test -- --target-full` against that origin as a separate step and
-  updates the comment with the result and its `/_tests/` HTML report.
+- The `preview` label deploys; it does not run `--target-full`. A deploy takes
+  about 7 min. The sticky pull request comment links the origin as soon as the
+  stack serves the commit ("live; NOT tested").
+- `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs
+  `pnpm test -- --target-full` against that origin (40–80 min). The comment then
+  gives the result and its `/_tests/` HTML report. Run it only for a deployed-only
+  surface: managed Git, Platinum sessions, Stripe. It gates no merge.
+- A deploy that waited in the per-PR queue re-checks the head SHA, the label, and
+  the branch. When any one changed, the run cancels itself and deploys nothing.
 - A push to a `preview`-labelled branch redeploys its environment in place; the
   label stays. Removing the label or deleting the branch tears it down. Closing
-  the pull request does not. A daily reconciler deletes environments whose
+  the pull request does not. An hourly reconciler deletes environments whose
   branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
-  `reconcile`).
+  `reconcile`). It also stops (never deletes) a host whose pull request is not
+  an open `preview` pull request, or that idled over 1 hour. A stopped host
+  keeps its disk; a redeploy or the next request to its URL starts it again.
+- A preview suite waits up to 45 min before it starts until the Platinum pool
+  has 64 GB free and the managed org saw at most 100 new repositories in the
+  last hour (`PREVIEW_SUITE_*`). It then stops the session boxes it created.
 - Preview warm images contain dependencies and Docker layers only. They never
   contain a database or runtime secret.
 - Preview Mailpit handles authentication and invite email. The dedicated

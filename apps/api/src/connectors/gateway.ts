@@ -173,6 +173,17 @@ export interface GatewayDeps {
     projectId: string,
     sessionId: string,
   ): Promise<EmailSessionContext | null>;
+  /**
+   * A session's Slack post binds its thread to that session, so a human reply
+   * in the thread comes back to the session instead of spawning a new one.
+   * Returns the binding state echoed to the agent as `thread_binding`.
+   */
+  bindSlackThread?(input: {
+    projectId: string;
+    sessionId: string;
+    channel: string;
+    threadTs: string;
+  }): Promise<Record<string, unknown>>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -948,7 +959,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           ? { attachment_count: attachmentClaim.attachmentIds.length }
           : {}),
       });
-      return { status: 'ok', data: result.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+      const data = await withSlackThreadBinding(deps, input, connector, executionArgs, result.data);
+      return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
@@ -992,6 +1004,46 @@ function hasAttachmentHandles(args: Record<string, unknown>): boolean {
       !Array.isArray(value) &&
       typeof (value as Record<string, unknown>).attachment_id === 'string',
   );
+}
+
+/**
+ * After a session posts to Slack, bind the thread to that session: the new
+ * message's own `ts` for a top-level post, `thread_ts` for a reply. The
+ * session comes from the caller's token (never the request body), so a post
+ * can only route replies to the session that made it. A bind failure never
+ * fails the delivered message; the agent sees it in `thread_binding`.
+ */
+async function withSlackThreadBinding(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  args: Record<string, unknown>,
+  data: unknown,
+): Promise<unknown> {
+  if (
+    !deps.bindSlackThread ||
+    !input.sessionId ||
+    connector.provider !== 'channel' ||
+    connector.platform !== 'slack' ||
+    input.actionPath !== 'send_message' ||
+    !data ||
+    typeof data !== 'object'
+  ) {
+    return data;
+  }
+  const posted = data as { ts?: unknown; channel?: unknown };
+  const threadTs = typeof args.thread_ts === 'string' && args.thread_ts ? args.thread_ts : posted.ts;
+  const channel = typeof posted.channel === 'string' && posted.channel ? posted.channel : args.channel;
+  if (typeof threadTs !== 'string' || typeof channel !== 'string') return data;
+  const threadBinding = await deps
+    .bindSlackThread({ projectId: input.projectId, sessionId: input.sessionId, channel, threadTs })
+    .catch((error) => {
+      logger.warn('[connector] slack thread bind failed after a delivered post', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { bound: false, thread_ts: threadTs, reason: 'bind_failed' };
+    });
+  return { ...data, thread_binding: threadBinding };
 }
 
 /**

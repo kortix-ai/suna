@@ -58,14 +58,14 @@ afterEach(async () => {
 describe('replaceCli', () => {
   test('replaces the binary atomically when the directory is writable', async () => {
     const { cliPath } = await lockedDir('OLD')
-    expect(await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE.buffer as ArrayBuffer)).toBe('updated')
+    expect(await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE)).toBe('updated')
     expect(await readFile(cliPath, 'utf8')).toBe(RUNNABLE.toString())
   })
 
   test('keeps the installed binary when the download digest does not match', async () => {
     const { cliPath } = await lockedDir('OLD')
     expect(
-      await replaceCli(cliPath, sha('SOMETHING ELSE'), RUNNABLE.buffer as ArrayBuffer),
+      await replaceCli(cliPath, sha('SOMETHING ELSE'), RUNNABLE),
     ).toBe('failed')
     expect(await readFile(cliPath, 'utf8')).toBe('OLD')
   })
@@ -73,7 +73,7 @@ describe('replaceCli', () => {
   test('a digest mismatch never creates a temp file in the directory', async () => {
     const { dir, cliPath } = await lockedDir('OLD')
     expect(
-      await replaceCli(cliPath, sha('SOMETHING ELSE'), RUNNABLE.buffer as ArrayBuffer),
+      await replaceCli(cliPath, sha('SOMETHING ELSE'), RUNNABLE),
     ).toBe('failed')
     expect(await Array.fromAsync(new Bun.Glob('.kortix.download.*').scan(dir))).toEqual([])
   })
@@ -81,7 +81,7 @@ describe('replaceCli', () => {
   test('a candidate that does not run never reaches the live path', async () => {
     const { dir, cliPath } = await lockedDir('OLD')
     expect(
-      await replaceCli(cliPath, sha(UNRUNNABLE), UNRUNNABLE.buffer as ArrayBuffer),
+      await replaceCli(cliPath, sha(UNRUNNABLE), UNRUNNABLE),
     ).toBe('unrunnable')
     expect(await readFile(cliPath, 'utf8')).toBe('OLD')
     expect(await Array.fromAsync(new Bun.Glob('.kortix.download.*').scan(dir))).toEqual([])
@@ -94,7 +94,7 @@ describe('replaceCli', () => {
     let unlocked = 0
     const reasons: string[] = []
     expect(
-      await replaceCli(cliPath, sha(UNRUNNABLE), UNRUNNABLE.buffer as ArrayBuffer, {
+      await replaceCli(cliPath, sha(UNRUNNABLE), UNRUNNABLE, {
         unlockDir: async () => {
           unlocked++
           return true
@@ -111,7 +111,7 @@ describe('replaceCli', () => {
     await chmod(dir, 0o555)
     const reasons: string[] = []
     expect(
-      await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE.buffer as ArrayBuffer, {
+      await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE, {
         unlockDir: async () => false,
         onUnlockAttempt: (r) => reasons.push(r),
       }),
@@ -125,7 +125,7 @@ describe('replaceCli', () => {
     await chmod(dir, 0o555)
     let unlocked = 0
     expect(
-      await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE.buffer as ArrayBuffer, {
+      await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE, {
         unlockDir: async (target) => {
           unlocked++
           await chmod(target, 0o755)
@@ -142,7 +142,7 @@ describe('replaceCli', () => {
     await chmod(dir, 0o555)
     let unlocked = 0
     expect(
-      await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE.buffer as ArrayBuffer, {
+      await replaceCli(cliPath, sha(RUNNABLE), RUNNABLE, {
         unlockDir: async () => {
           unlocked++
           return true // claims success but changes nothing

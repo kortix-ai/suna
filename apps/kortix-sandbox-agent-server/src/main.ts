@@ -7,7 +7,7 @@ import { runMonitorMode } from './app/monitor-mode'
 import { startStaticWebServer } from './services/static-web/static-web'
 import { startProxy } from './app/server'
 import { installShutdownHandlers } from './app/shutdown'
-import { registerHarnessAssets } from './services/runtime-assets/runtime-assets'
+import { bakeRuntimeAssetsState, registerHarnessAssets } from './services/runtime-assets/runtime-assets'
 
 async function main() {
   const bootTime = Date.now()
@@ -70,6 +70,22 @@ if (import.meta.main) {
       })
       .catch((error) => {
         process.stderr.write(`[warm-pi-packages] ${error instanceof Error ? error.message : String(error)}\n`)
+        process.exit(1)
+      })
+  } else if (subcommand === 'bake-runtime-assets-state') {
+    // Image build only: record which CLI, daemon, skill overlay and OpenCode
+    // this image carries, so a box booted from it states that on its FIRST
+    // health read instead of after its first reconcile. A missing artifact
+    // fails the build rather than shipping a box that reports a lie.
+    bakeRuntimeAssetsState()
+      .then((state) => {
+        process.stdout.write(`${JSON.stringify(state)}\n`)
+        process.exit(0)
+      })
+      .catch((error) => {
+        process.stderr.write(
+          `[bake-runtime-assets-state] ${error instanceof Error ? error.message : String(error)}\n`,
+        )
         process.exit(1)
       })
   } else if (subcommand === 'install-compiled-runtime') {

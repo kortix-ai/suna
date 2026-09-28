@@ -245,3 +245,39 @@ test('when a turn ends, the kept copy is re-read from the server', async () => {
     globalThis.setTimeout = realSetTimeout;
   }
 });
+
+test("a sub-agent reads its own saved window by `child`, and never touches the parent's kept copy", async () => {
+  // A sub-agent is its own OpenCode session inside the parent's Kortix
+  // session: same scope, different transcript. Read as the root, it would get
+  // the parent's window; kept like the root, it would overwrite the parent's
+  // copy on this device.
+  const store = await seeded('ses_parent_root', 2);
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json({ ...envelope('ses_subagent_one', 3), next_cursor: 'msg_ses_subagent_one_1' });
+  }) as unknown as typeof fetch;
+
+  const hook = await mount('ses_subagent_one', { ...offline, savedChild: true });
+  await settle();
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain('child=ses_subagent_one');
+  expect(hook.value().messages.map((row) => row.info.sessionID)).toEqual([
+    'ses_subagent_one',
+    'ses_subagent_one',
+    'ses_subagent_one',
+  ]);
+  const kept = store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope;
+  expect(kept.opencode_session_id).toBe('ses_parent_root');
+  expect(kept.messages).toHaveLength(2);
+
+  // Older windows come from the same sub-agent.
+  expect(hook.value().hasOlder).toBe(true);
+  await act(async () => {
+    await hook.value().loadOlder();
+  });
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toContain('child=ses_subagent_one');
+  expect(requests[1]).toContain('before=msg_ses_subagent_one_1');
+});

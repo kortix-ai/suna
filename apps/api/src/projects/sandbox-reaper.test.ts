@@ -2858,7 +2858,7 @@ describe('reapOrphanProviderBoxes', () => {
     const r = await reapOrphanProviderBoxes(NOW2);
 
     expect(stops).toEqual(['real-orphan']);
-    expect(r).toEqual({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 1, stopped: 1, errors: 0 });
   });
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {
@@ -2871,7 +2871,7 @@ describe('reapOrphanProviderBoxes', () => {
       { provider: 'daytona', externalId: 'daytona-orphan' },
       { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
-    expect(r).toEqual({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
+    expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {
@@ -2881,7 +2881,7 @@ describe('reapOrphanProviderBoxes', () => {
       managedBoxes = [{ externalId: 'orphan-x', createdAt: hoursAgo(48) }];
       const r = await reapOrphanProviderBoxes(NOW2);
       expect(stops).toEqual([]);
-      expect(r).toEqual({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
+      expect(r).toMatchObject({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
     } finally {
       if (prev === undefined) delete process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
       else process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = prev;

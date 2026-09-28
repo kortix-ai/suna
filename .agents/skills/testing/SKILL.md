@@ -66,7 +66,7 @@ Do not replace this package contract with a separate CI workflow.
 
 Browser and full modes start local Supabase, migrations, API, gateway, and web.
 They reuse a running API only when it proves the deterministic test profile.
-Local browser runs use two Playwright workers. CI browser shards use one worker.
+Browser runs use two Playwright workers, locally and in each CI shard.
 
 Run the narrowest relevant command first. Run `pnpm test` before handoff. Run
 `pnpm test -- --full` for testing infrastructure, broad refactors, and release
@@ -154,10 +154,12 @@ must change together.
 - Tag every preview session box with its host: the preview API runs with
   `KORTIX_INSTANCE_ID=<host sandbox name>` (Platinum `kortix.instance`) and its
   deadline reaper on. Teardown and replacement stop the host's session boxes.
-  Each deploy and the daily reconcile stop session boxes whose host is gone or
-  that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`).
-- Reconcile stale previews each day. Daytona reconciliation only deletes
-  previews created before 2026-09-22.
+  Each deploy and the hourly reconcile stop session boxes whose host is gone or
+  that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`). A suite
+  stops the session boxes it created when it ends, on a branch environment too.
+- Reconcile stale previews each hour. It stops hosts of closed pull requests
+  and hosts idle over 1 hour. Daytona reconciliation only deletes previews
+  created before 2026-09-22.
 
 The preview warm image can contain dependencies and Docker layers. It must not
 contain a database or runtime secret. Keep the runtime secret allowlist in

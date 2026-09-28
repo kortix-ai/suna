@@ -375,7 +375,10 @@ describe('the preview status tells the truth about the suite', () => {
     // The early comment never carries a suite outcome; the final one reads the
     // suite step's own outcome.
     expect(previewWorkflow.slice(early, suite)).toContain('SUITE_OUTCOME: ""');
-    expect(previewWorkflow.slice(final)).toContain("SUITE_OUTCOME: ${{ steps.suite.outcome || 'cancelled' }}");
+    // A suite a newer commit superseded reports that, not a failure.
+    expect(previewWorkflow.slice(final)).toContain(
+      "SUITE_OUTCOME: ${{ steps.suite.outputs.superseded == '1' && 'superseded' || steps.suite.outcome || 'cancelled' }}",
+    );
     expect(previewWorkflow.match(/bash scripts\/ci\/preview-sticky-comment\.sh/g)).toHaveLength(2);
     // The deployment status describes the deploy, never the suite.
     expect(previewWorkflow.slice(status, early)).not.toMatch(/target-full|tested/i);
@@ -383,5 +386,48 @@ describe('the preview status tells the truth about the suite', () => {
     expect(previewWorkflow).toContain(
       "if: steps.preview.outcome != 'success' || steps.suite.outcome == 'failure'",
     );
+  });
+});
+
+/**
+ * The `preview` label deploys; it never waits on, or starts, a 40-80 min suite.
+ *
+ * 2026-09-28: every label ran `--target-full` inline. Five ran at once, all
+ * shared one preview GitHub App, hit its secondary rate limit on repo creation,
+ * and each ran ~80 min to red. Pushes queued behind them for up to 67 min, and
+ * two queued runs finally deployed — re-creating 16 GB environments for
+ * branches that had merged and been torn down minutes earlier.
+ */
+describe('the preview label is a fast deploy, and a superseded run never deploys', () => {
+  const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
+  const revalidate = previewWorkflow.slice(
+    previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
+    previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
+  );
+
+  test('only an explicit dispatch runs the suite', () => {
+    expect(previewWorkflow).toContain(
+      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
+    );
+    expect(previewWorkflow).not.toContain("github.event.action == 'labeled' || github.event_name == 'workflow_dispatch'");
+  });
+
+  test('a moved head, a removed label, or a deleted branch cancels the run instead of deploying', () => {
+    expect(revalidate).toContain('supersede "approved ${COMMIT}; head is now ${current}."');
+    expect(revalidate).toContain('supersede "the preview label was removed."');
+    expect(revalidate).toContain('git/ref/heads/${BRANCH}');
+    expect(revalidate).toContain('gh run cancel "$GITHUB_RUN_ID"');
+    // Superseded is not a failure of this commit: no red check. (A lost write
+    // permission still is.)
+    expect(revalidate).not.toContain('is stale');
+    expect(revalidate).not.toContain('label was removed before deployment');
+    expect(previewWorkflow).toContain('BRANCH: ${{ needs.authorize.outputs.head_branch }}');
+    expect(previewWorkflow).toMatch(/deployments: write\n\s+# A superseded run cancels itself[^\n]*\n\s+actions: write/);
+  });
+
+  test('a cancelled run neither comments nor re-points a stable hostname', () => {
+    const comment = previewWorkflow.slice(previewWorkflow.indexOf('- name: Publish the preview on the pull request'));
+    expect(comment.split('\n')[1]).toContain('if: ${{ !cancelled() }}');
+    expect(previewWorkflow).not.toContain("if: always() && needs.authorize.outputs.public_worker != ''");
   });
 });
