@@ -39,6 +39,13 @@ export interface SessionSurfaceInput {
   newSessionHint: boolean;
   /** The durable first prompt exists, even after this tab loses its local hint. */
   hasPendingFirstPrompt?: boolean;
+  /**
+   * The server says this existing session never had a conversation: nothing
+   * saved, no turn ever, nothing queued (`useSession().conversationEmpty`).
+   * It opens like a new one, on its composer: a boot screen would wait for
+   * history that does not exist.
+   */
+  conversationEmpty?: boolean;
   /** Any transcript content is known for this session (live runtime OR cache). */
   hasTranscript: boolean;
 }
@@ -54,7 +61,10 @@ export interface SessionSurfaceInput {
  * the box is still booting, and does not depend on the chat having mounted.
  */
 export function isNewSessionSurface(input: SessionSurfaceInput): boolean {
-  return (input.newSessionHint || !!input.hasPendingFirstPrompt) && !input.hasTranscript;
+  return (
+    (input.newSessionHint || !!input.hasPendingFirstPrompt || !!input.conversationEmpty) &&
+    !input.hasTranscript
+  );
 }
 
 export interface MountSessionChatInput extends SessionSurfaceInput {

@@ -31,6 +31,17 @@ describe('isNewSessionSurface', () => {
     expect(isNewSessionSurface({ newSessionHint: true, hasTranscript: true })).toBe(false);
   });
 
+  test('an existing session that never had a conversation gets the shell, not the boot screen', () => {
+    // Created through the API and never prompted: nothing saved, no turn ever,
+    // nothing queued. There is nothing for a boot screen to wait for.
+    expect(isNewSessionSurface({ newSessionHint: false, hasTranscript: false, conversationEmpty: true })).toBe(true);
+    expect(
+      resolveSessionOverlay({ newSessionHint: false, hasTranscript: false, conversationEmpty: true, shellShowsFirstPrompt: false }),
+    ).toBe('new-session-shell');
+    // The runtime's own messages still revoke it, as for any new session.
+    expect(isNewSessionSurface({ newSessionHint: false, hasTranscript: true, conversationEmpty: true })).toBe(false);
+  });
+
   test('a resumed session is never the new-session surface', () => {
     expect(isNewSessionSurface({ newSessionHint: false, hasTranscript: false })).toBe(false);
     expect(isNewSessionSurface({ newSessionHint: false, hasTranscript: true })).toBe(false);
