@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type SavedTranscriptInput, resolveSavedTranscript } from './saved-transcript';
+import { type SavedTranscriptInput, isEmptyConversation, resolveSavedTranscript } from './saved-transcript';
 
 const base: SavedTranscriptInput = {
   enabled: true,
@@ -73,5 +73,46 @@ describe('resolveSavedTranscript', () => {
                 expect(answer).toBe('loading');
             }
     expect(cases).toBe(2 * 2 * 4 * 4 * 3);
+  });
+});
+
+describe('isEmptyConversation', () => {
+  // A session whose saved copy proves it empty has nothing to wait for, so it
+  // opens on its composer instead of a boot screen. The proof is the server's:
+  // a complete read of the runtime found no messages.
+  const ROOT = 'ses_root';
+  const empty = {
+    savedEmptyRoot: ROOT,
+    rootSessionId: ROOT,
+    turnRead: true,
+    hasEndedTurn: false,
+    hasOpenOrQueuedTurn: false,
+  };
+
+  test('a saved copy that proves this root empty, no turn ever, nothing queued: empty', () => {
+    expect(isEmptyConversation(empty)).toBe(true);
+  });
+
+  test('no saved copy is not evidence: a session may have run turns no record kept', () => {
+    // The turn ledger exists since 2026-08-17 and its writes are best-effort,
+    // so "no turn ever ended" is also what an older session with history says.
+    expect(isEmptyConversation({ ...empty, savedEmptyRoot: null })).toBe(false);
+  });
+
+  test('an empty copy of another root says nothing about this one', () => {
+    expect(isEmptyConversation({ ...empty, rootSessionId: 'ses_repinned' })).toBe(false);
+    expect(isEmptyConversation({ ...empty, rootSessionId: '' })).toBe(false);
+  });
+
+  test('a turn that ended outranks the saved copy: the copy is older than it', () => {
+    expect(isEmptyConversation({ ...empty, hasEndedTurn: true })).toBe(false);
+  });
+
+  test('an open or queued turn is a conversation starting', () => {
+    expect(isEmptyConversation({ ...empty, hasOpenOrQueuedTurn: true })).toBe(false);
+  });
+
+  test('an unanswered turn read is an unknown, never an empty', () => {
+    expect(isEmptyConversation({ ...empty, turnRead: false })).toBe(false);
   });
 });

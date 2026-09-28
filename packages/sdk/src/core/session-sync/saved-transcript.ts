@@ -58,3 +58,42 @@ export function resolveSavedTranscript(input: SavedTranscriptInput): SavedTransc
   if (input.mirror === 'absent') return 'none';
   return 'loading';
 }
+
+export interface EmptyConversationInput {
+  /**
+   * The OpenCode root the server's saved copy proves empty: a complete read of
+   * the runtime found no messages (`total: 0`). Null when no copy proves it.
+   */
+  savedEmptyRoot: string | null;
+  /** The OpenCode root this session's transcript is keyed by, or `''`. */
+  rootSessionId: string;
+  /** The server's turn record (`GET …/turn`) has answered. */
+  turnRead: boolean;
+  /** That record names a turn that ended (`last_ended`). */
+  hasEndedTurn: boolean;
+  /** A turn is open, working, or waiting in the prompt inbox. */
+  hasOpenOrQueuedTurn: boolean;
+}
+
+/**
+ * Is this session's conversation empty, with nothing to wait for?
+ *
+ * Only a positive record answers yes: the saved copy of THIS root proves the
+ * conversation empty, and the turn record shows no turn ended since and none
+ * open or queued. Absent records are never evidence. The turn ledger exists
+ * since 2026-08-17 and its writes are best-effort, so "no turn ever ended" is
+ * also what an older session with history says before its first wake.
+ *
+ * A host shows an empty conversation its composer instead of a boot screen:
+ * no saved copy will paint, and the computer holds no messages. Any read
+ * still in flight answers `false`.
+ */
+export function isEmptyConversation(input: EmptyConversationInput): boolean {
+  return (
+    input.savedEmptyRoot !== null &&
+    input.savedEmptyRoot === input.rootSessionId &&
+    input.turnRead &&
+    !input.hasEndedTurn &&
+    !input.hasOpenOrQueuedTurn
+  );
+}

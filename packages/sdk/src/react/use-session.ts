@@ -82,11 +82,11 @@ import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
-import { resolveSavedTranscript } from '../core/session-sync/saved-transcript';
+import { isEmptyConversation, resolveSavedTranscript } from '../core/session-sync/saved-transcript';
 import { useSessionSync } from './use-session-sync';
 import { selectTranscriptShapeKey } from './session-transcript-subscription';
 import { useSessionStartGiveUp } from './use-session-start-give-up';
-import { useSessionWorking } from './use-session-working';
+import { useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
 import { useVisibleAgents } from './use-visible-agents';
 
@@ -1189,6 +1189,22 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     mirror: sync.mirrorState,
     root: ocSessionId ? 'known' : canonicalSession.pinSettled ? 'unknown' : 'pending',
   });
+  // 5a'. And is there anything to wait for at all? The saved copy can prove
+  // the conversation empty (a complete read of the runtime found nothing); the
+  // server's turn record (shared `/turn` cache entry, no extra request) says
+  // whether a turn ended since, and the projection whether one is open or
+  // queued. A proven-empty session opens on its composer.
+  const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
+  const conversationEmpty = isEmptyConversation({
+    savedEmptyRoot: transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null,
+    rootSessionId: ocSessionId,
+    turnRead: typeof turnOutcome.atMs === 'number',
+    hasEndedTurn: turnOutcome.last_ended != null,
+    hasOpenOrQueuedTurn:
+      working.state === 'working' ||
+      working.pendingDelivery === true ||
+      working.serverOpenTurnToken !== null,
+  });
 
   useEffect(() => {
     setRewindPending(false);
@@ -1620,6 +1636,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      * never `none`.
      */
     savedTranscript,
+    /**
+     * The server's saved copy proves this session's conversation empty (a
+     * complete read of its runtime found no messages), no turn ended since,
+     * and nothing is open or queued. Open it on its empty conversation (the
+     * composer), never on a boot screen. `false` while any of those reads is
+     * in flight, and for a project that keeps no saved history.
+     */
+    conversationEmpty,
     isError: terminal || !!startError || !!runtimeSessionError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,
