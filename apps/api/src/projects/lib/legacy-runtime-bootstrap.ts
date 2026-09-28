@@ -111,7 +111,7 @@ export const LEGACY_OPENCODE_HOME = 'auto';
  * stopped looking.
  *
  * THE GROUND TRUTH, per the daemon's own contract
- * (`apps/kortix-sandbox-agent-server/src/runtime-assets.ts`,
+ * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts`,
  * `RuntimeConvergenceReport.running`): `build` and `components` describe a
  * PASS — an attempt — not what is running now; a daemon restart reports
  * `build: null` until its first pass completes, and `build` is written even

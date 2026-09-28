@@ -15,7 +15,7 @@ import {
 // (routes/forward.test.ts).
 describe('/file/import', () => {
   const daemonFiles = readFileSync(
-    new URL('../../../kortix-sandbox-agent-server/src/routes/files.ts', import.meta.url),
+    new URL('../../../kortix-sandbox-agent-server/src/routes/workspace/files.ts', import.meta.url),
     'utf8',
   );
   const daemonImportTimeoutMs = Number(
