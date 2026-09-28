@@ -773,9 +773,8 @@ const deltaActiveParts = new Map<string, Set<string>>();
 // function's behavior before this change — rather than risk a content-based
 // false positive (see the module comment above for why content isn't used).
 //
-// Cleared per-session on `session.idle`/`session.error` (a new turn's deltas
-// use brand-new part ids anyway, so nothing realistic is lost) and released
-// wholesale by `forgetSessionIds`/`reset()`, matching `deltaActiveParts`.
+// Kept across `session.idle` to reject a reconnect's replay of final deltas.
+// New turns use new part ids. Released by `forgetSessionIds`/`reset()`.
 const deltaEventTails = new Map<string, Map<string, Set<string>>>();
 
 /** Session-scoped tracking for `session.error`'s stub assistant message (see
@@ -2730,10 +2729,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// accepted normally. Never the whole map: another session may
 			// still be streaming (see comment above deltaActiveParts).
 			if (sessionID) deltaActiveParts.delete(sessionID);
-			// Same reasoning for the delta event-id tails (T14): a new
-			// turn's deltas use brand-new part ids anyway, so nothing realistic
-			// is lost by dropping this session's tracking here.
-			if (sessionID) deltaEventTails.delete(sessionID);
+			// Keep the bounded event-id tail after completion: reconnects can
+			// replay the final delta after idle. New turns use new part ids.
 			return;
 		}
 		case "session.error": {

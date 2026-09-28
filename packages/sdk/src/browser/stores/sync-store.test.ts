@@ -1114,6 +1114,20 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
 	});
 
+	test("a completed answer ignores a replayed final delta after session.idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		const delta = {
+			id: "evt_final",
+			type: "message.part.delta",
+			properties: { messageID: "msg_asst", partID: "prt_1", sessionID: "ses_1", field: "text", delta: "Done" },
+		} as never;
+		store.applyEvent(delta);
+		store.applyEvent({ type: "session.idle", properties: { sessionID: "ses_1" } } as never);
+		store.applyEvent(delta);
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Done");
+	});
+
 	// F1 review finding: the event-id was recorded as "applied" BEFORE the
 	// `set()` callback even checked whether the target part existed — so a
 	// delta that hit the not-found path (e.g. the extra was dropped by the
