@@ -788,7 +788,8 @@ export class UnknownTranscriptCursorError extends Error {
 /**
  * Serve the mirror. Returns null when nothing was ever captured — the caller
  * must then say "unavailable" rather than paint an empty thread as a complete
- * one.
+ * one. The one empty window it serves is a PROVEN one: a complete read of the
+ * runtime that found no messages (`total: 0`, `head_complete: true`).
  *
  * Rows the old mirror stripped are served with what they kept
  * (`restoreStrippedToolParts`).
@@ -839,7 +840,25 @@ export async function readSessionTranscriptMirror(input: {
         .from(sessionTranscriptMessages)
         .where(scope);
       const total = totals?.total ?? 0;
-      if (total === 0) return null;
+      if (total === 0) {
+        // A complete read of the runtime that found no messages is stored as a
+        // head-complete mirror with no rows: the proof that the conversation
+        // is empty, which lets a client open it without waiting for its
+        // computer. Every other empty read is "nothing saved".
+        const provenEmpty =
+          !input.before && !input.opencodeSessionId && state.headComplete && !!state.opencodeSessionId;
+        return provenEmpty
+          ? {
+              opencode_session_id: state.opencodeSessionId,
+              root_opencode_session_id: state.opencodeSessionId,
+              captured_at: new Date(state.capturedAt).toISOString(),
+              total: 0,
+              head_complete: true,
+              next_cursor: null,
+              messages: [],
+            }
+          : null;
+      }
 
       let anchor: { messageCreatedAt: Date | null; messageId: string } | null = null;
       if (input.before) {

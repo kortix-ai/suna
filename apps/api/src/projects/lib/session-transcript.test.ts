@@ -156,7 +156,7 @@ describe('the sync envelope is the mirror and says so', () => {
     expect(envelope.messages[1].parts).toHaveLength(2);
   });
 
-  test('an empty mirror is "none", not an empty transcript', async () => {
+  test('nothing captured is "none", not an empty transcript', async () => {
     const envelope = await buildSessionTranscriptSyncEnvelope(
       { session: session('running'), limit: 40 },
       { readMirror: async () => null },
@@ -164,6 +164,16 @@ describe('the sync envelope is the mirror and says so', () => {
     expect(envelope.available).toBe(false);
     expect(envelope.source).toBe('none');
     expect(envelope.messages).toEqual([]);
+  });
+
+  test('a mirror that proved the conversation empty is an available, complete, empty transcript', async () => {
+    // A complete read of the runtime found no messages. Clients open such a
+    // session on its composer instead of waiting for its computer.
+    const envelope = await buildSessionTranscriptSyncEnvelope(
+      { session: session('stopped'), limit: 40 },
+      { readMirror: async () => snapshot({ head_complete: true, total: 0, messages: [] }) },
+    );
+    expect(envelope).toMatchObject({ available: true, source: 'mirror', complete: true, total: 0, messages: [] });
   });
 });
 
