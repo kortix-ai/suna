@@ -67,6 +67,17 @@ export type {
   AnthropicTool,
 } from './ingress/anthropic-messages';
 
+export {
+  chatJsonToResponsesObject,
+  chatSseToResponsesSse,
+  responsesToChat,
+} from './ingress/openai-responses';
+export type {
+  ResponsesContentPart,
+  ResponsesInputItem,
+  ResponsesRequest,
+} from './ingress/openai-responses';
+
 export { createModelFallbackPolicyEngine } from './routing';
 export type { ModelFallbackPolicyEngine } from './routing';
 
