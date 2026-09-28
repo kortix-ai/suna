@@ -34,8 +34,10 @@ describe('film grid', () => {
     expect(pyConst('FPS')).toBe(FPS);
   });
 
-  test('the launch film and its score are the same length', () => {
-    expect(filmSources).toContain(`frames: bars(${pyConst('BARS')})`);
+  test('every film and its score are the same length', () => {
+    const films = [...filmSources.matchAll(/frames: bars\((\d+)\)[\s\S]*?score: \{\s*bars: (\d+)/g)];
+    expect(films.length).toBeGreaterThan(0);
+    for (const [, picture, sound] of films) expect(sound).toBe(picture);
   });
 });
 

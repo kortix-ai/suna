@@ -20,11 +20,28 @@ import {
 import { flushSync } from 'react-dom';
 import { FPS, interp } from './time';
 
-/** The stage is designed at 720p and scaled; the renderer multiplies by device scale. */
+/** The default stage is designed at 720p and scaled; the renderer multiplies by device scale. */
 export const STAGE_W = 1280;
 export const STAGE_H = 720;
 
+/** Stage size in CSS px. 1280 × 720 unless a film sets its own (1080 × 1080, 720 × 1280). */
+const sizeOf = (film: FilmDef) => film.size ?? { w: STAGE_W, h: STAGE_H };
+
 export type Cue = { frame: number; sfx: string; gain?: number };
+
+type SectionKind = 'intro' | 'reveal' | 'groove' | 'break' | 'lift' | 'end';
+
+/** The score `scripts/film/soundtrack.py` synthesizes for a film. Bars on the 120 BPM grid. */
+export type Score = {
+  bars: number;
+  sections: readonly (readonly [number, SectionKind])[];
+  /** The bar the Am–F–C–G cycle starts on; Am holds before it. */
+  cycle_from: number;
+  /** [bar, seconds]: a swell that lands on the bar. */
+  risers?: readonly (readonly [number, number])[];
+  /** [bar, gain]: a hit on the bar. */
+  impacts?: readonly (readonly [number, number])[];
+};
 
 export type FilmDef = {
   /** URL segment: /presentations/film/<slug>. */
@@ -33,10 +50,13 @@ export type FilmDef = {
   description: string;
   frames: number;
   Film: ComponentType;
-  /** Sound effects placed by `scripts/film/mix.py`. */
+  /** Sound effects placed by `scripts/film/soundtrack.py` on their frames. */
   cues: readonly Cue[];
+  score: Score;
   /** The mixed soundtrack, served from `public/`. Absent until the first audio render. */
   audio?: string;
+  /** Stage size in CSS px, for square and vertical cuts. Default 1280 × 720. */
+  size?: { w: number; h: number };
   /** Named starts, for chapter lists outside the player. */
   chapters?: readonly { frame: number; label: string }[];
 };
@@ -211,7 +231,7 @@ function Stage({ film, frame, mode }: { film: FilmDef; frame: number; mode: Mode
   return (
     <div
       className="dark bg-background text-foreground relative overflow-hidden antialiased"
-      style={{ width: STAGE_W, height: STAGE_H }}
+      style={{ width: sizeOf(film).w, height: sizeOf(film).h }}
     >
       <ModeCtx.Provider value={mode}>
         <FrameCtx.Provider value={frame}>
@@ -222,26 +242,26 @@ function Stage({ film, frame, mode }: { film: FilmDef; frame: number; mode: Mode
   );
 }
 
-/** Scales the fixed 1280 × 720 stage to fit its parent. */
-function Fit({ children }: { children: ReactNode }) {
+/** Scales the fixed-size stage to fit its parent. */
+function Fit({ size, children }: { size: { w: number; h: number }; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [k, setK] = useState(0);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const ro = new ResizeObserver(([e]) =>
-      setK(Math.min(e.contentRect.width / STAGE_W, e.contentRect.height / STAGE_H)),
+      setK(Math.min(e.contentRect.width / size.w, e.contentRect.height / size.h)),
     );
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [size.w, size.h]);
   return (
     <div ref={ref} className="relative size-full overflow-hidden">
       <div
         className="absolute top-1/2 left-1/2"
         style={{
-          width: STAGE_W,
-          height: STAGE_H,
+          width: size.w,
+          height: size.h,
           transform: `translate(-50%, -50%) scale(${k})`,
           visibility: k ? 'visible' : 'hidden',
         }}
@@ -363,7 +383,7 @@ export function FilmPlayer({
         onClick={toggle}
         className="absolute inset-0 cursor-pointer"
       >
-        <Fit>
+        <Fit size={sizeOf(film)}>
           <Stage film={film} frame={frame} mode={playing ? 'play' : 'pause'} />
         </Fit>
       </button>
@@ -407,7 +427,7 @@ export function FilmPlayer({
 /** A single frame, fitted. For stills on the landing page. */
 export function FilmStill({ film, frame }: { film: FilmDef; frame: number }) {
   return (
-    <Fit>
+    <Fit size={sizeOf(film)}>
       <Stage film={film} frame={frame} mode="pause" />
     </Fit>
   );
@@ -415,7 +435,14 @@ export function FilmStill({ film, frame }: { film: FilmDef; frame: number }) {
 
 declare global {
   interface Window {
-    __film?: { frames: number; fps: number; cues: readonly Cue[]; seek: (f: number) => Promise<void> };
+    __film?: {
+      frames: number;
+      fps: number;
+      size: { w: number; h: number };
+      cues: readonly Cue[];
+      score: Score;
+      seek: (f: number) => Promise<void>;
+    };
   }
 }
 
@@ -433,7 +460,9 @@ export function FilmRender({ film }: { film: FilmDef }) {
     window.__film = {
       frames: film.frames,
       fps: FPS,
+      size: sizeOf(film),
       cues: film.cues,
+      score: film.score,
       seek: async (f) => {
         flushSync(() => setFrame(f));
         await document.fonts.ready;
