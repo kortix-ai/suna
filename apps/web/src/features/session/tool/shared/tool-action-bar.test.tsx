@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ShowFileActions } from './show-helpers';
 import { ServicePreviewActions, type ServicePreviewState } from './infrastructure';
+import { ShowFileActions } from './show-helpers';
 
 function render(node: ReactNode) {
   return renderToStaticMarkup(
@@ -47,7 +47,9 @@ describe('show action toolbars', () => {
   }
 
   test('file panel hides Preview; service navigation disables both open actions', () => {
-    expect(render(<ShowFileActions path="/workspace/report.pdf" inPanel />)).not.toContain('Preview</button>');
+    expect(render(<ShowFileActions path="/workspace/report.pdf" inPanel />)).not.toContain(
+      'Preview</button>',
+    );
     const disabled = render(
       <ServicePreviewActions preview={{ ...preview, navigationEnabled: false }} compact />,
     );

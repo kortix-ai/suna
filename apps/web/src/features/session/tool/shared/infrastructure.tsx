@@ -17,13 +17,13 @@ import { openSessionQuickView } from '@/features/session/open-session-quick-view
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
-import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import {
   ToolSurfaceContext,
   useToolCardFrame,
   useToolCardPad,
   useToolIndent,
 } from '@/features/session/tool/shared/surface';
+import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -37,6 +37,7 @@ import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/dia
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { stripBashMetadata } from '@kortix/shared/tool-output';
 import {
   WarningIcon as AlertTriangle,
   ArrowClockwiseIcon,
@@ -47,7 +48,6 @@ import {
   GlobeIcon as Globe,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { stripBashMetadata } from '@kortix/shared/tool-output';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -257,7 +257,9 @@ export function ServicePreviewActions({
       refreshLabel={tHardcodedUi.raw('i18nComplete.text0e9161011702')}
       menuLabel={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
       onRefresh={handleRefresh}
-      secondaryLabel={tHardcodedUi.raw('autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929')}
+      secondaryLabel={tHardcodedUi.raw(
+        'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
+      )}
       secondaryIcon={ArrowSquareOutIcon}
       onSecondary={openInBrowser}
       secondaryDisabled={!navigationEnabled || !previewUrl}

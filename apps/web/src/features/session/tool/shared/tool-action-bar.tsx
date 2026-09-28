@@ -46,7 +46,13 @@ export function ToolActionBar({
       {compact ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" type="button" aria-label={menuLabel} className="active:scale-[0.96]">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              type="button"
+              aria-label={menuLabel}
+              className="active:scale-[0.96]"
+            >
               <DotsThreeIcon className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -64,12 +70,30 @@ export function ToolActionBar({
       ) : (
         <>
           <Hint label={refreshLabel} side="top">
-            <Button variant="ghost" size="icon-sm" type="button" onClick={onRefresh} aria-label={refreshButtonClassName ? refreshLabel : undefined} className={refreshButtonClassName}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              type="button"
+              onClick={onRefresh}
+              aria-label={refreshButtonClassName ? refreshLabel : undefined}
+              className={refreshButtonClassName}
+            >
               <ArrowClockwiseIcon className={cn('size-4', loading && 'animate-spinner-spin')} />
             </Button>
           </Hint>
           <Hint label={secondaryLabel} side="top">
-            <Button variant="ghost" size="icon-sm" type="button" onClick={onSecondary} disabled={secondaryDisabled} aria-label={secondaryButtonClassName ? secondaryLabel : undefined} className={cn(secondaryButtonClassName, secondaryDisabled && secondaryDisabledClassName)}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              type="button"
+              onClick={onSecondary}
+              disabled={secondaryDisabled}
+              aria-label={secondaryButtonClassName ? secondaryLabel : undefined}
+              className={cn(
+                secondaryButtonClassName,
+                secondaryDisabled && secondaryDisabledClassName,
+              )}
+            >
               <SecondaryIcon className={secondaryButtonClassName ? 'size-4' : 'size-4.5'} />
             </Button>
           </Hint>

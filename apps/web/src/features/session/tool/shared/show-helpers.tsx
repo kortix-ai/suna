@@ -3,7 +3,6 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
 import {
   getShowCarouselItemLabel,
@@ -20,6 +19,7 @@ import {
   useServicePreview,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import { useTranslations } from '@/i18n/use-translations';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
