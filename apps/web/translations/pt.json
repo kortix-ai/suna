@@ -198,6 +198,7 @@
       "repositoryLabel": "Repositório",
       "managedImportHint": "Apenas para operadores self-hosted. Lista os repositórios que o proprietário do git gerido já possui.",
       "ownerTypeOrg": "Organização",
+      "createPersonalAuthorize": "Na primeira vez que você criar um repositório em uma conta pessoal, o Kortix pedirá sua autorização no GitHub.",
       "sources": {
         "githubCreate": {
           "description": "A Kortix cria um repositório privado na sua conta do GitHub."

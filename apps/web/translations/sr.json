@@ -198,6 +198,7 @@
       "repositoryLabel": "Repozitorijum",
       "managedImportHint": "Samo za self-host operatere. Izlistava repozitorijume koje vlasnik upravljanog git-a već poseduje.",
       "ownerTypeOrg": "Организација",
+      "createPersonalAuthorize": "Kortix će prvi put zatražiti vašu autorizaciju na GitHubu kada kreirate repozitorijum na ličnom nalogu.",
       "sources": {
         "githubCreate": {
           "description": "Kortix прави приватни репозиторијум на вашем GitHub налогу."

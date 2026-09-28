@@ -198,6 +198,7 @@
       "repositoryLabel": "Dépôt",
       "managedImportHint": "Réservé aux opérateurs auto-hébergés. Liste les dépôts que le propriétaire git géré possède déjà.",
       "ownerTypeOrg": "Organisation",
+      "createPersonalAuthorize": "Kortix demande votre autorisation à GitHub la première fois que vous créez un dépôt dans un compte personnel.",
       "sources": {
         "githubCreate": {
           "description": "Kortix crée un dépôt privé dans votre compte GitHub."

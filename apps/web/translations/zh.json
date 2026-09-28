@@ -198,6 +198,7 @@
       "repositoryLabel": "仓库",
       "managedImportHint": "仅限自托管运维人员。列出托管 git 所有者已持有的仓库。",
       "ownerTypeOrg": "组织",
+      "createPersonalAuthorize": "首次在个人账户中创建仓库时，Kortix 会请求你在 GitHub 上的授权。",
       "sources": {
         "githubCreate": {
           "description": "Kortix 在您的 GitHub 账户中创建私有代码仓库。"
