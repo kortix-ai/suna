@@ -52,6 +52,11 @@ async function main(): Promise<void> {
 
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY?.trim();
   const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  // Demo tooling must never reach live Stripe, whatever the caller exported.
+  if (stripeSecretKey && !/^(sk|rk)_test_/.test(stripeSecretKey)) {
+    console.error('STRIPE_SECRET_KEY is not a test-mode key; refusing (preview-subscribe.sh)');
+    process.exit(1);
+  }
   if (!stripeSecretKey) {
     console.error('STRIPE_SECRET_KEY is required (see preview-subscribe.sh)');
     process.exit(1);
