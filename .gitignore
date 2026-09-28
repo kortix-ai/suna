@@ -101,10 +101,8 @@ test/
 # any local per-clone leftovers out. Other vendored .kortix dirs stay ignored
 # further down.
 .kortix/
-apps/kortix-v0/.local/
 apps/api/.kortix-data/
 apps/api/.sandbox-auth-token.json
-core/kortix-master/opencode/.kortix/
 **/.buildx-cache/
 
 .nx/
