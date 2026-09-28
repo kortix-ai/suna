@@ -69,7 +69,7 @@ export function ConnectedApps({ relativeTime }: { relativeTime: (iso: string) =>
   const grants = grantsQuery.data ?? [];
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 pt-4">
       <SettingsSectionHeader title={t('title')} description={t('description')} />
       {grantsQuery.isLoading ? (
         <Skeleton className="h-14 rounded-md" />
