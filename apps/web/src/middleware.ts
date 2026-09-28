@@ -66,6 +66,7 @@ const MARKETING_ROUTES = [
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
+  '/launch',
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
@@ -121,6 +122,7 @@ const PUBLIC_ROUTES = [
   '/design-system', // Living design system / brand guidelines should be public
   '/presentation', // Legacy deck paths, now 307'd to /presentations (next.config.ts)
   '/presentations', // Deck index + every registered deck. Link-shared, noindex, no login
+  '/launch', // Launch page + marketing design reference. Link-shared, noindex until announced
 
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
