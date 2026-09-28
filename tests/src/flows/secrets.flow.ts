@@ -705,6 +705,87 @@ flow('SEC-POOL-3', {
   });
 });
 
+flow('SEC-9', {
+  domain: 'secrets', requires: ['database'],
+  routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/secrets', 'GET /v1/projects/:projectId/secrets'],
+}, async (ctx) => {
+  const { Client: PgClient } = await import('pg');
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const owner = ctx.client.as(ctx.P.OWNER);
+  // A plain project manager launches the session: the run's OWNER is a platform
+  // admin, and the super-admin allow runs before the agent-grant check.
+  const manager = await team.addMember('member');
+  await team.grantProjectRole(project.id, manager.userId!, 'manager');
+  const asManager = ctx.client.as(manager);
+  const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: manager.userId! });
+  let sandboxInserted = false;
+  const mint = async (permissions: 'all' | string[]) => {
+    const minted = await asManager.post('/v1/accounts/tokens', { name: 'Agent sets a secret', account_id: team.id });
+    minted.status(201);
+    const credential = minted.json<{ token_id: string; secret_key: string }>();
+    const databaseUrl = ctx.env.databaseUrl!;
+    const database = new PgClient({ connectionString: databaseUrl,
+      ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await database.connect();
+    try {
+      if (!sandboxInserted) {
+        await database.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, team.id, project.id]);
+        sandboxInserted = true;
+      }
+      await database.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
+        credential.token_id, project.id, sessionId,
+        JSON.stringify({ agent: 'kortix', permissions, connectors: 'all', env: 'all' }), team.id,
+      ]);
+    } finally { await database.end(); }
+    return ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');
+  };
+  const agent = await mint('all');
+  const params = { projectId: project.id };
+  const stored = async (identifier: string) => {
+    const listed = await owner.get('/v1/projects/:projectId/secrets', { params });
+    listed.status(200);
+    return listed.json<{ items: Array<Record<string, unknown>> }>().items.find((item) => item.identifier === identifier);
+  };
+
+  await ctx.step('an agent session stores a runtime value it already has, and the owner reads it back configured', async () => {
+    (await agent.post('/v1/projects/:projectId/secrets', { name: 'AGENT_RUNTIME_KEY', value: 'agent-runtime-value' }, { params }))
+      .status(200).body().has('$.identifier', 'AGENT_RUNTIME_KEY');
+    const row = await stored('AGENT_RUNTIME_KEY');
+    if (!row || row.configured !== true || row.strategy !== 'runtime' || row.consumer !== 'sandbox') {
+      throw new Error(`runtime secret not stored as runtime/sandbox: ${JSON.stringify(row)}`);
+    }
+  });
+
+  await ctx.step('an agent session stores a connector-scoped value that stays server-side', async () => {
+    (await agent.post('/v1/projects/:projectId/secrets',
+      { name: 'AGENT_CONNECTOR_TOKEN', value: 'agent-connector-value', strategy: 'broker', consumer: 'connector' }, { params }))
+      .status(200).body().has('$.identifier', 'AGENT_CONNECTOR_TOKEN');
+    const row = await stored('AGENT_CONNECTOR_TOKEN');
+    if (!row || row.configured !== true || row.strategy !== 'broker' || row.consumer !== 'connector') {
+      throw new Error(`connector secret not stored as broker/connector: ${JSON.stringify(row)}`);
+    }
+  });
+
+  await ctx.step('an agent session cannot choose any other delivery policy', async () => {
+    for (const body of [
+      { strategy: 'broker', consumer: 'llm_gateway' },
+      { strategy: 'denied' },
+      { strategy: 'egress', consumer: 'network', egress_policy: { hosts: ['api.example.com'] } },
+    ]) {
+      (await agent.post('/v1/projects/:projectId/secrets', { name: 'AGENT_POLICY_KEY', value: 'x', ...body }, { params }))
+        .status(403).body().has('$.error', 'Agent sessions cannot change secret delivery policy');
+    }
+    if (await stored('AGENT_POLICY_KEY')) throw new Error('a refused policy write still stored a row');
+  });
+
+  await ctx.step('an agent whose Kortix permissions omit secret write is refused', async () => {
+    const reader = await mint(['project.secret.read']);
+    (await reader.post('/v1/projects/:projectId/secrets', { name: 'AGENT_READER_KEY', value: 'x' }, { params })).status(403);
+    if (await stored('AGENT_READER_KEY')) throw new Error('an agent without secret write stored a row');
+  });
+});
+
 flow(
   "SEC-1",
   { domain: "secrets", routes: ["GET /v1/projects/:projectId/secrets"] },

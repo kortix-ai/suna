@@ -634,7 +634,12 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realTriggerExecutionStore = await import('../projects/trigger-execution-store');
 mock.module('../projects/trigger-execution-store', () => ({
+  ...realTriggerExecutionStore,
   claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
     const due = runtimeRows
       .filter(

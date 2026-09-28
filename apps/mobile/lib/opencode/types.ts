@@ -56,6 +56,8 @@ export interface Message {
   sessionID: string;
   parentID?: string;
   error?: string;
+  /** The agent the message ran on (OpenCode's wire field). */
+  agent?: string;
   time: {
     created: number;
     completed?: number;

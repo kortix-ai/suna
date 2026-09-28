@@ -280,15 +280,17 @@ projectsApp.openapi(
   // PUT /:identifier/strategy guard below: an agent-session PAT that can create
   // a secret must not also set egress/broker/denied delivery or an outbound
   // host list, because a later session mints a spendable handle against that
-  // policy — widening a host list is exactly the exfil vector. A plain
-  // runtime/default secret (no policy field, or an explicit sandbox default)
-  // stays allowed, matching existing product behavior.
-  if (
-    isProjectSessionPrincipal(c) &&
-    ((requestedStrategy !== undefined && requestedStrategy !== 'runtime') ||
-      (requestedConsumerData !== undefined && requestedConsumerData !== 'sandbox') ||
-      body.egress_policy !== undefined)
-  ) {
+  // policy — widening a host list is exactly the exfil vector. Two shapes stay
+  // allowed, the same two an agent-minted setup link can write
+  // (writeSharedProjectSecret): a plain runtime/sandbox secret, and a
+  // connector-scoped one (broker/connector, no host list) whose value only
+  // the connector gateway spends.
+  const agentAllowedDelivery =
+    body.egress_policy === undefined &&
+    (requestedStrategy === undefined || requestedStrategy === 'runtime'
+      ? requestedConsumerData === undefined || requestedConsumerData === 'sandbox'
+      : requestedStrategy === 'broker' && requestedConsumerData === 'connector');
+  if (isProjectSessionPrincipal(c) && !agentAllowedDelivery) {
     return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
   }
   // The server does NOT infer delivery from the secret's NAME.

@@ -5,7 +5,9 @@
 #
 # A preview delivers every auth email to its own Mailpit at
 # <origin>/_mailpit. A local stack (localhost / 127.0.0.1) delivers it to local
-# Supabase's Mailpit on 127.0.0.1:54324. This prints the Supabase verify link, or the 6-digit
+# Supabase's Mailpit on 127.0.0.1:54324; an isolated-DB (`--db`) worktree sets
+# KORTIX_MAILPIT_API to its own Mailpit (`supabase status` → MAILPIT_URL + /api/v1).
+# This prints the Supabase verify link, or the 6-digit
 # code when the email carries no link. Polls for up to 60 s.
 # Exit codes: 0 printed, 1 usage, 2 no email arrived.
 set -euo pipefail
@@ -18,7 +20,7 @@ if [ -z "$origin" ] || [ -z "$email" ]; then
   exit 1
 fi
 case "$origin" in
-  http://localhost:* | http://127.0.0.1:*) mailpit="http://127.0.0.1:54324/api/v1" ;;
+  http://localhost:* | http://127.0.0.1:*) mailpit="${KORTIX_MAILPIT_API:-http://127.0.0.1:54324/api/v1}" ;;
   *) mailpit="${origin%/}/_mailpit/api/v1" ;;
 esac
 

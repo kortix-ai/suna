@@ -243,6 +243,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       create: P.createAccountToken,
       revoke: P.revokeAccountToken,
     },
+    /** Connected apps — the OAuth / MCP clients this person approved, across all accounts. */
+    connectedApps: {
+      list: P.listOAuthGrants,
+      revoke: P.revokeOAuthGrant,
+    },
     /** Enterprise audit log — events + CSV/JSONL export + SIEM webhooks. */
     audit: {
       log: P.listAccountAudit,
@@ -1186,6 +1191,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.createSessionPublicShare(projectId, sessionId, ...a),
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
+      },
+      /** Scheduled prompts into this session — see `CreateSessionReminderInput`. */
+      reminders: {
+        list: () => P.listSessionReminders(projectId, sessionId),
+        create: (input: Parameters<typeof P.createSessionReminder>[2]) =>
+          P.createSessionReminder(projectId, sessionId, input),
+        update: (reminderId: string, input: Parameters<typeof P.updateSessionReminder>[3]) =>
+          P.updateSessionReminder(projectId, sessionId, reminderId, input),
+        remove: (reminderId: string) => P.deleteSessionReminder(projectId, sessionId, reminderId),
       },
       /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>

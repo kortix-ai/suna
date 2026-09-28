@@ -6,9 +6,10 @@ import { normalizeString } from './serializers';
  * Who asked for this fire. `monitor` is the third trigger type's source:
  * the observer draining a monitor event
  * off `project_monitor_events`. It rides the identical downstream path as
- * `cron` — the session it mints is stamped `trigger:monitor`.
+ * `cron` — the session it mints is stamped `trigger:monitor`. `reminder` is a
+ * session reminder's fire (`lib/session-reminders.ts`); it only re-prompts a session.
  */
-export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor';
+export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);

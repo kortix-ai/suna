@@ -198,6 +198,18 @@ export interface GitTriggerSpec {
    * having to narrow the subscription and lose every other event type.
    */
   filter: Record<string, string> | null;
+  /**
+   * Set only on a session reminder (`lib/session-reminders.ts`): a DB-native `cron`
+   * row that re-prompts `pinnedSessionId`. The manifest never declares one, so
+   * manifest reconcile skips these rows instead of pruning them.
+   */
+  reminder?: SessionReminderFields | null;
+}
+
+export interface SessionReminderFields {
+  /** Recurring period in seconds, or null for a cron or one-shot reminder. */
+  everySeconds: number | null;
+  createdAt: string;
 }
 
 export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
