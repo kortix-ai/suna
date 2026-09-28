@@ -320,6 +320,8 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
   KORTIX_FRONTEND_MEMORY_LIMIT: ['frontend'],
+  // The web auth page renders it; the API reports it at /v1/auth/client-config.
+  KORTIX_PUBLIC_AUTH_METHODS: ['frontend', 'kortix-api'],
 
   // Internal tokens
   GATEWAY_INTERNAL_TOKEN: ['kortix-api', 'llm-gateway'],

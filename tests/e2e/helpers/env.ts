@@ -18,7 +18,13 @@ export function parseEnvFile(relativePath: string): Record<string, string> {
   for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
     const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (!match) continue;
-    env[match[1]!] = match[2]!.replace(/^['"]|['"]$/g, '').trim();
+    const value = match[2]!.replace(/^['"]|['"]$/g, '').trim();
+    // A dotenvx ciphertext is not a value this reader can use. Skip it, so
+    // the lookup falls through to the next name or file. `apps/api/.env`
+    // gained an encrypted SUPABASE_ANON_KEY in #7981, and every browser
+    // journey then sent `encrypted:…` as its Supabase apikey.
+    if (value.startsWith('encrypted:')) continue;
+    env[match[1]!] = value;
   }
   return env;
 }

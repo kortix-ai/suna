@@ -207,6 +207,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/admin/api/sandboxes/:sessionId/migrate': { action: 'admin.sandbox.migrate', title: 'Migrated sandbox to another provider' },
   'GET /v1/approval-links/:token': { action: 'approval.link.read', title: 'Viewed approval link' },
   'GET /v1/apps/edge/tls-check': 'GET /v1/edge/tls-check',
+  'GET /v1/auth/client-config': { action: 'auth.client_config.read', title: 'Read the sign-in configuration' },
   'POST /v1/auth/logout': { action: 'auth.logout', title: 'Signed out' },
   'POST /v1/auth/mfa/factors': { action: 'auth.mfa.factor.create', title: 'Enrolled a second factor' },
   'DELETE /v1/auth/mfa/factors/:factorId': { action: 'auth.mfa.factor.delete', title: 'Removed a second factor' },

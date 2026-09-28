@@ -27,6 +27,15 @@ describe('API image sandbox runtime artifacts', () => {
     expect(artifactRefresh).toBeGreaterThan(sourceCopy);
   });
 
+  test('runtime SDK keeps its node_modules link to @kortix/llm-catalog', () => {
+    // The context copy has no node_modules (.dockerignore); the API crash-looped
+    // on "Cannot find module '@kortix/llm-catalog/lite'" from the SDK.
+    const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+    expect(runtime).toContain('COPY --from=deps /app/packages/sdk ./packages/sdk');
+    expect(runtime).not.toMatch(/^COPY packages\/sdk \.\/packages\/sdk$/m);
+  });
+
   test('copies every migration runner dependency into the self-host image', () => {
     const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
     const scriptsDir = resolve(repoRoot, 'packages/db/scripts');

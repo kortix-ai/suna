@@ -94,7 +94,11 @@ mock.module('../middleware/auth', () => ({
 mock.module('../config', () => ({
   config: { FRONTEND_URL: 'https://app.example', KORTIX_URL: 'https://api.example', API_KEY_SECRET: process.env.API_KEY_SECRET },
 }));
-mock.module('../shared/db', () => ({ db: fake.db }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#8006 added one), and bun reports it as an unhandled
+// `Export named ... not found` between tests.
+const realDb = await import('../shared/db');
+mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { getUserById: async () => ({ data: { user: { email: 'oauth@example.test' } } }) } },

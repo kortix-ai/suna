@@ -1361,6 +1361,13 @@ export function ProjectScreen() {
             subAgents={activeSubAgents}
             onOpenProjectSession={handleOpenProjectSession}
             onCreateAgent={handleCreateAgent}
+            // The row's agent binds the root thread only; a sub-session runs its own.
+            // `'default'` is the server's spelling of "no agent bound" (web's session page).
+            boundAgentName={
+              !activeSubsession && activeProjectSession?.agent_name !== 'default'
+                ? activeProjectSession?.agent_name
+                : null
+            }
             isDrawerOpen={drawerOpen}
           />
         ) : activeSessionId || connectingProjectSessionId ? (
@@ -1371,6 +1378,8 @@ export function ProjectScreen() {
           <View style={{ flex: 1 }} className="bg-background">
             <FloatingMenuButton
               onPress={openDrawer}
+              // The thread's header gradient (`SessionPage` passes `fade` too).
+              fade
               title={<SessionThreadTitle title={connectingTitle} />}
             />
             <SessionConnecting

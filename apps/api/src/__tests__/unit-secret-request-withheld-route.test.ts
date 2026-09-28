@@ -14,7 +14,11 @@ const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realIam = await import('../iam');
+mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 // If anything in the import graph reaches `routes/projects.ts`, it attaches
 // `supabaseAuth` to every project route. Pass through; `buildApp` sets the
 // caller context the real middleware would.

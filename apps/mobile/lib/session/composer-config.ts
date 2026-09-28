@@ -2,10 +2,9 @@
  * composer-config — the data behind the composer's chip, the model sheet,
  * and the thread header's agent pill.
  *
- * The project home and the thread share one model sheet. The home lists the
- * project gateway catalog (no provider, no thinking levels); the thread lists
- * the sandbox's models grouped by provider, with the active model's thinking
- * levels. Both map their models to `PickerOption`.
+ * The project home and the thread share one model sheet and one model list
+ * (`useComposerModels`, built by `@kortix/sdk`). Both map their models to
+ * `PickerOption` (`modelPickerOptions`).
  *
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
@@ -21,6 +20,8 @@ export interface PickerOption {
   group?: string;
   /** Extra search text that is not shown, e.g. the raw model id. */
   keywords?: string;
+  /** Listed only for a search query, never in the empty-search view (`modelInDefaultView`). */
+  searchOnly?: boolean;
 }
 
 export interface PickerSection {
@@ -37,13 +38,15 @@ export function showsPickerSearch(optionCount: number): boolean {
 
 /**
  * Rows for the sheet: filtered by the query, then grouped by provider in
- * first-seen order. Row order inside a group is the input order.
+ * first-seen order. Row order inside a group is the input order. A query
+ * reveals `searchOnly` rows; the empty-search view hides them (web: typing is
+ * intent).
  */
 export function pickerSections(options: PickerOption[], query: string): PickerSection[] {
   const q = query.trim().toLowerCase();
   const matches = q
     ? options.filter((o) => `${o.label} ${o.group ?? ''} ${o.keywords ?? ''}`.toLowerCase().includes(q))
-    : options;
+    : options.filter((o) => !o.searchOnly);
 
   const sections: PickerSection[] = [];
   const byGroup = new Map<string | undefined, PickerSection>();
@@ -102,6 +105,20 @@ export function composerChip(i: {
 }
 
 /**
+ * The pick project home hands `resolveComposerAgent`: the pick made there,
+ * else the last agent picked anywhere — but only when the project declares no
+ * default. Web's order (`resolveCurrentAgentName` without a session): pick,
+ * project default, last-used.
+ */
+export function homeAgentPick(i: {
+  picked: string | null;
+  defaultAgent: string | null | undefined;
+  lastUsed: string | null;
+}): string | null {
+  return i.picked ?? (i.defaultAgent ? null : i.lastUsed);
+}
+
+/**
  * The agents a thread can run, from the Kortix project config: the SDK's
  * `selectableProjectAgents`, default first. Never the sandbox's `/agent` list,
  * which adds the runtime's built-ins (`build`, `plan`, `explore`, `general`).
@@ -113,21 +130,19 @@ export function threadAgents(config: ProjectConfigSummary): Agent[] {
     description: a.description ?? undefined,
     mode: a.mode === 'primary' ? 'primary' : 'all',
     options: {},
-  }));
+    // The SDK's `Agent` type (OpenCode's runtime shape) has fields a project
+    // config entry does not carry; the picker reads only these.
+  })) as unknown as Agent[];
 }
 
 /**
- * The agent project home starts a session on. Web's order
- * (`resolveCurrentAgentName`): the pick made on this screen, else the project's
- * declared default, else the last agent the user picked anywhere. A name the
- * project cannot run is skipped. Null: no agent is sent and the server decides.
+ * The agent of a thread's latest assistant message: web defaults the thread's
+ * agent picker to it, and a thread's pick falls back to it after a reload.
  */
-export function homeAgentName(
-  pickableNames: string[],
-  input: { picked: string | null; projectDefault: string | null | undefined; lastUsed: string | null },
-): string | null {
-  for (const name of [input.picked, input.projectDefault, input.lastUsed]) {
-    if (name && pickableNames.includes(name)) return name;
+export function latestAssistantAgent(messages: ReadonlyArray<{ info: { role: string; agent?: string } }>): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const info = messages[i].info;
+    if (info.role === 'assistant' && info.agent) return info.agent;
   }
   return null;
 }

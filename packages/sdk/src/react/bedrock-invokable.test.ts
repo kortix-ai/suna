@@ -173,11 +173,17 @@ describe('use-opencode-local applies the guard at every resolution seam', () => 
     expect(source).toContain('healBedrockModelKey');
   });
 
+  // The resolution chain moved to the framework-free core
+  // (`resolveComposerModel`) so mobile resolves the same model; the hook reads
+  // its result. Same assertions, on the file that now owns the code.
+  const resolution = readFileSync(
+    join(import.meta.dir, '..', 'core', 'models', 'composer-model.ts'),
+    'utf8',
+  );
+
   test('the DISPLAYED model (currentModelKey) is healed', () => {
-    const block = source.slice(
-      source.indexOf('const currentModelKey'),
-      source.indexOf('const onDefaultModel'),
-    );
+    expect(source).toContain('const currentModelKey = modelResolution.model;');
+    const block = resolution.slice(resolution.indexOf('const resolved ='));
     expect(block).toContain('healBedrockModelKey');
   });
 
@@ -190,9 +196,10 @@ describe('use-opencode-local applies the guard at every resolution seam', () => 
   });
 
   test("the fallback's \"first model of provider\" loop uses the auto-seedable set", () => {
-    const block = source.slice(
-      source.indexOf('const fallbackModel'),
-      source.indexOf('const explicitModelKey'),
+    expect(source).toContain('const fallbackModel = modelResolution.fallback;');
+    const block = resolution.slice(
+      resolution.indexOf('const fallback ='),
+      resolution.indexOf('const explicit ='),
     );
     expect(block).toContain('autoSeedableModels');
   });
