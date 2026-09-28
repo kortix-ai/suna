@@ -76,6 +76,12 @@ describe("the session's computer", () => {
       expect(notice).not.toMatch(/\b(sandbox|runtime|workspace|box)\b/i);
     }
   });
+
+  test('a parked computer, not the conversation, sleeps until the next message', () => {
+    expect(SESSION_NOTICE.idle).toMatch(/computer is asleep/i);
+    expect(SESSION_NOTICE.idle).toMatch(/next message wakes.*delivered/i);
+    expect(SESSION_NOTICE.idle).not.toMatch(/session is idle/i);
+  });
 });
 
 describe('a turn waiting to retry', () => {

@@ -50,9 +50,11 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerCopyMenu } from '@/features/file-renderers/shared/viewer-copy-menu';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 
 // react-xlsx loads its wasm inside a `blob:`-URL Web Worker, where a
 // root-relative path (`/_next/static/media/duke_sheets_wasm_bg.*.wasm`) fails to
@@ -332,6 +334,52 @@ async function findXlsxSearchResults(controller: XlsxViewerController, rawQuery:
   }
 
   return results;
+}
+
+/**
+ * The selection as tab-separated rows, read through the worker. With
+ * `useWorker` the library keeps no main-thread workbook, so its own
+ * `getClipboardData()` returns null and Cmd+C copies nothing. Returns null
+ * when there is no selection or the sheet is not worker-backed.
+ */
+export async function readXlsxSelectionText(
+  controller: Pick<
+    XlsxViewerController,
+    'activeCell' | 'activeSheet' | 'getRowsBatchAsync' | 'selection'
+  >,
+) {
+  const { activeCell, activeSheet: sheet, getRowsBatchAsync } = controller;
+  const range =
+    controller.selection ?? (activeCell ? { start: activeCell, end: activeCell } : null);
+  if (!range || !sheet || !getRowsBatchAsync) return null;
+
+  const startRow = Math.min(range.start.row, range.end.row);
+  const startCol = Math.min(range.start.col, range.end.col);
+  // A header click selects the whole column or row; copy only the used part.
+  const endRow = Math.min(Math.max(range.start.row, range.end.row), sheet.maxUsedRow);
+  const endCol = Math.min(Math.max(range.start.col, range.end.col), sheet.maxUsedCol);
+  const lines: string[] = [];
+
+  for (let batchStart = startRow; batchStart <= endRow; batchStart += XLSX_SEARCH_BATCH_ROW_COUNT) {
+    const rowCount = Math.min(XLSX_SEARCH_BATCH_ROW_COUNT, endRow - batchStart + 1);
+    const rows = await getRowsBatchAsync(sheet.workbookSheetIndex, batchStart, rowCount);
+    const cellsByRow = new Map(
+      getBatchRows(rows).map((row) => [Number(row.index), getBatchCells(row)]),
+    );
+
+    for (let row = batchStart; row < batchStart + rowCount; row += 1) {
+      const values = new Map(
+        (cellsByRow.get(row) ?? []).map((cell) => [Number(cell.col), cell.value]),
+      );
+      const line: string[] = [];
+      for (let col = startCol; col <= endCol; col += 1) {
+        line.push(normalizeSearchText(values.get(col)));
+      }
+      lines.push(line.join('\t'));
+    }
+  }
+
+  return lines.join('\n');
 }
 
 function sumAxisBefore(values: number[], endIndex: number, zoomFactor: number) {
@@ -1196,8 +1244,32 @@ export function XlsxWorkbookSurface({
   workbookIdentity: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { error } = useXlsxViewer();
+  const controller = useXlsxViewer();
+  const { error } = controller;
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
+
+  const controllerRef = React.useRef(controller);
+  React.useLayoutEffect(() => {
+    controllerRef.current = controller;
+  }, [controller]);
+
+  // Stable, so the window copy listener below is attached once.
+  const copySelection = React.useCallback(() => {
+    if (!controllerRef.current.getRowsBatchAsync) {
+      void controllerRef.current.copySelectionToClipboard();
+      return;
+    }
+    // ponytail: the controller's selection commits a frame (plus a React
+    // transition) after the grid's own, so a Cmd+C within ~20 ms of a click
+    // copies the previous cell. No human is that fast; wait on the library's
+    // commit if one ever is. A null result (nothing selected) rejects, which
+    // leaves the clipboard untouched.
+    void copyToClipboard(
+      readXlsxSelectionText(controllerRef.current).then(
+        (value) => value ?? Promise.reject(new Error('Nothing selected')),
+      ),
+    );
+  }, []);
 
   // The grid's first canvas paint can run before the worker-backed sheet
   // extent settles; the library only resyncs its painted viewport from the
@@ -1231,6 +1303,21 @@ export function XlsxWorkbookSurface({
     [],
   );
 
+  // Cmd+C with no text selected fires `copy` on <body> in Chrome, not on the
+  // focused grid, so the library's own `onCopy` on the grid never runs (and
+  // copies nothing for a worker-backed workbook anyway). Listen on the window
+  // and copy when focus is in this grid, as Glide does for the CSV viewer.
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (event.defaultPrevented) return; // the library already copied
+      if (!viewportRef.current?.contains(document.activeElement)) return;
+      event.preventDefault();
+      copySelection();
+    };
+    window.addEventListener('copy', handleCopy);
+    return () => window.removeEventListener('copy', handleCopy);
+  }, [copySelection]);
+
   return (
     <div className={cn('bg-background flex h-[640px] min-h-0 flex-col overflow-hidden', className)}>
       {showToolbar ? (
@@ -1249,37 +1336,39 @@ export function XlsxWorkbookSurface({
         />
       ) : null}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="bg-muted/20 min-h-0 flex-1">
-          <XlsxViewer
-            experimentalCanvas
-            allowResizeInReadOnly
-            className="h-full min-h-0 min-w-0"
-            height="100%"
-            isDark={isDark}
-            readOnly
-            rounded={false}
-            showDefaultToolbar={false}
-            showImages
-            fileTooLargeState={
-              <div className="grid h-full w-full min-w-full place-items-center p-6">
-                <div className="bg-background max-w-sm rounded-lg border p-4 text-sm">
-                  <p className="font-medium">{tI18nComplete.raw('text8a2819cae213')}</p>
-                  <p className="text-muted-foreground mt-1">
-                    {tI18nComplete.raw('textd3821f7d63f3')}
-                  </p>
+        <ViewerCopyMenu onCopy={copySelection}>
+          <div className="bg-muted/20 min-h-0 flex-1">
+            <XlsxViewer
+              experimentalCanvas
+              allowResizeInReadOnly
+              className="h-full min-h-0 min-w-0"
+              height="100%"
+              isDark={isDark}
+              readOnly
+              rounded={false}
+              showDefaultToolbar={false}
+              showImages
+              fileTooLargeState={
+                <div className="grid h-full w-full min-w-full place-items-center p-6">
+                  <div className="bg-background max-w-sm rounded-lg border p-4 text-sm">
+                    <p className="font-medium">{tI18nComplete.raw('text8a2819cae213')}</p>
+                    <p className="text-muted-foreground mt-1">
+                      {tI18nComplete.raw('textd3821f7d63f3')}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            }
-            loadingState={<ViewerLoadingSurface />}
-            renderScroller={renderSearchableScroller}
-            errorState={
-              <div className="text-destructive grid h-full w-full min-w-full place-items-center p-6 text-sm">
-                {error?.message ?? tI18nComplete.raw('text8d75c18adecc')}
-              </div>
-            }
-            renderTableHeaderMenu={renderTableHeaderMenu}
-          />
-        </div>
+              }
+              loadingState={<ViewerLoadingSurface />}
+              renderScroller={renderSearchableScroller}
+              errorState={
+                <div className="text-destructive grid h-full w-full min-w-full place-items-center p-6 text-sm">
+                  {error?.message ?? tI18nComplete.raw('text8d75c18adecc')}
+                </div>
+              }
+              renderTableHeaderMenu={renderTableHeaderMenu}
+            />
+          </div>
+        </ViewerCopyMenu>
         <WorkbookSheetTabs workbookIdentity={workbookIdentity} />
       </div>
     </div>
