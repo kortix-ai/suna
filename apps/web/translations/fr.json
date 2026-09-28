@@ -1150,6 +1150,10 @@
         "config_releases": {
           "name": "Versions de configuration",
           "description": "Exécute les sessions avec la configuration d'agent actuelle de la branche de base, servie en lecture seule, afin qu'un agent, un skill ou un outil fusionné atteigne chaque session en cours. Désactivé, une session lit son propre dossier de configuration dans le workspace."
+        },
+        "mcp": {
+          "name": "Serveur MCP",
+          "description": "Connectez Claude, ChatGPT, Cursor, Codex ou tout client MCP à ce projet via OAuth. Le client se connecte en votre nom et appelle Kortix avec vos autorisations. L’URL se trouve sous Connecter MCP dans le menu de l’espace de travail."
         }
       }
     },
@@ -19183,7 +19187,10 @@
       "text5176d59f25fd": "Version de configuration de la session résolue",
       "text273c48dbf3b9": "Appareil de notifications push enregistré",
       "textbb666ddf7a57": "Appareil de notifications push supprimé",
-      "text397ab5aecbbf": "Demande d’autorisation de session relayée"
+      "text397ab5aecbbf": "Demande d’autorisation de session relayée",
+      "text3ec6c235548a": "Métadonnées du serveur MCP lues",
+      "text7740934de920": "Client OAuth enregistré",
+      "textcd36423ea12a": "Serveur MCP appelé"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20304,16 +20311,22 @@
   },
   "connectMcp": {
     "title": "Connecter Kortix via MCP",
-    "description": "Donnez à Claude Code, Codex, Cursor ou tout client MCP l'ensemble de la CLI Kortix comme outils : projets, sessions, secrets, connecteurs, déclencheurs et plus.",
-    "install": "Installer la CLI",
-    "signIn": "Se connecter",
-    "signInHint": "Le serveur MCP agit avec cette connexion. Sur une machine sans navigateur, définissez plutôt KORTIX_TOKEN dans l'environnement du serveur.",
+    "description": "Ajoutez cette URL à Claude, ChatGPT, Cursor, Codex ou tout client MCP. La première fois, le client vous demande de vous connecter à Kortix. Rien à installer.",
+    "urlLabel": "URL MCP",
     "addToClient": "Ajoutez-le à votre client",
     "other": "Autre",
-    "otherHint": "Claude Desktop, VS Code, Windsurf et les autres clients acceptent ce JSON dans leurs réglages MCP.",
+    "claudeSteps": "Dans Claude (web ou bureau), ouvrez Réglages → Connecteurs → Ajouter un connecteur personnalisé, collez l’URL et connectez-vous.",
+    "claudeCodeHint": "Lancez ensuite /mcp dans Claude Code et connectez-vous.",
+    "otherHint": "ChatGPT (mode développeur), VS Code, Windsurf et les autres clients : ajoutez un serveur MCP distant avec l’URL ci-dessus, ou ce JSON.",
     "addToCursor": "Ajouter à Cursor",
+    "signInOnFirstUse": "Cursor vous demande de vous connecter à Kortix à la première utilisation.",
     "docs": "Documentation",
     "done": "Terminé",
     "copy": "Copier"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Application non vérifiée",
+    "unverifiedBody": "{client} s’est enregistrée elle-même auprès de Kortix. Kortix n’a pas vérifié qui l’exploite. Autorisez-la uniquement si vous la connectez vous-même en ce moment.",
+    "redirectsTo": "Vous renvoie vers"
   }
 }

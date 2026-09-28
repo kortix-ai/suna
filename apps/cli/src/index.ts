@@ -47,7 +47,6 @@ import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { type Command, TIERS } from './command-table.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
-import { runMcpServer } from './mcp.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
 import { printPermissionDenialIdentity } from './token-denial.ts';
@@ -207,10 +206,6 @@ async function main(argv: string[]): Promise<number> {
   // human host/update notices that would corrupt key=value output on stdout.
   if (argv[0] === 'git-credential') {
     return runGitCredential(argv.slice(1));
-  }
-  // stdout is the MCP JSON-RPC channel; no notice may be written ahead of it.
-  if (argv[0] === 'mcp') {
-    return runMcpServer(argv.slice(1));
   }
   const connectorMachineCommand =
     argv[0] === 'connectors' &&
@@ -433,7 +428,6 @@ const KNOWN_COMMANDS = [
   'permissions',
   'audit',
   'grants',
-  'mcp',
   'update',
   'uninstall',
   'help',

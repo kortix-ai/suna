@@ -1150,6 +1150,10 @@
         "config_releases": {
           "name": "設定リリース",
           "description": "ベースブランチの現在のエージェント設定を読み取り専用で配信してセッションを実行し、マージされたエージェント・スキル・ツールが実行中のすべてのセッションに届きます。オフの場合、セッションは自分のワークスペース設定フォルダーを読みます。"
+        },
+        "mcp": {
+          "name": "MCP サーバー",
+          "description": "Claude、ChatGPT、Cursor、Codex などの MCP クライアントを OAuth でこのプロジェクトに接続します。クライアントはあなたとしてサインインし、あなたの権限で Kortix を呼び出します。URL はワークスペースメニューの「MCP を接続」にあります。"
         }
       }
     },
@@ -19183,7 +19187,10 @@
       "text5176d59f25fd": "セッションの設定リリースを解決しました",
       "text273c48dbf3b9": "プッシュ通知デバイスを登録しました",
       "textbb666ddf7a57": "プッシュ通知デバイスを削除しました",
-      "text397ab5aecbbf": "セッションの権限リクエストを中継しました"
+      "text397ab5aecbbf": "セッションの権限リクエストを中継しました",
+      "text3ec6c235548a": "MCP サーバーのメタデータを読み取りました",
+      "text7740934de920": "OAuth クライアントを登録しました",
+      "textcd36423ea12a": "MCP サーバーを呼び出しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20304,16 +20311,22 @@
   },
   "connectMcp": {
     "title": "MCP で Kortix を接続",
-    "description": "Claude Code、Codex、Cursor などの MCP クライアントに、Kortix CLI 全体をツールとして提供します。プロジェクト、セッション、シークレット、コネクタ、トリガーなど。",
-    "install": "CLI をインストール",
-    "signIn": "サインイン",
-    "signInHint": "MCP サーバーはこのログインで動作します。ブラウザのないマシンでは、代わりにサーバー環境に KORTIX_TOKEN を設定してください。",
+    "description": "この URL を Claude、ChatGPT、Cursor、Codex などの MCP クライアントに追加します。初回はクライアントが Kortix へのサインインを求めます。インストールは不要です。",
+    "urlLabel": "MCP URL",
     "addToClient": "クライアントに追加",
     "other": "その他",
-    "otherHint": "Claude Desktop、VS Code、Windsurf などのクライアントは、MCP 設定でこの JSON を使用します。",
+    "claudeSteps": "Claude（Web またはデスクトップ）で 設定 → コネクタ → カスタムコネクタを追加 を開き、URL を貼り付けてサインインします。",
+    "claudeCodeHint": "次に Claude Code で /mcp を実行してサインインします。",
+    "otherHint": "ChatGPT（開発者モード）、VS Code、Windsurf などのクライアント：上の URL でリモート MCP サーバーを追加するか、この JSON を使用します。",
     "addToCursor": "Cursor に追加",
+    "signInOnFirstUse": "初回使用時に Cursor が Kortix へのサインインを求めます。",
     "docs": "ドキュメント",
     "done": "完了",
     "copy": "コピー"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "未確認のアプリ",
+    "unverifiedBody": "{client} は自分で Kortix に登録しました。Kortix は運営者を確認していません。今あなた自身が接続している場合のみ許可してください。",
+    "redirectsTo": "戻り先"
   }
 }

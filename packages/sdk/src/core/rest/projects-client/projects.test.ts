@@ -968,6 +968,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'connectors_api_discover',
     'llm_gateway',
     'marketplace',
+    'mcp',
     'meta_agent',
     'monitors',
     'secrets_egress',
