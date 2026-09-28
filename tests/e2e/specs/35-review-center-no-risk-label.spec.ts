@@ -72,7 +72,7 @@ test.describe('35 — Review Center shows no risk label', () => {
       await dismissOnboarding(page);
 
       const main = page.getByRole('main');
-      const row = main.getByRole('button', { name: new RegExp(title) });
+      const row = main.getByRole('button', { name: new RegExp(`^${title}`) });
       await expect(row).toBeVisible({ timeout: 60_000 });
       await expect(main.getByText(/\b(low|medium|high) risk\b/i)).toHaveCount(0);
 
