@@ -196,7 +196,7 @@ PRs, never to PRs into `main`.
 | --- | --- | --- |
 | `test` | Runs the six `Tests` lanes (~9 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
 | `preview` | Builds one self-host environment for the branch on Platinum (~7 min), then runs `pnpm test -- --target-full` against it (40–80 min), once. A push does not redeploy; re-add the label. Removing the label tears it down. See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
+| `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. On `main`, the same reorder needs `I18N_REORDER=1` past `.githooks/pre-commit` and the commit trailer `I18n-Reorder: intentional`. | Triage access. |
 
 Both labels are explicit, rare requests. Never add one by default, from a template, or from
 automation.
-| `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. | Triage access. |

@@ -53,6 +53,9 @@ export const catalogFiles = locales.map((locale) =>
 /** The pull-request label that allows an intentional reorder past `check`. */
 export const REORDER_LABEL = 'i18n-reorder';
 
+/** The commit-message trailer that allows an intentional reorder on a push to `main`. */
+export const REORDER_TRAILER = 'I18n-Reorder: intentional';
+
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -419,7 +422,8 @@ function runCheck(flags) {
         'rebuilt it reordered keys. Repair it without changing a value:',
         `  node apps/web/scripts/i18n-catalogs.mjs restore-order --from=${from} [--from=<your branch before the merge>]`,
         'If the reorder is intentional (for example STARTER_PROMPTS changed order),',
-        `label the pull request \`${REORDER_LABEL}\`.`,
+        `commit it with I18N_REORDER=1 and the trailer \`${REORDER_TRAILER}\`,`,
+        `or label a release pull request \`${REORDER_LABEL}\`.`,
       ].join('\n'),
     );
   }
