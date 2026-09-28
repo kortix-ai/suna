@@ -293,6 +293,23 @@ describe('emission', () => {
 });
 
 describe('the runtime control snapshot', () => {
+  test('mirror watermark reports absence and then the stored capture with empty message statistics', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-mirror`);
+    await handle.ready();
+    expect(handle.snapshot().find((event) => event.type === 'kortix.control.mirror')?.payload).toEqual({
+      known: true, present: false, captured_at: null, head_complete: false,
+      opencode_session_id: null, message_count: 0, newest_message_at: null,
+    });
+    mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, opencodeSessionId: 'synthetic-session' };
+    handle.poke();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(handle.snapshot().find((event) => event.type === 'kortix.control.mirror')?.payload).toEqual({
+      known: true, present: true, captured_at: '2026-08-27T00:00:00.000Z', head_complete: true,
+      opencode_session_id: 'synthetic-session', message_count: 0, newest_message_at: null,
+    });
+    handle.release();
+  });
+
   test('reports the sandbox status and the wake fence verdict', async () => {
     sandboxRow = {
       status: 'provisioning',

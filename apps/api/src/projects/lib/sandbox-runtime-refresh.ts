@@ -7,7 +7,7 @@ import { db } from '../../shared/db';
 /**
  * Poke a live sandbox's daemon so it re-converges on this deploy's runtime
  * assets (the `kortix` CLI and the managed-skill overlay — see
- * apps/kortix-sandbox-agent-server/src/runtime-assets.ts).
+ * apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts).
  *
  * WHY IT IS NEEDED HERE. The daemon reconciles at its own boot, but restart and
  * resume bring a session back on the SAME VM without re-running that boot, so

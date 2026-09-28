@@ -94,7 +94,7 @@ test('disabled history performs no read and exposes no stored transcript', async
   globalThis.fetch = fetcher as unknown as typeof fetch;
   const hook = await mount(false);
   expect(fetcher).not.toHaveBeenCalled();
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: false });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, emptyRootSessionId: null, isLoading: false });
 });
 
 test('switching sessions immediately drops the previous transcript while the new read waits', async () => {
@@ -105,14 +105,14 @@ test('switching sessions immediately drops the previous transcript while the new
   const hook = await mount(true);
   expect(hook.value().rootSessionId).toBe('ses_history');
   await hook.update('s2');
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: true });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, emptyRootSessionId: null, isLoading: true });
 });
 
 test('turning the flag off removes the early history result', async () => {
   globalThis.fetch = mock(async () => Response.json(transcript())) as unknown as typeof fetch;
   const hook = await mount(true);
   await hook.update('s1', false);
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: false });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, emptyRootSessionId: null, isLoading: false });
 });
 
 test('missing history falls back without inventing an empty conversation or root', async () => {
@@ -125,7 +125,7 @@ test('missing history falls back without inventing an empty conversation or root
     }),
   ) as unknown as typeof fetch;
   const hook = await mount(true);
-  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, isLoading: false });
+  expect(hook.value()).toEqual({ envelope: null, rootSessionId: null, emptyRootSessionId: null, isLoading: false });
 });
 
 test('a read with no answer yet is loading; an answer, found or not, is not', async () => {
@@ -145,4 +145,31 @@ test('a read with no answer yet is loading; an answer, found or not, is not', as
   });
   expect(hook.value().isLoading).toBe(false);
   expect(hook.value().rootSessionId).toBe('ses_history');
+});
+
+test('a complete saved copy with no messages names its root as proven empty, and paints nothing', async () => {
+  globalThis.fetch = mock(async () =>
+    Response.json({ ...transcript(), message_count: 0, total: 0, messages: [] }),
+  ) as unknown as typeof fetch;
+  const probe = await mount(true);
+  expect(probe.value().envelope).toBeNull();
+  expect(probe.value().emptyRootSessionId).toBe('ses_history');
+});
+
+test('only a complete, available copy that counts zero proves a conversation empty', async () => {
+  const answers = [
+    { ...transcript(), complete: false, message_count: 0, total: 0, messages: [] },
+    { ...transcript(), available: false, source: 'none', message_count: 0, total: 0, messages: [] },
+    // An older API sends no total; it never sends an available empty window.
+    { ...transcript(), message_count: 0, messages: [] },
+    { ...transcript(), total: 1 },
+  ];
+  for (const answer of answers) {
+    globalThis.fetch = mock(async () => Response.json(answer)) as unknown as typeof fetch;
+    const probe = await mount(true, `s-${answers.indexOf(answer)}`);
+    expect(probe.value().emptyRootSessionId).toBeNull();
+    if (root) await act(async () => root?.unmount());
+    root = undefined;
+    client.clear();
+  }
 });

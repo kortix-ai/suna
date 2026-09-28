@@ -20,7 +20,8 @@
  * deploy — see agentSelfUpdateEnabled().
  */
 
-import { stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { open, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFileSha256 } from '@kortix/shared/sandbox-runtime-artifact';
@@ -182,7 +183,7 @@ export interface RuntimeComponents {
    *
    * OUT-OF-BAND REPAIR ONLY — stated here because it was advertised and
    * unconsumed, which reads as a fifth convergeable component and is not one.
-   * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+   * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
    * apps/kortix-sandbox-agent-server/src/harness` returns doc comments and
    * nothing else: `reconcileRuntimeAssets` handles cli, skills, agent and the
    * harness `opencode` component, and no box has ever fetched this.
@@ -229,7 +230,7 @@ export interface RuntimeAssetsPolicy {
  * V1 KEYS ARE PERMANENT. Daemons already running in the field read
  * `cli_version` / `cli_sha256` / `cli_size` / `managed_skills_hash` /
  * `managed_skills_count` off this document (see
- * apps/kortix-sandbox-agent-server/src/runtime-assets.ts). Removing or renaming
+ * apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts). Removing or renaming
  * one breaks every box that already exists — the same failure class as the
  * accept-encoding two-list divergence. New daemons prefer `components`; old
  * daemons keep working because their keys are still here. `runtime-assets/
@@ -382,10 +383,201 @@ export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
   return { ...(await runtimeAssetsDigests()), policy: { agent_self_update: agentSelfUpdateEnabled() } };
 }
 
+// ---------------------------------------------------------------------------
+// Content-addressed chunks
+//
+// THE WASTE THIS REMOVES. A changed CLI made every box refetch ~105 MB, of
+// which ~90 MB provably did not change: that prefix is the embedded Bun
+// runtime, identical in every `bun --compile` output. Measured on real
+// linux-x64 builds at 1 MiB fixed chunks — two CLI builds differing only in
+// `KORTIX_CLI_VERSION` share 100 of 102 chunks (98.0%), and the CLI and the
+// daemon share 89 of 102 (87.3%) — but ONLY when both were compiled by the
+// same Bun. The shipped API image uses two (`SANDBOX_AGENT_BUN_VERSION=1.3.11`
+// for the daemon, `BUN_VERSION=1.2` for the CLI), and measured against a
+// deployed preview those two share 0 of 111 chunks. Same-artifact reuse, which
+// is what a CLI update actually is, is unaffected.
+//
+// FIXED-SIZE, and content-defined chunking is NOT the next increment. The
+// usual argument for a rolling hash is that an insertion shifts every later
+// byte out of alignment. It does not here: `bun --compile` pads its output to
+// a fixed length, so a 400-byte source addition to apps/cli produced a
+// 106,727,552-byte binary exactly like the build before it and moved the same
+// 2 of 102 chunks. There is nothing left for a rolling hash to recover.
+//
+// ONE STORE FOR BOTH BINARIES. `runtimeChunkSource` resolves a chunk hash
+// against every binary this image carries, so the ~90 MB the CLI and the
+// daemon share is one set of chunks on the server exactly as it is on the box.
+
+/**
+ * 1 MiB. The size every measurement above was taken at.
+ *
+ * Smaller buys almost nothing (256 KiB measured 88.0% cross-artifact against
+ * 87.3%) and quadruples the manifest; larger loses reuse (4 MiB measured
+ * 80.8%). It is served in the manifest rather than assumed, so it can move
+ * without a daemon release.
+ */
+export const RUNTIME_CHUNK_SIZE = 1024 * 1024;
+
+/** One binary, named chunk by chunk. Offsets are implied: chunk `i` starts at `i * chunk_size`. */
+export interface RuntimeChunkManifest {
+  /** The whole-file digest. This stays the authority — a box verifies its assembly against it. */
+  sha256: string;
+  size: number;
+  chunk_size: number;
+  /** sha256 of each chunk, in file order. The last one may be shorter than `chunk_size`. */
+  chunks: string[];
+}
+
+interface ChunkSource {
+  path: string;
+  offset: number;
+  length: number;
+}
+
+interface ChunkIndex {
+  manifests: Partial<Record<'agent' | 'cli', RuntimeChunkManifest>>;
+  /** chunk sha256 → where to read those bytes. One map for every component. */
+  sources: Map<string, ChunkSource>;
+}
+
+let chunkIndexPromise: Promise<ChunkIndex> | null = null;
+
+/**
+ * Hash one binary chunk by chunk without ever holding it in memory.
+ *
+ * `readFile` would put ~105 MB on the heap per binary, and this runs inside
+ * the request deadline on a shared API process. One reused 1 MiB buffer does
+ * not.
+ */
+async function indexBinary(
+  path: string,
+  sources: Map<string, ChunkSource>,
+): Promise<RuntimeChunkManifest | null> {
+  // Open FIRST and stat the HANDLE, never the path. A stat-then-open pair is a
+  // TOCTOU race (CodeQL js/file-system-race) and the handle already answers
+  // every question the path stat did.
+  let handle;
+  try {
+    handle = await open(path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile() || stats.size === 0) return null;
+    const buffer = Buffer.allocUnsafe(RUNTIME_CHUNK_SIZE);
+    const whole = createHash('sha256');
+    const chunks: string[] = [];
+    for (let offset = 0; offset < stats.size; offset += RUNTIME_CHUNK_SIZE) {
+      const length = Math.min(RUNTIME_CHUNK_SIZE, stats.size - offset);
+      const { bytesRead } = await handle.read(buffer, 0, length, offset);
+      if (bytesRead !== length) throw new Error(`short read at ${offset} of ${path}`);
+      const bytes = buffer.subarray(0, length);
+      whole.update(bytes);
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      chunks.push(digest);
+      // First writer wins. A chunk both binaries carry is served from whichever
+      // was indexed first; the bytes are the same by definition of the hash.
+      if (!sources.has(digest)) sources.set(digest, { path, offset, length });
+    }
+    return { sha256: whole.digest('hex'), size: stats.size, chunk_size: RUNTIME_CHUNK_SIZE, chunks };
+  } finally {
+    await handle.close();
+  }
+}
+
+function chunkIndex(): Promise<ChunkIndex> {
+  if (!chunkIndexPromise) {
+    // Same memo discipline as the digest manifest: store the PROMISE, so a
+    // post-deploy burst of converging boxes hashes ~210 MB once, not N times.
+    chunkIndexPromise = (async () => {
+      const sources = new Map<string, ChunkSource>();
+      // Sequential, not concurrent: each pass holds one 1 MiB buffer and this
+      // is a cold-start cost paid once per process.
+      const cli = await indexBinary(runtimeCliBinaryPath(), sources);
+      const agent = await indexBinary(runtimeAgentBinaryPath(), sources);
+      const manifests: ChunkIndex['manifests'] = {};
+      if (cli) manifests.cli = cli;
+      if (agent) manifests.agent = agent;
+      return { manifests, sources };
+    })().catch((error) => {
+      chunkIndexPromise = null;
+      throw error;
+    });
+  }
+  return chunkIndexPromise;
+}
+
+/** The chunk manifest for one component, or null when the image carries no such binary. */
+export async function runtimeChunkManifest(
+  component: 'agent' | 'cli',
+): Promise<RuntimeChunkManifest | null> {
+  return (await chunkIndex()).manifests[component] ?? null;
+}
+
+/**
+ * Build the chunk index off the request path.
+ *
+ * Same reasoning as the digest memo's boot warm-up: it reads ~200 MB, and the
+ * first caller is a booting sandbox inside a 25 s request deadline. Never
+ * throws — an absent binary is a legitimate state and the routes report it.
+ */
+export function warmRuntimeChunkIndex(): void {
+  void chunkIndex().catch(() => {});
+}
+
+/** Where one chunk's bytes live, or null when this image carries no chunk with that hash. */
+export async function runtimeChunkSource(sha256: string): Promise<ChunkSource | null> {
+  return (await chunkIndex()).sources.get(sha256) ?? null;
+}
+
+/**
+ * One chunk's bytes, READ not streamed, or null when no binary carries it.
+ *
+ * THE DEFECT THIS REPLACES, found on a deployed preview and by no unit test:
+ * the route returned `Bun.file(path).slice(offset, offset + length).stream()`.
+ * On this image's Bun that streamed the WHOLE FILE — a request for one 1 MiB
+ * chunk answered 200 with all 116,127,104 bytes and no `Content-Length`. The
+ * index was right and the digest check downstream still refused it, so it
+ * degraded safely while delivering the exact opposite of the optimization.
+ * Locally, on a newer Bun, the same handler HUNG instead (the response-stream
+ * hang this repo already knows: drain, never hand a large stream straight on).
+ *
+ * A chunk is 1 MiB. Streaming it buys nothing and costs two Bun-version
+ * behaviours to reason about; one positional read into a Buffer has neither.
+ */
+export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> {
+  const source = await runtimeChunkSource(sha256);
+  if (!source) return null;
+  let handle;
+  try {
+    handle = await open(source.path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    // `alloc`, not `allocUnsafe`: allocUnsafe serves small sizes out of Node's
+    // shared 8 KB pool, so a SHORT trailing chunk would come back as a view
+    // into a buffer holding other requests' bytes — and `.buffer` on it is the
+    // whole pool, not the chunk. The route hands `.buffer` to the response, so
+    // that distinction is the difference between one chunk and a leak.
+    const buffer = Buffer.alloc(source.length);
+    const { bytesRead } = await handle.read(buffer, 0, source.length, source.offset);
+    // A short read means the file changed under the index. Answer nothing
+    // rather than bytes that do not hash to the name they were asked for.
+    return bytesRead === source.length ? buffer : null;
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Test-only: drop both memos so a case can recompute against a mutated fixture. */
 export function _resetRuntimeAssetsCache(): void {
   manifestPromise = null;
   overlayCache = null;
+  chunkIndexPromise = null;
 }
 
 // ---------------------------------------------------------------------------

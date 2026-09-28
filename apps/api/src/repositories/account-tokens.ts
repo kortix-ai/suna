@@ -1,4 +1,5 @@
 import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
+import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
 import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
@@ -401,6 +402,7 @@ export async function revokeSessionConnectorTokens(
  * Validate a CLI Personal Access Token (kortix_pat_... prefix).
  * Returns the account + user id on success.
  */
+
 export async function validateAccountToken(
   secretKey: string,
 ): Promise<AccountTokenValidationResult> {
@@ -516,7 +518,7 @@ async function validateAccountTokenMatching(
           ),
         )
         .limit(1);
-      if (!lease) return { isValid: false, error: 'Session token is not active' };
+      if (!lease) return { isValid: false, error: SESSION_LEASE_REFUSAL };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't

@@ -18,9 +18,9 @@
  * precede it). KORTIX_BENCH_SCAFFOLD_GIT stands in for the image's
  * /opt/kortix/scaffold.git.
  */
-import { loadConfig } from '../src/config'
-import { materializeProject } from '../src/config-provider/config-provider'
-import { __setScaffoldRepoPathForTests } from '../src/git'
+import { loadConfig } from '../src/lib/config/config'
+import { materializeProject } from '../src/services/config-provider/config-provider'
+import { __setScaffoldRepoPathForTests } from '../src/lib/git/git'
 
 const scaffold = process.env.KORTIX_BENCH_SCAFFOLD_GIT?.trim()
 if (scaffold) __setScaffoldRepoPathForTests(scaffold)

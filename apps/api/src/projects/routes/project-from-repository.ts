@@ -317,6 +317,18 @@ projectsApp.openapi(
     } catch (error) {
       lastRepoError = error;
       if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
+      if (
+        githubAuth.auth.source === 'app_installation' &&
+        githubAuth.auth.ownerType === 'User' &&
+        typeof error === 'object' && error !== null &&
+        'status' in error && error.status === 403 &&
+        'path' in error && error.path === '/user/repos'
+      ) {
+        return c.json({
+          error: 'github_personal_installation_create_unsupported',
+          message: 'GitHub App installations cannot create repositories under personal accounts. Create a repository on GitHub and import it, or connect an organization installation.',
+        }, 409);
+      }
       return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
     }
   }

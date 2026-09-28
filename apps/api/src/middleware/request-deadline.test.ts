@@ -22,6 +22,13 @@ describe('requestDeadline exemptions', () => {
     expect(isExempt(ctx(path))).toBe(true);
   });
 
+  // The MCP server bounds itself at 55 s (mcp/index.ts REQUEST_BUDGET_MS):
+  // read_session waits and run_command runs up to 45 s. A client that sends
+  // only `Accept: application/json` gets no event-stream exemption.
+  test('exempts the MCP endpoint, whatever the client accepts', () => {
+    expect(isExempt(ctx('/v1/mcp'))).toBe(true);
+  });
+
   test.each([
     '/v1/marketplace/items',
     '/v1/projects/00000000-0000-4000-a000-000000000001/registry',
