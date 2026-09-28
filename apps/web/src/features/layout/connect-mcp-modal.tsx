@@ -108,7 +108,7 @@ export function ConnectMcpModal({
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <Link href="/docs/feature-flags/mcp" target="_blank">
+            <Link href="/docs/connect/mcp" target="_blank">
               {t('docs')}
               <ArrowSquareOutIcon className="size-3.5 shrink-0" />
             </Link>
