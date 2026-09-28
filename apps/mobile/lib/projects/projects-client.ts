@@ -165,7 +165,13 @@ export type { ProjectConfigSummary, ProjectDetail, ProjectLlmCatalogResponse } f
 export type ProjectConfigEntry = sdk.ProjectConfigSummary['skills'][number];
 export type ProjectAgentEntry = sdk.ProjectConfigSummary['agents'][number];
 
-export { getProjectDetail, getProjectLlmCatalog, getProjectModelPicker } from '@kortix/sdk';
+export {
+  getModelDefaults,
+  getProjectDetail,
+  getProjectLlmCatalog,
+  getProjectLlmCatalogProviders,
+  getProjectModelPicker,
+} from '@kortix/sdk';
 
 // ── Connectors (web parity: connectors-view) ──────────────────────────────────
 

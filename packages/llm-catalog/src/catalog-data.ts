@@ -1,6 +1,6 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
-import type { Catalog, CatalogModel } from './index';
-import { getManagedModel, pricingRefLookupCandidates } from './index';
+import type { Catalog, CatalogModel } from './lite';
+import { getManagedModel, pricingRefLookupCandidates } from './lite';
 
 /**
  * The bundled models.dev snapshot. Kept out of `index.ts` so consumers that

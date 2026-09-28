@@ -17,7 +17,7 @@
  * carry one). Choosing a model applies and the sheet stays open. `thinking`
  * adds one stepped slider above the list for the active model's thinking
  * levels: Default, then each level. A level applies on release and the sheet
- * stays open. The project home passes no `thinking`: its catalog has no levels.
+ * stays open.
  * `autoContinue` adds one row under Thinking in a thread: AutoContinue is a
  * per-run autonomy setting, so it lives beside Thinking, not in the `+` sheet.
  */
@@ -42,6 +42,7 @@ import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 import {
   agentDisplayName,
   nearestStop,
@@ -69,7 +70,8 @@ export interface ModelThinking {
 }
 
 export interface AgentChoice {
-  agents: Array<{ name: string; mode?: string | null; hidden?: boolean; enabled?: boolean }>;
+  /** The roster (`@kortix/sdk`); the tab lists its `isSelectableAgent` agents. */
+  agents: Agent[];
   /** The agent the next message runs on; its row carries the check. */
   activeName: string | null;
   onSelect: (name: string) => void;
@@ -92,7 +94,7 @@ interface ModelPickerSheetProps {
   thinking?: ModelThinking;
   /** "Connect provider" in the empty state: the project offers no model. */
   onConnect?: () => void;
-  /** The Agent tab. The thread passes the sandbox's agents; project home the project config's. */
+  /** The Agent tab: the project config's agents (`projectConfigAgentsToOpenCodeAgents`). */
   agent?: AgentChoice;
   /** The thread's AutoContinue row, under Thinking. */
   autoContinue?: ModelAutoContinue;
