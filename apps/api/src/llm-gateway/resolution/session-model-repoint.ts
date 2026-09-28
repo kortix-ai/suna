@@ -93,7 +93,8 @@ export async function repointRetiredSessionModel(
     decision = resolveSessionManagedModel(
       wire,
       SERVED_MANAGED_MODELS,
-      projectDefault ?? platformDefaultModelId(),
+      projectDefault,
+      platformDefaultModelId(),
     );
   }
   if (decision.kind === 'kept') return opencodeModelRef; // nothing usable to move to; the turn error names the cause

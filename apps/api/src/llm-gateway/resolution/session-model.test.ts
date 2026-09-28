@@ -78,17 +78,27 @@ describe('resolveSessionManagedModel', () => {
 describe('the platform-default floor', () => {
   const served = [{ id: 'deepseek-v4.1-flash' }, { id: 'kimi-k3' }] as never;
 
-  test('an orphan retired id moves to the platform default', () => {
+  test('an orphan retired id moves to the platform default, named as such', () => {
     // glm-5.2 is retired and has NO entry in LEGACY_MANAGED_IDS.
-    expect(resolveSessionManagedModel('glm-5.2', served, 'deepseek-v4.1-flash')).toEqual({
+    // The reason must NOT say `project_default`: this project never set one,
+    // and an audit row that claims it did sends the reader to the wrong setting.
+    expect(resolveSessionManagedModel('glm-5.2', served, null, 'deepseek-v4.1-flash')).toEqual({
       kind: 'repoint',
       to: 'deepseek-v4.1-flash',
+      reason: 'platform_default',
+    });
+  });
+
+  test('a project default still wins over the platform floor', () => {
+    expect(resolveSessionManagedModel('glm-5.2', served, 'kimi-k3', 'deepseek-v4.1-flash')).toEqual({
+      kind: 'repoint',
+      to: 'kimi-k3',
       reason: 'project_default',
     });
   });
 
   test('with no successor AND no default at all, it is still kept', () => {
-    // The floor is the CALLER's job; the pure decision must not invent one.
+    // The floor is supplied by the CALLER; the pure decision never invents one.
     expect(resolveSessionManagedModel('glm-5.2', served, null)).toEqual({ kind: 'kept' });
   });
 
