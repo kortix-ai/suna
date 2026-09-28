@@ -141,7 +141,7 @@ export async function resolveCandidates(
       : null;
     const agentMayUseChatGptAccounts = !Array.isArray(principal.agentGrant?.env) ||
       principal.agentGrant.env.some((name) => name.toUpperCase() === 'CODEX_AUTH_JSON');
-    const agentGrantRefusal = () => new GatewayResolutionError('provider_not_connected',
+    const agentGrantRefusal = () => new GatewayResolutionError('agent_grant_excludes',
       'The running agent cannot use ChatGPT connections.',
       'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
     if (selectedPool?.configured) {
@@ -315,7 +315,7 @@ export async function resolveCandidates(
       : null;
     if (selectedPool?.configured && Array.isArray(principal.agentGrant?.env) &&
       !principal.agentGrant.env.some((identifier) => identifier.toUpperCase() === byok.envVar.toUpperCase())) {
-      throw new GatewayResolutionError('provider_not_connected',
+      throw new GatewayResolutionError('agent_grant_excludes',
         `The running agent cannot use ${provider} keys.`,
         `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
     }

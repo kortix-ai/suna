@@ -378,3 +378,45 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
     await db.end();
   }
 }, 20_000);
+
+test('a complete read of an empty conversation is saved and served as complete and empty', async () => {
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-empty-test', {
+      metadata: { experimental: { session_transcript_history: true } },
+    });
+    const sessionId = await seedSession(project, randomUUID());
+    const root = 'ses_empty';
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+      sessionId,
+      root,
+    ]);
+    const capture = (headComplete: boolean) =>
+      captureSessionTranscriptMirror(sessionId, {
+        readMessages: async () => ({ opencodeSessionId: root, payload: [], headComplete, complete: headComplete }),
+      });
+
+    // Nothing captured, or a read that did not reach the head: unknown, never empty.
+    expect(await readSessionTranscriptMirror({ sessionId, limit: 40 })).toBeNull();
+    await capture(false);
+    expect(await readSessionTranscriptMirror({ sessionId, limit: 40 })).toBeNull();
+
+    // A complete read of the runtime that found no messages is the proof.
+    await capture(true);
+    expect(await readSessionTranscriptMirror({ sessionId, limit: 40 })).toMatchObject({
+      opencode_session_id: root,
+      root_opencode_session_id: root,
+      total: 0,
+      head_complete: true,
+      next_cursor: null,
+      messages: [],
+    });
+    // It speaks for the conversation only: a sub-agent with no rows is not saved.
+    expect(await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: 'ses_child' })).toBeNull();
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 20_000);

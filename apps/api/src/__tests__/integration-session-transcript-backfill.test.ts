@@ -12,6 +12,7 @@ import {
   backfillSessionTranscriptMirrorOnWake,
   resetTranscriptBackfillMemoForTests,
 } from '../projects/lib/session-transcript-capture';
+import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
   localTestDatabaseUrl,
   removeSeeded,
@@ -219,7 +220,7 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
   }
 });
 
-test('a wake reads a history the old mirror stripped again, and leaves a 1:1 one alone', async () => {
+test('a history the old mirror stripped is served with what it kept, read again on wake, and a 1:1 one left alone', async () => {
   const db = new Client({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   const seeded: SeededProject[] = [];
@@ -236,12 +237,20 @@ test('a wake reads a history the old mirror stripped again, and leaves a 1:1 one
       sessionId,
       ROOT,
     ]);
+    // OpenCode titles a command with the command, and keeps its output in
+    // `metadata.output`. The old mirror kept both.
     const call = (state: Record<string, unknown>) => ({
       id: 'prt_call',
       type: 'tool',
       tool: 'bash',
       callID: 'call_1',
-      state: { status: 'completed', title: 'List the build output', time: { start: 1, end: 2 }, ...state },
+      state: {
+        status: 'completed',
+        title: 'ls dist',
+        metadata: { output: 'app.js', exit: 0 },
+        time: { start: 1, end: 2 },
+        ...state,
+      },
     });
     const info = {
       id: 'msg_000000000001',
@@ -282,6 +291,13 @@ test('a wake reads a history the old mirror stripped again, and leaves a 1:1 one
           [sessionId, info.id],
         )
       ).rows[0].parts[0].state;
+
+    // Served with what it kept, stored as it was: every client draws the
+    // command and its output while the computer sleeps, and the wake below
+    // still finds the row stripped.
+    const served = await readSessionTranscriptMirror({ sessionId, limit: 40 });
+    expect(served?.messages[0].parts[0].state).toMatchObject({ input: { command: 'ls dist' }, output: 'app.js' });
+    expect('input' in (await storedState())).toBe(false);
 
     await backfillSessionTranscriptMirrorOnWake(sessionId, deps);
     expect(reads).toBe(1);
