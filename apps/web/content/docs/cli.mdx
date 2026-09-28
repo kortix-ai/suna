@@ -407,9 +407,9 @@ sandbox restart. It needs `project.members.manage`, or being the human who
 launched the session. An agent may never resolve its own approval.
 
 `sessions attachments` reads the session's private file store, not its
-workspace. Files land there when the project has **Session Transcript History**
-enabled (Settings → Feature flags): uploads at send time, and every file the
-agent showed at the end of the turn. Files stored while the flag was on stay
+workspace. Files land there while the project has **Session Transcript History**
+on (the default; Settings → Feature flags): uploads at send time, and every file
+the agent showed at the end of the turn. Files stored while the flag was on stay
 downloadable after it is turned off.
 
 `sessions files` reads the working tree the agent is editing right now, before
