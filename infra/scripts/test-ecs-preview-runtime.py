@@ -537,13 +537,13 @@ class PreviewTeardown(unittest.TestCase):
         self.assertNotIn("github.event.action == 'closed'", teardown)
         self.assertIn("github.event.label.name == 'preview'", teardown)
 
-    def test_the_nightly_sweep_deletes_only_unapproved_sandboxes(self):
+    def test_the_hourly_sweep_deletes_only_unapproved_sandboxes(self):
         # OLD: MAX_ACTIVE_PREVIEWS=20 and PREVIEW_MAX_AGE_HOURS=72 bounded a
         # shared cluster; "preserving its preview" kept the live PR's service.
         # NEW: the bound is one sandbox per open, labeled PR at its current head
         # SHA, plus provider-side archive and delete after seven days.
         self.assertIn("bun tests/bin/sandbox-preview.ts reconcile", job("reconcile"))
-        self.assertIn('cron: "17 6 * * *"', WORKFLOW)
+        self.assertIn('cron: "17 * * * *"', WORKFLOW)
         reconcile_action = cli_action("reconcile")
         self.assertIn(
             "reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames })",

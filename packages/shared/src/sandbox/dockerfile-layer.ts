@@ -49,7 +49,10 @@ import {
 } from './shell-tools';
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
   SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
 } from './platform-binaries';
 
 /**
@@ -283,6 +286,17 @@ export interface KortixArtifactLayerOpts {
    * instead of the daemon's minimal fallback. Optional; omit to skip.
    */
   catalogPath?: string;
+  /**
+   * Build-context path to the staged managed `kortix-*` skill overlay, baked
+   * at {@link SANDBOX_MANAGED_SKILLS_DIR}.
+   *
+   * REQUIRED, unlike `catalogPath`. Optional is how this diverged in the first
+   * place: the meta image passed a path, the standard layer had no field at
+   * all, and every ordinary session sandbox — dev, prod and preview alike —
+   * booted with nothing to overlay and downloaded the whole overlay on its
+   * first reconcile.
+   */
+  managedSkillsPath: string;
 }
 
 export interface BuildLayeredDockerfileOpts
@@ -749,6 +763,7 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     machineDocPath,
     slackCliPath,
     catalogPath,
+    managedSkillsPath,
   } = opts;
 
   return [
@@ -781,6 +796,17 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `    && ${SANDBOX_CLI_OWNERSHIP_COMMAND} \\`,
     `    && ${SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND} \\`,
     '    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral',
+    '',
+    // The overlay arrives ALREADY kortix-owned, below the `chown -R` above: a
+    // recursive chown in a later layer rewrites every inode it touches and
+    // forces overlayfs to copy the whole tree up again (see platform-binaries.ts).
+    `COPY --chown=kortix:kortix ${managedSkillsPath} ${SANDBOX_MANAGED_SKILLS_DIR}`,
+    // Then state what this image carries, with the daemon that is now on disk.
+    // Only the ~500 B bookkeeping file is chowned here, and the daemon must be
+    // able to REWRITE it in place: `writeState` writes the path, it does not
+    // rename into the directory.
+    `RUN ${SANDBOX_RUNTIME_ASSETS_STATE_COMMAND} \\`,
+    `    && chown kortix:kortix ${SANDBOX_RUNTIME_ASSETS_STATE_PATH}`,
     '',
     // Web-terminal login shells: keep the Kortix tool dirs on PATH on Debian
     // bases and load project secrets. Written here, still as root, and in the

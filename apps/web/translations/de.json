@@ -19190,7 +19190,9 @@
       "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet",
       "text3ec6c235548a": "MCP-Server-Metadaten gelesen",
       "text7740934de920": "OAuth-Client registriert",
-      "textcd36423ea12a": "MCP-Server aufgerufen"
+      "textcd36423ea12a": "MCP-Server aufgerufen",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

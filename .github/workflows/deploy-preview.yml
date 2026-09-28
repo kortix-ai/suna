@@ -27,7 +27,9 @@ on:
           - auto
           - platinum
   schedule:
-    - cron: "17 6 * * *"
+    # Hourly: the sweep stops idle preview hosts and orphaned session boxes.
+    # Daily let 26 always-on 16 GB hosts fill the 512 GB pool (2026-09-28).
+    - cron: "17 * * * *"
 
 concurrency:
   # `github.event.ref` is the deleted branch, so two branch deletions run in
@@ -317,7 +319,9 @@ jobs:
     name: Deploy full self-host preview
     needs: [authorize, build-api, build-gateway, build-web]
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
-    timeout-minutes: 100
+    # ~10 min deploy + up to 45 min waiting for pool and GitHub capacity
+    # (PREVIEW_SUITE_WAIT_MINUTES) + <= 80 min suite.
+    timeout-minutes: 145
     permissions:
       contents: read
       pull-requests: write

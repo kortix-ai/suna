@@ -529,9 +529,14 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   the branch. When any one changed, the run cancels itself and deploys nothing.
 - A push to a `preview`-labelled branch redeploys its environment in place; the
   label stays. Removing the label or deleting the branch tears it down. Closing
-  the pull request does not. A daily reconciler deletes environments whose
+  the pull request does not. An hourly reconciler deletes environments whose
   branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
-  `reconcile`).
+  `reconcile`). It also stops (never deletes) a host whose pull request is not
+  an open `preview` pull request, or that idled over 3 hours. A stopped host
+  keeps its disk; a redeploy or the next request to its URL starts it again.
+- A preview suite waits up to 45 min before it starts until the Platinum pool
+  has 64 GB free and the managed org saw at most 100 new repositories in the
+  last hour (`PREVIEW_SUITE_*`). It then stops the session boxes it created.
 - Preview warm images contain dependencies and Docker layers only. They never
   contain a database or runtime secret.
 - Preview Mailpit handles authentication and invite email. The dedicated
