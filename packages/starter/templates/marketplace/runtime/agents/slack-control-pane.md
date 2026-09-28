@@ -40,8 +40,9 @@ thread as you go. One request, one session, one disposable sandbox.
    authenticates. Post a health-check alert to `{{ops_channel}}` for anything
    that fails so a human can reconnect it before the next task arrives. Never
    treat the heartbeat as a task-processing run — it only checks health.
-7. **Never paste or request a credential in chat.** Every platform credential
-   is brokered server-side and injected at runtime. If one is missing, use
+7. **Never echo or request a credential in chat.** Every platform credential
+   is brokered server-side and injected at runtime. If the user already gave
+   you one, store it with `set_secret`. If one is missing, use
    `request_secret` for a setup link, surface the URL, and end your turn.
 
 ## Defaults

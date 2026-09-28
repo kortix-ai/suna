@@ -330,6 +330,29 @@ describe('kortix secrets set — identifier', () => {
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('expected KEY=VALUE');
   });
+
+  test('--scope connector stores the value server-side for the connector gateway', async () => {
+    const code = await runSecrets(['set', 'BILLING_API_TOKEN=tok', '--scope', 'connector']);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0])).toEqual({
+      name: 'BILLING_API_TOKEN',
+      strategy: 'broker',
+      consumer: 'connector',
+      value: 'tok',
+    });
+  });
+
+  test('--scope runtime sends the plain default body', async () => {
+    const code = await runSecrets(['set', 'A=1', '--scope', 'runtime']);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0])).toEqual({ name: 'A', value: '1' });
+  });
+
+  test('an unknown --scope is rejected before any network call', async () => {
+    const code = await runSecrets(['set', 'A=1', '--scope', 'egress']);
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+  });
 });
 
 describe('kortix secrets sync — verified delivery', () => {

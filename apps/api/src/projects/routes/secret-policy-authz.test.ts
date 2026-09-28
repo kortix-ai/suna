@@ -64,11 +64,11 @@ describe('POST /:projectId/secrets', () => {
   test('refuses an agent session that supplies a non-default delivery policy', () => {
     expect(src).toContain('isProjectSessionPrincipal(c)');
     expect(src).toContain(GUARD_MESSAGE);
-    // The guard fires on any of strategy!=runtime, consumer!=sandbox, or an
-    // egress_policy — the three delivery-policy inputs.
-    expect(src).toContain("requestedStrategy !== 'runtime'");
-    expect(src).toContain("requestedConsumerData !== 'sandbox'");
-    expect(src).toContain('body.egress_policy !== undefined');
+    // Only runtime/sandbox and broker/connector without a host list pass —
+    // the two shapes an agent-minted setup link can already write.
+    expect(src).toContain('body.egress_policy === undefined');
+    expect(src).toContain("requestedConsumerData === 'sandbox'");
+    expect(src).toContain("requestedStrategy === 'broker' && requestedConsumerData === 'connector'");
   });
 
   test('rejects the agent BEFORE the secret is written', () => {
@@ -83,7 +83,7 @@ describe('POST /:projectId/secrets', () => {
     // The guard is NOT an unconditional `if (isProjectSessionPrincipal(c)) return 403`: it
     // ANDs the agent check with the delivery-policy inputs, so an agent may
     // still create a plain runtime/default secret (matching product behavior).
-    expect(src).toContain('isProjectSessionPrincipal(c) &&');
+    expect(src).toContain('isProjectSessionPrincipal(c) && !agentAllowedDelivery');
   });
 });
 

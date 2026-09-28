@@ -210,15 +210,18 @@ enforcement feature:
 Never print or return a secret value or a handle. Use `kortix secrets ls
 --json` when you need the complete stored policy.
 
-**Getting a credential — never punt to the dashboard.** When you need an API key
-or an app connected, **mint a setup link and surface the URL in the same turn** —
-don't tell the human to "open Customize → Connectors", and don't ask them to
-paste a raw key into chat. Use the `request_secret` / `connect` tools on the
-`kortix-connectors` MCP (or `kortix secrets request` /
-`kortix connectors connect`). The human gets a fill-in
-modal (web) or a tappable link (Slack); you never touch the raw value. Do this
-automatically whenever you add or need a tool. Full playbook in the
-**credentials-and-setup-links** reference below.
+**Getting a credential — never punt to the dashboard.** If the human already
+gave you the value (pasted in chat, in a file, "use this key"), **store it
+yourself in the same turn** with the `set_secret` tool (or
+`kortix secrets set NAME=-`, `--scope connector` for a connector credential) —
+no link, no second entry, never echo it back. A `403` means your agent lacks
+secret-write permission: fall back to a link. If you do NOT have the value,
+**mint a setup link and surface the URL in the same turn** with the
+`request_secret` / `connect` tools on the `kortix-connectors` MCP (or
+`kortix secrets request` / `kortix connectors connect`). The human gets a
+fill-in modal (web) or a tappable link (Slack). Never tell them to "open
+Customize → Connectors". Full playbook in the **credentials-and-setup-links**
+reference below.
 
 **Exception — connecting Slack itself.** Slack is a built-in channel, not a
 connector or a secret. `kortix channels connect` is the ONE command: it prints
@@ -647,9 +650,10 @@ to see the full enum.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
-  How to get a credential you don't have — an API key, or an app connected —
-  by minting a short-lived **setup link** and surfacing the URL, instead of
-  punting the human to the dashboard or asking them to paste a raw key. Covers
+  How to get a credential — an API key, or an app connected. A value you
+  already have (the human gave it in chat) is stored directly with
+  `set_secret` / `kortix secrets set`; a value you lack is requested with a
+  short-lived **setup link** instead of punting the human to the dashboard. Covers
   the two link kinds (secret intake / Composio connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
   `kortix connectors connect` CLI), what the human sees

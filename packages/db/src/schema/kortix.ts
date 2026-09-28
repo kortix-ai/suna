@@ -1728,6 +1728,7 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_project').on(table.projectId),
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
+    index('idx_session_lifecycle_commands_account').on(table.accountId),
   ],
 );
 
@@ -6125,6 +6126,7 @@ export const connectorCalls = kortixSchema.table(
     index('idx_connector_calls_connector').on(table.connectorId),
     index('idx_connector_calls_connection').on(table.connectionId),
     index('idx_connector_calls_status').on(table.status),
+    index('idx_connector_calls_account').on(table.accountId),
   ],
 );
 

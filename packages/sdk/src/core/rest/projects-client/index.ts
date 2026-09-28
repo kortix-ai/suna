@@ -57,3 +57,4 @@ export type {
 
 export * from './model-access';
 export * from './session-attachments';
+export * from './project-agents';

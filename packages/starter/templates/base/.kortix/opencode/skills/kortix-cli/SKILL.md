@@ -41,7 +41,8 @@ get kortix-cli`, which just returns this same stub.
 
 ```bash
 kortix whoami                                   # which project + account this token has
-kortix secrets request <NAME>                   # mint a link for a human to enter a key (never handle raw keys)
+kortix secrets set <NAME>=-                     # store a value you already have (stdin); --scope connector
+kortix secrets request <NAME>                   # mint a link for a human to enter a value you lack
 kortix sessions status                          # every agent on the project + what it's doing now
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
