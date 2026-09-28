@@ -54,7 +54,7 @@ export const PLATINUM_POOL_MB_DEFAULT = 524_288;
  * at 3.8 GB used and a running `--target-full` suite at 5.6 GB (5 s samples, ~100 min per host). 16 GB hosts
  * left ~10 GB idle each while 28 of them filled the 512 GB pool.
  */
-export const PREVIEW_HOST_RAM_MB = 8_192;
+export const PREVIEW_HOST_RAM_MB = 16_384;
 
 function meta(sandbox: PlatinumListedSandbox, key: string): string {
   const value = sandbox.metadata?.[key];
