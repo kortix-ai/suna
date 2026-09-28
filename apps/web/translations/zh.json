@@ -19226,7 +19226,8 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "列出了已连接的应用",
-      "text37698a37f9d2": "撤销了已连接的应用"
+      "text37698a37f9d2": "撤销了已连接的应用",
+      "text8c8fb214b592": "以用户身份授权了 GitHub"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

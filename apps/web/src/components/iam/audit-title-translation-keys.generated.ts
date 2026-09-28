@@ -22,6 +22,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Authenticated LLM gateway token': 'text8945f35c150f',
   'Authenticated computer tunnel agent': 'texta3036afdb779',
   'Authenticated to sandbox previews': 'text3419bc5af9e9',
+  'Authorized GitHub as a user': 'text8c8fb214b592',
   'Authorized LLM gateway request': 'text82521856630c',
   'Batch-checked effective permissions': 'text334e88b99fc4',
   'Bootstrapped legacy sandbox runtime': 'text604c87003912',

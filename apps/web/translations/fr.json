@@ -19226,7 +19226,8 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "A listé les apps connectées",
-      "text37698a37f9d2": "A révoqué une app connectée"
+      "text37698a37f9d2": "A révoqué une app connectée",
+      "text8c8fb214b592": "A autorisé GitHub en tant qu’utilisateur"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

@@ -19226,7 +19226,8 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Ha elencato le app collegate",
-      "text37698a37f9d2": "Ha revocato un'app collegata"
+      "text37698a37f9d2": "Ha revocato un'app collegata",
+      "text8c8fb214b592": "Ha autorizzato GitHub come utente"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
