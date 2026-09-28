@@ -12,7 +12,8 @@ import type {
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
 import { usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
-import { ArrowUpLeftIcon as ArrowUpLeft, WarningIcon } from '@phosphor-icons/react';
+import { ArrowUpLeftIcon as ArrowUpLeft, MoonIcon, WarningIcon } from '@phosphor-icons/react';
+import { SESSION_NOTICE } from '@kortix/sdk';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
 import {
@@ -1810,7 +1811,11 @@ function ComposerImpl({
               // the NARROWER queue strip — both cases expose its top corners.
               className="bg-sidebar border-border flex w-full items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5"
             >
-              <Loading className="size-3.5 shrink-0" />
+              {notice === SESSION_NOTICE.idle ? (
+                <MoonIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <Loading className="size-3.5 shrink-0" />
+              )}
               <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                 {notice}
               </span>

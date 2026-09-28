@@ -104,10 +104,12 @@ export async function buildSessionTranscriptDigest(
     userId: string;
     limit: number;
     maxChars: number;
+    /** `compactMessage`'s `full` variant: line breaks plus tool input/output. */
+    full?: boolean;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptDigest> {
-  const { session, projectId, accountId, userId, limit, maxChars } = input;
+  const { session, projectId, accountId, userId, limit, maxChars, full = false } = input;
   const readMirror = deps.readMirror ?? readMirrorSafely;
 
   /**
@@ -131,7 +133,7 @@ export async function buildSessionTranscriptDigest(
         opencode_session_id: mirror.opencode_session_id ?? opencodeSessionId,
         message_count: mirror.messages.length,
         messages: mirror.messages.map((m) =>
-          compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars),
+          compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars, full),
         ),
       };
     }
@@ -215,7 +217,7 @@ export async function buildSessionTranscriptDigest(
       captured_at: null,
       opencode_session_id: opencodeSessionId,
       message_count: rawMessages.length,
-      messages: rawMessages.map((m) => compactMessage(m, maxChars)),
+      messages: rawMessages.map((m) => compactMessage(m, maxChars, full)),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
