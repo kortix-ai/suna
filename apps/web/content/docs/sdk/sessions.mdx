@@ -490,6 +490,12 @@ Call `forget(ids)` after the POST succeeds, or `reclaim(ids)` to return them to
 the composer after a failed send.
 The resolved file part contains `attachment_id`, `filename`, and `mime`.
 It contains no URL or file bytes. The server binds and materializes the upload.
+Every file reaches the session's computer, images and PDFs included: before the
+prompt runs, the server writes it to `/workspace/uploads/.kortix-inbox/` and the
+prompt references it by path. No file bytes ride in the prompt itself. With
+saved history on, the server also keeps a copy for the transcript. A failed copy
+never keeps a file from the computer. A file the server cannot write holds the
+prompt, which retries.
 Use these parts on platform session creation, warm-session start, or prompt inbox
 routes. Do not pass private handles directly to OpenCode runtime `sendParts`.
 Legacy platform file parts with `url` still work.
