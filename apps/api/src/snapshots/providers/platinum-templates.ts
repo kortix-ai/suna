@@ -11,6 +11,8 @@ export interface PlatinumTemplate {
   id: string;
   name?: string;
   state?: string;
+  /** Echoed by /from-build since Platinum #1326; absent on an older API. */
+  kernel_modules?: string;
 }
 
 /**

@@ -185,6 +185,30 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
   );
 }
 
+/**
+ * kortix.yaml `container_runtime: true` → Platinum `kernel_modules: "container"`
+ * on /v1/templates/from-build: the rootfs gets the full guest kernel module
+ * tree, so dockerd can use bridge + overlay + netfilter. An API older than the
+ * field strips it, and it cannot cancel the build it queued (DELETE answers 409
+ * build_in_progress). So a missing echo is a build-log warning, not a failure:
+ * the template builds as before, without the modules, and the next identity
+ * change (any runtime-layer bump) rebuilds it on the upgraded API.
+ */
+export function fromBuildKernelModules(input: Pick<BuildableTemplate, 'snapshotName' | 'containerRuntime'>): {
+  body: { kernel_modules?: 'container' };
+  missing: (registered: PlatinumTemplate) => string | null;
+} {
+  if (!input.containerRuntime) return { body: {}, missing: () => null };
+  return {
+    body: { kernel_modules: 'container' },
+    missing: (registered) =>
+      registered.kernel_modules === 'container'
+        ? null
+        : `WARNING: Platinum template ${input.snapshotName}: container_runtime was requested, but this ` +
+          'Platinum API did not confirm kernel_modules on /v1/templates/from-build. The template builds ' +
+          'without the container kernel modules; dockerd will not get bridge networking until Platinum is upgraded.',
+  };
+}
 
 
 export class PlatinumAdapter implements SandboxProviderAdapter {
@@ -236,6 +260,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       runtimeProfile: input.runtimeProfile,
       appContext: input.appContext,
       isShared: input.isShared,
+      containerRuntime: input.containerRuntime,
     });
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
@@ -262,6 +287,7 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       );
 
       const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
+      const kernelModules = fromBuildKernelModules(input);
 
       const registered = await this.client.json<PlatinumTemplate>('/v1/templates/from-build', {
         method: 'POST',
@@ -285,11 +311,17 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
+          ...kernelModules.body,
         }),
       });
       // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
       // poll THAT id (never the truncated name list) — see waitForActive.
       const externalId = requireExternalTemplateId(registered?.id, `from-build for ${input.snapshotName}`);
+      const kernelModulesWarning = kernelModules.missing(registered);
+      if (kernelModulesWarning) {
+        console.warn(`[snapshots] ${kernelModulesWarning}`);
+        tap?.onLine?.(kernelModulesWarning);
+      }
       await waitForActive(input.snapshotName, tap, externalId, this.client);
       // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
       // runner) — no name-list re-derivation downstream.

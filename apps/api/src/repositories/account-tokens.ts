@@ -1,4 +1,5 @@
 import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
+import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
 import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
@@ -10,6 +11,7 @@ import {
 } from '../shared/crypto';
 import type { AgentGrant } from '@kortix/db';
 import { isUuid } from '../shared/validate';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -84,8 +86,15 @@ export interface AccountTokenListEntry {
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((tokenId) =>
+  db.update(accountTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(and(
+      eq(accountTokens.tokenId, tokenId),
+      eq(accountTokens.status, 'active'),
+      isNull(accountTokens.revokedAt),
+    )),
+);
 
 // ─── CRUD Operations ─────────────────────────────────────────────────────────
 
@@ -393,6 +402,7 @@ export async function revokeSessionConnectorTokens(
  * Validate a CLI Personal Access Token (kortix_pat_... prefix).
  * Returns the account + user id on success.
  */
+
 export async function validateAccountToken(
   secretKey: string,
 ): Promise<AccountTokenValidationResult> {
@@ -508,7 +518,7 @@ async function validateAccountTokenMatching(
           ),
         )
         .limit(1);
-      if (!lease) return { isValid: false, error: 'Session token is not active' };
+      if (!lease) return { isValid: false, error: SESSION_LEASE_REFUSAL };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
@@ -546,40 +556,5 @@ async function validateAccountTokenMatching(
   } catch (err) {
     console.error('Account token validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-// ─── Internal ────────────────────────────────────────────────────────────────
-
-async function updateLastUsedThrottled(tokenId: string): Promise<void> {
-  const now = Date.now();
-  const lastUpdate = lastUsedCache.get(tokenId) || 0;
-  if (now - lastUpdate < THROTTLE_MS) return;
-
-  lastUsedCache.set(tokenId, now);
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) lastUsedCache.delete(k);
-    }
-  }
-
-  try {
-    await db
-      .update(accountTokens)
-      .set({ lastUsedAt: new Date() })
-      // Same liveness predicate as the validation query. A revoked token must
-      // not keep refreshing its own idle clock: without this, a token revoked
-      // between the read and this write looks freshly used, which defeats the
-      // idle-revoke sweep above and makes the token appear live in the UI.
-      .where(
-        and(
-          eq(accountTokens.tokenId, tokenId),
-          eq(accountTokens.status, 'active'),
-          isNull(accountTokens.revokedAt),
-        ),
-      );
-  } catch (err) {
-    console.warn('Failed to update account_tokens.last_used_at:', err);
   }
 }

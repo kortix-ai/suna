@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 686,
+  "count": 688,
   "routes": [
     {
       "method": "GET",
@@ -8,7 +8,7 @@
     },
     {
       "method": "GET",
-      "path": "/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp"
+      "path": "/.well-known/oauth-protected-resource/v1/mcp"
     },
     {
       "method": "GET",
@@ -1223,6 +1223,18 @@
       "path": "/v1/marketplace/sources/:id"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mcp"
+    },
+    {
       "method": "POST",
       "path": "/v1/notifications/device-token"
     },
@@ -1975,18 +1987,6 @@
       "path": "/v1/projects/:projectId/marketplace/install-session"
     },
     {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/mcp"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/mcp"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/mcp"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/model-access"
     },
@@ -2501,6 +2501,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunk/:sha256"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunks/:component"
     },
     {
       "method": "GET",

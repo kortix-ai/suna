@@ -546,6 +546,17 @@ test('getSessionTranscriptSync pages older windows with the previous window curs
   expect(envelope.next_cursor).toBe('msg_older');
 });
 
+test("getSessionTranscriptSync reads a sub-agent's own window with `child`", async () => {
+  nextResponse = {
+    status: 200,
+    body: { available: false, reason: null, source: 'none', complete: false, captured_at: null, opencode_session_id: 'ses_sub', message_count: 0, messages: [] },
+  };
+  await getSessionTranscriptSync('P1', 'S1', { limit: 40, child: 'ses_sub' });
+  expect(last().url).toContain('child=ses_sub');
+  await getSessionTranscriptSync('P1', 'S1', { limit: 40 });
+  expect(last().url).not.toContain('child=');
+});
+
 test('getSessionTranscriptSync omits the cursor on a first window', async () => {
   nextResponse = {
     status: 200,

@@ -11,33 +11,32 @@
  * config convergence is in flight". What THAT test cannot see is whether
  * `startProxy` is the thing that wires it in for a real daemon boot. This
  * file drives `startProxy` itself with a fake `HarnessService` (the same
- * technique `harness-boundary.test.ts` uses to prove host code depends only
- * on the contract) and reads the decision back through the real,
+ * technique `harness-boundary.test.ts` uses to prove host controllers depend
+ * only on the contract) and reads the decision back through the real,
  * module-level `requestAgentSwapIfIdle` — so it is a behavior assertion, not
  * a source-text one.
  *
  * `harness.control.convergenceInFlight` — not a direct import of
- * `harness/open-code/config-release` — is deliberate: `proxy.ts` is host
- * production code, and importing a concrete adapter from there is exactly
- * what `harness-boundary.test.ts`'s "only the resolver can import a concrete
- * adapter" tripwire forbids.
+ * `harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * is host production code, and importing a concrete adapter from there is
+ * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
+ * an adapter") forbids.
  */
 import { afterEach, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { HarnessService } from '../harness/harness'
-import type { HarnessQueryService } from '../harness/queries'
-import { requireOpenCodeConfig } from '../harness/open-code/config'
-import { startProxy } from '../proxy'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { HarnessService } from '@/harness/harness'
+import type { HarnessQueryService } from '@/harness/contract/queries'
+import { startProxy } from '@/app/server'
 import {
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
   type AgentSwapDecision,
-} from '../runtime-assets'
-import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '../routes/pty'
+} from '@/services/runtime-assets/runtime-assets'
+import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '@/routes/kortix/pty'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 

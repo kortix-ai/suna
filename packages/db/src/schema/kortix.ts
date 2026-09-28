@@ -895,6 +895,10 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** First permanent failure of the stored login (a refresh the provider
+   *  rejected, or a login that cannot be read). The account stays usable and
+   *  in its pools; a successful refresh or a reconnect clears it. */
+  needsReauthAt: timestamp('needs_reauth_at', { withTimezone: true }),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2426,6 +2430,11 @@ export const sandboxTemplates = kortixSchema.table(
     cpu: integer('cpu'),
     memoryGb: integer('memory_gb'),
     diskGb: integer('disk_gb'),
+    /**
+     * kortix.yaml `container_runtime: true`: the image carries the guest
+     * kernel's full module tree and starts dockerd at boot.
+     */
+    containerRuntime: boolean('container_runtime').default(false).notNull(),
 
     // ─── Live state (cached; provider is source of truth) ──────────────────
     /** Content hash of the template inputs — the snapshot identity. */

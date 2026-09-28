@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Sign a new synthetic user in to a preview, inside an agent-browser session.
+# Sign a new synthetic user in to a web origin, inside an agent-browser session.
 #
-#   preview-sign-in.sh <preview-origin> <agent-browser-session>
+#   preview-sign-in.sh <origin> <agent-browser-session>
 #
+# <origin> is a local stack (http://localhost:<web port>) or a PR preview.
 # Opens <origin>/auth, requests an email sign-in for pr-demo-<epoch>@example.test,
-# reads the link or code from the preview's Mailpit, and completes it. Prints the
+# reads the link or code from Mailpit (preview-auth-email.sh), and completes it. Prints the
 # email on success. The session stays open and signed in, ready to record.
 # Exit codes: 0 signed in, 1 usage, 2 the sign-in did not complete.
 set -euo pipefail

@@ -52,7 +52,7 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
@@ -73,13 +73,13 @@ import type {
   SandboxProvider,
   SandboxStartOptions,
   SandboxStatus,
-} from './index';
+} from './contract';
 import {
   SandboxTemplateNotFoundError,
   assertWorkloadCredential,
   sandboxWorkloadType,
-} from './index';
-import { providerAutoStopBackstopMinutes } from './index';
+} from './contract';
+import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
 

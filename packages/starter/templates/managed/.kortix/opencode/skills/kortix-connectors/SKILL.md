@@ -25,6 +25,12 @@ Use the **`kortix connectors` CLI** for normal agent work:
   ran when it matters.
 - `kortix connectors call … --attach <file>` attaches a file (see **Attach
   files** below). Never put base64 in args.
+- `kortix connectors call … --out <file>` writes the full JSON result to
+  `<file>` and prints only `saved_to`, `bytes`, and `shape` (keys, array
+  lengths, `pageInfo`). Use it for list and search calls; tool output above
+  ~50 KB is truncated. Then query the file with `jq` or `bun`, never `cat`.
+  The `kortix-connectors_call` MCP tool does this by itself above 16 KB: it
+  returns `{ saved_to, bytes, shape, preview }`.
 - `kortix connectors add`, `rm`, and `connect` manage connectors and connections.
 - `kortix connectors mcp` runs the optional `kortix-connectors` stdio MCP server.
 

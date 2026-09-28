@@ -15,6 +15,8 @@ import {
   normalizeMessageList,
 } from './session-transcript-compact';
 import {
+  boundMirrorWindow,
+  MIRROR_WINDOW_MAX_CHARS,
   type MirrorMessage,
   type MirrorSnapshot,
   readSessionTranscriptMirror,
@@ -59,9 +61,10 @@ export interface SessionTranscriptDigest {
   messages: CompactMessage[];
 }
 
-/** The sync-store shape: OpenCode message envelopes verbatim, with the parts
- *  array stripped of tool inputs/outputs and file urls. Mirror-only — a running
- *  session's client reads the runtime directly. */
+/** The sync-store shape: OpenCode message envelopes verbatim, every part 1:1
+ *  except attachment bytes (see `sanitizeParts`). Mirror-only — a running
+ *  session's client reads the runtime directly. A window holds at most `limit`
+ *  messages and MIRROR_WINDOW_MAX_CHARS of JSON, newest first to be kept. */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
   reason: string | null;
@@ -88,6 +91,8 @@ export interface SessionTranscriptDeps {
     sessionId: string,
     limit: number,
     before?: string | null,
+    /** A sub-agent's OpenCode session; null reads the root. */
+    opencodeSessionId?: string | null,
   ) => Promise<MirrorSnapshot | null>;
 }
 
@@ -99,10 +104,12 @@ export async function buildSessionTranscriptDigest(
     userId: string;
     limit: number;
     maxChars: number;
+    /** `compactMessage`'s `full` variant: line breaks plus tool input/output. */
+    full?: boolean;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptDigest> {
-  const { session, projectId, accountId, userId, limit, maxChars } = input;
+  const { session, projectId, accountId, userId, limit, maxChars, full = false } = input;
   const readMirror = deps.readMirror ?? readMirrorSafely;
 
   /**
@@ -126,7 +133,7 @@ export async function buildSessionTranscriptDigest(
         opencode_session_id: mirror.opencode_session_id ?? opencodeSessionId,
         message_count: mirror.messages.length,
         messages: mirror.messages.map((m) =>
-          compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars),
+          compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars, full),
         ),
       };
     }
@@ -210,7 +217,7 @@ export async function buildSessionTranscriptDigest(
       captured_at: null,
       opencode_session_id: opencodeSessionId,
       message_count: rawMessages.length,
-      messages: rawMessages.map((m) => compactMessage(m, maxChars)),
+      messages: rawMessages.map((m) => compactMessage(m, maxChars, full)),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -230,16 +237,24 @@ export async function buildSessionTranscriptSyncEnvelope(
     requireCurrentRoot?: boolean;
     /** A `next_cursor` from a previous window — read the window older than it. */
     before?: string | null;
+    /** A sub-agent's OpenCode session inside this session: its own saved
+     *  transcript. Omitted: the root conversation. */
+    child?: string | null;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptSyncEnvelope> {
-  const mirror = await (deps.readMirror ?? readMirrorSafely)(
+  const read = await (deps.readMirror ?? readMirrorSafely)(
     input.session.sessionId,
     input.limit,
     input.before ?? null,
+    input.child ?? null,
   );
+  // Bounded by size as well as by count: rows keep every tool payload 1:1, and
+  // a cold open waits for this window. What does not fit is one cursor away.
+  const mirror = read ? boundMirrorWindow(read, MIRROR_WINDOW_MAX_CHARS) : null;
+  const mirrorRoot = mirror?.root_opencode_session_id ?? mirror?.opencode_session_id;
   const rootMismatch = input.requireCurrentRoot && (
-    !input.session.opencodeSessionId || mirror?.opencode_session_id !== input.session.opencodeSessionId
+    !input.session.opencodeSessionId || mirrorRoot !== input.session.opencodeSessionId
   );
   if (!mirror || rootMismatch) {
     return {
@@ -248,7 +263,7 @@ export async function buildSessionTranscriptSyncEnvelope(
       source: 'none',
       complete: false,
       captured_at: null,
-      opencode_session_id: input.session.opencodeSessionId,
+      opencode_session_id: input.child ?? input.session.opencodeSessionId,
       message_count: 0,
       total: 0,
       next_cursor: null,
@@ -281,9 +296,10 @@ async function readMirrorSafely(
   sessionId: string,
   limit: number,
   before?: string | null,
+  opencodeSessionId?: string | null,
 ): Promise<MirrorSnapshot | null> {
   try {
-    return await readSessionTranscriptMirror({ sessionId, limit, before });
+    return await readSessionTranscriptMirror({ sessionId, limit, before, opencodeSessionId });
   } catch (err) {
     // A cursor the caller supplied is the caller's error, not a mirror
     // failure, and swallowing it here would answer "nothing was captured" for

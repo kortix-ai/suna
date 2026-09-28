@@ -17,9 +17,12 @@
  * - A muted "Sessions" label, then every session of the project, newest
  *   activity first (status mark · title; the session on screen is
  *   highlighted). A sub-agent session (one spawned by another session in the
- *   list, COR-162) nests directly under its coordinator, indented 16pt, with
- *   a 12pt branch mark (`ArrowElbowDownRightIcon`) BEFORE its status mark —
- *   both render (`flattenSessionGroups`, `lib/session/session-list.ts`).
+ *   list, COR-162) nests directly under its coordinator, joined to it by a
+ *   connector: a trunk down from the coordinator's status mark and one
+ *   rounded elbow into each sub-agent's status mark, the same strokes as
+ *   `SubsessionTree` and web's `SubAgentConnector`. No icon: web draws
+ *   `ArrowElbowDownRightIcon` only on a sub-agent whose coordinator is NOT
+ *   listed, and mobile never draws it (`flattenSessionGroups`).
  *   A row whose root OpenCode session has sub-sessions (`directSubsessions`)
  *   shows their count after its title and ALWAYS lists them under its row,
  *   joined by a connector (`SubsessionTree`) — every such row, not only the
@@ -53,7 +56,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowElbowDownRightIcon,
   CaretUpDownIcon,
   FoldersIcon,
   MagnifyingGlassIcon,
@@ -81,6 +83,8 @@ import { Avatar } from '@/components/kortix/avatar';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import {
+  CONNECTOR_RUN,
+  CONNECTOR_STROKE,
   SubsessionCountBadge,
   SubsessionTree,
   subsessionCountLabel,
@@ -151,9 +155,14 @@ function DrawerEmptyFlower({ color }: { color: string }) {
 
 // ─── Session row ─────────────────────────────────────────────────────────────
 
-/** Sub-agent sessions indent under their coordinator by this much (mobile's
- *  own stock-Tailwind spacing, not web's tighter `ml-4`). */
-const NESTED_SESSION_INDENT = 16;
+/**
+ * Sub-agent connector geometry, from the row's column edge. The trunk runs
+ * down the centre of the coordinator's status mark: `px-4` (16) + half the
+ * 20pt mark slot (10). A sub-agent row indents so its own status mark starts
+ * one elbow (`CONNECTOR_RUN`) plus a 4pt gap past the trunk, as on web.
+ */
+const SUB_AGENT_TRUNK_X = 16 + 10;
+const NESTED_SESSION_INDENT = SUB_AGENT_TRUNK_X + CONNECTOR_RUN + 4 - 16;
 
 function ProjectSessionListItem({
   item,
@@ -170,8 +179,8 @@ function ProjectSessionListItem({
   needsYou?: SessionNeedsYou;
   /** The session on screen: `bg-accent` at rest and the `selected` state. */
   active: boolean;
-  /** A sub-agent session, rendered indented under its coordinator with a
-   *  12pt branch mark before its status mark (both render). */
+  /** A sub-agent session, rendered indented under its coordinator with an
+   *  elbow into its status mark. */
   nested?: boolean;
   /** Direct OpenCode sub-sessions: a count badge after the title when > 0. */
   subsessionCount?: number;
@@ -206,7 +215,19 @@ function ProjectSessionListItem({
         active && 'bg-accent'
       )}>
       {nested && (
-        <Icon as={ArrowElbowDownRightIcon} size={12} className="shrink-0 text-muted-foreground/60" />
+        // Elbow: down from the row's top, curving right into its status mark.
+        <View
+          pointerEvents="none"
+          className="absolute rounded-bl-md border-border"
+          style={{
+            top: 0,
+            bottom: '50%',
+            left: SUB_AGENT_TRUNK_X - NESTED_SESSION_INDENT - CONNECTOR_STROKE / 2,
+            width: CONNECTOR_RUN + CONNECTOR_STROKE / 2,
+            borderLeftWidth: CONNECTOR_STROKE,
+            borderBottomWidth: CONNECTOR_STROKE,
+          }}
+        />
       )}
       <SessionStatusMark status={status} />
       {needsYou ? (
@@ -230,10 +251,9 @@ function ProjectSessionListItem({
  * Sub-session tree geometry, from the row's column edge. The trunk runs down
  * the centre of the row's status mark: `px-4` (16) + half the 20pt mark slot
  * (10). Each sub-session title starts on the row's title edge: `px-4` + the
- * 20pt slot + `gap-3` (12). A nested row adds its indent (16), the 12pt
- * branch mark and a `gap-3` (12) before the mark to both.
+ * 20pt slot + `gap-3` (12). A nested row adds its indent to both.
  */
-const NESTED_LEAD = NESTED_SESSION_INDENT + 12 + 12;
+const NESTED_LEAD = NESTED_SESSION_INDENT;
 const TRUNK_X_TOP_LEVEL = 16 + 10;
 const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 
@@ -249,6 +269,7 @@ function DrawerSessionNode({
   shown,
   activeOpenCodeId,
   nested = false,
+  trunkBelow = false,
   needsYou,
   onPress,
   onLongPress,
@@ -260,6 +281,8 @@ function DrawerSessionNode({
   /** The OpenCode id the thread shows; null while no thread is on screen. */
   activeOpenCodeId: string | null;
   nested?: boolean;
+  /** A later sibling sub-agent follows: the trunk runs through this whole node. */
+  trunkBelow?: boolean;
   needsYou?: SessionNeedsYou;
   onPress: (s: ProjectSession) => void;
   onLongPress: (s: ProjectSession) => void;
@@ -273,6 +296,18 @@ function DrawerSessionNode({
   );
   return (
     <View>
+      {trunkBelow ? (
+        <View
+          pointerEvents="none"
+          className="absolute border-border"
+          style={{
+            top: 0,
+            bottom: 0,
+            left: SUB_AGENT_TRUNK_X - CONNECTOR_STROKE / 2,
+            borderLeftWidth: CONNECTOR_STROKE,
+          }}
+        />
+      ) : null}
       <ProjectSessionListItem
         item={session}
         active={shown && !subsessionActive}
@@ -688,6 +723,7 @@ export function ProjectLeftDrawer({
           shown={item.session.session_id === activeProjectSessionId}
           activeOpenCodeId={activeOpenCodeSessionId}
           nested={item.nested}
+          trunkBelow={item.nested && !item.last}
           onPress={handleOpenProjectSession}
           onLongPress={onSessionActions}
           onPressSubsession={handleOpenSubsession}
