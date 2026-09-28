@@ -1,6 +1,7 @@
 const TRAFFIC_WINDOW_S = 300;
 export function createTraffic() {
-  // Rolling per-second buckets stay bounded by the window.
+  // Rolling per-second buckets feeding the health endpoint's error-rate
+  // signal — bounded to the window (≤300 buckets), pruned on every record.
   const trafficBuckets = new Map<number, { req: number; err: number }>();
   const recordOutcome = (status: number) => {
     const sec = Math.floor(Date.now() / 1000);

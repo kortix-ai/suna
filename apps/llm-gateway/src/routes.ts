@@ -29,12 +29,19 @@ function inference(gateway: Gateway, inflight: InflightBudget, recordOutcome: (s
   return async (c: { req: { raw: Request; header: (name: string) => string | undefined } }) => {
     const requestId = protocol === 'chat' ? `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}` : '';
     try {
+      // Reserve capacity before the body is materialized. `c.req.raw` is the
+      // standard Request: admission needs it, and its `signal` drives the
+      // client-disconnect abort below.
       const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
       if (!body.ok) {
         const status = body.reason === 'too_large' ? 413 : 503;
         if (protocol === 'chat' && body.reason === 'overloaded') console.warn('[gateway] admission overloaded', {
           usedBytes: inflight.inflightBytes, capacityBytes: inflight.capacityBytes, utilization: inflight.utilisation,
         });
+        // A client that vanished mid-upload is not a fleet error: its
+        // reservation is already back and nobody reads this response. Keeping
+        // it out of the error rate stops an aborting client from faking an
+        // incident on /health.
         if (body.reason !== 'client_aborted') recordOutcome(status);
         return status === 413 ? requestTooLargeResponse(requestId || undefined)
           : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1, requestId || undefined);
@@ -44,6 +51,10 @@ function inference(gateway: Gateway, inflight: InflightBudget, recordOutcome: (s
           authorization: protocol === 'messages'
             ? messagesAuthorization(c.req.header('authorization'), c.req.header('x-api-key'))
             : c.req.header('authorization'),
+          // `signal` fires on client disconnect, so a caller that goes away
+          // mid-request stops the upstream fetch/stream. Without it a
+          // disconnected client left the provider generating, and billing, a
+          // turn nobody would read.
           rawBody: body.body, signal: c.req.raw?.signal,
         };
         body.body = '';
@@ -62,6 +73,18 @@ function inference(gateway: Gateway, inflight: InflightBudget, recordOutcome: (s
   };
 }
 
+/**
+ * Every inference route under four alias prefixes. The API reverse proxy
+ * exposes `/v1/llm-gateway` as the OpenAI base URL and strips that prefix, so
+ * OpenAI-compatible clients reach this service at `/chat/completions`.
+ * `messages` is the Anthropic Messages shape and `responses` the OpenAI
+ * Responses shape (Codex CLI >=0.157 speaks only `wire_api = "responses"`).
+ * Both translate at the edges only: auth, grants, routing, dispatch, metering
+ * and audit run through the same pipeline as chat completions.
+ * `models?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
+ * project's servable set (~80KB), fetched by sandboxes on every boot so their
+ * `kortix` provider matches the web picker. See wire.ts.
+ */
 export function registerRoutes(app: Hono, gateway: Gateway, inflight: InflightBudget, recordOutcome: (status: number) => void) {
   const chat = inference(gateway, inflight, recordOutcome, 'chat');
   const messages = inference(gateway, inflight, recordOutcome, 'messages');
