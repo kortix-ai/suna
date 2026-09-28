@@ -121,6 +121,10 @@ export type ListResult =
       bootPhase?: string;
       /** Present on every `unreachable`. See `UnreachableCause`. */
       cause?: UnreachableCause;
+      /** `Server` header of whatever answered — names the provider edge. */
+      responder?: string;
+      /** First 120 chars of the error body, whitespace-collapsed. */
+      detail?: string;
     };
 
 /** The daemon names its boot phase on every 503 — see the daemon's boot-phase.ts. */
@@ -164,14 +168,39 @@ export async function listSandboxOpencodeSessions(
     // into a silent `unreachable` is what let a userId-less caller disable the
     // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
     // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
-    if (res.status === 401) {
-      appLogger.warn('[opencode-mapping] daemon refused the session list (unsigned context)', {
-        externalId,
-        hasUserId: Boolean(userId),
-      });
-      return { ok: false, reason: 'unreachable', cause: 'unsigned_context' };
+    if (!res.ok) {
+      // WHO answered. On this path the request goes to the PROVIDER EDGE
+      // (`resolveIngress` returns Platinum's `https://<port>-<id>.sbx…` with an
+      // HMAC header) — our control plane is never in it. So a 401 is either the
+      // edge rejecting the preview token or the DAEMON rejecting
+      // `X-Kortix-User-Context`, and those need opposite fixes.
+      //
+      // Five hypotheses were tested and killed against this one status code on
+      // 2026-09-28 — service-key rotation, a stale cached preview token, row/VM
+      // divergence, boot slowness, a control-plane refusal — because the
+      // responder was never recorded. Record it: `server` names the edge when
+      // the edge answers, and a short body snippet distinguishes the two.
+      const responder = res.headers.get('server')?.trim().slice(0, 40) || null;
+      const snippet = (await res.text().catch(() => ''))
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      if (res.status === 401) {
+        appLogger.warn('[opencode-mapping] session list refused with 401', {
+          externalId,
+          hasUserId: Boolean(userId),
+          responder: responder ?? 'unnamed',
+          body: snippet,
+        });
+      }
+      return {
+        ok: false,
+        reason: 'unreachable',
+        cause: res.status === 401 ? 'unsigned_context' : `http_${res.status}`,
+        ...(responder ? { responder } : {}),
+        ...(snippet ? { detail: snippet } : {}),
+      };
     }
-    if (!res.ok) return { ok: false, reason: 'unreachable', cause: `http_${res.status}` };
     const data = (await res.json()) as unknown;
     const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];
     return { ok: true, sessions };
@@ -195,6 +224,10 @@ export interface EnsureResult {
   bootPhase?: string;
   /** WHY, when `reason` is `unreachable`. See `UnreachableCause`. */
   cause?: UnreachableCause;
+  /** `Server` header of whatever answered. */
+  responder?: string;
+  /** First 120 chars of the error body. */
+  detail?: string;
 }
 
 /**
@@ -223,6 +256,8 @@ export async function ensureOpencodeSessionPin(input: {
       ...(listed.bootPhase ? { bootPhase: listed.bootPhase } : {}),
       // Carry the WHY to the open, which is the only place a human sees it.
       ...(listed.cause ? { cause: listed.cause } : {}),
+      ...(listed.responder ? { responder: listed.responder } : {}),
+      ...(listed.detail ? { detail: listed.detail } : {}),
     };
   }
 

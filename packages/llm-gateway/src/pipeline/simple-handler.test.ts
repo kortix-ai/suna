@@ -1059,6 +1059,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
   async function run(options: {
     fallbackOn?: 'transient' | 'any-error';
     fallbackModels?: string[];
+    policyId?: string;
     respond: (url: string) => Response | Promise<Response>;
     resolve?: (model: string) => UpstreamDescriptor[] | Promise<UpstreamDescriptor[]>;
     requestBody?: Record<string, unknown>;
@@ -1071,7 +1072,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
       hooks: {
         ...hooks(usage, traces),
         resolveRoute: async () => ({
-          policyId: 'project:default',
+          policyId: options.policyId ?? 'project:default',
           primaryModel: 'primary-model',
           fallbackModels: options.fallbackModels ?? ['fallback-model'],
           fallbackOn: options.fallbackOn ?? 'transient',
@@ -1122,6 +1123,25 @@ describe('model fallback chains (route.fallbackModels)', () => {
     expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.routeModel, f.status])).toEqual([
       ['primary-upstream', 'primary-model', 503],
     ]);
+  });
+
+  // Incident 2026-09-28: codex/gpt-6-sol on a ChatGPT plan hit its usage
+  // limit (429); the project's own chain of Kortix models never ran.
+  test.each([
+    ['a chain the project set in Routing', 'project:exact:primary-model', 200],
+    ['the platform route', 'platform-default', 429],
+  ])('a ChatGPT-plan primary that fails reaches Kortix models only through %s', async (_name, policyId, expected) => {
+    const planUpstream: UpstreamDescriptor = { ...primaryUpstream, provider: 'openai-codex', billingMode: 'none', markup: 0 };
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response } = await run({
+      policyId,
+      fallbackOn: 'any-error',
+      resolve: (model) => (model === 'primary-model' ? [planUpstream] : [managedUpstream]),
+      respond: (url) => (isPrimary(url)
+        ? new Response(JSON.stringify({ error: { type: 'usage_limit_reached', message: 'The usage limit has been reached' } }), { status: 429 })
+        : ok('from kortix')),
+    });
+    expect(response.status).toBe(expected);
   });
 
   test('when every model fails, the last failure reaches the client', async () => {
