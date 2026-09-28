@@ -40,13 +40,13 @@ appears in the sticky PR comment that starts with `<!-- preview-status -->`. Tha
 also gives the test state:
 
 - `live and tested`: `--target-full` passed on this commit.
-- `live; NOT tested`: a push redeploy. The suite did not run.
+- `live; NOT tested`: a label or push deploy. The suite did not run.
 - `live; tests failed`: the environment is up. Read `/_tests/` and the run log.
 - `deployment failed`: no origin was published. Read the run log. The environment can still
   be up: when `--target-full` hits the 90-minute worker cap (`Platinum worker exceeded
   5400000ms`), the job fails after the deploy. Find the origin in the log
   (`grep -o 'https://8080-[^ ]*sbx.platinum.dev'`) and check `<origin>/health`. Its `commit`
-  field names the deployed SHA. Push, or re-add the label, to publish it again.
+  field names the deployed SHA. Push, or dispatch the workflow, to publish it again.
 
 ## Sign in
 
@@ -68,16 +68,17 @@ also gives the test state:
 
 | Event | Result |
 | --- | --- |
-| `preview` label added | Build, deploy, then run `pnpm test -- --target-full` (~14 min total). |
-| Push to a labelled PR | Redeploy in place (~8 min). The database is kept. The suite is skipped. |
-| Label removed and re-added, or `gh workflow run deploy-preview.yml -f pr_number=<N>` | Full deploy with the suite. |
+| `preview` label added | Build and deploy (~7 min). No suite. |
+| Push to a labelled PR | Redeploy in place (~7 min). The database is kept. No suite. |
+| `gh workflow run deploy-preview.yml -f pr_number=<N>` | Redeploy, then run `pnpm test -- --target-full` (40–80 min). A push during the suite stops it within ~1 min. |
 | Label removed | Environment torn down. |
 | Branch deleted (including auto-delete on merge) | Environment torn down. |
 | PR closed, branch kept | **Keeps running.** Remove the label. |
 | Daily at 06:17 UTC | Reconciler deletes environments whose branch no longer exists. |
 
-- One deploy runs per PR at a time. Later ones queue. A push during a deploy makes the
-  running deploy fail as stale, and the queued one deploys the new head.
+- One deploy runs per PR at a time. Later ones queue. A queued run re-checks the head
+  SHA, the label, and the branch when it starts. When any one changed, it cancels itself
+  (grey, not red) and deploys nothing, so a merged branch is never re-created.
 - Sessions inside a preview stop after 6 h idle (provider backstop: 60 min).
 
 ## Constraints

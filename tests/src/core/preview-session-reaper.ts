@@ -125,8 +125,12 @@ export function selectPreviewSessionsForTeardown(
     .map((sandbox) => sandbox.id);
 }
 
-/** Default idle limit for a running preview HOST (16 GB each). */
-export const PREVIEW_HOST_MAX_IDLE_MS = 3 * 60 * 60_000;
+/**
+ * Default idle limit for a running preview HOST (16 GB each). One hour, not
+ * three: the software factory labels every agent pull request `preview`, and
+ * at 05:56Z 2026-09-28 28 hosts held 448 of 512 GB with 11 of them idle.
+ */
+export const PREVIEW_HOST_MAX_IDLE_MS = 60 * 60_000;
 
 /**
  * Running preview hosts the hourly reconcile stops: every host whose pull

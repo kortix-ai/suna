@@ -158,7 +158,7 @@ must change together.
   that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`). A suite
   stops the session boxes it created when it ends, on a branch environment too.
 - Reconcile stale previews each hour. It stops hosts of closed pull requests
-  and hosts idle over 3 hours. Daytona reconciliation only deletes previews
+  and hosts idle over 1 hour. Daytona reconciliation only deletes previews
   created before 2026-09-22.
 
 The preview warm image can contain dependencies and Docker layers. It must not

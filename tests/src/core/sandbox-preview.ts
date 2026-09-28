@@ -300,7 +300,16 @@ restore_last_good() {
   exit 1
 }
 
-${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
+# Every image here is immutable: \`pr-<sha>\` tags and digest-pinned third-party
+# images. \`missing\` skips the ones this host already has. Docker Hub counts
+# each manifest request as a pull and limits anonymous pulls per IP per hour;
+# \`always\` spent 5 per deploy, and a second deploy within the hour failed with
+# \`toomanyrequests\` (2026-09-28). Wait out that window instead of failing.
+for pull_attempt in 1 2 3 4 5; do
+  ${compose} pull --policy missing frontend kortix-api llm-gateway preview-edge mailpit && break
+  test "$pull_attempt" -lt 5 || exit 1
+  sleep $((pull_attempt * 60))
+done
 for stack_attempt in 1 2; do
   if ${compose} up -d --wait --wait-timeout 300; then
     break
