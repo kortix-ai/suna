@@ -377,7 +377,10 @@ runtimeAssetsApp.openapi(
     c.header('Cache-Control', 'public, max-age=31536000, immutable');
     c.header('Content-Type', 'application/octet-stream');
     c.header('Content-Length', String(bytes.length));
-    return c.body(bytes as unknown as ArrayBuffer, 200) as never;
+    // `runtimeChunkBytes` allocates the buffer at exactly this chunk's length
+    // and never out of Node's shared pool, so its ArrayBuffer IS the chunk:
+    // no cast that lies, no copy, no offset to get wrong.
+    return c.body(bytes.buffer as ArrayBuffer, 200) as never;
   },
 );
 

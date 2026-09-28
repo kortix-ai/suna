@@ -556,7 +556,12 @@ export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> 
     return null;
   }
   try {
-    const buffer = Buffer.allocUnsafe(source.length);
+    // `alloc`, not `allocUnsafe`: allocUnsafe serves small sizes out of Node's
+    // shared 8 KB pool, so a SHORT trailing chunk would come back as a view
+    // into a buffer holding other requests' bytes — and `.buffer` on it is the
+    // whole pool, not the chunk. The route hands `.buffer` to the response, so
+    // that distinction is the difference between one chunk and a leak.
+    const buffer = Buffer.alloc(source.length);
     const { bytesRead } = await handle.read(buffer, 0, source.length, source.offset);
     // A short read means the file changed under the index. Answer nothing
     // rather than bytes that do not hash to the name they were asked for.
