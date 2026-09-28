@@ -122,18 +122,17 @@ function isInsufficientCreditsError(text: string): boolean {
 }
 
 // ============================================================================
-// Usage-limit / subscription-required detection — the free tier running dry, an
-// inactive subscription, or an exhausted budget surfaces as messages like
-// "Free usage exceeded, subscribe to Go" or "Subscribe to activate your seat".
-// These are NOT a credit top-up situation, so they get their own subscribe CTA.
+// Kortix-entitlement detection — free tier dry, inactive subscription, or
+// exhausted Kortix budget ("Free usage exceeded, subscribe to Go"). Its own
+// subscribe CTA, not a credit top-up. Kortix-owned phrases only: a provider's
+// own cap ("The usage limit has been reached", an upstream 429) is not an
+// entitlement and must not reach this card (KRTX-621).
 // ============================================================================
 
 function isUsageLimitError(text: string): boolean {
   const lower = text.toLowerCase();
   return (
     lower.includes('free usage') ||
-    lower.includes('usage exceeded') ||
-    lower.includes('usage limit') ||
     lower.includes('subscription required') ||
     lower.includes('subscription_required') ||
     lower.includes('budget exceeded') ||
