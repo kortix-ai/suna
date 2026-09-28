@@ -20,6 +20,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import { apiRegion, databaseRegion } from './lib/deployment-region';
+import { requestLogLevel } from './lib/request-log-level';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -433,7 +434,11 @@ app.use('*', async (c, next) => {
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
-    const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
+    // WARN only for a real failure. A slow-but-successful request stays INFO —
+    // paging on it fired on ordinary contention (KRTX-627: 174 WARN lines on
+    // one read route, none 5xx). Latency regressions stay covered by the
+    // infra-sweep's p95 detector, and the line still carries `duration`.
+    const level = requestLogLevel(status);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
