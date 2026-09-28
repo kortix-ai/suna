@@ -1708,6 +1708,35 @@ async function runOpenSession(args: {
       external_id: runningExternalId,
       cause: ensured.cause ?? 'unspecified',
     });
+    // …and DURABLY, on the row. A log line is only reachable by someone with
+    // log access at the moment it scrolls past; the row is queryable later, by
+    // anyone, for a box that has been cycling for an hour. #7962 made the cause
+    // observable and stopped there, which left it unreadable from outside the
+    // process — a diagnostic nobody can reach does not diagnose anything.
+    //
+    // Written only when it CHANGES: these sessions poll every ~10s, and this
+    // must not become a write per poll.
+    const previousCause = sandboxMetadata(row).opencodeUnreachableCause;
+    const nextCause = ensured.cause ?? 'unspecified';
+    if (previousCause !== nextCause) {
+      // Merge in SQL, never a read-modify-write of the JSONB column (learnings
+      // 2026-09-22): a concurrent wake claim on this row would be clobbered.
+      await db
+        .update(sessionSandboxes)
+        .set({
+          metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+            opencodeUnreachableCause: nextCause,
+            opencodeUnreachableCauseAt: new Date().toISOString(),
+          })}::jsonb`,
+        })
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+        .catch((err) =>
+          console.warn(
+            '[start] could not stamp the unreachable cause:',
+            err instanceof Error ? err.message : err,
+          ),
+        );
+    }
   }
   if (booting) {
     // A daemon that reports a NEW boot phase since the last poll has made
