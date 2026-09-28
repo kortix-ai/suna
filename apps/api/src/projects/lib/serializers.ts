@@ -37,7 +37,6 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { proxyGitUrl } from './sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -702,6 +701,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
     .replace(/\/+$/, '')
     .replace(/\/v1\/router$/, '')
     .replace(/\/v1$/, '');
+}
+
+/**
+ * The Kortix git-proxy origin for a project — the UNIVERSAL client-facing git
+ * URL. Clients clone/push this with a Kortix token; the API resolves the real
+ * upstream + mints the host credential server-side.
+ */
+export function proxyGitUrl(projectId: string): string {
+  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
 }
 
 // Display cap for user-supplied project names. Well under the projects.name
