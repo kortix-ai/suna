@@ -15,12 +15,11 @@ set statement_timeout = '30s';
 -- columns nullable-vs-canonical every night.
 --
 -- Read-only, 2026-09-28:
---   account_deletion_requests: dev 15 rows / 1 NULL scheduled_for,
---     staging 497 rows / 0 NULL, prod 451 rows / 0 NULL (prod: already
---     NOT NULL -- this statement is a no-op there).
---   sandboxes: dev 391 rows / 0 NULL is_included, staging 0 rows,
---     prod 532 rows / 0 NULL (prod: already NOT NULL, is_included is
---     already NOT NULL on staging too -- both no-ops there).
+--   account_deletion_requests.scheduled_for: dev 15 rows / 1 NULL,
+--     nullable; staging 497 rows / 0 NULL, nullable; prod 451 rows / 0
+--     NULL, already NOT NULL.
+--   sandboxes.is_included: dev 391 rows / 0 NULL, nullable; staging 0
+--     rows, already NOT NULL; prod 532 rows / 0 NULL, already NOT NULL.
 --   No row on any checked environment has scheduled_for AND
 --   deletion_scheduled_for (the retired compatibility column,
 --   20260718031324154_reconcile_account_deletion_legacy_column.sql) both
@@ -37,35 +36,57 @@ set statement_timeout = '30s';
 -- on that same row) only guards an environment this change was not run
 -- against, and is not expected to fire anywhere checked.
 --
--- Table sizes (15-532 rows) make a full-table SET NOT NULL scan a
--- sub-second operation everywhere; no `.concurrent.ts` is needed.
+-- Each column is gated on its OWN current is_nullable in information_schema,
+-- checked inside the same DO block that backfills and constrains it. Prod
+-- (both columns already NOT NULL) and staging's sandboxes.is_included
+-- (already NOT NULL) skip the UPDATE entirely -- not just the ALTER -- so an
+-- already-converged environment never runs a scan against sandboxes (a
+-- write-hot table) at all, only a catalog lookup. Where the guard does fire,
+-- the tables are tiny (15-532 rows checked) so the backfill + SET NOT NULL
+-- scan is sub-second; no `.concurrent.ts` is needed.
 --
--- backfill-safe: account_deletion_requests holds at most 532 rows on any
--- checked environment (dev/staging/prod) and the UPDATE below is bounded by
--- `WHERE scheduled_for IS NULL` (currently 1 row, on dev only) -- this is
--- the bounded, single-row-scale backfill the guard's escape hatch exists
--- for, not a hot-table rewrite; account_deletion_requests takes one insert
--- per account-deletion request (a rare, user-initiated action), so no
--- writer queues behind a sub-second lock on it.
-
-UPDATE kortix.account_deletion_requests
-SET scheduled_for = COALESCE(deletion_scheduled_for, requested_at + interval '30 days')
-WHERE scheduled_for IS NULL;
+-- backfill-safe: bounded by the is_nullable guard plus `WHERE ... IS NULL`
+-- -- currently 1 row (account_deletion_requests, dev only) and 0 rows
+-- (sandboxes, nowhere checked needs it). account_deletion_requests takes one
+-- insert per account-deletion request (a rare, user-initiated action); no
+-- writer queues behind a sub-second lock on it. sandboxes only runs its
+-- UPDATE where is_included is still nullable, which is 0 rows everywhere
+-- checked already, and the guard skips the table entirely once converged.
 
 DO $$
 BEGIN
-  ALTER TABLE kortix.account_deletion_requests
-    ALTER COLUMN scheduled_for SET NOT NULL;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'kortix'
+      AND table_name = 'account_deletion_requests'
+      AND column_name = 'scheduled_for'
+      AND is_nullable = 'YES'
+  ) THEN
+    UPDATE kortix.account_deletion_requests
+    SET scheduled_for = COALESCE(deletion_scheduled_for, requested_at + interval '30 days')
+    WHERE scheduled_for IS NULL;
+
+    ALTER TABLE kortix.account_deletion_requests
+      ALTER COLUMN scheduled_for SET NOT NULL;
+  END IF;
 END
 $$;
 
-UPDATE kortix.sandboxes
-SET is_included = false
-WHERE is_included IS NULL;
-
 DO $$
 BEGIN
-  ALTER TABLE kortix.sandboxes
-    ALTER COLUMN is_included SET NOT NULL;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'kortix'
+      AND table_name = 'sandboxes'
+      AND column_name = 'is_included'
+      AND is_nullable = 'YES'
+  ) THEN
+    UPDATE kortix.sandboxes
+    SET is_included = false
+    WHERE is_included IS NULL;
+
+    ALTER TABLE kortix.sandboxes
+      ALTER COLUMN is_included SET NOT NULL;
+  END IF;
 END
 $$;
