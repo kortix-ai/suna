@@ -20,6 +20,12 @@
  * doing. The loader is gone — the conversation is the content. A failure then
  * takes the composer's slot instead of replacing the thread, the rule the web
  * follows: a readable conversation is never replaced by a card.
+ *
+ * A conversation the saved copy proves EMPTY (`empty`) has nothing to wait
+ * for: no loader, the status bar and the composer. With `onSend` the composer
+ * takes messages while the computer wakes: they queue through the prompt inbox
+ * (`lib/session/connecting-send.ts`), and the typed text is the thread's own
+ * draft, so it carries into the thread when the computer is ready.
  */
 
 import React from 'react';
@@ -31,6 +37,9 @@ import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Composer } from '@/components/kortix/composer';
+import { draftKey } from '@/lib/session/composer-draft';
+import { useComposerDraft } from '@/lib/session/use-composer-draft';
+import { flushComposerDrafts } from '@/stores/composer-draft-store';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
 import { AttachmentTile } from '@/components/session/attachment-tile';
@@ -64,6 +73,8 @@ export function SessionConnecting({
   messages,
   statusLabel,
   sessionId,
+  empty = false,
+  onSend,
 }: {
   /** The user's just-sent first message (a fresh send from project home), shown as the thread shows it. */
   firstMessage?: string;
@@ -86,6 +97,10 @@ export function SessionConnecting({
   statusLabel?: string | null;
   /** The OpenCode session the saved copy belongs to; tool rows read it. */
   sessionId?: string;
+  /** The saved copy proves the conversation empty: nothing to wait for. */
+  empty?: boolean;
+  /** Queues a message while the computer wakes. Absent: the composer is disabled. */
+  onSend?: (text: string) => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -107,7 +122,22 @@ export function SessionConnecting({
         onCancel={onCancel}
         onRestart={onRestart}
         restarting={restarting}
+        onSend={onSend}
       />
+    );
+  }
+
+  if (empty && !error && !hasFiles && !firstMessage) {
+    return (
+      <View style={{ flex: 1 }} className="bg-background">
+        <View style={{ flex: 1 }} />
+        <View style={{ paddingBottom: insets.bottom }}>
+          <WakingStatus label={statusLabel ?? null} />
+          <View className="px-4 pb-3 pt-1">
+            <WakingComposer onSend={onSend} draftSessionId={sessionId} />
+          </View>
+        </View>
+      </View>
     );
   }
 
@@ -166,10 +196,54 @@ export function SessionConnecting({
 }
 
 /**
+ * The composer while the computer wakes. With `onSend` it takes a message (see
+ * the file comment); the draft is flushed on unmount so the thread's own
+ * composer restores it in the same commit. Without it, disabled: there is no
+ * runtime to send to yet.
+ */
+function WakingComposer({ onSend, draftSessionId }: { onSend?: (text: string) => void; draftSessionId?: string }) {
+  const [text, setText] = React.useState('');
+  useComposerDraft(
+    onSend && draftSessionId ? draftKey({ kind: 'session', sessionId: draftSessionId }) : null,
+    text,
+    setText,
+  );
+  React.useEffect(() => () => flushComposerDrafts(), []);
+  if (!onSend) return <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />;
+  return (
+    <Composer
+      value={text}
+      onChangeText={setText}
+      onSubmit={() => {
+        const sent = text;
+        setText('');
+        onSend(sent);
+      }}
+    />
+  );
+}
+
+/** What the computer is doing: the composer card, as `SandboxHealthPill` draws it. */
+function WakingStatus({ label }: { label: string | null }) {
+  if (!label) return null;
+  return (
+    <View className="px-4 pb-2" accessibilityLiveRegion="polite">
+      <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
+        <View className="flex-1 flex-row items-center gap-2 px-2 py-2">
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
+          <Text variant="muted" className="shrink" numberOfLines={2}>
+            {label}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/**
  * The thread as its saved copy shows it: the turns, read-only, opened at the
- * newest message like the live thread; then the status bar (the composer card,
- * as `SandboxHealthPill` draws it) and the disabled composer. A failure takes
- * the composer's slot and the thread stays readable.
+ * newest message like the live thread; then the status bar and the composer.
+ * A failure takes the composer's slot and the thread stays readable.
  */
 function SavedThread({
   turns,
@@ -179,6 +253,7 @@ function SavedThread({
   onCancel,
   onRestart,
   restarting,
+  onSend,
 }: {
   turns: Turn[];
   sessionId?: string;
@@ -187,6 +262,7 @@ function SavedThread({
   onCancel: () => void;
   onRestart?: () => void;
   restarting?: boolean;
+  onSend?: (text: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
@@ -217,20 +293,9 @@ function SavedThread({
           </View>
         ) : (
           <>
-            {statusLabel ? (
-              <View className="px-4 pb-2" accessibilityLiveRegion="polite">
-                <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
-                  <View className="flex-1 flex-row items-center gap-2 px-2 py-2">
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
-                    <Text variant="muted" className="shrink" numberOfLines={1}>
-                      {statusLabel}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            ) : null}
+            <WakingStatus label={statusLabel} />
             <View className="px-4 pb-3 pt-1">
-              <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
+              <WakingComposer onSend={onSend} draftSessionId={sessionId} />
             </View>
           </>
         )}
