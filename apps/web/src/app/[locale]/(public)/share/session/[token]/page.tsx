@@ -21,8 +21,13 @@ import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
-import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
+import {
+  getPublicSessionShare,
+  getPublicShareByToken,
+  startSessionWithToken,
+} from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
+import { PublicTranscriptShareView } from './public-transcript-share-view';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
 
@@ -31,7 +36,7 @@ interface PublicShareMeta {
     share_id: string;
     session_id: string;
     project_id: string;
-    resource_type: 'preview' | 'file' | string;
+    resource_type: 'preview' | 'file' | 'transcript' | string;
     label: string;
     port: number | null;
     path: string;
@@ -66,6 +71,9 @@ export default function PublicSessionSharePage() {
   const [loading, setLoading] = useState(true);
   const [hasAuth, setHasAuth] = useState(false);
   const [starting, setStarting] = useState(false);
+  // A transcript share is titled by the session's name. The share row's own
+  // label is the generic "Conversation".
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   // Full screen here means "no share chrome" — the header unmounts and the
   // shared content owns the whole viewport. Deliberately not the native
   // Fullscreen API: the content is an iframe, and animating/entering native
@@ -112,6 +120,16 @@ export default function PublicSessionSharePage() {
           cache: 'no-store',
         });
         if (!cancelled) setMeta(body);
+        if (body.share.resource_type === 'transcript') {
+          // Title only, and not awaited: the transcript view mounts with `meta`
+          // and starts its own /messages read in parallel. A failure keeps the
+          // share label, never the error page.
+          void getPublicSessionShare(token)
+            .then((session) => {
+              if (!cancelled) setSessionTitle(session.session.title || null);
+            })
+            .catch(() => {});
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Share link unavailable');
       } finally {
@@ -194,11 +212,18 @@ export default function PublicSessionSharePage() {
     );
   }
 
-  const offline = meta.share.sandbox_status !== 'active';
   const isFileShare = meta.share.resource_type === 'file';
+  const isTranscriptShare = meta.share.resource_type === 'transcript';
+  // A transcript needs no running sandbox: the API answers from the saved copy
+  // when the session is stopped.
+  const offline = !isTranscriptShare && meta.share.sandbox_status !== 'active';
   // A file share is titled by its file name only — the workspace path is
   // internal detail the recipient has no context for.
-  const title = isFileShare ? fileName : meta.share.label;
+  const title = isFileShare
+    ? fileName
+    : isTranscriptShare
+      ? (sessionTitle ?? meta.share.label)
+      : meta.share.label;
   const authHref = `/auth?next=${encodeURIComponent(`/share/session/${token}`)}`;
   const sessionHref = `/projects/${meta.share.project_id}/sessions/${meta.share.session_id}`;
   const offlineTitle = isFileShare
@@ -242,7 +267,7 @@ export default function PublicSessionSharePage() {
                 </Button>
               </Hint>
             )}
-            {iframeSrc && !offline && !isFileShare && (
+            {iframeSrc && !offline && !isFileShare && !isTranscriptShare && (
               <Hint label={openAppLabel} side="bottom">
                 <Button
                   variant="ghost"
@@ -262,16 +287,20 @@ export default function PublicSessionSharePage() {
                 {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenIn2fdbf464')}
               </Link>
             </Button>
-            <Hint label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')} side="bottom">
-              <Button
-                variant="ghost"
-                size="icon-base"
-                aria-label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')}
-                onClick={() => setFullscreen(true)}
-              >
-                <ArrowsOutSimple />
-              </Button>
-            </Hint>
+            {/* Full screen exists for an iframe that needs the whole viewport.
+                A transcript is a scrolling page; the header costs it nothing. */}
+            {!isTranscriptShare && (
+              <Hint label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon-base"
+                  aria-label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')}
+                  onClick={() => setFullscreen(true)}
+                >
+                  <ArrowsOutSimple />
+                </Button>
+              </Hint>
+            )}
           </div>
         </header>
       )}
@@ -296,7 +325,9 @@ export default function PublicSessionSharePage() {
           than `hidden` so this never becomes a scrollable box — the scrolling
           belongs to the child. */}
       <section className="bg-background border-border relative h-dvh min-h-0 flex-1 overflow-clip rounded-t-md border-x border-t">
-        {offline ? (
+        {isTranscriptShare ? (
+          <PublicTranscriptShareView token={token} />
+        ) : offline ? (
           <div className="flex h-full items-center justify-center px-6 text-center">
             <div className="max-w-sm">
               <h2 className="text-base font-semibold">{offlineTitle}</h2>

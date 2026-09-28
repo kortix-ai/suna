@@ -2,16 +2,24 @@
  * Box resource telemetry — the numbers every "the session stopped"
  * investigation needed and never had on record.
  */
-import { afterEach, describe, expect, test } from 'bun:test'
-import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason } from '../harness/open-code/resource-diagnostics'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { logger } from '../logger'
+import { evaluateOpenCodePressure, formatOpenCodeMemoryGuardReason, isOpenCodeServeCommand } from '../harness/open-code/resource-diagnostics'
 import {
+  type MemoryConsumer,
   type ResourceSnapshot,
   cgroupSnapshot,
   evaluatePressure,
   parseLoadavg,
   parseMeminfo,
+  parseMemoryConsumer,
   parseProcStatus,
+  pickShedCandidate,
   readResourceSnapshot,
+  readTopMemoryProcesses,
   startResourceMonitor,
 } from '../resources'
 
@@ -48,6 +56,18 @@ function snapshot(overrides: Partial<ResourceSnapshot> = {}): ResourceSnapshot {
 }
 
 describe('parsers', () => {
+  test('process attribution keeps RSS but never logs an arbitrary process name', () => {
+    expect(parseMemoryConsumer(10, 'Name:\tbun\nVmRSS:\t 1843200 kB\n')).toEqual({ pid: 10, name: 'bun', rssMb: 1800 })
+    expect(parseMemoryConsumer(11, 'Name:\tprivate-project\nVmRSS:\t 1024000 kB\n')).toEqual({ pid: 11, name: 'other', rssMb: 1000 })
+  })
+
+  test('only the OpenCode executable with serve as its subcommand is counted', () => {
+    expect(isOpenCodeServeCommand(['/opt/kortix/bin/opencode', 'serve', '--port', '4096'].join('\0'))).toBe(true)
+    expect(isOpenCodeServeCommand(['/opt/kortix/opencode.current', 'serve'].join('\0'))).toBe(true)
+    expect(isOpenCodeServeCommand(['/usr/local/bin/opencode-kortix', 'serve'].join('\0'))).toBe(true)
+    expect(isOpenCodeServeCommand('/home/kortix/.bun/bin/bun\0test\0/tmp/opencode/log\0serve\0')).toBe(false)
+    expect(isOpenCodeServeCommand('/bin/bash\0-c\0opencode serve\0')).toBe(false)
+  })
   test('meminfo → MB and used% from MemAvailable', () => {
     const m = parseMeminfo(MEMINFO)
     expect(m.shmemMb).toBe(1952)
@@ -114,7 +134,7 @@ describe('formatOpenCodeMemoryGuardReason', () => {
       runtime: { pid: 17567, rssMb: 916, threads: 15, state: 'S' },
     })
     expect(formatOpenCodeMemoryGuardReason(s, 99)).toBe(
-      'sandbox memory at 99% (opencode 916 MB RSS, 1950 MB in RAM-backed files such as /tmp, of 3915 MB): turn stopped before the kernel would kill opencode',
+      'sandbox memory at 99% (opencode 916 MB RSS, 1950 MB in RAM-backed files such as /tmp, of 3915 MB): turn stopped to prevent a kernel OOM kill',
     )
   })
   test('leaves a small shared-memory figure out', () => {
@@ -124,8 +144,21 @@ describe('formatOpenCodeMemoryGuardReason', () => {
       runtime: { pid: 1, rssMb: 7440, threads: 8, state: 'R' },
     })
     expect(formatOpenCodeMemoryGuardReason(s, 95)).toBe(
-      'sandbox memory at 95% (opencode 7440 MB RSS of 8000 MB): turn stopped before the kernel would kill opencode',
+      'sandbox memory at 95% (opencode 7440 MB RSS of 8000 MB): turn stopped to prevent a kernel OOM kill',
     )
+  })
+
+  test('names the largest other process without claiming OpenCode used the box', () => {
+    const s = snapshot({
+      memory: { totalMb: 11961, availableMb: 438, usedPct: 96, swapTotalMb: 0, swapFreeMb: 0 },
+      runtime: { pid: 212, rssMb: 674, threads: 24, state: 'S' },
+      topProcesses: [
+        { pid: 7486, name: 'bun', rssMb: 2800 },
+        { pid: 212, name: 'opencode', rssMb: 674 },
+      ],
+    })
+    expect(formatOpenCodeMemoryGuardReason(s, 96)).toContain('largest other process bun 2800 MB RSS')
+    expect(formatOpenCodeMemoryGuardReason(s, 96)).toContain('prevent a kernel OOM kill')
   })
 })
 
@@ -163,6 +196,22 @@ describe('evaluatePressure', () => {
 })
 
 describe('readResourceSnapshot', () => {
+  test('top process sampling is bounded and excludes command lines', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kortix-proc-'))
+    try {
+      for (const [pid, name, rss] of [[101, 'bun', 2048000], [102, 'private-project', 1024000], [103, 'opencode', 512000]] as const) {
+        await mkdir(join(root, String(pid)))
+        await writeFile(join(root, String(pid), 'status'), `Name:\t${name}\nVmRSS:\t${rss} kB\n`)
+      }
+      expect(await readTopMemoryProcesses(root)).toEqual([
+        { pid: 101, name: 'bun', rssMb: 2000 },
+        { pid: 102, name: 'other', rssMb: 1000 },
+        { pid: 103, name: 'opencode', rssMb: 500 },
+      ])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
   test('never throws on a host without /proc; disks come from statfs', async () => {
     const s = await readResourceSnapshot({ daemonPid: process.pid, runtimePid: null, diskPaths: ['/', '/definitely/missing'] })
     expect(s.disks).toHaveLength(2)
@@ -180,36 +229,39 @@ describe('startResourceMonitor', () => {
     stop = null
   })
 
-  test('ticks on start, on demand, and on an opencode state change; pressure logs once per change', async () => {
-    const reasons: string[] = []
-    let state = 'ok'
+  test('ticks on start and on demand; pressure warns once per change, not once per tick', async () => {
     let pressured = false
-    const monitor = startResourceMonitor({
-      intervalMs: 60_000,
-      runtimePid: () => 2423,
-      runtimeState: () => state,
-      snapshot: async () => {
-        return pressured
-          ? snapshot({ memory: { totalMb: 3892, availableMb: 100, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 } })
-          : snapshot()
-      },
-    })
-    stop = monitor.stop
-    // The start tick is async; wait for it.
-    await Bun.sleep(20)
-    expect(monitor.latest()).not.toBeNull()
+    const warn = spyOn(logger, 'warn')
+    try {
+      const monitor = startResourceMonitor({
+        intervalMs: 60_000,
+        runtimePid: () => 2423,
+        snapshot: async () =>
+          pressured
+            ? snapshot({ memory: { totalMb: 3892, availableMb: 100, usedPct: 97, swapTotalMb: 0, swapFreeMb: 0 } })
+            : snapshot(),
+      })
+      stop = monitor.stop
+      // The start tick is async; wait for it.
+      await Bun.sleep(20)
+      expect(monitor.latest()).not.toBeNull()
 
-    pressured = true
-    const s = await monitor.tick('diag')
-    reasons.push('diag')
-    expect(s.memory.usedPct).toBe(97)
-    expect(monitor.latest()?.memory.usedPct).toBe(97)
+      pressured = true
+      const s = await monitor.tick('diag')
+      await monitor.tick('diag')
+      expect(s.memory.usedPct).toBe(97)
+      expect(monitor.latest()?.memory.usedPct).toBe(97)
+      const pressureWarnings = () => warn.mock.calls.filter(([msg]) => msg === '[resources] pressure')
+      expect(pressureWarnings()).toHaveLength(1)
 
-    state = 'starting'
-    // The state watcher polls every 5 s; drive a tick directly to keep the test fast.
-    const t = await monitor.tick('opencode ok -> starting')
-    expect(t.memory.usedPct).toBe(97)
-    expect(reasons).toEqual(['diag'])
+      pressured = false
+      await monitor.tick('diag')
+      pressured = true
+      await monitor.tick('diag')
+      expect(pressureWarnings()).toHaveLength(2)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 
@@ -220,8 +272,9 @@ describe('memory guard', () => {
     stop = null
   })
 
-  test('aborts the in-flight turn once at the guard line, relays why, re-arms only after memory drops', async () => {
+  test('aborts each active turn while pressure remains high', async () => {
     let usedPct = 50
+    let running = true
     const aborts: string[] = []
     const relays: Array<{ aborted: boolean }> = []
     const monitor = startResourceMonitor({
@@ -238,9 +291,10 @@ describe('memory guard', () => {
         guardPct: 92,
         elevatedPct: 80,
         fastIntervalMs: 60_000,
-        turnInFlight: async () => true,
+        turnInFlight: async () => running,
         abortTurn: async (reason) => {
           aborts.push(reason)
+          running = false
           return true
         },
         onGuard: ({ aborted }) => {
@@ -261,21 +315,27 @@ describe('memory guard', () => {
     expect(aborts).toHaveLength(1)
     expect(aborts[0]).toContain('sandbox memory at 93%')
     expect(aborts[0]).toContain('7440 MB RSS')
-    expect(aborts[0]).toBe('sandbox memory at 93% (opencode 7440 MB RSS of 8000 MB): turn stopped before the kernel would kill opencode')
+    expect(aborts[0]).toBe('sandbox memory at 93% (opencode 7440 MB RSS of 8000 MB): turn stopped to prevent a kernel OOM kill')
     expect(relays).toEqual([{ aborted: true }])
 
     usedPct = 95
     await monitor.tick('t')
-    expect(aborts).toHaveLength(1) // fired once per crossing
+    expect(aborts).toHaveLength(1) // the first turn is already over
+
+    running = true // a new turn starts before memory recovers
+    await monitor.tick('t')
+    expect(aborts).toHaveLength(2)
+    expect(relays).toEqual([{ aborted: true }, { aborted: true }])
 
     usedPct = 60
     await monitor.tick('t')
     usedPct = 94
+    running = true
     await monitor.tick('t')
-    expect(aborts).toHaveLength(2) // re-armed after dropping under the elevated line
+    expect(aborts).toHaveLength(3)
   })
 
-  test('with no turn in flight the guard relays but does not abort', async () => {
+  test('with no turn in flight the guard does not report a failed turn', async () => {
     const aborts: string[] = []
     const relays: Array<{ aborted: boolean }> = []
     const monitor = startResourceMonitor({
@@ -297,6 +357,193 @@ describe('memory guard', () => {
     stop = monitor.stop
     await monitor.tick('t')
     expect(aborts).toHaveLength(0)
-    expect(relays).toEqual([{ aborted: false }])
+    expect(relays).toEqual([])
+  })
+})
+
+describe('pickShedCandidate', () => {
+  const consumer = (pid: number, rssMb: number, name = 'docker'): MemoryConsumer => ({ pid, name, rssMb })
+
+  test('picks the largest process that is neither protected nor init', () => {
+    const top = [consumer(50, 900), consumer(51, 500), consumer(52, 4000)]
+    expect(pickShedCandidate(top, new Set([50]))).toEqual(consumer(51, 500))
+  })
+
+  test('never picks pid 1 (the VM init), even as the largest consumer', () => {
+    expect(pickShedCandidate([consumer(1, 9999)], new Set())).toBeNull()
+  })
+
+  test('returns null when every candidate is protected — nothing safe to shed', () => {
+    const top = [consumer(10, 100), consumer(11, 50)]
+    expect(pickShedCandidate(top, new Set([10, 11]))).toBeNull()
+  })
+
+  test('an empty list has nothing to shed', () => {
+    expect(pickShedCandidate([], new Set())).toBeNull()
+  })
+})
+
+describe('memory guard — process shedding (prefer shedding over losing the VM)', () => {
+  let stop: (() => void) | null = null
+  afterEach(() => {
+    stop?.()
+    stop = null
+  })
+
+  test('kills the largest non-daemon, non-runtime process instead of aborting the turn', async () => {
+    let usedPct = 50 // below elevated for the constructor's own async start tick
+    const aborts: string[] = []
+    const killed: Array<{ pid: number; signal: string }> = []
+    const guardEvents: Array<{ aborted: boolean; shed: MemoryConsumer[] }> = []
+    const rogue = { pid: 9001, name: 'docker', rssMb: 6000 }
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      runtimePid: () => 2423,
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 8000, availableMb: 400, usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          topProcesses: [rogue, { pid: 451, name: 'kortixd', rssMb: 180 }, { pid: 2423, name: 'bun', rssMb: 1500 }],
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        turnInFlight: async () => true,
+        abortTurn: async (reason) => {
+          aborts.push(reason)
+          return true
+        },
+        killProcess: (pid, signal) => {
+          killed.push({ pid, signal })
+          return true
+        },
+        onGuard: ({ aborted, shed }) => {
+          guardEvents.push({ aborted, shed })
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20) // let the constructor's own start tick (usedPct 50) pass
+    usedPct = 93
+    await monitor.tick('t')
+
+    expect(killed).toEqual([{ pid: rogue.pid, signal: 'SIGKILL' }])
+    expect(aborts).toHaveLength(0) // the turn was never touched
+    expect(guardEvents).toEqual([{ aborted: false, shed: [rogue] }])
+  })
+
+  test('protects the daemon and runtime pids even when they are the largest consumers', async () => {
+    let usedPct = 50
+    const killed: number[] = []
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      runtimePid: () => 2423,
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 8000, availableMb: 400, usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          topProcesses: [
+            { pid: 2423, name: 'bun', rssMb: 7000 }, // the runtime itself — the real memory user
+            { pid: 451, name: 'kortixd', rssMb: 180 }, // the daemon
+          ],
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        turnInFlight: async () => true,
+        abortTurn: async () => true,
+        killProcess: (pid) => {
+          killed.push(pid)
+          return true
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20)
+    usedPct = 93
+    await monitor.tick('t')
+    expect(killed).toEqual([]) // nothing safe to shed — abortTurn is the only lever
+  })
+
+  test('gives up shedding after maxShedAttemptsPerEpisode and falls back to abortTurn', async () => {
+    let usedPct = 50
+    let pid = 9000
+    const killed: number[] = []
+    const aborts: string[] = []
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      runtimePid: () => 2423,
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 8000, availableMb: 200, usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          // A fresh rogue "reappears" each tick (e.g. the tool keeps respawning
+          // it) so shedding alone never relieves the pressure.
+          topProcesses: [{ pid: ++pid, name: 'docker', rssMb: 5000 }],
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        maxShedAttemptsPerEpisode: 2,
+        turnInFlight: async () => true,
+        abortTurn: async (reason) => {
+          aborts.push(reason)
+          return true
+        },
+        killProcess: (p) => {
+          killed.push(p)
+          return true
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20)
+    usedPct = 96
+    await monitor.tick('t1')
+    await monitor.tick('t2')
+    expect(killed).toHaveLength(2) // the budget for this elevated episode
+    expect(aborts).toHaveLength(0)
+
+    await monitor.tick('t3') // budget spent — falls back to ending the turn
+    expect(killed).toHaveLength(2)
+    expect(aborts).toHaveLength(1)
+    expect(aborts[0]).toContain('already shed without relief')
+  })
+
+  test('a harness with disableProcessShedding never kills anything, even with a candidate available', async () => {
+    let usedPct = 50
+    const killed: number[] = []
+    const aborts: string[] = []
+    const monitor = startResourceMonitor({
+      intervalMs: 60_000,
+      runtimePid: () => 2423,
+      snapshot: async () =>
+        snapshot({
+          memory: { totalMb: 8000, availableMb: 200, usedPct, swapTotalMb: 0, swapFreeMb: 0 },
+          topProcesses: [{ pid: 9001, name: 'docker', rssMb: 5000 }],
+        }),
+      guard: {
+        guardPct: 92,
+        elevatedPct: 80,
+        fastIntervalMs: 60_000,
+        disableProcessShedding: true,
+        turnInFlight: async () => true,
+        abortTurn: async (reason) => {
+          aborts.push(reason)
+          return true
+        },
+        killProcess: (p) => {
+          killed.push(p)
+          return true
+        },
+      },
+    })
+    stop = monitor.stop
+    await Bun.sleep(20)
+    usedPct = 96
+    await monitor.tick('t')
+    expect(killed).toEqual([])
+    expect(aborts).toHaveLength(1)
+    expect(aborts[0]).toContain('no non-critical process to shed')
   })
 })

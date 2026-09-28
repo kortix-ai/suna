@@ -1,6 +1,6 @@
 'use client';
 
-import { favicon } from '@/components/home/interactive-demo/data';
+import { faviconUrlForHostname } from '@/lib/favicon';
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -122,7 +122,7 @@ export function ConnectorsHeroVisual(): ReactNode {
                   }}
                 >
                   <img
-                    src={favicon(domain)}
+                    src={faviconUrlForHostname(domain)}
                     alt=""
                     aria-hidden
                     loading="lazy"

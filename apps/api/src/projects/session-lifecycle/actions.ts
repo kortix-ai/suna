@@ -8,13 +8,14 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
+import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
 import {
   legacyRehydrateSpec,
   rehydrateSessionChat,
 } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
-import { pushSessionAgentConfigToSandbox } from '../lib/sandbox-env-sync';
-import { scheduleSandboxRuntimeRefresh } from '../lib/sandbox-runtime-refresh';
+import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
+import { refreshSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   projectImageAllowedForSession,
@@ -32,7 +33,9 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
+  parkEstablishedRuntime,
   preserveEstablishedRuntime,
+  runtimeLossVerdict,
   retireUnmaterializedRuntime,
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
@@ -64,7 +67,6 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
-  metadata?: Record<string, unknown> | null;
 }): Promise<{ ok: true } | { error: string; status: number }> {
   const { projectId, sessionId, accountId, userId } = input;
   const [sandbox] = await db
@@ -103,6 +105,14 @@ export async function deleteSession(input: {
   await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
     console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
   });
+
+  // Public links end with the session. `resolvePublicShare` already refuses a
+  // tombstoned session (410); this makes the owner's share list say so too.
+  await Promise.resolve()
+    .then(() => revokeAllPublicSharesForSession(sessionId, deletedAt))
+    .catch((error) => {
+      console.error('[public-shares] revoke on session delete failed', { sessionId, error });
+    });
 
   if (sandbox) {
     const removable =
@@ -464,7 +474,24 @@ export async function restartSession(input: {
               sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
             ),
           );
-        await provider.start(externalId);
+        await provider.start(externalId, {
+          // A restore from cold storage runs inside start() and can outlast
+          // the restart lease; keep it, fenced to this restart.
+          onProgress: async () => {
+            const leaseExpiresAt = new Date(Date.now() + RUNTIME_RESTART_LEASE_MS);
+            await db
+              .update(sessionSandboxes)
+              .set({
+                metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeRestartLeaseExpiresAt: leaseExpiresAt.toISOString() })}::jsonb`,
+              })
+              .where(
+                and(
+                  eq(sessionSandboxes.sandboxId, sessionId),
+                  sql`${sessionSandboxes.metadata}->>'runtimeRestartId' = ${restartId}`,
+                ),
+              );
+          },
+        });
         if (!(await ownsRestart('after_start'))) return;
         // Provider ingress credentials can change on every stop/start cycle.
         // Remove any link resolved while the sandbox was stopped.
@@ -557,31 +584,37 @@ export async function restartSession(input: {
         // merged agent change and got the old agents back, which is most of why
         // "there is no way to reload" felt true.
         //
-        // Recompile from the session's ref and push. Best-effort and after the
+        // Converge on the session's base ref. Best-effort and after the
         // session is already marked running: a box that is up with old config
         // beats one parked because a git read failed.
+        //
+        // This used to push the compiled config alone. That moved the etag and
+        // left the agent unchanged, because opencode reads the agent `.md` files
+        // from the working tree and a restart never touched them. The
+        // convergence syncs those files first, and skips the second opencode
+        // restart entirely when the box is already current.
+        //
         // A restart resumes the SAME VM, so the daemon's boot-time reconcile
         // never re-runs and the box keeps whatever `kortix` binary its image was
         // built with — the exact reason production sandboxes ran a CLI that
         // predated the routes it calls. Poke the daemon to re-converge. Detached
         // and after the session is already marked running: this must not extend
         // the restart the user is waiting on.
-        scheduleSandboxRuntimeRefresh(sessionId, 'restart');
-        void pushSessionAgentConfigToSandbox({
-          projectId,
-          sessionId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        }).then((result) => {
-          if (!result.applied) {
-            logger.info('[projects] restart kept the existing agent config', {
-              session_id: sessionId,
-              reason: result.reason,
-            });
-          }
-        });
+        //
+        // AWAITED here, not fire-and-forget (`scheduleSandboxRuntimeRefresh`'s
+        // usual form) — still inside this already-detached block, so the 202
+        // sent long ago is unaffected. `POST /kortix/refresh?restart=0` is what
+        // now also fetches the live managed-model lineup and rewrites the
+        // overlay file (see `convergeManagedModelCatalog`, `allowRestart:
+        // false`), and config convergence right below is what actually
+        // RESPAWNS opencode. Racing the two left a real dev box restarting
+        // straight back onto its stale managed lineup 2026-09-26: the config
+        // convergence's respawn read whatever catalog file was on disk at THAT
+        // instant, and the runtime-asset refresh's write had not landed yet.
+        // Awaiting closes that race — the file is current before anything
+        // that reads it from disk gets a chance to spawn.
+        await refreshSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
+        scheduleSessionConfigConvergence(sessionId, 'restart');
       } catch (err) {
         // Detached from the request (the 202 already went out) — a structured
         // error is the only trace the reboot died and the session was parked.
@@ -605,11 +638,40 @@ export async function restartSession(input: {
               () => null,
             );
           } else {
-            await preserveEstablishedRuntime(
-              claim.row,
-              'restart_missing_runtime',
-              'restart_failed',
-            ).catch(() => null);
+            // Incident 2026-08-14: a loss verdict requires a fresh, definitive
+            // provider `removed` — nothing else may reach the terminal "computer
+            // was lost" state. Neither condition that got us here is evidence of
+            // one. `isMissingRuntimeError` is a message heuristic that matches
+            // any error whose text merely contains "not found", and
+            // `recoverInPlace` is OPTIONAL: `?.` yields `undefined` for a
+            // provider that does not implement it, which is indistinguishable
+            // here from a provider that tried and failed. The sibling restart
+            // paths above both gate on `getStatus() === 'removed'` before they
+            // preserve; this one is reached from a catch block and did not, so
+            // an unrelated "not found" thrown mid-restart reported a live box as
+            // lost — unrecoverable and non-retriable to the user, a false
+            // `runtime.lost` page, and the box left running because only a park
+            // stops it. Ask the provider, then let the shared gate decide.
+            const status = await (async () => {
+              try {
+                return await provider.getStatus(externalId);
+              } catch {
+                return 'unknown' as const;
+              }
+            })();
+            if (runtimeLossVerdict(status) === 'preserve') {
+              await preserveEstablishedRuntime(
+                claim.row,
+                'restart_missing_runtime',
+                'restart_failed',
+              ).catch(() => null);
+            } else {
+              await parkEstablishedRuntime(
+                claim.row,
+                'restart_missing_runtime',
+                'restart_failed',
+              ).catch(() => null);
+            }
           }
           return;
         }

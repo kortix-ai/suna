@@ -23,6 +23,7 @@ import {
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { contentAfterExternalChange } from './external-content';
 import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagnostics';
 
 // Language id (from `getLanguageFromExtension` or the `language` prop) →
@@ -359,15 +360,30 @@ export function CodeEditor({
   // Also sync localContent if it matches the old saved content (no local edits)
   useEffect(() => {
     if (originalContent !== undefined) {
-      const hadChanges = localContent !== savedContent.current;
+      const previousSaved = savedContent.current;
+      const hadChanges = localContent !== previousSaved;
       savedContent.current = originalContent;
       // If the new original matches what's in the editor, notify parent that changes are cleared
       if (hadChanges && localContent === originalContent) {
         onUnsavedChangeRef.current?.(false);
         prevHasChanges.current = false;
       }
+      // The file changed underneath the editor (the agent's turn end refetched
+      // it). Decided here, against the saved content from BEFORE the change:
+      // the content effect below runs after `savedContent` has already moved,
+      // so it reads an unedited editor as edited and never adopts the update.
+      if (isReady && originalContent !== previousSaved) {
+        const adopted = contentAfterExternalChange({
+          local: localContent,
+          saved: previousSaved,
+          next: originalContent,
+          readOnly,
+          justSaved: !!saveTimestampRef.current && Date.now() - saveTimestampRef.current < 2000,
+        });
+        if (adopted !== null) setLocalContent(adopted);
+      }
     }
-  }, [originalContent, localContent]);
+  }, [originalContent, localContent, isReady, readOnly]);
 
   // Set mounted state & inject diagnostic CSS
   useEffect(() => {

@@ -66,7 +66,12 @@ function mapRow(r: typeof oauthClients.$inferSelect): OAuthClient {
  * server can register `http://localhost:3200/…` while every deployed app
  * must use https.
  */
-export function normalizeRedirectUris(input: unknown): string[] {
+/**
+ * `native` admits a private-use URI scheme (RFC 8252 §7.1), which desktop MCP
+ * clients register (Cursor: `cursor://…`). Only self-registered clients pass it;
+ * the account registry keeps http(s).
+ */
+export function normalizeRedirectUris(input: unknown, opts: { native?: boolean } = {}): string[] {
   if (!Array.isArray(input)) throw new OAuthClientInputError('redirect_uris must be an array of absolute URLs');
   const out: string[] = [];
   for (const raw of input) {
@@ -81,7 +86,9 @@ export function normalizeRedirectUris(input: unknown): string[] {
     if (url.hash) throw new OAuthClientInputError(`redirect_uri must not carry a fragment: ${value}`);
     const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]' || url.hostname.endsWith('.localhost');
     if (url.protocol === 'http:' && !loopback) throw new OAuthClientInputError(`redirect_uri must use https (http is allowed on localhost only): ${value}`);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new OAuthClientInputError(`redirect_uri must be http(s): ${value}`);
+    const web = url.protocol === 'http:' || url.protocol === 'https:';
+    const nativeScheme = opts.native && !web && !['javascript:', 'data:', 'vbscript:', 'file:', 'blob:'].includes(url.protocol);
+    if (!web && !nativeScheme) throw new OAuthClientInputError(`redirect_uri must be http(s): ${value}`);
     if (!out.includes(value)) out.push(value);
   }
   if (out.length === 0) throw new OAuthClientInputError('at least one redirect_uri is required');
@@ -137,8 +144,9 @@ export async function getOAuthClient(accountId: string, clientId: string): Promi
 }
 
 export async function createOAuthClient(input: {
-  accountId: string;
-  createdBy: string;
+  /** Null for a client that registered itself (RFC 7591): no account owns it. */
+  accountId: string | null;
+  createdBy: string | null;
   name: string;
   description?: string | null;
   clientType: OAuthClientType;

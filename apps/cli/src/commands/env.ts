@@ -1,10 +1,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { splitHelp } from '../command-argv.ts';
 import {
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  fail,
+  missing,
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
@@ -35,21 +38,11 @@ change any secret's exposure — use \`kortix secrets delivery\` for that.
 `;
 
 export async function runEnv(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let outFlag: string | undefined;
@@ -62,8 +55,7 @@ export async function runEnv(argv: string[]): Promise<number> {
     fromFlag = takeFlagValue(rest, ['--from', '-f']);
     force = takeFlagBool(rest, ['--force']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
@@ -140,10 +132,7 @@ async function envPull(outArg: string | undefined, force: boolean, opts: CtxOpts
 }
 
 async function envPush(fromArg: string | undefined, opts: CtxOpts): Promise<number> {
-  if (!fromArg) {
-    process.stderr.write(`${status.err('Pass --from <dotenv-path>.')}\n`);
-    return 2;
-  }
+  if (!fromArg) return missing('--from <dotenv-path>');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 

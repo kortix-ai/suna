@@ -79,7 +79,7 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
-| `repositoryMode` | — | Set `'previous'` only after the user confirms they want to resume a preserved pre-replacement workspace. Git access remains disabled. |
+| `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
 events fill in the agent's reply.
@@ -97,7 +97,7 @@ need a running session. Each mirrors a method on the
 | Hook | Reads |
 |---|---|
 | `useProjectModels(projectId)` | Selectable models for the project. |
-| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) for capability-gated controls. |
+| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) and `managedPricingRoutes` customer price estimates for each eligible managed route. The server includes its configured markup; the serving route determines the final charge. |
 | `useVisibleAgents({ projectId })` | The project's visible agents. |
 | `useProjectConfig(projectId)` | The project's runtime config: default agent, commands. |
 | `useProjectSecrets(projectId)` | Secrets: list, add, remove, and personal overrides. |
@@ -128,6 +128,48 @@ import { prefetchSessionOpen } from '@kortix/sdk/react';
 />;
 ```
 
+## Render from cache on a reload
+
+Two stores keep what a user already saw, so a reload or a cold app start renders it
+in the first frame and refreshes it in place. Both are per user and bounded, and a
+host clears both on sign-out.
+
+- `createPersistedQueryCache` keeps the React Query results a user navigates by:
+  accounts, projects, project detail, the paged session list, and session rows
+  (`isPersistableQueryKey`). A restored entry keeps its original age, so it refetches
+  on mount. The default bounds are 1,000,000 characters and 7 days.
+- `createSavedCopyStore` keeps the last saved copies of transcripts that the server
+  sent. Register it with `setSavedCopyStore`, and `useSession` paints the kept copy
+  before the first frame. The server's copy then reconciles into it by message ID, and
+  the SDK re-reads it 3 seconds after each turn ends. The default bounds are 12
+  sessions, 1,500,000 characters, and 14 days. A copy over 300,000 characters keeps
+  its newest messages that fit; older messages load from the server when the user
+  scrolls up.
+
+```tsx
+import {
+  browserKeyValueStorage,
+  createPersistedQueryCache,
+  createSavedCopyStore,
+  isPersistableQueryKey,
+  setSavedCopyStore,
+} from '@kortix/sdk';
+
+const storage = browserKeyValueStorage(); // null where there is no localStorage
+if (storage) {
+  const cache = createPersistedQueryCache({ storage, userId, shouldPersist: isPersistableQueryKey });
+  cache.restore(queryClient); // synchronous with localStorage: no pending frame
+  const stop = cache.persist(queryClient);
+  setSavedCopyStore(createSavedCopyStore({ storage, userId }));
+}
+```
+
+On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
+
+The saved-copy store keeps only server captures: the transcript mirror that the API
+writes when a turn ends. The live transcript is never written to the device, so a
+stopped turn cannot come back as a running one.
+
 ## Sign-out and account switching
 
 The SDK keeps per-user session state in memory: transcripts, pending questions
@@ -150,6 +192,11 @@ supabase.auth.onAuthStateChange((event, session) => {
 does not clear the host's own caches, such as React Query, or the token source
 passed to `createKortix`. Reset those in the same handler. It never throws.
 
+With the stores from [Render from cache on a reload](#render-from-cache-on-a-reload),
+clear them in the same handler: `await cache.clear()`, then
+`await savedCopies.clear()` and `setSavedCopyStore(null)`. Neither store ever
+restores data for a different user, but a signed-out device should not keep it.
+
 ## Next
 
 - [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.
@@ -158,14 +205,20 @@ passed to `createKortix`. Reset those in the same handler. It never throws.
 
 ## Saved history during startup
 
-Enable **Session Transcript History** in a project's **Settings → Feature flags** to let
-`useSession(projectId, sessionId)` show saved chat history while its computer starts.
+**Session Transcript History** is on by default: `useSession(projectId, sessionId)` shows
+saved chat history while its computer starts. A project can turn it off in
+**Settings → Feature flags**.
 The SDK reads the database independently of runtime readiness. Live messages then reconcile
 by their original IDs. Hosts do not need a separate history request or message store.
 
-This flag is off by default. Sessions without saved history use the existing runtime read.
-The initial history window contains the last 40 messages. Older-message loading and attachments
-that require the computer become available when the runtime is ready.
+Sessions of a project that turned the flag off use the existing runtime read.
+Saved history renders exactly like the live transcript: text, reasoning, and every tool call
+with its input, output and error. A sub-agent's full view reads the sub-agent's own saved
+transcript: pass the parent's scope and `savedChild: true` to
+`useSessionSync(subAgentSessionId, { kortixSessionScope, savedChild: true })`. The initial window contains the newest 40 messages, at
+most 1,000,000 characters. Scrolling up loads older windows from saved history, also while
+the computer is off. Attachments that require the computer become available when the
+runtime is ready.
 
 `savedTranscript` tells a host what to render while the computer starts. It is `loading` while
 a saved copy may still arrive, `shown` once messages are in `messages`, and `none` when nothing

@@ -8,6 +8,7 @@ test-results/
 .turbo/
 .expo/
 
+.agents/
 .claude/
 .kortix/
 **/templates/**/.kortix/

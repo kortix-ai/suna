@@ -15,7 +15,11 @@
     "selectInstallation": "选择安装",
     "manifestRequirement": "新仓库的默认分支需要包含 {manifest}。请先停止活动会话并关闭未完成的变更请求。",
     "cancel": "取消",
-    "changing": "正在更改…"
+    "changing": "正在更改…",
+    "searchBranches": "搜索分支…",
+    "loadingBranches": "正在加载分支…",
+    "noBranches": "没有匹配的分支。",
+    "moreBranches": "还有 {count} 个。输入以筛选。"
   },
   "pooledSecrets": {
     "saveChanges": "保存更改",
@@ -1143,6 +1147,14 @@
         "agent_principal": {
           "name": "代理作为主体",
           "description": "代理以自身身份执行操作：使用其 Kortix 权限，并受其角色上限约束。运行代理的人只会提供自己的账户。"
+        },
+        "config_releases": {
+          "name": "配置发布",
+          "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"
+        },
+        "mcp": {
+          "name": "MCP 服务器",
+          "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
         }
       }
     },
@@ -1439,6 +1451,7 @@
       "createAccount": "创建账户…",
       "settings": "设置",
       "downloadApp": "下载应用",
+      "connectMcp": "连接 MCP",
       "logOut": "退出登录",
       "find": "查找项目…",
       "accountSettings": "账户设置",
@@ -1639,11 +1652,6 @@
     "previousRepository": {
       "title": "此会话已过时",
       "message": "此会话开始后项目已更改。请更新以继续在最新版本上工作。",
-      "unavailable": "先前的工作区已不可用。请在当前仓库中启动新会话。",
-      "resume": "恢复先前的工作区",
-      "resuming": "正在恢复…",
-      "newSession": "启动新会话",
-      "delete": "删除会话",
       "update": "更新到最新",
       "updating": "正在更新…",
       "dismiss": "关闭",
@@ -9479,7 +9487,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。这些更改仅存在于此处，尚未包含在你的",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "版本中。提议这些更改以供审核和应用。",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "重命名...",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "分享...",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix 会话正在启动",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "新航站楼",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "文件视图",
@@ -18587,6 +18594,17 @@
       "textea5d0ffa0962": "共享账户由项目管理员连接。",
       "text3d6627454174": "设置凭据",
       "text929505ef815a": "尚未连接任何账户。在下方添加你自己的账户，或请项目管理员连接一个共享账户。",
+      "text931cb67e2af7": "无法加载新的智能体配置。此会话仍在使用较早的配置运行。",
+      "textd9ff3a72833d": "配置加载失败",
+      "textebfb07812fb4": "无法加载新的智能体配置",
+      "text4e62b29dd3b6": "此会话正在使用较早的配置运行。在基础分支发生变化之前，不会重试失败的配置。",
+      "textf81ab834de5f": "原因",
+      "text44cdf35701cd": "当前运行",
+      "text591f9f0f3259": "失败的发布",
+      "text00ed4c71dc2b": "最后可用的发布",
+      "textbd7a1a3b4141": "平台默认配置",
+      "text643df05476ab": "此会话正在使用平台默认配置运行。在基础分支发生变化之前，不会重试失败的配置。",
+      "text40652e008fc9": "无法加载新的智能体配置。此会话正在使用平台默认配置运行。",
       "text3312ddb06c1d": "在 Azure 中注册机器人，在此连接，然后将应用包上传到 Teams。",
       "text7f1b55a356b0": "在 Azure 中注册机器人",
       "text91004edf8b30": "将其连接到此项目",
@@ -18695,7 +18713,9 @@
       "texta0bcee97cbb3": "已确认内嵌结账",
       "text0b751a917c97": "已连接 GitHub 安装",
       "text8b7a8797d532": "已连接 Microsoft Teams 租户",
+      "text83c0e255d4bb": "已完成 Microsoft Teams 安装",
       "text17a8cf884e2a": "已连接 Slack 工作区",
+      "textf887cb0e6800": "已完成 Slack 应用安装",
       "textc7f9ec5ed69c": "已连接电脑隧道代理",
       "textafd58fcedeee": "已连接邮件收件箱",
       "text2eda12b4ed38": "已连接现有 GitHub App",
@@ -18952,6 +18972,7 @@
       "text60954a626cee": "已撤销 LLM 网关密钥",
       "text32c1477a3336": "已撤销电脑隧道权限",
       "text953488439740": "已撤销连接器账户",
+      "texte817b7da7436": "已共享私有连接器账户",
       "text538cb0effaea": "已撤销个人访问令牌",
       "text74be1c139903": "已撤销池化提供商密钥授权",
       "text6d3935be0516": "已撤销项目 CLI 令牌",
@@ -19162,17 +19183,51 @@
       "text8cc0d84b66bb": "预览了 Slack 身份链接",
       "text508b43cc4545": "预览了 Teams 身份链接",
       "text467f597e95b0": "已验证 SSO 域名",
-      "text8295f9d4861b": "已设置账户 SSO 域名验证"
+      "text8295f9d4861b": "已设置账户 SSO 域名验证",
+      "text7beaff63a7d3": "已下载项目配置归档",
+      "text5176d59f25fd": "已解析会话配置发布",
+      "text273c48dbf3b9": "已注册推送通知设备",
+      "textbb666ddf7a57": "已移除推送通知设备",
+      "text397ab5aecbbf": "已转发会话权限请求",
+      "text3ec6c235548a": "读取了 MCP 服务器元数据",
+      "text7740934de920": "注册了 OAuth 客户端",
+      "textcd36423ea12a": "调用了 MCP 服务器",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
       "description": "任何拥有此链接的人都无需登录即可查看。链接在你撤销之前一直有效。",
       "confirm": "创建链接"
     },
+    "publicTranscriptShare": {
+      "sectionTitle": "公开链接",
+      "sectionDescription": "任何拥有此链接的人都无需登录即可阅读此对话。",
+      "create": "创建公开链接",
+      "revokeDescription": "所有持有此链接的人将无法再加载此对话。之后你可以创建新链接。",
+      "rowMeta": "只读对话",
+      "unavailable": "此对话暂时不可用。",
+      "unavailableDescription": "暂时无法读取此对话。请稍后再试。",
+      "loadFailedDescription": "无法加载此对话。",
+      "empty": "暂无消息",
+      "savedCopy": "保存于 {date} 的副本"
+    },
     "chatIdentityConnect": {
       "chatAccount": "{service} 账户",
       "chatWorkspace": "{service} 工作区",
       "checking": "正在检查链接…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} 未连接",
+      "mismatch": "此安装是从另一个 Kortix 账户或为另一个项目发起的。请使用该账户登录，或从项目中重新开始安装。",
+      "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
+      "failed": "无法完成安装。请从项目中重新开始。",
+      "backToProject": "返回项目"
+    },
+    "secretIntakeWithheld": {
+      "title": "已保存，但 {agent} 暂时无法读取",
+      "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
+      "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
     }
   },
   "projectOnboarding": {
@@ -19287,7 +19342,17 @@
   },
   "commandPalette": {
     "title": "命令面板",
-    "description": "搜索要运行的命令..."
+    "description": "搜索要运行的命令...",
+    "copyTitle": "复制",
+    "copyEmail": "邮箱",
+    "copyUserId": "用户 ID",
+    "copyAccountId": "账户 ID",
+    "copyProjectId": "项目 ID",
+    "copySessionId": "会话 ID",
+    "copySessionLink": "会话链接",
+    "copyAction": "复制{label}",
+    "copied": "已复制{label}",
+    "copyFailed": "无法复制到剪贴板"
   },
   "personalWelcome": {
     "dismiss": "关闭",
@@ -20054,6 +20119,9 @@
     "providerError": "无法更新提供商访问权限。",
     "managedTitle": "Kortix 托管模型",
     "managedDescription": "使用 Kortix 额度计费的托管模型。无需 API 密钥。",
+    "pricingEstimate": "客户预估价格。实际费用取决于使用的路由。",
+    "pricingRoute": "{route}：每百万 token 输入 {input} / 缓存 {cacheRead} / 输出 {output}",
+    "pricingPreferred": "首选",
     "textImage": "文本 + 图像",
     "textOnly": "仅文本",
     "zdrTitle": "零数据保留",
@@ -20197,5 +20265,71 @@
     "verifiedToast": "域名已验证",
     "failedToast": "域名尚未验证",
     "enforceNeedsVerification": "请先验证域名。强制 SSO 仅适用于已验证的域名。"
+  },
+  "accessSharing": {
+    "everyone": "{project} 中的所有人",
+    "everyoneRoleNote": "每个人保留自己的项目角色。你选择的代理适用于 {project} 中的所有人。",
+    "shareTitle": "共享 {label}",
+    "shareDescription": "选择谁可以使用此账户。只选择自己即可仅供自己使用。",
+    "whoCanUse": "谁可以使用",
+    "add": "添加人员或组",
+    "everyoneDefaultMeta": "直到你添加一个组或一个人",
+    "everyoneMeta": "所有可以访问该项目的人",
+    "groupMeta": "组",
+    "memberMeta": "成员",
+    "remove": "移除 {name}",
+    "keep": "保留",
+    "removedMeta": "保存时移除",
+    "resultEveryone": "{project} 中的所有人都可以使用此账户。",
+    "resultNarrowed": "只有你选择的人可以在其私密会话中使用此账户。",
+    "save": "保存",
+    "saved": "访问权限已更新",
+    "saveFailed": "无法更新访问权限",
+    "manageAccess": "管理访问权限",
+    "sharedWith": "已与 {names} 共享",
+    "notSharedWithYou": "未与你共享",
+    "removeEveryoneTitle": "停止与所有人共享 {agent}？",
+    "removeEveryoneDescription": "只有被授予 {agent} 的人员和组可以继续使用。其他成员将失去访问权限。",
+    "removeEveryone": "停止共享",
+    "removed": "已移除",
+    "removeFailed": "无法移除访问权限",
+    "accountsTitle": "账户",
+    "addAccount": "添加账户",
+    "addAccountTitle": "添加 {connector} 账户",
+    "addAccountDescription": "为账户命名，并选择谁可以使用它。",
+    "onlyYou": "仅你自己",
+    "onlyYouDescription": "只有你可以在自己的私密会话中使用。",
+    "specificPeople": "特定人员或群组",
+    "specificPeopleDescription": "只有你选择的人员和群组，可在其私密会话中使用。",
+    "shareRequiresManage": "共享账户需要管理项目连接的权限。",
+    "nameTaken": "名为 {label} 的账户已存在。",
+    "noAccountsTitle": "还没有账户",
+    "noAccountsDescription": "添加账户后即可在会话中使用 {connector}。",
+    "visibilityEveryone": "整个项目",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "已保存为 {label}",
+    "connectFailed": "无法连接账户，请重试。",
+    "sharePrivateDescription": "选择还有谁可以使用你的账户。它会变为共享账户，项目的连接管理员也可以管理它。",
+    "ownerMeta": "你的账户"
+  },
+  "connectMcp": {
+    "title": "通过 MCP 连接 Kortix",
+    "description": "将此 URL 添加到 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端。首次使用时，客户端会请你登录 Kortix。无需安装。",
+    "urlLabel": "MCP URL",
+    "addToClient": "添加到你的客户端",
+    "other": "其他",
+    "claudeSteps": "在 Claude（网页版或桌面版）中打开 设置 → 连接器 → 添加自定义连接器，粘贴 URL 并登录。",
+    "claudeCodeHint": "然后在 Claude Code 中运行 /mcp 并登录。",
+    "otherHint": "ChatGPT（开发者模式）、VS Code、Windsurf 等客户端：使用上方 URL 添加远程 MCP 服务器，或使用此 JSON。",
+    "addToCursor": "添加到 Cursor",
+    "signInOnFirstUse": "首次使用时，Cursor 会请你登录 Kortix。",
+    "docs": "文档",
+    "done": "完成",
+    "copy": "复制"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "未验证的应用",
+    "unverifiedBody": "{client} 自行在 Kortix 注册。Kortix 尚未验证其运营方。仅当你正在亲自连接它时才允许。",
+    "redirectsTo": "完成后返回至"
   }
 }

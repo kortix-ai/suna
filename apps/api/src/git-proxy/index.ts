@@ -216,6 +216,8 @@ async function forwardAuthorized(
   scope: GitScope,
   suffix: string,
   body: ReadableStream<Uint8Array> | null,
+  /** The ref updates of a receive-pack, read by `gateReceivePack`. */
+  pushedRefs: readonly RefUpdate[] = [],
 ): Promise<Response> {
   const projectId = auth.project.projectId;
   const upstream = await resolveProjectUpstreamMemo(auth.project, scope);
@@ -307,6 +309,7 @@ async function forwardAuthorized(
   // provider(s) a session on this project will actually use (pinned provider =>
   // that one; no pin => every enabled provider).
   if (suffix === '/git-receive-pack' && res.status >= 200 && res.status < 300) {
+    notifyPushedBranches(projectId, pushedRefs);
     void (async () => {
       try {
         const gitProject = await loadGitProject({ row: auth.project });
@@ -428,6 +431,18 @@ async function forwardAuthorized(
   }
 
   return new Response(res.body, { status: res.status, headers: respHeaders });
+}
+
+/**
+ * Convergence trigger for a push through this proxy (spec, "Convergence
+ * triggers"). `notifyPushedRefs` filters the refs and rate-limits. Dynamic
+ * import: `projects/lib` is a heavy graph this module does not load eagerly.
+ */
+function notifyPushedBranches(projectId: string, updates: readonly RefUpdate[]): void {
+  if (updates.length === 0) return;
+  void import('../projects/lib/config-convergence-triggers')
+    .then((triggers) => triggers.notifyPushedRefs(projectId, updates))
+    .catch(() => {});
 }
 
 // ── ref policy on push ────────────────────────────────────────────────────
@@ -1053,7 +1068,14 @@ gitProxyApp.openapi(
     // point where both the principal and the refs it wants to move are known.
     const gated = await gateReceivePack(c, auth);
     if (gated instanceof Response) return gated;
-    const res = await forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
+    const res = await forwardAuthorized(
+      c,
+      auth,
+      'write',
+      '/git-receive-pack',
+      gated.body,
+      gated.updates,
+    );
     // Every ref's old → new sha on the push's row. An HTTP 2xx means the
     // upstream accepted the transfer; its per-ref report-status is not parsed.
     annotateGitTransfer({

@@ -11,8 +11,8 @@
 --
 -- Then: `pnpm migrate:create drop_public_wallet_wrappers`, paste the body below
 -- under the generated header, delete this file, and update:
---   - tests/migration/credit-rpc-overloads.test.ts (the public.* assertions),
---   - apps/api/src/__tests__/billing/atomic-use-credits-overload.test.ts (WRAPPER),
+--   - tests/migration/credit-rpc-overloads.test.ts (the public.* assertions,
+--     including the atomic_use_credits wrapper rows),
 --   - packages/db/scripts/atomic-use-credits-balance-guard.integration.test.ts
 --     (call kortix_wallet.debit_credits directly),
 --   - tests/src/flows/security-backlog.flow.ts SEC-K (a dropped name answers

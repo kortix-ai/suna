@@ -12,9 +12,12 @@ import { OutcomeCard } from '@/features/session/outcomes/outcome-card';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
-import { KeyIcon, PlugIcon } from '@phosphor-icons/react';
-import React, { useCallback, useMemo, useState } from 'react';
-import { ConnectorIntake } from './connector-intake';
+import { cn } from '@/lib/utils';
+import { CheckIcon, KeyIcon, PlugIcon } from '@phosphor-icons/react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { ConnectorAppMark, ConnectorHandshake } from './connector-handshake';
+import { ConnectorConnectModal } from './connector-connect-modal';
+import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
 import { SecretIntakeForm } from './secret-intake-form';
 import { onSetupLinkModalClose } from './setup-link-close-finalize';
 import { setupLinkChipLabel, type SetupLinkKind } from './util';
@@ -38,6 +41,24 @@ const COPY = {
     doneStatus: 'Connected',
   },
 } as const satisfies Record<SetupLinkKind, unknown>;
+
+/** Card and modal titles once the link says which app, and for which project. */
+const CONNECTOR_TITLES = {
+  app: 'Connect {app}',
+  appToProject: 'Connect {app} to {project}',
+} as const;
+
+/**
+ * True inside a table cell or a list item. A setup link there shares its line
+ * with other content (see `components/markdown/setup-link-blocks.ts`, which
+ * lifts the links that do not), so it renders as an inline chip, not a card.
+ */
+export const SetupLinkInlineContext = createContext(false);
+
+/** "Connect HubSpot" → "HubSpot": the app a link's own text names, if any. */
+function appFromLabel(label: string): string {
+  return label.replace(/^connect\s+/i, '').trim() || label;
+}
 
 function textOf(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return '';
@@ -89,11 +110,29 @@ export function SetupLinkButton({
    * the GET response, which is an API change.
    */
   const [settled, setSettled] = useState(false);
+  const inline = useContext(SetupLinkInlineContext);
   const localizedCopy = useLocalizedUiCatalog(COPY);
+  const titles = useLocalizedUiCatalog(CONNECTOR_TITLES);
   const copy = localizedCopy[kind];
   const Icon = copy.icon;
   const pending = token === null;
-  const label = setupLinkChipLabel(textOf(children), token ?? '', copy.fallback);
+  const agentLabel = setupLinkChipLabel(textOf(children), token ?? '', copy.fallback);
+
+  // The link names its app and project; the agent's own text does not always
+  // ("Connect", or a bare URL). Until the GET answers, the agent's label stands.
+  const info = useConnectorLinkInfo(kind === 'connector' ? token : null);
+  const headline = info ? connectorHeadline(info) : null;
+  const headlineApp = headline?.app ?? null;
+  const headlineProject = headline?.project ?? null;
+  const appName = headlineApp ?? appFromLabel(agentLabel);
+  const label =
+    headlineApp === null
+      ? agentLabel
+      : (headlineProject ? titles.appToProject : titles.app)
+          .replace('{app}', headlineApp)
+          .replace('{project}', headlineProject ?? '');
+  // `undefined` while the info loads (skeleton), `null` once known to have none.
+  const iconUrl = info === undefined ? undefined : (info?.icon_url ?? null);
 
   /** Stable so `ConnectorIntake`'s notify effect does not refire on every render. */
   const handleSettled = useCallback((): void => setSettled(true), []);
@@ -134,19 +173,68 @@ export function SetupLinkButton({
     [token, pending, label, settled, copy.doneStatus, copy.action, tI18nComplete],
   );
 
+  const card = inline ? (
+    <button
+      type="button"
+      data-testid={`setup-link-chip-${kind}`}
+      disabled={pending}
+      aria-busy={pending || undefined}
+      onClick={() => setOpen(true)}
+      className={cn(
+        'border-border bg-muted/50 text-foreground hover:bg-hover inline-flex max-w-full items-center gap-1.5',
+        'rounded-md border py-0.5 pr-2 pl-0.5 align-middle text-sm font-medium',
+        'transition-colors active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50',
+      )}
+    >
+      {kind === 'connector' ? (
+        <ConnectorAppMark name={appName} iconUrl={iconUrl} size="xs" />
+      ) : (
+        <span className="bg-kortix-orange/15 flex size-5 shrink-0 items-center justify-center rounded-sm">
+          <Icon weight="fill" className="text-kortix-orange size-3" />
+        </span>
+      )}
+      <span className="truncate">{label}</span>
+      {settled ? (
+        <CheckIcon weight="bold" className="text-kortix-green size-3.5 shrink-0" />
+      ) : (
+        <span className="bg-kortix-orange size-1.5 shrink-0 rounded-full" />
+      )}
+    </button>
+  ) : (
+    <OutcomeCard
+      outcome={outcome}
+      index={0}
+      icon={Icon}
+      media={
+        kind === 'connector' ? (
+          <ConnectorHandshake name={appName} iconUrl={iconUrl} connected={settled} />
+        ) : undefined
+      }
+      actionVariant={settled ? 'outline' : 'default'}
+      pending={pending}
+      onOpen={() => setOpen(true)}
+      // The query container for `ConnectorHandshake`'s narrow layout. Below
+      // 28rem the title wraps to two lines instead of cutting off the app name.
+      titleClassName="@max-md/connect:line-clamp-2 @max-md/connect:whitespace-normal"
+      className="@container/connect my-2"
+    />
+  );
+
   return (
     <>
-      <OutcomeCard
-        outcome={outcome}
-        index={0}
-        icon={Icon}
-        actionVariant={settled ? 'outline' : 'default'}
-        pending={pending}
-        onOpen={() => setOpen(true)}
-        className="my-2"
-      />
+      {card}
 
-      {token !== null && (
+      {token !== null && kind === 'connector' ? (
+        <ConnectorConnectModal
+          token={token}
+          open={open}
+          onOpenChange={handleOpenChange}
+          onConnected={handleSettled}
+          fallbackName={appName}
+        />
+      ) : null}
+
+      {token !== null && kind === 'secret' ? (
         <Modal open={open} onOpenChange={handleOpenChange}>
           <ModalContent className="lg:max-w-lg">
             {/* `pr-12` keeps the text clear of the absolute close button (`top-3 right-3 size-8`). */}
@@ -156,15 +244,11 @@ export function SetupLinkButton({
             </ModalHeader>
 
             <ModalBody className="max-h-[60vh] overflow-y-auto">
-              {kind === 'secret' ? (
-                <SecretIntakeForm token={token} compact onDone={handleSettled} />
-              ) : (
-                <ConnectorIntake token={token} compact onConnected={handleSettled} />
-              )}
+              <SecretIntakeForm token={token} compact onDone={handleSettled} />
             </ModalBody>
           </ModalContent>
         </Modal>
-      )}
+      ) : null}
     </>
   );
 }

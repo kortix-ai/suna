@@ -173,9 +173,9 @@ mock.module('../channels/slack-api', () => ({
 // Keep the REAL buildAgentUnavailablePickerBlocks (so we assert the actual
 // picker blocks), but fake loadScopedChannelAgents so the recovery path never
 // reads a git mirror. Imported before the mock so the real exports survive.
-const realCommands = await import('../channels/slack/commands');
-mock.module('../channels/slack/commands', () => ({
-  ...realCommands,
+const realAgentPicker = await import('../channels/slack/agent-picker');
+mock.module('../channels/slack/agent-picker', () => ({
+  ...realAgentPicker,
   loadScopedChannelAgents: async () => scopedAgents,
 }));
 

@@ -94,6 +94,10 @@ export interface SlotCreds {
   serviceRoleKey: string;
   anonKey: string;
   jwtSecret: string;
+  /** Supabase Storage's S3 protocol key pair — the API's object store signs
+   *  config archive requests with it. `supabase status` prints both. */
+  s3AccessKeyId: string;
+  s3SecretAccessKey: string;
 }
 
 export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): SlotCreds {
@@ -103,6 +107,8 @@ export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): S
     serviceRoleKey: st.SERVICE_ROLE_KEY || '',
     anonKey: st.ANON_KEY || '',
     jwtSecret: st.JWT_SECRET || '',
+    s3AccessKeyId: st.S3_PROTOCOL_ACCESS_KEY_ID || '',
+    s3SecretAccessKey: st.S3_PROTOCOL_ACCESS_KEY_SECRET || '',
   };
 }
 
@@ -145,5 +151,7 @@ export function primaryCredsFromStatus(st: Record<string, string>): SlotCreds {
     serviceRoleKey: st.SERVICE_ROLE_KEY || '',
     anonKey: st.ANON_KEY || '',
     jwtSecret: st.JWT_SECRET || '',
+    s3AccessKeyId: st.S3_PROTOCOL_ACCESS_KEY_ID || '',
+    s3SecretAccessKey: st.S3_PROTOCOL_ACCESS_KEY_SECRET || '',
   };
 }

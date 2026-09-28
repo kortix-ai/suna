@@ -60,7 +60,7 @@ import {
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
@@ -177,7 +177,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // The SAME gate `open-bundle` applies, for the same reason: this stream
     // carries strictly the facts that route already serves, so it must not be

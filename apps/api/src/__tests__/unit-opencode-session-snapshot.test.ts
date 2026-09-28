@@ -1,11 +1,14 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 import type { ProjectSessionRow } from '../projects/lib/serializers';
-import { projectSessionMetadataMerge } from '../projects/lib/session-metadata-merge';
 
-// Mock the DB write and the sandbox session listing before importing the module.
+// Every write the sync makes. The rows below that write nothing assert it here.
+// The merge the real write performs is proven on PostgreSQL in
+// `integration-session-title-claim.test.ts`.
 const dbUpdates: Array<Record<string, unknown>> = [];
+const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({
+  ...realDb,
   db: {
     update: () => ({
       set: (values: Record<string, unknown>) => ({
@@ -50,37 +53,6 @@ async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<voi
 }
 
 describe('syncOpencodeSessionSnapshot', () => {
-  it('MERGES opencode_sessions in-SQL and never rewrites the rest of metadata', async () => {
-    dbUpdates.length = 0;
-    listResult = {
-      ok: true,
-      sessions: [{ id: 'ses_root', title: 'A Real Title', parentID: null }],
-    };
-    // A title the CAS commits between this pass's read and its write must
-    // survive: a read-modify-write of the whole object would drop it, and for a
-    // one-shot automation session nothing ever re-titles.
-    await syncOpencodeSessionSnapshot({
-      row: row({ metadata: { name: 'Set Up MS Graph' } } as Partial<ProjectSessionRow>),
-      externalId: 'ext',
-    });
-    expect(dbUpdates).toHaveLength(1);
-    expect(dbUpdates[0].metadata).toEqual(
-      projectSessionMetadataMerge({
-        opencode_sessions: [
-          {
-            id: 'ses_root',
-            title: 'A Real Title',
-            parent_id: null,
-            project_id: null,
-            created_at: null,
-            updated_at: null,
-            archived_at: null,
-          },
-        ],
-      }),
-    );
-  });
-
   it('no-ops when the snapshot is unchanged and on unreachable sandboxes', async () => {
     dbUpdates.length = 0;
     const existing = [
@@ -134,23 +106,46 @@ describe('scheduleOpencodeSnapshotSync', () => {
     expect(pendingSnapshotSyncs()).toBe(0);
   });
 
-  it('is best-effort — a sync failure never throws', async () => {
-    await expect(
-      (async () => {
-        scheduleOpencodeSnapshotSync(
-          { sessionId: 's2', projectId: 'p', externalId: 'ext', userId: 'u1' },
-          {
-            firstMs: 0,
-            retryMs: 0,
-            loadRow: async () => row({ sessionId: 's2' }),
-            sync: async () => {
-              throw new Error('sandbox unreachable');
-            },
+  // Bun does not fail a test on an unhandled rejection, so the listener is the
+  // proof that the scheduler catches a failed sync. The second schedule proves
+  // the failure released the per-session slot.
+  it('is best-effort — a failed sync is caught and frees the session for the next prompt', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      scheduleOpencodeSnapshotSync(
+        { sessionId: 's2', projectId: 'p', externalId: 'ext', userId: 'u1' },
+        {
+          firstMs: 0,
+          retryMs: 0,
+          loadRow: async () => row({ sessionId: 's2' }),
+          sync: async () => {
+            throw new Error('sandbox unreachable');
           },
-        );
-        await waitFor(() => pendingSnapshotSyncs() === 0);
-      })(),
-    ).resolves.toBeUndefined();
+        },
+      );
+      await waitFor(() => pendingSnapshotSyncs() === 0);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(unhandled).toEqual([]);
+
+      const calls: string[] = [];
+      scheduleOpencodeSnapshotSync(
+        { sessionId: 's2', projectId: 'p', externalId: 'ext', userId: 'u1' },
+        {
+          firstMs: 0,
+          retryMs: 0,
+          loadRow: async () => row({ sessionId: 's2' }),
+          sync: async ({ row: r }: { row: ProjectSessionRow }) => {
+            calls.push(r.sessionId);
+            return r;
+          },
+        },
+      );
+      await waitFor(() => calls.length === 2 && pendingSnapshotSyncs() === 0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   // REGRESSION (staging release gate, SESS-10). The scheduler used to drop the

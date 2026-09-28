@@ -111,3 +111,15 @@ describe('a session offers only keys it can use when it runs', () => {
     expect(own).toContain('Using your default ChatGPT connection');
   });
 });
+
+test('a ChatGPT account whose login stopped working says so where a session selects it', () => {
+  const chatGpt = (label: string, needsReauthAt: string | null) =>
+    ({ ...key(label), provider_id: 'codex', name: 'CODEX_AUTH_JSON', needs_reauth_at: needsReauthAt });
+  const html = render({
+    resources: [chatGpt('ChatGPT · Work', '2026-09-25T10:00:00.000Z'), chatGpt('ChatGPT · Home', null)],
+    providerId: 'codex',
+  });
+  expect(html).toContain('ChatGPT · Work');
+  expect(html).toContain('ChatGPT · Home');
+  expect(html.match(/Needs reconnection/g)).toHaveLength(1);
+});

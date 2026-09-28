@@ -39,12 +39,14 @@ flow(
     };
     const owner = ctx.client.as(ctx.P.OWNER);
     await ctx.step(
-      "the default flag rejects early history with 403",
+      "history is on by default: a project that never set the flag reads its stored messages while stopped",
       async () => {
         (await owner.get(route, options))
-          .status(403)
+          .status(200)
           .body()
-          .has("$.code", "feature_disabled");
+          .has("$.source", "mirror")
+          .has("$.available", true)
+          .has("$.message_count", 2);
       },
     );
     await ctx.step(
@@ -72,6 +74,57 @@ flow(
             "$.messages[1].parts[0].text",
             "This reply is stored in the database.",
           );
+      },
+    );
+    await ctx.step(
+      "a sub-agent's saved transcript is its own window, and the conversation never includes it",
+      async () => {
+        const child = "ses_subagentwindow";
+        const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        await db.connect();
+        try {
+          const info = {
+            id: "msg_subagent_000000000000001",
+            sessionID: child,
+            role: "user",
+            time: { created: Date.now() - 30_000 },
+          };
+          await db.query(
+            "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,'user',$4,$5,$6)",
+            [
+              sessionId,
+              info.id,
+              child,
+              new Date(info.time.created),
+              JSON.stringify(info),
+              JSON.stringify([{ id: "prt_subagent", type: "text", text: "List the files." }]),
+            ],
+          );
+        } finally {
+          await db.end();
+        }
+        (await owner.get(route, options))
+          .status(200)
+          .body()
+          .has("$.message_count", 2)
+          .has("$.total", 2);
+        (await owner.get(route, { ...options, query: { ...options.query, child } }))
+          .status(200)
+          .body()
+          .has("$.available", true)
+          .has("$.opencode_session_id", child)
+          .has("$.message_count", 1)
+          .has("$.messages[0].parts[0].text", "List the files.");
+        (
+          await owner.get(route, { ...options, query: { ...options.query, child: "not-a-session" } })
+        ).status(400);
+        (
+          await owner.get(route, { ...options, query: { ...options.query, child: "ses_nothingsaved" } })
+        )
+          .status(200)
+          .body()
+          .has("$.available", false)
+          .has("$.message_count", 0);
       },
     );
     await ctx.step(
@@ -337,13 +390,14 @@ flow(
         )
       ).status(200);
     await ctx.step(
-      "attachments require authentication and the explicit project flag",
+      "attachments require authentication and the project flag, which a project can turn off",
       async () => {
         (
           await ctx.client
             .as(ctx.P.ANON)
             .request("POST", upload, { params, body: form() })
         ).status(401);
+        await setFlag(false);
         (await owner.request("POST", upload, { params, body: form() }))
           .status(403)
           .body()

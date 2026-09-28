@@ -45,6 +45,14 @@ export interface MessageWithPartsLike {
 export interface TurnLike<M extends MessageWithPartsLike = MessageWithPartsLike> {
   userMessage: M;
   assistantMessages: M[];
+  /**
+   * The prompt that started this turn is not loaded: a bounded transcript
+   * window began mid-run, so only the replies are here. `userMessage` is a
+   * stand-in with the prompt's id, the `user` role, and no parts. Render the
+   * replies without a prompt row. When the prompt loads, the turn keeps this
+   * id and becomes an ordinary turn.
+   */
+  partial?: true;
 }
 
 /** A part paired with the message it belongs to. */

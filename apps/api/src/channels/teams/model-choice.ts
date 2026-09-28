@@ -29,7 +29,10 @@ import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { type TeamsConversationSession, conversationSession, teamsChannelCtx } from './binding';
 import { buildModelPickerCard, buildNoticeCard } from './cards';
 import { normalizeConversationPolicy } from './participants';
-import { resolveTeamsActor, teamsUserId } from './identity';
+import { teamsUserId } from './identity';
+import { chatUser, resolveChatActor } from '../core/identity';
+import { authorizeChannelChange } from '../core/settings';
+import { teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
 import type { TeamsActivity } from './types';
 import { isPersonalChat } from './util';
 
@@ -48,7 +51,7 @@ export async function teamsModelScope(activity: TeamsActivity, tenantId: string,
   const gate = await channelModelContext(ctx);
   if (!gate) return null;
   const sender = config.TEAMS_REQUIRE_USER_IDENTITY ? teamsUserId(activity) : null;
-  const actor = sender ? await resolveTeamsActor(tenantId, sender, gate.accountId, gate.projectId).catch(() => null) : null;
+  const actor = sender ? await resolveChatActor(chatUser('teams', tenantId, sender), gate).catch(() => null) : null;
   const pooledEnabled = await projectFeatureFlagEnabled(gate.projectId, 'pooled_provider_secrets').catch(() => false);
   return channelModelScope({
     ...gate,
@@ -98,6 +101,11 @@ export async function applyTeamsModelChoice(
   const id = choice.trim();
   const scope = await teamsModelScope(activity, tenantId, conversationId);
   if (!scope) return buildNoticeCard('Connect a project to this conversation first.');
+  const auth = await authorizeChannelChange(
+    chatUser('teams', tenantId, teamsUserId(activity) ?? ''),
+    teamsSettingsChannel(activity, tenantId, conversationId),
+  );
+  if (!auth.ok) return buildNoticeCard(teamsSettingsRefusal(auth.reason, 'Connect a project to this conversation first.'));
   const reset = !id || id.toLowerCase() === 'default';
   // Native mode (gateway off): no gateway catalog — accept a native
   // `provider/model` ref verbatim. A choice waits for the next session.

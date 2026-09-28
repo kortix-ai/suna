@@ -53,10 +53,11 @@ A group is a principal, exactly like a person. Assign a role to a group at a sco
 
 ## Object assignments
 
-An assignment can name one object inside a project: an `agent`, a `skill`, a `secret`, an `app`, or a `trigger`. Kortix enforces object assignments on agents and skills today.
+An assignment can name one object inside a project: an `agent`, a `skill`, a `secret`, an `app`, a `trigger`, or a `connection` (a shared connector account). Kortix enforces object assignments on agents, skills, and connections today.
 
-- **Agents are closed by default.** A member reaches an agent only when an assignment names them, or names one of their groups.
-- **Every other object type is open by default.** With no assignment on the object, a member reaches it.
+- **Agents are closed by default.** A member reaches an agent only when an assignment names them, one of their groups, or everyone in the project.
+- **Every other object type is open by default.** With no assignment on the object, a member reaches it. A shared connector account with an assignment is usable only by the people it names — see [Choose who can use a shared account](/docs/connect/connectors#choose-who-can-use-a-shared-account).
+- **Everyone in the project is a principal too.** In the **Grant access** dialog, pick **Everyone in** followed by the project's name to give an agent to every member at once (`principal_type: "project"`, `principal_id` = the project id). It holds object assignments only — never a role — so each person keeps their own project role.
 - **An object assignment restricts a project manager too.** That is what makes "scope this agent to the finance group" mean anything. What the manager role buys is the unscoped default, not an exemption.
 - **Account owners and admins are never restricted by an object assignment**, and neither is a service account acting on its own assignments.
 
@@ -127,7 +128,7 @@ Each one narrows access to one resource. None of them grants a permission the ro
 
 The catalog is data, not a hardcoded list. Each permission carries its `action`, `scope_type`, `resource_type`, `delegable` flag, `description`, `area`, `level`, and `implies`. Read it instead of hardcoding action strings.
 
-The write routes choose the permission they require from what you are granting: `project.members.manage` for a project role or an object assignment, `member.update` for an account role, `policy.create` for a custom role. You cannot side-step a ceiling by picking a different route.
+The write routes choose the permission they require from what you are granting: `project.members.manage` for a project role or an object assignment, `project.connector.connections.manage` for a `connection` assignment, `member.update` for an account role, `policy.create` for a custom role. You cannot side-step a ceiling by picking a different route.
 
 ## Branding
 

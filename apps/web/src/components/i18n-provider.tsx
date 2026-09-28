@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { catalogHref } from '@/i18n/catalog-href';
-import { getLoadedCatalog, loadClientCatalog, type MessageTree } from '@/i18n/client-catalog';
+import { loadClientCatalog, type MessageTree } from '@/i18n/client-catalog';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
 import { getUserLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
 import { serverMessagesRegistry } from '@/i18n/server-registry';
@@ -73,10 +73,21 @@ function CatalogProvider({
   children: ReactNode;
   initialLocale: Locale;
 }) {
+  // Always call `use` on the client. Never short-circuit it with a direct
+  // cache read of an already-loaded catalog.
+  //
+  // React suspends this component on the first client render, then replays it
+  // with the rerender dispatcher (ReactFiberHooks `useThenable`). `use` switches
+  // the dispatcher back to mount/update when no hooks remain from the suspended
+  // attempt. A skipped `use` leaves the rerender dispatcher in place, so the
+  // first `useState` throws minified React error #467 ("Update hook called on
+  // initial render") during hydration. When the catalog is already loaded,
+  // `loadClientCatalog` resolves synchronously, so `use` returns without
+  // suspending and the fast path is preserved.
   const initialCatalog =
     typeof window === 'undefined'
       ? serverCatalog(initialLocale)
-      : (getLoadedCatalog(initialLocale) ?? use(hydrationCatalog(initialLocale)));
+      : use(hydrationCatalog(initialLocale));
 
   const { user } = useAuth();
   const [locale, setLocale] = useState<Locale>(initialLocale);

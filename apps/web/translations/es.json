@@ -15,7 +15,11 @@
     "selectInstallation": "Seleccionar instalación",
     "manifestRequirement": "El repositorio nuevo necesita {manifest} en su rama predeterminada. Primero detén las sesiones activas y cierra las solicitudes de cambio abiertas.",
     "cancel": "Cancelar",
-    "changing": "Cambiando…"
+    "changing": "Cambiando…",
+    "searchBranches": "Buscar ramas…",
+    "loadingBranches": "Cargando ramas…",
+    "noBranches": "No hay ninguna rama que coincida.",
+    "moreBranches": "{count} más. Escribe para filtrar."
   },
   "pooledSecrets": {
     "saveChanges": "Guardar cambios",
@@ -1143,6 +1147,14 @@
         "agent_principal": {
           "name": "Agentes como principales",
           "description": "Los agentes actúan como sí mismos: con sus permisos de Kortix, limitados por su rol. Quien ejecuta un agente solo aporta sus propias cuentas."
+        },
+        "config_releases": {
+          "name": "Versiones de configuración",
+          "description": "Ejecuta las sesiones con la configuración de agente actual de la rama base, servida en solo lectura, para que un agente, skill o herramienta fusionado llegue a cada sesión en curso. Desactivado, cada sesión lee su propia carpeta de configuración del workspace."
+        },
+        "mcp": {
+          "name": "Servidor MCP",
+          "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
         }
       }
     },
@@ -1439,6 +1451,7 @@
       "createAccount": "Crear una cuenta…",
       "settings": "Ajustes",
       "downloadApp": "Descargar aplicación",
+      "connectMcp": "Conectar MCP",
       "logOut": "Cerrar sesión",
       "find": "Buscar un proyecto…",
       "accountSettings": "Configuración de la cuenta",
@@ -1639,11 +1652,6 @@
     "previousRepository": {
       "title": "Esta sesión está desactualizada",
       "message": "El proyecto cambió después de que empezara esta sesión. Actualízala para seguir trabajando con la versión más reciente.",
-      "unavailable": "El espacio de trabajo anterior ya no está disponible. Inicia una sesión nueva en el repositorio actual.",
-      "resume": "Reanudar espacio anterior",
-      "resuming": "Reanudando…",
-      "newSession": "Iniciar sesión nueva",
-      "delete": "Eliminar sesión",
       "update": "Actualizar a lo último",
       "updating": "Actualizando…",
       "dismiss": "Descartar",
@@ -9479,7 +9487,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Estos cambios solo existen aquí; aún no están en tu",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "versión. Propón los cambios para que se revisen y apliquen.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Cambiar nombre…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Comparte…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "La sesión de Kortix se está iniciando",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Nueva terminal",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Vista de archivos",
@@ -18587,6 +18594,17 @@
       "textea5d0ffa0962": "Un responsable del proyecto conecta la cuenta compartida.",
       "text3d6627454174": "Establecer credencial",
       "text929505ef815a": "Todavía no hay ninguna cuenta conectada. Añade la tuya a continuación o pide a un responsable del proyecto que conecte una compartida.",
+      "text931cb67e2af7": "No se pudo cargar la nueva configuración del agente. Esta sesión sigue usando una configuración anterior.",
+      "textd9ff3a72833d": "No se pudo cargar la configuración",
+      "textebfb07812fb4": "No se pudo cargar la nueva configuración del agente",
+      "text4e62b29dd3b6": "Esta sesión usa una configuración anterior. La configuración fallida no se reintenta hasta que cambie la rama base.",
+      "textf81ab834de5f": "Motivo",
+      "text44cdf35701cd": "En uso ahora",
+      "text591f9f0f3259": "Versión fallida",
+      "text00ed4c71dc2b": "Última versión que funcionó",
+      "textbd7a1a3b4141": "La configuración predeterminada de la plataforma",
+      "text643df05476ab": "Esta sesión usa la configuración predeterminada de la plataforma. La configuración fallida no se reintenta hasta que cambie la rama base.",
+      "text40652e008fc9": "No se pudo cargar la nueva configuración del agente. Esta sesión usa la configuración predeterminada de la plataforma.",
       "text3312ddb06c1d": "Registra un bot en Azure, conéctalo aquí y luego sube el paquete de la app a Teams.",
       "text7f1b55a356b0": "Registrar el bot en Azure",
       "text91004edf8b30": "Conectarlo a este proyecto",
@@ -18695,7 +18713,9 @@
       "texta0bcee97cbb3": "Pago integrado confirmado",
       "text0b751a917c97": "Instalación de GitHub conectada",
       "text8b7a8797d532": "Inquilino de Microsoft Teams conectado",
+      "text83c0e255d4bb": "Instalación de Microsoft Teams completada",
       "text17a8cf884e2a": "Espacio de trabajo de Slack conectado",
+      "textf887cb0e6800": "Instalación de la app de Slack completada",
       "textc7f9ec5ed69c": "Agente del túnel de equipo conectado",
       "textafd58fcedeee": "Bandeja de entrada de correo conectada",
       "text2eda12b4ed38": "GitHub App existente conectada",
@@ -18952,6 +18972,7 @@
       "text60954a626cee": "Clave de la pasarela de LLM revocada",
       "text32c1477a3336": "Permiso del túnel de equipo revocado",
       "text953488439740": "Cuenta de conector revocada",
+      "texte817b7da7436": "Cuenta de conector privada compartida",
       "text538cb0effaea": "Token de acceso personal revocado",
       "text74be1c139903": "Concesión de clave de proveedor agrupada revocada",
       "text6d3935be0516": "Token de CLI del proyecto revocado",
@@ -19162,17 +19183,51 @@
       "text8cc0d84b66bb": "Enlace de identidad de Slack previsualizado",
       "text508b43cc4545": "Enlace de identidad de Teams previsualizado",
       "text467f597e95b0": "Dominio SSO verificado",
-      "text8295f9d4861b": "Verificación del dominio SSO de la cuenta establecida"
+      "text8295f9d4861b": "Verificación del dominio SSO de la cuenta establecida",
+      "text7beaff63a7d3": "Archivo de configuración del proyecto descargado",
+      "text5176d59f25fd": "Versión de configuración de la sesión resuelta",
+      "text273c48dbf3b9": "Dispositivo de notificaciones push registrado",
+      "textbb666ddf7a57": "Dispositivo de notificaciones push eliminado",
+      "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida",
+      "text3ec6c235548a": "Metadatos del servidor MCP leídos",
+      "text7740934de920": "Cliente OAuth registrado",
+      "textcd36423ea12a": "Servidor MCP llamado",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
       "description": "Cualquier persona con el enlace puede verlo sin iniciar sesión. El enlace sigue activo hasta que lo revoques.",
       "confirm": "Crear enlace"
     },
+    "publicTranscriptShare": {
+      "sectionTitle": "Enlace público",
+      "sectionDescription": "Cualquier persona con el enlace puede leer esta conversación sin iniciar sesión.",
+      "create": "Crear enlace público",
+      "revokeDescription": "La conversación deja de cargarse para todos los que tengan el enlace. Después puedes crear un enlace nuevo.",
+      "rowMeta": "Conversación de solo lectura",
+      "unavailable": "Esta conversación no está disponible temporalmente.",
+      "unavailableDescription": "No se puede leer la conversación en este momento. Inténtalo de nuevo en unos instantes.",
+      "loadFailedDescription": "No se pudo cargar la conversación.",
+      "empty": "Aún no hay mensajes",
+      "savedCopy": "Copia guardada del {date}"
+    },
     "chatIdentityConnect": {
       "chatAccount": "Cuenta de {service}",
       "chatWorkspace": "Espacio de trabajo de {service}",
       "checking": "Comprobando el enlace…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} no se conectó",
+      "mismatch": "Esta instalación se inició desde otra cuenta de Kortix o para otro proyecto. Inicia sesión con esa cuenta o vuelve a iniciar la instalación desde el proyecto.",
+      "expired": "Este enlace de instalación no es válido o ha caducado. Vuelve a iniciar la instalación desde el proyecto.",
+      "failed": "No se pudo completar la instalación. Vuelve a iniciarla desde el proyecto.",
+      "backToProject": "Volver al proyecto"
+    },
+    "secretIntakeWithheld": {
+      "title": "Guardado, pero {agent} aún no puede leerlo",
+      "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",
+      "allowlist": "{names} {count, plural, one {está} other {están}} fuera de los secretos de esta sesión. Inicia una nueva sesión para {count, plural, one {usarlo} other {usarlos}}."
     }
   },
   "projectOnboarding": {
@@ -19287,7 +19342,17 @@
   },
   "commandPalette": {
     "title": "Paleta de comandos",
-    "description": "Busca un comando para ejecutar..."
+    "description": "Busca un comando para ejecutar...",
+    "copyTitle": "Copiar",
+    "copyEmail": "correo electrónico",
+    "copyUserId": "ID de usuario",
+    "copyAccountId": "ID de cuenta",
+    "copyProjectId": "ID de proyecto",
+    "copySessionId": "ID de sesión",
+    "copySessionLink": "enlace de la sesión",
+    "copyAction": "Copiar {label}",
+    "copied": "Copiado: {label}",
+    "copyFailed": "No se pudo copiar al portapapeles"
   },
   "personalWelcome": {
     "dismiss": "Cerrar",
@@ -20054,6 +20119,9 @@
     "providerError": "No se pudo actualizar el acceso al proveedor.",
     "managedTitle": "Modelos gestionados por Kortix",
     "managedDescription": "Modelos gestionados que usan créditos de Kortix. No necesitas una clave API.",
+    "pricingEstimate": "Precio estimado para el cliente. La ruta utilizada determina el cargo.",
+    "pricingRoute": "{route}: {input} entrada / {cacheRead} caché / {output} salida por millón de tokens",
+    "pricingPreferred": "Preferida",
     "textImage": "Texto + imagen",
     "textOnly": "Solo texto",
     "zdrTitle": "Retención cero de datos",
@@ -20197,5 +20265,71 @@
     "verifiedToast": "Dominio verificado",
     "failedToast": "El dominio aún no está verificado",
     "enforceNeedsVerification": "Verifica primero el dominio. Exigir SSO solo se aplica a un dominio verificado."
+  },
+  "accessSharing": {
+    "everyone": "Todos en {project}",
+    "everyoneRoleNote": "Cada persona conserva su propio rol en el proyecto. Los agentes que elijas se aplican a todos en {project}.",
+    "shareTitle": "Compartir {label}",
+    "shareDescription": "Elige quién puede usar esta cuenta. Elige solo a ti para quedártela.",
+    "whoCanUse": "Quién puede usarla",
+    "add": "Añadir personas o grupos",
+    "everyoneDefaultMeta": "Hasta que añadas un grupo o una persona",
+    "everyoneMeta": "Todos con acceso al proyecto",
+    "groupMeta": "Grupo",
+    "memberMeta": "Miembro",
+    "remove": "Quitar a {name}",
+    "keep": "Mantener",
+    "removedMeta": "Se quita al guardar",
+    "resultEveryone": "Todos en {project} pueden usar esta cuenta.",
+    "resultNarrowed": "Solo las personas que elegiste pueden usar esta cuenta, en sus sesiones privadas.",
+    "save": "Guardar",
+    "saved": "Acceso actualizado",
+    "saveFailed": "No se pudo actualizar el acceso",
+    "manageAccess": "Gestionar acceso",
+    "sharedWith": "Compartida con {names}",
+    "notSharedWithYou": "No compartida contigo",
+    "removeEveryoneTitle": "¿Dejar de compartir {agent} con todos?",
+    "removeEveryoneDescription": "Solo las personas y los grupos con {agent} asignado lo conservan. Los demás miembros pierden el acceso.",
+    "removeEveryone": "Dejar de compartir",
+    "removed": "Quitado",
+    "removeFailed": "No se pudo quitar el acceso",
+    "accountsTitle": "Cuentas",
+    "addAccount": "Añadir cuenta",
+    "addAccountTitle": "Añadir una cuenta de {connector}",
+    "addAccountDescription": "Ponle un nombre a la cuenta y elige quién puede usarla.",
+    "onlyYou": "Solo tú",
+    "onlyYouDescription": "Solo tú puedes usarla, en tus sesiones privadas.",
+    "specificPeople": "Personas o grupos concretos",
+    "specificPeopleDescription": "Solo las personas y los grupos que elijas, en sus sesiones privadas.",
+    "shareRequiresManage": "Para compartir una cuenta necesitas permiso para gestionar las conexiones del proyecto.",
+    "nameTaken": "Ya existe una cuenta llamada {label}.",
+    "noAccountsTitle": "Aún no hay ninguna cuenta",
+    "noAccountsDescription": "Añade una cuenta para usar {connector} en las sesiones.",
+    "visibilityEveryone": "Todo el proyecto",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Guardada como {label}",
+    "connectFailed": "No se pudo conectar la cuenta. Inténtalo de nuevo.",
+    "sharePrivateDescription": "Elige quién más puede usar tu cuenta. Pasa a ser una cuenta compartida, que también pueden gestionar quienes gestionan las conexiones del proyecto.",
+    "ownerMeta": "Tu cuenta"
+  },
+  "connectMcp": {
+    "title": "Conectar Kortix por MCP",
+    "description": "Añade esta URL a Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP. La primera vez, el cliente te pide iniciar sesión en Kortix. No hay nada que instalar.",
+    "urlLabel": "URL de MCP",
+    "addToClient": "Añádelo a tu cliente",
+    "other": "Otro",
+    "claudeSteps": "En Claude (web o escritorio), abre Configuración → Conectores → Añadir conector personalizado, pega la URL e inicia sesión.",
+    "claudeCodeHint": "Después ejecuta /mcp en Claude Code e inicia sesión.",
+    "otherHint": "ChatGPT (modo desarrollador), VS Code, Windsurf y otros clientes: añade un servidor MCP remoto con la URL de arriba o con este JSON.",
+    "addToCursor": "Añadir a Cursor",
+    "signInOnFirstUse": "Cursor te pide iniciar sesión en Kortix la primera vez.",
+    "docs": "Documentación",
+    "done": "Listo",
+    "copy": "Copiar"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "App no verificada",
+    "unverifiedBody": "{client} se registró sola en Kortix. Kortix no ha verificado quién la gestiona. Permítela solo si la estás conectando tú mismo ahora.",
+    "redirectsTo": "Te devuelve a"
   }
 }

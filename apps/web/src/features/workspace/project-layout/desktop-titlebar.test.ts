@@ -8,10 +8,10 @@ import { join } from 'node:path';
  * main process positions the macOS traffic lights, and the (remote) web app
  * positions everything else that shares the band with them. Nothing links the
  * two at build time, so the numbers were copied by hand — and drifted into
- * four disagreeing band heights (60px in main.js's comment, 52px for
- * `.kx-app-header`, 40px for the tab bar and both sidebar headers) with two
- * React components centering controls on a y=26 line while the lights sat at
- * y=30.
+ * four disagreeing band heights (60px in main.js's comment, 52px for the
+ * standalone-page breadcrumb header, 40px for the tab bar and both sidebar
+ * headers) with two React components centering controls on a y=26 line while
+ * the lights sat at y=30.
  *
  * window-chrome.js is now the one table. These tests fail if the CSS mirror or
  * a component stops agreeing with it.
@@ -342,7 +342,6 @@ describe('nothing re-hard-codes the band', () => {
     expect(scoped).not.toBeNull();
     for (const owner of [
       '.kx-titlebar-tabs',
-      '.kx-app-header',
       '.kx-project-sidebar-header',
       "[role='dialog']",
       "[role='menu']",

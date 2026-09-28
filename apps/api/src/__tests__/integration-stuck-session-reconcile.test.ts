@@ -8,8 +8,6 @@
 // usage / an in-flight turn) or still within the TTL is left untouched.
 //
 // Runs in the `db-suites` lane of `pnpm test` (one throwaway database per file).
-// Gated on TEST_DATABASE_URL + explicit confirmation + non-prod (it writes and
-// deletes rows); the lane fails the suite if the gate ever skips it.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { eq, inArray, sql } from 'drizzle-orm';
 import {
@@ -23,14 +21,6 @@ import {
   type Database,
 } from '@kortix/db';
 import { reconcileStuckActiveSessions } from '../projects/sandbox-reaper';
-
-const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
-const HAS_CONFIRMED_TEST_DB = Boolean(
-  process.env.TEST_DATABASE_URL &&
-  process.env.KORTIX_TEST_DB_CONFIRM === TEST_DB_CONFIRMATION &&
-  process.env.INTERNAL_KORTIX_ENV !== 'prod',
-);
-const describeWithDb = HAS_CONFIRMED_TEST_DB ? describe : describe.skip;
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000009301';
 const PROJECT_ID = '00000000-0000-4000-a000-000000009302';
@@ -137,7 +127,7 @@ async function statusOf(sessionId: string): Promise<string> {
   return row?.status ?? '<missing>';
 }
 
-describeWithDb('reconcileStuckActiveSessions (real DB)', () => {
+describe('reconcileStuckActiveSessions (real DB)', () => {
   beforeEach(cleanup);
   afterEach(cleanup);
 

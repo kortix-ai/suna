@@ -27,15 +27,7 @@ function deps(lost: LostTurn[], overrides: Partial<RuntimeRestartRecoveryDeps> =
   return { d, requeued, logs, reArmedSessions, drains };
 }
 
-describe('recoverTurnsAfterRuntimeRestart (SampleCo 2026-08-25: wake under an open turn)', () => {
-  test('a box with no open turn is untouched', async () => {
-    const { d, requeued, logs } = deps([]);
-    const result = await recoverTurnsAfterRuntimeRestart({ sandboxId: 'sb', sessionId: 'ses' }, d);
-    expect(result.lost).toEqual([]);
-    expect(requeued).toEqual([]);
-    expect(logs).toEqual([]);
-  });
-
+describe('recoverTurnsAfterRuntimeRestart (2026-08-25: wake under an open turn)', () => {
   test('every open turn is settled and each prompt it carried is redelivered DUE on a wake', async () => {
     const { d, requeued } = deps([
       { token: 't-active', messageId: 'msg_active', state: 'active' },
@@ -110,7 +102,7 @@ describe('recoverTurnsAfterRuntimeRestart (SampleCo 2026-08-25: wake under an op
 describe('recoverTurnsAfterRuntimeRestart — the runtime is back, so parked prompts go out', () => {
   test('re-arms this session and kicks the drain rather than waiting for the tick', async () => {
     const reArmed: string[] = [];
-    const { d, reArmedSessions, drains } = deps([], {
+    const { d, drains } = deps([], {
       reArmBlockedPrompts: async (sessionId) => {
         reArmed.push(sessionId);
         return 2;
@@ -120,19 +112,17 @@ describe('recoverTurnsAfterRuntimeRestart — the runtime is back, so parked pro
     expect(result.reArmed).toBe(2);
     expect(reArmed).toEqual(['ses']);
     expect(drains).toEqual([1]);
-    expect(reArmedSessions).toEqual([]);
   });
 
   test('a box that comes back with NOTHING to settle still re-arms — the user still sent it', async () => {
-    const { d, reArmedSessions } = deps([]);
+    const { d, requeued, logs, reArmedSessions, drains } = deps([]);
     const result = await recoverTurnsAfterRuntimeRestart({ sandboxId: 'sb', sessionId: 'ses' }, d);
+    // No open turn: nothing is settled, redelivered, or reported.
     expect(result.lost).toEqual([]);
+    expect(requeued).toEqual([]);
+    expect(logs).toEqual([]);
     expect(reArmedSessions).toEqual(['ses']);
-  });
-
-  test('nothing parked → no drain kick', async () => {
-    const { d, drains } = deps([]);
-    await recoverTurnsAfterRuntimeRestart({ sandboxId: 'sb', sessionId: 'ses' }, d);
+    // Nothing was parked, so there is nothing to kick the drain for.
     expect(drains).toEqual([]);
   });
 

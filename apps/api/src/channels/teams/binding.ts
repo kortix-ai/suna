@@ -1,7 +1,8 @@
-import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
+import { findChatThread } from '../core/threads';
 
 const PLATFORM = 'teams';
 
@@ -184,14 +185,6 @@ export async function ensureTeamsConversationBinding(input: {
   return true;
 }
 
-export async function setConversationProject(input: {
-  tenantId: string;
-  conversationId: string;
-  projectId: string;
-}): Promise<boolean> {
-  return ensureTeamsConversationBinding(input);
-}
-
 export interface TeamsConversationSession {
   sessionId: string;
   status: string | null;
@@ -220,18 +213,7 @@ export async function conversationSession(
   /** Only a session of this project counts (a per-project bot's scope). */
   projectId?: string,
 ): Promise<TeamsConversationSession | null> {
-  const [thread] = await db
-    .select({ sessionId: chatThreads.sessionId })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.platform, PLATFORM),
-        eq(chatThreads.workspaceId, tenantId),
-        eq(chatThreads.threadId, conversationId),
-        projectId ? eq(chatThreads.projectId, projectId) : undefined,
-      ),
-    )
-    .limit(1);
+  const thread = await findChatThread({ platform: PLATFORM, workspaceId: tenantId, threadId: conversationId }, projectId);
   if (!thread?.sessionId) return null;
   const [row] = await db
     .select({

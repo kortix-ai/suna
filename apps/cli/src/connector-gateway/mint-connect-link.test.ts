@@ -69,6 +69,27 @@ test('sends owner only when the caller names one', async () => {
   expect(posts[0].body).toMatchObject({ slug: 'gmail', owner: 'me' });
 });
 
+// The agent may suggest a name for the NEW account ("Dad's Gmail"); the human
+// sees it prefilled. Omitted unless named, for the same old-API reason as owner.
+test('sends the suggested account name only when the caller names one', async () => {
+  posts.length = 0;
+  await mintConnectLink({ slug: 'gmail' });
+  expect(posts[0].body).not.toHaveProperty('label');
+
+  posts.length = 0;
+  await mintConnectLink({ slug: 'gmail', label: "Dad's Gmail" });
+  expect(posts[0].body).toMatchObject({ slug: 'gmail', label: "Dad's Gmail" });
+});
+
+test('the provider fallback takes no label: it authorizes the slot account', async () => {
+  posts.length = 0;
+  setupLinkThrows = true;
+  await mintConnectLink({ slug: 'weird', label: 'Named' });
+  setupLinkThrows = false;
+  expect(posts.at(-1)?.path).toContain('/connectors/weird/connect');
+  expect(posts.at(-1)?.body).toEqual({});
+});
+
 test('carries owner onto the provider fallback too', async () => {
   posts.length = 0;
   setupLinkThrows = true;

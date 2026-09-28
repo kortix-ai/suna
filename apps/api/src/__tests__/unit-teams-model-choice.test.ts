@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Teams `/models`, `/model <id>` and the model card's buttons. The list and
 // every check run as the person who typed, with the conversation's personal
@@ -18,12 +19,19 @@ mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: 
 let actor: { userId: string } | { reason: string } = { userId: 'ivan' };
 const actorLookups: string[] = [];
 mock.module('../channels/teams/identity', () => ({
-  resolveTeamsActor: async (_tenant: string, sender: string) => {
-    actorLookups.push(sender);
-    return actor;
-  },
   teamsUserId: () => 'aad-ivan',
 }));
+// The same linked person decides the scope and, through core/settings.ts,
+// whether they may change this conversation's settings at all.
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+    resolveChatActor: async (user: { platformUserId: string }) => {
+      actorLookups.push(user.platformUserId);
+      return actor;
+    },
+    resolveProjectChatActor: async () => actor,
+  }),
+);
 
 let live: {
   sessionId: string;
@@ -46,6 +54,8 @@ let selection: Record<string, unknown> | null = null;
 const stored: Array<string | null> = [];
 mock.module('../channels/slack/selection', () => ({
   currentChannelSelection: async () => selection,
+  setChannelAgent: async () => ({ ok: true }),
+  setChannelConversationPolicy: async () => true,
   setChannelModel: async (_ctx: unknown, model: string | null) => {
     stored.push(model);
     return true;
@@ -181,7 +191,7 @@ describe('/model — a choice reaches the live session', () => {
     live = { sessionId: 'sess-1', agentName: null, createdBy: 'ivan' };
     actor = { reason: 'unlinked' };
     const card = await applyTeamsModelChoice(groupChat as never, 'tenant-1', 'a:synthetic-chat', 'glm-5.3-flash');
-    expect(cardText(card)).toContain('Link your Kortix account first');
+    expect(cardText(card)).toContain('Connect your Kortix account first');
     expect(stored).toHaveLength(0);
   });
 
@@ -235,13 +245,14 @@ describe('/model — a choice reaches the live session', () => {
     expect(cardText(card)).toContain('Send /new to start a session that is private to you');
   });
 
-  test('an unlinked person is never told about the owner`s own keys', async () => {
+  test('an unlinked person is never told about the owner`s own keys: they are asked to link, and nothing is checked or stored', async () => {
     actor = { reason: 'unlinked' };
     servableFor = () => false;
     const card = await applyTeamsModelChoice(personal as never, 'tenant-1', 'a:synthetic-chat', 'codex/gpt-6-astra');
-    expect(checks).toHaveLength(1);
-    expect(checks[0].scope).toMatchObject({ memberUserId: 'owner', personalUserId: null });
-    expect(cardText(card)).toContain("isn't available in this conversation");
+    expect(checks).toHaveLength(0);
+    expect(stored).toHaveLength(0);
+    expect(cardText(card)).toContain('Connect your Kortix account first');
+    expect(cardText(card)).not.toContain('your own API key');
   });
 
   test('`default` with a live session: new sessions use the default, the live one keeps its own model', async () => {

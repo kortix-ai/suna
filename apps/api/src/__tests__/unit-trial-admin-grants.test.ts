@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { createFakeWallet } from '../billing/wallet/fake';
+import { createFakeWallet } from './helpers/fake-wallet';
 
 // Trial-admin touches the DB (sweep queries) and the wallet. Stub both so the
 // grant semantics are exercised without a database.

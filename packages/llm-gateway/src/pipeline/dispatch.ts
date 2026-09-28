@@ -6,7 +6,7 @@ import type {
   UpstreamDescriptor,
 } from '../domain';
 import { ClientAbortError, UpstreamHttpError, isUnknownParameterRejection } from '../errors';
-import { type CallUpstreamOptions, type FetchImpl, callUpstream } from '../http';
+import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
 import { clampRetryAfterSeconds } from './error-response';
@@ -46,12 +46,6 @@ export interface DispatchPlan {
   defaultsFor?: (model: string) => ModelGenerationDefaults | undefined;
 }
 
-export type Send = (
-  body: Record<string, unknown>,
-  descriptor: UpstreamDescriptor,
-  opts: CallUpstreamOptions,
-) => Promise<Response>;
-
 export interface DispatchContext {
   requestId: string;
   logger: GatewayLogger;
@@ -60,8 +54,6 @@ export interface DispatchContext {
   /** Resolves a fallback model's candidates. Called only when the plan reaches that model. */
   resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (secretId: string, seconds: number) => Promise<void>;
-  /** The transport. Defaults to `callUpstream`. */
-  send?: Send;
 }
 
 interface DispatchProgress {
@@ -94,15 +86,11 @@ export function upstreamHeadersTimeoutMs(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
   streaming: boolean,
-  limits: { direct: number; syntheticStreaming: number } = {
-    direct: UPSTREAM_HEADERS_TIMEOUT_MS,
-    syntheticStreaming: SYNTHETIC_STREAMING_HEADERS_TIMEOUT_MS,
-  },
 ): number {
   const transportKind = resolveTransportKind(body, descriptor);
   const hasSyntheticStreamingHeaders =
     streaming && transportKind !== 'openai-compat' && transportKind !== 'custom';
-  return hasSyntheticStreamingHeaders ? limits.syntheticStreaming : limits.direct;
+  return hasSyntheticStreamingHeaders ? SYNTHETIC_STREAMING_HEADERS_TIMEOUT_MS : UPSTREAM_HEADERS_TIMEOUT_MS;
 }
 
 /**
@@ -240,7 +228,6 @@ export async function dispatch(
   ctx: DispatchContext,
 ): Promise<DispatchOutcome> {
   const { logger, requestId } = ctx;
-  const send = ctx.send ?? callUpstream;
   const primary = plan.candidates[0];
   if (!primary || !body) throw new Error('dispatch needs a request body and at least one candidate');
   const fallbackModels = fallbackModelsOf(plan);
@@ -293,7 +280,7 @@ export async function dispatch(
       upstreamHeadersTimeoutMs(payload, attempt.descriptor, payload.stream === true),
     );
     try {
-      const pending = send(payload, attempt.descriptor, { fetchImpl, signal: ctx.signal, requestId });
+      const pending = callUpstream(payload, attempt.descriptor, { fetchImpl, signal: ctx.signal, requestId });
       // The transport has serialized or translated the body synchronously up
       // to its first await; this frame no longer needs it.
       payload = null;

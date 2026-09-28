@@ -79,12 +79,6 @@ export const DB_SUITE_QUARANTINE: Readonly<Record<string, string>> = {
     'Needs a reachable S3-compatible bucket (KORTIX_PROJECT_SNAPSHOT_S3_*): the S3 round ' +
     'trip is the subject under test, and the lane provides only PostgreSQL. Run it by hand ' +
     'against local MinIO; un-quarantine when the lane can supply a bucket.',
-  'packages/db/scripts/migration-ledger-repair.integration.test.ts':
-    'The final pending-list check uses node-pg-migrate `dryRun`, which still runs a ' +
-    "pending migration's `pgm.db.query()` statements (first seen with " +
-    '20260818120000000_project_role_editor_to_manager.concurrent.ts), so the minimal ' +
-    'fixture schema fails on kortix.project_members. `migrate.ts status` uses the same ' +
-    'dry run. Fix: compute pending migrations without the runner, then use that here.',
 };
 
 export interface DbSuite {

@@ -15,7 +15,11 @@
     "selectInstallation": "Installation auswählen",
     "manifestRequirement": "Das neue Repository benötigt {manifest} auf seinem Standard-Branch. Beenden Sie zuerst aktive Sitzungen und schließen Sie offene Änderungsanfragen.",
     "cancel": "Abbrechen",
-    "changing": "Wird geändert…"
+    "changing": "Wird geändert…",
+    "searchBranches": "Branches durchsuchen…",
+    "loadingBranches": "Branches werden geladen…",
+    "noBranches": "Kein passender Branch.",
+    "moreBranches": "{count} weitere. Zum Filtern tippen."
   },
   "pooledSecrets": {
     "saveChanges": "Änderungen speichern",
@@ -1143,6 +1147,14 @@
         "agent_principal": {
           "name": "Agenten als Prinzipale",
           "description": "Agenten handeln als sie selbst: mit ihren Kortix-Berechtigungen, begrenzt durch ihre Rolle. Wer einen Agenten ausführt, bringt nur die eigenen Konten ein."
+        },
+        "config_releases": {
+          "name": "Config-Releases",
+          "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
+        },
+        "mcp": {
+          "name": "MCP-Server",
+          "description": "Verbinde Claude, ChatGPT, Cursor, Codex oder einen anderen MCP-Client per OAuth mit diesem Projekt. Der Client meldet sich als du an und ruft Kortix mit deinen Berechtigungen auf. Die URL findest du unter „MCP verbinden“ im Workspace-Menü."
         }
       }
     },
@@ -1439,6 +1451,7 @@
       "createAccount": "Konto erstellen…",
       "settings": "Einstellungen",
       "downloadApp": "App herunterladen",
+      "connectMcp": "MCP verbinden",
       "logOut": "Abmelden",
       "find": "Projekt suchen…",
       "accountSettings": "Kontoeinstellungen",
@@ -1639,11 +1652,6 @@
     "previousRepository": {
       "title": "Diese Sitzung ist veraltet",
       "message": "Das Projekt hat sich seit dem Start dieser Sitzung geändert. Aktualisiere sie, um mit der neuesten Version weiterzuarbeiten.",
-      "unavailable": "Der vorherige Arbeitsbereich ist nicht mehr verfügbar. Starte eine neue Sitzung im aktuellen Repository.",
-      "resume": "Vorherigen Arbeitsbereich fortsetzen",
-      "resuming": "Wird fortgesetzt…",
-      "newSession": "Neue Sitzung starten",
-      "delete": "Sitzung löschen",
       "update": "Auf neuesten Stand bringen",
       "updating": "Wird aktualisiert…",
       "dismiss": "Schließen",
@@ -9479,7 +9487,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": ". Diese Änderungen existieren nur hier; sie sind noch nicht in deiner",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "Version. Schlage die Änderungen vor, damit sie geprüft und übernommen werden.",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "Umbenennen…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "Teilen…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix-Sitzung wird gestartet",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "Neues Terminal",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "Dateiansicht",
@@ -18587,6 +18594,17 @@
       "textea5d0ffa0962": "Ein Projektmanager verbindet das gemeinsame Konto.",
       "text3d6627454174": "Anmeldedaten festlegen",
       "text929505ef815a": "Es ist noch kein Konto verbunden. Fügen Sie unten Ihr eigenes hinzu, oder bitten Sie einen Projektmanager, ein gemeinsames Konto zu verbinden.",
+      "text931cb67e2af7": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft weiter mit einer früheren Konfiguration.",
+      "textd9ff3a72833d": "Konfiguration nicht geladen",
+      "textebfb07812fb4": "Die neue Agent-Konfiguration konnte nicht geladen werden",
+      "text4e62b29dd3b6": "Eine frühere Konfiguration läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "textf81ab834de5f": "Grund",
+      "text44cdf35701cd": "Läuft jetzt",
+      "text591f9f0f3259": "Fehlgeschlagenes Release",
+      "text00ed4c71dc2b": "Letztes funktionierendes Release",
+      "textbd7a1a3b4141": "Die Standardkonfiguration der Plattform",
+      "text643df05476ab": "Die Standardkonfiguration der Plattform läuft in dieser Sitzung. Die fehlerhafte Konfiguration wird erst nach einer Änderung am Basis-Branch erneut versucht.",
+      "text40652e008fc9": "Die neue Agent-Konfiguration konnte nicht geladen werden. Diese Sitzung läuft mit der Standardkonfiguration der Plattform.",
       "text3312ddb06c1d": "Registriere einen Bot in Azure, verbinde ihn hier und lade dann das App-Paket in Teams hoch.",
       "text7f1b55a356b0": "Bot in Azure registrieren",
       "text91004edf8b30": "Mit diesem Projekt verbinden",
@@ -18695,7 +18713,9 @@
       "texta0bcee97cbb3": "Inline-Checkout bestätigt",
       "text0b751a917c97": "GitHub-Installation verbunden",
       "text8b7a8797d532": "Mandant für Microsoft Teams verbunden",
+      "text83c0e255d4bb": "Microsoft Teams-Installation abgeschlossen",
       "text17a8cf884e2a": "Slack-Workspace verbunden",
+      "textf887cb0e6800": "Slack-App-Installation abgeschlossen",
       "textc7f9ec5ed69c": "Computer-Tunnel-Agent verbunden",
       "textafd58fcedeee": "E-Mail-Postfach verbunden",
       "text2eda12b4ed38": "Vorhandene GitHub App verbunden",
@@ -18952,6 +18972,7 @@
       "text60954a626cee": "LLM-Gateway-Schlüssel widerrufen",
       "text32c1477a3336": "Computer-Tunnel-Berechtigung widerrufen",
       "text953488439740": "Connector-Konto widerrufen",
+      "texte817b7da7436": "Privates Connector-Konto geteilt",
       "text538cb0effaea": "Persönliches Zugriffstoken widerrufen",
       "text74be1c139903": "Zugriffsrecht auf gepoolten Anbieterschlüssel widerrufen",
       "text6d3935be0516": "Projekt-CLI-Token widerrufen",
@@ -19162,17 +19183,51 @@
       "text8cc0d84b66bb": "Slack-Identitätslink angesehen",
       "text508b43cc4545": "Teams-Identitätslink angesehen",
       "text467f597e95b0": "SSO-Domain verifiziert",
-      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt"
+      "text8295f9d4861b": "SSO-Domain-Verifizierung des Kontos gesetzt",
+      "text7beaff63a7d3": "Projekt-Konfigurationsarchiv heruntergeladen",
+      "text5176d59f25fd": "Config-Release der Sitzung aufgelöst",
+      "text273c48dbf3b9": "Gerät für Push-Benachrichtigungen registriert",
+      "textbb666ddf7a57": "Gerät für Push-Benachrichtigungen entfernt",
+      "text397ab5aecbbf": "Berechtigungsanfrage für Sitzung weitergeleitet",
+      "text3ec6c235548a": "MCP-Server-Metadaten gelesen",
+      "text7740934de920": "OAuth-Client registriert",
+      "textcd36423ea12a": "MCP-Server aufgerufen",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
       "description": "Jeder mit dem Link kann dies ohne Anmeldung ansehen. Der Link bleibt aktiv, bis du ihn widerrufst.",
       "confirm": "Link erstellen"
     },
+    "publicTranscriptShare": {
+      "sectionTitle": "Öffentlicher Link",
+      "sectionDescription": "Jeder mit dem Link kann diese Unterhaltung ohne Anmeldung lesen.",
+      "create": "Öffentlichen Link erstellen",
+      "revokeDescription": "Die Unterhaltung lädt für niemanden mit dem Link mehr. Du kannst danach einen neuen Link erstellen.",
+      "rowMeta": "Schreibgeschützte Unterhaltung",
+      "unavailable": "Diese Unterhaltung ist vorübergehend nicht verfügbar.",
+      "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
+      "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
+      "empty": "Noch keine Nachrichten",
+      "savedCopy": "Gespeicherte Kopie vom {date}"
+    },
     "chatIdentityConnect": {
       "chatAccount": "{service}-Konto",
       "chatWorkspace": "{service}-Workspace",
       "checking": "Link wird geprüft…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} wurde nicht verbunden",
+      "mismatch": "Diese Installation wurde von einem anderen Kortix-Konto oder für ein anderes Projekt gestartet. Melde dich mit diesem Konto an oder starte die Installation im Projekt erneut.",
+      "expired": "Dieser Installationslink ist ungültig oder abgelaufen. Starte die Installation im Projekt erneut.",
+      "failed": "Die Installation konnte nicht abgeschlossen werden. Starte sie im Projekt erneut.",
+      "backToProject": "Zurück zum Projekt"
+    },
+    "secretIntakeWithheld": {
+      "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
+      "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
+      "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
     }
   },
   "projectOnboarding": {
@@ -19287,7 +19342,17 @@
   },
   "commandPalette": {
     "title": "Befehlspalette",
-    "description": "Nach einem auszuführenden Befehl suchen..."
+    "description": "Nach einem auszuführenden Befehl suchen...",
+    "copyTitle": "Kopieren",
+    "copyEmail": "E-Mail",
+    "copyUserId": "Benutzer-ID",
+    "copyAccountId": "Konto-ID",
+    "copyProjectId": "Projekt-ID",
+    "copySessionId": "Sitzungs-ID",
+    "copySessionLink": "Sitzungslink",
+    "copyAction": "{label} kopieren",
+    "copied": "{label} kopiert",
+    "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
   },
   "personalWelcome": {
     "dismiss": "Schließen",
@@ -20054,6 +20119,9 @@
     "providerError": "Der Anbieterzugriff konnte nicht aktualisiert werden.",
     "managedTitle": "Von Kortix verwaltete Modelle",
     "managedDescription": "Verwaltete Modelle, abgerechnet über Kortix-Guthaben. Kein API-Schlüssel erforderlich.",
+    "pricingEstimate": "Geschätzter Kundenpreis. Die genutzte Route bestimmt die Kosten.",
+    "pricingRoute": "{route}: {input} Eingabe / {cacheRead} Cache / {output} Ausgabe pro 1 Mio. Token",
+    "pricingPreferred": "Bevorzugt",
     "textImage": "Text + Bild",
     "textOnly": "Nur Text",
     "zdrTitle": "Keine Datenspeicherung",
@@ -20197,5 +20265,71 @@
     "verifiedToast": "Domain verifiziert",
     "failedToast": "Domain noch nicht verifiziert",
     "enforceNeedsVerification": "Verifizieren Sie zuerst die Domain. Die SSO-Pflicht gilt nur für eine verifizierte Domain."
+  },
+  "accessSharing": {
+    "everyone": "Alle in {project}",
+    "everyoneRoleNote": "Alle behalten ihre eigene Projektrolle. Die ausgewählten Agents gelten für alle in {project}.",
+    "shareTitle": "{label} teilen",
+    "shareDescription": "Wählen Sie, wer dieses Konto verwenden darf. Wählen Sie nur sich selbst, um es für sich zu behalten.",
+    "whoCanUse": "Wer es verwenden darf",
+    "add": "Personen oder Gruppen hinzufügen",
+    "everyoneDefaultMeta": "Bis Sie eine Gruppe oder Person hinzufügen",
+    "everyoneMeta": "Alle mit Zugriff auf das Projekt",
+    "groupMeta": "Gruppe",
+    "memberMeta": "Mitglied",
+    "remove": "{name} entfernen",
+    "keep": "Behalten",
+    "removedMeta": "Wird beim Speichern entfernt",
+    "resultEveryone": "Alle in {project} können dieses Konto verwenden.",
+    "resultNarrowed": "Nur die ausgewählten Personen können dieses Konto verwenden, in ihren privaten Sitzungen.",
+    "save": "Speichern",
+    "saved": "Zugriff aktualisiert",
+    "saveFailed": "Zugriff konnte nicht aktualisiert werden",
+    "manageAccess": "Zugriff verwalten",
+    "sharedWith": "Geteilt mit {names}",
+    "notSharedWithYou": "Nicht mit Ihnen geteilt",
+    "removeEveryoneTitle": "{agent} nicht mehr mit allen teilen?",
+    "removeEveryoneDescription": "Nur die Personen und Gruppen, denen {agent} gewährt wurde, behalten ihn. Andere Mitglieder verlieren den Zugriff.",
+    "removeEveryone": "Nicht mehr teilen",
+    "removed": "Entfernt",
+    "removeFailed": "Zugriff konnte nicht entfernt werden",
+    "accountsTitle": "Konten",
+    "addAccount": "Konto hinzufügen",
+    "addAccountTitle": "{connector}-Konto hinzufügen",
+    "addAccountDescription": "Benennen Sie das Konto und wählen Sie, wer es verwenden darf.",
+    "onlyYou": "Nur Sie",
+    "onlyYouDescription": "Nur Sie können es verwenden, in Ihren privaten Sitzungen.",
+    "specificPeople": "Bestimmte Personen oder Gruppen",
+    "specificPeopleDescription": "Nur die ausgewählten Personen und Gruppen, in ihren privaten Sitzungen.",
+    "shareRequiresManage": "Zum Teilen eines Kontos benötigen Sie die Berechtigung, die Verbindungen des Projekts zu verwalten.",
+    "nameTaken": "Ein Konto namens {label} gibt es bereits.",
+    "noAccountsTitle": "Noch kein Konto",
+    "noAccountsDescription": "Fügen Sie ein Konto hinzu, um {connector} in Sitzungen zu verwenden.",
+    "visibilityEveryone": "Alle im Projekt",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "Gespeichert als {label}",
+    "connectFailed": "Das Konto konnte nicht verbunden werden. Versuchen Sie es erneut.",
+    "sharePrivateDescription": "Wählen Sie, wer Ihr Konto außerdem verwenden darf. Es wird zu einem geteilten Konto, das auch die Verbindungsverwalter des Projekts verwalten können.",
+    "ownerMeta": "Ihr Konto"
+  },
+  "connectMcp": {
+    "title": "Kortix über MCP verbinden",
+    "description": "Füge diese URL in Claude, ChatGPT, Cursor, Codex oder einem anderen MCP-Client hinzu. Beim ersten Mal fragt der Client nach deiner Kortix-Anmeldung. Keine Installation nötig.",
+    "urlLabel": "MCP-URL",
+    "addToClient": "Zum Client hinzufügen",
+    "other": "Andere",
+    "claudeSteps": "Öffne in Claude (Web oder Desktop) Einstellungen → Connectors → Eigenen Connector hinzufügen, füge die URL ein und melde dich an.",
+    "claudeCodeHint": "Führe dann /mcp in Claude Code aus und melde dich an.",
+    "otherHint": "ChatGPT (Entwicklermodus), VS Code, Windsurf und andere Clients: Füge einen Remote-MCP-Server mit der URL oben hinzu oder nutze dieses JSON.",
+    "addToCursor": "Zu Cursor hinzufügen",
+    "signInOnFirstUse": "Cursor fragt beim ersten Aufruf nach deiner Kortix-Anmeldung.",
+    "docs": "Doku",
+    "done": "Fertig",
+    "copy": "Kopieren"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Nicht verifizierte App",
+    "unverifiedBody": "{client} hat sich selbst bei Kortix registriert. Kortix hat nicht geprüft, wer sie betreibt. Erlaube den Zugriff nur, wenn du sie gerade selbst verbindest.",
+    "redirectsTo": "Leitet dich zurück zu"
   }
 }

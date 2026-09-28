@@ -5,12 +5,15 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { promptModelOverride } from '../lib/prompt-model';
 import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
+import { normalizeString } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readJsonObject } from '../../shared/http-body';
 import {
   deleteInboxPrompt,
   drainSessionLifecycleQueue,
@@ -21,6 +24,7 @@ import {
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -32,7 +36,7 @@ import {
   promptState,
   serializePrompt,
 } from '../lib/session-prompt-view';
-import { isWireIdAheadOf } from '../wire-message-id';
+import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -54,7 +58,6 @@ import { isWireIdAheadOf } from '../wire-message-id';
 // own rows, because that answer changes between the POST and the delivery. A
 // live turn holds later prompts until its terminal event releases the next row.
 
-const PROMPT_WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const PROMPT_LIST_LIMIT = 200;
 
 const SessionPromptSchema = z.object({
@@ -137,7 +140,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // FLOOR 'session', NOT 'write'. Sending a prompt is running the session,
     // not editing the project — it must pass exactly the check `/start` and
@@ -176,7 +179,7 @@ projectsApp.openapi(
       return c.json({ error: 'Session is deleted' }, 409);
     }
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const clientMessageId = normalizeString(body.client_message_id);
     const messageId = normalizeString(body.message_id);
     if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
@@ -186,7 +189,7 @@ projectsApp.openapi(
     if (!clientMessageId || clientMessageId.length > 128) {
       return c.json({ error: 'client_message_id is required (1..128 chars)' }, 400);
     }
-    if (!messageId || !PROMPT_WIRE_MESSAGE_ID.test(messageId)) {
+    if (!messageId || !WIRE_MESSAGE_ID.test(messageId)) {
       // Rejected rather than repaired: an id this endpoint cannot verify the
       // ordering of is one OpenCode may read as already answered, and a
       // dropped turn is worse than a refused request.
@@ -205,12 +208,12 @@ projectsApp.openapi(
 
     const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
     const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
+    // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
+    // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
+    // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
     const overrides = {
       agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
-      model:
-        model && typeof model.providerID === 'string' && typeof model.modelID === 'string'
-          ? { providerID: model.providerID, modelID: model.modelID }
-          : null,
+      model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
       variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
       directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
     };
@@ -358,7 +361,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -407,10 +410,10 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
     // A prompt is named by its row id (uuid) OR by its wire message id — the
     // handle the bubble still has after the row leaves the list.
-    if (!UUID_V4_REGEX.test(promptId) && !/^msg_[A-Za-z0-9]{6,40}$/.test(promptId)) {
+    if (!isUuid(promptId) && !/^msg_[A-Za-z0-9]{6,40}$/.test(promptId)) {
       return c.json({ error: 'Invalid prompt id' }, 400);
     }
 
@@ -508,8 +511,8 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-    if (!UUID_V4_REGEX.test(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
 
     // Floor 'session' — see the POST /prompts gate comment. "Retry"/"send now"
     // on your own queued message is running the session, not editing the project.
@@ -572,7 +575,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     // Floor 'session' — see the POST /prompts gate comment. Stop/hold is the
     // counterpart of send; a member who can send must be able to hold.
@@ -589,11 +592,26 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     if (typeof body.held !== 'boolean') {
       return c.json({ error: 'held must be a boolean' }, 400);
     }
 
+    // A HOLD IS A STOP SOMEBODY ASKED FOR. Stamp it on the open turn before
+    // anything this Stop sends can reach OpenCode. The hold is the Stop's FIRST
+    // request, and its settle (below) can abort the box before the client's
+    // own abort leaves the browser. That settle abort does not pass the
+    // sandbox proxy that stamps `UserStop`, so without this stamp the turn
+    // closed on a bare "Aborted" frame and the user's own Stop read as
+    // "stopped before it finished" (prod 2026-09-25). The ledger keeps the
+    // stamp only over an abort: a turn that completes drops it, and a named
+    // cause replaces it. Scoped to the session's root OpenCode session, like
+    // the proxy stamp. The write never throws.
+    if (body.held) {
+      await markTurnStopRequested(sessionId, 'UserStop', {
+        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+      });
+    }
     await holdInboxPrompts(sessionId, body.held);
     if (body.held) await disarmAllQuickQueueInterrupt(sessionId, loaded.userId);
     // After the write, before the read-back — either instant orders this

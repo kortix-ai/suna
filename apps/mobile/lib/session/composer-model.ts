@@ -31,6 +31,17 @@ export function selectComposerModel(modelID: string, defaultModel: string | unde
   return modelID === defaultModel ? null : modelID;
 }
 
+/**
+ * The project offers no model, so a send must not start a session or post a
+ * message (KRTX-251; web's `isModelRequiredButUnavailable`). True only once
+ * the catalog has loaded and is empty. While it loads nothing is blocked, and
+ * a project without the gateway (no catalog, 404 `llm_gateway_disabled`) runs
+ * on its sandbox's own providers, so it is never blocked here.
+ */
+export function isModelUnavailable(i: { hasCatalog: boolean; loading: boolean; modelCount: number }): boolean {
+  return i.hasCatalog && !i.loading && i.modelCount === 0;
+}
+
 /** Pill text. Null hides the pill: there is nothing to choose from. */
 export function composerModelLabel(
   options: ComposerModelOption[],

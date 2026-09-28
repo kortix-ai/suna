@@ -8,7 +8,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * credential, the only mode written today (`per_user` — a set user, each
  * member's own — was removed 2026-07-05; every caller here passes
  * `userId: null`). Values are encrypted with the project key and resolved
- * server-side only. See docs/specs/connector.md §5–6.
+ * server-side only.
  */
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';

@@ -86,3 +86,13 @@ test('grant editors can handle a failure once without a duplicate global notific
   await expect(grantAccountSecretResource('account', 'secret', 'member')).rejects.toMatchObject({ status: 403 });
   expect(notifications).toBe(1);
 });
+
+test('a ChatGPT account whose login stopped working says since when', async () => {
+  globalThis.fetch = mock(async () => new Response(JSON.stringify({ secrets: [
+    { secret_id: 'expired', label: 'ChatGPT · Work', active: true, needs_reauth_at: '2026-09-25T10:00:00.000Z' },
+    { secret_id: 'working', label: 'ChatGPT · Home', active: true, needs_reauth_at: null },
+  ] }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+  const { secrets } = await listAccountSecretResources('account', 'project');
+  const since: Array<string | null | undefined> = secrets.map((secret) => secret.needs_reauth_at);
+  expect(since).toEqual(['2026-09-25T10:00:00.000Z', null]);
+});

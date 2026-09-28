@@ -591,8 +591,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
   });
 
   test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
-    // The deterministic install/lock engine is gone (see
-    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
+    // The deterministic install/lock engine is gone — provision seeds only
     // the plain starter scaffold. `marketplace_items` is accepted for API
     // back-compat but no longer installs anything at provision time; adding a
     // marketplace item to a project is now an agent import

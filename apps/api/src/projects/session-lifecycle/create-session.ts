@@ -5,7 +5,7 @@
 
 import { projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { bindChatThread } from '../../channels/slack/binding';
+import { bindChatThread } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
@@ -201,11 +201,40 @@ async function runInlineCreate(
   command: CreateSessionCommand,
   row: SessionLifecycleCommandRow,
 ): Promise<SessionLifecycleResult> {
-  const result = await executeCreateSession({
-    ...command,
-    attachmentSourceCommandId: row.commandId,
-    createCommandId: row.commandId,
-  });
+  let result: SessionLifecycleResult;
+  try {
+    result = await executeCreateSession({
+      ...command,
+      attachmentSourceCommandId: row.commandId,
+      createCommandId: row.commandId,
+    });
+  } catch (err) {
+    // `executeCreateSession` -> `createProjectSession` ->
+    // `loadProjectAgents({ rethrowReadErrors: true })` -> `refreshMirror` can
+    // THROW a `GitOperationError` (e.g. a cold `git clone --bare` that times
+    // out, `git/mirror.ts`) rather than return `{ error }`. This inline path
+    // holds a REAL lease on `row` (`claimCreateSessionCommand` set
+    // `lockedBy`/`lockedUntil` so the drain's reclaim arm can take the row
+    // over if this pod dies mid-create — c30b60d038). Left uncaught, the
+    // throw skipped `markCommandFailed`: the row sat `running` under that
+    // lease for the full lock period before the drain's abandoned-claim
+    // reclaim even saw it, and — until the `drain.ts` create_session branch
+    // was ALSO hardened — retried the same doomed clone forever afterward.
+    // Finalize here instead: the caller gets a structured retryable error
+    // immediately, and the row is queued for backoff / dead-lettered per the
+    // normal 5-attempt budget rather than left dangling on a lease.
+    const message = err instanceof Error ? err.message : String(err);
+    await markCommandFailed(row, message, {
+      retryable: true,
+      attempts: row.attempts + 1,
+    });
+    return {
+      status: 'failed',
+      commandId: row.commandId,
+      retryable: true,
+      error: { status: 503, body: { error: message } },
+    };
+  }
   if (result.status === 'created' && result.sessionId) {
     const postCreate = await applyPostCreateActions({
       projectId: command.project.projectId,

@@ -24,6 +24,42 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
 export const STALE_OPENCODE_BOOT_HARD_MS = 10 * 60 * 1000;
 
 /**
+ * How long a repair that reports itself RUNNING holds the readiness clock off.
+ *
+ * Mirrors `LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS` in
+ * `../lib/legacy-runtime-bootstrap.ts` and is asserted equal to it by
+ * `readiness-repair-grace.test.ts`. Declared here rather than imported: this
+ * module is pure and is imported from the session-open path, and pulling in
+ * the bootstrap module's graph to read one number is how a module-init cycle
+ * gets created.
+ *
+ * WHY THIS EXISTS: the readiness clock parked a session `failed` after 5
+ * minutes while the repair that would have fixed it was still inside its own
+ * 8-minute budget. A repair needing more than 5 minutes could therefore never
+ * win, and its result landed on a session the user had already been told was
+ * broken. An ACTIVE repair is progress, not staleness.
+ *
+ * Bounded on purpose: the grace is measured from the repair's own
+ * `lastAttemptAt`, so a wedged repair that never updates stops holding the
+ * clock once its budget lapses.
+ */
+export const REPAIR_IN_FLIGHT_GRACE_MS = 8 * 60 * 1000;
+
+/** True while a runtime repair for this row is running and still inside its budget. */
+export function repairInFlight(
+  metadata: RuntimeReadinessMetadata,
+  nowMs = Date.now(),
+): boolean {
+  const record = metadata.legacyRuntimeBootstrap;
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  const bootstrap = record as Record<string, unknown>;
+  if (bootstrap.state !== 'running') return false;
+  const startedMs = parseTimestampMs(bootstrap.lastAttemptAt);
+  if (startedMs === null) return false;
+  return nowMs - startedMs <= REPAIR_IN_FLIGHT_GRACE_MS;
+}
+
+/**
  * Marks that identify the current boot attempt: when the wake was claimed, when
  * the provider confirmed the box RUNNING, and when the provisioner finished.
  * A readiness clock stamped BEFORE the newest of these belongs to an earlier
@@ -72,19 +108,6 @@ export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetad
     runtimeWakeStartedAt: now.toISOString(),
     runtimeWakeProviderStatus: 'starting',
   };
-}
-
-export function prepareInPlaceRestartMetadata(
-  metadata: RuntimeReadinessMetadata | null | undefined,
-  now = new Date(),
-): RuntimeReadinessMetadata {
-  const next = { ...(metadata ?? {}) };
-  // A human pressing Restart is an explicit "start this episode over": the
-  // consecutive-failure accounting that escalates the automatic retry cooldown
-  // (runtime-wake-fence.ts) resets with it, and no stale stop reason survives
-  // to be replayed as a verdict about the new attempt.
-  for (const key of IN_PLACE_RESTART_CLEARED_KEYS) delete next[key];
-  return { ...next, ...inPlaceRestartWakePatch(now) };
 }
 
 /**
@@ -136,6 +159,8 @@ export function staleOpencodeReadyReason(
   hardCapMs = STALE_OPENCODE_BOOT_HARD_MS,
 ): string | null {
   if (reason !== 'not_ready' && reason !== 'unreachable') return null;
+  // An active repair is progress: never park a session the platform is fixing.
+  if (repairInFlight(metadata, nowMs)) return null;
   const bootEpochMs = runtimeBootEpochMs(metadata);
   const firstSeenMs = clockForThisBoot(
     parseTimestampMs(metadata.opencodeBootWaitFirstSeenAt),

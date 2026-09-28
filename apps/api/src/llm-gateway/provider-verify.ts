@@ -22,7 +22,7 @@
 // a separate, additive signal layered on top.
 import {
   GatewayResolutionError,
-  callUpstream as realCallUpstream,
+  callUpstream,
   type AuthedPrincipal,
   type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
@@ -38,7 +38,6 @@ export interface ProviderVerifyResult {
 
 export interface ProviderVerifyDeps {
   resolveCandidates: typeof realResolveCandidates;
-  callUpstream: typeof realCallUpstream;
   pickVerificationModel: (providerId: string) => string | null;
 }
 
@@ -65,7 +64,6 @@ function defaultPickVerificationModel(providerId: string): string | null {
 
 const DEFAULT_DEPS: ProviderVerifyDeps = {
   resolveCandidates: realResolveCandidates,
-  callUpstream: realCallUpstream,
   pickVerificationModel: defaultPickVerificationModel,
 };
 
@@ -139,8 +137,9 @@ export async function verifyProviderConnection(
     return { status: 'unknown', message: 'No upstream candidate was resolved for this provider.' };
   }
 
+  const timeout = AbortSignal.timeout(VERIFY_TIMEOUT_MS);
   try {
-    const response = await deps.callUpstream(
+    const response = await callUpstream(
       {
         model: modelId,
         messages: [{ role: 'user', content: 'ping' }],
@@ -148,7 +147,7 @@ export async function verifyProviderConnection(
         max_tokens: 16,
       },
       descriptor,
-      { signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS) },
+      { signal: timeout },
     );
     if (!response.ok) {
       const body = await response.text().catch(() => '');
@@ -195,8 +194,9 @@ export async function verifyProviderConnection(
           upstreamErrorHint(body) ?? `The provider returned HTTP ${status} — couldn't confirm.`,
       };
     }
-    const kind = (err as { kind?: string } | undefined)?.kind;
-    if (kind === 'timeout') {
+    // The direct transport rejects with the timeout signal's `TimeoutError`;
+    // the AI SDK transport reports the fired signal as a client abort.
+    if (timeout.aborted || (err as { name?: string } | undefined)?.name === 'TimeoutError') {
       return { status: 'unknown', message: "Verification timed out — couldn't confirm the key." };
     }
     return {

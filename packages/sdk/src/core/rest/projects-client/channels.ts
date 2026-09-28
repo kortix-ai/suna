@@ -114,6 +114,53 @@ export async function getSlackMode(projectId: string): Promise<SlackMode> {
   return res.data;
 }
 
+/** The provider's OAuth `code` and the signed `state` from the install redirect. */
+export interface ChannelInstallCompletionInput {
+  code: string;
+  state: string;
+}
+
+export interface ChannelInstallCompletion {
+  /** The dashboard page the install outcome lands on. */
+  redirect_url: string;
+}
+
+async function completeChannelInstall(
+  service: 'slack' | 'teams',
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return unwrap(
+    await backendApi.post<ChannelInstallCompletion>(
+      `/projects/${encodeURIComponent(projectId)}/channels/${service}/oauth/complete`,
+      { code: input.code, state: input.state },
+      { showErrors: false },
+    ),
+    'Failed to finish the install',
+  );
+}
+
+/**
+ * Finish a Slack "Add to Slack" install as the signed-in user. The API installs
+ * only when the signed state names this user and project; otherwise it rejects
+ * with `403` and code `CHANNEL_INSTALL_STATE_MISMATCH` (`400`
+ * `CHANNEL_INSTALL_STATE_INVALID` for an expired or malformed state).
+ */
+export function completeSlackInstall(
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return completeChannelInstall('slack', projectId, input);
+}
+
+/** Finish a Microsoft Teams org install as the signed-in user. Same contract as `completeSlackInstall`. */
+export function completeTeamsInstall(
+  projectId: string,
+  input: ChannelInstallCompletionInput,
+): Promise<ChannelInstallCompletion> {
+  return completeChannelInstall('teams', projectId, input);
+}
+
 export async function getSlackManifest(projectId: string): Promise<Record<string, unknown>> {
   return unwrap(
     await backendApi.get<Record<string, unknown>>(

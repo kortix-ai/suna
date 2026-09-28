@@ -1,4 +1,13 @@
-import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { splitHelp } from '../command-argv.ts';
+import {
+  emitJson,
+  resolveProjectContext,
+  surfaceApiError,
+  takeFlagBool,
+  takeFlagValue,
+  fail,
+  missing,
+} from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
@@ -63,21 +72,11 @@ from the environment automatically — you don't need to log in or link.
 `;
 
 export async function runCr(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let json = false;
@@ -86,8 +85,7 @@ export async function runCr(argv: string[]): Promise<number> {
     hostFlag = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
@@ -208,14 +206,10 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
   try {
     statusFilter = takeFlagValue(argv, ['--status']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const filter = (statusFilter ?? 'open').toLowerCase();
-  if (!['open', 'merged', 'closed', 'all'].includes(filter)) {
-    process.stderr.write(`${status.err('--status must be open|merged|closed|all')}\n`);
-    return 2;
-  }
+  if (!['open', 'merged', 'closed', 'all'].includes(filter)) return fail('--status must be open|merged|closed|all');
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -420,8 +414,7 @@ async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
     description = takeFlagValue(argv, ['--description', '--body']);
     sessionId = takeFlagValue(argv, ['--session']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
 
   // Inside a sandbox the agent already knows the branch and session it's on.
@@ -430,14 +423,8 @@ async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
   if (!headRef) headRef = process.env.KORTIX_BRANCH_NAME || process.env.KORTIX_HEAD_REF;
   if (!sessionId) sessionId = process.env.KORTIX_SESSION_ID;
 
-  if (!headRef) {
-    process.stderr.write(`${status.err('--head <version> is required (or set KORTIX_BRANCH_NAME).')}\n`);
-    return 2;
-  }
-  if (!title) {
-    process.stderr.write(`${status.err('--title "<text>" is required.')}\n`);
-    return 2;
-  }
+  if (!headRef) return fail('--head <version> is required (or set KORTIX_BRANCH_NAME).');
+  if (!title) return fail('--title "<text>" is required.');
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -494,8 +481,7 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
   try {
     message = takeFlagValue(argv, ['--message', '-m']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
@@ -591,14 +577,10 @@ async function crRequestChanges(
   try {
     message = takeFlagValue(argv, ['--message', '--feedback', '-m']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const feedback = (message ?? '').trim();
-  if (!feedback) {
-    process.stderr.write(`${status.err('Pass --message "<what to change>".')}\n`);
-    return 2;
-  }
+  if (!feedback) return missing('--message "<what to change>"');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
@@ -640,16 +622,10 @@ async function crVersionDiff(argv: string[], opts: CtxOpts, json = false): Promi
     fromRef = takeFlagValue(argv, ['--from', '--head']);
     intoRef = takeFlagValue(argv, ['--into', '--base']);
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   if (!fromRef) fromRef = process.env.KORTIX_BRANCH_NAME || process.env.KORTIX_HEAD_REF;
-  if (!fromRef || !intoRef) {
-    process.stderr.write(
-      `${status.err('Pass --from <version> and --into <version>.')}\n`,
-    );
-    return 2;
-  }
+  if (!fromRef || !intoRef) return missing('--from <version> and --into <version>');
 
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;

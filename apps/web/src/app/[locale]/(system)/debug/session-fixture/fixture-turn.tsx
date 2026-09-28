@@ -36,6 +36,7 @@ import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   type QueuedPromptState,
 } from '@/features/session/turn/queued-prompt-bubbles';
+import { ShowGroupRenderer } from '@/features/session/tool/show-group-renderer';
 import { segmentTurn } from '@/features/session/turn/segment-turn';
 import { ThrottledMarkdown } from '@/features/session/turn/throttled-markdown';
 import { UserMessage } from '@/features/session/turn/user-message';
@@ -63,7 +64,7 @@ import {
   shouldShowToolPart,
   unwrapError,
 } from '@/ui';
-import { isAbortError } from '@kortix/sdk';
+import { groupShowSegments, isAbortError } from '@kortix/sdk';
 
 const NOOP_PERMISSION_REPLY = async () => {};
 
@@ -209,7 +210,7 @@ export function FixtureTurn({
       }
       parts.push(part);
     }
-    return segmentTurn(parts, { standaloneCallIds });
+    return groupShowSegments(segmentTurn(parts, { standaloneCallIds }), { standaloneCallIds });
   }, [allParts, pendingQuestionCallIds, standaloneCallIds]);
 
   const hasAssistantContent = turn.assistantMessages.length > 0;
@@ -272,6 +273,15 @@ export function FixtureTurn({
                     isTrailing={index === segments.length - 1}
                     density="normal"
                   />
+                );
+              }
+              if (segment.kind === 'show-group') {
+                const visible = segment.parts.filter(shouldShowToolPart);
+                if (visible.length === 0) return null;
+                return visible.length === 1 ? (
+                  <ToolPartRenderer key={visible[0].id} part={visible[0]} sessionId={sessionId} />
+                ) : (
+                  <ShowGroupRenderer key={visible[0].id} parts={visible} sessionId={sessionId} />
                 );
               }
               if (segment.kind === 'standalone') {

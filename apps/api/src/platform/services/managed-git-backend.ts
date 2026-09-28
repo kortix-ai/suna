@@ -171,10 +171,6 @@ export function refreshGitBackend(): Promise<void> {
   return setting.refresh();
 }
 
-export function invalidateGitBackend(): void {
-  setting.invalidate();
-}
-
 /** Overwrite the stored backend whole. */
 export async function writeGitBackend(backend: StoredGitBackend): Promise<void> {
   await setting.write(backend);

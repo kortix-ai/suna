@@ -25,6 +25,7 @@ ID, and the branch name are the same value. See
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.configState()` | `GET …/sessions/:sid/config` | Reads config freshness (`stale`) and the config release state (`release`) |
 | `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
 | `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
@@ -70,15 +71,37 @@ The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
 `refreshing-workspace` when `refresh_repo` is `false`. The
 `applying-config` phase includes the daemon's validated runtime replacement.
 
+`s.configState()` returns `release` when the API supports config releases.
+Its type is `SessionConfigRelease`. The reload results carry the same object.
+
+```ts
+const { stale, release } = await s.configState();
+if (release?.fallback_reason) {
+  // The desired config failed on the box. An earlier config runs the session.
+  console.warn(release.fallback_reason, release.running_release_id);
+} else if (stale === true) {
+  // Moves the session onto the base branch's current config AND
+  // fast-forwards its /workspace checkout. `workspace_checkout` says what
+  // happened to the checkout; `detail` words both halves.
+  const result = await s.reloadConfig();
+  console.log(result.workspace_checkout, result.detail);
+}
+```
+
+`stale` is tri-state. `null` means Kortix could not tell. Test `stale === true`,
+never `!stale`. An older API omits `release`. See
+[Config convergence](/docs/work/runtime#config-convergence).
+
 Three more read methods round out the handle:
 
 - `s.previews()` — candidate preview ports the runtime exposes.
 - `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
+  `.create({ transcript: true })` makes a read-only link to the conversation (one live link per session; a second call returns the same link). Read it anonymously with `getPublicSessionShareMessages(token)`; `findActiveTranscriptShare(shares)` picks the live one from `.list()`.
 - `s.audit(limit?)` — the session's audit trail of agent actions.
 - `s.attachments.upload(file, options?)` — save a private file before startup when `session_transcript_history` is enabled. Maximum 50 MiB. Returns a stable URL for a prompt file part.
 - `s.attachments.read(attachmentId, signal?)` — read saved bytes as a `Blob` without starting the sandbox.
 - `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
-- `s.transcriptSync(options?)` — the transcript the server saves at the end of every turn, as OpenCode message envelopes. It answers while the sandbox is stopped or still waking, without starting it. Pass `limit` (at most 500) for the newest window, and a window's `next_cursor` as `before` to read the one older than it. `source` is `mirror`; `complete` is true only when the window holds every saved message and the saved copy reaches the session's first message.
+- `s.transcriptSync(options?)` — the transcript the server saves at the end of every turn, as OpenCode message envelopes. Every part is kept 1:1 — text, reasoning, and each tool call with its input, output, error and metadata — except attachment bytes. It answers while the sandbox is stopped or still waking, without starting it. Pass `limit` (at most 500) for the newest window, and a window's `next_cursor` as `before` to read the one older than it. A window also stops at 1,000,000 characters of JSON: it keeps its newest messages, and `next_cursor` then names the oldest one it kept. Pass `child` (a sub-agent's `ses_…` id, the session a sub-agent row opens) to read that sub-agent's own saved transcript; projects with session transcript history save each sub-agent the conversation dispatched. `source` is `mirror`; `complete` is true only when the window holds every saved message and the saved copy reaches the session's first message.
 - `s.voiceTranscript(options?)` — this session's live voice-call transcript (spoken turns plus `ask_kortix`/`run_command` worker tool calls). Returns an empty list when the session has no live call, not a 404.
 
 ### Files a session stored
@@ -253,6 +276,22 @@ const url = s.previewUrl(3000, '/docs');
 runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 `s.ensureReady()` first, or they throw `SessionNotReadyError`. See
 [Session readiness errors](#session-readiness-errors).
+
+## Status words
+
+Every host reads one vocabulary, so one state has one word on every screen.
+
+| Export                                     | Use                                                                                          |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `sessionListStatus(session, reviewCount?)` | A session in a list: `needs-you`, `starting`, `running`, `done`, `stopped`, `failed`, `legacy` |
+| `SESSION_LIST_STATUS[status]`              | `{ label, tone, description }` for that status                                               |
+| `sessionConnectionLabel(connection)`       | A short label for the session's computer, or `null` for `unknown` and `live`                  |
+| `SESSION_NOTICE`                           | The composer's sentence while the computer is not ready                                      |
+| `turnRetryLabel(secondsLeft)`              | `Retrying in 5s`, `Retrying now`, or `Waiting to retry` when no countdown is known           |
+
+Tones are `actionable`, `live`, `progress`, `muted`, and `danger`. Green is for
+`live` and `actionable` only; a finished session is `muted`. A status that a newer
+API sends and this build does not know reads `stopped`, never `failed`.
 
 ## Streaming
 
@@ -601,8 +640,8 @@ try {
 | ---------------------- | ---------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | `ApiError`             | `Error`    | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
 | `AuthError`            | `ApiError` | `getToken` returned `null`. Kortix never sent the request                      | `code` is always `'NO_SESSION'`                                      |
-| `BillingError`         | `Error`    | HTTP `402`. The only billing error class                                       | `status` (`402`), `detail.message`                                   |
-| `RequestTooLargeError` | `Error`    | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
+| `BillingError`         | `ApiError` | HTTP `402`. The only billing error class                                       | `status` (`402`), `code`, `detail.message`                           |
+| `RequestTooLargeError` | `ApiError` | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
 | `SessionNotReadyError` | `Error`    | A runtime accessor ran before `ensureReady()`                                  | `name` is `'SessionNotReadyError'`                                   |
 
 `ApiError.name` is `'ApiError'` by default. Two cases override it:
@@ -612,11 +651,13 @@ try {
 
 For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string. `message` is an enumerable own property on `ApiError`, so it survives `JSON.stringify` and object spread.
 
+Kortix sends a request that receives `401` once more with a fresh token from `getToken()`, when that token differs from the one it sent. A request with a one-shot stream body is not resent.
+
 Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A transient transport failure on a `GET` or `HEAD` — a network error, not a status code — is retried the same way. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
 
 Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
 
-Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend.
+Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend, and `code` holds the backend's machine code (for example `app_budget_exceeded`). `BillingError` extends `ApiError`, so check `BillingError` first when you handle both.
 
 Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the request carried too many files. `detail.suggestion` holds a ready-to-show hint for the user.
 

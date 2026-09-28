@@ -6,7 +6,9 @@ import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   STATIC_FILE_SHARE_PORT,
   resolvePublicShare,
+  resourceProxyPath,
   touchPublicShare,
+  transcriptShareViewerUrl,
 } from '../../shared/session-public-shares';
 import {
   buildSandboxUpstreamHeaders,
@@ -117,9 +119,7 @@ publicShareApp.get('/:token', async (c) => {
   const resolved = await resolvePublicShare(token);
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status as any);
   const row = resolved.row;
-  const proxyPath = row.resourceType === 'file'
-    ? `/v1/p/public-share/${token}/file`
-    : `/v1/p/public-share/${token}/${row.port}${row.path}`;
+  const proxyPath = resourceProxyPath(token, row);
   // A shared preview goes to its OWN origin when this deployment has a preview
   // domain. A shared app is a real site to whoever opens the link: under the
   // path form its root-absolute links (`<a href="/learn">`, `fetch('/api')`,
@@ -135,7 +135,10 @@ publicShareApp.get('/:token', async (c) => {
         ? previewOriginFor(row.externalId, STATIC_FILE_SHARE_PORT)
         : null
     : null;
-  const publicUrl = previewOrigin
+  // A transcript share is rendered by the web app, not by the sandbox.
+  const publicUrl = row.resourceType === 'transcript'
+    ? transcriptShareViewerUrl(token)
+    : previewOrigin
     ? row.resourceType === 'file'
       // A shared file is author-controlled content — HTML and SVG carry script.
       // On the path form it renders on the API origin, i.e. with the same

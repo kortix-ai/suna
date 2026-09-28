@@ -8,9 +8,10 @@ import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from './auth-resume';
-import { isAccountMember, linkTeamsIdentity } from './identity';
+import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
 import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
+import { readJsonObject } from '../../shared/http-body';
 
 export const teamsIdentityApp = makeOpenApiApp();
 
@@ -74,7 +75,8 @@ teamsIdentityApp.openapi(
     if (!config.MICROSOFT_APP_PASSWORD) {
       return c.json({ error: 'Teams identity binding is not configured on this server.' }, 503);
     }
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token : '';
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyTeamsLoginState(token);
@@ -129,7 +131,8 @@ teamsIdentityApp.openapi(
       return c.json({ error: 'Teams identity binding is not configured on this server.' }, 503);
     }
     const userId = c.get('userId') as string;
-    const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
+    const body = await readJsonObject(c);
+    const token = typeof body.token === 'string' ? body.token : '';
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyTeamsLoginState(token);
@@ -151,11 +154,7 @@ teamsIdentityApp.openapi(
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
     const hasAccess = memberships.some(Boolean);
 
-    await linkTeamsIdentity({
-      tenantId: payload.tenantId,
-      teamsUserId: payload.teamsUserId,
-      userId,
-    });
+    await linkChatIdentity(chatUser('teams', payload.tenantId, payload.teamsUserId), userId);
 
     const pending = await consumePendingTeamsAuthMessage({
       pendingId: payload.pendingId,

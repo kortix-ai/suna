@@ -61,7 +61,8 @@ export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: str
  * "Kortix ignored the incident".
  *
  * The GC sweep below is the reaper, and the honest one: it is keyed on
- * `updated_at` (30 minutes with no relay at all) and it POSTS before it deletes.
+ * `updated_at` (30 minutes with no relay at all), it spares any turn the
+ * runtime still holds, and it POSTS before it deletes.
  * Reaping here raced that sweep and won silently. `expires_at` stays written for
  * bookkeeping and its index; nothing reads it as authority any more.
  */
@@ -125,55 +126,86 @@ const LIVE_PLAN_TITLE = 'Working on it…';
 
 // GC sweep — NOT the old streaming watchdog. There is no heartbeat and no Slack
 // auto-fail to fight: the plan is a plain message we only ever chat.update, and
-// an edited message never goes stale. This only (1) sweeps turns that went
-// silent for an inactivity window so long the sandbox clearly died before it
-// could close out (updated_at bumps on every relay, so a long-but-live turn is
-// never reaped), and (2) GCs the inbound-event dedup table. Runs every 5 min
-// (it's housekeeping, not a keep-alive); claimFinalize keeps it single-winner.
+// an edited message never goes stale. This only (1) closes turns that went
+// silent for 30 minutes AND that the runtime no longer holds — the sandbox died
+// or the end relay was lost — and (2) GCs the inbound-event dedup table. Runs
+// every 5 min (it's housekeeping, not a keep-alive); claimFinalize keeps it
+// single-winner.
 const STALE_AFTER_MS = 30 * 60 * 1000;
+
+/** One pass of the stale-turn sweep. Exported for tests; the interval below runs it. */
+export async function sweepStaleSlackTurns(): Promise<void> {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
+  const stale = await db
+    .select()
+    .from(chatTurnStreams)
+    .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff)))
+    .limit(50);
+  for (const row of stale) {
+    if (row.channelRef) continue;
+    // Thirty minutes without a `slack step` is not proof of a dead run: a
+    // build, a test suite, or a subagent posts nothing while it works. This
+    // used to close the thread as "timed out" AND abort the runtime turn,
+    // killing healthy work mid-run (prod 2026-09-25: one `slack step`, then
+    // two subagents with model calls every minute, aborted at 30m56s). The
+    // runtime's turn authority decides; a live run keeps its thread, touched
+    // so it is not reconsidered for another 30 minutes.
+    if (await runtimeStillWorking(row.sessionId)) {
+      await db
+        .update(chatTurnStreams)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(chatTurnStreams.sessionId, row.sessionId), eq(chatTurnStreams.finalized, false)));
+      continue;
+    }
+    if (!(await claimFinalize(row.sessionId))) continue;
+    const token = await loadSlackTokenForProject(row.projectId);
+    if (token) {
+      // Last-resort close: the runtime holds no turn, yet no end relay reached
+      // this thread in 30 minutes (the sandbox died, or the relay was lost).
+      await finalizeTurn(rowToHandle(row, token), {
+        error: ':warning: *This run ended without a reply.* Open the session to see how far it got.',
+      });
+    } else {
+      // No token (app uninstalled / token rotated) → we can't post or clear
+      // the ⏳. Reap the row anyway (below) and surface it so a dead install
+      // is observable instead of silently dropping every turn.
+      console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
+        projectId: row.projectId,
+        teamId: row.teamId,
+        sessionId: row.sessionId,
+      });
+    }
+    await deleteTurn(row.sessionId);
+    await abortDeadRuntimeTurn(row.sessionId);
+  }
+  await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
+}
 
 setInterval(() => {
   void runWorkerTick('slack-turn-gc', async () => {
     try {
-      const now = new Date();
-      const cutoff = new Date(now.getTime() - STALE_AFTER_MS);
-      const stale = await db
-        .select()
-        .from(chatTurnStreams)
-        .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff)))
-        .limit(50);
-      for (const row of stale) {
-        if (row.channelRef) continue;
-        if (!(await claimFinalize(row.sessionId))) continue;
-        const token = await loadSlackTokenForProject(row.projectId);
-        if (token) {
-          // Last-resort close for a turn that went silent for 30 min — the
-          // sandbox never relayed an end (it died, hung, or stalled retrying).
-          // Be honest about why rather than a bare "ended without a reply".
-          await finalizeTurn(rowToHandle(row, token), {
-            error:
-              ':warning: *This run was closed after 30 minutes of silence* — it may have stalled or run out of credits.',
-            title: 'Run timed out',
-          });
-        } else {
-          // No token (app uninstalled / token rotated) → we can't post or clear
-          // the ⏳. Reap the row anyway (below) and surface it so a dead install
-          // is observable instead of silently dropping every turn.
-          console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
-            projectId: row.projectId,
-            teamId: row.teamId,
-            sessionId: row.sessionId,
-          });
-        }
-        await deleteTurn(row.sessionId);
-        await abortDeadRuntimeTurn(row.sessionId);
-      }
-      await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
+      await sweepStaleSlackTurns();
     } catch (err) {
       console.warn('[slack-webhook] gc tick failed', err);
     }
   });
 }, 5 * 60 * 1000).unref();
+
+/**
+ * Does the runtime's turn authority still hold a live turn for this session?
+ * Unknown counts as no: a sweep that cannot tell must still close a thread
+ * that would otherwise sit on ⏳ forever. Imported lazily for the same reason
+ * as the abort below.
+ */
+async function runtimeStillWorking(sessionId: string): Promise<boolean> {
+  try {
+    const { sessionHoldsLiveTurn } = await import('../../projects/session-lifecycle/inbox-admission');
+    return await sessionHoldsLiveTurn(sessionId);
+  } catch {
+    return false;
+  }
+}
 
 export async function startTurn(
   projectId: string,

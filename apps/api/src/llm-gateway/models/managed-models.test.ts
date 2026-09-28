@@ -1,24 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  canonicalManagedModelId,
+  isRetiredManagedModelId,
+  LEGACY_MANAGED_IDS,
   type ManagedModel,
-  RUNTIME_MANAGED_MODELS,
-  getRuntimeManagedModel,
-  isRuntimeManagedModelId,
   parseManagedModels,
+  resolveLegacyIdChain,
   resolvePlatformDefaultModelId,
-  servedManagedModels,
+  retiredManagedModelReplacement,
 } from './managed-models';
 
 describe('runtime managed model registry', () => {
-  test('exposes the configured control-plane overlay through one lookup', () => {
-    expect(RUNTIME_MANAGED_MODELS.length).toBeGreaterThan(0);
-    const first = RUNTIME_MANAGED_MODELS[0]!;
-    expect(getRuntimeManagedModel(first.id)).toBe(first);
-    expect(isRuntimeManagedModelId(first.id)).toBe(true);
-    expect(isRuntimeManagedModelId('not-managed')).toBe(false);
-  });
-
   test('accepts a complete operator-defined managed-model replacement', () => {
     const configured = parseManagedModels(JSON.stringify([{
       id: 'operator-model',
@@ -50,31 +43,22 @@ describe('runtime managed model registry', () => {
       .toEqual([expect.objectContaining({ id: 'text', vision: false }), expect.objectContaining({ id: 'vision' })]);
   });
 
-  test('accepts text-only models in operator overlays', () => {
-    const text = {
-      id: 'deepseek-v4-flash-0731', name: 'DeepSeek V4 Flash 0731',
-      upstreamModelId: 'deepseek/deepseek-v4-flash-0731', transport: 'openrouter',
-      pricingRef: 'openrouter/deepseek/deepseek-v4-flash-0731', tier: 'fast', vision: false,
-      limit: { context: 1_048_576, output: 16_384 },
-      openrouterProvider: {
-        only: ['deepinfra/fp8'], allow_fallbacks: false, zdr: true, data_collection: 'deny',
-      },
-    };
-    expect(parseManagedModels(JSON.stringify([text, { ...text, id: 'other-text' }])))
-      .toMatchObject([text, { ...text, id: 'other-text' }]);
-  });
-
-  test('accepts a Morph primary with a ZDR OpenRouter pool', () => {
+  test('accepts a ZDR OpenRouter pool without a direct upstream', () => {
     const pooled = {
       id: 'pooled', name: 'Pooled', upstreamModelId: 'z-ai/glm-5.3-flash',
-      transport: 'openrouter', morphModelId: 'morph-glm53flash', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+      transport: 'openrouter', pricingRef: 'openrouter/z-ai/glm-5.3-flash',
       tier: 'fast', vision: true, limit: { context: 1_000, output: 100 },
       openrouterProvider: {
-        only: ['morph', 'wafer'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+        only: ['decart/fp4', 'coreweave/nvfp4'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
         max_price: { prompt: 0.15, completion: 0.5 },
       },
     };
     expect(parseManagedModels(JSON.stringify([pooled]))).toMatchObject([pooled]);
+    const withMorph = { ...pooled, morphModelId: 'morph-glm53flash',
+      morphPricing: { inputPerMillion: 0.1, outputPerMillion: 0.35 } };
+    expect(parseManagedModels(JSON.stringify([withMorph]))).toMatchObject([withMorph]);
+    expect(() => parseManagedModels(JSON.stringify([{ ...pooled, morphModelId: 'morph-glm53flash' }]))).toThrow();
+    expect(() => parseManagedModels(JSON.stringify([{ ...pooled, morphPricing: withMorph.morphPricing }]))).toThrow();
   });
 
   test('rejects an unrestricted, non-ZDR, or data-collecting operator route', () => {
@@ -103,6 +87,8 @@ describe('runtime managed model registry', () => {
       upstreamModelId: 'retired-model',
       transport: 'aster',
       pricingRef: 'vendor/retired-model',
+      // A valid route, so the transport is the only fault.
+      openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
       tier: 'balanced',
       vision: false,
       limit: { context: 1_000, output: 1_000 },
@@ -139,31 +125,6 @@ const managed = (
   tier,
   vision: false,
   limit: { context: 1_000, output: 1_000 },
-});
-
-describe('servedManagedModels — never offer a managed model with no upstream credential', () => {
-  const lineup = [
-    managed('kimi-k3', 'openrouter', 'flagship'),
-    managed('morph-glm53-744b', 'openrouter'),
-    managed('morph-dsv4flash', 'openrouter', 'fast'),
-  ];
-
-  test('drops every model whose transport has no configured credential', () => {
-    const served = servedManagedModels(lineup, (m) => m.id !== 'morph-glm53-744b');
-    expect(served.map((m) => m.id)).toEqual(['kimi-k3', 'morph-dsv4flash']);
-  });
-
-  test('keeps the whole lineup when every transport is credentialed', () => {
-    expect(servedManagedModels(lineup, () => true).map((m) => m.id)).toEqual([
-      'kimi-k3',
-      'morph-glm53-744b',
-      'morph-dsv4flash',
-    ]);
-  });
-
-  test('returns nothing when no transport is credentialed', () => {
-    expect(servedManagedModels(lineup, () => false)).toEqual([]);
-  });
 });
 
 describe('resolvePlatformDefaultModelId — the platform default must always be reachable', () => {
@@ -207,5 +168,97 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
   test('leaves the configured default unchanged when nothing managed is served at all', () => {
     expect(resolvePlatformDefaultModelId('morph-glm53-744b', [])).toBe('morph-glm53-744b');
     expect(resolvePlatformDefaultModelId('', [])).toBe('');
+  });
+});
+
+describe('isRetiredManagedModelId', () => {
+  test('the two ids from the 2026-09-28 sweep are retired', () => {
+    expect(isRetiredManagedModelId('deepseek-v4-flash-0731')).toBe(true);
+    expect(isRetiredManagedModelId('grok-4.6')).toBe(true);
+  });
+
+  test('a current lineup id is not retired', () => {
+    expect(isRetiredManagedModelId('deepseek-v4.1-flash')).toBe(false);
+    expect(isRetiredManagedModelId('glm-5.3-flash')).toBe(false);
+    expect(isRetiredManagedModelId('kimi-k3')).toBe(false);
+  });
+
+  test('an id this catalog has never heard of is not retired — it is simply unknown', () => {
+    expect(isRetiredManagedModelId('not-a-real-model')).toBe(false);
+  });
+});
+
+describe('deepseek-v4-flash-0731 declares deepseek-v4.1-flash as its successor', () => {
+  test('canonicalManagedModelId resolves it', () => {
+    expect(canonicalManagedModelId('deepseek-v4-flash-0731')).toBe('deepseek-v4.1-flash');
+  });
+
+  // deepseek-v4-flash-0731 is ITSELF the one-hop target of two older aliases —
+  // a single lookup would leave morph-dsv4flash/deepseek-v4-flash pointing at
+  // a now-also-retired id. canonicalManagedModelId must follow the full chain.
+  test('a two-hop alias (morph-dsv4flash / deepseek-v4-flash) resolves through it, not to it', () => {
+    expect(canonicalManagedModelId('morph-dsv4flash')).toBe('deepseek-v4.1-flash');
+    expect(canonicalManagedModelId('deepseek-v4-flash')).toBe('deepseek-v4.1-flash');
+  });
+});
+
+// The guard against this exact class of bug recurring: someone retires a
+// model that is itself the declared successor of an older alias, and does not
+// revisit that alias. Every entry in the map must resolve — however many hops
+// it takes — to something that is NOT ALSO retired.
+describe('every LEGACY_MANAGED_IDS chain resolves off of a retired id', () => {
+  for (const alias of Object.keys(LEGACY_MANAGED_IDS)) {
+    test(`"${alias}" -> ... -> a non-retired id`, () => {
+      const resolved = canonicalManagedModelId(alias);
+      expect(isRetiredManagedModelId(resolved)).toBe(false);
+      // Idempotent: a true fixed point, not an intermediate hop left behind
+      // by the bound or a cycle guard.
+      expect(canonicalManagedModelId(resolved)).toBe(resolved);
+    });
+  }
+});
+
+describe('resolveLegacyIdChain is bounded and cycle-safe (synthetic tables — the real map is never mutated)', () => {
+  test('a direct cycle stops instead of looping forever', () => {
+    const cyclic = { a: 'b', b: 'a' };
+    // Enters the cycle at 'a' -> 'b' -> 'a' (seen) -> stops at 'b'.
+    expect(resolveLegacyIdChain('a', cyclic)).toBe('b');
+  });
+
+  test('a self-referencing entry stops immediately', () => {
+    expect(resolveLegacyIdChain('a', { a: 'a' })).toBe('a');
+  });
+
+  test('a chain longer than the hop bound stops rather than hanging', () => {
+    const long: Record<string, string> = {};
+    for (let i = 0; i < 20; i++) long[`chain-${i}`] = `chain-${i + 1}`;
+    const resolved = resolveLegacyIdChain('chain-0', long, 8);
+    expect(resolved).not.toBe('chain-20'); // never reaches the true (unbounded) end
+    expect(resolved.startsWith('chain-')).toBe(true); // stopped mid-chain, not a wrong answer
+  });
+
+  test('a chain within the bound fully resolves', () => {
+    const short = { a: 'b', b: 'c', c: 'd' };
+    expect(resolveLegacyIdChain('a', short, 8)).toBe('d');
+  });
+});
+
+describe('retiredManagedModelReplacement', () => {
+  const lineup = [managed('deepseek-v4.1-flash', 'openrouter'), managed('kimi-k3', 'openrouter')];
+
+  test('names the declared successor when it is actually served', () => {
+    expect(retiredManagedModelReplacement('deepseek-v4-flash-0731', lineup)).toBe('deepseek-v4.1-flash');
+  });
+
+  test('returns null when the declared successor is not itself served here', () => {
+    expect(retiredManagedModelReplacement('deepseek-v4-flash-0731', [managed('kimi-k3', 'openrouter')])).toBeNull();
+  });
+
+  test('returns null when there is no declared successor at all', () => {
+    expect(retiredManagedModelReplacement('grok-4.6', lineup)).toBeNull();
+  });
+
+  test('returns null for an id that was never retired', () => {
+    expect(retiredManagedModelReplacement('kimi-k3', lineup)).toBeNull();
   });
 });

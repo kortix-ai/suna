@@ -7,9 +7,10 @@ import {
   loadSlackInstall,
   saveSlackInstall,
 } from '../../channels/install-store';
-import { buildSlackInstallUrl } from '../../channels/slack-oauth';
+import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
+import { buildSlackInstallUrl, completeSlackOauthInstall } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
+import { bindSlackThreadToSession } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -19,7 +20,7 @@ import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { readBody } from '../lib/serializers';
+import { readJsonObject } from '../../shared/http-body';
 
 interface SlackAuthTest {
   ok: boolean;
@@ -89,6 +90,57 @@ projectsApp.openapi(
     } catch {
       return c.json({ oauth_available: false, install_url: null });
     }
+  },
+);
+
+// POST /v1/projects/:projectId/channels/slack/oauth/complete
+// The web completion page posts the provider's {code, state} here with the
+// signed-in user's bearer. The install lands only when the signed state names
+// this caller and this project (see channels/install-completion.ts).
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/slack/oauth/complete',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/oauth/complete',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: InstallCompletionBody } } },
+    },
+    responses: {
+      200: json(z.object({ redirect_url: z.string() }), 'OK'),
+      ...errors(400, 403, 404, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Same gate as the manual connect route: installing a Slack app is a
+    // connector-write capability.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    const body = InstallCompletionBody.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) {
+      return c.json({ error: 'Missing code or state', code: INSTALL_STATE_INVALID }, 400);
+    }
+    const result = await completeSlackOauthInstall({
+      projectId,
+      userId: loaded.userId,
+      code: body.data.code,
+      state: body.data.state,
+    });
+    if (!result.ok) {
+      return c.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, result.status);
+    }
+    return c.json({ redirect_url: result.redirectUrl });
   },
 );
 
@@ -285,7 +337,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const result = await uploadSlackFile(projectId, {
       channel: String(body.channel ?? ''),
       filename: String(body.filename ?? ''),
@@ -308,7 +360,11 @@ projectsApp.openapi(
 // session, so a later human reply in that thread routes back into this session
 // (approval loops, follow-up Q&A). This writes the same `chat_threads` row the
 // inbound `bind_chat_thread` post-create action does; without it, replies to a
-// non-Slack-originated thread are classified `ignore` and dropped.
+// non-Slack-originated thread are classified `ignore` and dropped. A session's
+// `slack send --channel` binds its thread automatically (connectors/gateway.ts
+// `withSlackThreadBinding`); this route binds a thread the session did not post.
+// First mapping wins: a thread owned by another session answers 409. `force`
+// moves it between two sessions of the same project and user (403 otherwise).
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -322,7 +378,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.boolean(), bound: z.boolean() }).passthrough(), 'Bound'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -375,6 +431,7 @@ projectsApp.openapi(
       channel?: string;
       thread_ts?: string;
       workspace_id?: string;
+      force?: boolean;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -407,18 +464,43 @@ projectsApp.openapi(
     if (!sess) {
       return c.json({ error: 'session not found in project' }, 404);
     }
-    const workspaceId =
-      body.workspace_id?.trim() || (await resolveWorkspaceIdForChannel(projectId, channel));
-    if (!workspaceId) {
+    const binding = await bindSlackThreadToSession({
+      projectId,
+      sessionId,
+      channel,
+      threadTs,
+      workspaceId: body.workspace_id?.trim() || null,
+      force: body.force === true,
+    });
+    if (binding.bound) return c.json({ ok: true, channel, ...binding });
+    if (binding.reason === 'workspace_unknown') {
       return c.json(
-        {
-          error:
-            'could not resolve Slack workspace for channel (is the channel bound to this project?)',
-        },
+        { error: 'could not resolve the Slack workspace: this project has no Slack install', code: 'SLACK_WORKSPACE_UNKNOWN', ...binding },
         400,
       );
     }
-    await bindChatThread({ projectId, workspaceId, threadId: threadTs, sessionId });
-    return c.json({ ok: true, bound: true, channel, thread_ts: threadTs });
+    if (binding.reason === 'thread_bound_to_another_session') {
+      return c.json(
+        {
+          error: `this Slack thread is bound to session ${binding.owner_session_id ?? '(unknown)'}; replies in it go to that session. Re-run with --force (body "force": true) to move it to this session, or post a new top-level message to start a thread for this session.`,
+          code: 'THREAD_BOUND_TO_ANOTHER_SESSION',
+          channel,
+          ...binding,
+        },
+        409,
+      );
+    }
+    return c.json(
+      {
+        error:
+          binding.reason === 'thread_owned_by_another_user'
+            ? `this Slack thread is bound to session ${binding.owner_session_id}, which another user started; --force moves only threads of your own sessions. Post a new top-level message instead.`
+            : 'this Slack thread belongs to another project and cannot be bound here. Post a new top-level message instead.',
+        code: binding.reason === 'thread_owned_by_another_user' ? 'THREAD_OWNED_BY_ANOTHER_USER' : 'THREAD_OWNED_BY_ANOTHER_PROJECT',
+        channel,
+        ...binding,
+      },
+      403,
+    );
   },
 );

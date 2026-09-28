@@ -20,11 +20,10 @@
 const CREDIT_GRANT_DUPLICATE_MARKERS = [
   'kortix_unique_stripe_event',
   'uniq_credit_ledger_idempotency_key',
-  'idx_kortix_credit_ledger_idempotency',
 ];
 
 /** Every string an error chain carries, including `cause`. Cycle-safe. */
-export function errorChainText(error: unknown): string {
+function errorChainText(error: unknown): string {
   const parts: string[] = [];
   const seen = new Set<unknown>();
   let current: unknown = error;

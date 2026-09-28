@@ -1,5 +1,34 @@
 import { describe, expect, test } from 'bun:test';
+import { createElement } from 'react';
+import { act, create } from 'react-test-renderer';
+import { getSessionSyncController } from '../browser/session-sync/session-sync-registry';
+import { useSessionSync } from './use-session-sync';
 import { livenessBusy, sessionSyncBusy } from './use-session-sync';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+test('an empty detached session does not start idle transcript verification', () => {
+  const controller = getSessionSyncController('', undefined, 'none');
+  const original = controller.setBusy;
+  const calls: Array<[boolean, boolean | undefined]> = [];
+  controller.setBusy = (busy, watchIdle) => {
+    calls.push([busy, watchIdle]);
+  };
+  function Detached() {
+    useSessionSync('');
+    return null;
+  }
+  try {
+    let renderer: ReturnType<typeof create> | undefined;
+    act(() => {
+      renderer = create(createElement(Detached));
+    });
+    expect(calls).toContainEqual([false, false]);
+    act(() => renderer?.unmount());
+  } finally {
+    controller.setBusy = original;
+  }
+});
 
 /**
  * WHICH signal switches the transcript liveness poll.

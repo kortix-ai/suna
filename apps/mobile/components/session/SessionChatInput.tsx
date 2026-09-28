@@ -64,7 +64,8 @@ import { Composer, COMPOSER_CONTROL_HIT_SLOP } from '@/components/kortix/compose
 import { sessionFileMentionLabel, type SessionFile } from '@/lib/session/session-files';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ModelPickerSheet } from './ModelPickerSheet';
-import { composerPillLabel, type PickerOption } from '@/lib/session/composer-config';
+import { composerChip, type PickerOption } from '@/lib/session/composer-config';
+import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
 import { modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -205,9 +206,20 @@ interface SessionChatInputProps {
   onCreateAgent?: () => void;
   model?: FlatModel | null;
   models?: FlatModel[];
-  /** The model list is not known yet: the pill hides instead of reading "Connect model". */
+  /** The model list is not known yet: the composer chip hides instead of flashing a label. */
   modelsLoading?: boolean;
-  /** "Connect provider" in the model sheet's empty state. */
+  /**
+   * The sandbox has not listed its agents yet (a new thread): the chip reads
+   * the agent project home sent with, never the model name (`composerChip`).
+   */
+  agentsLoading?: boolean;
+  /**
+   * The project's catalog loaded with no model (`isModelUnavailable`): the
+   * chip reads "Connect model", and Send calls `onConnectModel` instead of
+   * sending, and the draft stays (KRTX-251). One flag for both, so they agree.
+   */
+  modelUnavailable?: boolean;
+  /** "Connect provider" in the model sheet's empty state, and Send while `modelUnavailable`. */
   onConnectModel?: () => void;
   modelKey?: { providerID: string; modelID: string } | null;
   variant?: string | null;
@@ -262,6 +274,8 @@ function SessionChatInputImpl({
   model,
   models = EMPTY_MODELS,
   modelsLoading = false,
+  agentsLoading = false,
+  modelUnavailable = false,
   onConnectModel,
   modelKey,
   variant,
@@ -291,6 +305,8 @@ function SessionChatInputImpl({
 
   const modelSheetRef = useRef<SheetRef>(null);
   // The model sheet's Agent tab: the thread's agents, the active one checked.
+  // The agent project home last sent with (`ProjectHome` → `setAgent`).
+  const pendingAgentName = useLocalConfigStore((s) => s.selectedAgent);
   const agentChoice = useMemo(
     () =>
       onAgentChange
@@ -455,15 +471,6 @@ function SessionChatInputImpl({
       return;
     }
 
-    // Staged command — execute it with args
-    if (stagedCommand) {
-      const args = text.trim();
-      onCommand?.(stagedCommand, args || undefined);
-      setText('');
-      setStagedCommand(null);
-      return;
-    }
-
     const trimmedRaw = text.trim();
     const fileCount = attachments.files.length;
     const plan = planComposerSend({
@@ -473,8 +480,25 @@ function SessionChatInputImpl({
       isBusy,
       canQueue: Boolean(onEnqueue),
       canAttach,
+      modelUnavailable,
+      allowEmpty: Boolean(stagedCommand),
     });
     if (plan === 'noop') return;
+    // No model: connect one first. Nothing is sent or queued; the draft,
+    // the staged command, and the files stay.
+    if (plan === 'connect-model') {
+      Keyboard.dismiss();
+      onConnectModel?.();
+      return;
+    }
+
+    // Staged command — execute it with args
+    if (stagedCommand) {
+      onCommand?.(stagedCommand, trimmedRaw || undefined);
+      setText('');
+      setStagedCommand(null);
+      return;
+    }
     // Both refusals keep the text and the files in the composer.
     if (plan === 'refuse-busy-files') {
       toast.error('Wait for the reply to finish, then send your files.');
@@ -566,7 +590,7 @@ function SessionChatInputImpl({
     skill.reset();
     attachments.clearAfterSend();
     onSend(trimmed, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
-  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachments]);
+  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachments]);
 
   // One submission at a time: two taps inside one frame both read the same
   // draft (the cleared text has not rendered yet), so the second would send
@@ -590,8 +614,6 @@ function SessionChatInputImpl({
     () => modelPickerOptions(models, (m) => `${m.providerID}/${m.modelID}`),
     [models],
   );
-  // Web's "No model connected": the models have loaded and the project offers none.
-  const noModelConnected = !modelsLoading && models.length === 0;
 
   const handleModelSelect = useCallback(
     (key: string) => {
@@ -607,9 +629,20 @@ function SessionChatInputImpl({
     [variants, variant, onVariantSet],
   );
 
-  // `+` opens the Add sheet: Camera · Photos · Files, then Recent files, plus an
-  // AutoContinue row when the project has AutoContinue commands.
+  // `+` opens the Add sheet: Camera · Photos · Files, then Recent files. It only
+  // attaches; AutoContinue lives in the model sheet, under Thinking.
   const hasAutoContinue = availableAutoAlgorithms.length > 0;
+  const autoContinueRow = useMemo(
+    () =>
+      hasAutoContinue
+        ? {
+            value: autocontinueMode ? currentAutoAlgorithm?.label || 'On' : 'Off',
+            // The AutoContinue sheet stacks over the model sheet; closing it returns there.
+            onPress: () => setShowAutoSheet(true),
+          }
+        : undefined,
+    [hasAutoContinue, autocontinueMode, currentAutoAlgorithm],
+  );
   const handleAddPress = useCallback(() => {
     Keyboard.dismiss();
     attachSheetRef.current?.open();
@@ -707,14 +740,18 @@ function SessionChatInputImpl({
             onAttach={handleAddPress}
             attachLabel="Add"
             onRemoveAttachment={attachments.remove}
-            modelLabel={
+            chip={
               modelsLoading
                 ? null
-                : noModelConnected
-                  ? 'Connect model'
-                  : composerPillLabel(model ? pickerModelName(model) : undefined, variant)
+                : composerChip({
+                    connectModel: modelUnavailable,
+                    agentName: agent?.name,
+                    pendingAgentName,
+                    agentsLoading,
+                    modelName: model ? pickerModelName(model) : undefined,
+                  })
             }
-            onModelPress={openModelSheet}
+            onChipPress={openModelSheet}
             accessory={
               autocontinueMode && currentAutoAlgorithm ? (
                 <Button
@@ -732,7 +769,7 @@ function SessionChatInputImpl({
         </View>
       </View>
 
-      {/* Add sheet — Camera · Photos · Files, and AutoContinue when the project has it. */}
+      {/* Add sheet — Camera · Photos · Files, then Recent files. */}
       <AttachSheet ref={attachSheetRef} onPick={attachments.add}>
         <SettingsGroup>
           <SettingsRow
@@ -740,14 +777,6 @@ function SessionChatInputImpl({
             label="Recent files"
             onPress={() => attachSheetRef.current?.closeThen(() => filesSheetRef.current?.open())}
           />
-          {hasAutoContinue ? (
-            <SettingsRow
-              icon={InfinityIcon}
-              label="AutoContinue"
-              value={autocontinueMode ? (currentAutoAlgorithm?.label || 'On') : 'Off'}
-              onPress={() => attachSheetRef.current?.closeThen(() => setShowAutoSheet(true))}
-            />
-          ) : null}
         </SettingsGroup>
       </AttachSheet>
 
@@ -768,6 +797,7 @@ function SessionChatInputImpl({
         thinking={thinking}
         onConnect={onConnectModel}
         agent={agentChoice}
+        autoContinue={autoContinueRow}
       />
 
       <AutoContinueSheet

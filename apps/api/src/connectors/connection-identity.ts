@@ -12,6 +12,7 @@ import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
+import { isUuid } from '../shared/validate';
 
 /** The authorized identity: an email, a login, or a display name. */
 export const CONNECTED_AS_KEY = 'connected_as';
@@ -32,7 +33,6 @@ const GENERIC_LABELS = new Set(['private connection', 'project connection']);
 
 /** Words `--account` resolves before labels (`selectEntitledConnectorConnection`). */
 const RESERVED_LABELS = new Set(['me', 'project']);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Metadata keys that belong to the ROW, not to one authorization attempt. */
 const ROW_METADATA_KEYS = ['connector_slug', DEFAULT_SLOT_KEY] as const;
@@ -85,7 +85,7 @@ export function validateConnectionLabel(
   if (RESERVED_LABELS.has(label.toLowerCase())) {
     return { ok: false, error: `"${label}" is reserved for --account selection; choose another label` };
   }
-  if (UUID.test(label)) {
+  if (isUuid(label)) {
     return { ok: false, error: 'label must not look like a connection id' };
   }
   return { ok: true, label };

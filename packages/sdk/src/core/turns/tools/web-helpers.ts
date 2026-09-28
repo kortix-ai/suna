@@ -1,3 +1,4 @@
+import { urlError } from '../text-scan';
 import { recoverLinkResults } from './tool-output-format';
 
 export interface WebSearchSource {
@@ -250,10 +251,7 @@ export function buildScrapeFailureResults(output: string, urls: string[]): Scrap
   const cleaned = output.replace(/^Error:\s*/i, '').trim();
 
   return urls.map((url) => {
-    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const perUrl = new RegExp(`${escaped}\\s*:\\s*([^]*?)(?=\\s+https?:\\/\\/|$)`, 'i');
-    const match = cleaned.match(perUrl);
-    const error = match?.[1]?.trim() || cleaned;
+    const error = urlError(cleaned, url)?.trim() || cleaned;
     return { url, success: false, error };
   });
 }

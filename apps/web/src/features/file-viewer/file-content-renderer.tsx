@@ -39,6 +39,7 @@ import { getFileCategory, getLanguageFromExt, type FileCategory } from './previe
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { usePreviewFit } from './preview-fit';
+import { useContentRevision } from './use-content-revision';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -173,6 +174,10 @@ export interface FileContentRendererProps {
   fitOnOpen?: boolean;
   /** Additional class name for the code editor */
   codeEditorEditorClassName?: string;
+  /** Bumped by the surface's Refresh control. Remounts the renderers that read
+   *  their own bytes (xlsx, sqlite, the HTML frame), which a cache refetch
+   *  cannot reach. */
+  reloadKey?: number;
 }
 
 export function FileContentRenderer({
@@ -190,6 +195,7 @@ export function FileContentRenderer({
   onStatusChange,
   fitOnOpen = false,
   codeEditorEditorClassName,
+  reloadKey = 0,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -222,7 +228,16 @@ export function FileContentRenderer({
     isLoading,
     error,
     refetch,
+    dataUpdatedAt,
   } = useFileContent(isHeicImage || isZipArchive ? null : filePath);
+
+  // The agent's turn end refetches this file. The xlsx and sqlite renderers
+  // read their own bytes, so they remount only when the content really
+  // changed (structural sharing keeps the reference otherwise). The HTML frame
+  // reloads on every refetch: its stylesheets can change while its markup
+  // does not. Neither moves on the first load.
+  const contentRevision = useContentRevision(fileContent);
+  const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -861,6 +876,7 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
               <XlsxRenderer
+                key={`xlsx-${filePath}-${contentRevision}-${reloadKey}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -873,6 +889,7 @@ export function FileContentRenderer({
           {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
             <Suspense fallback={<RendererFallback />}>
               <SqliteRenderer
+                key={`sqlite-${filePath}-${contentRevision}-${reloadKey}`}
                 filePath={filePath}
                 fileName={fileName}
                 className="h-full"
@@ -942,6 +959,7 @@ export function FileContentRenderer({
             <HtmlPreview
               key={`html-preview-${filePath}`}
               path={toSandboxAbsolutePath(filePath)}
+              reloadKey={`${fetchRevision}-${reloadKey}`}
               fileName={fileName}
               pendingLabel={tHardcodedUi.raw(
                 'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',

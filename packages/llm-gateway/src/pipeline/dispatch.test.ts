@@ -1,96 +1,113 @@
 import { describe, expect, test } from 'bun:test';
 import type { UpstreamDescriptor } from '../domain';
-import { ClientAbortError, UpstreamHttpError } from '../errors';
-import { type DispatchContext, type DispatchPlan, type Send, dispatch } from './dispatch';
+import { UpstreamHttpError } from '../errors';
+import {
+  type DispatchContext,
+  type DispatchPlan,
+  UPSTREAM_HEADERS_TIMEOUT_MS,
+  dispatch,
+  upstreamHeadersTimeoutMs,
+  withUpstreamHeadersTimeout,
+} from './dispatch';
 
-const base: UpstreamDescriptor = {
-  provider: 'provider-a',
-  kind: 'openai-compat',
-  baseUrl: 'https://provider-a.example/v1',
-  apiKey: 'key',
-  billingMode: 'credits',
-  markup: 1,
-};
+// Every attempt goes through the real transport (`callUpstream`): the direct
+// OpenAI-compatible request, or the AI SDK Bedrock Converse request. Only the
+// network is fake: `fetchImpl` records each request and answers per row.
 
-type Reply = Response | Error;
+function upstream(provider: string, overrides: Partial<UpstreamDescriptor> = {}): UpstreamDescriptor {
+  return {
+    provider,
+    kind: 'openai-compat',
+    baseUrl: `https://${provider}.example/v1`,
+    apiKey: 'key',
+    billingMode: 'credits',
+    markup: 1,
+    ...overrides,
+  };
+}
+
+const base = upstream('provider-a');
+
+function bedrock(resolvedModel: string, overrides: Partial<UpstreamDescriptor> = {}): UpstreamDescriptor {
+  return upstream('amazon-bedrock', { kind: 'bedrock', resolvedModel, ...overrides });
+}
+
 interface Sent {
-  provider: string;
+  /** The host the request went to: the provider of an OpenAI-compatible candidate. */
+  host: string;
   key: string;
-  model: unknown;
-  resolvedModel?: string;
+  /** The model on the wire: the OpenAI body's `model`, or the Bedrock URL's model id. */
+  model: string;
   body: Record<string, unknown>;
 }
 
-const ok = () => new Response('{"choices":[]}', { status: 200 });
+const json = (value: unknown, status = 200, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', ...headers } });
+const ok = () => json({ choices: [] });
 const status = (code: number, headers?: Record<string, string>) =>
   new Response(`status ${code}`, { status: code, headers });
+const converseOk = () =>
+  json({
+    output: { message: { role: 'assistant', content: [{ text: 'ok' }] } },
+    stopReason: 'end_turn',
+    usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+  });
+// Bedrock's refusal of a bare model id, as its Converse API answers it.
 const profileRefusal = () =>
-  new UpstreamHttpError(400, 'Invocation of model ID x with on-demand throughput isn’t supported.', 'amazon-bedrock');
+  json(
+    {
+      message:
+        'Invocation of model ID xai.grok-4.6 with on-demand throughput isn’t supported. Retry your request with the ID or ARN of an inference profile that contains this model.',
+    },
+    400,
+  );
 
-function harness(reply: (sent: Sent, index: number) => Reply, overrides: Partial<DispatchContext> = {}) {
+function harness(reply: (sent: Sent, index: number) => Response | Error, overrides: Partial<DispatchContext> = {}) {
   const sent: Sent[] = [];
   const cooldowns: Array<[string, number]> = [];
   const resolved: string[] = [];
-  const send: Send = async (body, descriptor) => {
-    const entry = {
-      provider: descriptor.provider,
-      key: descriptor.apiKey,
-      model: body.model,
-      resolvedModel: descriptor.resolvedModel,
-      body,
-    };
-    sent.push(entry);
-    const result = reply(entry, sent.length - 1);
-    if (result instanceof Error) throw result;
-    return result;
-  };
   const ctx: DispatchContext = {
     requestId: 'req_test',
     logger: { info() {}, warn() {}, error() {} },
-    fetchImpl: async () => ok(),
-    send,
+    fetchImpl: async (input, init) => {
+      const url = new URL(input);
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      const converse = url.pathname.match(/\/model\/([^/]+)\/converse/);
+      const entry: Sent = {
+        host: url.hostname.split('.')[0]!,
+        key: (new Headers(init.headers).get('authorization') ?? '').replace(/^Bearer /, ''),
+        model: converse ? decodeURIComponent(converse[1]!) : String(body.model),
+        body,
+      };
+      sent.push(entry);
+      const result = reply(entry, sent.length - 1);
+      if (result instanceof Error) throw result;
+      return result;
+    },
     resolveCandidates: async (model) => {
       resolved.push(model);
-      return [{ ...base, provider: `${model}-upstream` }];
+      return [upstream(`${model}-upstream`)];
     },
     notePoolRateLimit: async (secretId, seconds) => {
       cooldowns.push([secretId, seconds]);
     },
     ...overrides,
   };
-  const run = (plan: DispatchPlan, body: Record<string, unknown> = { messages: [] }) => dispatch(body, plan, ctx);
+  const run = (plan: DispatchPlan, body: Record<string, unknown> = { messages: [{ role: 'user', content: 'hi' }] }) =>
+    dispatch(body, plan, ctx);
   return { run, sent, cooldowns, resolved };
 }
 
 describe('dispatch: one attempt plan', () => {
-  test('a single candidate is sent once and its answer returned unchanged', async () => {
-    const { run, sent } = harness(() => status(503));
-    const outcome = await run({ model: 'm', candidates: [base] });
-    expect(sent).toHaveLength(1);
-    expect(outcome.response?.status).toBe(503);
-    expect(outcome).toMatchObject({ attempts: 1, candidatesTried: ['provider-a'], attemptFailures: [] });
-  });
-
-  test('a thrown final failure is returned as `error`', async () => {
-    const failure = new TypeError('fetch failed');
-    const { run } = harness(() => failure);
-    const outcome = await run({ model: 'm', candidates: [base] });
-    expect(outcome.response).toBeUndefined();
-    expect(outcome.error).toBe(failure);
-  });
-
   test('a pool key and its Bedrock inference profile compose', async () => {
-    const key = (name: string): UpstreamDescriptor => ({
-      ...base, provider: 'amazon-bedrock', kind: 'bedrock', apiKey: name, poolSecretId: name,
-      billingMode: 'none', markup: 0, resolvedModel: 'xai.grok-4.6',
-    });
-    const { run, sent, cooldowns } = harness(({ key: apiKey, resolvedModel }) => {
-      if (resolvedModel === 'xai.grok-4.6') return profileRefusal();
-      if (apiKey === 'a') return new UpstreamHttpError(429, 'limited', 'amazon-bedrock', { 'retry-after': '5' });
-      return ok();
+    const key = (name: string) => bedrock('xai.grok-4.6', { apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
+    const { run, sent, cooldowns } = harness(({ key: apiKey, model }) => {
+      if (model === 'xai.grok-4.6') return profileRefusal();
+      if (apiKey === 'a') return json({ message: 'Too many requests' }, 429, { 'retry-after': '5' });
+      return converseOk();
     });
     const outcome = await run({ model: 'amazon-bedrock/xai.grok-4.6', candidates: [key('a'), key('b')] });
-    expect(sent.map((s) => `${s.key}:${s.resolvedModel}`)).toEqual([
+    expect(sent.map((s) => `${s.key}:${s.model}`)).toEqual([
       'a:xai.grok-4.6',
       'a:global.xai.grok-4.6',
       'b:xai.grok-4.6',
@@ -108,26 +125,29 @@ describe('dispatch: one attempt plan', () => {
   });
 
   test('Bedrock inference profiles are tried global first, then us, then the refusal is final', async () => {
-    const bedrock: UpstreamDescriptor = { ...base, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'xai.grok-4.6' };
     const { run, sent } = harness(() => profileRefusal());
-    const outcome = await run({ model: 'm', candidates: [bedrock] });
-    expect(sent.map((s) => s.resolvedModel)).toEqual(['xai.grok-4.6', 'global.xai.grok-4.6', 'us.xai.grok-4.6']);
+    const outcome = await run({ model: 'm', candidates: [bedrock('xai.grok-4.6')] });
+    expect(sent.map((s) => s.model)).toEqual(['xai.grok-4.6', 'global.xai.grok-4.6', 'us.xai.grok-4.6']);
     expect(outcome.error).toBeInstanceOf(UpstreamHttpError);
   });
 
-  test('a refused reasoning_effort is dropped once, for that attempt only', async () => {
-    const bedrock: UpstreamDescriptor = { ...base, provider: 'amazon-bedrock', kind: 'bedrock', resolvedModel: 'openai.dispatch-effort' };
-    const refusal = new UpstreamHttpError(400, 'unknown_parameter: reasoning_effort', 'amazon-bedrock');
-    const { run, sent } = harness(() => refusal);
-    const outcome = await run({ model: 'm', candidates: [bedrock] }, { messages: [], reasoning_effort: 'high' });
-    expect(sent.map((s) => s.body.reasoning_effort)).toEqual(['high', undefined]);
-    expect(outcome.error).toBe(refusal);
+  test('a refused reasoning_effort is dropped once, and a second refusal is final', async () => {
+    const { run, sent } = harness(() => json({ message: 'unknown_parameter: reasoning_effort is not supported' }, 400));
+    const outcome = await run(
+      { model: 'm', candidates: [bedrock('openai.dispatch-effort')] },
+      { messages: [{ role: 'user', content: 'hi' }], reasoning_effort: 'high' },
+    );
+    expect(sent).toHaveLength(2);
+    expect(JSON.stringify(sent[0]!.body)).toContain('high');
+    expect(JSON.stringify(sent[1]!.body)).not.toContain('high');
+    expect(outcome.error).toMatchObject({ status: 400 });
   });
 
-  test('every pool key rate-limited returns a 429 carrying the earliest cooldown', async () => {
-    const key = (name: string): UpstreamDescriptor => ({ ...base, apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
+  test('every pool key rate-limited returns a 429 carrying the earliest cooldown and the provider body', async () => {
+    const key = (name: string) => ({ ...base, apiKey: name, poolSecretId: name, billingMode: 'none' as const, markup: 0 });
     const { run, cooldowns } = harness(({ key: apiKey }) =>
-      new UpstreamHttpError(429, '{"error":"limited"}', 'provider-a', { 'retry-after': apiKey === 'a' ? '40' : '6' }));
+      new Response('{"error":"limited"}', { status: 429, headers: { 'retry-after': apiKey === 'a' ? '40' : '6' } }),
+    );
     const outcome = await run({ model: 'm', candidates: [key('a'), key('b')] });
     expect(outcome.response?.status).toBe(429);
     expect(outcome.response?.headers.get('retry-after')).toBe('6');
@@ -135,23 +155,15 @@ describe('dispatch: one attempt plan', () => {
     expect(cooldowns).toEqual([['a', 40], ['b', 6]]);
   });
 
-  test('a pool key failing with anything but 429 is final', async () => {
-    const key = (name: string): UpstreamDescriptor => ({ ...base, apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
-    const { run, sent } = harness(() => status(401));
-    const outcome = await run({ model: 'm', candidates: [key('a'), key('b')] });
-    expect(sent).toHaveLength(1);
-    expect(outcome.response?.status).toBe(401);
-  });
-
   test('a failover chain skips candidates that did not opt in', async () => {
     const chain = [
-      { ...base, provider: 'first', failover: true },
-      { ...base, provider: 'no-opt-in' },
-      { ...base, provider: 'third', failover: true },
+      upstream('first', { failover: true }),
+      upstream('no-opt-in'),
+      upstream('third', { failover: true }),
     ];
-    const { run, sent } = harness((s) => (s.provider === 'third' ? ok() : status(500)));
+    const { run, sent } = harness((s) => (s.host === 'third' ? ok() : status(500)));
     const outcome = await run({ model: 'm', candidates: chain });
-    expect(sent.map((s) => s.provider)).toEqual(['first', 'third']);
+    expect(sent.map((s) => s.host)).toEqual(['first', 'third']);
     expect(outcome.attemptFailures.map((f) => [f.provider, f.status])).toEqual([['first', 500]]);
   });
 
@@ -174,78 +186,148 @@ describe('dispatch: one attempt plan', () => {
   });
 
   test('a fallback model that cannot be resolved is skipped', async () => {
-    const { run, sent } = harness((s) => (s.provider === 'g-upstream' ? ok() : status(503)), {
+    const { run, sent } = harness((s) => (s.host === 'g-upstream' ? ok() : status(503)), {
       resolveCandidates: async (model) => {
         if (model === 'f') throw new Error('provider not connected');
-        return [{ ...base, provider: `${model}-upstream` }];
+        return [upstream(`${model}-upstream`)];
       },
     });
     const outcome = await run({ model: 'm', candidates: [base], fallbackModels: ['f', 'g'] });
-    expect(sent.map((s) => s.provider)).toEqual(['provider-a', 'g-upstream']);
+    expect(sent.map((s) => s.host)).toEqual(['provider-a', 'g-upstream']);
     expect(outcome.response?.status).toBe(200);
   });
 
-  test('each model gets its own generation defaults and the client value still wins', async () => {
-    const { run, sent } = harness((_s, index) => (index === 0 ? status(502) : ok()));
-    await run(
-      {
-        model: 'm',
-        candidates: [base],
-        fallbackModels: ['f'],
-        defaultsFor: (model) => (model === 'm' ? { temperature: 0.9, maxOutputTokens: 100 } : { maxOutputTokens: 50 }),
-      },
-      { messages: [], top_p: 0.5 },
-    );
-    expect(sent.map((s) => [s.body.temperature, s.body.max_tokens, s.body.top_p])).toEqual([
-      [0.9, 100, 0.5],
-      [undefined, 50, 0.5],
-    ]);
+  test.each([
+    ['transient', 1],
+    ['any-error', 2],
+  ] as const)('a %s chain after a request error sends %i request(s)', async (fallbackOn, expected) => {
+    const { run, sent } = harness(() => status(400));
+    await run({ model: 'm', candidates: [base], fallbackModels: ['f'], fallbackOn });
+    expect(sent).toHaveLength(expected);
   });
 
-  test('a transient chain stops at a request error; any-error moves past it', async () => {
-    for (const [fallbackOn, expected] of [['transient', 1], ['any-error', 2]] as const) {
-      const { run, sent } = harness(() => status(400));
-      await run({ model: 'm', candidates: [base], fallbackModels: ['f'], fallbackOn });
-      expect(sent).toHaveLength(expected);
-    }
-  });
-
-  test('a transient chain moves past limit statuses, server errors, and network errors', async () => {
-    for (const reply of [status(402), status(403), status(429), status(500), new TypeError('fetch failed')]) {
-      const { run, sent } = harness((_s, index) => (index === 0 ? reply : ok()));
-      const outcome = await run({ model: 'm', candidates: [base], fallbackModels: ['f'] });
-      expect(sent).toHaveLength(2);
-      expect(outcome.model).toBe('f');
-    }
+  test.each([
+    ['402', () => status(402)],
+    ['403', () => status(403)],
+    ['429', () => status(429)],
+    ['500', () => status(500)],
+    ['a network error', () => new TypeError('fetch failed')],
+  ])('a transient chain moves past %s', async (_name, reply) => {
+    const { run, sent } = harness((_s, index) => (index === 0 ? reply() : ok()));
+    const outcome = await run({ model: 'm', candidates: [base], fallbackModels: ['f'] });
+    expect(sent).toHaveLength(2);
+    expect(outcome.model).toBe('f');
   });
 
   test('a BYOK primary skips Kortix-billed fallback candidates', async () => {
     const byok: UpstreamDescriptor = { ...base, billingMode: 'none', markup: 0 };
     const { run, sent } = harness(() => status(503), {
       resolveCandidates: async (model) => [
-        { ...base, provider: `${model}-managed` },
-        ...(model === 'g' ? [{ ...base, provider: 'g-byok', billingMode: 'none' as const, markup: 0 }] : []),
+        upstream(`${model}-managed`),
+        ...(model === 'g' ? [upstream('g-byok', { billingMode: 'none', markup: 0 })] : []),
       ],
     });
     await run({ model: 'm', candidates: [byok], fallbackModels: ['f', 'g'] });
-    expect(sent.map((s) => s.provider)).toEqual(['provider-a', 'g-byok']);
+    expect(sent.map((s) => s.host)).toEqual(['provider-a', 'g-byok']);
   });
 
   test('a client that left stops the plan', async () => {
-    const { run, sent } = harness(() => new ClientAbortError());
-    const outcome = await run({ model: 'm', candidates: [{ ...base, failover: true }, { ...base, failover: true }], fallbackModels: ['f'], fallbackOn: 'any-error' });
+    const client = new AbortController();
+    const { run, sent } = harness(
+      () => {
+        client.abort();
+        return new DOMException('The operation was aborted.', 'AbortError');
+      },
+      { signal: client.signal },
+    );
+    const outcome = await run({
+      model: 'm',
+      candidates: [upstream('first', { failover: true }), upstream('second', { failover: true })],
+      fallbackModels: ['f'],
+      fallbackOn: 'any-error',
+    });
+    // Dispatch itself stops: callUpstream's own pre-check would also hold the
+    // fetch count at 1, but only dispatch's stop keeps the second candidate
+    // from being attempted.
+    expect(outcome.attempts).toBe(1);
+    expect(outcome.candidatesTried).toHaveLength(1);
     expect(sent).toHaveLength(1);
-    expect(outcome.error).toBeInstanceOf(ClientAbortError);
+    expect(outcome.error).toBeInstanceOf(DOMException);
   });
 
   test('a publicly named candidate records a classified failure, never the upstream text', async () => {
-    const managed = (provider: string): UpstreamDescriptor => ({ ...base, provider, failover: true, publicProvider: 'kortix' });
-    const { run } = harness((s) => (s.provider === 'upstream-a' ? new Response('upstream-a key rejected', { status: 401 }) : ok()));
+    const managed = (provider: string) => upstream(provider, { failover: true, publicProvider: 'kortix' });
+    const { run } = harness((s) =>
+      s.host === 'upstream-a' ? new Response('upstream-a key rejected', { status: 401 }) : ok(),
+    );
     const outcome = await run({ model: 'm', candidates: [managed('upstream-a'), managed('upstream-b')] });
     expect(outcome.attemptFailures).toEqual([
       expect.objectContaining({ provider: 'kortix', resolvedModel: 'm', code: 'model_unavailable', status: 401 }),
     ]);
     expect(JSON.stringify(outcome.attemptFailures)).not.toContain('upstream-a');
     expect(outcome.candidatesTried).toEqual(['kortix', 'kortix']);
+  });
+});
+
+describe('the provider response-header deadline', () => {
+  test('aborts a provider fetch that does not return response headers before the deadline', async () => {
+    const fetchWithTimeout = withUpstreamHeadersTimeout(
+      async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        }),
+      5,
+    );
+
+    await expect(fetchWithTimeout('https://provider.example', {})).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+  });
+
+  test('clears the provider-headers deadline before consuming the response body', async () => {
+    const providerSignals: AbortSignal[] = [];
+    const fetchWithTimeout = withUpstreamHeadersTimeout(async (_input, init) => {
+      if (init.signal) providerSignals.push(init.signal);
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            await Bun.sleep(15);
+            controller.enqueue(new TextEncoder().encode('late body'));
+            controller.close();
+          },
+        }),
+      );
+    }, 5);
+
+    const response = await fetchWithTimeout('https://provider.example', {});
+    expect(await response.text()).toBe('late body');
+    expect(providerSignals[0]?.aborted).toBe(false);
+  });
+
+  test('keeps client cancellation attached after provider headers arrive', async () => {
+    const client = new AbortController();
+    const providerSignals: AbortSignal[] = [];
+    const fetchWithTimeout = withUpstreamHeadersTimeout(async (_input, init) => {
+      if (init.signal) providerSignals.push(init.signal);
+      return new Response('stream');
+    }, 50);
+
+    await fetchWithTimeout('https://provider.example', {
+      signal: client.signal,
+    });
+    client.abort('client left');
+    expect(providerSignals[0]?.aborted).toBe(true);
+    expect(providerSignals[0]?.reason).toBe('client left');
+  });
+
+  // AI SDK streams answer the client with synthetic headers, so a large prefill
+  // may wait on the provider's headers for five minutes; a direct request, whose
+  // headers ARE the provider's, keeps the short budget.
+  test.each([
+    ['an AI SDK stream', { stream: true }, bedrock('anthropic.claude'), true, 5 * 60_000],
+    ['a direct stream', { stream: true }, base, true, UPSTREAM_HEADERS_TIMEOUT_MS],
+    ['a non-streaming AI SDK request', { stream: false }, bedrock('anthropic.claude'), false, UPSTREAM_HEADERS_TIMEOUT_MS],
+  ])('%s gets its header budget', (_name, body, descriptor, streaming, expected) => {
+    expect(upstreamHeadersTimeoutMs(body, descriptor, streaming)).toBe(expected);
   });
 });

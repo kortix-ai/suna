@@ -4,17 +4,18 @@
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
-import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { auditDb, auditErrorSqlstate, isAuditContentionError } from '../../shared/audit-db';
+import { isAuditSessionLockTimeout, withAuditSessionLock } from '../../shared/audit-session-serial';
 import { logger as appLogger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountTokens, auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
+import { accountTokens, auditEvents, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { readSessionAuditActions } from '../lib/session-audit-read';
 import { AnyObject, projectsApp } from '../lib/app';
-import { UUID_V4_REGEX } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import { buildFilters } from '../../accounts/audit-filters';
@@ -75,6 +76,20 @@ const AUDIT_INGEST_CHUNK = (() => {
 
 /** Advertised backoff when the session's sequence lock is contended. */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * How long one chunk waits for the in-process per-session audit lock before it
+ * reports contention (`shared/audit-session-serial.ts`). The holder is another
+ * audit INSERT for the same session in this process — the request's own inbound
+ * audit row the queue flushes, or a concurrent batch for the session. Waiting
+ * in memory cannot be cut short by the pool's `lock_timeout`, so this budget
+ * covers the holder's own statement budget (10 s) plus margin, while staying
+ * under the 25 s request deadline.
+ */
+const AUDIT_INGEST_LOCK_WAIT_MS = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_LOCK_WAIT_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 12_000;
+})();
 
 /** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
 function auditErrorSqlState(error: unknown): string | null {
@@ -377,15 +392,25 @@ projectsApp.openapi(
     for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
       const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
       try {
-        const inserted = await auditDb()
-          .insert(auditEvents)
-          .values(chunk)
-          .onConflictDoNothing()
-          .returning({ eventId: auditEvents.eventId });
+        // Hold the process-local session lock for the chunk's INSERT. The
+        // request's OWN inbound audit row is enqueued for this same session and
+        // would otherwise race this insert for the same
+        // `audit_session_sequences` row lock — the second writer lost at the
+        // pool's 2.5 s `lock_timeout` (55P03) and the queue dropped the row.
+        const inserted = await withAuditSessionLock(
+          sessionId,
+          () =>
+            auditDb()
+              .insert(auditEvents)
+              .values(chunk)
+              .onConflictDoNothing()
+              .returning({ eventId: auditEvents.eventId }),
+          { timeoutMs: AUDIT_INGEST_LOCK_WAIT_MS },
+        );
         attempted += chunk.length;
         insertedCount += inserted.length;
       } catch (error) {
-        if (!isAuditContentionError(error)) {
+        if (!isAuditContentionError(error) && !isAuditSessionLockTimeout(error)) {
           // A write that is NOT backpressure is a defect, and until now the
           // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
           // query: insert into "kortix"."audit_events" …` with the whole
@@ -418,7 +443,10 @@ projectsApp.openapi(
         appLogger.warn('[audit] ingest contended', {
           projectId,
           sessionId,
-          sqlstate: auditErrorSqlState(error),
+          // `57xxx`/`55P03` came back from Postgres; a null SQLSTATE on a
+          // bounded in-process wait means the writer never reached the DB.
+          sqlstate: auditErrorSqlstate(error),
+          contention_source: isAuditSessionLockTimeout(error) ? 'in_process' : 'postgres',
           accepted: parsed.accepted,
           attempted,
           inserted: insertedCount,
@@ -497,7 +525,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     let limit: number;
     let cursor: ReturnType<typeof parseAuditSessionCursor>;
@@ -573,102 +601,36 @@ projectsApp.openapi(
     const eventRows = hasMoreEvents ? fetchedEvents.slice(0, limit) : fetchedEvents;
     const lastEvent = eventRows.at(-1);
 
-    const rows = await db
-      .select({
-        executionId: connectorCalls.executionId,
-        connectorId: connectorCalls.connectorId,
-        actionPath: connectorCalls.actionPath,
-        actingUserId: connectorCalls.actingUserId,
-        status: connectorCalls.status,
-        risk: connectorCalls.risk,
-        resultSummary: connectorCalls.resultSummary,
-        approvedBy: connectorCalls.approvedBy,
-        createdAt: connectorCalls.createdAt,
-        resolvedAt: connectorCalls.resolvedAt,
-      })
-      .from(connectorCalls)
-      .where(
-        and(
-          eq(connectorCalls.projectId, projectId),
-          eq(connectorCalls.sessionId, sessionId),
-          ...(audited
-            ? []
-            : [
-                eq(connectorCalls.status, 'pending_approval'),
-                isNull(connectorCalls.approvedBy),
-                isNull(connectorCalls.resolvedAt),
-              ]),
-        ),
-      )
-      // Most-recent-first: when a busy session exceeds `limit`, keep the RECENT
-      // actions (truncating oldest), not the other way round.
-      .orderBy(desc(connectorCalls.createdAt))
-      .limit(limit);
-
-    // Resolve actor + approver emails in one batched lookup (managers see who).
-    const userIds = [
-      ...new Set(
-        rows.flatMap((r) => [r.actingUserId, r.approvedBy]).filter((v): v is string => !!v),
-      ),
-    ];
-    const emailByUser = userIds.length
-      ? await lookupEmailsByUserIds(userIds)
-      : new Map<string, string>();
-
-    // Connector slugs in one batched lookup — the UI needs `<slug>.<action>`
-    // to offer a "always run this" project-policy shortcut on a pending row.
-    const connectorIds = [
-      ...new Set(rows.map((r) => r.connectorId).filter((v): v is string => !!v)),
-    ];
-    const slugByConnector = new Map<string, string>();
-    if (connectorIds.length) {
-      const conns = await db
-        .select({ connectorId: connectors.connectorId, slug: connectors.slug })
-        .from(connectors)
-        .where(inArray(connectors.connectorId, connectorIds));
-      for (const conn of conns) slugByConnector.set(conn.connectorId, conn.slug);
-    }
+    // Same query, same batched email + connector-slug lookups, same
+    // `approval_url` rule as before — now shared with the session-open
+    // bundle's `audit` leg (`../lib/session-audit-read.ts`) so the two can
+    // never disagree about what is pending.
+    const auditActions = await readSessionAuditActions({
+      projectId,
+      sessionId,
+      agentName: (visible.row.agentName as string | null) ?? null,
+      audited,
+      limit,
+    });
 
     return c.json({
       session_id: sessionId,
-      agent: (visible.row.agentName as string | null) ?? null,
+      agent: auditActions.agent,
       // False when the account lacks the Enterprise `auditAccess` entitlement:
       // `actions` then contains only unresolved pending approvals, and the UI
       // shows the upgrade path for the full trail.
       audit_access: audited,
-      count: audited ? eventRows.length : rows.length,
+      // Unchanged from before the extraction: the EVENTS page size for an
+      // entitled caller (0 whenever `include_events=false`, which is every
+      // poll), the PENDING-ACTIONS count otherwise.
+      count: audited ? eventRows.length : auditActions.count,
       events: eventRows.map(serializeAuditEvent),
       next_cursor:
         hasMoreEvents && lastEvent?.sessionSequence != null
           ? `${lastEvent.sessionSequence}|${lastEvent.eventId}`
           : null,
       // Most-recent-first trail of every connector-gated action this session took.
-      actions: rows.map((r) => ({
-        execution_id: r.executionId,
-        action: r.actionPath,
-        connector_id: r.connectorId,
-        connector: r.connectorId ? (slugByConnector.get(r.connectorId) ?? null) : null,
-        status: r.status, // ok | error | denied | pending_approval
-        risk: r.risk, // read | write | destructive | null
-        acted_by: r.actingUserId,
-        acted_by_email: r.actingUserId ? (emailByUser.get(r.actingUserId) ?? null) : null,
-        // Who resolved a gated action — set for BOTH approve and deny (the
-        // approvedBy column doubles as "resolver"). null while still pending.
-        resolved_by: r.approvedBy,
-        resolved_by_email: r.approvedBy ? (emailByUser.get(r.approvedBy) ?? null) : null,
-        result_summary: r.resultSummary ?? null,
-        at: r.createdAt.toISOString(),
-        resolved_at: r.resolvedAt?.toISOString() ?? null,
-        // For an UNRESOLVED row, the standalone page where a human reviews the
-        // full (redacted) arguments and decides. Minted here so the in-session
-        // notice can link straight to it without a second round trip. Only for
-        // pending rows: a resolved row has nothing left to decide, and a
-        // settled decision shouldn't carry a live link around.
-        approval_url:
-          r.status === 'pending_approval' && !r.resolvedAt
-            ? approvalPageUrl(projectId, r.executionId, sessionId)
-            : null,
-      })),
+      actions: auditActions.actions,
     });
   },
 );

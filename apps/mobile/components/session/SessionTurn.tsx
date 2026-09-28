@@ -248,7 +248,9 @@ function SessionTurnImpl({
       .join('\n\n');
   }, [inlineItems, response]);
 
-  const userMessage = (
+  // A long run whose prompt is not loaded has a stand-in prompt with no parts:
+  // render its replies without a prompt bubble.
+  const userMessage = turn.partial ? null : (
     <UserMessage
       turn={turn}
       isDark={isDark}

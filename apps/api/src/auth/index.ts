@@ -21,6 +21,7 @@ import { auditLogout } from '../shared/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from './gotrue';
 import { forgetJwtLiveness } from '../shared/jwt-liveness';
+import { readJsonObject } from '../shared/http-body';
 
 export const authRouter = makeOpenApiApp<AppEnv>();
 
@@ -193,8 +194,8 @@ authRouter.openapi(
     responses: { 200: json(z.object({}).passthrough(), 'The challenge'), ...errors(400, 401, 422) },
   }),
   async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    return mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}/challenge`, 'POST', body ?? {});
+    const body = await readJsonObject(c);
+    return mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}/challenge`, 'POST', body);
   },
 );
 
@@ -304,7 +305,8 @@ authRouter.openapi(
   }),
   async (c: any) => {
     const token = bearerOf(c);
-    const scope = ((await c.req.json().catch(() => ({}))) as { scope?: string }).scope ?? 'global';
+    const body = await readJsonObject(c);
+    const scope = body.scope === 'local' || body.scope === 'others' ? body.scope : 'global';
     if (token && (c.get('authType') as string) === 'supabase') {
       // Best effort: the local revoke below is what the Kortix gate reads.
       await gotrue('/logout', { method: 'POST', bearer: token, body: {}, query: { scope } });

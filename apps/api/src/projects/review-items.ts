@@ -5,7 +5,7 @@
  * output / decision / batch submitted for review (kinds `change` and `approval`
  * are folded in by adapters in a later pass — they keep their own tables). The
  * polymorphic `detail` jsonb carries the kind-specific payload. Mirrors the CR
- * core module (./change-requests.ts). See docs/REVIEW_CENTER_DESIGN.md.
+ * core module (./change-requests.ts).
  */
 
 import { changeRequests, connectorCalls, reviewItems } from '@kortix/db';

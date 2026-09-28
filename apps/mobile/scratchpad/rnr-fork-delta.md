@@ -200,6 +200,21 @@ Real usage: **0**. `grep -rl "from '@/components/ui/context-menu'"` returns noth
 DECISION: drop. Take stock's context-menu.tsx wholesale (zero-risk, no
   behavioral content to preserve).
 
+### Re-added 2026-09-27 (Jay): the user message long-press menu
+Stock context-menu.tsx, re-installed and adopted by
+`components/session/turn/user-message.tsx` (`MessageMenu`). Deltas from stock
+beyond the icon import line (see Icon library):
+- `ContextMenuShortcut` renders `@/components/ui/text`'s `Text`, not
+  react-native's: stock imports `Text` from `react-native`.
+- `ContextMenuLabel` passes `asChild` and renders `@/components/ui/text`'s
+  `Text`: the primitive's Label is a raw react-native `Text`, which cannot take
+  the app font (`font-roobert` lives on the design-system `Text` base class).
+  Same classes as stock.
+- The content surface matches `popover.tsx` (Jay, 2026-09-27): `ContextMenuContent`
+  and `ContextMenuSubContent` are `rounded-xl … shadow-md` (stock `rounded-md …
+  shadow-lg`), and items are `rounded-lg` (stock `rounded-sm`), so an item's
+  highlight nests inside the 12pt corner and its 4pt padding.
+
 ## input.tsx — adds an unused `variant?: 'default' | 'transparent'` prop; default chrome itself differs at 3 real call sites
 Fork type: `InputProps = ComponentProps<TextInput> & { variant?: 'default' |
 'transparent' }`. Stock has no `variant` prop at all.
@@ -605,18 +620,9 @@ bodies are unchanged):
 
 | File | Stock | App |
 | --- | --- | --- |
-| `accordion.tsx` | `ChevronDown` | `CaretDownIcon as ChevronDown` |
-| `alert.tsx` | `type LucideIcon` | `type AppIcon` (also the `icon` prop type) |
-| `checkbox.tsx` | `Check` | `CheckIcon as Check` |
-| `context-menu.tsx` | `Check, ChevronDown, ChevronRight, ChevronUp` | `CheckIcon`, `CaretDownIcon`, `CaretRightIcon`, `CaretUpIcon` aliased |
 | `dialog.tsx` | `X` | `XIcon as X` |
-| `dropdown-menu.tsx` | same as context-menu | same as context-menu |
-| `menubar.tsx` | same as context-menu | same as context-menu |
 | `select.tsx` | `Check, ChevronDown, ChevronDownIcon, ChevronUpIcon` | `CheckIcon`, `CaretDownIcon` (×2), `CaretUpIcon` aliased |
-
-One non-import line: `checkbox.tsx` drops
-`strokeWidth={Platform.OS === 'web' ? 2.5 : 3.5}` — Phosphor has no stroke
-width; the app weight applies.
+| `context-menu.tsx` | `Check, ChevronDown, ChevronRight, ChevronUp` | `CheckIcon`, `CaretDownIcon`, `CaretRightIcon`, `CaretUpIcon` aliased |
 
 `icon.tsx` is rewritten: `as: AppIcon` (was `LucideIcon`), and `IconImpl`
 passes the `className` color from `style.color` to the `color` prop, because

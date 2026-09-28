@@ -74,8 +74,15 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
     return { envVar: BEDROCK_BYOK_ENV_VAR, kind, npm: provider.npm ?? undefined };
   }
 
+  // Prefer the catalog provider's own `api` base URL when it publishes one:
+  // several anthropic-TRANSPORT providers are third-party Anthropic-compatible
+  // endpoints (kimi-for-coding → https://api.kimi.com/coding/v1, the MiniMax
+  // coding plans → api.minimax[i].com/anthropic/v1, …), and keying the override
+  // off `kind` sent their users' keys to api.anthropic.com, where they 401.
+  // The catalog's own `anthropic` entry carries no `api` field, so the
+  // hardcoded endpoint remains as the fallback for exactly that case.
   const baseUrl =
-    kind === 'anthropic' ? ANTHROPIC_BASE_URL : provider.api || BASE_URL_FALLBACKS[providerId];
+    provider.api || (kind === 'anthropic' ? ANTHROPIC_BASE_URL : BASE_URL_FALLBACKS[providerId]);
   const envVar = provider.env?.[0];
   if (!baseUrl || !envVar) return null;
 

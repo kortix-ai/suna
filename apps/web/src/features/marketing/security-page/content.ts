@@ -29,8 +29,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *  1. "Never visible to the model" (the /enterprise secrets bullet) is FALSE
  *     for project secrets. A granted runtime secret is a real environment value
  *     inside the session, readable by any command the agent runs — that is how
- *     a tool uses it. See docs/ENV_SECRET_EXPOSURE_BASELINE.md, which states it
- *     plainly. What IS true, and is all this page claims: connector credentials
+ *     a tool uses it. What IS true, and is all this page claims: connector credentials
  *     are resolved server-side and never enter the machine, Kortix's own
  *     upstream keys never enter it either, and a session only receives the
  *     secrets both the person's role and the agent's declared grant allow.
@@ -129,8 +128,10 @@ export const isolation = {
    from HKDF-SHA256 over API_KEY_SECRET salted with the project id, versioned
    envelope), apps/api/src/iam/agent-scope.ts (the userRole ∩ agentGrant rule),
    apps/api/src/connectors/pipedream.ts (connector credentials resolved
-   server-side), apps/api/src/platform/sandbox-env.ts (the allowlist that keeps
-   Kortix's own upstream keys out of every sandbox) and
+   server-side), apps/api/src/projects/lib/sessions.ts
+   (buildSessionSandboxEnvVars builds the sandbox env from project secrets, never
+   from the API's own env) with apps/api/src/projects/lib/sandbox-env-names.ts
+   (the names a sandbox never receives) and
    apps/kortix-sandbox-agent-server/src/agent-env-file.ts (tmpfs, 0600,
    shredded on shutdown).
 
@@ -411,10 +412,10 @@ export const posture = {
 } as const;
 
 /* ── disclosure ────────────────────────────────────────────────────────────
-   Grounded in docs/SECURITY.md. The mailbox is ALREADY published publicly on
+   The mailbox is ALREADY published publicly on
    /support (support/page.tsx), so naming it here adds no new exposure, and the
-   three timelines below are that document's policy quoted exactly.
-   ⚠️ BEFORE THIS PAGE GOES LIVE: docs/SECURITY.md marks security@kortix.com as
+   three timelines below are the security disclosure policy, quoted exactly.
+   ⚠️ BEFORE THIS PAGE GOES LIVE: security@kortix.com is
    a PLACEHOLDER that "must be created and monitored before this policy is
    published externally". Confirm the mailbox is real and watched, or cut the
    SLA rows — publishing a 3-day acknowledgement against an unread inbox is

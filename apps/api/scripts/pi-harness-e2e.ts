@@ -2,7 +2,9 @@
  * pi harness end-to-end against a running local stack.
  *
  *   bun pi-e2e.ts setup  --api http://localhost:14208/v1 --runtime pi|opencode --name <n>
- *   bun pi-e2e.ts run    --api ... --project <id> --provider daytona [--prompt "..."] [--keep]
+ *   bun pi-e2e.ts run    --api ... --project <id> --provider daytona [--agent <name>] [--prompt "..."] [--keep]
+ *   bun pi-e2e.ts cr     --api ... --project <id> --head <branch> [--title "..."]   (open + merge a change request)
+ *   bun pi-e2e.ts exec   --api ... --external <sandbox> --command "..."               (run a shell command in a kept sandbox)
  *
  * setup: provisions a managed project (starter template), clones it through
  * the Git proxy with a PAT, sets `runtime:` in kortix.yaml, pushes.
@@ -16,6 +18,7 @@ import { createHmac } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mintWireMessageId } from '../src/projects/wire-message-id';
 
 function arg(name: string, def?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -123,6 +126,28 @@ async function setup(): Promise<void> {
   console.log(JSON.stringify({ project_id: projectId, name, runtime, default_agent: defaultAgent, sha, manifest_head: manifest.split('\n').slice(0, 4) }));
 }
 
+/** Open a change request for `--head` (a branch already in the project repo) and merge it. */
+async function changeRequest(): Promise<void> {
+  const base = need('api');
+  const projectId = need('project');
+  const head = need('head');
+  const token = await jwt();
+  const created = await api(base, token, `/projects/${projectId}/change-requests`, {
+    method: 'POST',
+    body: JSON.stringify({ title: arg('title', `pi-e2e ${head}`), head_ref: head }),
+  });
+  const crId: string | undefined = created.body?.cr_id ?? created.body?.id;
+  const out: Record<string, unknown> = { head, create_status: created.status, cr_id: crId ?? null };
+  if (created.status === 201 && crId) {
+    const merged = await api(base, token, `/projects/${projectId}/change-requests/${crId}/merge`, { method: 'POST', body: '{}' });
+    out.merge_status = merged.status;
+    out.merge_body = typeof merged.body === 'string' ? merged.body.slice(0, 600) : JSON.stringify(merged.body).slice(0, 600);
+  } else {
+    out.create_body = JSON.stringify(created.body).slice(0, 600);
+  }
+  console.log(JSON.stringify(out, null, 2));
+}
+
 /** Register a project straight in the DB (the flows' database-project fixture), pointing at a local repo. */
 async function setupDb(): Promise<void> {
   const base = need('api');
@@ -147,12 +172,9 @@ async function setupDb(): Promise<void> {
   console.log(JSON.stringify({ project_id: projectId, name, repo_url: repoUrl, account_id: accountId, get_status: project.status, git_origin_url: project.body?.git_origin_url ?? null }));
 }
 
+/** A wire id at this instant, un-backdated: the harness transcript is empty. */
 function mintMessageId(): string {
-  const time = (BigInt(Date.now()) * BigInt(0x1000)) & BigInt(0xffffffffffff);
-  const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  let tail = '';
-  for (let i = 0; i < 14; i++) tail += B62[Math.floor(Math.random() * 62)];
-  return `msg_${time.toString(16).padStart(12, '0')}${tail}`;
+  return mintWireMessageId({ nowMs: Date.now(), backdateMs: 0 }).id;
 }
 
 async function run(): Promise<void> {
@@ -166,7 +188,8 @@ async function run(): Promise<void> {
   const t0 = performance.now();
   const at = () => Math.round(performance.now() - t0);
   const out: Record<string, unknown> = { project_id: projectId, provider };
-  const created = await api(base, token, `/projects/${projectId}/sessions`, { method: 'POST', body: JSON.stringify({ provider }) });
+  const agent = arg('agent');
+  const created = await api(base, token, `/projects/${projectId}/sessions`, { method: 'POST', body: JSON.stringify({ provider, ...(agent ? { agent_name: agent } : {}) }) });
   if (created.status !== 201) throw new Error(`create ${created.status}: ${JSON.stringify(created.body).slice(0, 300)}`);
   const sessionId: string = created.body.session_id ?? created.body.id;
   out.session_id = sessionId;
@@ -208,6 +231,11 @@ async function run(): Promise<void> {
     out.boot_timeline = health.boot_timeline;
     out.image = psql(`select coalesce(metadata->'runtimeArtifact'->>'providerArtifactRef','') from kortix.session_sandboxes where sandbox_id='${sessionId}'`);
     out.daemon_has_pi = (await api(base, token, `${daemon}/kortix/opencode/state`)).body?.identity?.harness ?? null;
+    out.extensions = health.extensions ?? null;
+    out.tool_ids = (await api(base, token, `${daemon}/tool/ids`)).body ?? null;
+    // The daemon's own pi lines: runtime ready (ms, extensionsMs), package bundle download.
+    const diag = await api(base, token, `${daemon}/kortix/diag?tail=400`);
+    out.pi_log = String(diag.body?.logs?.daemon ?? '').split('\n').filter((line) => line.includes('[pi]')).map((line) => line.slice(0, 600));
 
     // One prompt through the inbox.
     const messageId = mintMessageId();
@@ -230,7 +258,8 @@ async function run(): Promise<void> {
       const user = messages.find((m) => m.info?.id === messageId);
       const assistants = messages.filter((m) => m.info?.role === 'assistant' && m.info?.parentID === messageId);
       if (assistants.length && firstAssistantMs === null) firstAssistantMs = Math.round(performance.now() - tp);
-      const done = assistants.find((m) => m.info?.time?.completed && m.parts?.some((p: any) => p.type === 'text' && p.text?.trim()));
+      // A step that called a tool is followed by another step, so it is never the answer.
+      const done = assistants.find((m) => m.info?.time?.completed && m.parts?.some((p: any) => p.type === 'text' && p.text?.trim()) && !m.parts?.some((p: any) => p.type === 'tool'));
       const collect = (from: any) => ({ text: from.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(''), tools: assistants.flatMap((m) => m.parts.filter((p: any) => p.type === 'tool').map((p: any) => ({ tool: p.tool, status: p.state?.status, output: String(p.state?.output ?? '').slice(0, 120) }))) });
       if (user && done) {
         reply = collect(done);
@@ -300,6 +329,18 @@ async function probe(): Promise<void> {
   await show(`/p/${eid}/8000/kortix/logs?tail=${arg('tail', '120')}`, 9000);
 }
 
+/** Run one shell command in a kept sandbox (the daemon's env-rpc `exec`) and print its result. */
+async function exec(): Promise<void> {
+  const base = need('api');
+  const eid = need('external');
+  const token = await jwt();
+  const r = await api(base, token, `/p/${eid}/8000/kortix/env-rpc`, {
+    method: 'POST',
+    body: JSON.stringify({ op: 'exec', args: { command: need('command'), timeout: Number(arg('timeout-ms', '600000')) } }),
+  });
+  console.log(JSON.stringify({ status: r.status, ...(typeof r.body === 'object' ? r.body : { body: r.body }) }));
+}
+
 /** Set or clear a per-project feature flag override (PATCH /projects/:id/features). */
 async function flag(): Promise<void> {
   const base = need('api');
@@ -330,6 +371,9 @@ switch (process.argv[2]) {
   case 'flag':
     await flag();
     break;
+  case 'exec':
+    await exec();
+    break;
   case 'probe':
     await probe();
     break;
@@ -345,7 +389,10 @@ switch (process.argv[2]) {
   case 'run':
     await run();
     break;
+  case 'cr':
+    await changeRequest();
+    break;
   default:
-    console.error('usage: pi-e2e.ts setup|run …');
+    console.error('usage: pi-e2e.ts setup|setup-db|run|cr|exec|status|probe|flag|delete …');
     process.exit(2);
 }

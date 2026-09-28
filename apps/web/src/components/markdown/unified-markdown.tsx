@@ -27,7 +27,8 @@ import {
   remoteImageHost,
   shouldUseNextLink,
 } from '@/components/markdown/unified-markdown-utils';
-import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
+import { remarkSetupLinkBlocks } from '@/components/markdown/setup-link-blocks';
+import { SetupLinkButton, SetupLinkInlineContext } from '@/components/setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from '@/components/setup-links/util';
 import { Button } from '@/components/ui/button';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -115,9 +116,14 @@ const MARKDOWN_COMPONENTS = {
     </ul>
   ),
   ol: MarkdownOrderedList,
+  // A setup link still inside a list or table is part of a sentence or a row of
+  // data (`liftSetupLinkBlocks` lifted the ones that were not), so it renders
+  // as an inline chip rather than a full-width card.
   li: ({ children }: { children?: React.ReactNode }) => (
     <li className="text-foreground/95 leading-relaxed font-medium [overflow-wrap:anywhere]">
-      {wrapChildrenWithPaths(children)}
+      <SetupLinkInlineContext.Provider value={true}>
+        {wrapChildrenWithPaths(children)}
+      </SetupLinkInlineContext.Provider>
     </li>
   ),
 
@@ -241,7 +247,9 @@ const MARKDOWN_COMPONENTS = {
       className={cn(tdClassName, 'text-foreground px-4 py-2 text-left font-normal break-normal')}
       {...props}
     >
-      {wrapChildrenWithPaths(children)}
+      <SetupLinkInlineContext.Provider value={true}>
+        {wrapChildrenWithPaths(children)}
+      </SetupLinkInlineContext.Provider>
     </td>
   ),
 
@@ -397,6 +405,13 @@ export interface UnifiedMarkdownProps {
   isStreaming?: boolean;
 }
 
+/**
+ * Agent content only: the setup-link lift depends on `policy.setupLinks`, the
+ * same gate that turns a setup link into a card. Module-level so the array is
+ * stable across renders (see the `rehypePlugins` note below).
+ */
+const REMARK_PLUGINS_WITH_SETUP_LINKS = [...katexRemarkPlugins, remarkSetupLinkBlocks];
+
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
@@ -456,7 +471,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             parseIncompleteMarkdown={isStreaming}
             parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
             components={MARKDOWN_COMPONENTS as any}
-            remarkPlugins={katexRemarkPlugins}
+            remarkPlugins={policy.setupLinks ? REMARK_PLUGINS_WITH_SETUP_LINKS : katexRemarkPlugins}
             // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
             // new array each render made every block re-parse on every token.
             rehypePlugins={policy.rawHtml ? katexRehypePlugins : katexRehypePluginsNoRaw}

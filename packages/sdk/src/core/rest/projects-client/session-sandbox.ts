@@ -213,7 +213,10 @@ export async function startProjectSession(
   options?: number | {
     /** Server-side long-poll budget in milliseconds. */
     waitMs?: number;
-    /** Resume only a preserved runtime from the previous repository generation. */
+    /**
+   * Telemetry only. A session created before a repository replacement starts,
+   * runs the project's current config release and converges without it.
+   */
     repositoryMode?: "previous";
   },
 ): Promise<SessionStartResult | null> {

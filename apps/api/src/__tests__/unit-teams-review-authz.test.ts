@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // `handleReview` checked only that the presser had SOME linked Kortix identity
 // in the tenant — never that they had access to the project. So anyone in the
@@ -18,14 +19,23 @@ const actorCalls: Array<{ tenantId: string; uid: string; accountId: string; proj
 let actorResult: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
 mock.module('../channels/teams/identity', () => ({
   teamsUserId: () => '29:presser',
-  resolveTeamsActor: async (tenantId: string, uid: string, accountId: string, projectId: string) => {
-    actorCalls.push({ tenantId, uid, accountId, projectId });
+  notifyAdminsOfTeamsAccessRequest: async () => {},
+}));
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+  
+  resolveChatActor: async (
+    user: { workspaceId: string; platformUserId: string },
+    project: { accountId: string; projectId: string },
+  ) => {
+    actorCalls.push({ tenantId: user.workspaceId, uid: user.platformUserId, accountId: project.accountId, projectId: project.projectId });
     return actorResult;
   },
-  createTeamsAccessRequest: async () => null,
-  notifyAdminsOfTeamsAccessRequest: async () => {},
-  lookupTeamsIdentity: async () => ({ userId: 'user-1' }),
-}));
+  createChatAccessRequest: async () => null,
+  resolveProjectChatActor: async () => ({ userId: 'user-1' }),
+  lookupChatIdentity: async () => ({ userId: 'user-1' }),
+}),
+);
 
 const verdicts: Array<Record<string, unknown>> = [];
 mock.module('../projects/review-items', () => ({

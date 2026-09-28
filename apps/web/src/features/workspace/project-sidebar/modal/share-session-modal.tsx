@@ -33,9 +33,11 @@ import {
   LockIcon as LockSolid,
   UsersIcon as UsersSolid,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { SessionPublicLinkSection } from './session-public-link-section';
 import { sessionAccessSummary, sessionAccessView } from './share-session-access';
+import { refreshAfterShare } from './share-session-cache';
 
 /**
  * The three options, worded from the EDITOR's seat.
@@ -157,6 +159,7 @@ export function ShareSessionModal({
   });
   const oversightOn = oversightQuery.data?.enabled === true;
 
+  const queryClient = useQueryClient();
   const save = useMutation({
     mutationFn: () => {
       if (!isSharingComplete(sharing)) {
@@ -166,6 +169,8 @@ export function ShareSessionModal({
     },
     onSuccess: () => {
       successToast(tI18nHardcoded.raw('i18nComplete.textd8b630796604'));
+      // A share can switch the session's provider keys (share-session-cache.ts).
+      void refreshAfterShare(queryClient, projectId, session!.session_id);
       onSaved?.();
       onOpenChange(false);
     },
@@ -209,7 +214,7 @@ export function ShareSessionModal({
                   )}
           </ModalDescription>
         </ModalHeader>
-        <ModalBody className="max-h-[60vh] overflow-y-auto">
+        <ModalBody className="max-h-[60vh] space-y-5 overflow-y-auto">
           {view.canEdit ? (
             <SharingPicker
               projectId={projectId}
@@ -234,11 +239,16 @@ export function ShareSessionModal({
             <InfoBanner
               tone="neutral"
               icon={ShieldCheckIcon}
-              className="mt-4"
               data-testid="session-oversight-disclosure"
             >
               {tOversight.raw('shareDisclosure')}
             </InfoBanner>
+          ) : null}
+          {/* Next to the in-team picker: who in the project can open the
+              session, and a read-only link for anyone outside it. Same
+              server verdict as the picker (`can_manage_sharing`). */}
+          {view.canEdit && session ? (
+            <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />
           ) : null}
         </ModalBody>
         <ModalFooter className="sm:justify-between">

@@ -2,7 +2,8 @@
 // shared Kortix email shell (lib/email/template.ts); delivery goes through the
 // one platform transport (lib/email/transport.ts).
 import { config } from '../config';
-import { escapeHtml, renderEmail, renderText, actionButton, S } from '../lib/email/template';
+import { renderEmail, renderText, actionButton, S } from '../lib/email/template';
+import { escapeHtml } from '../shared/html';
 import { isEmailConfigured, sendEmail, type EmailSendResult } from '../lib/email/transport';
 
 export type EmailDeliveryResult = EmailSendResult;

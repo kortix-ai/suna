@@ -28,33 +28,38 @@ describe('reconcileRuntimeWakeCandidate', () => {
     expect(events).toEqual(['claim', 'stop', 'record-stop']);
   });
 
-  test('keeps checking a non-running ambiguous start without issuing stop', async () => {
-    const events: string[] = [];
-    const result = await reconcileRuntimeWakeCandidate({
-      claim: async () => {
-        events.push('claim');
-        return true;
-      },
-      getStatus: async () => 'stopped',
-      stop: async () => {
-        events.push('stop');
-      },
-      markChecked: async (status) => {
-        events.push(`check:${status}`);
-      },
-      markStopped: async () => {
-        events.push('record-stop');
-      },
-      markRemoved: async () => {
-        events.push('preserve-unavailable');
-      },
-    });
+  // A status that is neither running nor removed proves nothing: it is
+  // recorded, and the box is neither stopped nor preserved as gone.
+  test.each(['stopped', 'unknown'])(
+    'a `%s` status is only recorded, never stopped or preserved as gone',
+    async (status) => {
+      const events: string[] = [];
+      const result = await reconcileRuntimeWakeCandidate({
+        claim: async () => {
+          events.push('claim');
+          return true;
+        },
+        getStatus: async () => status,
+        stop: async () => {
+          events.push('stop');
+        },
+        markChecked: async (checked) => {
+          events.push(`check:${checked}`);
+        },
+        markStopped: async () => {
+          events.push('record-stop');
+        },
+        markRemoved: async () => {
+          events.push('preserve-unavailable');
+        },
+      });
 
-    expect(result).toBe('checked');
-    expect(events).toEqual(['claim', 'check:stopped']);
-  });
+      expect(result).toBe('checked');
+      expect(events).toEqual(['claim', `check:${status}`]);
+    },
+  );
 
-  // Regression for prod session ad4b63ac (2026-08-13). Its Platinum box was
+  // Regression for a prod session (2026-08-13). Its Platinum box was
   // parked on 08-12, then vanished provider-side. The user's wake failed at
   // 13:51:48; this pass asked Platinum at 14:03:50 and got a definitive
   // `removed` — and recorded it as `runtimeWakeLateStartProviderStatus` and
@@ -93,29 +98,6 @@ describe('reconcileRuntimeWakeCandidate', () => {
     // No provider stop: the box is already gone, and the identity is preserved
     // rather than re-checked into another silent pass.
     expect(events).toEqual(['claim', 'preserve-unavailable']);
-  });
-
-  test('a transient `unknown` is still only recorded, never preserved as gone', async () => {
-    const events: string[] = [];
-    const result = await reconcileRuntimeWakeCandidate({
-      claim: async () => true,
-      getStatus: async () => 'unknown',
-      stop: async () => {
-        events.push('stop');
-      },
-      markChecked: async (status) => {
-        events.push(`check:${status}`);
-      },
-      markStopped: async () => {
-        events.push('record-stop');
-      },
-      markRemoved: async () => {
-        events.push('preserve-unavailable');
-      },
-    });
-
-    expect(result).toBe('checked');
-    expect(events).toEqual(['check:unknown']);
   });
 
   // A provider round-trip that throws must never be read as proof of removal:

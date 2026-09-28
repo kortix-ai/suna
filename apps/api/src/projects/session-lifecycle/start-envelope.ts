@@ -2,8 +2,8 @@
  * The session-open envelope: what `POST …/sessions/:sid/start` DID on this call
  * and what it OBSERVED, stamped onto every payload the open path returns.
  *
- * WHY THIS EXISTS. A live capture on 2026-08-26 (session 9c8749ac, box
- * i67m4fhw2t3nesssgl4yf) showed `/start` answering, on every open for 10+ hours:
+ * WHY THIS EXISTS. A live capture on 2026-08-26 (a prod session) showed
+ * `/start` answering, on every open for 10+ hours:
  *
  *   {"stage":"failed","retriable":false,
  *    "metadata":{"stopReason":"runtime_boot_failed","initStatus":"ready",

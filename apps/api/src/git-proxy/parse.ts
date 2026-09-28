@@ -3,6 +3,7 @@
  * stay trivially unit-testable.
  */
 import type { GitScope } from '../projects/git-backends';
+import { isUuid } from '../shared/validate';
 
 /** Strip an optional trailing `.git` from the project path segment. */
 export function normalizeProjectId(raw: string): string {
@@ -11,7 +12,7 @@ export function normalizeProjectId(raw: string): string {
 
 /** Git proxy project ids must be UUIDs after optional `.git` suffix stripping. */
 export function isValidGitProxyProjectId(raw: string): boolean {
-  return /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(normalizeProjectId(raw));
+  return isUuid(normalizeProjectId(raw));
 }
 
 /** Extract the bare token from a git `Authorization` header (Basic or Bearer). */

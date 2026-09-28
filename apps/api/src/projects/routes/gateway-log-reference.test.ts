@@ -4,6 +4,8 @@ import { classifyGatewayLogReference } from './gateway-log-reference';
 describe('classifyGatewayLogReference', () => {
   test('treats UUID references as ambiguous because both ids use UUIDs', () => {
     expect(classifyGatewayLogReference('e6117078-2f86-4c83-a205-09372912e165')).toBe('both');
+    // A v7 id is still a uuid both columns can hold.
+    expect(classifyGatewayLogReference('01890a5d-ac96-774b-bcce-b302099a8057')).toBe('both');
   });
 
   test('treats prefixed request ids as request ids only', () => {

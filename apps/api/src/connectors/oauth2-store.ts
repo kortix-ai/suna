@@ -12,10 +12,7 @@ import {
   connectionOAuthSessions,
 } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import {
-  connectionIsReachable,
-  isTrustedManagedChannelAuthorization,
-} from '../projects/lib/connection-access';
+import { connectionRowIsReachable } from '../projects/lib/connection-access';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
@@ -74,22 +71,15 @@ async function authorizationCanCompleteOAuth(
     .where(eq(connectorConnections.connectionId, connectionId))
     .limit(1);
   if (!authorization) return false;
-  return connectionIsReachable({
-    ownerType: authorization.ownerType,
-    ownerId: authorization.ownerId,
-    actingUserId: initiatedBy,
-    actingPrincipalIsServiceAccount: false,
-    trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: authorization.providerType,
-      platform:
-        typeof authorization.connectorConfig.platform === 'string'
-          ? authorization.connectorConfig.platform
-          : null,
-      ownerType: authorization.ownerType,
-      ownerId: authorization.ownerId,
-      metadata: authorization.metadata,
-    }),
-  });
+  // OAuth completion runs as the human who started the flow, never as a
+  // service account or an agent principal. Completing an authorization manages
+  // the account (the initiate route already required the manage capability for
+  // a shared one), so its audience does not apply: 'open'.
+  return connectionRowIsReachable(
+    authorization,
+    { userId: initiatedBy, isServiceAccount: false, agentPrincipal: null },
+    'open',
+  );
 }
 
 /**

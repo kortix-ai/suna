@@ -9,6 +9,7 @@ import {
   projectPickerCatalog,
   providerFlagship,
 } from './picker-catalog';
+import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 const catalogHas = (providerId: string, modelId: string): boolean =>
   CATALOG.providers.some((p) => p.id === providerId && p.models.some((m) => m.id === modelId));
@@ -64,14 +65,17 @@ describe('labelForModelRef', () => {
 });
 
 describe('managedPickerModels', () => {
-  test('every managed model is offered as a kortix/<id> opencode ref', () => {
-    const models = managedPickerModels();
-    expect(models.length).toBe(RUNTIME_MANAGED_MODELS.length);
-    for (const m of models) {
-      expect(m.id.startsWith('kortix/')).toBe(true);
-      expect(m.managed).toBe(true);
-      expect(m.provider).toBe('kortix');
-    }
+  test('every served managed model is offered as a kortix/<id> opencode ref with its tier hint', () => {
+    const hint = { flagship: 'Most capable', fast: 'Fastest', balanced: 'Balanced, fast' };
+    expect(managedPickerModels()).toEqual(
+      SERVED_MANAGED_MODELS.map((m) => ({
+        id: `kortix/${m.id}`,
+        label: m.name,
+        provider: 'kortix',
+        managed: true,
+        hint: hint[m.tier],
+      })),
+    );
   });
 });
 

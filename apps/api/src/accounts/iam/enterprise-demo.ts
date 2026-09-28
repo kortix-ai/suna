@@ -21,7 +21,8 @@ import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../../billing/services/account-write-owner';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
-import { auditIam, readBody } from './helpers';
+import { auditIam } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 
 const DemoStateSchema = z.object({ enabled: z.boolean() }).openapi('EnterpriseDemoState');
 
@@ -72,7 +73,7 @@ iamRouter.openapi(
       return c.json({ error: 'Platform admin role required', code: 'admin_required' }, 403);
     }
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     if (typeof body.enabled !== 'boolean') {
       return c.json({ error: 'enabled must be a boolean' }, 400);
     }

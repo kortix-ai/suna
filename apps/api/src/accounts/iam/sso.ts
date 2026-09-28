@@ -28,7 +28,8 @@ import {
   SsoProviderSchema,
   SsoMappingSchema,
 } from './app';
-import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+import { auditIam, isUniqueViolation, requireEntitlement } from './helpers';
+import { readJsonObject } from '../../shared/http-body';
 import {
   deleteSupabaseSamlProvider,
   registerSupabaseSamlProvider,
@@ -118,7 +119,7 @@ iamRouter.openapi(
   const denied = await requireEntitlement(c, accountId, 'sso');
   if (denied) return denied;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const supabaseSsoProviderId = (body.supabase_sso_provider_id ?? body.supabaseSsoProviderId) as unknown;
   const name = body.name as unknown;
   const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
@@ -249,7 +250,7 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'sso');
     if (denied) return denied;
 
-    const body = await readBody(c);
+    const body = await readJsonObject(c);
     const name = body.name as unknown;
     const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
     const metadataXml = (body.metadata_xml ?? body.metadataXml) as unknown;
@@ -519,7 +520,7 @@ iamRouter.openapi(
   const denied = await requireEntitlement(c, accountId, 'sso');
   if (denied) return denied;
 
-  const body = await readBody(c);
+  const body = await readJsonObject(c);
   const claimValue = (body.claim_value ?? body.claimValue) as unknown;
   const groupId = (body.group_id ?? body.groupId) as unknown;
   if (typeof claimValue !== 'string' || claimValue.trim().length === 0) {

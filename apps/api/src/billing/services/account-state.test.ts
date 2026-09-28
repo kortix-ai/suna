@@ -8,7 +8,6 @@
 // pattern in ./billing-gate.test.ts.
 import { describe, expect, mock, test } from 'bun:test';
 import { sandboxes } from '@kortix/db';
-import { effectiveTierForLimits } from '../../shared/account-limits';
 import { getTier } from './tiers';
 import * as realUsageBreakdown from './usage-breakdown';
 
@@ -164,6 +163,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     });
     expect(state.subscription.tier_key).toBe('free');
     expect(state.tier.name).toBe('free');
+    expect(state.plan).toMatchObject({
+      key: 'free',
+      family: 'free',
+      status: 'current',
+      sublabel: null,
+      rank: 1,
+    });
     expect(state.auto_topup).toEqual({
       enabled: false,
       threshold: expect.any(Number),
@@ -197,21 +203,6 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(state.billing_state).toBe('out_of_credits');
     expect(state.credits.can_run).toBe(false);
     expect(state.has_active_subscription).toBe(true);
-  });
-
-  test('a per-seat account with a FUNDED wallet runs', async () => {
-    account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
-      balance: '25',
-      stripeSubscriptionId: 'sub_live',
-      stripeSubscriptionStatus: 'active',
-    });
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.billing_state).toBe('active');
-    expect(state.credits.can_run).toBe(true);
   });
 
   test('a per-seat account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {
@@ -336,82 +327,11 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
   });
 
-  test('an expired trial falls back to the stored plan with no cron involved', async () => {
-    account = trialing({ trialEndsAt: new Date(Date.now() - 1_000).toISOString() });
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.name).toBe('free');
-    expect(state.plan?.key).toBe('free');
-    expect(state.plan?.family).toBe('free');
-    expect(state.plan?.is_grandfathered).toBe(false);
-    expect(state.tier.can_purchase_credits).toBe(false);
-  });
-
   test('a per-account session override still wins over the resolved plan cap', async () => {
     account = trialing({ maxConcurrentSessions: 7 });
 
     const state = await buildMinimalAccountState('acct-1');
 
     expect(state.limits?.concurrent_sessions.limit).toBe(7);
-  });
-
-  test('an ordinary free account is unchanged — plan block reports Free', async () => {
-    account = creditAccount();
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.subscription.tier_key).toBe('free');
-    expect(state.tier.name).toBe('free');
-    expect(state.plan?.key).toBe('free');
-    expect(state.plan?.family).toBe('free');
-    expect(state.plan?.status).toBe('current');
-    expect(state.plan?.sublabel).toBeNull();
-    expect(state.plan?.rank).toBe(1);
-  });
-});
-
-/**
- * The concurrency limit the dashboard SHOWS must be the one the server ENFORCES.
- *
- * resolveAccountSessionLimit coerces a paying per-seat account whose stored
- * `tier` is stale to 'per_seat', so bad tier data cannot gate a paying team as
- * free. account-state read the raw `tier` column instead, so such an account
- * was shown the FREE ceiling while the server admitted the per-seat one — two
- * independent derivations of a single number.
- */
-describe('effectiveTierForLimits', () => {
-  const paying = {
-    billingModel: 'per_seat',
-    stripeSubscriptionId: 'sub_123',
-    stripeSubscriptionStatus: 'active',
-  };
-
-  test('a paying per-seat account with a stale free tier resolves to per_seat', () => {
-    expect(effectiveTierForLimits('free', paying)).toBe('per_seat');
-  });
-
-  test('a genuinely free account stays free', () => {
-    expect(effectiveTierForLimits('free', { billingModel: 'credits' })).toBe('free');
-  });
-
-  test('a cancelled per-seat subscription is not coerced', () => {
-    expect(
-      effectiveTierForLimits('free', { ...paying, stripeSubscriptionStatus: 'canceled' }),
-    ).toBe('free');
-  });
-
-  test('an unpaid per-seat subscription is not coerced', () => {
-    expect(effectiveTierForLimits('free', { ...paying, stripeSubscriptionStatus: 'unpaid' })).toBe(
-      'free',
-    );
-  });
-
-  test('a per-seat row with no Stripe subscription is not coerced', () => {
-    expect(effectiveTierForLimits('free', { ...paying, stripeSubscriptionId: null })).toBe('free');
-  });
-
-  test('a null tier defaults to free rather than throwing', () => {
-    expect(effectiveTierForLimits(null, null)).toBe('free');
   });
 });

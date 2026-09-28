@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
-import { creatableAccounts, orderLandingAccounts, resolveLandingProject } from './landing';
+import {
+  checkLastProject,
+  creatableAccounts,
+  freshOrCached,
+  orderLandingAccounts,
+  resolveLandingProject,
+} from './landing';
 
 function account(account_id: string, account_role: string): KortixAccount {
   return { account_id, account_role } as KortixAccount;
@@ -110,5 +116,106 @@ describe('resolveLandingProject: the app opens the last project', () => {
       listProjects: lists({}),
     });
     expect(result).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('checkLastProject: the project that opened blind, confirmed in the background', () => {
+  test('listed in another account than the selected one: stay, and select that account', async () => {
+    const result = await checkLastProject({
+      accounts: [personal, team],
+      selectedAccountId: 'acc-personal',
+      lastProjectId: 'p-team-2',
+      listProjects: lists({
+        'acc-personal': [project('p-personal-1')],
+        'acc-team': [project('p-team-1'), project('p-team-2')],
+      }),
+    });
+    expect(result).toEqual({ kind: 'listed', accountId: 'acc-team' });
+  });
+
+  test('every account answered and none lists it: gone, resolve again', async () => {
+    const result = await checkLastProject({
+      accounts: [personal, team],
+      selectedAccountId: 'acc-personal',
+      lastProjectId: 'p-deleted',
+      listProjects: lists({ 'acc-personal': [project('p-personal-1')], 'acc-team': [] }),
+    });
+    expect(result).toEqual({ kind: 'gone' });
+  });
+
+  test('the account that may hold it failed: unknown, a network error never moves the user', async () => {
+    const result = await checkLastProject({
+      accounts: [personal, team],
+      selectedAccountId: 'acc-personal',
+      lastProjectId: 'p-team-1',
+      listProjects: lists({
+        'acc-personal': [project('p-personal-1')],
+        'acc-team': new Error('502'),
+      }),
+    });
+    expect(result).toEqual({ kind: 'unknown' });
+  });
+
+  test('listed wins over another account’s failure', async () => {
+    const result = await checkLastProject({
+      accounts: [personal, team],
+      selectedAccountId: null,
+      lastProjectId: 'p-personal-1',
+      listProjects: lists({
+        'acc-personal': [project('p-personal-1')],
+        'acc-team': new Error('502'),
+      }),
+    });
+    expect(result).toEqual({ kind: 'listed', accountId: 'acc-personal' });
+  });
+
+  test('every list failed: unknown', async () => {
+    const result = await checkLastProject({
+      accounts: [personal, team],
+      selectedAccountId: null,
+      lastProjectId: 'p-1',
+      listProjects: lists({
+        'acc-personal': new Error('offline'),
+        'acc-team': new Error('offline'),
+      }),
+    });
+    expect(result).toEqual({ kind: 'unknown' });
+  });
+
+  test('no account at all: gone, no account can hold the project', async () => {
+    const result = await checkLastProject({
+      accounts: [],
+      selectedAccountId: null,
+      lastProjectId: 'p-1',
+      listProjects: lists({}),
+    });
+    expect(result).toEqual({ kind: 'gone' });
+  });
+});
+
+describe('freshOrCached: the failure screens show only with nothing kept', () => {
+  const kept = [project('p-kept')];
+  const failWith = (status: number | undefined) => async (): Promise<KortixProject[]> => {
+    throw Object.assign(new Error(`status ${status}`), { status });
+  };
+
+  test('a fresh answer wins over the kept one', async () => {
+    const fresh = [project('p-fresh')];
+    expect(await freshOrCached(async () => fresh, () => kept)).toBe(fresh);
+  });
+
+  test('offline, a gateway error or a server error: the kept answer', async () => {
+    expect(await freshOrCached(failWith(undefined), () => kept)).toBe(kept);
+    expect(await freshOrCached(failWith(503), () => kept)).toBe(kept);
+    expect(await freshOrCached(failWith(500), () => kept)).toBe(kept);
+  });
+
+  test('nothing kept: the original error, so the start screen can say why', async () => {
+    await expect(freshOrCached(failWith(503), () => undefined)).rejects.toThrow('status 503');
+  });
+
+  test('an ended login never opens the kept lists: the user signs in again', async () => {
+    await expect(freshOrCached(failWith(401), () => kept)).rejects.toThrow('status 401');
+    await expect(freshOrCached(failWith(403), () => kept)).rejects.toThrow('status 403');
   });
 });

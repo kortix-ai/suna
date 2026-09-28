@@ -183,12 +183,60 @@ suite('usage breakdown reads metadata->>ledger_type (throwaway Postgres)', () =>
     expect(breakdown.compute_usd).toBeCloseTo(1, 6);
   });
 
-  test('an account with no debits reports zeroes rather than failing', async () => {
+  test('an account with no debits reports zeroes for the requested, still-open period', async () => {
     const account = newAccount();
 
     const breakdown = await getUsageBreakdownThisPeriod(account, PERIOD_START);
 
-    expect(breakdown).toMatchObject({ compute_usd: 0, llm_usd: 0, total_usd: 0 });
+    expect(breakdown).toEqual({
+      compute_usd: 0,
+      llm_usd: 0,
+      other_usd: 0,
+      total_usd: 0,
+      period_start: PERIOD_START,
+      period_end: null,
+    });
+  });
+
+  test('without a billing anchor the period is the last 30 days', async () => {
+    const account = newAccount();
+    const day = 86_400_000;
+    rpcDebit(account, '-7', 'compute_debit', new Date(Date.now() - 31 * day).toISOString());
+    rpcDebit(account, '-2', 'compute_debit', new Date(Date.now() - day).toISOString());
+
+    const before = Date.now();
+    const breakdown = await getUsageBreakdownThisPeriod(account, null);
+    const after = Date.now();
+
+    expect(breakdown.compute_usd).toBeCloseTo(2, 6);
+    const start = Date.parse(breakdown.period_start ?? '');
+    expect(start).toBeGreaterThanOrEqual(before - 30 * day);
+    expect(start).toBeLessThanOrEqual(after - 30 * day);
+  });
+
+  test('tool-call debits and manual debits count as other spend', async () => {
+    const account = newAccount();
+    rpcDebit(account, '-0.75', 'usage');
+    rawLedger(account, '-3', 'admin_debit');
+    rpcDebit(account, '-1', 'llm_debit');
+
+    const breakdown = await getUsageBreakdownThisPeriod(account, PERIOD_START);
+
+    expect(breakdown.other_usd).toBeCloseTo(3.75, 6);
+    expect(breakdown.llm_usd).toBeCloseTo(1, 6);
+    expect(breakdown.compute_usd).toBe(0);
+    expect(breakdown.total_usd).toBeCloseTo(4.75, 6);
+  });
+
+  test('a positive manual adjustment is not spend', async () => {
+    const account = newAccount();
+    rawLedger(account, '5', 'admin_debit');
+    rawLedger(account, '-1', 'admin_debit');
+
+    const breakdown = await getUsageBreakdownThisPeriod(account, PERIOD_START);
+
+    expect(breakdown.other_usd).toBeCloseTo(1, 6);
+    expect(breakdown.total_usd).toBeCloseTo(1, 6);
   });
 });
 

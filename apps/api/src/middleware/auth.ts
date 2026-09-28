@@ -16,6 +16,7 @@ import { setContextField } from '../lib/request-context';
 import { createHash } from 'node:crypto';
 import { extractSsoProviderId, syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { requestClientKey } from '../shared/client-ip';
 import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
 import { buildActor } from '../iam/actor';
@@ -189,7 +190,7 @@ async function resolveApiKeyAuth(c: Context, next: Next) {
 
   if (!result.isValid) {
     console.warn(
-      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`,
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${requestClientKey(c)}`,
     );
     auditLoginFail({
       c,
@@ -392,6 +393,9 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
   const sandboxTokenPathAllowed =
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
+    // The daemon relays OpenCode `permission.asked` so apps/api can push the
+    // session creator. The handler re-checks sandbox, project, and session.
+    /^\/v1\/projects\/[^/]+\/turn-permission$/.test(path) ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
     // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
     // full picker. Catalog is the non-secret model list — safe for a sandbox token.

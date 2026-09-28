@@ -13,11 +13,16 @@
  * what.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
+
+/** No caller passes a value above this — a safety ceiling, not a default
+ *  (the list route stays unbounded when `limit` is omitted, matching every
+ *  existing caller's current behavior). */
+export const CHANGE_REQUEST_LIST_MAX_LIMIT = 500;
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 
@@ -45,6 +50,48 @@ export function serializeChangeRequest(row: ChangeRequestRow) {
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
+}
+
+export interface ListChangeRequestsForProjectOptions {
+  status?: ChangeRequestStatus | 'all';
+  /**
+   * Scope to one session's change requests. The "outcome" cards used to fetch
+   * every change request in the project, every 60s, per open session thread,
+   * just to filter down to the ones that session opened (measured on prod:
+   * 565KB body for the unfiltered list). This does the filtering at the
+   * source instead.
+   */
+  originSessionId?: string;
+  /**
+   * Capped at CHANGE_REQUEST_LIST_MAX_LIMIT. Omitted keeps the historical
+   * unbounded response every existing caller (the panel, the open-CR badge,
+   * `kortix cr list`) already depends on.
+   */
+  limit?: number;
+}
+
+/** The `GET /:projectId/change-requests` list query, extracted so it is
+ *  unit-testable against a real Postgres without going through HTTP/auth. */
+export async function listChangeRequestsForProject(
+  projectId: string,
+  options: ListChangeRequestsForProjectOptions = {},
+) {
+  const whereClauses = [eq(changeRequests.projectId, projectId)];
+  if (options.status && options.status !== 'all') {
+    whereClauses.push(eq(changeRequests.status, options.status));
+  }
+  if (options.originSessionId) {
+    whereClauses.push(eq(changeRequests.originSessionId, options.originSessionId));
+  }
+  const baseQuery = db
+    .select()
+    .from(changeRequests)
+    .where(and(...whereClauses))
+    .orderBy(desc(changeRequests.number));
+  const limit =
+    options.limit != null ? Math.min(options.limit, CHANGE_REQUEST_LIST_MAX_LIMIT) : undefined;
+  const rows = limit !== undefined ? await baseQuery.limit(limit) : await baseQuery;
+  return rows.map(serializeChangeRequest);
 }
 
 /**

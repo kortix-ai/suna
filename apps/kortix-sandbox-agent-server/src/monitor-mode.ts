@@ -8,8 +8,7 @@ import { startProxy } from './proxy'
 import { installShutdownHandlers } from './shutdown'
 
 /**
- * Monitor mode — the box that watches things 24/7
- * (docs/specs/2026-08-12-monitors.md D4).
+ * Monitor mode — the box that watches things 24/7.
  *
  * It shares the session boot exactly up to the repo checkout, because monitor
  * commands ARE repo code and need the same working tree an agent gets. From

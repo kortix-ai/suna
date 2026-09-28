@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 // No config mock: replacing that module wholesale deletes every export the
 // collaborators need. The hermetic scripts/test.env supplies the real shape.
 const { portUnreachableResponse } = await import('./routes/preview');
-const { PREVIEW_STATE_HEADER } = await import('./preview-state-page');
 
 const BROWSER = new Headers({ accept: 'text/html', host: 'dev-p8081-sbx-a.p.kortix.com' });
 const MACHINE = new Headers({ accept: 'application/json', host: 'dev-p8081-sbx-a.p.kortix.com' });
@@ -35,7 +34,9 @@ describe('what each caller is told about an unreachable port', () => {
       });
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/html');
-      expect(res.headers.get(PREVIEW_STATE_HEADER)).toBe(c.state);
+      // The literal wire name: probes and logs read it, so a rename is a
+      // contract change, not a refactor.
+      expect(res.headers.get('x-kortix-preview-state')).toBe(c.state);
       // The truth is still fully legible to a probe reading the HTML response.
       expect(res.headers.get('x-kortix-proxy-hop')).toBe('upstream_port');
       expect(await res.text()).toContain('<!doctype html>');
@@ -54,6 +55,16 @@ describe('what each caller is told about an unreachable port', () => {
       expect(res.status).toBe(c.status);
       expect(res.headers.get('content-type')).toContain('application/json');
       expect(res.headers.get('x-kortix-proxy-hop')).toBe('upstream_port');
+      // The failing hop's own status byte, wire and body: a null upstreamStatus
+      // (connection refused, never reached the app) omits the header and reports
+      // `upstream_status: null`; a defined one (the app itself answered with an
+      // error) round-trips verbatim on both.
+      const expectedUpstreamStatus = c.opts.upstreamStatus;
+      expect(res.headers.get('x-kortix-upstream-status')).toBe(
+        expectedUpstreamStatus === null ? null : String(expectedUpstreamStatus),
+      );
+      const body = await res.json();
+      expect(body.upstream_status).toBe(expectedUpstreamStatus);
     });
   }
 
@@ -67,7 +78,11 @@ describe('what each caller is told about an unreachable port', () => {
       hop: 'upstream_port',
     });
     expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
-    expect(res.headers.get('access-control-expose-headers')).toContain('X-Kortix-Proxy-Hop');
+    const exposed = (res.headers.get('access-control-expose-headers') ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase());
+    expect(exposed).toContain('x-kortix-proxy-hop');
+    expect(exposed).toContain('x-kortix-upstream-status');
   });
 
   test('an unknown origin gets no credentialed CORS grant on either branch', () => {

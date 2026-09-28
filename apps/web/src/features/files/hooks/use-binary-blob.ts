@@ -1,21 +1,20 @@
 'use client';
 
 import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
+import { binaryBlobKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFileAsBlob } from '../api/runtime-files';
+import { keepBlobIfUnchanged } from './blob-identity';
 import { sandboxWakingRefetchInterval } from './file-read-retry';
 import { useServerHealth } from './use-server-health';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
-export const binaryBlobKeys = {
-  all: ['runtime-files', 'binary-blob'] as const,
-  file: (serverUrl: string, filePath: string) =>
-    ['runtime-files', 'binary-blob', serverUrl, filePath] as const,
-};
+// Keyed by the SDK factory: the live event stream invalidates it on
+// `file.edited` and at turn end, so an open viewer shows the agent's edit.
+export { binaryBlobKeys };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +49,7 @@ export function useBinaryBlob(filePath: string | null): {
   // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
   const stored = isSessionAttachmentRef(filePath);
+  const queryClient = useQueryClient();
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
@@ -57,25 +57,30 @@ export function useBinaryBlob(filePath: string | null): {
       ? ['runtime-files', 'binary-blob', '__disabled__']
       : stored
         ? // Globally unique on its own: no server URL, because no server.
-          ['runtime-files', 'binary-blob', 'stored', filePath]
+          // Outside `binaryBlobKeys.all` on purpose: a stored attachment never
+          // changes, so the turn-end invalidation must not re-download it.
+          ['session-attachment', 'blob', filePath]
         : binaryBlobKeys.file(serverUrl, filePath),
-    queryFn: ({ signal }) =>
-      stored
-        ? fetchSessionAttachment(filePath!, signal)
-        : readRuntimeFileWithRetry(
-            filePath!,
-            async () => {
-              const blob = await readFileAsBlob(filePath!);
-              if (blob.size === 0) {
-                throw new Error(
-                  'File is empty (0 bytes). It may still be generating — try again in a moment.',
-                );
-              }
-              return blob;
-            },
-            undefined,
-            signal,
-          ),
+    queryFn: async ({ signal, queryKey }) => {
+      if (stored) return fetchSessionAttachment(filePath!, signal);
+      const blob = await readRuntimeFileWithRetry(
+        filePath!,
+        async () => {
+          const blob = await readFileAsBlob(filePath!);
+          if (blob.size === 0) {
+            throw new Error(
+              'File is empty (0 bytes). It may still be generating — try again in a moment.',
+            );
+          }
+          return blob;
+        },
+        undefined,
+        signal,
+      );
+      // The turn end refetches every open file; same bytes keep the same Blob,
+      // so the viewer does not reload a file the agent never touched.
+      return keepBlobIfUnchanged(queryClient.getQueryData<Blob>(queryKey), blob);
+    },
     enabled: !!filePath,
     staleTime: stored ? Number.POSITIVE_INFINITY : 30_000,
     gcTime: 5 * 60_000,

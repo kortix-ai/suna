@@ -15,7 +15,11 @@
     "selectInstallation": "インストールを選択",
     "manifestRequirement": "新しいリポジトリのデフォルトブランチには {manifest} が必要です。先に実行中のセッションを停止し、開いている変更リクエストを閉じてください。",
     "cancel": "キャンセル",
-    "changing": "変更中…"
+    "changing": "変更中…",
+    "searchBranches": "ブランチを検索…",
+    "loadingBranches": "ブランチを読み込み中…",
+    "noBranches": "一致するブランチはありません。",
+    "moreBranches": "ほか {count} 件。入力して絞り込みます。"
   },
   "pooledSecrets": {
     "saveChanges": "変更を保存",
@@ -1143,6 +1147,14 @@
         "agent_principal": {
           "name": "プリンシパルとしてのエージェント",
           "description": "エージェントはエージェント自身として動作します。権限は Kortix の権限で、ロールが上限です。エージェントを実行する人が加えるのは自分のアカウントだけです。"
+        },
+        "config_releases": {
+          "name": "設定リリース",
+          "description": "ベースブランチの現在のエージェント設定を読み取り専用で配信してセッションを実行し、マージされたエージェント・スキル・ツールが実行中のすべてのセッションに届きます。オフの場合、セッションは自分のワークスペース設定フォルダーを読みます。"
+        },
+        "mcp": {
+          "name": "MCP サーバー",
+          "description": "Claude、ChatGPT、Cursor、Codex などの MCP クライアントを OAuth でこのプロジェクトに接続します。クライアントはあなたとしてサインインし、あなたの権限で Kortix を呼び出します。URL はワークスペースメニューの「MCP を接続」にあります。"
         }
       }
     },
@@ -1439,6 +1451,7 @@
       "createAccount": "アカウントを作成…",
       "settings": "設定",
       "downloadApp": "アプリをダウンロード",
+      "connectMcp": "MCP を接続",
       "logOut": "ログアウト",
       "find": "プロジェクトを検索…",
       "accountSettings": "アカウント設定",
@@ -1639,11 +1652,6 @@
     "previousRepository": {
       "title": "このセッションは古くなっています",
       "message": "このセッションの開始後にプロジェクトが変更されました。最新の状態で作業を続けるには更新してください。",
-      "unavailable": "以前のワークスペースは利用できません。現在のリポジトリで新しいセッションを開始してください。",
-      "resume": "以前のワークスペースを再開",
-      "resuming": "再開中…",
-      "newSession": "新しいセッションを開始",
-      "delete": "セッションを削除",
       "update": "最新に更新",
       "updating": "更新中…",
       "dismiss": "閉じる",
@@ -9479,7 +9487,6 @@
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37": "。これらの変更はここにのみ存在し、まだ次には含まれていません:",
     "autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd": "バージョン。変更を提案してレビューと適用を受けてください。",
     "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53": "名前を変更…",
-    "autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f": "シェア…",
     "autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a": "Kortix セッションを起動しています",
     "autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9": "新しいターミナル",
     "autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463": "ファイルビュー",
@@ -18587,6 +18594,17 @@
       "textea5d0ffa0962": "共有アカウントはプロジェクト管理者が接続します。",
       "text3d6627454174": "認証情報を設定",
       "text929505ef815a": "まだアカウントが接続されていません。以下で自分のアカウントを追加するか、プロジェクト管理者に共有アカウントの接続を依頼してください。",
+      "text931cb67e2af7": "新しいエージェント設定を読み込めませんでした。このセッションは以前の設定で実行されています。",
+      "textd9ff3a72833d": "設定を読み込めませんでした",
+      "textebfb07812fb4": "新しいエージェント設定を読み込めませんでした",
+      "text4e62b29dd3b6": "このセッションは以前の設定で実行されています。失敗した設定は、ベースブランチが変更されるまで再試行されません。",
+      "textf81ab834de5f": "理由",
+      "text44cdf35701cd": "現在実行中",
+      "text591f9f0f3259": "失敗したリリース",
+      "text00ed4c71dc2b": "最後に動作したリリース",
+      "textbd7a1a3b4141": "プラットフォームのデフォルト設定",
+      "text643df05476ab": "このセッションはプラットフォームのデフォルト設定で実行されています。失敗した設定は、ベースブランチが変更されるまで再試行されません。",
+      "text40652e008fc9": "新しいエージェント設定を読み込めませんでした。このセッションはプラットフォームのデフォルト設定で実行されています。",
       "text3312ddb06c1d": "Azure でボットを登録し、ここで接続してから、アプリ パッケージを Teams にアップロードします。",
       "text7f1b55a356b0": "Azure でボットを登録",
       "text91004edf8b30": "このプロジェクトに接続",
@@ -18695,7 +18713,9 @@
       "texta0bcee97cbb3": "インラインチェックアウトを確定しました",
       "text0b751a917c97": "GitHub インストールを接続しました",
       "text8b7a8797d532": "Microsoft Teams テナントを接続しました",
+      "text83c0e255d4bb": "Microsoft Teams のインストールを完了しました",
       "text17a8cf884e2a": "Slack ワークスペースを接続しました",
+      "textf887cb0e6800": "Slack アプリのインストールを完了しました",
       "textc7f9ec5ed69c": "コンピュータトンネルエージェントを接続しました",
       "textafd58fcedeee": "メール受信トレイを接続しました",
       "text2eda12b4ed38": "既存の GitHub App を接続しました",
@@ -18952,6 +18972,7 @@
       "text60954a626cee": "LLM ゲートウェイキーを取り消しました",
       "text32c1477a3336": "コンピュータトンネルの権限を取り消しました",
       "text953488439740": "コネクタアカウントを取り消しました",
+      "texte817b7da7436": "非公開のコネクタアカウントを共有しました",
       "text538cb0effaea": "個人用アクセストークンを取り消しました",
       "text74be1c139903": "プールされたプロバイダーキーの付与を取り消しました",
       "text6d3935be0516": "プロジェクト CLI トークンを取り消しました",
@@ -19162,17 +19183,51 @@
       "text8cc0d84b66bb": "Slack ID リンクをプレビュー",
       "text508b43cc4545": "Teams ID リンクをプレビュー",
       "text467f597e95b0": "SSO ドメインを検証しました",
-      "text8295f9d4861b": "アカウントの SSO ドメイン検証を設定しました"
+      "text8295f9d4861b": "アカウントの SSO ドメイン検証を設定しました",
+      "text7beaff63a7d3": "プロジェクトの設定アーカイブをダウンロードしました",
+      "text5176d59f25fd": "セッションの設定リリースを解決しました",
+      "text273c48dbf3b9": "プッシュ通知デバイスを登録しました",
+      "textbb666ddf7a57": "プッシュ通知デバイスを削除しました",
+      "text397ab5aecbbf": "セッションの権限リクエストを中継しました",
+      "text3ec6c235548a": "MCP サーバーのメタデータを読み取りました",
+      "text7740934de920": "OAuth クライアントを登録しました",
+      "textcd36423ea12a": "MCP サーバーを呼び出しました",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
       "description": "リンクを知っている人は誰でもサインインせずに閲覧できます。リンクは取り消すまで有効です。",
       "confirm": "リンクを作成"
     },
+    "publicTranscriptShare": {
+      "sectionTitle": "公開リンク",
+      "sectionDescription": "リンクを知っている人は誰でもサインインせずにこの会話を読めます。",
+      "create": "公開リンクを作成",
+      "revokeDescription": "リンクを持つすべての人に対して会話が読み込まれなくなります。後で新しいリンクを作成できます。",
+      "rowMeta": "読み取り専用の会話",
+      "unavailable": "この会話は一時的に利用できません。",
+      "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
+      "loadFailedDescription": "会話を読み込めませんでした。",
+      "empty": "まだメッセージはありません",
+      "savedCopy": "{date} に保存されたコピー"
+    },
     "chatIdentityConnect": {
       "chatAccount": "{service} アカウント",
       "chatWorkspace": "{service} ワークスペース",
       "checking": "リンクを確認中…"
+    },
+    "channelInstall": {
+      "failedTitle": "{service} は接続されませんでした",
+      "mismatch": "このインストールは別の Kortix アカウント、または別のプロジェクトから開始されました。そのアカウントでサインインするか、プロジェクトからインストールをやり直してください。",
+      "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
+      "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
+      "backToProject": "プロジェクトに戻る"
+    },
+    "secretIntakeWithheld": {
+      "title": "保存しましたが、{agent} はまだ読み取れません",
+      "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
+      "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
     }
   },
   "projectOnboarding": {
@@ -19287,7 +19342,17 @@
   },
   "commandPalette": {
     "title": "コマンドパレット",
-    "description": "実行するコマンドを検索..."
+    "description": "実行するコマンドを検索...",
+    "copyTitle": "コピー",
+    "copyEmail": "メールアドレス",
+    "copyUserId": "ユーザー ID",
+    "copyAccountId": "アカウント ID",
+    "copyProjectId": "プロジェクト ID",
+    "copySessionId": "セッション ID",
+    "copySessionLink": "セッションのリンク",
+    "copyAction": "{label}をコピー",
+    "copied": "{label}をコピーしました",
+    "copyFailed": "クリップボードにコピーできませんでした"
   },
   "personalWelcome": {
     "dismiss": "閉じる",
@@ -20054,6 +20119,9 @@
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
     "managedDescription": "Kortixクレジットで課金される管理モデルです。APIキーは不要です。",
+    "pricingEstimate": "お客様向けの概算料金です。実際の料金は使用された経路によって決まります。",
+    "pricingRoute": "{route}：100万トークンあたり入力 {input} / キャッシュ {cacheRead} / 出力 {output}",
+    "pricingPreferred": "優先",
     "textImage": "テキスト + 画像",
     "textOnly": "テキストのみ",
     "zdrTitle": "ゼロデータ保持",
@@ -20197,5 +20265,71 @@
     "verifiedToast": "ドメインを検証しました",
     "failedToast": "ドメインはまだ検証されていません",
     "enforceNeedsVerification": "先にドメインを検証してください。SSO の必須化は検証済みのドメインにのみ適用されます。"
+  },
+  "accessSharing": {
+    "everyone": "{project} の全員",
+    "everyoneRoleNote": "各メンバーのプロジェクトロールは変わりません。選択したエージェントは {project} の全員に適用されます。",
+    "shareTitle": "{label} を共有",
+    "shareDescription": "このアカウントを使用できるユーザーを選択します。自分だけを選ぶと、自分専用になります。",
+    "whoCanUse": "使用できるユーザー",
+    "add": "ユーザーまたはグループを追加",
+    "everyoneDefaultMeta": "グループまたはユーザーを追加するまで",
+    "everyoneMeta": "プロジェクトにアクセスできる全員",
+    "groupMeta": "グループ",
+    "memberMeta": "メンバー",
+    "remove": "{name} を削除",
+    "keep": "残す",
+    "removedMeta": "保存時に削除されます",
+    "resultEveryone": "{project} の全員がこのアカウントを使用できます。",
+    "resultNarrowed": "選択したユーザーだけが、自分のプライベートセッションでこのアカウントを使用できます。",
+    "save": "保存",
+    "saved": "アクセスを更新しました",
+    "saveFailed": "アクセスを更新できませんでした",
+    "manageAccess": "アクセスを管理",
+    "sharedWith": "{names} と共有",
+    "notSharedWithYou": "あなたとは共有されていません",
+    "removeEveryoneTitle": "{agent} を全員と共有するのをやめますか？",
+    "removeEveryoneDescription": "{agent} を付与されたユーザーとグループだけが引き続き使用できます。ほかのメンバーはアクセスできなくなります。",
+    "removeEveryone": "共有をやめる",
+    "removed": "削除しました",
+    "removeFailed": "アクセスを削除できませんでした",
+    "accountsTitle": "アカウント",
+    "addAccount": "アカウントを追加",
+    "addAccountTitle": "{connector} アカウントを追加",
+    "addAccountDescription": "アカウントに名前を付け、使用できるユーザーを選択します。",
+    "onlyYou": "自分のみ",
+    "onlyYouDescription": "自分のプライベートセッションで、自分だけが使用できます。",
+    "specificPeople": "特定のユーザーまたはグループ",
+    "specificPeopleDescription": "選択したユーザーとグループだけが、各自のプライベートセッションで使用できます。",
+    "shareRequiresManage": "アカウントを共有するには、プロジェクトの接続を管理する権限が必要です。",
+    "nameTaken": "{label} という名前のアカウントはすでに存在します。",
+    "noAccountsTitle": "アカウントはまだありません",
+    "noAccountsDescription": "セッションで {connector} を使用するには、アカウントを追加してください。",
+    "visibilityEveryone": "プロジェクト全員",
+    "visibilityNamedMore": "{names} +{count}",
+    "savedAs": "{label} として保存しました",
+    "connectFailed": "アカウントを接続できませんでした。もう一度お試しください。",
+    "sharePrivateDescription": "自分のアカウントを使用できるユーザーを追加で選択します。共有アカウントになり、プロジェクトの接続管理者も管理できるようになります。",
+    "ownerMeta": "自分のアカウント"
+  },
+  "connectMcp": {
+    "title": "MCP で Kortix を接続",
+    "description": "この URL を Claude、ChatGPT、Cursor、Codex などの MCP クライアントに追加します。初回はクライアントが Kortix へのサインインを求めます。インストールは不要です。",
+    "urlLabel": "MCP URL",
+    "addToClient": "クライアントに追加",
+    "other": "その他",
+    "claudeSteps": "Claude（Web またはデスクトップ）で 設定 → コネクタ → カスタムコネクタを追加 を開き、URL を貼り付けてサインインします。",
+    "claudeCodeHint": "次に Claude Code で /mcp を実行してサインインします。",
+    "otherHint": "ChatGPT（開発者モード）、VS Code、Windsurf などのクライアント：上の URL でリモート MCP サーバーを追加するか、この JSON を使用します。",
+    "addToCursor": "Cursor に追加",
+    "signInOnFirstUse": "初回使用時に Cursor が Kortix へのサインインを求めます。",
+    "docs": "ドキュメント",
+    "done": "完了",
+    "copy": "コピー"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "未確認のアプリ",
+    "unverifiedBody": "{client} は自分で Kortix に登録しました。Kortix は運営者を確認していません。今あなた自身が接続している場合のみ許可してください。",
+    "redirectsTo": "戻り先"
   }
 }

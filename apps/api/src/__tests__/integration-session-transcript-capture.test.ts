@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
+import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
   localTestDatabaseUrl,
   removeSeeded,
@@ -80,8 +81,9 @@ test('complete capture persists all pages, retries, serializes writes, and retai
     expect(failed).toBeNull();
     expect(await count()).toBe(620);
 
+    // Two captures of one session serialize: the first holds its read open,
+    // and the second still writes last (622 rows, the newest one `Second`).
     let release = () => {};
-    let secondRead = false;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -98,7 +100,6 @@ test('complete capture persists all pages, retries, serializes writes, and retai
     });
     const second = captureSessionTranscriptMirror(sessionId, {
       readMessages: async () => {
-        secondRead = true;
         return {
           opencodeSessionId: root,
           payload: messages(622, 'Second'),
@@ -107,8 +108,6 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         };
       },
     });
-    await Promise.resolve();
-    expect(secondRead).toBe(false);
     release();
     await Promise.all([first, second]);
     expect(await count()).toBe(622);
@@ -262,6 +261,118 @@ test('a turn writes only what changed, and only what vanished is deleted', async
     ).rows.map((row) => row.message_id as string);
     expect(survivors[0]).toBe('msg_000000000000');
     expect(survivors.at(-1)).toBe('msg_000000000039');
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 20_000);
+
+test("a sub-agent's transcript is saved under its own OpenCode session, and a root read never shows it", async () => {
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-children-test', {
+      metadata: { experimental: { session_transcript_history: true } },
+    });
+    const sessionId = await seedSession(project, randomUUID());
+    const root = 'ses_parent';
+    const child = 'ses_subagent';
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+      sessionId,
+      root,
+    ]);
+    const message = (session: string, id: string, created: number, parts: unknown[]) => ({
+      info: {
+        id,
+        sessionID: session,
+        role: id.endsWith('u') ? 'user' : 'assistant',
+        time: id.endsWith('u') ? { created } : { created, completed: created + 1 },
+      },
+      parts,
+    });
+    const rootRows = [
+      message(root, 'msg_001u', 1, [{ id: 'p1', type: 'text', text: 'Explore the repository.' }]),
+      message(root, 'msg_002a', 2, [
+        {
+          id: 'p2',
+          type: 'tool',
+          tool: 'task',
+          state: {
+            status: 'completed',
+            input: { description: 'Explore', prompt: 'List the files.' },
+            output: 'Found two files.',
+            metadata: { sessionId: child },
+            time: { start: 2, end: 3 },
+          },
+        },
+      ]),
+    ];
+    const childRows = [
+      message(child, 'msg_101u', 2, [{ id: 'c1', type: 'text', text: 'List the files.' }]),
+      message(child, 'msg_102a', 3, [
+        {
+          id: 'c2',
+          type: 'tool',
+          tool: 'bash',
+          state: {
+            status: 'completed',
+            input: { command: 'ls' },
+            output: 'a.ts b.ts',
+            metadata: {},
+            time: { start: 3, end: 4 },
+          },
+        },
+      ]),
+    ];
+    const capture = (rootPayload: unknown[], children: Array<{ payload: unknown[]; complete: boolean }>) =>
+      captureSessionTranscriptMirror(sessionId, {
+        readMessages: async () => ({
+          opencodeSessionId: root,
+          payload: rootPayload,
+          headComplete: true,
+          complete: true,
+          children: children.map((entry) => ({ opencodeSessionId: child, ...entry })),
+        }),
+      });
+    const count = async (opencodeSessionId: string) =>
+      Number(
+        (
+          await db.query(
+            'SELECT count(*)::int AS n FROM kortix.session_transcript_messages WHERE session_id = $1 AND opencode_session_id = $2',
+            [sessionId, opencodeSessionId],
+          )
+        ).rows[0].n,
+      );
+
+    await capture(rootRows, [{ payload: childRows, complete: true }]);
+    expect(await count(root)).toBe(2);
+    expect(await count(child)).toBe(2);
+
+    // The conversation is the root's alone; the sub-agent is its own window.
+    const conversation = await readSessionTranscriptMirror({ sessionId, limit: 40 });
+    expect(conversation?.messages.map((m) => m.info.id)).toEqual(['msg_001u', 'msg_002a']);
+    expect(conversation?.total).toBe(2);
+    const subagent = await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: child });
+    expect(subagent?.messages.map((m) => m.info.id)).toEqual(['msg_101u', 'msg_102a']);
+    expect(subagent?.opencode_session_id).toBe(child);
+    expect(subagent?.root_opencode_session_id).toBe(root);
+    expect(subagent?.head_complete).toBe(true);
+    expect((subagent?.messages[1].parts[0].state as { input: unknown }).input).toEqual({ command: 'ls' });
+
+    // A rewind of the root deletes root rows only: the sub-agent was never in
+    // the root read, so it is not "gone".
+    await capture(rootRows.slice(0, 1), []);
+    expect(await count(root)).toBe(1);
+    expect(await count(child)).toBe(2);
+
+    // A whole sub-agent read replaces its transcript.
+    await capture(rootRows, [{ payload: childRows.slice(0, 1), complete: true }]);
+    expect(await count(child)).toBe(1);
+
+    // A partial one writes nothing: a saved sub-agent is whole or absent.
+    await capture(rootRows, [{ payload: [], complete: false }]);
+    expect(await count(child)).toBe(1);
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();

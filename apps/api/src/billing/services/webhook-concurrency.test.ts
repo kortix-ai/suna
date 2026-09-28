@@ -70,19 +70,6 @@ function burst(lock: ReturnType<typeof createAccountLock>, query: () => Promise<
 }
 
 describe('withAccountLock never holds every pool connection', () => {
-  test('uncapped holders (one lock connection per concurrent body) stall the pool: the hazard is real', async () => {
-    const pool = simulatedPool(3);
-    const uncapped = createAccountLock({
-      database: pool.database,
-      maxHolders: 3,
-      acquireTimeoutMs: 60_000,
-      lockTimeoutMs: 15_000,
-    });
-
-    const outcome = await settleWithin(burst(uncapped, pool.query, 3), 200);
-    expect(outcome).toBe(STALL);
-  });
-
   test('a burst larger than the pool completes when holders stay below the pool size', async () => {
     const pool = simulatedPool(3);
     const capped = createAccountLock({

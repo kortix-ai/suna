@@ -33,5 +33,6 @@
   "opencodeSdk": "1.18.23",
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0",
-  "anydoc": "0.1.6"
+  "anydoc": "0.1.6",
+  "piSystemPackages": []
 }

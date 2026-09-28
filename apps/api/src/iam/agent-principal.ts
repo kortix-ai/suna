@@ -1,5 +1,5 @@
 /**
- * Agents as principals — spec docs/specs/2026-09-22-agents-as-principals.md.
+ * Agents as principals.
  *
  * With the project feature flag `agent_principal` ON, a GOVERNED agent session
  * (non-null kortix.yaml grant, not the platform `meta` coordinator) authorizes

@@ -277,8 +277,3 @@ export async function sha256File(path: string): Promise<{ sha256: string; sizeBy
   }
   return { sha256: hash.digest('hex'), sizeBytes };
 }
-
-export async function removeAppArtifact(objectPath: string): Promise<void> {
-  const { error } = await getSupabase().storage.from(APP_ARTIFACT_BUCKET).remove([objectPath]);
-  if (error && !/not found/i.test(error.message)) throw error;
-}

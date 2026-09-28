@@ -7,14 +7,11 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * different billing decisions — the BYOK platform-fee/waiver branch and the
  * managed-model free-tier gate could disagree for up to 30s after a tier
  * change, independently, because each read a different cache with its own
- * expiry clock. resolve-candidates.ts now imports getCachedAccountTier
- * directly (see resolve-candidates.ts's `resolveCachedAccountTier =
- * getCachedAccountTier` alias) instead of keeping its own Map, so there is
- * exactly one cache and one invalidation point. This file proves that single
- * cache's own contract: it serves a cached value within the TTL window, and a
- * tier change mid-window is only picked up once invalidated (or once the TTL
- * naturally expires) — the exact scenario RELIABILITY-BACKLOG.md flagged as
- * having no test.
+ * expiry clock. resolve-candidates.ts now calls getCachedAccountTier and
+ * accountMayUseManagedModels directly, so there is exactly one cache and one
+ * invalidation point. This file proves that single cache's own contract: the
+ * 30 000 ms TTL boundary, and a tier change mid-window that is only picked up
+ * once invalidated (or once the TTL expires).
  */
 
 let fakeTier = 'free';
@@ -48,6 +45,18 @@ describe('getCachedAccountTier — the single unified tier cache', () => {
     expect(await getCachedAccountTier(acct)).toBe('free');
     expect(await getCachedAccountTier(acct)).toBe('free');
     expect(getAccountTierCalls).toBe(1);
+  });
+
+  test('the TTL is exactly 30 000 ms: a read at +29 999 ms is cached, a read at +30 000 ms reloads', async () => {
+    const acct = 'acct-ttl-boundary';
+    expect(await getCachedAccountTier(acct, 10_000)).toBe('free');
+
+    fakeTier = 'per_seat';
+    expect(await getCachedAccountTier(acct, 10_000 + 29_999)).toBe('free');
+    expect(getAccountTierCalls).toBe(1);
+
+    expect(await getCachedAccountTier(acct, 10_000 + 30_000)).toBe('per_seat');
+    expect(getAccountTierCalls).toBe(2);
   });
 
   test('a tier change mid-window is invisible until the cache is invalidated — the exact skew the two-cache bug caused', async () => {

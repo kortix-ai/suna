@@ -123,7 +123,7 @@ export async function trialSeatLimitBlocksNewMember(
  *   billed from the next renewal. Crediting unused time would let a team add
  *   seats, collect their allowance, remove them, and get the charge back.
  */
-export function seatProrationFor(
+function seatProrationFor(
   currentSeats: number,
   nextSeats: number,
 ): { proration_behavior: 'always_invoice' | 'none' } {

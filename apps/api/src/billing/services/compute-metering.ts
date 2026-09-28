@@ -11,13 +11,13 @@
 //       ├─ hibernate / user-stop / wake / restart hooks
 //       │     │
 //       │     ├─ pauseComputeSession (finalize cost, debit, mark stopped)
-//       │     └─ resumeComputeSession (open new row when sandbox starts again)
+//       │     └─ reopenComputeForSandbox (open new row when sandbox starts again)
 //       │
 //       └─ remove → endComputeSession (finalize, no resume)
 //
-// Cron tick (tickRunningComputeCharges) runs every 15 minutes and partially
-// bills any session whose last_billed_at is > 1 hour ago, so a missed close
-// hook can never silently accrue 24h+ of uncharged compute.
+// The maintenance tick (tickRunningComputeCharges) runs every 5 minutes and
+// partially bills any session whose last_billed_at is at least 5 minutes old,
+// so a missed close hook can never silently accrue uncharged compute.
 
 import {
   appDeployments,
@@ -213,7 +213,7 @@ async function settleComputeWindow(
 ): Promise<'settled' | 'contended' | 'debit_failed' | 'no_window'> {
   const lastBilled = new Date(row.lastBilledAt);
   // THE CLAMP — never bill past the last control-plane observation that the box
-  // was alive, plus the provider's own auto-stop ceiling. A sandbox physically
+  // was alive, plus the billing grace. A sandbox physically
   // cannot outlive that, so anything beyond it is billing a box that no longer
   // exists (measured 2026-07-29: one row had accrued 829 hours this way, and
   // 54% of an affected customer's compute bill was time the box provably could
@@ -327,7 +327,7 @@ async function settleComputeWindow(
  * The next runtime start will open a fresh row via startComputeSession.
  *
  * `windowEnd` bills through an EARLIER, affirmatively-evidenced instant instead
- * of `now` — used by the billing-invariant sweep (projects/sandbox-reaper.ts
+ * of `now` — used by the billing-invariant sweep (compute-invariant-sweep.ts
  * `reconcileOrphanComputeSessions`) when it finds a row that has been open long
  * after the box actually died: a box whose sandbox row we flipped to `stopped`
  * 34 days ago must be billed through that flip, not through the moment we
@@ -409,15 +409,6 @@ export async function markComputeSessionAlive(sandboxId: string, at = new Date()
 }
 
 /**
- * Sandbox is being woken from a stopped state. Open a new row.
- * Caller passes the current spec — spec may have changed if the project
- * manifest was edited between the stop and the wake.
- */
-export async function resumeComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  return startComputeSession(opts);
-}
-
-/**
  * Reopen metering for a hibernated sandbox being resumed in place (the
  * stopped→active wake path). Reuses the spec from the sandbox's most recent
  * window so the resumed compute bills exactly like the original run, without
@@ -487,8 +478,7 @@ export interface ReconcileMissingComputeResult {
  * decision, not something this sweep silently charges for.
  */
 /**
- * Candidate query, exported so its predicate can be asserted directly rather
- * than through a mock that reimplements the filtering.
+ * Candidate query.
  *
  * The metered-account inner join is load-bearing, not defence-in-depth: a legacy
  * paid plan can NEVER be metered (`startComputeSession` returns early), so every
@@ -498,7 +488,7 @@ export interface ReconcileMissingComputeResult {
  * row. The inner join also drops accounts with no `credit_accounts` row at all,
  * which is the same fail-closed outcome as the `accountRowMetersCompute` gate below.
  */
-export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
+function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -537,7 +527,7 @@ export function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_S
  * billable only while it is the active deployment, its desired state is
  * running, and the runtime row itself is running.
  */
-export function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
+function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
     .select({
       sandboxId: appRuntimes.runtimeId,

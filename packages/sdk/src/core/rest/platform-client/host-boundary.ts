@@ -181,6 +181,10 @@ export interface OAuthConsentRequest {
   scope?: string;
   /** True when this user already approved this client for every requested scope — approve without asking. */
   remembered?: boolean;
+  /** True when the client registered itself (RFC 7591, e.g. an MCP client) — no account vouches for it. */
+  self_registered?: boolean;
+  /** Where approval sends the browser: the redirect host, or a native app's scheme (`cursor:`). */
+  redirect_to?: string;
 }
 
 export function getOAuthConsentRequest(
@@ -201,9 +205,22 @@ export function submitOAuthConsent(
 }
 
 export interface ConnectorSetupLinkInfo {
+  /** The project the link belongs to. Absent on older servers. */
+  project_id?: string;
   project_name: string;
+  /** The name the agent suggested for the new account, or `null`. Absent on older servers. */
+  label?: string | null;
+  /** Whose account the agent meant the link to create. Absent on older servers. */
+  owner?: 'me' | 'project';
   slug: string;
   app: string | null;
+  /**
+   * The connector's display name ("Google Calendar"), so a card can name the
+   * app before it is opened. Optional: servers older than this field omit it.
+   */
+  name?: string | null;
+  /** The app's logo. `null` when the catalog has none; absent on older servers. */
+  icon_url?: string | null;
   expires_at: string;
 }
 
@@ -236,6 +253,15 @@ export interface ConnectorSetupLinkFinalize {
    * `null` (or absent, on older servers) when the provider exposes none.
    */
   connected_as?: string | null;
+  /** The account finalized, when the call named one (`connectionId`). */
+  connection_id?: string;
+  /** That account's name, when the call named one. */
+  label?: string;
+}
+
+/** Name ONE account the link's dialog created, so the session is told about it. */
+export interface FinalizeConnectorSetupLinkInput {
+  connectionId?: string;
 }
 
 export function startConnectorSetupLink(
@@ -258,10 +284,11 @@ export function startConnectorSetupLink(
 export function finalizeConnectorSetupLink(
   token: string,
   options: HostRequestOptions,
+  input: FinalizeConnectorSetupLinkInput = {},
 ): Promise<ConnectorSetupLinkFinalize> {
   return requestJson(`/setup-links/connectors/${encodeURIComponent(token)}/finalize`, options, {
     method: 'POST',
-    body: {},
+    body: input.connectionId ? { connection_id: input.connectionId } : {},
   });
 }
 
@@ -282,11 +309,41 @@ export function getSecretSetupLink(
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options);
 }
 
+/**
+ * Why a saved secret never reaches the session that requested it:
+ * `agent_grant` — outside the session agent's `secrets` grant (a person with
+ * project access can widen it); `session_allowlist` — outside the session's
+ * create-time allowlist (fixed; start a new session).
+ */
+export type SecretWithheldReason = 'agent_grant' | 'session_allowlist';
+
+export interface SecretSetupLinkWithheld {
+  name: string;
+  reason: SecretWithheldReason;
+}
+
+/** What `POST /setup-links/secret/:token` answers. */
+export interface SecretSetupLinkSubmitResult {
+  ok: boolean;
+  /** Names whose values were saved. */
+  saved: string[];
+  /**
+   * The requesting session's agent. Present only with `withheld`, and absent
+   * on servers older than this field.
+   */
+  agent?: string;
+  /**
+   * Saved names the requesting session will not receive. The value IS saved;
+   * a person must widen the grant before the agent can read it.
+   */
+  withheld?: SecretSetupLinkWithheld[];
+}
+
 export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
-): Promise<unknown> {
+): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
     body: { values },

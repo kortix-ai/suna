@@ -373,7 +373,9 @@ export interface SessionPublicShare {
   share_id: string;
   session_id: string;
   project_id: string;
-  resource_type: 'preview' | 'file' | string;
+  /** `transcript` names the session conversation; its `public_url` is the
+   *  web viewer (`/share/session/<public_token>`). */
+  resource_type: 'preview' | 'file' | 'transcript' | string;
   label: string;
   port: number | null;
   path: string;
@@ -398,6 +400,15 @@ export interface SessionPublicShare {
 }
 
 export interface CreateSessionPublicShareInput {
+  /**
+   * `true` shares the session conversation as a read-only, sanitized
+   * transcript. A session has at most one live transcript share: minting
+   * again returns the live one as-is (HTTP 200) instead of a new link, and
+   * the `label` and `expires_at` of that second call are ignored. Revoke it
+   * first to mint a link with new values. Cannot be combined with `preview`,
+   * `preview_id`, or `file`. Deleting the session revokes it.
+   */
+  transcript?: boolean;
   preview_id?: string;
   preview?: {
     label?: string;
@@ -412,6 +423,24 @@ export interface CreateSessionPublicShareInput {
   mode?: 'view' | 'interactive';
   label?: string;
   expires_at?: string | null;
+}
+
+/**
+ * The live transcript share among a session's shares (newest first), or null.
+ * Live means not revoked and not expired at `now`. Pure: pass the `shares`
+ * from `listSessionPublicShares`.
+ */
+export function findActiveTranscriptShare(
+  shares: readonly SessionPublicShare[],
+  now: Date = new Date(),
+): SessionPublicShare | null {
+  let found: SessionPublicShare | null = null;
+  for (const share of shares) {
+    if (share.resource_type !== 'transcript' || share.revoked_at) continue;
+    if (share.expires_at && Date.parse(share.expires_at) <= now.getTime()) continue;
+    if (!found || Date.parse(share.created_at) > Date.parse(found.created_at)) found = share;
+  }
+  return found;
 }
 
 export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
@@ -431,6 +460,11 @@ export async function listSessionPublicShares(projectId: string, sessionId: stri
   );
 }
 
+/**
+ * Mint a public share link. With `{ transcript: true }` this is idempotent:
+ * an existing live transcript share is returned as-is (its label and expiry
+ * unchanged; the ones passed are ignored).
+ */
 export async function createSessionPublicShare(
   projectId: string,
   sessionId: string,
@@ -748,12 +782,19 @@ export async function getSessionTranscriptSync(
      * rather than silently returning the newest window again.
      */
     before?: string | null;
+    /**
+     * A sub-agent's OpenCode session inside this session (`ses_…`, the id a
+     * sub-agent row opens). Returns that sub-agent's own saved transcript
+     * instead of the conversation; `available: false` when nothing was saved.
+     */
+    child?: string | null;
   },
 ) {
   const search = new URLSearchParams({ shape: 'sync' });
   if (options?.limit != null) search.set('limit', String(options.limit));
   if (options?.history) search.set('history', 'true');
   if (options?.before) search.set('before', options.before);
+  if (options?.child) search.set('child', options.child);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
       `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
@@ -844,8 +885,9 @@ export async function getSessionTurn(
 //
 // ONE round trip for everything a session view needs to PAINT and ARM: the
 // session row, the running turns, the prompt queue, the durable transcript
-// mirror, the composer's control-plane essentials, and the model defaults.
-// It replaces 6 serial reads on the open path and introduces NO new truth —
+// mirror, the composer's control-plane essentials, the model defaults, and
+// the pending-approvals audit projection. It replaces 7 serial reads (6 plus
+// `/audit`) on the open path and introduces NO new truth —
 // every leg is byte-identical to the endpoint that already served it, so a
 // consumer can hand a leg straight to the code that reads that endpoint.
 //
@@ -903,6 +945,21 @@ export type SessionOpenBundleModels =
     }
   | SessionOpenBundleUnknown;
 
+/** = `GET .../audit?include_events=false` — the pending-approvals projection
+ *  only, never the historical `events` timeline (that half needs its own
+ *  audit-queue flush and answers "show me history", not "what's blocking this
+ *  run"). Byte-identical to `SessionAudit` minus `events`/`next_cursor`. */
+export type SessionOpenBundleAudit =
+  | ({
+      known: true;
+      session_id: string;
+      agent: string | null;
+      audit_access: boolean;
+      count: number;
+      actions: SessionAuditAction[];
+    })
+  | SessionOpenBundleUnknown;
+
 export interface SessionOpenBundle {
   /** ONE clock for the whole envelope. Every leg is a snapshot at this instant,
    *  and every projection that ranks a server observation against local
@@ -914,6 +971,7 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
+  audit: SessionOpenBundleAudit;
 }
 
 /**
@@ -1254,6 +1312,62 @@ export async function stopProjectSession(projectId: string, sessionId: string) {
 }
 
 /**
+ * The config release state of one session: which config release the box runs,
+ * which one the API assigns, and why the two differ.
+ *
+ * A config release is one archive of the base branch's config dir plus one
+ * compiled governance. The sandbox serves it from a read-only directory, never
+ * from `/workspace`. `/workspace` stays the full editable clone: a config edit
+ * made there reaches a box only once it is pushed to the base branch.
+ */
+export interface SessionConfigRelease {
+  /**
+   * Always `follow-base`: a session runs the base branch's current config
+   * release. One member on purpose — there is no per-session config policy.
+   */
+  mode: 'follow-base';
+  /**
+   * Where the running config comes from, as the daemon reports it. The chain
+   * is the desired release, then the last release this box proved, then the
+   * platform's own default config dir. `/workspace` is not a step in it.
+   */
+  source: 'release' | 'image-default';
+  /** The release ID the box serves from. `null` when no release is running. */
+  running_release_id: string | null;
+  /** The release ID the API assigns. `null` when the base branch produces none. */
+  desired_release_id: string | null;
+  /** True when the running config passed the proven check on this box. */
+  proven: boolean;
+  /**
+   * Why the box runs a config other than the desired release. `null` when it
+   * does not. When set, an earlier config serves the session.
+   */
+  fallback_reason: string | null;
+  /** The release ID that failed on this box, when one did. */
+  failed_release_id: string | null;
+}
+
+/**
+ * The managed-model catalog's freshness for one session's box — the third
+ * convergeable asset alongside binaries and the skill overlay. Reported in the
+ * SAME place a config fallback is (`SessionConfigState`), not a log line: a
+ * box can look perfectly healthy (current binaries, a proven config release)
+ * and still be serving a managed lineup the control plane retired weeks ago,
+ * because OpenCode learns its provider map once, at process start.
+ */
+export interface SessionManagedCatalogState {
+  /**
+   * Managed model ids this box currently believes are servable, or `null` when
+   * UNCONFIRMED — no live fetch has ever succeeded on this box, so it is
+   * running the baked/bundled managed set with no proof it matches the
+   * platform's current lineup. Never read `null` as "no managed models exist".
+   */
+  ids: string[] | null;
+  /** Why the last live fetch did not confirm this box, or `null` when it did. */
+  fallback_reason: string | null;
+}
+
+/**
  * Whether a session is running the agent config the manifest compiles to now.
  *
  * A session's agent behaviour is compiled from git ONCE, at provision, and
@@ -1280,6 +1394,17 @@ export interface SessionConfigState {
    */
   stale: boolean | null;
   sandbox_reachable: boolean;
+  /**
+   * The config release state. Absent on a response from an API that predates
+   * config releases; a host then renders from `stale` alone.
+   */
+  release?: SessionConfigRelease;
+  /**
+   * Absent on a response from an API that predates it. Present regardless of
+   * whether config releases are enabled for this project — see the field's
+   * own doc for why.
+   */
+  managed_catalog?: SessionManagedCatalogState;
 }
 
 /**
@@ -1351,6 +1476,22 @@ export interface SessionReloadResult {
   /** Why nothing was applied. Internal wording — map it, don't render it. */
   reason?: string;
   detail: string;
+  /**
+   * The config release state after the reload. Absent on a response from an
+   * API that predates config releases. A set `fallback_reason` means the reload
+   * did not take effect and an earlier config still serves the session.
+   */
+  release?: SessionConfigRelease;
+  /**
+   * What happened to the session's own `/workspace` checkout — the other half
+   * of a reload. A reload fast-forwards the checkout AND converges the config
+   * the box runs; a host reports both, so a half-sync is never silent.
+   *
+   * `not-requested` when the caller passed `refresh_repo: false`, `refused`
+   * when the box declined the pull. Absent on a response from an API that
+   * predates config releases.
+   */
+  workspace_checkout?: 'updated' | 'already-current' | 'not-requested' | 'refused';
 }
 
 /** Server-observed boundaries for a live session-config reload. */

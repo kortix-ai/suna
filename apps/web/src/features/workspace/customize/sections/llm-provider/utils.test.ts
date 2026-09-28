@@ -307,6 +307,11 @@ describe('formatPricePerMillion', () => {
     expect(formatPricePerMillion(0.25)).toBe('$0.250');
   });
 
+  test('preserves four-decimal provider rates', () => {
+    expect(formatPricePerMillion(0.0306)).toBe('$0.0306');
+    expect(formatPricePerMillion(0.1275)).toBe('$0.1275');
+  });
+
   test('formats sub-cent rates with four decimals', () => {
     expect(formatPricePerMillion(0.0007)).toBe('$0.0007');
   });

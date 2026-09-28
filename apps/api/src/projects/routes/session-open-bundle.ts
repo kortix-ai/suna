@@ -33,13 +33,21 @@
  * `known: false` and the client renders UNKNOWN — never idle, never an empty
  * queue, never "no models". A default rendered as an answer is the defect class
  * this bundle exists to remove, so it must not re-introduce it under a new name.
+ *
+ * THE `audit` LEG (added 2026-09-27, the turn-latency spec (PR #7840) R4) answers
+ * the pending-approvals projection every open session tab polls every 5-15s
+ * (`GET .../audit?include_events=false`), through the SAME function that
+ * route calls (`readSessionAuditActions`). It deliberately excludes the
+ * historical `events` timeline — that half needs its own audit-queue flush
+ * and answers "show me history", not "what's blocking this run", which is
+ * all a first paint needs.
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 
-import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
@@ -53,13 +61,18 @@ import {
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { serializeSession } from '../lib/serializers';
-import { UUID_V4_REGEX, parseBoundedPositiveInt } from '../lib/serializers';
+import { parseBoundedPositiveInt } from '../lib/serializers';
+import { isUuid } from '../../shared/validate';
+import { readSessionAuditActions } from '../lib/session-audit-read';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
+
+/** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
+const AUDIT_ACTIONS_LIMIT = 100;
 
 /** Same ceiling `GET .../prompts` uses. The inbox is a queue, not a log. */
 const PROMPT_LIST_LIMIT = 200;
@@ -102,7 +115,7 @@ const sessionSnapshotRoute = (path: string, summary: string) =>
 const handleSessionSnapshot = async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
     const transcriptLimit = parseBoundedPositiveInt(
       c.req.query('transcript'),
@@ -149,7 +162,7 @@ const handleSessionSnapshot = async (c: any) => {
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime] = await Promise.allSettled([
+    const [turn, queue, transcript, models, runtime, audit] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
@@ -191,6 +204,23 @@ const handleSessionSnapshot = async (c: any) => {
       // commands, what model" — it is a DB read like every other leg here, and
       // it does not touch the sandbox even when the box is up.
       readRuntimeLeg(sessionId),
+      // = `GET .../audit?include_events=false` — the pending-approvals poll
+      // every open session tab makes every 5-15s (`session-audit-shared.tsx`).
+      // NEVER the historical `events` timeline: that half needs its own
+      // audit-queue flush and answers "show me history", not "what's blocking
+      // this run" — the bundle answers only the second question, same as this
+      // leg's shared function documents.
+      (async () => {
+        const accountId = loaded.row.accountId as string;
+        const audited = await accountHasEntitlement(accountId, 'auditAccess');
+        return readSessionAuditActions({
+          projectId,
+          sessionId,
+          agentName: (visible.row.agentName as string | null) ?? null,
+          audited,
+          limit: AUDIT_ACTIONS_LIMIT,
+        });
+      })(),
     ]);
 
     const prompts =
@@ -289,6 +319,15 @@ const handleSessionSnapshot = async (c: any) => {
       // roster presented as fact.
       runtime:
         runtime.status === 'fulfilled' ? runtime.value : failed(runtime.reason),
+
+      // = `GET .../audit?include_events=false`'s `actions` array — the
+      // pending-approvals projection, never the historical `events` timeline.
+      // `known: false` means the leg could not answer; the client falls back
+      // to `GET .../audit` exactly as `claimOpenBundle`'s other legs do.
+      audit:
+        audit.status === 'fulfilled'
+          ? { known: true as const, ...audit.value }
+          : failed(audit.reason),
     });
   };
 

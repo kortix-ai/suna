@@ -392,8 +392,7 @@ agents:
   });
 });
 
-// `per_user` connector credential mode was removed 2026-07-05 (docs/specs/
-// 2026-07-05-agent-first-config-unification.md §2.5): v1 tolerates it as a
+// `per_user` connector credential mode was removed 2026-07-05: v1 tolerates it as a
 // legacy value (warning; resolves to `shared` at runtime), v2 is a clean
 // break and rejects it outright — same pattern as the removed CLI actions.
 describe('validateManifest — connector `credential: per_user` removal', () => {
@@ -526,8 +525,7 @@ connectors:
 });
 
 // The connector-side agent gate (`[[connectors]].agent_scope`) was removed
-// 2026-07 (wave-2 of the agent-first cut, docs/specs/
-// 2026-07-05-agent-first-config-unification.md §2.5): connector access is now
+// 2026-07 (wave-2 of the agent-first cut): connector access is now
 // purely the agent's own `connectors` grant. The runtime (apps/api's
 // connectors.ts `parseConnectorEntry`) no longer parses `agent_scope` at all —
 // it is silently ignored, never round-tripped back into git. Same
@@ -1242,5 +1240,39 @@ describe('validateAgentMdFrontmatter', () => {
   test('`maxSteps` is rejected with a pointer to `steps`', () => {
     const issues = frontmatterIssues({ maxSteps: 50 });
     expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
+  });
+});
+
+describe('v2 harnesses.pi.packages', () => {
+  const manifest = (packages: string) =>
+    `kortix_version: 2\ndefault_agent: w\nruntime: pi\nagents:\n  w: {}\nharnesses:\n  pi:\n    packages:\n${packages}`;
+
+  test('an author sees which entry is wrong and what to write instead', () => {
+    const result = validateManifest(manifest('      - npm:pi-web-access\n      - source: ./ok.ts\n        commands: []\n'), 'yaml');
+    expect(result.valid).toBe(false);
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual(['harnesses.pi.packages[0]', 'harnesses.pi.packages[1].commands']);
+    expect(errors[0]!.message).toContain('npm:<name>@<x.y.z>');
+    expect(errors[1]!.message).toContain('extensions, skills, prompts, themes');
+  });
+
+  test('agent level: packages follow the same rules; exclude names packages, never versions', () => {
+    const result = validateManifest(
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      pi:\n        packages: [npm:x]\n        exclude: [npm:y@1.0.0, "Bad Name"]\n        extra: 1\n',
+      'yaml',
+    );
+    const errors = result.issues.filter((issue: ManifestIssue) => issue.severity === 'error');
+    expect(errors.map((issue: ManifestIssue) => issue.path)).toEqual([
+      'agents.w.harnesses.pi.extra',
+      'agents.w.harnesses.pi.exclude[0]',
+      'agents.w.harnesses.pi.exclude[1]',
+      'agents.w.harnesses.pi.packages[0]',
+    ]);
+    expect(errors[1]!.message).toContain('package name');
+  });
+
+  test('more than 20 packages is an error', () => {
+    const many = Array.from({ length: 21 }, (_, i) => `      - npm:pkg-${i}@1.0.0\n`).join('');
+    expect(validateManifest(manifest(many), 'yaml').valid).toBe(false);
   });
 });

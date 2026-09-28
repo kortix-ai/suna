@@ -1,26 +1,15 @@
 'use client';
 
-import { Skeleton } from '@/components/ui/skeleton';
 import { COMPOSER_SHELL_CLASS } from '@/features/session/composer/composer';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { SavedSessionSkeletonRows, SkeletonBar } from '@/features/session/saved-session-skeleton-rows';
+import { savedSessionSkeletonShape } from '@/features/session/saved-session-skeleton-shape';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { SessionStartStage } from '@kortix/sdk';
-
-/**
- * Placeholder turns: the user bubble's width, then the assistant's line widths.
- * Fixed values, so the placeholder never shifts between renders.
- */
-const TURNS = [
-  { bubble: 'w-2/5', lines: ['w-full', 'w-11/12', 'w-3/5'] },
-  { bubble: 'w-1/3', lines: ['w-full', 'w-4/5'] },
-  { bubble: 'w-1/2', lines: ['w-full', 'w-11/12', 'w-full', 'w-2/3'] },
-] as const;
-
-/** The `Skeleton` primitive pads itself (`py-4`); these shapes set their own height. */
-const SHAPE = 'py-0 motion-reduce:animate-none';
+import { useMemo } from 'react';
 
 /**
  * A session being resumed, while its saved conversation is on its way.
@@ -35,6 +24,11 @@ const SHAPE = 'py-0 motion-reduce:animate-none';
  * `SESSION_TRANSCRIPT_CLASS`, `COMPOSER_SHELL_CLASS`), so the crossfade into
  * `SessionChat` moves nothing but the content. The side panel still reports the
  * boot stage for anyone who opens it.
+ *
+ * The turns are this session's own (`savedSessionSkeletonShape`, seeded by the
+ * session id), so two sessions do not open on the same picture, and the route's
+ * loading boundary and the page draw identical rows. One pulse travels down
+ * them, ending on the composer.
  */
 export function SavedSessionSkeleton({
   projectId,
@@ -47,6 +41,7 @@ export function SavedSessionSkeleton({
   stage: SessionStartStage;
 }) {
   const t = useTranslations('sessionPage');
+  const shape = useMemo(() => savedSessionSkeletonShape(sessionId), [sessionId]);
   return (
     <SessionLayout
       sessionId={sessionId}
@@ -68,24 +63,17 @@ export function SavedSessionSkeleton({
               data-testid="saved-session-skeleton"
               className={SESSION_TRANSCRIPT_CLASS}
             >
-              {TURNS.map((turn) => (
-                <div key={turn.bubble} className="mt-12 first:mt-0">
-                  <div className="flex justify-end">
-                    <Skeleton className={cn(SHAPE, 'h-10 rounded-lg', turn.bubble)} />
-                  </div>
-                  <div className="mt-5 space-y-2.5">
-                    {turn.lines.map((width, line) => (
-                      <Skeleton key={`${turn.bubble}-${line}`} className={cn(SHAPE, 'h-3.5', width)} />
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <SavedSessionSkeletonRows shape={shape} />
             </div>
           </div>
           {/* The card's outline, on the rails of the docked composer: its height
               and the gap the agent row keeps below it. */}
           <div aria-hidden className={cn(COMPOSER_SHELL_CLASS, 'pb-8')}>
-            <Skeleton className={cn(SHAPE, 'h-28 w-full rounded-xl')} />
+            <SkeletonBar
+              phase={shape.composerPhase}
+              phases={shape.phases}
+              className="h-28 w-full rounded-xl"
+            />
           </div>
         </SessionBodyRow>
       </div>

@@ -1,134 +1,17 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
-import { db } from '../../shared/db';
 import { accountRoleMap, isAccountManagerRole } from '../../iam/read-models';
 import { config } from '../../config';
-import { authorize } from '../../iam';
-import { actorForUser } from '../../iam/actor';
-import { PROJECT_ACTIONS } from '../../iam/actions';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { loadSlackTokenForProject } from '../install-store';
 import { openDmChannel, postBlocks, postEphemeral } from '../slack-api';
+import { lookupChatUserForKortixUser } from '../core/identity';
 import { createPendingSlackAuthMessage } from './auth-resume';
 import { buildSlackLoginUrl } from './login';
 import { dashboardBase } from './util';
 import type { SlackEnvelope, SlackEvent } from './types';
 
-const PLATFORM = 'slack';
-
-export type SlackActor =
-  | { userId: string }
-  | { reason: 'unlinked' | 'not_member' };
-
-// Resolve the Slack sender to the Kortix user they linked via `/login`, and
-// confirm that user may start work in this project. This is the authoritative
-// security gate: no live, project-write-capable mapping → no run.
-export async function resolveSlackActor(
-  teamId: string,
-  slackUserId: string,
-  accountId: string,
-  projectId: string,
-): Promise<SlackActor> {
-  if (!teamId || !slackUserId) return { reason: 'unlinked' };
-
-  const [link] = await db
-    .select({ userId: chatUserIdentities.userId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
-        eq(chatUserIdentities.platformUserId, slackUserId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  if (!link) return { reason: 'unlinked' };
-
-  if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
-  // A channel webhook carries no Kortix credential: it acts AS the Kortix user
-  // the Slack/Teams identity is linked to. Role-only is the honest classification
-  // and is exactly the authority this call had when the trailing `actingTokenId`
-  // was omitted.
-  const verdict = await authorize(
-    actorForUser(link.userId, accountId),
-    PROJECT_ACTIONS.PROJECT_WRITE,
-    { type: 'project', id: projectId },
-  );
-  if (!verdict.allowed) return { reason: 'not_member' };
-  return { userId: link.userId };
-}
-
-export async function isAccountMember(userId: string, accountId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
-  return !!row;
-}
-
-export async function lookupSlackIdentity(
-  teamId: string,
-  slackUserId: string,
-): Promise<{ userId: string } | null> {
-  const [row] = await db
-    .select({ userId: chatUserIdentities.userId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
-        eq(chatUserIdentities.platformUserId, slackUserId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-// Idempotent bind — used by the `/login` web flow and the installer auto-seed.
-// A re-link (same Slack user, new Kortix user) overwrites the mapping and clears
-// any prior revocation.
-export async function linkSlackIdentity(input: {
-  teamId: string;
-  slackUserId: string;
-  userId: string;
-}): Promise<void> {
-  await db
-    .insert(chatUserIdentities)
-    .values({
-      platform: PLATFORM,
-      workspaceId: input.teamId,
-      platformUserId: input.slackUserId,
-      userId: input.userId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        chatUserIdentities.platform,
-        chatUserIdentities.workspaceId,
-        chatUserIdentities.platformUserId,
-      ],
-      set: { userId: input.userId, linkedAt: new Date(), revokedAt: null },
-    });
-}
-
-export async function revokeSlackIdentity(teamId: string, slackUserId: string): Promise<boolean> {
-  const rows = await db
-    .update(chatUserIdentities)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
-        eq(chatUserIdentities.platformUserId, slackUserId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .returning({ identityId: chatUserIdentities.identityId });
-  return rows.length > 0;
-}
+// The Slack rendering of the chat identity link (core/identity.ts owns the
+// link itself and the actor check).
 
 // ── In-thread identity / access nudges ───────────────────────────────────────
 // When an unlinked or no-access sender @-mentions Kortix we answer right where
@@ -233,67 +116,6 @@ export async function postIdentityPrompt(input: {
   if (dm) await postBlocks(token, dm, fallback, blocks);
 }
 
-export type AccessRequestOutcome =
-  | { status: 'created' | 'pending' | 'already-member'; requesterUserId: string; accountId: string }
-  | { status: 'no-identity' | 'no-project' };
-
-// File (or find the existing pending) project access request for the Slack sender,
-// reusing the same projectAccessRequests table the web "Request access" flow uses.
-// Idempotent: a second click while one is pending returns 'pending', not a dupe.
-export async function createSlackAccessRequest(input: {
-  teamId: string;
-  slackUserId: string;
-  projectId: string;
-}): Promise<AccessRequestOutcome> {
-  const identity = await lookupSlackIdentity(input.teamId, input.slackUserId);
-  if (!identity) return { status: 'no-identity' };
-
-  const [project] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, input.projectId))
-    .limit(1);
-  if (!project) return { status: 'no-project' };
-
-  const base = { requesterUserId: identity.userId, accountId: project.accountId };
-  if (await isAccountMember(identity.userId, project.accountId)) {
-    const verdict = await authorize(
-      actorForUser(identity.userId, project.accountId),
-      PROJECT_ACTIONS.PROJECT_WRITE,
-      { type: 'project', id: input.projectId },
-    );
-    if (!verdict.allowed) {
-      // They are in the org, but cannot run Slack-started sessions for this
-      // project yet. Keep the same review queue instead of silently failing.
-    } else {
-      return { status: 'already-member', ...base };
-    }
-  }
-
-  const [existing] = await db
-    .select({ requestId: projectAccessRequests.requestId })
-    .from(projectAccessRequests)
-    .where(
-      and(
-        eq(projectAccessRequests.projectId, input.projectId),
-        eq(projectAccessRequests.requesterUserId, identity.userId),
-        eq(projectAccessRequests.status, 'pending'),
-      ),
-    )
-    .limit(1);
-  if (existing) return { status: 'pending', ...base };
-
-  const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
-  await db.insert(projectAccessRequests).values({
-    accountId: project.accountId,
-    projectId: input.projectId,
-    requesterUserId: identity.userId,
-    requesterEmail: email || identity.userId,
-    message: 'Requested from Slack. Approve so they can run Kortix from Slack.',
-  });
-  return { status: 'created', ...base };
-}
-
 // DM every account admin (owner/admin) who has a linked Slack identity in this
 // workspace that a new access request is waiting, with a link to review it in
 // Kortix. Best-effort — an admin without a Slack link still sees it on the web
@@ -346,28 +168,10 @@ export async function notifyAdminsOfAccessRequest(input: {
 
   for (const admin of admins) {
     if (admin.userId === input.requesterUserId) continue;
-    const slackId = await lookupSlackUserIdForKortixUser(input.teamId, admin.userId);
+    const slackId = await lookupChatUserForKortixUser('slack', input.teamId, admin.userId);
     if (!slackId) continue;
     const dm = await openDmChannel(token, slackId);
     if (!dm) continue;
     await postBlocks(token, dm, text, blocks);
   }
-}
-
-// Reverse of lookupSlackIdentity: the Slack user a Kortix user is linked to in a
-// given workspace, so we can DM admins about access requests.
-export async function lookupSlackUserIdForKortixUser(teamId: string, userId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ slackUserId: chatUserIdentities.platformUserId })
-    .from(chatUserIdentities)
-    .where(
-      and(
-        eq(chatUserIdentities.platform, PLATFORM),
-        eq(chatUserIdentities.workspaceId, teamId),
-        eq(chatUserIdentities.userId, userId),
-        isNull(chatUserIdentities.revokedAt),
-      ),
-    )
-    .limit(1);
-  return row?.slackUserId ?? null;
 }
