@@ -196,6 +196,8 @@ export interface TranscriptMessage {
   created: string | null;
   completed: string | null;
   text: string;
+  /** The message's tool calls: name and final state (`completed`, `error`, …). */
+  tools?: Array<{ tool: string; status: string | null }>;
   error: { name?: string; message?: string } | null;
 }
 

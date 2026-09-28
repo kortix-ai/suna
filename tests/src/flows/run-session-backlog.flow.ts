@@ -33,7 +33,6 @@ import {
   assertRuntimeHarness,
   bootSession,
   endedAfter,
-  pinnedRoot,
   readTranscript,
   readTurn,
   runtimePath,
@@ -1265,7 +1264,6 @@ harnessFlow(
       'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
@@ -1289,19 +1287,17 @@ harnessFlow(
           `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
           `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
       });
-      await ctx.step('the agent attempted the write and the runtime refused it', async () => {
-        await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
-        const root = await pinnedRoot(ctx, session.projectId, session.sessionId);
-        const page = await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, `/kortix/opencode/messages/${root}`));
-        page.status(200);
-        const tools = (page.json<{ messages: Array<{ parts?: Array<Record<string, any>> }> }>()?.messages ?? [])
-          .flatMap((m) => m.parts ?? [])
-          .filter((p) => p.type === 'tool' && (p.tool === 'write' || p.tool === 'edit'));
-        if (tools.length === 0) {
-          throw new Error(`the agent never called a file tool, so the policy was not exercised: ${page.text().slice(0, 2_000)}`);
-        }
-        const ran = tools.filter((p) => p.state?.status !== 'error');
+      await ctx.step('no file tool ran; on pi the write was attempted and refused', async () => {
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        const fileTools = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'write' || t.tool === 'edit');
+        const ran = fileTools.filter((t) => t.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
+        // OpenCode never offers a tool its policy denies, so its model has no
+        // write tool to call. pi offers every tool and refuses the call; a
+        // refused `write` is the proof that `edit: deny` reached it.
+        if (harness === 'pi' && fileTools.length === 0) {
+          throw new Error(`the pi agent never called a file tool, so the policy was not exercised: ${JSON.stringify(messages.map((m) => m.tools))}`);
+        }
       });
       await ctx.step('the file does not exist in the workspace', async () => {
         const file = await ctx.client
