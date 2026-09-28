@@ -79,9 +79,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
         sql`(
           (
             ${sessionSandboxes.metadata}->>'runtimeWakeId' IS NOT NULL
-            AND (
-               ${wakeLeaseOpen}
-            )
+            AND ${wakeLeaseOpen}
           )
           OR (
             ${sessionSandboxes.metadata}->>'runtimeWakeCleanupUntilAt' ~ '^\\d{4}-\\d{2}-\\d{2}T'
@@ -90,8 +88,8 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
           )
         )
         AND (
-           ${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL
-           OR ${cleanupLeaseOpen}
+          ${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL
+          OR ${cleanupLeaseOpen}
         )`,
       ),
     )
@@ -152,7 +150,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
           const wakePredicate = claimExpired
             ? and(
                 sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${String(metadata.runtimeWakeId)}`,
-                 wakeLeaseOpen,
+                wakeLeaseOpen,
               )
             : sql`${sessionSandboxes.metadata}->>'runtimeWakeId' IS NULL`;
           const [claimed] = await db
@@ -171,7 +169,7 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
                 eq(sessionSandboxes.sandboxId, row.sandboxId),
                 eq(sessionSandboxes.status, 'stopped'),
                 wakePredicate,
-                 sql`(${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL OR ${cleanupLeaseOpen})`,
+                sql`(${sessionSandboxes.metadata}->>'runtimeWakeCleanupId' IS NULL OR ${cleanupLeaseOpen})`,
               ),
             )
             .returning({ sandboxId: sessionSandboxes.sandboxId });
