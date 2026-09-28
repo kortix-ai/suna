@@ -175,6 +175,9 @@ async function setup(page: Page, label: string, messages?: SavedMessages) {
     [sessionId],
     env.databaseUrl ?? undefined,
   );
+  // The recordings are PR demos: they show the session, not the personal
+  // welcome card a new account gets.
+  await page.addInitScript(() => localStorage.setItem('kortix:marko-welcome-dismissed', '1'));
   await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
   await selectAccountForUi(page, accountId);
   await dismissOnboarding(page);
