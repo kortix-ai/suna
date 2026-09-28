@@ -1,6 +1,6 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
@@ -20,8 +20,8 @@ import type {
   SandboxIngressRequest,
   SandboxProvider,
   SandboxStatus,
-} from './index';
-import { assertWorkloadCredential, sandboxWorkloadType } from './index';
+} from './contract';
+import { assertWorkloadCredential, sandboxWorkloadType } from './contract';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
 // Kortix's own idle reaper normally pauses much sooner; this is the provider
