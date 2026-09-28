@@ -40,6 +40,26 @@ export function previewDeploymentStatusPath(runId: string, runAttempt: string): 
 /** Suite exit code when it refused to start: no report was written for this commit. */
 export const PREVIEW_SUITE_REFUSED = 3;
 
+/** Suite exit code when a newer commit (or removing the label) superseded it and the runner stopped it. */
+export const PREVIEW_SUITE_SUPERSEDED = 4;
+
+/** The suite script's PID. `setsid` makes it the process-group leader, so `kill -- -PID` stops the whole suite. */
+export const PREVIEW_SUITE_PID_PATH = '/workspace/kortix-preview/suite.pid';
+
+/**
+ * Whether the commit a suite tests is still the one the pull request wants
+ * tested. The suite holds the deploy lock for ~40 min, so a stale suite keeps a
+ * push's redeploy queued behind it; the runner stops it instead.
+ */
+export function previewSuiteSuperseded(
+  pull: { state?: string; head?: { sha?: string }; labels?: Array<{ name?: string }> },
+  sha: string,
+): boolean {
+  if (pull.state && pull.state !== 'open') return true;
+  if (pull.head?.sha && pull.head.sha !== sha) return true;
+  return !(pull.labels ?? []).some((label) => label.name === 'preview');
+}
+
 /** Completion record for the suite a run launches after its deploy. */
 export function previewSuiteStatusPath(runId: string, runAttempt: string): string {
   return previewDeploymentStatusPath(runId, runAttempt).replace(/\.exit$/, '-suite.exit');
@@ -79,11 +99,13 @@ export KORTIX_SELF_HOST_CONFIG_DIR="$STATE/self-host"
 exec 9>"$STATE/deploy.lock"
 flock -x 9
 rm -f "$STATUS"
+printf '%s\n' "$$" > ${shellQuote(PREVIEW_SUITE_PID_PATH)}
 exec > >(tee -a "$LOG") 2>&1
 
 finish() {
   local code="$1"
   set +e
+  rm -f ${shellQuote(PREVIEW_SUITE_PID_PATH)}
   tar -czf /workspace/kortix-test-results.tar.gz -C "$ROOT" tests/test-results
   printf '%s\n' "$code" > "$STATUS"
 }
@@ -175,6 +197,10 @@ mkdir -p "$STATE" "$ROOT/tests/test-results"
 exec 9>"$STATE/deploy.lock"
 flock -x 9
 rm -f "$STATUS" "$PHASE"
+# Results belong to one commit. The preview serves this directory at /_tests/
+# and the run uploads it, so an earlier run's report would read as this one's.
+# Empty it, keep the directory: it is bind-mounted into the edge container.
+find "$ROOT/tests/test-results" -mindepth 1 -delete
 exec > >(tee -a "$LOG") 2>&1
 
 finish() {

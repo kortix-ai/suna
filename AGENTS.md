@@ -469,7 +469,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   file against its own fresh migrated database. A skipped DB suite fails.
 - `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
   deterministic local stack.
-- Local browser runs use two Playwright workers. CI browser shards use one.
+- Browser runs use two Playwright workers, locally and in each CI shard.
 - `pnpm test -- --packages-only` runs every app/package test and publish check.
 - `pnpm test -- --full` adds browser journeys and every app/package test. It
   starts the deterministic local stack.
@@ -524,9 +524,14 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   updates the comment with the result and its `/_tests/` HTML report.
 - A push to a `preview`-labelled branch redeploys its environment in place; the
   label stays. Removing the label or deleting the branch tears it down. Closing
-  the pull request does not. A daily reconciler deletes environments whose
+  the pull request does not. An hourly reconciler deletes environments whose
   branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
-  `reconcile`).
+  `reconcile`). It also stops (never deletes) a host whose pull request is not
+  an open `preview` pull request, or that idled over 3 hours. A stopped host
+  keeps its disk; a redeploy or the next request to its URL starts it again.
+- A preview suite waits up to 45 min before it starts until the Platinum pool
+  has 64 GB free and the managed org saw at most 40 new repositories in the
+  last hour (`PREVIEW_SUITE_*`). It then stops the session boxes it created.
 - Preview warm images contain dependencies and Docker layers only. They never
   contain a database or runtime secret.
 - Preview Mailpit handles authentication and invite email. The dedicated

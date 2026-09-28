@@ -51,6 +51,8 @@ import {
   managedSkillOverlay,
   runtimeAgentBinaryPath,
   runtimeAssetsManifest,
+  runtimeChunkBytes,
+  runtimeChunkManifest,
   runtimeCliBinaryPath,
   runtimeEntrypointPath,
 } from './manifest';
@@ -59,7 +61,7 @@ import {
 // (see the call in src/index.ts). Hashing ~200 MB of binaries inside the 25s
 // request deadline made the first post-deploy caller 503, and that caller is a
 // booting sandbox.
-export { runtimeAssetsManifest } from './manifest';
+export { runtimeAssetsManifest, warmRuntimeChunkIndex } from './manifest';
 
 export const runtimeAssetsApp = makeOpenApiApp<AppEnv>();
 
@@ -90,6 +92,15 @@ const ManifestSchema = z
     policy: z.object({ agent_self_update: z.boolean() }),
   })
   .openapi('RuntimeAssetsManifest');
+
+const ChunkManifestSchema = z
+  .object({
+    sha256: z.string(),
+    size: z.number().int(),
+    chunk_size: z.number().int(),
+    chunks: z.array(z.string()),
+  })
+  .openapi('RuntimeAssetsChunkManifest');
 
 const ManagedSkillsSchema = z
   .object({
@@ -275,6 +286,102 @@ runtimeAssetsApp.openapi(
     },
   }),
   (c) => serveEntrypoint(c as never) as never,
+);
+
+// ── Content-addressed chunks ───────────────────────────────────────────────
+//
+// A changed CLI used to cost every box ~105 MB, of which ~90 MB provably did
+// not change — that prefix is the embedded Bun runtime and it is identical in
+// every `bun --compile` output. These two routes let a box move only what it
+// does not already have. Measured at 1 MiB chunks on real linux-x64 builds:
+// 100 of 102 chunks shared between two CLI builds that differ only in their
+// version stamp (98.0%), and 89 of 102 between the CLI and the daemon (87.3%)
+// when both are compiled by the same Bun — which the shipped API image does
+// not do today, so cross-artifact reuse measures 0% on a real deploy. See
+// manifest.ts. The same-artifact case is the one that matters and it holds.
+//
+// The whole-file digest on /manifest stays the authority. These routes are an
+// optimization and nothing more: a box that cannot use them, or whose assembly
+// fails to match, falls straight back to the full download.
+
+runtimeAssetsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/chunks/{component}',
+    tags: ['runtime-assets'],
+    summary: 'GET /runtime-assets/chunks/{component} — the chunk manifest for one binary',
+    description:
+      'Names every 1 MiB chunk of `cli` or `agent`, in file order, plus the whole-file sha256 ' +
+      'that stays the authority. Offsets are implied — chunk `i` starts at `i * chunk_size` — ' +
+      'and the last chunk may be shorter. A box fetches only the chunks it cannot supply from ' +
+      'a binary it already has on disk. 404 when the image carries no such binary.',
+    ...auth,
+    request: { params: z.object({ component: z.enum(['agent', 'cli']) }) },
+    responses: {
+      200: json(ChunkManifestSchema, 'Chunk manifest for the component'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c) => {
+    const component = c.req.param('component') as 'agent' | 'cli';
+    const manifest = await runtimeChunkManifest(component);
+    if (!manifest) {
+      return c.json(
+        { error: true as const, message: `This deploy carries no sandbox ${component} binary`, status: 404 as const },
+        404,
+      ) as never;
+    }
+    // Content-addressed by the digest inside it, so a caller that already holds
+    // this manifest can skip the body entirely.
+    const etag = `"${manifest.sha256}"`;
+    c.header('ETag', etag);
+    c.header('Cache-Control', 'no-cache');
+    return c.json(manifest) as never;
+  },
+);
+
+runtimeAssetsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/chunk/{sha256}',
+    tags: ['runtime-assets'],
+    summary: 'GET /runtime-assets/chunk/{sha256} — one chunk of one of this deploy`s binaries',
+    description:
+      'The bytes of the named chunk, from whichever baked binary carries it. ONE store serves ' +
+      'both: the ~90 MB the CLI and the daemon share is one set of chunks here exactly as it is ' +
+      'on the box. The response is immutable by construction — the path IS the digest — so it ' +
+      'is cacheable forever. 404 when no binary in this image carries that chunk.',
+    ...auth,
+    request: { params: z.object({ sha256: z.string().regex(/^[0-9a-f]{64}$/) }) },
+    responses: {
+      200: {
+        description: 'The chunk bytes',
+        content: { 'application/octet-stream': { schema: z.string() } },
+      },
+      ...errors(401, 404),
+    },
+  }),
+  async (c) => {
+    const sha256 = c.req.param('sha256');
+    // Read, do not stream: a sliced `Bun.file(...).stream()` served the WHOLE
+    // file on the API image's Bun and hung on a newer one. See runtimeChunkBytes.
+    const bytes = await runtimeChunkBytes(sha256);
+    if (!bytes) {
+      return c.json(
+        { error: true as const, message: 'No binary in this deploy carries that chunk', status: 404 as const },
+        404,
+      ) as never;
+    }
+    c.header('ETag', `"${sha256}"`);
+    // The name is the content. Nothing served here can ever change under it.
+    c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    c.header('Content-Type', 'application/octet-stream');
+    c.header('Content-Length', String(bytes.length));
+    // `runtimeChunkBytes` allocates the buffer at exactly this chunk's length
+    // and never out of Node's shared pool, so its ArrayBuffer IS the chunk:
+    // no cast that lies, no copy, no offset to get wrong.
+    return c.body(bytes.buffer as ArrayBuffer, 200) as never;
+  },
 );
 
 runtimeAssetsApp.openapi(
