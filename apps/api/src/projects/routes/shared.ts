@@ -1707,6 +1707,8 @@ async function runOpenSession(args: {
       session_id: row.sessionId,
       external_id: runningExternalId,
       cause: ensured.cause ?? 'unspecified',
+      responder: ensured.responder ?? 'unnamed',
+      detail: ensured.detail ?? '',
     });
     // …and DURABLY, on the row. A log line is only reachable by someone with
     // log access at the moment it scrolls past; the row is queryable later, by
@@ -1727,6 +1729,11 @@ async function runOpenSession(args: {
           metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
             opencodeUnreachableCause: nextCause,
             opencodeUnreachableCauseAt: new Date().toISOString(),
+            // WHO answered, and what it said. Without these the cause names a
+            // status code and nothing else, which is what left five competing
+            // explanations alive for one 401.
+            ...(ensured.responder ? { opencodeUnreachableResponder: ensured.responder } : {}),
+            ...(ensured.detail ? { opencodeUnreachableDetail: ensured.detail } : {}),
           })}::jsonb`,
         })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
