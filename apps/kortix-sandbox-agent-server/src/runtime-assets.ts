@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   stat,
@@ -19,6 +20,7 @@ import type {
   HarnessAssetsService,
 } from './harness/assets'
 import { logger } from './logger'
+import { fetchArtifactByChunks } from './runtime-asset-chunks'
 import { withReleaseStoreLock } from './boot-config'
 
 /**
@@ -364,6 +366,129 @@ async function writeState(path: string, state: RuntimeAssetsState): Promise<void
   }
 }
 
+/**
+ * Read a baked overlay back off disk as the file list {@link overlayHash} takes.
+ *
+ * Byte-for-byte the shape `managedSkillOverlayFiles()` produces in the API:
+ * paths relative to the overlay root, sorted with `localeCompare`. Both sides
+ * must agree or the hash this module records would never match the one the
+ * manifest advertises, and every box would re-download an overlay it already
+ * has.
+ */
+async function readOverlayFromDisk(dir: string): Promise<OverlayFile[]> {
+  let entries: string[]
+  try {
+    entries = (await readdir(dir, { recursive: true })) as string[]
+  } catch {
+    return []
+  }
+  const files: OverlayFile[] = []
+  for (const rel of [...entries].sort((a, b) => a.localeCompare(b))) {
+    // Read directly rather than stat-then-read: a directory answers EISDIR and
+    // an unreadable entry answers its own errno, so the filter costs nothing
+    // and there is no window between the check and the use (CodeQL
+    // js/file-system-race).
+    const content = await readFile(join(dir, rel), 'utf8').catch(() => null)
+    if (content === null) continue
+    files.push({ path: rel, content })
+  }
+  return files
+}
+
+/** What {@link bakeRuntimeAssetsState} may be pointed at. Defaults are the image paths. */
+export interface BakeRuntimeAssetsStateOptions {
+  cliPath?: string
+  agentPath?: string
+  managedSkillsDir?: string
+  statePath?: string
+  /**
+   * The OpenCode release this image installs. Omitted reads it from the
+   * symlink every image definition creates
+   * ({@link DEFAULT_OPENCODE_CURRENT_LINK}); unreadable leaves the field
+   * unset rather than guessed, and the first pass fills it in.
+   */
+  opencodeVersion?: string
+}
+
+/** The launcher symlink all three image definitions point at their OpenCode. */
+const DEFAULT_OPENCODE_CURRENT_LINK = '/opt/kortix/opencode.current'
+
+/** `opencode --version` prints a bare version, so the binary can be asked. */
+async function bakedOpencodeVersion(path: string): Promise<string | undefined> {
+  try {
+    const proc = Bun.spawn([path, '--version'], { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
+    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+    if (code !== 0) return undefined
+    const version = out.trim()
+    return /^\d+\.\d+\.\d+/.test(version) ? version : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * IMAGE BUILD ONLY. State which runtime assets this image carries.
+ *
+ * THE DEFECT THIS FIXES. Baking the CLI, the daemon and the skill overlay into
+ * an image is only half of "this box is current". The other half is the box
+ * being able to SAY so: `runtime-assets-state.json` was written by a completed
+ * reconcile and by nothing else, so a freshly booted box answered
+ * `runtime.running` with nulls — every digest unknown — until its first pass
+ * finished. Measured on a cold preview box: boot 23:41:53, first pass complete
+ * 23:44:15, a ~140 s window in which the control plane could not tell a current
+ * box from a months-old one. Worse, the pass was not free: with no recorded
+ * hash the overlay check could not short-circuit, so every cold box downloaded
+ * an overlay it already had, and hashed ~210 MB of binaries to learn nothing.
+ *
+ * Running it at image build rather than at boot is the whole point. The mtimes
+ * recorded here are the ones the files will still have on every box that starts
+ * from this image, so {@link localDigest} answers from the cache and the first
+ * reconcile reads the manifest and stops.
+ *
+ * FAILS LOUD, unlike every other write in this module. Everything else here is
+ * best-effort because a live box must survive a bad API; this runs in `docker
+ * build`, where a missing artifact means the image is wrong and shipping it
+ * would put a confident lie on every box it starts.
+ */
+export async function bakeRuntimeAssetsState(
+  options: BakeRuntimeAssetsStateOptions = {},
+): Promise<RuntimeAssetsState> {
+  const cliPath = options.cliPath ?? DEFAULT_CLI_PATH
+  const agentPath = options.agentPath ?? DEFAULT_AGENT_BAKED_PATH
+  const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
+  const statePath = options.statePath ?? DEFAULT_STATE_PATH
+
+  const cli = await localDigest(cliPath, {})
+  if (!cli) throw new Error(`bake-runtime-assets-state: no kortix CLI at ${cliPath}`)
+  const agent = await localDigest(agentPath, {})
+  if (!agent) throw new Error(`bake-runtime-assets-state: no kortix-agent at ${agentPath}`)
+  const overlay = await readOverlayFromDisk(skillsDir)
+  if (overlay.length === 0) {
+    throw new Error(`bake-runtime-assets-state: no managed-skill overlay at ${skillsDir}`)
+  }
+
+  const state: RuntimeAssetsState = {
+    cli_path: cliPath,
+    cli_sha256: cli.sha,
+    cli_size: cli.size,
+    cli_mtime_ms: cli.mtimeMs,
+    agent_path: agentPath,
+    agent_sha256: agent.sha,
+    agent_size: agent.size,
+    agent_mtime_ms: agent.mtimeMs,
+    managed_skills_hash: overlayHash(overlay),
+  }
+  const opencode =
+    options.opencodeVersion ?? (await bakedOpencodeVersion(DEFAULT_OPENCODE_CURRENT_LINK))
+  if (opencode) state.opencode_version = opencode
+  // `build` is deliberately absent. It records the highest manifest epoch this
+  // box has READ, and an image build reads no manifest. Claiming one would arm
+  // the epoch guard against an API that is legitimately older than the image.
+  await mkdir(dirname(statePath), { recursive: true })
+  await writeFile(statePath, `${JSON.stringify(state)}\n`, 'utf8')
+  return state
+}
+
 interface LocalDigest {
   sha: string
   size: number
@@ -412,7 +537,7 @@ async function localCliSha(cliPath: string, state: RuntimeAssetsState): Promise<
  * baked into the image is the next increment and lands here, in one place, on
  * purpose.
  */
-function verifyArtifact(bytes: Buffer, expectedSha: string): boolean {
+function verifyArtifact(bytes: Uint8Array, expectedSha: string): boolean {
   return createHash('sha256').update(bytes).digest('hex') === expectedSha
 }
 
@@ -545,7 +670,7 @@ export interface ReplaceCliDeps {
 export async function replaceCli(
   cliPath: string,
   expectedSha: string,
-  body: ArrayBuffer,
+  body: Uint8Array,
   deps: ReplaceCliDeps = {},
 ): Promise<'updated' | 'failed' | 'unrunnable'> {
   // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
@@ -553,7 +678,7 @@ export async function replaceCli(
   // hash-while-streaming pipeline is more machinery than the numbers justify:
   // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
   // transient, and the reconcile runs at most once per session start.
-  const bytes = Buffer.from(body)
+  const bytes = body
   // Verify BEFORE touching the filesystem: a digest mismatch must not even
   // create a temp file, and it must not be mistaken for a permission problem.
   if (!verifyArtifact(bytes, expectedSha)) {
@@ -687,7 +812,7 @@ async function resolveRunningAgentPath(options: RuntimeAssetsOptions): Promise<s
 async function stageAgentBinary(
   stateDir: string,
   expectedSha: string,
-  body: ArrayBuffer,
+  body: Uint8Array,
   execProbe: ExecProbe,
 ): Promise<'staged' | 'failed' | 'unrunnable'> {
   const nextPath = join(stateDir, 'agent.next')
@@ -700,7 +825,7 @@ async function stageAgentBinary(
   const tmpShaPath = `${tmpPath}.sha256`
   try {
     await mkdir(stateDir, { recursive: true })
-    const bytes = Buffer.from(body)
+    const bytes = body
     await writeFile(tmpPath, bytes)
     if (!verifyArtifact(bytes, expectedSha)) {
       logger.warn('[runtime-assets] agent download digest mismatch — nothing staged', {
@@ -810,6 +935,75 @@ async function fetchJson<T>(
  * One reconcile pass. Returns what happened for each half so callers (and tests)
  * can assert on it. NEVER throws.
  */
+/** A downloaded artifact, or the HTTP status that stopped it. */
+type ArtifactFetch = { bytes: Buffer } | { status: number }
+
+/**
+ * Get one artifact's bytes: chunked when this box can supply most of them,
+ * a plain download otherwise.
+ *
+ * The chunk path is a transfer optimization and never a second install path —
+ * it returns bytes or nothing, and the caller runs the SAME `verifyArtifact`
+ * over the result either way. That is deliberate: one place decides whether
+ * bytes are allowed near something that will be executed.
+ */
+async function fetchArtifact(
+  fetchImpl: typeof fetch,
+  base: string,
+  token: string,
+  component: 'agent' | 'cli',
+  expectedSha: string,
+  url: string,
+  localSources: string[],
+): Promise<ArtifactFetch> {
+  const chunked = await fetchArtifactByChunks({
+    fetchImpl,
+    base,
+    token,
+    component,
+    expectedSha,
+    localSources,
+    timeoutMs: DOWNLOAD_TIMEOUT_MS,
+  }).catch((err) => {
+    // Never fatal. The full download below is the path this one is trying to
+    // save, and it is still there.
+    logger.warn('[runtime-assets] chunked fetch failed; falling back to the full download', {
+      component,
+      err: String(err),
+    })
+    return null
+  })
+  if (chunked) return { bytes: chunked }
+  const res = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  })
+  if (!res.ok) return { status: res.status }
+  return { bytes: Buffer.from(await res.arrayBuffer()) }
+}
+
+/**
+ * Every binary this box already holds — the chunk store.
+ *
+ * There is no chunk cache on disk and there should not be one: ~90 MB of both
+ * the CLI and the daemon is the same embedded Bun runtime, so the files the
+ * box RUNS already carry almost everything a new build needs. They are always
+ * current, never stale, and cost no extra disk. Missing entries are skipped by
+ * the indexer, so listing a path that may not exist is free.
+ */
+async function chunkStoreSources(
+  cliPath: string,
+  options: RuntimeAssetsOptions,
+): Promise<string[]> {
+  const stateDir = agentStateDirOf(options)
+  return [
+    cliPath,
+    await resolveRunningAgentPath(options),
+    agentBakedPathOf(options),
+    join(stateDir, 'agent.current'),
+  ]
+}
+
 export async function reconcileRuntimeAssets(
   options: RuntimeAssetsOptions = {},
 ): Promise<RuntimeAssetsResult> {
@@ -904,22 +1098,27 @@ export async function reconcileRuntimeAssets(
         nextState.cli_mtime_ms = local.mtimeMs
         nextState.cli_path = effectiveCliPath
       } else {
-        const res = await fetchImpl(resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`), {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-        })
-        if (!res.ok) {
-          logger.warn('[runtime-assets] CLI download non-ok', { status: res.status })
+        const fetched = await fetchArtifact(
+          fetchImpl,
+          base,
+          token,
+          'cli',
+          cliSha,
+          resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`),
+          await chunkStoreSources(effectiveCliPath, options),
+        )
+        if (!('bytes' in fetched)) {
+          logger.warn('[runtime-assets] CLI download non-ok', { status: fetched.status })
           cli = 'failed'
         } else {
-          const body = await res.arrayBuffer()
+          const body = fetched.bytes
           // Verify ONCE, before any location is even chosen: a digest that
           // does not match the manifest is wrong everywhere, and retrying the
           // identical bytes at a second path would not just waste a hash of a
           // ~100 MB buffer — DEF-C's own tests found it reaching this box's
           // REAL `$HOME/.local/bin` in a case that has nothing to do with a
           // permission problem at all.
-          if (!verifyArtifact(Buffer.from(body), cliSha)) {
+          if (!verifyArtifact(body, cliSha)) {
             logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
               expected: cliSha,
             })
@@ -1116,22 +1315,24 @@ export async function reconcileRuntimeAssets(
           // at the resolved path to compare against. Both mean "cannot prove
           // this box is current", and staging is the safe answer to that: the
           // supervisor verifies the artifact again before it installs it.
-          const res = await fetchImpl(
+          const fetched = await fetchArtifact(
+            fetchImpl,
+            base,
+            token,
+            'agent',
+            expectedSha,
             resolveArtifactUrl(apiRoot, component?.path, `${base}/agent`),
-            {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-            },
+            await chunkStoreSources(cliPath, options),
           )
-          if (!res.ok) {
-            logger.warn('[runtime-assets] agent download non-ok', { status: res.status })
+          if (!('bytes' in fetched)) {
+            logger.warn('[runtime-assets] agent download non-ok', { status: fetched.status })
             agent = 'failed'
-            reasons.agent = `agent download returned ${res.status}`
+            reasons.agent = `agent download returned ${fetched.status}`
           } else {
             const stagedOutcome = await stageAgentBinary(
               stateDir,
               expectedSha,
-              await res.arrayBuffer(),
+              fetched.bytes,
               execProbe,
             )
             if (stagedOutcome === 'unrunnable') {

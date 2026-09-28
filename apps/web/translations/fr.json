@@ -19190,7 +19190,9 @@
       "text397ab5aecbbf": "Demande d’autorisation de session relayée",
       "text3ec6c235548a": "Métadonnées du serveur MCP lues",
       "text7740934de920": "Client OAuth enregistré",
-      "textcd36423ea12a": "Serveur MCP appelé"
+      "textcd36423ea12a": "Serveur MCP appelé",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
