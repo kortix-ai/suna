@@ -12,7 +12,7 @@ import {
   performUpdate,
   type SpawnDeps,
   type UpdateOptions,
-} from '../cli'
+} from '@/app/cli'
 
 function sha(bytes: Buffer | string): string {
   return createHash('sha256').update(bytes).digest('hex')

@@ -1,5 +1,5 @@
 /**
- * The daemon's environment contract (`src/config.ts`): what each `KORTIX_*`
+ * The daemon's environment contract (`src/lib/config/config.ts`): what each `KORTIX_*`
  * variable the API sets turns into, and the defaults a box boots with when it
  * is absent. One table, so a changed default or a dropped mapping fails one
  * named row.
@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig, resolveSandboxOnBoot } from '../config'
+import { resolveSandboxOnBoot } from '@/lib/config/config'
+import { loadConfig } from '@/harness/harness'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
 

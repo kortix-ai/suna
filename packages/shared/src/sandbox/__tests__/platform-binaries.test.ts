@@ -133,7 +133,7 @@ describe('platform-owned binaries', () => {
     // Same constant the daemon defaults to (runtime-assets.ts DEFAULT_STATE_PATH)
     // and the same overlay root it overlays from.
     const daemon = readFileSync(
-      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/runtime-assets.ts'),
+      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts'),
       'utf8',
     );
     expect(daemon).toContain(`const DEFAULT_STATE_PATH = '${SANDBOX_RUNTIME_ASSETS_STATE_PATH}'`);

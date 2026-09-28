@@ -14,7 +14,7 @@ import {
   configReleaseNoticePath,
   renderConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '../config-release/notice'
+} from '@/services/config-release/notice'
 
 const COMMIT = '1234567890abcdef1234567890abcdef12345678'
 let dir: string

@@ -346,7 +346,7 @@ export async function reapAndReconcileSandboxes(
           // the observation, and the drip below needs it: an answer proves the
           // runtime is up and only its description of the turn is missing (an
           // agent build that omits the turn fields returns 200 without them —
-          // apps/kortix-sandbox-agent-server/src/routes/health.ts). Nothing
+          // apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts). Nothing
           // coming back at all proves the opposite, and a box like that must
           // die on the bound its record already carries.
           let answeredProbes = 0;

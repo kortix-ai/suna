@@ -82,6 +82,9 @@ if [ -n "$new_docs" ]; then
   exit 1
 fi
 
+# A `pnpm worktree` checkout commits only on its own branch (AGENTS.md).
+sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
+
 # (3) No customer data: refuse added lines with a blocked term (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
 

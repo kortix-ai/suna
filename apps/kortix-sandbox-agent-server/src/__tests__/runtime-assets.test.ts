@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,7 +9,14 @@ import {
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
   runningRuntimeAssets,
-} from '../runtime-assets'
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
+} from '@/services/runtime-assets/runtime-assets'
+import { resolveHarness } from '@/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 const API_URL = 'https://api.test.invalid'
 const TOKEN = 'kortix_pat_test'
