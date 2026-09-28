@@ -3,7 +3,7 @@
 
 const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|.well-known|oauth-authorization-server",
-  "GET|.well-known|oauth-protected-resource|v1|projects|:projectId|mcp",
+  "GET|.well-known|oauth-protected-resource|v1|mcp",
   "GET|health",
   "GET|health|live",
   "GET|health|ready",
@@ -307,6 +307,9 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|marketplace|sources",
   "POST|v1|marketplace|sources",
   "DELETE|v1|marketplace|sources|:id",
+  "DELETE|v1|mcp",
+  "GET|v1|mcp",
+  "POST|v1|mcp",
   "POST|v1|notifications|device-token",
   "DELETE|v1|notifications|device-token|:token",
   "GET|v1|oauth|.well-known|oauth-authorization-server",
@@ -495,9 +498,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|llm-catalog|providers",
   "POST|v1|projects|:projectId|manifest|validate",
   "POST|v1|projects|:projectId|marketplace|install-session",
-  "DELETE|v1|projects|:projectId|mcp",
-  "GET|v1|projects|:projectId|mcp",
-  "POST|v1|projects|:projectId|mcp",
   "GET|v1|projects|:projectId|model-access",
   "PUT|v1|projects|:projectId|model-access",
   "DELETE|v1|projects|:projectId|model-defaults",
