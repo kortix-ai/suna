@@ -1,4 +1,5 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
+import { config } from '../../config';
 
 // Run alone: Bun module mocks are process-global.
 let atCap = false;
@@ -52,7 +53,14 @@ const project = {
   metadata: {}, repoUrl: 'https://example.test/repo', manifestPath: 'kortix.yaml',
 } as Parameters<typeof createProjectSession>[0]['project'];
 
-beforeEach(() => { atCap = false; billing = { ok: true }; inserted = undefined; });
+const originalKortixUrl = config.KORTIX_URL;
+beforeEach(() => {
+  atCap = false;
+  billing = { ok: true };
+  inserted = undefined;
+  config.KORTIX_URL = 'https://api.example.test';
+});
+afterAll(() => { config.KORTIX_URL = originalKortixUrl; });
 
 test('cap 429 takes precedence over simultaneous billing 402 without inserting', async () => {
   atCap = true;
