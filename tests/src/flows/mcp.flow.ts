@@ -121,7 +121,11 @@ flow(
     let clientId = "";
     let token = "";
     const mcp = (body: unknown) =>
-      ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/mcp", body, { params: { projectId: p.id }, headers: { Authorization: `Bearer ${token}` } });
+      ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/mcp", body, {
+        params: { projectId: p.id },
+        // Real MCP clients ask for compression; tool calls must still read plain bodies.
+        headers: { Authorization: `Bearer ${token}`, "Accept-Encoding": "gzip, deflate, br" },
+      });
 
     await ctx.step("register, authorize for the MCP resource with no scope, and see a self-registered consent for kortix", async () => {
       const reg = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { client_name: "Flow MCP", redirect_uris: [redirectUri] });
@@ -193,10 +197,10 @@ flow(
     await ctx.step("call_api runs as the user: GET /v1/accounts/me → HTTP 200 auth_type oauth; {projectId} → this project", async () => {
       const me = await mcp(rpc(5, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/accounts/me" } }));
       const text: string = me.json<any>().result.content[0].text;
-      if (!text.startsWith("HTTP 200") || !text.includes('"auth_type":"oauth"')) throw new Error(`me: ${text.slice(0, 200)}`);
+      if (!text.startsWith("HTTP 200") || !text.includes('"auth_type":"oauth"')) throw new Error(`me: ${JSON.stringify(text.slice(0, 400))}`);
       const proj = await mcp(rpc(6, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects/{projectId}" } }));
       const body: string = proj.json<any>().result.content[0].text;
-      if (!body.startsWith("HTTP 200") || !body.includes(p.id)) throw new Error(`project: ${body.slice(0, 200)}`);
+      if (!body.startsWith("HTTP 200") || !body.includes(p.id)) throw new Error(`project: ${JSON.stringify(body.slice(0, 400))}`);
     });
     await ctx.step("call_api refuses /v1/oauth and MCP paths; a missing session is an isError 404", async () => {
       const oauth = await mcp(rpc(7, "tools/call", { name: "call_api", arguments: { method: "POST", path: "/v1/oauth/register" } }));

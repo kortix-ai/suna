@@ -62,7 +62,12 @@ async function callApi(
     if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
   }
   const headers = new Headers(ctx.headers);
-  for (const name of ['content-length', 'content-type', 'mcp-session-id', 'mcp-protocol-version']) headers.delete(name);
+  // Body headers belong to the caller's request, not this one. accept-encoding
+  // too: an in-process Response is never decoded, so a gzip reply would reach
+  // the tool as raw bytes.
+  for (const name of ['content-length', 'content-type', 'accept-encoding', 'connection', 'transfer-encoding', 'mcp-session-id', 'mcp-protocol-version']) {
+    headers.delete(name);
+  }
   headers.set('authorization', ctx.authorization);
   headers.set('accept', 'application/json');
   if (opts.body !== undefined) headers.set('content-type', 'application/json');
