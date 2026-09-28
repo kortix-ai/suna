@@ -30,7 +30,7 @@ describe('project onboarding wizard — permission gate', () => {
       'const cannotSetUpProject = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === false;',
     );
     expect(code).toContain("onboarding.status === 'pending' && !cannotSetUpProject");
-    expect(code).toContain('if (!isPending) return null;');
+    expect(code).toContain('if (!isPending && !leaving) return null;');
   });
 
   // `=== false`, not `!== true`: an unresolved probe must leave the wizard
