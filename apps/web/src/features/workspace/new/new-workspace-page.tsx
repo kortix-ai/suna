@@ -42,6 +42,7 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
+import { firstChatHref } from '@/stores/first-chat-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
 /**
@@ -658,8 +659,10 @@ export function NewWorkspacePage() {
         <ProjectOnboardingWizard
           key={onboardingProjectId}
           projectId={onboardingProjectId}
-          onCompleted={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
-          onSkip={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
+          // Onboarding lands on the project's first chat, the one place besides
+          // the sidebar row that opens it (`firstChatHref`).
+          onCompleted={() => router.replace(firstChatHref(onboardingProjectId))}
+          onSkip={() => router.replace(firstChatHref(onboardingProjectId))}
         />
       )}
 

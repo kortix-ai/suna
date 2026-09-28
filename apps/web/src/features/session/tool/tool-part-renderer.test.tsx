@@ -197,3 +197,29 @@ describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => 
     expect(gapsFor('forceOpen')).toEqual([]);
   });
 });
+
+describe('a command saved before tool calls were kept 1:1', () => {
+  // The old mirror kept a call's status, title, time and metadata, and lost
+  // its input and output. OpenCode titles a command with the command and keeps
+  // its output in `metadata.output`, so the API serves the row with both
+  // restored (`restoreStrippedToolParts`). This is that served shape.
+  test('draws its command and its output through the bash renderer', () => {
+    const served = {
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call-restored',
+      state: {
+        status: 'completed',
+        title: 'ls -la dist',
+        time: { start: 1, end: 2 },
+        metadata: { output: 'bundle.min.js', exit: 0, truncated: false },
+        input: { command: 'ls -la dist' },
+        output: 'bundle.min.js',
+      },
+    } as unknown as ToolPart;
+    const html = renderPanel(served, { defaultOpen: true });
+    expect(html).toContain('-la');
+    expect(html).toContain('dist');
+    expect(html).toContain('bundle.min.js');
+  });
+});

@@ -33,8 +33,11 @@ import { kortixArtifactLayer, kortixToolchainLayer } from '../dockerfile-layer';
 import { buildMetaSandboxDockerfile } from '../meta-dockerfile';
 import {
   SANDBOX_CLI_OWNERSHIP_COMMAND,
+  SANDBOX_MANAGED_SKILLS_DIR,
   SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND,
   SANDBOX_OPENCODE_GLOBAL_CONFIG_PATH,
+  SANDBOX_RUNTIME_ASSETS_STATE_COMMAND,
+  SANDBOX_RUNTIME_ASSETS_STATE_PATH,
 } from '../platform-binaries';
 
 const repoFile = (path: string) =>
@@ -47,6 +50,7 @@ const ARTIFACTS = kortixArtifactLayer({
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
   catalogPath: 'llm-catalog.json',
+  managedSkillsPath: 'managed-skills',
 });
 
 /** One entry per image definition that must own its binaries. */
@@ -109,5 +113,30 @@ describe('platform-owned binaries', () => {
     test(`${label} bakes the global opencode.json with autoupdate off`, () => {
       expect(dockerfile).toContain(SANDBOX_OPENCODE_GLOBAL_CONFIG_COMMAND);
     });
+
+    // A box that boots without these cannot answer "which bytes am I running"
+    // until its first reconcile finishes — ~140 s on a cold preview box, and
+    // it pays a full overlay download to get there. The overlay alone is not
+    // enough: the daemon short-circuits on the RECORDED hash, so bytes without
+    // bookkeeping still re-download once per box.
+    test(`${label} bakes the managed-skill overlay`, () => {
+      expect(dockerfile).toContain(SANDBOX_MANAGED_SKILLS_DIR);
+    });
+
+    test(`${label} bakes the runtime-asset bookkeeping beside it`, () => {
+      expect(dockerfile).toContain(SANDBOX_RUNTIME_ASSETS_STATE_COMMAND);
+    });
   }
+
+  test('the bake writes the one path the daemon reads', () => {
+    expect(SANDBOX_RUNTIME_ASSETS_STATE_PATH).toBe('/opt/kortix/runtime-assets-state.json');
+    // Same constant the daemon defaults to (runtime-assets.ts DEFAULT_STATE_PATH)
+    // and the same overlay root it overlays from.
+    const daemon = readFileSync(
+      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts'),
+      'utf8',
+    );
+    expect(daemon).toContain(`const DEFAULT_STATE_PATH = '${SANDBOX_RUNTIME_ASSETS_STATE_PATH}'`);
+    expect(daemon).toContain(`const DEFAULT_MANAGED_SKILLS_DIR = '${SANDBOX_MANAGED_SKILLS_DIR}'`);
+  });
 });

@@ -1,4 +1,4 @@
-import type { SandboxBootState } from '../../boot-state'
+import type { SandboxBootState } from '../contract/boot-state'
 
 /**
  * pi's boot state. The three session fields keep the OpenCode names on

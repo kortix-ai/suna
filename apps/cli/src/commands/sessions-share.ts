@@ -60,6 +60,11 @@ Set who inside Kortix can open this session. With no --mode it prints the
 current setting and changes nothing. Owner-governed: the API refuses a project
 manager who cannot already read the session.
 
+A shared session runs only on provider keys shared with the whole project. If
+its model ran on your own keys or ChatGPT connection, sharing switches it to
+the project's keys for that provider. If none runs the model, the share is
+refused and the session stays private.
+
 Modes:
   private            Only the session's owner.
   project            Every member of the project.

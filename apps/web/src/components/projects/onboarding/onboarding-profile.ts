@@ -2,144 +2,54 @@
  * Pure onboarding logic — no React, no network, no DOM.
  *
  * Everything the wizard decides that does not need to render lives here so it
- * can be asserted directly instead of through a mounted component. Keeping it
- * dependency-free is what makes the five-step flow cheap to test.
+ * can be asserted directly instead of through a mounted component.
  */
 
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import type { OnboardingUseCase } from '@kortix/sdk';
-import type { IconWeight } from '@phosphor-icons/react';
-
-export type StepId = 'company' | 'tools' | 'slack' | 'plan' | 'done';
-
-export interface UseCaseOption {
-  value: OnboardingUseCase;
-  label: string;
-  description: string;
-  weight: IconWeight;
-}
 
 /**
- * No longer collected by any step — the survey used to force a single-bucket
- * choice ("what will you use Kortix for?") even though a real team plausibly
- * uses it for several of these at once. The picker is gone; this table
- * survives only as the key set `STARTER_PROMPTS` and `starterPromptsFor` are
- * built from, and as the option list `starterPromptsFor`'s tests iterate to
- * prove every value still has a complete prompt set.
- *
- * Ordered by how often the matching department appears across
- * `apps/web/content/use-cases/` — Sales (11 posts), Engineering (9), Finance
- * (7), Support/CS (7), Ops (5), Marketing (5), HR/Recruiting (4).
+ * Three questions, then the project. Nothing here signs in to anything:
+ * `apps` only declares connectors, and the first chat connects them in one
+ * click each.
  */
-export const USE_CASE_OPTIONS: readonly UseCaseOption[] = [
-  {
-    value: 'sales',
-    label: 'Sales',
-    description: 'Follow up on leads, keep the CRM clean',
-    weight: 'regular',
-  },
-  {
-    value: 'support',
-    label: 'Customer support',
-    description: 'Triage tickets, draft replies',
-    weight: 'duotone',
-  },
-  {
-    value: 'marketing',
-    label: 'Marketing',
-    description: 'Watch the market, refresh content',
-    weight: 'duotone',
-  },
-  {
-    value: 'engineering',
-    label: 'Engineering',
-    description: 'Triage errors, chase upgrades',
-    weight: 'regular',
-  },
-  {
-    value: 'finance_ops',
-    label: 'Finance & operations',
-    description: 'Invoices, expenses, month-end close',
-    weight: 'regular',
-  },
-  {
-    value: 'hr_recruiting',
-    label: 'HR & recruiting',
-    description: 'Onboarding, scheduling, sourcing',
-    weight: 'duotone',
-  },
-  {
-    value: 'other',
-    label: 'Something else',
-    description: 'We’ll start you with the basics',
-    weight: 'regular',
-  },
-] as const;
+export type StepId = 'work' | 'apps' | 'models';
 
 /**
- * No welcome step. A screen that asks nothing and tells nothing is a screen
- * the user pays for and gets nothing back from — Alan, Brilliant, and Headspace
- * all open directly on their first real question. The founder-concierge CTA
- * that used to live on the welcome screen moves to the finish step.
- *
- * No use-case step either, for the same reason from the other direction: a
- * forced single-bucket pick ("Sales" *or* "Engineering" *or* …) asks a
- * question that does not have one right answer for a real team, so the
- * question itself was wrong, not just its styling.
+ * The work question's answers, in grid order (two columns, read row by row).
+ * `hr_recruiting` stays a valid stored value for older projects but is not
+ * offered: recruiting reads as "Something else" plus a typed note.
  */
-const ALL_STEPS: readonly StepId[] = ['company', 'tools', 'slack', 'plan', 'done'];
+export const WORK_OPTIONS: readonly OnboardingUseCase[] = [
+  'founder',
+  'engineering',
+  'product_design',
+  'sales',
+  'marketing',
+  'finance_ops',
+  'support',
+  'other',
+];
 
-/** Steps that need the caller to be able to reach the connector surface. */
-const CONNECTOR_STEPS: readonly StepId[] = ['tools', 'slack'];
+/** The API keeps 120 characters of the "Something else" note. */
+export const USE_CASE_NOTE_MAX = 120;
+
+const ALL_STEPS: readonly StepId[] = ['work', 'apps', 'models'];
 
 /**
- * Two reasons a step is dropped, and they are different questions:
+ * Two reasons the apps step is dropped, and they are different questions:
  *
- *  - `connectorsEnabled` — is there a catalogue at all? A self-host without
- *    Pipedream configured (`isConnectorsEnabled()` false) has nothing to offer,
- *    so the tools step goes rather than landing the user on a dead 501.
+ *  - `connectorsEnabled` — is there a catalogue at all? A self-host without a
+ *    connector provider (`isConnectorsEnabled()` false) has nothing to offer.
  *  - `canReadConnectors` — may THIS caller reach it? `project.connector.read`
- *    left the member floor role in #6522, so a plain project member invited
- *    into someone else's project gets this wizard on first open and used to
- *    hit "Connect your tools", whose `listConnectors` 403s and raises a bare
- *    "forbidden" toast over the whole flow. Slack goes with it: Channels is a
- *    scope of Connectors and rides the same leaf.
+ *    left the member floor role in #6522, so a plain project member would hit
+ *    a 403 on the catalogue.
  *
  * Pass `canReadConnectors` false only on a RECEIVED denial — an in-flight probe
  * must not silently shorten the wizard for someone who does hold the leaf.
  */
 export function buildSteps(connectorsEnabled: boolean, canReadConnectors = true): StepId[] {
-  return ALL_STEPS.filter((id) => {
-    if (!connectorsEnabled && id === 'tools') return false;
-    if (!canReadConnectors && CONNECTOR_STEPS.includes(id)) return false;
-    return true;
-  });
-}
-
-const SURVEY_STEPS: readonly StepId[] = ['company'];
-
-/**
- * The eyebrow counts SURVEY questions, not wizard steps — so dropping the tools
- * step never renumbers it. There is only one survey question left (company);
- * `surveyPosition` still returns `{ index, total }` rather than a bare boolean
- * so a second survey step can slot back in without changing this shape again.
- */
-export function surveyPosition(stepId: StepId): { index: number; total: number } | null {
-  const i = SURVEY_STEPS.indexOf(stepId);
-  return i === -1 ? null : { index: i + 1, total: SURVEY_STEPS.length };
-}
-
-/**
- * Where "Skip" lands from a survey question: the first step that is not itself
- * a survey question.
- *
- * Computed from the step list rather than hardcoded, because the tools step is
- * absent when connectors are disabled — a fixed index would drop the user onto
- * the wrong screen on a self-host build.
- */
-export function firstStepAfterSurvey(steps: readonly StepId[]): number {
-  const i = steps.findIndex((s) => !surveyPosition(s));
-  return i === -1 ? Math.max(steps.length - 1, 0) : i;
+  return ALL_STEPS.filter((id) => id !== 'apps' || (connectorsEnabled && canReadConnectors));
 }
 
 /**
@@ -159,32 +69,6 @@ export function deriveCompanyDomain(email: string | null | undefined): string {
   return domain;
 }
 
-/**
- * Company domain field: empty is allowed (optional survey), otherwise require a
- * hostname or http(s) URL the agent can research — `acme.com` or
- * `https://acme.com`. Rejects other schemes, single-label hosts, and free text.
- */
-export function isValidCompanyHttpLink(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) return true;
-
-  let url: URL;
-  try {
-    url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-  } catch {
-    return false;
-  }
-
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
-
-  const host = url.hostname;
-  if (!host.includes('.') || host.startsWith('.') || host.endsWith('.')) return false;
-  // Bare IPs are not company domains; a real site host has at least one label.
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return false;
-
-  return true;
-}
-
 export interface StarterPrompt {
   /** The matching template under `apps/web/content/use-cases/`. */
   template: string;
@@ -198,6 +82,41 @@ export interface StarterPrompt {
  * does.
  */
 const STARTER_PROMPTS: Record<OnboardingUseCase, StarterPrompt[]> = {
+  founder: [
+    {
+      template: 'investor-update',
+      title: 'Draft the investor update',
+      prompt: 'Draft this month’s investor update from our metrics, wins, and asks.',
+    },
+    {
+      template: 'weekly-report',
+      title: 'Write the weekly report',
+      prompt: 'Summarize what shipped, what slipped, and what is next across the team this week.',
+    },
+    {
+      template: 'saas-spend-audit',
+      title: 'Audit software spend',
+      prompt: 'List every software subscription we pay for and flag the ones nobody uses.',
+    },
+  ],
+  product_design: [
+    {
+      template: 'user-feedback',
+      title: 'Sort user feedback',
+      prompt:
+        'Group this month’s user feedback into themes and rank them by how often they come up.',
+    },
+    {
+      template: 'release-notes',
+      title: 'Write release notes',
+      prompt: 'Turn the changes merged since the last release into customer-facing release notes.',
+    },
+    {
+      template: 'competitor-watch',
+      title: 'Watch competitors',
+      prompt: 'Check our top three competitors for product and pricing changes this month.',
+    },
+  ],
   sales: [
     {
       template: 'lead-follow-up',
@@ -329,47 +248,4 @@ const STARTER_PROMPTS: Record<OnboardingUseCase, StarterPrompt[]> = {
 /** `null` means the user skipped the survey — they still get useful prompts. */
 export function starterPromptsFor(useCase: OnboardingUseCase | null): StarterPrompt[] {
   return STARTER_PROMPTS[useCase ?? 'other'];
-}
-
-/**
- * The message auto-sent as the first user turn the moment onboarding
- * finishes — the finish step's "Open project" button both completes
- * onboarding AND fires this as the session's opening prompt, so the user
- * lands in a live conversation instead of an empty composer.
- *
- * There is no backend primitive for a session to open with an
- * agent-authored turn (every session starts on a user message), so this is
- * written in the user's voice, asking Kortix to do the thing the
- * company-step promised ("Your agent uses the domain to research your own
- * company"). The agent's real, live-researched reply is what actually reads
- * as Kortix talking — far better than any hardcoded greeting could.
- */
-export interface OnboardingKickoffCopy {
-  noDomain: (toolsClause: string) => string;
-  withDomain: (domain: string, toolsClause: string) => string;
-  tools: (count: number) => string;
-}
-
-const ENGLISH_KICKOFF_COPY: OnboardingKickoffCopy = {
-  noDomain: (toolsClause) =>
-    `I just finished setting up my workspace.${toolsClause} Introduce yourself, tell me what you can do, and ask me what I'd like help with first.`,
-  withDomain: (domain, toolsClause) =>
-    `I just finished setting up my workspace for ${domain}. Take a look at the company and tell me what you find.${toolsClause} Then ask me what I'd like help with first.`,
-  tools: (count) =>
-    ` I also connected ${count} ${count === 1 ? 'tool' : 'tools'} — use ${count === 1 ? 'it' : 'them'} if it helps.`,
-};
-
-export function buildOnboardingKickoffPrompt(
-  domain: string,
-  connectedTools: number,
-  copy: OnboardingKickoffCopy = ENGLISH_KICKOFF_COPY,
-): string {
-  const trimmedDomain = domain.trim();
-  const toolsClause = connectedTools > 0 ? copy.tools(connectedTools) : '';
-
-  if (!trimmedDomain) {
-    return copy.noDomain(toolsClause);
-  }
-
-  return copy.withDomain(trimmedDomain, toolsClause);
 }
