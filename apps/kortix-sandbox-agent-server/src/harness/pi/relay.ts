@@ -7,8 +7,9 @@
  * Every relay is bounded, never throws into its caller, and no-ops when the
  * daemon has no control-plane config (local / self-host boots).
  */
-import { logger } from '../../logger'
-import { sandboxRelayContext, sessionChannel, type SandboxRelayContext } from '../../relay-context'
+import { logger } from '@/lib/log/logger'
+import { sandboxRelayContext, sessionChannel, type SandboxRelayContext } from '@/lib/kortix-api/relay-context'
+import type { InitialTurnClaim } from '@/types/control-plane'
 
 async function postTurnStream(ctx: SandboxRelayContext, body: Record<string, unknown>, timeoutMs = 15_000): Promise<Response> {
   return fetch(`${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/turn-stream`, {
@@ -17,12 +18,6 @@ async function postTurnStream(ctx: SandboxRelayContext, body: Record<string, unk
     body: JSON.stringify({ session_id: ctx.sessionId, ...body }),
     signal: AbortSignal.timeout(timeoutMs),
   })
-}
-
-export interface InitialTurnClaim {
-  prompt: string
-  turnToken: string
-  messageId: string
 }
 
 let claimedInitialTurn: InitialTurnClaim | null = null

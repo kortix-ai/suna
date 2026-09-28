@@ -1,12 +1,6 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import type { ShowCarouselItem } from '@/features/file-renderers/show-content-renderer';
@@ -25,6 +19,7 @@ import {
   useServicePreview,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import { useTranslations } from '@/i18n/use-translations';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
@@ -41,9 +36,7 @@ import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
 import {
   WarningIcon as AlertTriangle,
   AppWindowIcon,
-  ArrowClockwiseIcon,
   CodeSimpleIcon as Code2,
-  DotsThreeIcon,
   ArrowSquareOutIcon as ExternalLink,
   FileCodeIcon as FileCode,
   FileCsvIcon as FileCsv,
@@ -315,67 +308,20 @@ export function ShowFileActions({
     </Hint>
   );
 
-  if (compact) {
-    return (
-      <div className="flex shrink-0 items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label={tI18nComplete.raw('textf8d46c2570e7')}
-              className="active:scale-[0.96]"
-            >
-              <DotsThreeIcon className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-40">
-            <DropdownMenuItem onSelect={handleRefresh}>
-              <ArrowClockwiseIcon className={cn(refreshing && 'animate-spinner-spin')} />
-              {tI18nComplete.raw('text0e9161011702')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={openFullScreen}>
-              <Maximize2 />
-              {tI18nComplete.raw('text674fe2acd0d5')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {previewButton}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <Hint label={tI18nComplete.raw('text0e9161011702')} side="top">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          type="button"
-          onClick={handleRefresh}
-          aria-label={tI18nComplete.raw('text0e9161011702')}
-          className="active:scale-[0.96]"
-        >
-          <ArrowClockwiseIcon className={cn('size-4', refreshing && 'animate-spinner-spin')} />
-        </Button>
-      </Hint>
-
-      <Hint label={tI18nComplete.raw('text674fe2acd0d5')} side="top">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          type="button"
-          onClick={openFullScreen}
-          aria-label={tI18nComplete.raw('text674fe2acd0d5')}
-          className="active:scale-[0.96]"
-        >
-          <Maximize2 className="size-4" />
-        </Button>
-      </Hint>
-
-      {previewButton}
-    </div>
+    <ToolActionBar
+      compact={compact}
+      loading={refreshing}
+      refreshLabel={tI18nComplete.raw('text0e9161011702')}
+      menuLabel={tI18nComplete.raw('textf8d46c2570e7')}
+      onRefresh={handleRefresh}
+      secondaryLabel={tI18nComplete.raw('text674fe2acd0d5')}
+      secondaryIcon={Maximize2}
+      onSecondary={openFullScreen}
+      refreshButtonClassName="active:scale-[0.96]"
+      secondaryButtonClassName="active:scale-[0.96]"
+      primary={previewButton}
+    />
   );
 }
 

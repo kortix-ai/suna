@@ -476,6 +476,23 @@ describe('relayProvisioningFailure', () => {
     expect(calls('addReaction').length).toBe(0); // not a success
   });
 
+  // Teams keeps its turns in the same table, with a `channel_ref`. In a project
+  // with both installed, this relay took a Teams turn for a Slack one: the
+  // Slack post failed and the Teams row was deleted, its card left spinning.
+  test('a Teams turn row is not Slack\'s: nothing posted, claimed or deleted', async () => {
+    // The claim would succeed: only the channel_ref keeps this relay away.
+    dbResults = [
+      [streamRow({ channelRef: { platform: 'teams', serviceUrl: 'https://smba/', conversationId: 'conv-1' } })],
+      [{ sessionId: 'sess-1' }],
+    ];
+    const ok = await relayProvisioningFailure('sess-1', 'The sandbox provider is at capacity right now.');
+    expect(ok).toBe(false);
+    expect(dbResults).toHaveLength(1); // the claim was never attempted
+    expect(calls('updateBlocks').length).toBe(0);
+    expect(calls('postMessage').length).toBe(0);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+  });
+
   test('no open turn (non-Slack session) → no-op', async () => {
     dbResults = [[]]; // loadTurn finds nothing
     const ok = await relayProvisioningFailure('sess-unknown', 'whatever');

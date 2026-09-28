@@ -4,11 +4,16 @@ import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { logger } from '../../logger'
-import type { HarnessAssetOutcome, HarnessAssetsInput, HarnessAssetsResult, HarnessAssetsService } from '../assets'
+import { logger } from '@/lib/log/logger'
+import type {
+  HarnessAssetOutcome,
+  HarnessAssetsInput,
+  HarnessAssetsResult,
+  HarnessAssetsService,
+} from '@/services/runtime-assets/port'
 import { requireOpenCodeConfig } from './config'
-import { ensureInjectedManagedSkills } from '../../managed-skills'
-import { isInReleaseStore, readBootLinkTarget } from '../../boot-config'
+import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
+import { isInReleaseStore, readBootLinkTarget } from '@/services/config-release/boot-config'
 import {
   captureProcessOutput,
   latchOpencodePinned,
@@ -495,9 +500,4 @@ export function createOpenCodeAssetsService(
     // never disagree about whether this box will update itself again.
     updatesPinned: () => opencodeUpdatesPinned(options.opencodePinnedPath ?? OPENCODE_PINNED_LATCH),
   }
-}
-
-/** Existing health/reconcile wire fields, retained for native compatibility. */
-export interface OpenCodeAssetsCompatibilityResult {
-  opencode?: HarnessAssetOutcome
 }

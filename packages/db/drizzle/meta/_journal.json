@@ -617,6 +617,20 @@
       "when": 1790476022260,
       "tag": "20260927022702_accounts_created_at_index",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790583495303,
+      "tag": "20260928081815_account_secret_needs_reauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790615801030,
+      "tag": "20260928171641_sandbox_templates_container_runtime",
+      "breakpoints": true
     }
   ]
 }

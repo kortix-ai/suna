@@ -44,10 +44,15 @@ pnpm --filter @kortix/desktop-electron dev:prod-env   # https://kortix.com
 KORTIX_DESKTOP_URL=https://kortix.com/projects pnpm --filter @kortix/desktop-electron dev
 ```
 
-At runtime you can also switch via the native **Kortix → Frontend URL** menu
-(Production / Dev / Local / Custom… / Reset). The choice is remembered across
-launches (stored in `userData/frontend_url`). `KORTIX_DESKTOP_USER_DATA=<dir>`
-runs against an isolated profile instead of the real one.
+At runtime you can also switch via the native menu. A **dev build**
+(`kortixUpdateChannel: "dev"`, product "Kortix Dev") keeps the full
+**Kortix → Frontend URL** switcher (Production / Dev / Local / Custom… /
+Reset). A **production build** hides the developer presets and shows one
+**Kortix → Change Kortix Instance…** item that opens the same instance-chooser
+window as first launch, so a self-hoster still sets a custom URL. The choice is
+remembered across launches (stored in `userData/frontend_url`).
+`KORTIX_DESKTOP_USER_DATA=<dir>` runs against an isolated profile instead of
+the real one.
 
 ### First launch: choose a Kortix instance
 
@@ -75,8 +80,10 @@ Rules:
 - `KORTIX_DESKTOP_URL` or a saved `frontend_url` skips the chooser, so
   `pnpm dev` and the native e2e journey never see it.
 
-The same window opens from **Frontend URL → Custom URL…**, and when the app
-origin fails to load (`did-fail-load` on the main frame): the title reads
+The same window opens from the frontend-URL menu entry (**Frontend URL →
+Custom URL…** on dev builds, **Change Kortix Instance…** on production builds),
+and when the app origin fails to load (`did-fail-load` on the main frame): the
+title reads
 **Can't reach \<host\>**, with **Try Again** or a different instance. To see the
 first-launch chooser locally, launch without `KORTIX_DESKTOP_URL` on an empty
 profile:
@@ -108,8 +115,8 @@ Origin credentials are sent only to the configured app origin. Any other
 origin challenge from a sandbox preview or iframe is refused. Proxy challenges
 open the same dialog, but use a separate credential entry keyed by proxy host
 and port. The app-origin environment variables never answer a proxy challenge.
-**Kortix → Frontend URL → Forget Saved Environment Password** clears the
-remembered credential for the current host.
+**Kortix → Frontend URL → Forget Saved Environment Password** (dev builds)
+clears the remembered credential for the current host.
 
 ### Testing login (the `kortix://` deep link)
 

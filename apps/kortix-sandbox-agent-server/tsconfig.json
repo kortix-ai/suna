@@ -34,6 +34,10 @@
     // The Dockerfile places packages/api-contract at the matching relative
     // path.
     "paths": {
+      // `@/` is this package's src/. Imports that cross a top-level folder of
+      // src/ use it; imports inside one stay relative (ARCHITECTURE.md, enforced
+      // by the kortixd/import-style lint rule).
+      "@/*": ["./src/*"],
       "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
       // env-rpc-worker-integration.test.ts imports the worker's real source.
       // That source lazily references `ws`, but this standalone package keeps

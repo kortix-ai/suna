@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { logger } from '../../logger'
+import { logger } from '@/lib/log/logger'
 import { OPENCODE_HOME } from './paths'
 
 const execFileAsync = promisify(execFile)

@@ -4,8 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { loadOpenCodeConfig as loadConfig } from '../harness/open-code/config'
-import { __setScaffoldRepoPathForTests, buildFastBootBundleUrl, isShallowRepo, materializeRepo } from '../git'
+import { loadOpenCodeConfig as loadConfig } from '@/harness/open-code/config'
+import { __setScaffoldRepoPathForTests, buildFastBootBundleUrl, isShallowRepo, materializeRepo } from '@/lib/git/git'
 
 const roots: string[] = []
 const realFetch = globalThis.fetch
