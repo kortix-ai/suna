@@ -1253,8 +1253,7 @@ export function XlsxWorkbookSurface({
     controllerRef.current = controller;
   }, [controller]);
 
-  // Stable, so `renderSearchableScroller` does not re-render the grid
-  // scroller on every controller change.
+  // Stable, so the window copy listener below is attached once.
   const copySelection = React.useCallback(() => {
     if (!controllerRef.current.getRowsBatchAsync) {
       void controllerRef.current.copySelectionToClipboard();
@@ -1295,23 +1294,29 @@ export function XlsxWorkbookSurface({
     ({ children, viewportProps }: XlsxScrollerRenderProps) => (
       <ScrollArea
         className="h-full min-h-0 w-full min-w-0 flex-1"
-        viewportProps={{
-          ...viewportProps,
-          onCopy: (event) => {
-            viewportProps.onCopy?.(event);
-            // The library copies nothing for a worker-backed workbook.
-            if (event.defaultPrevented) return;
-            event.preventDefault();
-            copySelection();
-          },
-        }}
+        viewportProps={viewportProps}
         viewportRef={viewportRef}
       >
         {children}
       </ScrollArea>
     ),
-    [copySelection],
+    [],
   );
+
+  // Cmd+C with no text selected fires `copy` on <body> in Chrome, not on the
+  // focused grid, so the library's own `onCopy` on the grid never runs (and
+  // copies nothing for a worker-backed workbook anyway). Listen on the window
+  // and copy when focus is in this grid, as Glide does for the CSV viewer.
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (event.defaultPrevented) return; // the library already copied
+      if (!viewportRef.current?.contains(document.activeElement)) return;
+      event.preventDefault();
+      copySelection();
+    };
+    window.addEventListener('copy', handleCopy);
+    return () => window.removeEventListener('copy', handleCopy);
+  }, [copySelection]);
 
   return (
     <div className={cn('bg-background flex h-[640px] min-h-0 flex-col overflow-hidden', className)}>
