@@ -2,30 +2,36 @@
  * Self-hosted instances: which Kortix the app signs in to and talks to.
  *
  * A deployment is the web origin a user already opens in a browser or in the
- * desktop app (the same URL the desktop instance chooser takes). The app reads
- * that origin's public runtime config (`GET /api/runtime-config`, served by
- * apps/web from the same env as its own auth page) for the API URL, the
- * Supabase URL + anon key and the auth methods. One configuration source for
- * web, desktop and mobile; nothing is configured twice.
+ * desktop app (the same URL the desktop instance chooser takes), or its API
+ * URL. For a web origin the app reads its public runtime config
+ * (`GET /api/runtime-config`, served by apps/web from the same env as its own
+ * auth page) for the API URL, the Supabase URL + anon key and the auth
+ * methods. For an API URL (`api.kortix.com`, `…/v1`, a LAN `:8008`) it reads
+ * the API's public `GET /v1/auth/client-config` instead: a web app behind
+ * access protection (dev, staging) cannot be read from a phone, its API can.
  *
  * Pure: no React Native, no storage. `store.ts` persists the choice.
  */
 
 export interface Deployment {
-  /** Web origin the user entered, e.g. `https://kortix.example.com`. */
+  /** Origin the user entered (web or API), e.g. `https://kortix.example.com`. */
   origin: string;
+  /** Web origin for "open on the web" links: the entered web origin, or the API's `frontend_url`. */
+  webUrl: string;
   /** API base, always ending in `/v1`. */
   backendUrl: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
-  /** Raw `AUTH_METHODS` / `AUTH_PROVIDERS` of the deployment (comma lists). */
-  authMethods: string;
-  authProviders: string;
+  /** Raw `AUTH_METHODS` / `AUTH_PROVIDERS` of the deployment (comma lists); null = not reported, use the build defaults. */
+  authMethods: string | null;
+  authProviders: string | null;
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export const KORTIX_CLOUD_WEB_URL = 'https://kortix.com';
+/** The self-hosting guide (`apps/web/content/docs/host/index.mdx`), behind the sheet's Docs button. */
+export const SELF_HOST_DOCS_URL = `${KORTIX_CLOUD_WEB_URL}/docs/host`;
 const DEFAULT_BACKEND_URL = 'http://localhost:8008/v1';
 const PROBE_TIMEOUT_MS = 8_000;
 
@@ -116,13 +122,15 @@ function withoutTrailingSlash(url: URL): string {
   return url.toString().replace(/\/+$/, '');
 }
 
+const RUNTIME_CONFIG = /__KORTIX_RUNTIME_CONFIG=(\{[\s\S]*?\});\s*window\.__RUNTIME_ENV/;
+
 export function parseRuntimeConfig(
   script: string,
   origin: string
 ): { ok: true; deployment: Deployment } | { ok: false; error: string } {
   const host = hostOf(origin);
   const notKortix = { ok: false as const, error: `${host} is not a Kortix instance.` };
-  const match = /__KORTIX_RUNTIME_CONFIG=(\{[\s\S]*?\});\s*window\.__RUNTIME_ENV/.exec(script);
+  const match = RUNTIME_CONFIG.exec(script);
   if (!match) return notKortix;
   let env: Record<string, unknown>;
   try {
@@ -145,6 +153,7 @@ export function parseRuntimeConfig(
     ok: true,
     deployment: {
       origin,
+      webUrl: origin,
       backendUrl: api.endsWith('/v1') ? api : `${api}/v1`,
       supabaseUrl: withoutTrailingSlash(supabaseUrl),
       supabaseAnonKey: anonKey,
@@ -169,33 +178,91 @@ async function fetchWithTimeout(fetchImpl: FetchLike, url: string, init: Request
   }
 }
 
+type CheckResult = { ok: true; deployment: Deployment } | { ok: false; error: string };
+
+function listOrNull(value: unknown): string | null {
+  return Array.isArray(value) ? value.filter((v) => typeof v === 'string').join(',') : null;
+}
+
+/**
+ * The host is no web app: read the API's public client config
+ * (`GET /v1/auth/client-config`, apps/api/src/auth/headless.ts). An API that
+ * has no anon key configured names its web app; that web app's runtime config
+ * is the fallback.
+ */
+async function readApiConfig(origin: string, webStatus: number, fetchImpl: FetchLike): Promise<CheckResult> {
+  const host = hostOf(origin);
+  const res = await fetchWithTimeout(fetchImpl, `${origin}/v1/auth/client-config`).catch(() => null);
+  const config = res?.ok ? ((await res.json().catch(() => null)) as Record<string, unknown> | null) : null;
+  if (!config || typeof config.supabase_url !== 'string') {
+    const isApi = await fetchWithTimeout(fetchImpl, `${origin}/v1/health`).then(
+      (health) => health.ok,
+      () => false
+    );
+    return {
+      ok: false,
+      error: isApi
+        ? `${host} runs an older Kortix API. Enter the web URL, or update the instance.`
+        : `${host} is not a Kortix instance (HTTP ${webStatus}).`,
+    };
+  }
+
+  const web = resolveConfigUrl(config.frontend_url, origin)?.origin ?? null;
+  const anonKey = typeof config.supabase_anon_key === 'string' ? config.supabase_anon_key.trim() : '';
+  if (!anonKey) {
+    const noConfig = `${host} has no sign-in configuration`;
+    if (!web) return { ok: false, error: `${noConfig}.` };
+    const page = await fetchWithTimeout(fetchImpl, `${web}/api/runtime-config`, {
+      headers: { accept: 'application/javascript' },
+    }).catch(() => null);
+    const script = page?.ok ? await page.text().catch(() => '') : '';
+    if (!RUNTIME_CONFIG.test(script)) return { ok: false, error: `${noConfig}, and ${hostOf(web)} did not provide one.` };
+    const parsed = parseRuntimeConfig(script, web);
+    return parsed.ok ? { ok: true, deployment: { ...parsed.deployment, origin } } : parsed;
+  }
+
+  const supabaseUrl = resolveConfigUrl(config.supabase_url, origin);
+  if (!supabaseUrl) return { ok: false, error: `${host} points sign-in at an insecure or invalid address.` };
+  return {
+    ok: true,
+    deployment: {
+      origin,
+      webUrl: web ?? origin,
+      backendUrl: `${origin}/v1`,
+      supabaseUrl: withoutTrailingSlash(supabaseUrl),
+      supabaseAnonKey: anonKey,
+      authMethods: listOrNull(config.auth_methods),
+      authProviders: listOrNull(config.auth_providers),
+    },
+  };
+}
+
 /**
  * Validate what the user entered before anything is saved: the origin serves
- * the Kortix runtime config, and the API it names answers `/v1/health` (any
- * HTTP status proves the server is reachable).
+ * the Kortix web runtime config or the API client config, and the API it
+ * names answers `/v1/health` (any HTTP status proves the server is reachable).
  */
-export async function checkDeployment(
-  raw: unknown,
-  fetchImpl: FetchLike
-): Promise<{ ok: true; deployment: Deployment } | { ok: false; error: string }> {
+export async function checkDeployment(raw: unknown, fetchImpl: FetchLike): Promise<CheckResult> {
   const normalized = normalizeDeploymentUrl(raw);
   if (!normalized.ok) return normalized;
   const { origin } = normalized;
   const host = hostOf(origin);
 
+  let res: Response;
   let script: string;
   try {
-    const res = await fetchWithTimeout(fetchImpl, `${origin}/api/runtime-config`, {
+    res = await fetchWithTimeout(fetchImpl, `${origin}/api/runtime-config`, {
       headers: { accept: 'application/javascript' },
     });
-    if (!res.ok) return { ok: false, error: `${host} is not a Kortix instance (HTTP ${res.status}).` };
-    script = await res.text();
+    script = res.ok ? await res.text() : '';
   } catch (error) {
     const message = (error as Error)?.message ?? '';
     return { ok: false, error: message.includes('did not respond') ? message : `${host} could not be reached.` };
   }
 
-  const parsed = parseRuntimeConfig(script, origin);
+  const parsed = RUNTIME_CONFIG.test(script)
+    ? parseRuntimeConfig(script, origin)
+    : await readApiConfig(origin, res.status, fetchImpl);
   if (!parsed.ok) return parsed;
 
   try {
@@ -232,12 +299,16 @@ export function parseSavedDeployment(raw: string | null | undefined): Deployment
   } catch {
     return null;
   }
-  const fields = ['origin', 'backendUrl', 'supabaseUrl', 'supabaseAnonKey', 'authMethods', 'authProviders'] as const;
+  const fields = ['origin', 'backendUrl', 'supabaseUrl', 'supabaseAnonKey'] as const;
   if (!value || fields.some((key) => typeof value[key] !== 'string')) return null;
+  const lists = ['authMethods', 'authProviders'] as const;
+  if (lists.some((key) => typeof value[key] !== 'string' && value[key] !== null)) return null;
   const d = value as Deployment;
   const origin = normalizeDeploymentUrl(d.origin);
   if (!origin.ok || origin.origin !== d.origin || !d.supabaseAnonKey) return null;
-  for (const url of [d.backendUrl, d.supabaseUrl]) {
+  // Saved before `webUrl` existed: the origin was always the web origin.
+  const webUrl = typeof d.webUrl === 'string' ? d.webUrl : d.origin;
+  for (const url of [webUrl, d.backendUrl, d.supabaseUrl]) {
     try {
       if (!isAllowedUrl(new URL(url))) return null;
     } catch {
@@ -246,6 +317,7 @@ export function parseSavedDeployment(raw: string | null | undefined): Deployment
   }
   return {
     origin: d.origin,
+    webUrl,
     backendUrl: d.backendUrl,
     supabaseUrl: d.supabaseUrl,
     supabaseAnonKey: d.supabaseAnonKey,
@@ -272,7 +344,7 @@ export function resolveEndpoints(deployment: Deployment | null, env: BuildEnv) {
       backendUrl: deployment.backendUrl,
       supabaseUrl: deployment.supabaseUrl,
       supabaseAnonKey: deployment.supabaseAnonKey,
-      webUrl: deployment.origin,
+      webUrl: deployment.webUrl,
     };
   }
   return {
@@ -284,7 +356,7 @@ export function resolveEndpoints(deployment: Deployment | null, env: BuildEnv) {
   };
 }
 
-function parseList(raw: string | undefined): string[] {
+function parseList(raw: string | null | undefined): string[] {
   return (raw ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -295,19 +367,22 @@ function parseList(raw: string | undefined): string[] {
  * Which sign-in options the auth screens render. The build default keeps the
  * shipped behavior (Google + Apple always, email methods from
  * `EXPO_PUBLIC_AUTH_METHODS`). A self-hosted instance renders exactly what its
- * web auth page renders (`AUTH_METHODS` / `AUTH_PROVIDERS`).
+ * web auth page renders (`AUTH_METHODS` / `AUTH_PROVIDERS`); a list the
+ * instance does not report (null, an API without the setting) keeps the
+ * build default.
  */
 export function authOptionsFor(deployment: Deployment | null, env: BuildEnv) {
-  const methods = parseList(deployment ? deployment.authMethods : env.EXPO_PUBLIC_AUTH_METHODS).filter(
+  const methods = parseList(deployment?.authMethods ?? env.EXPO_PUBLIC_AUTH_METHODS).filter(
     (m) => m === 'magic' || m === 'password'
   );
   const both = methods.length === 0;
-  const providers = parseList(deployment?.authProviders);
+  const reported = deployment?.authProviders ?? null;
+  const providers = parseList(reported);
   return {
     magic: both || methods.includes('magic'),
     password: both || methods.includes('password'),
-    google: deployment ? providers.includes('google') : true,
-    apple: deployment ? providers.includes('apple') : true,
+    google: reported === null || providers.includes('google'),
+    apple: reported === null || providers.includes('apple'),
     custom: deployment !== null,
   };
 }

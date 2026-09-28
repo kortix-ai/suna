@@ -101,6 +101,13 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.ENABLE_EMAIL_SIGNUP).toBe('true');
     expect(env.ENABLE_EMAIL_AUTOCONFIRM).toBe('true');
     expect(env.KORTIX_PUBLIC_AUTH_METHODS).toBe('password');
+    // GET /v1/auth/client-config is complete on a fresh install: the API loads
+    // every .env key (env_file), so it reports the anon key, the auth methods
+    // and an explicit empty provider list (none, like the web auth page).
+    expect(env.KORTIX_PUBLIC_AUTH_PROVIDERS).toBe('');
+    expect(env.SUPABASE_ANON_KEY).toBeTruthy();
+    expect(env.SUPABASE_PUBLIC_URL).toBeTruthy();
+    expect((readCompose().services['kortix-api'] as { env_file: string[] }).env_file).toContain('.env');
     expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
     expect(env.DAYTONA_SERVER_URL).toBe('https://app.daytona.io/api');
 

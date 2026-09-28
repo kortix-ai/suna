@@ -26,6 +26,10 @@ export const SHARED_AUTH_DEFAULTS: Record<string, string> = {
   // Sign-in UI method order. Password-first so no email is required out of the
   // box; add 'magic' after SMTP is configured.
   KORTIX_PUBLIC_AUTH_METHODS: 'password',
+  // Social providers: none (the web auth page's default). Explicitly empty,
+  // not unset: the API's GET /v1/auth/client-config reports unset as null,
+  // which the mobile app reads as "use the build's Google + Apple buttons".
+  KORTIX_PUBLIC_AUTH_PROVIDERS: '',
   // GoTrue redirect allow-list (GOTRUE_URI_ALLOW_LIST). The Kortix mobile app
   // (app.json scheme `kortix`) finishes magic-link, OAuth and SSO sign-in on
   // kortix://auth/callback; without this entry GoTrue drops the redirect and

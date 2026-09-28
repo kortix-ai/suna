@@ -32,6 +32,7 @@ const ENV = {
 
 const DEPLOYMENT: Deployment = {
   origin: ORIGIN,
+  webUrl: ORIGIN,
   backendUrl: 'https://api.kortix.example.com/v1',
   supabaseUrl: 'https://kortix.example.com',
   supabaseAnonKey: 'anon-key-synthetic',
@@ -155,6 +156,18 @@ describe('checkDeployment', () => {
     expect(result).toEqual({ ok: false, error: 'kortix.example.com is not a Kortix instance (HTTP 404).' });
   });
 
+  test('an older API (no client config) is refused with a pointer to the web URL', async () => {
+    const { fetchImpl } = fakeFetch({
+      'https://api.kortix.example.com/api/runtime-config': { status: 404, body: 'not found' },
+      'https://api.kortix.example.com/v1/auth/client-config': { status: 404, body: 'not found' },
+      'https://api.kortix.example.com/v1/health': { body: '{"status":"ok"}' },
+    });
+    expect(await checkDeployment('api.kortix.example.com', fetchImpl)).toEqual({
+      ok: false,
+      error: 'api.kortix.example.com runs an older Kortix API. Enter the web URL, or update the instance.',
+    });
+  });
+
   test('an unreachable host says so', async () => {
     const { fetchImpl } = fakeFetch({
       'https://kortix.example.com/api/runtime-config': { throws: 'Network request failed' },
@@ -183,6 +196,117 @@ describe('checkDeployment', () => {
   });
 });
 
+/** The shape the API serves at GET /v1/auth/client-config (apps/api/src/auth/headless.ts). */
+const CLIENT_CONFIG = {
+  supabase_url: 'https://auth.kortix.example.com',
+  supabase_anon_key: 'anon-key-synthetic',
+  frontend_url: 'https://kortix.example.com',
+  auth_methods: ['password'],
+  auth_providers: [],
+};
+const API_ORIGIN = 'https://api.kortix.example.com';
+const API_DEPLOYMENT: Deployment = {
+  origin: API_ORIGIN,
+  webUrl: ORIGIN,
+  backendUrl: 'https://api.kortix.example.com/v1',
+  supabaseUrl: 'https://auth.kortix.example.com',
+  supabaseAnonKey: 'anon-key-synthetic',
+  authMethods: 'password',
+  authProviders: '',
+};
+
+function apiRoutes(config: unknown, origin = API_ORIGIN): Record<string, FakeRoute> {
+  return {
+    [`${origin}/api/runtime-config`]: { status: 404, body: 'not found' },
+    [`${origin}/v1/auth/client-config`]: { body: JSON.stringify(config) },
+    [`${origin}/v1/health`]: { body: '{"status":"ok"}' },
+  };
+}
+
+describe('checkDeployment with an API URL', () => {
+  test('reads the API client config when the host serves no web runtime config', async () => {
+    const { fetchImpl, calls } = fakeFetch(apiRoutes(CLIENT_CONFIG));
+    expect(await checkDeployment('https://api.kortix.example.com', fetchImpl)).toEqual({
+      ok: true,
+      deployment: API_DEPLOYMENT,
+    });
+    expect(calls.map((c) => c.url)).toEqual([
+      'https://api.kortix.example.com/api/runtime-config',
+      'https://api.kortix.example.com/v1/auth/client-config',
+      'https://api.kortix.example.com/v1/health',
+    ]);
+  });
+
+  test('a /v1 suffix, a trailing slash and a bare host all name the same API', async () => {
+    for (const input of ['https://api.kortix.example.com/v1', 'api.kortix.example.com/v1/']) {
+      const { fetchImpl } = fakeFetch(apiRoutes(CLIENT_CONFIG));
+      expect(await checkDeployment(input, fetchImpl)).toEqual({ ok: true, deployment: API_DEPLOYMENT });
+    }
+  });
+
+  test('a LAN API: loopback URLs point at the host entered, unset auth lists mean the build defaults', async () => {
+    const lan = 'http://192.168.1.10:8008';
+    const { fetchImpl } = fakeFetch(
+      apiRoutes(
+        {
+          supabase_url: 'http://127.0.0.1:54321',
+          supabase_anon_key: 'anon-key-synthetic',
+          frontend_url: 'http://localhost:3000',
+          auth_methods: null,
+          auth_providers: null,
+        },
+        lan
+      )
+    );
+    expect(await checkDeployment(lan, fetchImpl)).toEqual({
+      ok: true,
+      deployment: {
+        origin: lan,
+        webUrl: 'http://192.168.1.10:3000',
+        backendUrl: 'http://192.168.1.10:8008/v1',
+        supabaseUrl: 'http://192.168.1.10:54321',
+        supabaseAnonKey: 'anon-key-synthetic',
+        authMethods: null,
+        authProviders: null,
+      },
+    });
+  });
+
+  test('without a frontend URL the web links use the API origin', async () => {
+    const { fetchImpl } = fakeFetch(apiRoutes({ ...CLIENT_CONFIG, frontend_url: null }));
+    const result = await checkDeployment(API_ORIGIN, fetchImpl);
+    expect(result.ok && result.deployment.webUrl).toBe(API_ORIGIN);
+  });
+
+  test('an API without the anon key falls back to the runtime config of its web app', async () => {
+    const { fetchImpl, calls } = fakeFetch({
+      ...apiRoutes({ ...CLIENT_CONFIG, supabase_anon_key: null }),
+      'https://kortix.example.com/api/runtime-config': { body: runtimeScript(ENV) },
+    });
+    expect(await checkDeployment(API_ORIGIN, fetchImpl)).toEqual({
+      ok: true,
+      deployment: { ...DEPLOYMENT, origin: API_ORIGIN, webUrl: ORIGIN },
+    });
+    expect(calls.map((c) => c.url)).toContain('https://kortix.example.com/api/runtime-config');
+  });
+
+  test('an API without the anon key and an unreadable web app says so', async () => {
+    const { fetchImpl } = fakeFetch({
+      ...apiRoutes({ ...CLIENT_CONFIG, supabase_anon_key: null }),
+      'https://kortix.example.com/api/runtime-config': { status: 401, body: 'protected' },
+    });
+    expect(await checkDeployment(API_ORIGIN, fetchImpl)).toEqual({
+      ok: false,
+      error: 'api.kortix.example.com has no sign-in configuration, and kortix.example.com did not provide one.',
+    });
+  });
+
+  test('an https API that hands out an http Supabase URL is refused', async () => {
+    const { fetchImpl } = fakeFetch(apiRoutes({ ...CLIENT_CONFIG, supabase_url: 'http://auth.kortix.example.com' }));
+    expect((await checkDeployment(API_ORIGIN, fetchImpl)).ok).toBe(false);
+  });
+});
+
 describe('fetchSsoEnabled', () => {
   test('reads saml_enabled from the deployment auth settings with its anon key', async () => {
     const { fetchImpl, calls } = fakeFetch({
@@ -203,6 +327,13 @@ describe('fetchSsoEnabled', () => {
 describe('parseSavedDeployment', () => {
   test('round-trips a saved deployment', () => {
     expect(parseSavedDeployment(JSON.stringify(DEPLOYMENT))).toEqual(DEPLOYMENT);
+  });
+
+  test('unset auth lists survive a round trip; a file saved before webUrl existed links to its origin', () => {
+    const unset = { ...API_DEPLOYMENT, authMethods: null, authProviders: null };
+    expect(parseSavedDeployment(JSON.stringify(unset))).toEqual(unset);
+    const { webUrl: _dropped, ...legacy } = DEPLOYMENT;
+    expect(parseSavedDeployment(JSON.stringify(legacy))).toEqual(DEPLOYMENT);
   });
 
   test('a missing, corrupt or insecure file falls back to the build default', () => {
@@ -240,6 +371,10 @@ describe('resolveEndpoints', () => {
     });
   });
 
+  test('an API-URL deployment links to its web app, not the API host', () => {
+    expect(resolveEndpoints(API_DEPLOYMENT, BUILD_ENV).webUrl).toBe(ORIGIN);
+  });
+
   test('the local default API stays the fallback when the build sets none', () => {
     expect(resolveEndpoints(null, {}).backendUrl).toBe('http://localhost:8008/v1');
   });
@@ -265,6 +400,12 @@ describe('authOptionsFor', () => {
     expect(
       authOptionsFor({ ...DEPLOYMENT, authMethods: 'magic,password', authProviders: 'google' }, {})
     ).toEqual({ magic: true, password: true, google: true, apple: false, custom: true });
+  });
+
+  test('auth lists the instance does not report (null) keep the build defaults', () => {
+    expect(
+      authOptionsFor({ ...DEPLOYMENT, authMethods: null, authProviders: null }, { EXPO_PUBLIC_AUTH_METHODS: 'magic' })
+    ).toEqual({ magic: true, password: false, google: true, apple: true, custom: true });
   });
 
   test('an empty method list falls back to both email methods', () => {

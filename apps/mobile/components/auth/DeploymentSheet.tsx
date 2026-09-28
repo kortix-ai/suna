@@ -10,19 +10,21 @@
 
 import * as React from 'react';
 import { View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 
-import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
 import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { checkDeployment, type Deployment } from '@/lib/deployment/deployment';
+import { checkDeployment, SELF_HOST_DOCS_URL, type Deployment } from '@/lib/deployment/deployment';
 import { activeDeployment } from '@/lib/deployment/store';
 import { switchDeployment } from '@/lib/deployment/switch';
+import { BookOpenIcon } from '@/lib/icons';
+import { openLink } from '@/lib/utils/open-link';
 
 export const DeploymentSheet = React.forwardRef<SheetRef>(function DeploymentSheet(_props, ref) {
-  const insets = useSafeAreaInsets();
-  const sheetRef = React.useRef<SheetRef>(null);
+  const sheetRef = React.useRef<BottomSheetModal>(null);
   const initial = activeDeployment ? new URL(activeDeployment.origin).host : '';
   const [address, setAddress] = React.useState(initial);
   const [error, setError] = React.useState<string | null>(null);
@@ -34,9 +36,9 @@ export const DeploymentSheet = React.forwardRef<SheetRef>(function DeploymentShe
       open: () => {
         setAddress(initial);
         setError(null);
-        sheetRef.current?.open();
+        sheetRef.current?.present();
       },
-      close: () => sheetRef.current?.close(),
+      close: () => sheetRef.current?.dismiss(),
     }),
     [initial]
   );
@@ -70,9 +72,27 @@ export const DeploymentSheet = React.forwardRef<SheetRef>(function DeploymentShe
   };
 
   return (
-    <Sheet ref={sheetRef} fullScreen enablePanDownToClose>
-      <SheetHeader title="Self-hosted instance" />
-      <SheetBody className="gap-3">
+    <KortixBottomSheetModal
+      ref={sheetRef}
+      title="Self-hosted instance"
+      // The self-hosting guide: install, update, and the URL to enter here.
+      titleTrailing={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-full"
+          onPress={() => void openLink(SELF_HOST_DOCS_URL)}
+          accessibilityLabel="Docs"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Icon as={BookOpenIcon} size={20} className="text-foreground" />
+        </Button>
+      }
+      snapPoints={['100%']}
+      enableDynamicSizing={false}
+      enablePanDownToClose
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore">
+      <View className="gap-3 px-5 pb-6">
         <SheetTextInput
           value={address}
           onChangeText={(value) => {
@@ -111,8 +131,7 @@ export const DeploymentSheet = React.forwardRef<SheetRef>(function DeploymentShe
             <Text>{pending === 'cloud' ? 'Switching…' : 'Use Kortix Cloud'}</Text>
           </Button>
         ) : null}
-      </SheetBody>
-      <View style={{ height: insets.bottom }} />
-    </Sheet>
+      </View>
+    </KortixBottomSheetModal>
   );
 });
