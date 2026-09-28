@@ -406,8 +406,11 @@ slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
 ### React to a message
 
 ```sh
-slack react --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "white_check_mark"
+slack react   --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "white_check_mark"
+slack unreact --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "eyes"   # remove one you added
 ```
+
+A "seen it" reaction (`eyes`, `hourglass`, `thinking_face`, …) is temporary. The platform already marks the message ⏳ while you work, so you rarely need one. If you add one, remove it with `slack unreact` right after `slack send`. A marker left behind reads as "still working" forever.
 
 ### Post to a different channel (announcements, cross-posts)
 
@@ -455,6 +458,7 @@ Full help: `slack help`.
 - **`slack send --file` does NOT finalize the stream.** It posts a separate file message. Follow it with a regular `slack send "..."` to close the turn.
 - **`$SLACK_CHANNEL_ID`, `$SLACK_THREAD_TS`, `$SLACK_TRIGGER_TS` are pre-injected on Slack turns.** Use them — don't hard-code IDs.
 - **Stay in the thread.** Unless the task explicitly says "post in #channel-X", everything goes in the originating thread. Cross-posting to other channels needs a real reason (incident broadcast, scheduled digest).
+- **Clean up your temporary reactions.** An `eyes` (or other "working") reaction you added stays on the message until you `slack unreact` it. Remove it once you have replied.
 - **The user can hit Stop.** A red Stop button sits under the plan block; the user can click it any time. If you see the turn end abruptly, that's why — don't retry automatically.
 </gotchas>
 
