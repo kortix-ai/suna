@@ -122,6 +122,7 @@ export const BlockMath = memo(function BlockMath({
           }}
           contentContainerStyle={{ paddingHorizontal: web(4), paddingVertical: web(3) }}>
           <RNText
+            selectable
             style={{
               fontFamily: MONO_FONT,
               fontSize: TYPE.sm.fontSize,
@@ -137,6 +138,7 @@ export const BlockMath = memo(function BlockMath({
     // Web: KaTeX's `span.katex-error`, the raw TeX in the message's 15px text.
     return (
       <RNText
+        selectable
         style={{
           fontFamily: FONT_FAMILY.regular,
           fontSize: TYPE.body.fontSize,

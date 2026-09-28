@@ -16,12 +16,8 @@
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
  *
- * No rendered text is natively selectable (KRTX-562): on Android a
- * `selectable` root `Text` takes the tap, so a nested link's `onPress` never
- * fires. Selection lives outside the rendered text. On iOS a double tap opens
- * a sheet with the raw text (`selectOnDoubleTap`, on by default). The session
- * transcript turns it off and uses its long-press message menu instead
- * (`components/session/turn/message-menu.tsx`, KRTX-607).
+ * On Android the text is natively selectable; on iOS a double tap opens a
+ * sheet with the raw text.
  *
  * Streaming: the text is split into top-level blocks (`splitMarkdown`), and
  * each block renders in its own memoized component keyed by its position.
@@ -108,8 +104,6 @@ export interface SelectableMarkdownTextProps {
    * a finished message whose last fence was never closed still highlights.
    */
   isStreaming?: boolean;
-  /** iOS: a double tap opens the raw-text selection sheet. Default true. */
-  selectOnDoubleTap?: boolean;
 }
 
 /**
@@ -247,7 +241,7 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     text: (node: AstNode, _children: unknown, _parent: unknown, styles: any, inheritedStyles: any = {}) => (
-      <RNText key={node.key} style={[inheritedStyles, styles.text]}>
+      <RNText key={node.key} style={[inheritedStyles, styles.text]} selectable>
         {node.content}
       </RNText>
     ),
@@ -262,17 +256,17 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     strong: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.strong}>
+      <RNText key={node.key} style={styles.strong} selectable>
         {children}
       </RNText>
     ),
     em: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.em}>
+      <RNText key={node.key} style={styles.em} selectable>
         {children}
       </RNText>
     ),
     s: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.s}>
+      <RNText key={node.key} style={styles.s} selectable>
         {children}
       </RNText>
     ),
@@ -540,6 +534,7 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                       }}
                     >
                       <RNText
+                        selectable
                         numberOfLines={section.isHeader ? 1 : undefined}
                         style={{
                           fontFamily: section.isHeader ? FONT_FAMILY.semibold : FONT_FAMILY.regular,
@@ -988,23 +983,18 @@ function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; is
 /**
  * SelectableMarkdownText
  *
- * Renders markdown. On iOS a double tap opens the raw-text selection sheet
- * unless `selectOnDoubleTap` is false.
+ * Renders markdown with selectable text: natively on Android, through a
+ * double-tap selection sheet on iOS.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
-  function SelectableMarkdownText({
-    children,
-    isDark: isDarkProp,
-    isStreaming,
-    selectOnDoubleTap = true,
-  }: SelectableMarkdownTextProps) {
+  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
 
     // Trailing whitespace would add empty space below the last block.
     const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
 
-    if (Platform.OS === 'ios' && selectOnDoubleTap) {
+    if (Platform.OS === 'ios') {
       return <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />;
     }
     return <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />;

@@ -2,8 +2,8 @@
  * UserMessage — the user side of a turn. Mirrors apps/web
  * `features/session/turn/user-message.tsx` (`UserMessage`, `UserMessageBubble`,
  * `UserMessageEditor`, `MessageAttachments`). Web's `UserMessageActions` row
- * (time · Edit · Copy) is a long-press menu on mobile instead (Jay,
- * 2026-09-27): `MessageMenu` in `./message-menu`, shared with assistant text.
+ * (time · Edit · Copy) is a long-press menu on mobile instead
+ * (`UserMessageMenuSheet`, Jay 2026-09-27).
  *
  * One right-aligned column capped at 80%: attachments → bubble → a queued
  * status line (only while one applies).
@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
@@ -23,6 +23,9 @@ import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   CaretDownIcon,
+  CopyIcon,
+  PencilIcon,
+  TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
   SlackLogoIcon,
@@ -48,6 +51,7 @@ import {
   parseUserMessageText,
   queuedPromptStatusLabel,
   quoteMarginBottom,
+  userMessageSentLabel,
   webSpace,
   type QueuedPromptState,
 } from '@/lib/session/user-message';
@@ -55,8 +59,17 @@ import { MentionChip } from '../mention-chip';
 import { AttachmentOverflowTile, AttachmentTile } from '../attachment-tile';
 import { useSandboxImage } from './use-sandbox-image';
 import { haptics } from '@/lib/haptics';
+import * as Clipboard from 'expo-clipboard';
 import type { TriggerRef } from '@rn-primitives/context-menu';
-import { MessageMenu, SelectableMessageText, SelectTextDoneButton } from './message-menu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { useToast } from '@/components/kortix/toast-provider';
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
@@ -232,7 +245,9 @@ export function UserMessage({
   };
 
   const actions = selecting ? (
-    <SelectTextDoneButton onPress={() => setSelecting(false)} />
+    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
+      <Text>Done</Text>
+    </Button>
   ) : statusLabel ? (
     <Text
       variant="muted"
@@ -353,7 +368,7 @@ export function UserMessage({
                 // While selecting, a long press belongs to the text selection.
                 onLongPress={selecting ? undefined : openMenu}>
                 {selecting ? (
-                  <SelectableMessageText text={promptText} isDark={isDark} style={BUBBLE_TEXT_STYLE} />
+                  <SelectableMessageText text={promptText} isDark={isDark} />
                 ) : bodyText || commandInfo ? (
                   <MessageBody
                     text={bodyText}
@@ -372,6 +387,101 @@ export function UserMessage({
         {actions}
       </View>
     </Reanimated.View>
+  );
+}
+
+// ─── Long-press menu ─────────────────────────────────────────────────────────
+
+/**
+ * The message menu, anchored under its bubble (`relativeTo="trigger"`, bottom,
+ * end-aligned like the bubble): the time it was sent, then Copy · Select text
+ * · Edit. The components are the RNR `context-menu`; `ContextMenuContent`
+ * portals over the thread and closes on a tap outside or an item.
+ */
+function MessageMenu({
+  menuRef,
+  text,
+  timestamp,
+  edited,
+  onEdit,
+  onSelectText,
+  children,
+}: {
+  menuRef: React.RefObject<TriggerRef | null>;
+  text: string;
+  timestamp: number | null;
+  edited: boolean;
+  onEdit?: () => void;
+  onSelectText?: () => void;
+  children: React.ReactNode;
+}) {
+  const toast = useToast();
+  // Read when the menu renders its content (on open), so "Today" is current.
+  const sentLabel = userMessageSentLabel({ timestamp, edited, now: Date.now() });
+  const copy = useCallback(async () => {
+    await Clipboard.setStringAsync(text);
+    haptics.success();
+    toast.success('Copied');
+  }, [text, toast]);
+
+  return (
+    <ContextMenu relativeTo="trigger">
+      {/* The trigger only measures the bubble: the bubble's own long press
+          calls `menuRef.current.open()`. */}
+      <ContextMenuTrigger ref={menuRef} asChild>
+        <View>{children}</View>
+      </ContextMenuTrigger>
+      <ContextMenuContent side="bottom" align="end" sideOffset={6} className="min-w-48">
+        {sentLabel ? (
+          <>
+            <ContextMenuLabel className="text-muted-foreground text-xs font-normal">{sentLabel}</ContextMenuLabel>
+            <ContextMenuSeparator />
+          </>
+        ) : null}
+        <ContextMenuItem onPress={() => void copy()}>
+          <Icon as={CopyIcon} size={16} className="text-foreground" />
+          <Text>Copy</Text>
+        </ContextMenuItem>
+        {onSelectText ? (
+          <ContextMenuItem onPress={onSelectText}>
+            <Icon as={TextTIcon} size={16} className="text-foreground" />
+            <Text>Select text</Text>
+          </ContextMenuItem>
+        ) : null}
+        {onEdit ? (
+          <ContextMenuItem onPress={onEdit}>
+            <Icon as={PencilIcon} size={16} className="text-foreground" />
+            <Text>Edit</Text>
+          </ContextMenuItem>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/**
+ * Select text: the message, selectable in its own bubble, in the bubble's type.
+ * Android: a selectable `Text` is a TextView with range selection. iOS: a
+ * selectable `Text` offers only "Copy" of the whole text, so a read-only raw
+ * `TextInput` (not `Input`: it is not a field, and `Input` draws one) gives
+ * range selection.
+ */
+function SelectableMessageText({ text, isDark }: { text: string; isDark: boolean }) {
+  if (Platform.OS === 'ios') {
+    return (
+      <TextInput
+        value={text}
+        editable={false}
+        multiline
+        scrollEnabled={false}
+        style={[BUBBLE_TEXT_STYLE, { color: paletteFor(isDark).foreground, padding: 0 }]}
+      />
+    );
+  }
+  return (
+    <Text selectable style={BUBBLE_TEXT_STYLE}>
+      {text}
+    </Text>
   );
 }
 
