@@ -42,7 +42,7 @@ describe('STOP_REASONS', () => {
 describe('STOP_REASONS_NOT_YET_EMITTED', () => {
   test('names every member no code path writes today', () => {
     expect(([...STOP_REASONS_NOT_YET_EMITTED] as string[]).sort()).toEqual(
-      ['boot_floor_expired', 'idle_grace'].sort(),
+      ['boot_floor_expired', 'idle_grace', 'runtime_admission_refused'].sort(),
     );
   });
 
