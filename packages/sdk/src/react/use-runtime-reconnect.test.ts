@@ -67,8 +67,10 @@ describe('manual runtime reconnect', () => {
 });
 
 describe('computeFailureStatus — reconnect (was previously connected)', () => {
-  test('first miss drops into connecting, not unreachable', () => {
-    expect(computeFailureStatus(1, true, false)).toBe('connecting');
+  // KRTX-606: this used to drop to `connecting`, which closed the live SSE
+  // stream on one missed probe. A miss changes nothing until the streak holds.
+  test('first miss leaves the status alone', () => {
+    expect(computeFailureStatus(1, true, false)).toBeNull();
   });
 
   test('flips to unreachable at exactly FAIL_THRESHOLD_RECONNECT consecutive failures', () => {
@@ -95,7 +97,7 @@ describe('computeFailureStatus — timeout counts as a plain failure', () => {
   });
 
   test('a timeout after a prior successful connection uses the tighter reconnect threshold', () => {
-    expect(computeFailureStatus(1, true, false)).toBe('connecting');
+    expect(computeFailureStatus(1, true, false)).toBeNull();
     expect(computeFailureStatus(2, true, false)).toBe('unreachable');
   });
 });
