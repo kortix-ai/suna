@@ -518,10 +518,15 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   fallback. Daytona code remains only to delete previews created before
   2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
   frontend, Mailpit, and HTTPS origin.
-- The sticky pull request comment links the origin as soon as the stack serves
-  the commit ("live; tests running"). Preview CI then runs
-  `pnpm test -- --target-full` against that origin as a separate step and
-  updates the comment with the result and its `/_tests/` HTML report.
+- The `preview` label deploys; it does not run `--target-full`. A deploy takes
+  about 7 min. The sticky pull request comment links the origin as soon as the
+  stack serves the commit ("live; NOT tested").
+- `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs
+  `pnpm test -- --target-full` against that origin (40–80 min). The comment then
+  gives the result and its `/_tests/` HTML report. Run it only for a deployed-only
+  surface: managed Git, Platinum sessions, Stripe. It gates no merge.
+- A deploy that waited in the per-PR queue re-checks the head SHA, the label, and
+  the branch. When any one changed, the run cancels itself and deploys nothing.
 - A push to a `preview`-labelled branch redeploys its environment in place; the
   label stays. Removing the label or deleting the branch tears it down. Closing
   the pull request does not. An hourly reconciler deletes environments whose
