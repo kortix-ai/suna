@@ -54,7 +54,7 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: "false"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -85,7 +85,7 @@ jobs:
           output: trivy-image.sarif
           exit-code: "0"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ strategy.job-index }}
@@ -108,7 +108,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov
@@ -137,7 +137,7 @@ jobs:
           output-file: hadolint.sarif
           no-fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: hadolint.sarif
           category: hadolint-${{ strategy.job-index }}
