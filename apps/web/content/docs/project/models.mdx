@@ -191,6 +191,14 @@ shared with the project never uses a key granted to one member, so the list
 leaves those keys out and saving one is refused. Changing a shared session to a
 model that only such keys reach is refused too, instead of failing every turn.
 
+Sharing a private session, with the whole project or with chosen people, is
+checked the same way. When its model ran only on keys that work in your
+private sessions, such as your own ChatGPT connection, the session switches to
+every key shared with the whole project for that provider. When no such key
+runs the model, the share is refused with `409 SHARED_SESSION_NEEDS_PROJECT_KEY`
+and the session stays private. Share a key with the whole project, or switch
+the session to another model, then share it.
+
 ### Sessions that name only a model
 
 The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
