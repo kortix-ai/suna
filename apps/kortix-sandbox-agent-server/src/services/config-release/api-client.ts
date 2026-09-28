@@ -1,3 +1,4 @@
+import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 import {
   MAX_CONFIG_ARCHIVE_BYTES,
   parseConfigReleaseDescriptor,
@@ -79,6 +80,12 @@ export function isFeatureDisabledError(err: unknown): err is ConfigReleaseApiErr
 /** An error for a non-2xx answer, with the JSON body's `error` and `code` when present. */
 async function errorFromResponse(res: Response, what: string): Promise<ConfigReleaseApiError> {
   const text = (await res.text().catch(() => '')).slice(0, 2_000)
+  // Report the refusal to the shared dead-session-token breaker. This client is
+  // called from the runtime-truth tick, so a retired credential must be visible
+  // to the one signal built for it (`session-token-health`); otherwise the tick
+  // re-POSTs config-release and the API logs one `401 Session token is not
+  // active` warn per minute per box (KRTX-613).
+  noteControlPlaneResponse(res.status, text)
   let code: string | null = null
   let message: string | null = null
   try {
@@ -123,6 +130,10 @@ export async function fetchConfigReleaseDescriptor(
     throw new ConfigReleaseApiError(`descriptor request failed: ${(err as Error).message}`, null)
   }
   if (!res.ok) throw await errorFromResponse(res, 'descriptor request')
+  // A 2xx is proof the control plane answers this box again (a rotated
+  // credential, or a repaired sandbox row). Clear the shared breaker so a
+  // convergence the daemon paused resumes on the next tick.
+  noteControlPlaneResponse(res.status, null)
   let json: unknown
   try {
     json = await res.json()
