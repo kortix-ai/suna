@@ -5,17 +5,23 @@ import 'react-native-url-polyfill/auto';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
 import { createDeadlineFetch } from '@/lib/utils/with-deadline';
+import { resolveEndpoints } from '@/lib/deployment/deployment';
+import { activeDeployment } from '@/lib/deployment/store';
 
 /**
  * Supabase Configuration
- * 
- * Configure with environment variables:
- * - EXPO_PUBLIC_SUPABASE_URL
- * - EXPO_PUBLIC_SUPABASE_ANON_KEY
+ *
+ * The build's EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY, or the
+ * private deployment chosen on the auth screen (lib/deployment): its web
+ * runtime config names its own Supabase, so sign-in moves with the API.
  */
 
-const supabaseUrl = resolveLocalUrl(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const endpoints = resolveEndpoints(activeDeployment, {
+  EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+});
+const supabaseUrl = resolveLocalUrl(endpoints.supabaseUrl);
+const supabaseAnonKey = endpoints.supabaseAnonKey;
 
 // Validate environment variables
 if (!supabaseUrl || supabaseUrl === 'YOUR_SUPABASE_URL' || (!supabaseUrl.startsWith('https://') && !supabaseUrl.startsWith('http://'))) {

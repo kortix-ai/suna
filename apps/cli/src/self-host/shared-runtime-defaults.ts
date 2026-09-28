@@ -26,6 +26,11 @@ export const SHARED_AUTH_DEFAULTS: Record<string, string> = {
   // Sign-in UI method order. Password-first so no email is required out of the
   // box; add 'magic' after SMTP is configured.
   KORTIX_PUBLIC_AUTH_METHODS: 'password',
+  // GoTrue redirect allow-list (GOTRUE_URI_ALLOW_LIST). The Kortix mobile app
+  // (app.json scheme `kortix`) finishes magic-link, OAuth and SSO sign-in on
+  // kortix://auth/callback; without this entry GoTrue drops the redirect and
+  // the phone lands on the web SITE_URL instead of back in the app.
+  ADDITIONAL_REDIRECT_URLS: 'kortix://**',
 };
 
 /** Agent code-execution sandbox provider (Daytona SaaS by default). */
