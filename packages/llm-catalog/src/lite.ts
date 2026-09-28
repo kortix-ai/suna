@@ -521,6 +521,12 @@ export const VERIFIED_US_MANAGED_ENDPOINTS = [
   'coreweave/fp8', 'decart/fp4', 'coreweave/nvfp4', 'fireworks/us',
 ] as const;
 
+// Customer-facing name of the US inference provider behind each endpoint. The
+// picker shows this name, never the aggregator or the quantization tag.
+export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_US_MANAGED_ENDPOINTS)[number], string> = {
+  'coreweave/fp8': 'CoreWeave', 'decart/fp4': 'Decart', 'coreweave/nvfp4': 'CoreWeave', 'fireworks/us': 'Fireworks',
+};
+
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
