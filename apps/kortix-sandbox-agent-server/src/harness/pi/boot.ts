@@ -10,25 +10,23 @@
  * as fast as the model catalog reads from disk.
  */
 import { homedir } from 'node:os'
-import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
-import { relayBootTimelineToApi } from '../../boot-timeline-relay'
-import { materializeProject } from '../../config-provider/config-provider'
-import { startEgressShim } from '../../egress-shim'
+import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
+import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
+import { materializeProject } from '@/services/config-provider/config-provider'
+import { startEgressShim } from '@/services/egress-shim'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   scheduleHistoryBackfill,
-} from '../../git'
+} from '@/lib/git/git'
 import type { HarnessBootContext } from '../harness'
-import { kortixEventBus } from '../../kortix-event-bus'
-import { startLlmProxy } from '../../llm-proxy'
-import { logger } from '../../logger'
-import { runSandboxOnBoot } from '../../on-boot'
-import { createProjectEnvStore } from '../../project-env'
-import { startProxy } from '../../proxy'
-import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import { installShutdownHandlers } from '../../shutdown'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { startLlmProxy } from '@/services/llm-proxy/llm-proxy'
+import { logger } from '@/lib/log/logger'
+import { runSandboxOnBoot } from '../shared/on-boot'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
 import {
@@ -44,7 +42,7 @@ import type { PiRuntimeHooks } from './runtime'
 import { createPiHarnessService } from './service'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
-  const { cfg, bootTime, bootState, bootMark, staticWeb } = context
+  const { cfg, bootState, bootMark, serve } = context
   const sessionId = (process.env.KORTIX_SESSION_ID ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   const home = homedir()
@@ -84,8 +82,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     },
   }
   const harness = createPiHarnessService(cfg, projectEnv, { onStartupMark: bootMark, hooks, sessionId })
-  const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
-  const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  const { shutdown } = serve(harness, projectEnv)
   configureRuntimeConvergence({
     assets: harness.assets,
     turnInFlight: async () => harness.runtime()?.busy() ?? null,

@@ -185,7 +185,7 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
  * GUEST's own disk. Daytona and Platinum hand it back from their control plane
  * on resume, so on those two the session credential and the project's runtime
  * secrets exist only in a live process — the same reason the daemon keeps the
- * agent's env on tmpfs (kortix-sandbox-agent-server/src/agent-env-file.ts).
+ * agent's env on tmpfs (kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts).
  * Here the file has to survive the pause, and `chmod 600 root` is thin cover:
  * the sandbox user has NOPASSWD sudo (packages/shared/src/sandbox/dockerfile-layer.ts).
  * What differs from a live process env is DURABILITY — the plaintext outlived

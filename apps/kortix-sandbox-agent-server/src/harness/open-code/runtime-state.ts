@@ -1,11 +1,11 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { logger } from '../../logger'
-import { resolveKortixRuntimeStateDirectory } from '../../runtime-state-dir'
+import { logger } from '@/lib/log/logger'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 
 // The state directory is a host concern (every harness pins under it); the
 // OpenCode pin paths below are native. Re-exported for the existing importers.
-export { DEFAULT_KORTIX_RUNTIME_STATE_DIRECTORY, resolveKortixRuntimeStateDirectory } from '../../runtime-state-dir'
+export { DEFAULT_KORTIX_RUNTIME_STATE_DIRECTORY, resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 
 export function resolveOpenCodeAuditSpoolPath(
   env: Record<string, string | undefined> = process.env,

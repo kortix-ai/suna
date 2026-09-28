@@ -239,7 +239,11 @@ in before any non-trivial change. **Do not create a branch by reflex.**
    --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
    only when the work needs migrations, destructive data work, schema drift, or
    independent auth/storage state. See the **worktree** skill.
-3. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
+3. **Never switch a worktree you did not create.** It belongs to one session and
+   its canonical branch. The pre-commit hook refuses a commit on any other branch
+   there (`scripts/check-worktree-branch.sh`). A throwaway probe branch goes in a
+   private `git worktree add` in your scratchpad.
+4. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
    and investigating. Do not park feature work there.
 
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a

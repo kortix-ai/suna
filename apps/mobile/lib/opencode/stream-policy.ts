@@ -5,7 +5,7 @@
 
 /**
  * Silence the sandbox daemon allows before it writes a `kortix.keepalive`
- * frame. Duplicated from `apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`
+ * frame. Duplicated from `apps/kortix-sandbox-agent-server/src/routes/proxy/sse-keepalive.ts`
  * (`SSE_KEEPALIVE_INTERVAL_MS`); the app cannot import daemon code. The daemon
  * checks on the same interval, so a healthy quiet stream is silent for up to
  * twice this value.
