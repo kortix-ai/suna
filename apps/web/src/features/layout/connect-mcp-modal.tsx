@@ -27,6 +27,16 @@ import type { ReactNode } from 'react';
 
 const SERVER = { command: 'kortix', args: ['mcp'] };
 const SERVER_JSON = JSON.stringify({ mcpServers: { kortix: SERVER } }, null, 2);
+// Client names and shell commands are product identifiers, not UI copy.
+const CLIENTS: { id: string; name: string; command?: string }[] = [
+  {
+    id: 'claude',
+    name: 'Claude Code',
+    command: 'claude mcp add --scope user kortix -- kortix mcp',
+  },
+  { id: 'codex', name: 'Codex', command: 'codex mcp add kortix -- kortix mcp' },
+  { id: 'cursor', name: 'Cursor' },
+];
 const CURSOR_INSTALL_URL = `cursor://anysphere.cursor-deeplink/mcp/install?name=kortix&config=${btoa(JSON.stringify(SERVER))}`;
 
 /** Kortix Cloud signs in with the CLI default; any other deployment names its API. */
@@ -64,17 +74,18 @@ export function ConnectMcpModal({
           <Step n={3} title={t('addToClient')}>
             <Tabs defaultValue="claude" className="space-y-3">
               <TabsListCompact>
-                <TabsTriggerCompact value="claude">Claude Code</TabsTriggerCompact>
-                <TabsTriggerCompact value="codex">Codex</TabsTriggerCompact>
-                <TabsTriggerCompact value="cursor">Cursor</TabsTriggerCompact>
+                {CLIENTS.map((client) => (
+                  <TabsTriggerCompact key={client.id} value={client.id}>
+                    {client.name}
+                  </TabsTriggerCompact>
+                ))}
                 <TabsTriggerCompact value="other">{t('other')}</TabsTriggerCompact>
               </TabsListCompact>
-              <TabsContent value="claude">
-                <CommandBlock text="claude mcp add --scope user kortix -- kortix mcp" />
-              </TabsContent>
-              <TabsContent value="codex">
-                <CommandBlock text="codex mcp add kortix -- kortix mcp" />
-              </TabsContent>
+              {CLIENTS.filter((client) => client.command).map((client) => (
+                <TabsContent key={client.id} value={client.id}>
+                  <CommandBlock text={client.command!} />
+                </TabsContent>
+              ))}
               <TabsContent value="cursor" className="space-y-3">
                 <Button asChild size="sm" variant="secondary" className="gap-1.5">
                   <a href={CURSOR_INSTALL_URL}>
