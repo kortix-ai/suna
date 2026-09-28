@@ -156,24 +156,24 @@ describe('SessionChat transcript rows', () => {
   });
 
   test('inbox hook rows reach the mounted chat in queued and restored order', () => {
+    const queuedPrompt = (id: string, text: string): SessionPrompt => ({
+      prompt_id: id,
+      client_message_id: `c-${id}`,
+      message_id: `m-${id}`,
+      text,
+      full_text: text,
+      state: 'queued',
+      placement: 'composer',
+      reason: 'turn_active',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+      available_at: '2026-01-01T00:00:00.000Z',
+    });
     inboxPrompts = [
-      {
-        prompt_id: 'queued',
-        client_message_id: 'c-queued',
-        text: 'queued prompt',
-        full_text: 'queued prompt',
-        state: 'queued',
-        placement: 'queue',
-      },
-      {
-        prompt_id: 'restored',
-        client_message_id: 'c-restored',
-        text: 'restored prompt',
-        full_text: 'restored prompt',
-        state: 'queued',
-        placement: 'queue',
-      },
-    ] as SessionPrompt[];
+      queuedPrompt('queued', 'queued prompt'),
+      queuedPrompt('restored', 'restored prompt'),
+    ];
     try {
       const markup = renderChat();
       expect(markup.indexOf('queued prompt')).toBeGreaterThan(-1);
