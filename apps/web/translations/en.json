@@ -1446,6 +1446,7 @@
       "createAccount": "Create an account…",
       "settings": "Settings",
       "downloadApp": "Download app",
+      "connectMcp": "Connect MCP",
       "logOut": "Log out",
       "find": "Find a project…",
       "accountSettings": "Account settings",
@@ -20302,5 +20303,19 @@
     "connectFailed": "Could not connect the account. Try again.",
     "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
     "ownerMeta": "Your account"
+  },
+  "connectMcp": {
+    "title": "Connect Kortix over MCP",
+    "description": "Give Claude Code, Codex, Cursor or any MCP client the whole Kortix CLI as tools: projects, sessions, secrets, connectors, triggers and more.",
+    "install": "Install the CLI",
+    "signIn": "Sign in",
+    "signInHint": "The MCP server acts as this login. On a headless machine, set KORTIX_TOKEN in the server env instead.",
+    "addToClient": "Add it to your client",
+    "other": "Other",
+    "otherHint": "Claude Desktop, VS Code, Windsurf and other clients take this JSON in their MCP settings.",
+    "addToCursor": "Add to Cursor",
+    "docs": "Docs",
+    "done": "Done",
+    "copy": "Copy"
   }
 }

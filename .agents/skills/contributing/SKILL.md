@@ -94,6 +94,11 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
+# A fresh preview account is free tier: no managed models, empty model picker
+# (preview-environments.md -> "Sign in"). Subscribe it before recording ANY
+# session/agent behavior, or the demo can only show static UI.
+.agents/skills/contributing/scripts/preview-subscribe.sh "$S" "$SESSION"
+
 mkdir -p output/pr
 ab set viewport 1440 900
 ab open "$S/<changed route>"

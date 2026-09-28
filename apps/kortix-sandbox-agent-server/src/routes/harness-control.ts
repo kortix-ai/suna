@@ -41,7 +41,7 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   mount('/config', createConfigRouter(context.cfg, control))
   mount('/catalog', createCatalogRouter(context.cfg, control))
   mount('/abort', createAbortRouter(context.cfg, control))
-  mount('/part', createPartRouter(queries.attachments))
+  mount('/part', createPartRouter(context.cfg, queries.attachments))
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))
   mount('/diag', createDiagRouter(context, harness.diagnostics))
   if (context.projectEnv) mount('/env', createEnvRouter(context.cfg, control))
