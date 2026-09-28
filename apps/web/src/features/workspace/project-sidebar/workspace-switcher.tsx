@@ -75,7 +75,7 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
@@ -115,8 +115,6 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const accountsQueryKey = useAccountsQueryKey();
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
-  // Experimental: the row and the hosted MCP endpoint both follow the project's `mcp` flag.
-  const mcpEnabled = useFeatureFlag(projectId, 'mcp').enabled;
   const { data: adminRole } = useAdminRole();
   // Self-host hides the row for non-admins when account creation is restricted
   // — admins are exempt (see `isAccountCreationRestricted()` /
@@ -307,15 +305,13 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </Link>
               </DropdownMenuItem>
 
-              {mcpEnabled && (
-                <DropdownMenuItem
-                  onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
-                  size="sm"
-                >
-                  <PlugsConnectedIcon />
-                  {t('workspace.connectMcp')}
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
+                size="sm"
+              >
+                <PlugsConnectedIcon />
+                {t('workspace.connectMcp')}
+              </DropdownMenuItem>
 
               <ThemeSubmenu />
 
@@ -338,7 +334,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
 
-      <ConnectMcpModal projectId={projectId} open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
+      <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
 
       <CreateAccountModal
         open={createAccountOpen}
