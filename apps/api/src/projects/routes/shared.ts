@@ -56,6 +56,7 @@ import type { StopReason } from '../stop-reason';
 import { recoverTurnsAfterRuntimeRestart } from '../session-lifecycle/runtime-restart-recovery';
 import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-metadata-sql';
 import { transitionRuntime, transitionSession } from '../session-lifecycle/status-transitions';
+import { pinnedRuntimeMayServe } from '../lib/pinned-runtime';
 import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
@@ -1804,7 +1805,33 @@ async function runOpenSession(args: {
       // back, latching updates off (`pinned: true`). Never looped — this is
       // Rule 2's `blocked`: a human must look at this box, not another
       // automatic attempt.
-      return {
+      //
+      // "Do not REPAIR it automatically" is right. "Refuse the SESSION" does
+      // not follow, and it was the same statement. A pinned box is very often
+      // still serving: measured on dev 2026-09-28, a box pinned after a
+      // rollback reported `daemon: ok`, `opencode: ok`, `runtimeReady: true`,
+      // uptime 14917s, and `cli`/`skills`/`opencode` all `current` — only
+      // `agent` was `skipped` ("updates pinned after a rollback"). The open
+      // answered `stage: 'failed', retriable: false` anyway, so a session on a
+      // working box could never be used again by anyone, ever, and no amount
+      // of retrying could change it.
+      //
+      // That is a boot-time one-shot decision hardening forever, which is the
+      // failure shape the learnings ledger already names. Trading a GUARANTEED
+      // total outage for a POSSIBLE degradation is the wrong side of that
+      // trade. So: when the daemon says it can serve, serve. The operator
+      // signal is not lost — the `blocked` classification is still stamped in
+      // the sandbox's own metadata by `bootstrapLegacyRuntime`, the reaper
+      // still sees it, and the line below keeps it in the log.
+      const pinnedButServing = pinnedRuntimeMayServe(guarantee.classification);
+      if (pinnedButServing) {
+        console.warn('[start] opening a session on a PINNED runtime — it serves, but it is stale', {
+          sandbox_id: row.sandboxId,
+          session_id: row.sessionId,
+          detail: guarantee.classification?.detail.join('; ') ?? 'pinned',
+        });
+      }
+      if (!pinnedButServing) return {
         stage: 'failed',
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
