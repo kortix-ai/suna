@@ -86,7 +86,7 @@ import {
   filterSessionsBySearch,
   filterSessionsByStatus,
   groupSessionsByActivity,
-  groupSessionsByCoordinator,
+  groupSectionsByCoordinator,
   isSessionFilterActive,
   sessionDisplayStatus,
   sessionDisplayTitle,
@@ -96,6 +96,7 @@ import {
   shortRelative,
   spokenRelative,
   type SessionStatusFilter,
+  type SessionGroup,
 } from '@/lib/session/session-list';
 import { THEME } from '@/lib/utils/theme';
 import { EMPTY_SESSION_FILTER, useSessionFilterStore } from '@/stores/session-filter-store';
@@ -221,6 +222,7 @@ interface SessionSection {
   key: string;
   title: string;
   data: ProjectSession[];
+  groups: SessionGroup[];
 }
 
 export interface ProjectSessionsPageProps {
@@ -306,10 +308,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
   const sections = React.useMemo<SessionSection[]>(
     () =>
-      grouped.sections.map((section) => ({
+      groupSectionsByCoordinator(grouped.sections).map((section) => ({
         key: section.id,
         title: section.label,
         data: section.sessions,
+        groups: section.groups,
       })),
     [grouped]
   );
@@ -356,13 +359,9 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // One list item per group: a `SettingsGroup` of `SettingsRow`s, the settings
   // screens' layout. The title shows only when more than one group has sessions.
   //
-  // Within each activity-day section, a sub-agent session (spawned by
-  // another session in that SAME section, COR-162) nests as an indented row
-  // right after its coordinator (`groupSessionsByCoordinator`) — mirroring
-  // web, which composes the same two groupings (activity day, then
-  // coordinator) in that order. A coordinator whose activity bucket differs
-  // from its child's (rare — spawning is normally near-simultaneous) leaves
-  // the child top-level in its own section instead of disappearing.
+  // A sub-agent session (COR-162) nests as an indented row right after its
+  // coordinator, even when the two fall in different activity-day sections
+  // (`groupSectionsByCoordinator`, the same composition web uses).
   const showHeaders = grouped.showHeaders;
   const renderSection = React.useCallback<ListRenderItem<SessionSection>>(
     ({ item: section }) => (
@@ -373,7 +372,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             coordinator and its sub-agent children must each be a top-level
             element here — a `Fragment` would fuse a whole group into one
             shared tile instead of one tile per row. */}
-        {groupSessionsByCoordinator(section.data).flatMap((group) => [
+        {section.groups.flatMap((group) => [
           <SessionRow
             key={group.session.session_id}
             session={group.session}

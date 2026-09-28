@@ -59,8 +59,9 @@ import {
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
 
-/** Spawn-chain levels one page reaches up for a missing coordinator. */
-const MAX_ANCESTOR_DEPTH = 3;
+/** Spawn-chain levels one page reaches up for a missing coordinator. One
+ *  bounded read per level; real chains are 1–3 deep. */
+const MAX_ANCESTOR_DEPTH = 10;
 
 function spawnedByOf(row: ProjectSessionRow): string | null {
   const parent = row.metadata?.spawned_by_session;

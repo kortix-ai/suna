@@ -4,6 +4,7 @@ import type { ChangeRequest, ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
   groupChangeRequestsBySession,
+  groupSectionsByCoordinator,
   groupSessionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
@@ -508,5 +509,31 @@ describe('getSessionDisplayTitle — Teams mention markup', () => {
       name: '<at>Kortix Dev</at>summarize the README in two sentences',
     } as never);
     expect(title).toBe('summarize the README in two sentences');
+  });
+});
+
+describe('groupSectionsByCoordinator', () => {
+  const coord = makeSession({ session_id: 'coord' });
+  const child = makeSession({ session_id: 'child', metadata: { spawned_by_session: 'coord' } } as never);
+  const solo = makeSession({ session_id: 'solo' });
+
+  test('a child in an earlier section pulls its coordinator group there', () => {
+    // e.g. child is "Running"/"Today", coordinator is "Completed"/"Last week".
+    const out = groupSectionsByCoordinator([
+      { id: 'running', sessions: [child] },
+      { id: 'done', sessions: [solo, coord] },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(['running', 'done']);
+    expect(out[0]!.groups.map((g) => g.session.session_id)).toEqual(['coord']);
+    expect(out[0]!.groups[0]!.children.map((c) => c.session_id)).toEqual(['child']);
+    expect(out[1]!.groups.map((g) => g.session.session_id)).toEqual(['solo']);
+  });
+
+  test('a section left with no group is dropped', () => {
+    const out = groupSectionsByCoordinator([
+      { id: 'running', sessions: [child] },
+      { id: 'done', sessions: [coord] },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(['running']);
   });
 });

@@ -434,6 +434,33 @@ export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionG
   return order;
 }
 
+/**
+ * `groupSessionsByCoordinator` across sections. Nesting per section left a
+ * sub-agent stranded whenever its coordinator sorted into another section
+ * (a running child under a completed coordinator, a child active today under
+ * a coordinator last touched yesterday). Groups are built over the whole list,
+ * and each group renders in the FIRST section any of its members sits in. A
+ * section left with no group is dropped.
+ */
+export function groupSectionsByCoordinator<T extends { sessions: ProjectSession[] }>(
+  sections: T[],
+): Array<T & { groups: SessionGroup[] }> {
+  const sectionIndexOf = new Map<string, number>();
+  sections.forEach((section, index) => {
+    for (const session of section.sessions) sectionIndexOf.set(session.session_id, index);
+  });
+  const bySection = sections.map(() => [] as SessionGroup[]);
+  for (const group of groupSessionsByCoordinator(sections.flatMap((section) => section.sessions))) {
+    const index = Math.min(
+      ...[group.session, ...group.children].map((s) => sectionIndexOf.get(s.session_id)!),
+    );
+    bySection[index]!.push(group);
+  }
+  return sections
+    .map((section, index) => ({ ...section, groups: bySection[index]! }))
+    .filter((section) => section.groups.length > 0);
+}
+
 /** One row of a flattened coordinator tree: a session plus whether it renders
  *  indented under its coordinator, with the sub-agent mark. */
 export interface SessionListRow {
