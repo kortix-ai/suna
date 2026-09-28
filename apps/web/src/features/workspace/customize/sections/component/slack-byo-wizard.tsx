@@ -28,7 +28,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
  *    JSON, confirm"). Creating the app, installing it, and pasting credentials
  *    are now three separate steps with three separate confirmations.
  * 3. **Real step structure.** The prose counter is now the shared `Stepper`
- *    (the same primitive `dev-view.tsx` uses), so progress is visible rather
+ *    (the shared onboarding primitive), so progress is visible rather
  *    than described, and a user can jump back to a step they need to redo.
  * 4. **Copy names the screen, not the concept.** Each credential field says
  *    which Slack sidebar item it is on. `project_secrets` — an internal table

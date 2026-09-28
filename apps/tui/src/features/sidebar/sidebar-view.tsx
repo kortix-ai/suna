@@ -326,7 +326,16 @@ export function SidebarView({
               setFilter(value);
               onFilterChange?.(value);
             }}
-            onSubmit={() => setMode('browse')}
+            onSubmit={() => {
+              setMode('browse');
+              // Enter on a filter means "open what I found": land on the first
+              // match. Leaving the cursor where it was — usually "+ New
+              // session" — made the next Enter CREATE a session instead.
+              if (filter.trim()) {
+                const first = selectableIds.find((id) => id.startsWith('session:'));
+                if (first) setCursorId(first);
+              }
+            }}
           />
         </box>
       ) : null}

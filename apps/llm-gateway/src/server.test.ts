@@ -67,6 +67,31 @@ describe('standalone gateway inference routes', () => {
     expect(res.status).toBe(404);
   });
 
+  // Piece: `POST /responses` (+ `/v1/responses`, `/v1/llm/responses`,
+  // `/v1/openai/responses`) — Codex CLI >=0.157 only supports
+  // `wire_api = "responses"` and cannot reach `/chat/completions` at all.
+  // Proven here by the response using the Responses API error envelope
+  // (`{error:{type,message,code,param}}`, no top-level `type`, unlike the
+  // Anthropic envelope), which only `gateway.responses()` produces.
+  const postResponses = (path: string) =>
+    app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codex/gpt-6-sol', input: 'hi' }),
+    });
+
+  for (const path of ['/responses', '/v1/responses', '/v1/llm/responses', '/v1/openai/responses']) {
+    test(`${path} is registered and speaks the Responses API error envelope`, async () => {
+      const res = await postResponses(path);
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as { type?: unknown; error: { type: string; message: string } };
+      expect(body.type).toBeUndefined();
+      expect(body.error.type).toBe('invalid_request_error');
+      expect(body.error.message).toBe('Missing bearer token');
+      expect((body as unknown as { code?: unknown }).code).toBeUndefined();
+    });
+  }
+
   for (const path of ['/chat/completions', '/v1/chat/completions']) {
     test(`${path} speaks the OpenAI-compat error envelope`, async () => {
       const res = await app.request(path, {

@@ -1,20 +1,21 @@
 import { spawn } from 'node:child_process';
 
 import { loadAuthForHost } from '../api/auth.ts';
-import { takeFlagValue } from '../command-helpers.ts';
+import { locateSessionAnywhere, takeFlagValue } from '../command-helpers.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
+import { SUPERVISED_NOTICE, isSupervised } from '../supervised.ts';
 import {
   type TuiBinResolution,
   cliVersion,
   downloadTuiBin,
   findTuiBin,
+  installedTuiBins,
   isValidTuiVersion,
   managedTuiPath,
   removeTuiCache,
   tuiCacheRoot,
 } from '../tui-bin.ts';
-import { isSupervised, SUPERVISED_NOTICE } from '../supervised.ts';
 
 const DOCS_URL = 'https://kortix.com/docs/tui';
 
@@ -34,9 +35,19 @@ Experimental. Open the Kortix terminal client: the sidebar of sessions, the
 transcript and composer, a real shell inside the session sandbox, and the
 Files, Review, Apps, Customize and Account screens — all in your terminal.
 
+\`kortix t\` is the short spelling, and \`kortixt\` (one word, installed beside
+\`kortix\`) is the one-keystroke door: bind it to a key in your terminal.
+
+A cloud engineering desk in one command:
+  kortixt --project <id> --new --terminal
+creates a session in that project (\`--agent <name>\` picks the agent; the
+project default otherwise) and opens it with the sandbox shell focused.
+
 The TUI is a SEPARATE binary (\`kortix-tui\`, ~80 MB). \`kortix\` does not carry
 it. The first \`kortix tui\` asks to install the copy that matches this CLI's
-version into ~/.kortix/tui/<version>/, then runs it. Every later run execs the
+version into ~/.kortix/tui/<version>/, then runs it. After a CLI update it
+updates the TUI by itself, reuses the installed copy when the release did not
+change it, and removes the old versions. Every later run execs the
 cached one.
 
 Authentication is this CLI's. It runs against the active host, or the one
@@ -48,6 +59,13 @@ Options:
   --project <id>    List this project's sessions (default: the host's default
                     project, else its first project).
   --session <id>    Open this session at boot.
+  --new             Create a session in the project at boot and open it.
+  --agent <name>    Agent for the new session. Default: the project's default.
+  --terminal        Open the sandbox terminal panel at boot (focused).
+  --no-sidebar      Start with the sidebar hidden. Alt+b shows it again.
+  --mouse           Let the TUI take the mouse. Off by default, so your
+                    terminal's own text selection, copy-on-select and
+                    Cmd+click on a URL keep working inside the TUI.
   --install         Install the TUI binary now and exit. No prompt.
   --uninstall       Remove ~/.kortix/tui/ and exit.
   -h, --help        Show this help.
@@ -62,6 +80,9 @@ Keys:
   Ctrl+p            Session switcher across every project.
   Ctrl+n            New session in this project.
   Alt+t             Toggle the sandbox terminal beside the transcript.
+  Alt+b             Hide or show the sidebar.
+  Alt+l             Links: every URL in the transcript or on the terminal
+                    screen (wrapped ones rejoined). Enter opens it.
   Alt+f / Alt+r     Files · Review.
   Alt+a / Alt+c     Apps · Customize.
   Alt+u / Alt+h     Account · switch host.
@@ -89,6 +110,17 @@ export interface TuiFlags {
   host?: string;
   project?: string;
   session?: string;
+  /** Create a session at boot and open it (`--new`). */
+  newSession: boolean;
+  /** Agent for that new session (`--agent`); the project default otherwise. */
+  agent?: string;
+  /** Open the sandbox terminal panel at boot (`--terminal`). */
+  terminal: boolean;
+  /** Start with the sidebar hidden (`--no-sidebar`); Alt+B shows it. */
+  noSidebar: boolean;
+  /** Let the TUI take the mouse (`--mouse`). Off by default so the terminal's
+   *  own selection, copy-on-select and Cmd+click on URLs keep working. */
+  mouse: boolean;
   install: boolean;
   uninstall: boolean;
   help: boolean;
@@ -97,7 +129,15 @@ export interface TuiFlags {
 /** `kortix tui` takes flags only — a bare positional is a typo, not an id. */
 export function parseTuiFlags(argv: string[]): TuiFlags {
   const rest = [...argv];
-  const flags: TuiFlags = { help: false, install: false, uninstall: false };
+  const flags: TuiFlags = {
+    help: false,
+    install: false,
+    uninstall: false,
+    newSession: false,
+    terminal: false,
+    noSidebar: false,
+    mouse: false,
+  };
   for (let i = rest.length - 1; i >= 0; i -= 1) {
     const arg = rest[i];
     if (arg === '-h' || arg === '--help') {
@@ -109,11 +149,24 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     } else if (arg === '--uninstall') {
       flags.uninstall = true;
       rest.splice(i, 1);
+    } else if (arg === '--new') {
+      flags.newSession = true;
+      rest.splice(i, 1);
+    } else if (arg === '--terminal') {
+      flags.terminal = true;
+      rest.splice(i, 1);
+    } else if (arg === '--no-sidebar') {
+      flags.noSidebar = true;
+      rest.splice(i, 1);
+    } else if (arg === '--mouse') {
+      flags.mouse = true;
+      rest.splice(i, 1);
     }
   }
   flags.host = takeFlagValue(rest, ['--host']);
   flags.project = takeFlagValue(rest, ['--project']);
   flags.session = takeFlagValue(rest, ['--session']);
+  flags.agent = takeFlagValue(rest, ['--agent']);
   const left = rest[0];
   if (left !== undefined) {
     throw new Error(
@@ -136,7 +189,12 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
  * (apps/tui/src/index.tsx).
  */
 export function tuiChildEnv(
-  flags: Pick<TuiFlags, 'host' | 'project' | 'session'>,
+  flags: Partial<
+    Pick<
+      TuiFlags,
+      'host' | 'project' | 'session' | 'newSession' | 'agent' | 'terminal' | 'noSidebar' | 'mouse'
+    >
+  >,
   base: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
   return {
@@ -144,6 +202,11 @@ export function tuiChildEnv(
     ...(flags.host ? { KORTIX_TUI_HOST: flags.host } : {}),
     ...(flags.project ? { KORTIX_PROJECT_ID: flags.project } : {}),
     ...(flags.session ? { KORTIX_SESSION_ID: flags.session } : {}),
+    ...(flags.newSession ? { KORTIX_TUI_NEW: '1' } : {}),
+    ...(flags.agent ? { KORTIX_TUI_AGENT: flags.agent } : {}),
+    ...(flags.terminal ? { KORTIX_TUI_TERMINAL: '1' } : {}),
+    ...(flags.noSidebar ? { KORTIX_TUI_SIDEBAR: '0' } : {}),
+    ...(flags.mouse ? { KORTIX_TUI_MOUSE: '1' } : {}),
   };
 }
 
@@ -158,6 +221,17 @@ export interface TuiDeps {
   uninstall: () => string;
   /** This CLI's version — the TUI is matched to it exactly. */
   version: () => string;
+  /**
+   * `--session` without `--project`: which project (and host) holds it. The
+   * TUI pairs a session with a project id; a wrong pair is a dead session
+   * view, so the CLI's cross-account locator answers first.
+   */
+  locateSession: (
+    sessionId: string,
+    hostArg: string | undefined,
+  ) => Promise<{ projectId: string; hostName?: string } | null>;
+  /** Managed versions already on disk. Non-empty means an upgrade, not a first install. */
+  installedVersions: () => string[];
   /** True only on a real terminal, where a question can be answered. */
   isInteractive: () => boolean;
   ask: (question: string, defaultValue: boolean) => Promise<boolean>;
@@ -173,6 +247,15 @@ const DEFAULT_DEPS: TuiDeps = {
   download: (version) => downloadTuiBin({ version }),
   uninstall: () => removeTuiCache(),
   version: () => cliVersion(),
+  locateSession: async (sessionId, hostArg) => {
+    const found = await locateSessionAnywhere(
+      sessionId,
+      { hostArg },
+      (host) => `kortix tui --session ${sessionId} --host ${host}`,
+    );
+    return found ? { projectId: found.located.projectId, hostName: found.located.hostName } : null;
+  },
+  installedVersions: () => installedTuiBins().map((installed) => installed.version),
   isInteractive: () => process.stdin.isTTY === true && process.stdout.isTTY === true,
   ask: (question, defaultValue) => confirm(question, defaultValue, { onEndOfInput: false }),
   run: spawnTui,
@@ -249,6 +332,18 @@ export async function runTui(argv: string[], overrides: Partial<TuiDeps> = {}): 
     }
   }
 
+  if (flags.session && !flags.project) {
+    const located = await deps.locateSession(flags.session, flags.host);
+    if (!located) {
+      deps.stderr(
+        `${status.err(`Session ${flags.session} was not found on any host you are logged into.`)}\n`,
+      );
+      return 1;
+    }
+    flags.project = located.projectId;
+    if (!flags.host && located.hostName) flags.host = located.hostName;
+  }
+
   const version = deps.version();
   let resolution = deps.findBin();
 
@@ -321,7 +416,19 @@ async function install(
     return 1;
   }
 
-  if (!skipPrompt) {
+  // An upgrade is not a first install. The user already said yes once; a
+  // question on every CLI release trains them to stop reading it, and the
+  // release may not even change the binary (then nothing is downloaded — see
+  // `downloadTuiBin`). One line says what is happening; old copies are pruned.
+  const previous = deps.installedVersions().filter((v) => v !== version && v !== 'dev');
+  const upgrade = previous.length > 0;
+  if (upgrade && !skipPrompt) {
+    deps.stderr(
+      `${C.dim}Updating kortix-tui ${previous.map(label).join(', ')} → ${label(version)}…${C.reset}\n`,
+    );
+  }
+
+  if (!skipPrompt && !upgrade) {
     if (!deps.isInteractive()) {
       deps.stderr(
         `${status.err('kortix tui needs the kortix-tui binary, which is not installed.')}\n` +

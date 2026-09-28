@@ -1044,8 +1044,6 @@ function scanFile(file) {
           catalogRoot === 'POLICY_SEGMENTS') ||
         (file === path.join(srcDir, 'features/workspace/command-palette.tsx') &&
           catalogRoot === 'DENSITY_PAGE_OPTIONS') ||
-        (file === path.join(srcDir, 'features/workspace/customize/sections/view/dev-view.tsx') &&
-          catalogRoot === 'LAUNCHERS') ||
         (file ===
           path.join(
             srcDir,

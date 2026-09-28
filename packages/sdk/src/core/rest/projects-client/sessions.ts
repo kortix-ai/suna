@@ -885,8 +885,9 @@ export async function getSessionTurn(
 //
 // ONE round trip for everything a session view needs to PAINT and ARM: the
 // session row, the running turns, the prompt queue, the durable transcript
-// mirror, the composer's control-plane essentials, and the model defaults.
-// It replaces 6 serial reads on the open path and introduces NO new truth —
+// mirror, the composer's control-plane essentials, the model defaults, and
+// the pending-approvals audit projection. It replaces 7 serial reads (6 plus
+// `/audit`) on the open path and introduces NO new truth —
 // every leg is byte-identical to the endpoint that already served it, so a
 // consumer can hand a leg straight to the code that reads that endpoint.
 //
@@ -944,6 +945,21 @@ export type SessionOpenBundleModels =
     }
   | SessionOpenBundleUnknown;
 
+/** = `GET .../audit?include_events=false` — the pending-approvals projection
+ *  only, never the historical `events` timeline (that half needs its own
+ *  audit-queue flush and answers "show me history", not "what's blocking this
+ *  run"). Byte-identical to `SessionAudit` minus `events`/`next_cursor`. */
+export type SessionOpenBundleAudit =
+  | ({
+      known: true;
+      session_id: string;
+      agent: string | null;
+      audit_access: boolean;
+      count: number;
+      actions: SessionAuditAction[];
+    })
+  | SessionOpenBundleUnknown;
+
 export interface SessionOpenBundle {
   /** ONE clock for the whole envelope. Every leg is a snapshot at this instant,
    *  and every projection that ranks a server observation against local
@@ -955,6 +971,7 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
+  audit: SessionOpenBundleAudit;
 }
 
 /**

@@ -1150,6 +1150,10 @@
         "config_releases": {
           "name": "Издања конфигурације",
           "description": "Покрећите сесије са тренутном конфигурацијом агента са основне гране, послуженом само за читање, тако да спојени агент, вештина или алат стигне до сваке покренуте сесије. Када је искључено, сесија чита сопствену фасциклу конфигурације у радном простору."
+        },
+        "mcp": {
+          "name": "MCP server",
+          "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
         }
       }
     },
@@ -1446,6 +1450,7 @@
       "createAccount": "Направите налог…",
       "settings": "Подешавања",
       "downloadApp": "Преузми апликацију",
+      "connectMcp": "Poveži MCP",
       "logOut": "Одјави се",
       "find": "Пронађи пројекат…",
       "accountSettings": "Подешавања налога",
@@ -19182,7 +19187,12 @@
       "text5176d59f25fd": "Издање конфигурације сесије разрешено",
       "text273c48dbf3b9": "Регистрован уређај за пусх обавештења",
       "textbb666ddf7a57": "Уклоњен уређај за пусх обавештења",
-      "text397ab5aecbbf": "Захтев за дозволу сесије прослеђен"
+      "text397ab5aecbbf": "Захтев за дозволу сесије прослеђен",
+      "text3ec6c235548a": "Pročitani metapodaci MCP servera",
+      "text7740934de920": "Registrovan OAuth klijent",
+      "textcd36423ea12a": "Pozvan MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20300,5 +20310,25 @@
     "connectFailed": "Налог није могао да се повеже. Покушајте поново.",
     "sharePrivateDescription": "Изаберите ко још може да користи ваш налог. Он постаје дељени налог, којим могу да управљају и управљачи веза пројекта.",
     "ownerMeta": "Ваш налог"
+  },
+  "connectMcp": {
+    "title": "Poveži Kortix preko MCP-a",
+    "description": "Dodaj ovaj URL u Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent. Prvi put klijent traži da se prijaviš u Kortix. Ništa se ne instalira.",
+    "urlLabel": "MCP URL",
+    "addToClient": "Dodaj ga u svoj klijent",
+    "other": "Ostalo",
+    "claudeSteps": "U Claude-u (veb ili desktop) otvori Podešavanja → Konektori → Dodaj prilagođeni konektor, nalepi URL i prijavi se.",
+    "claudeCodeHint": "Zatim pokreni /mcp u Claude Code-u i prijavi se.",
+    "otherHint": "ChatGPT (režim za programere), VS Code, Windsurf i drugi klijenti: dodaj udaljeni MCP server sa URL-om iznad ili ovim JSON-om.",
+    "addToCursor": "Dodaj u Cursor",
+    "signInOnFirstUse": "Cursor traži prijavu u Kortix pri prvom korišćenju.",
+    "docs": "Dokumentacija",
+    "done": "Gotovo",
+    "copy": "Kopiraj"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Neverifikovana aplikacija",
+    "unverifiedBody": "{client} se sama registrovala u Kortix-u. Kortix nije proverio ko je pokreće. Dozvoli je samo ako je upravo ti povezuješ.",
+    "redirectsTo": "Vraća te na"
   }
 }

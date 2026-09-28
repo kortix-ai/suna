@@ -201,7 +201,7 @@ slackWebhookApp.openapi(
     if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event))) {
       return;
     }
-    const resolution = await resolveOauthProject(teamId, envelope.event?.channel);
+    const resolution = await resolveOauthProject(teamId, envelope.event?.channel, envelope.event?.thread_ts);
     if (resolution.kind === 'project') {
       await dispatchSlackEvent(resolution.projectId, envelope);
     } else if (resolution.kind === 'ambiguous') {

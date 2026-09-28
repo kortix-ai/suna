@@ -1205,6 +1205,17 @@ export function missingManagedModelIds(live: Record<string, KortixGatewayModel> 
 }
 
 /**
+ * The `kortix` provider ids THIS box's OpenCode actually registered at its
+ * last config build — read-only. This is `catalog_fingerprint`'s source of
+ * truth (the runtime-convergence contract (PR #7785), Rule 1.2): the provider map a
+ * running box really serves, never a second opinion re-derived from a file it
+ * only hoped to load. Null before OpenCode has built a config at all.
+ */
+export function configuredKortixProviderModelIds(): readonly string[] | null {
+  return lastConfiguredProviderModelIds ? [...lastConfiguredProviderModelIds] : null
+}
+
+/**
  * Persist the managed overlay so the NEXT OpenCode start (the reconcile's
  * restart, and any later restart on this box) registers it from disk, not just
  * from this process's cache. Returns the file OpenCode should read, or null

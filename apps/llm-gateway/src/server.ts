@@ -443,6 +443,61 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
 
+  // OpenAI Responses-API-compatible ingress — Codex CLI >=0.157 only supports
+  // `wire_api = "responses"` (`POST {base_url}/responses`, Bearer token), so
+  // it cannot reach `/chat/completions` at all. `gateway.responses` translates
+  // the Responses request/response/SSE shape at the edges only; auth, grants,
+  // routing, dispatch, metering and audit run through the identical pipeline.
+  // Mirrors the chat-completions/messages alias namespaces above.
+  const responses = async (c: {
+    req: {
+      header: (k: string) => string | undefined;
+      text: () => Promise<string>;
+      raw: Request;
+    };
+  }) => {
+    try {
+      const body = await readAdmittedBody(c.req.raw, perRequestCapBytes, inflight);
+      if (!body.ok) {
+        const status = body.reason === 'too_large' ? 413 : 503;
+        if (body.reason !== 'client_aborted') recordOutcome(status);
+        return status === 413
+          ? requestTooLargeResponse()
+          : gatewayOverloadedResponse(body.retryAfterSeconds ?? 1);
+      }
+      try {
+        const request = {
+          authorization: c.req.header('authorization'),
+          rawBody: body.body,
+          // Without this a disconnected `codex exec` left the ChatGPT
+          // backend generating — and billing — a turn nobody would read.
+          signal: c.req.raw?.signal,
+        };
+        body.body = '';
+        const res = await cloudflareSafe(await gateway.responses(request));
+        recordOutcome(res.status);
+        return releaseWhenResponseEnds(res, body.release);
+      } catch (error) {
+        body.release();
+        throw error;
+      }
+    } catch (err) {
+      console.error('[gateway] responses request failed', err);
+      recordOutcome(503);
+      return new Response(
+        JSON.stringify({
+          error: { type: 'server_error', message: 'Gateway unavailable', code: null, param: null },
+        }),
+        { status: 503, headers: { 'content-type': 'application/json' } },
+      );
+    }
+  };
+
+  app.post('/responses', responses);
+  app.post('/v1/responses', responses);
+  app.post('/v1/llm/responses', responses);
+  app.post('/v1/openai/responses', responses);
+
   // `?scope=managed` → managed lineup only (~3KB); `?scope=picker` → the
   // project's servable set (~80KB), which sandboxes fetch on every boot so
   // their `kortix` provider matches the web picker. See wire.ts.
