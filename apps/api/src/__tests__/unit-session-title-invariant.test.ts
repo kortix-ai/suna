@@ -48,6 +48,7 @@ describe('session-title invariant', () => {
     expect(
       offenders(/\.insert\(\s*projectSessions\b/, [
         'projects/lib/sessions.ts',
+        'projects/lib/session-create.ts',
         'projects/suna-migration/suna-migration-phases.ts',
       ]),
     ).toEqual([]);
