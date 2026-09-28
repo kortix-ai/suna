@@ -106,6 +106,21 @@ Files that another package imports (`src/harness/open-code/fallback-models.ts`,
 `src/services/egress-shim/rules.ts`) have no imports, because that package's
 typecheck does not know this `@/`.
 
+## OpenCode names (E18 ratchet)
+
+OpenCode knowledge belongs in `src/harness/open-code/`. The `kortixd/opencode-names`
+lint rule rejects an identifier or string that matches `/open.?code/i` in
+`src/lib/`, `src/types/`, `src/services/`, `src/routes/`, `src/app/`,
+`src/main.ts`, `src/harness/contract/` and `src/harness/shared/`. Tests,
+`src/harness/harness.ts` and both adapters are out of scope. `src/harness/pi/`
+joins after E2, when pi stops emitting the OpenCode wire. Comments are not
+checked.
+
+`OPENCODE_NAMES_ALLOWED` in `eslint.config.mjs` lists the names that exist
+today, per file. The list only shrinks: an entry whose word no longer occurs in
+its file fails the lint, so the PR that removes a name deletes its entry. Do not
+add an entry; name the new code neutrally or move it into the adapter.
+
 ## Where a type goes
 
 1. A type its consumers may already import stays with its owner. The harness

@@ -7,6 +7,7 @@ import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionComman
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';
 import { renderSessionKey } from './trigger-payload';
+import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 
 /**
@@ -314,12 +315,43 @@ export async function fireGitTrigger(input: {
     return { status: 'failed', error: 'No account owner available to own the session' };
   }
 
+  if (spec.reminder) return fireSessionReminder(input, actor);
+
   const sessionKey = renderSessionKey(spec, payload);
   const queuedSessionId = await queueExistingTriggerSession(input, actor, sessionKey);
   if (queuedSessionId) {
     return { status: 'queued', sessionId: queuedSessionId, reason: 'prompt queued for delivery' };
   }
   return createGitTriggerSession(input, actor, sessionKey);
+}
+
+/**
+ * A session reminder re-prompts its own session and nothing else. Unlike a pinned
+ * trigger it never falls back to a fresh session: a check-in without the
+ * session's context is noise. A gone session switches the reminder off instead.
+ */
+async function fireSessionReminder(
+  input: Parameters<typeof fireGitTrigger>[0],
+  actor: string,
+): ReturnType<typeof fireGitTrigger> {
+  const { spec, project } = input;
+  const sessionId = spec.pinnedSessionId;
+  const outcome = sessionId
+    ? await enqueueTriggerPrompt({
+        project, sessionId, actor, text: reminderPromptText(spec), source: 'reminder',
+        triggerSlug: spec.slug, model: null,
+        idempotencyKey: input.idempotencyKey ?? null,
+      })
+    : 'no-session';
+  if (outcome === 'queued') {
+    return { status: 'queued', sessionId: sessionId!, reason: 'prompt queued for delivery' };
+  }
+  await disableSessionReminder(project.projectId, spec.slug, new Date());
+  return {
+    status: 'failed',
+    error: 'The reminder session is deleted or failed, so the reminder is now paused',
+    errorCode: 'reminder_session_gone',
+  };
 }
 
 async function queueExistingTriggerSession(

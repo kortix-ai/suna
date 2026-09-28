@@ -28,7 +28,7 @@ session (a restart or resume re-reads the selection).
 | --- | --- |
 | `harness.ts` | Resolution, `loadConfig`, the boot context and the union helpers every box uses |
 | `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`); no router dependencies |
-| `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, boot-timeline and memory-guard relays |
+| `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, boot-timeline and memory-guard relays, the host facts of `/kortix/health` (`host-health.ts`) |
 | `../services/runtime-assets/port.ts` | Harness maintenance contract, owned by the service that consumes it |
 | `open-code/service.ts` | Composition over one lifecycle; native typed ports |
 | `open-code/boot.ts` | Native cold boot, warm seed/adoption, first turn, reconciliation and relays |

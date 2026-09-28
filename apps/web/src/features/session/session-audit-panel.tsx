@@ -62,10 +62,10 @@ export function SessionAuditPanel({
   const history = events.length > 0 ? [] : actions.filter((action) => !isPendingAction(action));
   const historyGated = data?.audit_access === false;
 
-  const decide = (executionId: string, decision: ApprovalDecisionValue) => {
+  const decide = (executionId: string, decision: ApprovalDecisionValue, note?: string) => {
     setBusy((current) => ({ ...current, [executionId]: decision }));
     resolve.mutate(
-      { executionId, decision },
+      { executionId, decision, note },
       {
         onSuccess: () => {
           setOutcomes((current) => ({ ...current, [executionId]: decision }));
@@ -157,7 +157,7 @@ export function SessionAuditPanel({
                       <ApprovalRequest
                         key={action.execution_id}
                         request={approvalRequestFromAction(action, outcome === null)}
-                        onDecision={(decision) => decide(action.execution_id, decision)}
+                        onDecision={(decision, note) => decide(action.execution_id, decision, note)}
                         busyDecision={busy[action.execution_id] ?? null}
                         outcome={outcome}
                       />
