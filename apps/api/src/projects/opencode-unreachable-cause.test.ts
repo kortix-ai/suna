@@ -42,6 +42,21 @@ describe('the cause behind an unreachable', () => {
     expect(causeForThrow('not an error at all')).toBe('endpoint_error');
   });
 
+  test('a 401 from OUR control plane is not the same as one from the daemon', () => {
+    // Both arrive as a bare 401 and need OPPOSITE fixes: `control_plane_refused`
+    // means the session_sandboxes row is not `active` and we answered without
+    // ever dialling the box (a lifecycle ordering problem on our side);
+    // `unsigned_context` means the box rejected the signed context (a
+    // credential problem). Collapsing them is what made a session cycling for
+    // 38 minutes undiagnosable on 2026-09-28.
+    const causeFor401 = (hop: string | null) =>
+      hop === 'control_plane' ? 'control_plane_refused' : 'unsigned_context';
+    expect(causeFor401('control_plane')).toBe('control_plane_refused');
+    expect(causeFor401('daemon')).toBe('unsigned_context');
+    expect(causeFor401('provider_ingress')).toBe('unsigned_context');
+    expect(causeFor401(null)).toBe('unsigned_context');
+  });
+
   test('an http cause carries the actual status code', () => {
     // `http_${status}` must be the real code, so a 502 is never read as a 401.
     for (const status of [400, 404, 500, 502, 503]) {

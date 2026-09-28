@@ -1707,6 +1707,7 @@ async function runOpenSession(args: {
       session_id: row.sessionId,
       external_id: runningExternalId,
       cause: ensured.cause ?? 'unspecified',
+      hop: ensured.hop ?? 'unattributed',
     });
     // …and DURABLY, on the row. A log line is only reachable by someone with
     // log access at the moment it scrolls past; the row is queryable later, by
@@ -1727,6 +1728,7 @@ async function runOpenSession(args: {
           metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
             opencodeUnreachableCause: nextCause,
             opencodeUnreachableCauseAt: new Date().toISOString(),
+            ...(ensured.hop ? { opencodeUnreachableHop: ensured.hop } : {}),
           })}::jsonb`,
         })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))

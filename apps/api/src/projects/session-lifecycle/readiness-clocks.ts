@@ -19,6 +19,7 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
   // bug keeps setting.
   'opencodeUnreachableCause',
   'opencodeUnreachableCauseAt',
+  'opencodeUnreachableHop',
 ] as const;
 
 /**

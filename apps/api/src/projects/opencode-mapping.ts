@@ -31,6 +31,7 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
   encodeKortixUserContext,
 } from '../shared/kortix-user-context';
+import { PROXY_HOP_HEADER } from '../sandbox-proxy/proxy-hop';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
@@ -90,7 +91,16 @@ export async function sandboxOpencodeEndpoint(
 export type UnreachableCause =
   /** No service key for this box — nothing was ever sent. */
   | 'no_key'
-  /** The daemon refused the signed context (401). Never transient. */
+  /**
+   * OUR OWN control plane refused, without ever dialling the box: the
+   * `session_sandboxes` row is not `active` (see `sandbox-proxy/proxy-hop.ts`).
+   *
+   * This was previously indistinguishable from `unsigned_context`, and the two
+   * need OPPOSITE fixes — one is a lifecycle ordering problem on our side, the
+   * other is a credential the box rejects. Both arrive as a bare 401.
+   */
+  | 'control_plane_refused'
+  /** The DAEMON refused the signed context (401). Never transient. */
   | 'unsigned_context'
   /** The daemon answered, with a status we cannot use. Carries the code. */
   | `http_${number}`
@@ -121,6 +131,8 @@ export type ListResult =
       bootPhase?: string;
       /** Present on every `unreachable`. See `UnreachableCause`. */
       cause?: UnreachableCause;
+      /** Which hop answered, when it said (`sandbox-proxy/proxy-hop.ts`). */
+      hop?: string;
     };
 
 /** The daemon names its boot phase on every 503 — see the daemon's boot-phase.ts. */
@@ -164,14 +176,35 @@ export async function listSandboxOpencodeSessions(
     // into a silent `unreachable` is what let a userId-less caller disable the
     // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
     // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
+    // WHICH hop answered. A 401 from our own control plane (the row is not
+    // `active`) and a 401 from the daemon (it rejected the signed context) are
+    // the same status code and need opposite fixes. `proxy-hop.ts` exists
+    // precisely so this is answerable; the session list never asked.
+    const hop = res.headers.get(PROXY_HOP_HEADER)?.trim() || null;
     if (res.status === 401) {
-      appLogger.warn('[opencode-mapping] daemon refused the session list (unsigned context)', {
+      const fromControlPlane = hop === 'control_plane';
+      appLogger.warn('[opencode-mapping] session list refused with 401', {
         externalId,
         hasUserId: Boolean(userId),
+        hop: hop ?? 'unattributed',
+        // `true` means WE refused, before the box was ever dialled.
+        controlPlane: fromControlPlane,
       });
-      return { ok: false, reason: 'unreachable', cause: 'unsigned_context' };
+      return {
+        ok: false,
+        reason: 'unreachable',
+        cause: fromControlPlane ? 'control_plane_refused' : 'unsigned_context',
+        ...(hop ? { hop } : {}),
+      };
     }
-    if (!res.ok) return { ok: false, reason: 'unreachable', cause: `http_${res.status}` };
+    if (!res.ok) {
+      return {
+        ok: false,
+        reason: 'unreachable',
+        cause: hop === 'control_plane' ? 'control_plane_refused' : `http_${res.status}`,
+        ...(hop ? { hop } : {}),
+      };
+    }
     const data = (await res.json()) as unknown;
     const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];
     return { ok: true, sessions };
@@ -195,6 +228,8 @@ export interface EnsureResult {
   bootPhase?: string;
   /** WHY, when `reason` is `unreachable`. See `UnreachableCause`. */
   cause?: UnreachableCause;
+  /** Which hop answered, when it said so. */
+  hop?: string;
 }
 
 /**
@@ -223,6 +258,7 @@ export async function ensureOpencodeSessionPin(input: {
       ...(listed.bootPhase ? { bootPhase: listed.bootPhase } : {}),
       // Carry the WHY to the open, which is the only place a human sees it.
       ...(listed.cause ? { cause: listed.cause } : {}),
+      ...(listed.hop ? { hop: listed.hop } : {}),
     };
   }
 
