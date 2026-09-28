@@ -735,6 +735,18 @@ describe('flattenSessionGroups', () => {
     ]);
   });
 
+  test('only the last sub-agent of a group ends the connector', () => {
+    const coordinator = makeSession({ session_id: 'coord-1' });
+    const childA = makeSession({ session_id: 'child-a', metadata: { spawned_by_session: 'coord-1' } });
+    const childB = makeSession({ session_id: 'child-b', metadata: { spawned_by_session: 'coord-1' } });
+    const rows = flattenSessionGroups([coordinator, childA, childB]);
+    expect(rows.map((r) => [r.session.session_id, r.last])).toEqual([
+      ['coord-1', false],
+      ['child-a', false],
+      ['child-b', true],
+    ]);
+  });
+
   test('empty input yields an empty list', () => {
     expect(flattenSessionGroups([])).toEqual([]);
   });

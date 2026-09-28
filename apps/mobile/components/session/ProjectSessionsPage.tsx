@@ -49,7 +49,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
-import { ArrowElbowDownRightIcon, FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
+import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -65,6 +65,7 @@ import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { useCoveringRoute, useProjectRoute } from '@/components/session/ProjectRoutes';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import {
+  CONNECTOR_STROKE,
   SubsessionCountBadge,
   SubsessionTree,
   subsessionCountLabel,
@@ -117,7 +118,7 @@ interface SessionRowProps {
   session: ProjectSession;
   now: number;
   /** A sub-agent session (spawned by another session in this group, COR-162):
-   *  a small branch mark joins the status mark, indenting the label past the
+   *  a short connector elbow joins the status mark, indenting the label past the
    *  usual leading slot — the row's own tile stays full width. */
   nested?: boolean;
   /** Pending review-inbox items from this session (`needsYouBySession`): > 0 marks it `needs-you`. */
@@ -132,7 +133,7 @@ interface SessionRowProps {
  * the centre of the row's status mark: `SettingsRow` `px-4` (16) + half the
  * 20pt slot (10). Each sub-session title starts on the row's label edge:
  * `px-4` + the 20pt leading slot + its `mr-3` (12). A nested row's leading
- * adds the 12pt branch mark and its `gap-1.5` (6) before the mark to both.
+ * adds the 12pt elbow and its `gap-1.5` (6) before the mark to both.
  */
 const NESTED_LEAD = 12 + 6;
 const TRUNK_X_TOP_LEVEL = 16 + 10;
@@ -175,7 +176,19 @@ const SessionRow = React.memo(function SessionRow({
       leading={
         nested ? (
           <View className="flex-row items-center gap-1.5">
-            <Icon as={ArrowElbowDownRightIcon} size={12} className="text-muted-foreground/60" />
+            {/* Each row is its own tile, so no trunk can join the tiles: a
+                short elbow in the connector stroke (`SubsessionTree`) marks
+                the sub-agent instead of an icon. */}
+            <View
+              className="rounded-bl-md border-border"
+              style={{
+                width: 12,
+                height: 10,
+                marginTop: -10,
+                borderLeftWidth: CONNECTOR_STROKE,
+                borderBottomWidth: CONNECTOR_STROKE,
+              }}
+            />
             <SessionStatusMark status={status} />
           </View>
         ) : (

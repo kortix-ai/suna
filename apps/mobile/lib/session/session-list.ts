@@ -462,11 +462,13 @@ export function groupSectionsByCoordinator<T extends { sessions: ProjectSession[
 }
 
 /** One row of a flattened coordinator tree: a session plus whether it renders
- *  indented under its coordinator, with the sub-agent mark. */
+ *  indented under its coordinator, joined to it by a connector. */
 export interface SessionListRow {
   session: ProjectSession;
   /** True for a sub-agent session rendered under its coordinator. */
   nested: boolean;
+  /** True for the last sub-agent row of its group: its connector ends there. */
+  last: boolean;
 }
 
 /**
@@ -478,8 +480,10 @@ export interface SessionListRow {
 export function flattenSessionGroups(sessions: ProjectSession[]): SessionListRow[] {
   const rows: SessionListRow[] = [];
   for (const group of groupSessionsByCoordinator(sessions)) {
-    rows.push({ session: group.session, nested: false });
-    for (const child of group.children) rows.push({ session: child, nested: true });
+    rows.push({ session: group.session, nested: false, last: false });
+    group.children.forEach((child, index) =>
+      rows.push({ session: child, nested: true, last: index === group.children.length - 1 }),
+    );
   }
   return rows;
 }
