@@ -532,7 +532,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   the pull request does not. An hourly reconciler deletes environments whose
   branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
   `reconcile`). It also stops (never deletes) a host whose pull request is not
-  an open `preview` pull request, or that idled over 3 hours. A stopped host
+  an open `preview` pull request, or that idled over 1 hour. A stopped host
   keeps its disk; a redeploy or the next request to its URL starts it again.
 - A preview suite waits up to 45 min before it starts until the Platinum pool
   has 64 GB free and the managed org saw at most 100 new repositories in the
