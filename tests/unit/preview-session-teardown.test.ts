@@ -41,7 +41,7 @@ const listing = [
 
 let calls: string[] = [];
 
-function stubPlatinum(rows: unknown[] = listing) {
+function stubPlatinum(rows: unknown[] = listing, reread: Record<string, unknown> = {}) {
   calls = [];
   vi.stubGlobal(
     'fetch',
@@ -50,6 +50,11 @@ function stubPlatinum(rows: unknown[] = listing) {
       const method = String(init?.method ?? 'GET').toUpperCase();
       if (method === 'GET' && parsed.pathname === '/v1/sandboxes') {
         return new Response(JSON.stringify({ rows, has_more: false, total: rows.length }));
+      }
+      const one = /^\/v1\/sandboxes\/([^/]+)$/.exec(parsed.pathname);
+      if (method === 'GET' && one) {
+        const row = reread[one[1]!] ?? (rows as Array<{ id: string }>).find((r) => r.id === one[1]);
+        return new Response(JSON.stringify(row ?? {}), { status: row ? 200 : 404 });
       }
       calls.push(`${method} ${parsed.pathname}`);
       return new Response('{}');
@@ -109,6 +114,18 @@ describe('preview teardown and sweep against the provider API', () => {
       'POST /v1/sandboxes/sfeature/stop',
       'POST /v1/sandboxes/host-feature/stop',
     ]);
+  });
+
+  it('the reconcile keeps a host that a deploy started since the listing', async () => {
+    const feature = listing.find((row) => row.id === 'host-feature')!;
+    stubPlatinum(listing, { 'host-feature': { ...feature, lastActivityAt: new Date().toISOString(), metadata: { ...feature.metadata, pr_number: '7' } } });
+    await reconcilePlatinumPreviews({
+      apiUrl: 'https://platinum.example.test',
+      apiKey: 'k',
+      activePullRequests: new Map([[7, 'a'.repeat(40)]]),
+      liveBranchSandboxNames: new Set(['kortix-env-feature-x']),
+    });
+    expect(calls.some((call) => call.includes('host-feature') || call.includes('sfeature'))).toBe(false);
   });
 
   it('a suite waits for pool headroom and never launches into a full pool once superseded', async () => {

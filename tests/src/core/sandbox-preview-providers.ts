@@ -792,14 +792,21 @@ export async function reconcilePlatinumPreviews(input: {
   const stoppedSessions = await sweepStalePreviewSessions(api, sandboxes, surviving);
   // Stop hosts of closed pull requests and hosts idle past the limit, with
   // their session boxes: a stopped host's API cannot reap them.
-  const idleHosts = selectIdlePreviewHosts(
-    sandboxes.filter((sandbox) => !staleIds.has(sandbox.id)),
-    {
-      openPullRequests: new Set(input.activePullRequests.keys()),
-      nowMs: Date.now(),
-      maxIdleMs: envNumber('PREVIEW_HOST_MAX_IDLE_HOURS', PREVIEW_HOST_MAX_IDLE_MS / 3_600_000) * 3_600_000,
-    },
-  );
+  const hostRule = {
+    openPullRequests: new Set(input.activePullRequests.keys()),
+    nowMs: Date.now(),
+    maxIdleMs: envNumber('PREVIEW_HOST_MAX_IDLE_HOURS', PREVIEW_HOST_MAX_IDLE_MS / 3_600_000) * 3_600_000,
+  };
+  const idleHosts: string[] = [];
+  // Re-read each candidate just before the stop. A deploy that started it
+  // since the listing has fresh activity; stopping it made that deploy fail
+  // with `entered state=stopped` (2026-09-28).
+  for (const id of selectIdlePreviewHosts(sandboxes.filter((sandbox) => !staleIds.has(sandbox.id)), hostRule)) {
+    const current = await api.json<ListedPlatinumSandbox>(`/v1/sandboxes/${id}`).catch(() => null);
+    if (current && selectIdlePreviewHosts([current], { ...hostRule, nowMs: Date.now() }).length === 1) {
+      idleHosts.push(id);
+    }
+  }
   const idleHostNames = sandboxes
     .filter((sandbox) => idleHosts.includes(sandbox.id) && sandbox.name)
     .map((sandbox) => sandbox.name as string);
