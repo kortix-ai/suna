@@ -97,7 +97,6 @@ relative to `apps/web/src/features/workspace/` unless given in full.
 | **`shared/access/access-row.tsx`** | Entity rows, `UserAvatar`, `InlineMeta` — the single row used by every access surface |
 | **`customize/sections/view/changes-view.tsx`** | Tinted `size-9` icon tiles, `Badge variant="kortix" size="xs"`, row inline actions, `TabsListCompact` |
 | **`customize/sections/view/channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
-| **`customize/sections/view/dev-view.tsx`** | `Stepper` onboarding, command blocks, minimal bordered panels |
 | **`apps/web/src/features/tunnel/tunnel-overview.tsx`** | Device/computer list; the former `computers-view` delegated to it |
 
 **Shells:** `capabilities/index/customize-index-page.tsx` (the customize index)

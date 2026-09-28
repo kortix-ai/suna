@@ -10,8 +10,7 @@ import {
 import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
 import { buildSlackInstallUrl, completeSlackOauthInstall } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { bindChatThread } from '../../channels/core/threads';
-import { resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
+import { bindSlackThreadToSession } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -361,7 +360,11 @@ projectsApp.openapi(
 // session, so a later human reply in that thread routes back into this session
 // (approval loops, follow-up Q&A). This writes the same `chat_threads` row the
 // inbound `bind_chat_thread` post-create action does; without it, replies to a
-// non-Slack-originated thread are classified `ignore` and dropped.
+// non-Slack-originated thread are classified `ignore` and dropped. A session's
+// `slack send --channel` binds its thread automatically (connectors/gateway.ts
+// `withSlackThreadBinding`); this route binds a thread the session did not post.
+// First mapping wins: a thread owned by another session answers 409. `force`
+// moves it between two sessions of the same project and user (403 otherwise).
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -375,7 +378,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ ok: z.boolean(), bound: z.boolean() }).passthrough(), 'Bound'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -428,6 +431,7 @@ projectsApp.openapi(
       channel?: string;
       thread_ts?: string;
       workspace_id?: string;
+      force?: boolean;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -460,18 +464,43 @@ projectsApp.openapi(
     if (!sess) {
       return c.json({ error: 'session not found in project' }, 404);
     }
-    const workspaceId =
-      body.workspace_id?.trim() || (await resolveWorkspaceIdForChannel(projectId, channel));
-    if (!workspaceId) {
+    const binding = await bindSlackThreadToSession({
+      projectId,
+      sessionId,
+      channel,
+      threadTs,
+      workspaceId: body.workspace_id?.trim() || null,
+      force: body.force === true,
+    });
+    if (binding.bound) return c.json({ ok: true, channel, ...binding });
+    if (binding.reason === 'workspace_unknown') {
       return c.json(
-        {
-          error:
-            'could not resolve Slack workspace for channel (is the channel bound to this project?)',
-        },
+        { error: 'could not resolve the Slack workspace: this project has no Slack install', code: 'SLACK_WORKSPACE_UNKNOWN', ...binding },
         400,
       );
     }
-    await bindChatThread({ platform: 'slack', projectId, workspaceId, threadId: threadTs, sessionId });
-    return c.json({ ok: true, bound: true, channel, thread_ts: threadTs });
+    if (binding.reason === 'thread_bound_to_another_session') {
+      return c.json(
+        {
+          error: `this Slack thread is bound to session ${binding.owner_session_id ?? '(unknown)'}; replies in it go to that session. Re-run with --force (body "force": true) to move it to this session, or post a new top-level message to start a thread for this session.`,
+          code: 'THREAD_BOUND_TO_ANOTHER_SESSION',
+          channel,
+          ...binding,
+        },
+        409,
+      );
+    }
+    return c.json(
+      {
+        error:
+          binding.reason === 'thread_owned_by_another_user'
+            ? `this Slack thread is bound to session ${binding.owner_session_id}, which another user started; --force moves only threads of your own sessions. Post a new top-level message instead.`
+            : 'this Slack thread belongs to another project and cannot be bound here. Post a new top-level message instead.',
+        code: binding.reason === 'thread_owned_by_another_user' ? 'THREAD_OWNED_BY_ANOTHER_USER' : 'THREAD_OWNED_BY_ANOTHER_PROJECT',
+        channel,
+        ...binding,
+      },
+      403,
+    );
   },
 );

@@ -41,6 +41,11 @@ interface World {
   /** What the file, upload, and conversations routes answer with (403), to
    *  reproduce the API's structured denial. */
   denial: Record<string, unknown> | null;
+  /** `thread_binding` the fake connector returns on send_message; null = omitted (older API). */
+  sendBinding: Record<string, unknown> | null;
+  /** thread_ts → owning session, for the fake bind-thread route. */
+  threadOwners: Record<string, string>;
+  binds: Array<Record<string, unknown>>;
 }
 
 // The API's structured denial (apps/api/src/iam/denial-message.ts): `error` is
@@ -78,6 +83,7 @@ function slackDataFor(action: string, args: Record<string, unknown>): unknown {
       return { ok: true, ts: args.ts, channel: args.channel };
     case 'delete_message':
     case 'add_reaction':
+    case 'remove_reaction':
       return { ok: true };
     case 'get_history':
       return { ok: true, messages: [{ type: 'message', text: 'history', channel: args.channel }] };
@@ -196,6 +202,9 @@ beforeEach(() => {
     manifests: [],
     reservedFailure: null,
     denial: null,
+    sendBinding: null,
+    threadOwners: {},
+    binds: [],
   };
   server = Bun.serve({
     port: 0,
@@ -231,7 +240,33 @@ beforeEach(() => {
         if (body.connector !== SLACK_CHANNEL_CONNECTOR_SLUG && body.connector !== 'slack') {
           return json({ ok: false, status: 'denied', reason: 'connector_not_found' }, 404);
         }
-        return json({ ok: true, data: slackDataFor(body.action, body.args ?? {}), risk: 'read' });
+        const data = slackDataFor(body.action, body.args ?? {}) as Record<string, unknown>;
+        if (body.action === 'send_message' && world.sendBinding) data.thread_binding = world.sendBinding;
+        return json({ ok: true, data, risk: 'read' });
+      }
+
+      if (url.pathname === `/v1/projects/${PROJECT}/channels/slack/bind-thread`) {
+        const body = (await req.json()) as { thread_ts: string; force?: boolean };
+        world.binds.push(body);
+        const owner = world.threadOwners[body.thread_ts];
+        if (owner && owner !== SESSION && !body.force) {
+          return json(
+            {
+              error: `this Slack thread is bound to session ${owner}; replies in it go to that session. Re-run with --force`,
+              code: 'THREAD_BOUND_TO_ANOTHER_SESSION',
+              bound: false,
+            },
+            409,
+          );
+        }
+        world.threadOwners[body.thread_ts] = SESSION;
+        return json({
+          ok: true,
+          bound: true,
+          thread_ts: body.thread_ts,
+          session_id: SESSION,
+          ...(owner && owner !== SESSION ? { rebound_from: owner } : {}),
+        });
       }
 
       if (url.pathname === `/v1/projects/${PROJECT}/channels/slack/file/upload`) {
@@ -301,6 +336,11 @@ describe('slack CLI', () => {
         args: ['react', '--channel', 'C1', '--ts', '111.222', '--emoji', 'white_check_mark'],
         action: 'add_reaction',
         expectedArgs: { channel: 'C1', timestamp: '111.222', name: 'white_check_mark' },
+      },
+      {
+        args: ['unreact', '--channel', 'C1', '--ts', '111.222', '--emoji', 'eyes'],
+        action: 'remove_reaction',
+        expectedArgs: { channel: 'C1', timestamp: '111.222', name: 'eyes' },
       },
       {
         args: ['history', '--channel', 'C1', '--limit', '3'],
@@ -446,6 +486,40 @@ describe('slack CLI', () => {
     });
     expect(world.manifests).toEqual(['Test Slack App']);
     // Same reason as above: this one spawns the CLI seven times.
+  }, 30_000);
+
+  test('reports where thread replies go on every send path, and --force moves a foreign thread', async () => {
+    world.sendBinding = { bound: true, thread_ts: '111.222', session_id: SESSION };
+    const bound = asObject(await runSlack(['send', '--channel', 'U1', '--text', 'Approve?']));
+    expect(bound.thread_binding).toEqual({ bound: true, thread_ts: '111.222', session_id: SESSION });
+
+    world.sendBinding = { bound: false, thread_ts: '100.1', reason: 'thread_bound_to_another_session', owner_session_id: 'sess-other' };
+    const foreign = asObject(await runSlack(['send', '--channel', 'C1', '--thread', '100.1', '--text', 'hi']));
+    expect(foreign.thread_binding).toMatchObject({ bound: false, owner_session_id: 'sess-other' });
+    expect(String((foreign.thread_binding as CliObject).hint)).toContain('--force');
+
+    world.sendBinding = null;
+    const older = asObject(await runSlack(['send', '--channel', 'C1', '--text', 'hi']));
+    expect(older.thread_binding).toMatchObject({ bound: 'unknown', thread_ts: '111.222', reason: 'not_reported' });
+    expect(String((older.thread_binding as CliObject).hint)).toContain('slack bind-thread');
+
+    const uploadPath = join(tempDir, 'r.txt');
+    writeFileSync(uploadPath, 'x');
+    const topLevelFile = asObject(await runSlack(['send', '--channel', 'C1', '--file', uploadPath]));
+    expect(topLevelFile.thread_binding).toMatchObject({ bound: false, reason: 'top_level_file' });
+
+    world.threadOwners['200.2'] = 'sess-other';
+    const threadedFile = asObject(await runSlack(['send', '--channel', 'C1', '--thread', '200.2', '--file', uploadPath]));
+    expect(threadedFile.thread_binding).toMatchObject({ bound: false, reason: 'thread_bound_to_another_session' });
+
+    const refused = asObject(await runSlack(['bind-thread', '--channel', 'C1', '--thread', '200.2'], { ok: false }));
+    expect(refused).toMatchObject({ ok: false, code: 'API_ERROR', status: 409 });
+    expect(String(refused.error)).toContain('sess-other');
+    expect(world.threadOwners['200.2']).toBe('sess-other');
+
+    const forced = asObject(await runSlack(['bind-thread', '--channel', 'C1', '--thread', '200.2', '--force']));
+    expect(forced).toMatchObject({ ok: true, bound: true, session_id: SESSION, rebound_from: 'sess-other' });
+    expect(world.binds.at(-1)).toMatchObject({ session_id: SESSION, channel: 'C1', thread_ts: '200.2', force: true });
   }, 30_000);
 
   test('manifest reports one /v1 mount when KORTIX_API_URL already includes /v1', async () => {

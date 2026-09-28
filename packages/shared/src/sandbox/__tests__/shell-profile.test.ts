@@ -172,6 +172,7 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
+      managedSkillsPath: 'managed-skills',
     });
     const at = image.indexOf(kortixShellProfileRun());
     expect(at).toBeGreaterThan(-1);

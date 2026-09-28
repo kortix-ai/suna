@@ -86,7 +86,8 @@ import { upstreamTiming } from './middleware/upstream-timing';
 import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
-import { oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { createMcpApp } from './mcp';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
@@ -116,7 +117,7 @@ import {
 } from './projects/suna-migration/suna-migration-worker';
 import { router } from './router';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
+import { runtimeAssetsApp, runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
@@ -647,6 +648,17 @@ app.get('/.well-known/oauth-authorization-server', (c) => {
   });
 });
 
+// RFC 9728 protected-resource metadata for a project's MCP endpoint — what an
+// MCP client reads after the endpoint's 401 challenge to find the authorization
+// server above.
+app.get('/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp', (c) => {
+  const projectId = c.req.param('projectId');
+  if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
+  return c.json(mcpProtectedResourceMetadata(projectId, new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+
 app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
@@ -977,6 +989,8 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
+// Before projectsApp: the MCP route answers its own 401 with an OAuth challenge.
+app.route('/v1/projects', createMcpApp(dispatchInProcess));
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
@@ -1712,6 +1726,9 @@ async function bootServices() {
     // Absent binaries are a legitimate state (a checkout that never built one);
     // the route reports that per component. Nothing to do here.
   });
+  // Same reasoning, same shape, for the chunk index: it reads the same ~200 MB
+  // and would otherwise be built inside the first converging box's request.
+  void warmRuntimeChunkIndex();
 }
 
 // Graceful shutdown
@@ -1788,6 +1805,16 @@ import {
  * outside Hono names its entrypoint class so its row says what it was.
  * `unit-audit-boundary-wiring.test.ts` fails if a branch escapes it.
  */
+// MCP tool calls (./mcp) re-enter the API as ordinary requests: through the
+// audit boundary and this dispatcher, never around them. There is no socket,
+// so nothing to time out and nothing to upgrade.
+const IN_PROCESS_SERVER = { timeout() {}, upgrade: () => false };
+async function dispatchInProcess(req: Request): Promise<Response> {
+  const url = getRequestUrl(req, config.PORT);
+  const response = await runInboundAudit(req, url, () => dispatchInbound(req, url, IN_PROCESS_SERVER));
+  return response ?? new Response(null, { status: 500 });
+}
+
 async function dispatchInbound(
   req: Request,
   url: URL,

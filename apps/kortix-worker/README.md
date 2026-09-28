@@ -47,5 +47,6 @@ bundle directly: `apps/api/src/git-proxy/compiled-pi-runtime.test.ts` and
 `pi-worker-bundle.test.ts` (the latter boots the real `dist/worker-runtime.mjs`
 under node and asserts `/health`). Build first: `bun run build`.
 
-Provenance: graduated from `spikes/pi-worker` (PR #6924), where the Phase 0
-gates S0.1–S0.5 and the Daytona benchmarks live.
+Provenance: graduated from the `pi-worker` spike (PR #6924). The spike held the
+Phase 0 gates S0.1–S0.5 and the Daytona benchmarks. It was removed from the
+tree; read it in the git history of PR #6924.

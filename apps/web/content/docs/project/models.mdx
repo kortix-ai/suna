@@ -191,14 +191,24 @@ shared with the project never uses a key granted to one member, so the list
 leaves those keys out and saving one is refused. Changing a shared session to a
 model that only such keys reach is refused too, instead of failing every turn.
 
+Sharing a private session, with the whole project or with chosen people, is
+checked the same way. When its model ran only on keys that work in your
+private sessions, such as your own ChatGPT connection, the session switches to
+every key shared with the whole project for that provider. When no such key
+runs the model, the share is refused with `409 SHARED_SESSION_NEEDS_PROJECT_KEY`
+and the session stays private. Share a key with the whole project, or switch
+the session to another model, then share it.
+
 ### Sessions that name only a model
 
 The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
 runs only on pooled keys, the session gets every key its creator may use for
 that provider, up to ten, so they rotate. The agent must be allowed the key's
-name in its `secrets`. Changing a running session to such a model does the
-same when the session has no selection for that provider. A selection made on
-purpose, an empty one included, is left alone.
+name in its `secrets`. Otherwise the turn fails with `agent_grant_excludes`:
+add the name, for example `CODEX_AUTH_JSON` for ChatGPT, to the agent's
+`secrets`, or choose another agent. Changing a running session to such a model
+does the same when the session has no selection for that provider. A selection
+made on purpose, an empty one included, is left alone.
 
 Your own keys and ChatGPT connections count only in a session that is private
 to you and acts on your behalf. In a shared session only keys shared with the
@@ -233,9 +243,30 @@ again. Reconnecting keeps the account's name, access, and session selections.
 Only the member who connected an account can reconnect it. Account owners and
 admins can delete any account.
 
+When an account's login stops working, the account shows **Needs
+reconnection**. This happens when ChatGPT rejects the renewal of the login, or
+when the stored login cannot be read. A brief outage at ChatGPT does not mark
+an account. The member who connected the account sees **Reconnect** beside it.
+**Session overrides → Provider keys** shows the same mark. A turn that fails
+names the accounts that need reconnection. The account stays selected, and
+reconnecting it or a successful renewal clears the mark.
+
+A turn that fails for this reason also shows the fix beside its error:
+
+- `provider_reauth_required` shows **Reconnect ChatGPT**. It appears in your
+  own private session, and in a shared session that selects ChatGPT accounts.
+- `provider_not_connected` shows **Connect ChatGPT**. It appears only in your
+  own private session without a ChatGPT selection. A session with a selection
+  is fixed in **Session overrides → Provider keys** instead.
+
+Both open your ChatGPT accounts. After you connect or reconnect, send your
+message again.
+
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is
-the default in their own private session. A session shared with the project
+the default in their own private session. A connection marked **Needs
+reconnection** is the default only when all of the member's connections are
+marked. A session shared with the project
 never uses a member's own connection: select a connection shared with the whole
 project for it. Scheduled sessions cannot use an **Only you** account either.
 Another member's shared connection requires an explicit selection. The legacy

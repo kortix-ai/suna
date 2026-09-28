@@ -9,7 +9,7 @@ Every change reaches `main` through a pull request. Each PR carries a demo video
 change, recorded with **agent-browser**. The video is uploaded with `gh --attach` and appears
 in the PR body. This skill is that loop, end to end.
 
-`AGENTS.md` owns the policy: canonical branches, merge approval, and the customer-data
+`AGENTS.md` owns the policy: canonical branches, when to self-merge, and the customer-data
 rule. This skill is the procedure. Read `AGENTS.md` → "First, at session start" and
 "Default delivery" before step 1 if you have not.
 
@@ -94,6 +94,11 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
+# A fresh preview account is free tier: no managed models, empty model picker
+# (preview-environments.md -> "Sign in"). Subscribe it before recording ANY
+# session/agent behavior, or the demo can only show static UI.
+.agents/skills/contributing/scripts/preview-subscribe.sh "$S" "$SESSION"
+
 mkdir -p output/pr
 ab set viewport 1440 900
 ab open "$S/<changed route>"
@@ -157,9 +162,9 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Keep the PR mergeable: `gh pr view <pr> --json mergeable` must not say `CONFLICTING`.
   While it conflicts, GitHub runs no `pull_request` workflow (CI, `Tests`, secret scans).
   Only the preview runs. Merge `main` into the branch and push.
-- A push redeploys the preview in place. That redeploy skips `--target-full`, and the
-  sticky comment says `live; NOT tested`. Remove and re-add `preview` to test the new
-  head commit.
+- A push redeploys the preview in place (~7 min). The label never runs `--target-full`;
+  the sticky comment says `live; NOT tested`. To test the head commit against the
+  preview, run `gh workflow run deploy-preview.yml -f pr_number=<N>` (40–80 min).
 - When the behaviour in the video changes, record the video again and repeat step 6.
 - Edit the body after an upload from the live copy:
   `gh pr view <pr> --json body --jq .body > output/pr/body.md`. The old local file still holds
@@ -168,13 +173,17 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Merge `main` into the branch daily. Git's rename detection carries `main`'s edits
   through moved files. GitHub's conflict check does not, so push the merge.
 
-### 8. Hand off
+### 8. Merge and hand off
 
 - Mark the PR ready: `gh pr ready <pr>`.
-- Report the PR URL, the preview origin, the test commands and their results, and anything
-  still unverified.
-- Merge only when the user says so (`AGENTS.md` → "Default delivery", rule 5). After a merge,
-  follow **Deploy Dev** to completion.
+- Self-merge when the change is verified (`AGENTS.md` → "Default delivery", rule 5): the
+  local checks passed, `gh pr checks <pr>` shows the `Tests` lanes green, and the PR is
+  mergeable. Do not wait for the user's approval. `gh pr merge <pr> --squash`.
+- After the merge, follow **Deploy Dev** to completion and verify the change on dev.
+- Report the PR URL, the merge SHA, the preview origin, the test commands and their
+  results, the dev verification, and anything still unverified.
+- Merging into `staging` or `prod`, and every release step, still needs the user's explicit
+  approval (the **kortix-release** skill).
 - Remove the `preview` label when the environment is no longer needed. Closing the PR does
   not tear it down.
 
@@ -182,7 +191,7 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Label | Effect | Who can add it |
 | --- | --- | --- |
-| `preview` | Builds and deploys one full self-host environment for the branch, then runs `pnpm test -- --target-full` against it. Also runs the six-lane `Tests` suite (`tests.yml`). A push redeploys the environment. Removing the label tears it down. | Needs write access, and a PR from a branch of this repo (not a fork). |
+| `preview` | Builds and deploys one full self-host environment for the branch (~7 min). It does not run `--target-full`; dispatch `deploy-preview.yml` for that. Also runs the six-lane `Tests` suite (`tests.yml`). A push redeploys the environment. Removing the label tears it down. | Needs write access, and a PR from a branch of this repo (not a fork). |
 | `test` | Runs the six-lane `Tests` suite (`core`, `browser-1`…`4`, `packages`, ~8 min) on the PR. Adding the label re-triggers the suite without a push. | Triage access. |
 | `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json`. | Triage access. |
 

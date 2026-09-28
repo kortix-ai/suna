@@ -141,7 +141,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     verb: 'POST',
     name: 'Send message',
     description:
-      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread.',
+      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread. From a session, the thread is bound to that session, so human replies in it come back to it; `thread_binding` in the result reports whether the bind held.',
     risk: 'write',
     properties: {
       channel: { type: 'string', description: 'Channel ID (e.g. C0123) or user ID for a DM.' },
@@ -195,6 +195,21 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
       channel: { type: 'string', description: 'Channel ID the message is in.' },
       timestamp: { type: 'string', description: 'Timestamp (ts) of the target message.' },
       name: { type: 'string', description: 'Emoji name without colons, e.g. "white_check_mark".' },
+    },
+    required: ['channel', 'timestamp', 'name'],
+  },
+  {
+    path: 'remove_reaction',
+    method: 'reactions.remove',
+    verb: 'POST',
+    name: 'Remove reaction',
+    description:
+      'Remove an emoji reaction you added to a message. Requires `channel`, the message `timestamp`, and the emoji `name` (without colons).',
+    risk: 'write',
+    properties: {
+      channel: { type: 'string', description: 'Channel ID the message is in.' },
+      timestamp: { type: 'string', description: 'Timestamp (ts) of the target message.' },
+      name: { type: 'string', description: 'Emoji name without colons, e.g. "eyes".' },
     },
     required: ['channel', 'timestamp', 'name'],
   },

@@ -11,6 +11,7 @@ import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-vers
 import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
 import { projectSessions, projects } from '@kortix/db';
 import { sql } from 'drizzle-orm';
+import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
 import { mintSessionToken } from '../../platform/services/session-sandbox';
 import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { recordAuditEvent } from '../../shared/audit';
@@ -188,6 +189,60 @@ async function probeDaemonWithServiceKey(row: LegacyBootstrapRow, serviceKey: st
   }
 }
 
+/**
+ * How long the repair's own credential lives. It is revoked the moment the
+ * exec returns; the expiry is only the backstop for a process that dies
+ * mid-repair. Sized to the script's exec budget, not to the session.
+ */
+const REPAIR_TOKEN_TTL_MS = 30 * 60_000;
+
+/**
+ * Mint the credential the repair runs on.
+ *
+ * NOT a session credential. `validateAccountToken` refuses any token carrying
+ * a `session_id` whose sandbox row is not `provisioning`/`active`
+ * (repositories/account-tokens.ts) — which is exactly the state a repair has
+ * to work in. A project-scoped PAT with a short expiry is vouched for by the
+ * control plane at repair time and is not hostage to the row being repaired.
+ * It only ever fetches `/v1/runtime-assets/*`, and it is revoked when the exec
+ * returns.
+ */
+async function mintRepairCredential(
+  row: LegacyBootstrapRow,
+): Promise<{ secret: string; release: () => Promise<void> } | null> {
+  if (!row.sessionId) return null;
+  const [session] = await db
+    .select({
+      accountId: projectSessions.accountId,
+      projectId: projectSessions.projectId,
+      createdBy: projectSessions.createdBy,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .limit(1);
+  if (!session?.createdBy) return null;
+  const token = await createAccountToken({
+    accountId: session.accountId,
+    userId: session.createdBy,
+    projectId: session.projectId,
+    name: `Runtime repair ${row.sandboxId.slice(0, 8)}`,
+    expiresAt: new Date(Date.now() + REPAIR_TOKEN_TTL_MS),
+    // Purpose-scoped, NOT a laptop-CLI PAT. A project-scoped token with a null
+    // `agentGrant` resolves to the full project authority of `session.createdBy`;
+    // an EMPTY grant makes `agentMayPerform` deny every `project.*` action while
+    // the authentication-only `/v1/runtime-assets/*` routes stay reachable, which
+    // is all the repair fetches. The narrow scope is enforced by the token model
+    // here, not merely described by the script's behaviour.
+    agentGrant: { agent: 'runtime-repair', permissions: [], connectors: [], env: [] },
+  });
+  return {
+    secret: token.secretKey,
+    release: async () => {
+      await revokeAccountToken(token.tokenId, session.accountId, session.projectId);
+    },
+  };
+}
+
 export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstrapDeps {
   const provider = getProvider(row.provider as ProviderName);
   return {
@@ -243,6 +298,9 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
+    mintRepairToken: () => mintRepairCredential(row),
+    // Asked only when the daemon answered nothing: is there still a box there?
+    providerRunning: async () => (await provider.getStatus(row.externalId)) === 'running',
     entrypointSource: () => {
       try {
         return readFileSync(runtimeEntrypointPath(), 'utf8');

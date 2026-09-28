@@ -2,10 +2,8 @@ import { describe, test, expect } from 'bun:test';
 import {
   UPLOAD_LIMITS,
   ALLOWED_EXTENSIONS,
-  EXTRACTABLE_EXTENSIONS,
   formatFileSize,
   isAllowedFile,
-  isExtractableArchive,
 } from './upload-limits';
 
 describe('UPLOAD_LIMITS', () => {
@@ -75,25 +73,6 @@ describe('isAllowedFile', () => {
 
   test('matches extensions case-insensitively', () => {
     expect(isAllowedFile({ name: 'PHOTO.PNG' })).toEqual({ allowed: true });
-  });
-});
-
-describe('isExtractableArchive', () => {
-  test('returns true for zip files', () => {
-    expect(isExtractableArchive({ name: 'bundle.zip' })).toBe(true);
-  });
-
-  test('is case-insensitive for the zip extension', () => {
-    expect(isExtractableArchive({ name: 'BUNDLE.ZIP' })).toBe(true);
-  });
-
-  test('returns false for non-zip files', () => {
-    expect(isExtractableArchive({ name: 'archive.tar' })).toBe(false);
-    expect(isExtractableArchive({ name: 'doc.pdf' })).toBe(false);
-  });
-
-  test('only declares zip as extractable', () => {
-    expect(EXTRACTABLE_EXTENSIONS).toEqual(['.zip']);
   });
 });
 

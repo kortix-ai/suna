@@ -28,6 +28,11 @@ import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { REAP_CONCURRENCY } from '../reaper-constants';
 import { hasProviderBoxReference } from './orphan-box-references';
+import {
+  EMPTY_ROW_VM_DIVERGENCE,
+  closeRowVmDivergence,
+  type RowVmDivergenceResult,
+} from './row-vm-divergence';
 
 const ORPHAN_BOX_GRACE_MS = 60 * 60_000; // a box must be this old to qualify
 const ORPHAN_REAP_MAX_PER_PASS = 50; // bound provider stop() calls per pass
@@ -37,10 +42,18 @@ export interface OrphanReapResult {
   orphans: number;
   stopped: number;
   errors: number;
+  /** Parked rows whose VM this pass found running, and stopped. */
+  divergence: RowVmDivergenceResult;
 }
 
 export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanReapResult> {
-  const zero: OrphanReapResult = { listed: 0, orphans: 0, stopped: 0, errors: 0 };
+  const zero: OrphanReapResult = {
+    listed: 0,
+    orphans: 0,
+    stopped: 0,
+    errors: 0,
+    divergence: EMPTY_ROW_VM_DIVERGENCE,
+  };
   if (process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED === 'false') return zero;
   const boxes: Array<{
     provider: ProviderName;
@@ -66,7 +79,14 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
 
   const [sessionKeepRows, environmentKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
     db
-      .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
+      .select({
+        provider: sessionSandboxes.provider,
+        externalId: sessionSandboxes.externalId,
+        // Carried for the row↔VM divergence pass below: a row whose status says
+        // the box is off, over a box this listing proves is running.
+        status: sessionSandboxes.status,
+        sandboxId: sessionSandboxes.sandboxId,
+      })
       .from(sessionSandboxes)
       .where(isNotNull(sessionSandboxes.externalId)),
     db
@@ -91,6 +111,22 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)
       .map((row) => `${row.provider}:${row.externalId}`),
   );
+
+  // Same listing, the other divergence direction: a box that IS referenced, by
+  // a row that says it should be off. The orphan filter below deliberately
+  // keeps every referenced box, so without this pass nothing would ever look.
+  const divergence = await closeRowVmDivergence({
+    boxes,
+    rows: sessionKeepRows.flatMap((row) =>
+      row.externalId
+        ? [{ provider: row.provider, externalId: row.externalId, status: row.status, sandboxId: row.sandboxId }]
+        : [],
+    ),
+    now,
+  }).catch((err) => {
+    console.warn('[row-vm] divergence pass failed:', err instanceof Error ? err.message : err);
+    return { ...EMPTY_ROW_VM_DIVERGENCE, errors: 1 };
+  });
 
   const cutoff = now.getTime() - ORPHAN_BOX_GRACE_MS;
   const orphans = boxes.filter(
@@ -129,5 +165,5 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   if (stopped || errors) {
     console.log('[reaper] orphan-box sweep', { listed: boxes.length, orphans: orphans.length, stopped, errors });
   }
-  return { listed: boxes.length, orphans: orphans.length, stopped, errors };
+  return { listed: boxes.length, orphans: orphans.length, stopped, errors, divergence };
 }
