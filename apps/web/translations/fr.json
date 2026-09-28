@@ -19287,6 +19287,7 @@
       "useKortix": "Modèles Kortix",
       "recommended": "Recommandé",
       "useKortixDescription": "Prêt tout de suite. Utilise les crédits de votre forfait.",
+      "useKortixNeedsPlan": "Nécessite un forfait Kortix ou des crédits.",
       "bringKey": "Ma propre clé API",
       "providerDescription": "Anthropic, OpenAI ou un autre fournisseur.",
       "keyConnected": "Une clé est connectée.",

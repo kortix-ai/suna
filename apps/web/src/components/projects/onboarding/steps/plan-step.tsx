@@ -21,10 +21,12 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup } from '@/components/ui/radio-group';
 import { Kortix } from '@/features/icon/icons/kortix';
-import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
+import { useAccountState } from '@/hooks/billing';
 import { useTranslations } from '@/i18n/use-translations';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { billingStateAllowsRun, resolveBillingState } from '@/lib/billing/billing-gate-state';
+import { isBillingEnabled } from '@/lib/config';
+import { useProjectModels } from '@kortix/sdk/react';
 
 import { hasModelsFrom, planAction, type PlanChoice } from '../plan-action';
 import { SelectionRow, StepShell } from '../step-shell';
@@ -37,13 +39,22 @@ import { SelectionRow, StepShell } from '../step-shell';
  */
 export function PlanStep({ projectId, onContinue }: { projectId: string; onContinue: () => void }) {
   const t = useTranslations('projectOnboarding.plan');
-  const { data: providers } = useRuntimeProviders();
-  const models = flattenModels(providers);
+  // The explicit project, never the route: `/new` has no `[id]` segment, and a
+  // route-scoped read saw 0 models there.
+  const models = useProjectModels(projectId);
   const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate(
     models,
     { projectId },
   );
-  const access = hasModelsFrom(models);
+  const { data: accountState } = useAccountState();
+  // A plan with an empty wallet still lists Kortix models; the billing state
+  // machine, not the model list, says whether they run. Billing off (self-host)
+  // has no wallet to check.
+  const access = {
+    ...hasModelsFrom(models),
+    kortixRunnable: !isBillingEnabled() || billingStateAllowsRun(resolveBillingState(accountState)),
+  };
+  const kortixReady = access.hasKortixModels && access.kortixRunnable;
   const offerKortix = showUpgradeOption || access.hasKortixModels;
   const [picked, setPicked] = useState<PlanChoice | null>(null);
   const choice: PlanChoice = picked ?? (offerKortix ? 'kortix' : 'byok');
@@ -84,7 +95,7 @@ export function PlanStep({ projectId, onContinue }: { projectId: string; onConti
                   {t('recommended')}
                 </Badge>
               }
-              description={t('useKortixDescription')}
+              description={kortixReady ? t('useKortixDescription') : t('useKortixNeedsPlan')}
               leading={<Kortix className="size-5 shrink-0" />}
             />
           )}

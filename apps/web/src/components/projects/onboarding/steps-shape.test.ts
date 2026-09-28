@@ -91,6 +91,14 @@ describe('models step', () => {
     expect(plan).toContain('projectId: string;');
   });
 
+  // `/new` has no `[id]` route segment. `useRuntimeProviders` reads the project
+  // from the route, so there it saw 0 models: "Kortix models" never showed and
+  // "Add a key" stayed after a key was saved (reproduced on /new, 2026-09-28).
+  test('reads models for the explicit project, not the route', () => {
+    expect(plan).toContain('useProjectModels(projectId)');
+    expect(plan).not.toContain('useRuntimeProviders');
+  });
+
   // THE reported bug: after adding a key the button still said "Add a key".
   test('derives the primary label from what is connected, not only the pick', () => {
     expect(plan).toContain('const action = planAction(choice, access)');

@@ -19287,6 +19287,7 @@
       "useKortix": "Kortix modeli",
       "recommended": "Preporučeno",
       "useKortixDescription": "Spremno odmah. Troši kredite tvog plana.",
+      "useKortixNeedsPlan": "Potreban je Kortix plan ili krediti.",
       "bringKey": "Moj API ključ",
       "providerDescription": "Anthropic, OpenAI ili drugi provajder.",
       "keyConnected": "Ključ je povezan.",

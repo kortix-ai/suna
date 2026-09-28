@@ -19287,6 +19287,7 @@
       "useKortix": "Kortix 模型",
       "recommended": "推荐",
       "useKortixDescription": "立即可用。使用你套餐中的额度。",
+      "useKortixNeedsPlan": "需要 Kortix 套餐或额度。",
       "bringKey": "我自己的 API 密钥",
       "providerDescription": "Anthropic、OpenAI 或其他提供商。",
       "keyConnected": "已连接一个密钥。",

@@ -19300,6 +19300,7 @@
       "useKortix": "Kortix models",
       "recommended": "Recommended",
       "useKortixDescription": "Ready now. Runs on your plan’s credits.",
+      "useKortixNeedsPlan": "Needs a Kortix plan or credits.",
       "bringKey": "My own API key",
       "providerDescription": "Anthropic, OpenAI, or another provider.",
       "keyConnected": "A key is connected.",

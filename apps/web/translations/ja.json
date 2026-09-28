@@ -19287,6 +19287,7 @@
       "useKortix": "Kortix のモデル",
       "recommended": "おすすめ",
       "useKortixDescription": "すぐに使えます。プランのクレジットを使います。",
+      "useKortixNeedsPlan": "Kortix のプランまたはクレジットが必要です。",
       "bringKey": "自分の API キー",
       "providerDescription": "Anthropic、OpenAI、その他のプロバイダー。",
       "keyConnected": "キーが接続されています。",
