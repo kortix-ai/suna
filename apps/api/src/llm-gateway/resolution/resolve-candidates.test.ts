@@ -30,15 +30,16 @@ let resolvedSecret: string | null = null;
 let secretsByName: Record<string, string | null> = {};
 let resolvedSecrets: Array<{ identifier: string; value: string }> = [];
 let pooledEnabled = false;
-let pooledSecrets: { configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: Array<{ secretId: string; label: string; value: string }> } = { configured: false, coolingDown: false, secrets: [] };
-let defaultCodexSecret: { secretId: string; label: string; value: string } | null = null;
+type PooledSecret = { secretId: string; label: string; value: string | null; updatedAt?: Date };
+let pooledSecrets: { configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { configured: false, coolingDown: false, secrets: [] };
+let defaultCodexSecret: PooledSecret | null = null;
 mock.module('../../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => pooledEnabled }));
 const resolveSessionProviderSecrets = mock(async (_input: unknown) => pooledSecrets);
 const resolveDefaultCodexAccountSecret = mock(async (..._args: unknown[]) => defaultCodexSecret);
 // The project's shared ChatGPT accounts an unconfigured session falls back to.
 // Which accounts are usable is the real SQL's job (integration-usable-gateway-
 // secrets.test.ts); here the stub answers what that read returned.
-let sharedSecrets: { coolingDown: boolean; retryAfterSeconds?: number; secrets: Array<{ secretId: string; label: string; value: string }> } = { coolingDown: false, secrets: [] };
+let sharedSecrets: { coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { coolingDown: false, secrets: [] };
 const resolveProjectSharedProviderSecrets = mock(async (_input: unknown) => sharedSecrets);
 mock.module('../../secrets/account-resource', () => ({
   resolveSessionProviderSecrets,
@@ -69,8 +70,9 @@ const resolveCodexCredential = mock(async () => {
 });
 // Account secrets whose OAuth refresh throws `CodexRefreshError`.
 let codexAccountRefreshFails = new Set<string>();
-const resolveCodexAccountCredential = mock(async (input: { value: string; secretId?: string }) => {
+const resolveCodexAccountCredential = mock(async (input: { value: string | null; secretId?: string }) => {
   if (input.secretId && codexAccountRefreshFails.has(input.secretId)) throw new CodexRefreshError('revoked');
+  if (!input.value) return null;
   const parsed = JSON.parse(input.value) as { openai?: { access?: string } };
   return parsed.openai?.access ? { access: parsed.openai.access } : null;
 });
@@ -205,6 +207,21 @@ describe('resolveCandidates — selected account key pool', () => {
     pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'id-a', label: 'A', value: 'key-a' }] };
     await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: [] } }),
       'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'provider_not_connected' });
+  });
+
+  // A key this API cannot decrypt is unusable, not a server error.
+  test('a pooled key that cannot be read is skipped, and a pool of only such keys is not connected', async () => {
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'unreadable', label: 'Old', value: null },
+      { secretId: 'id-b', label: 'B', value: 'key-b' },
+    ] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((candidate) => candidate.poolSecretId)).toEqual(['id-b']);
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'unreadable', label: 'Old', value: null }] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6'))
+      .rejects.toMatchObject({ code: 'provider_not_connected' });
   });
 
   test('an exhausted selected pool returns a rate-limit reason and never uses a legacy key', async () => {
@@ -561,6 +578,52 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(resolveCodexCredential).not.toHaveBeenCalled();
   });
 
+  // The error names the account to reconnect: a member with several ChatGPT
+  // accounts cannot otherwise tell which one stopped working.
+  test('a selected ChatGPT account whose login fails is named in the error', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'work', label: 'ChatGPT · Work', value: JSON.stringify({ openai: {} }) },
+    ] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: 'The ChatGPT account "ChatGPT · Work" needs reconnection.',
+      suggestion: 'Reconnect it in your ChatGPT accounts, or select another granted connection in session settings.',
+    });
+  });
+
+  test('several failing ChatGPT accounts are listed, three at most', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: ['A', 'B', 'C', 'D', 'E'].map((label) => ({
+      secretId: `id-${label}`, label, value: null,
+    })) };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: '5 selected ChatGPT accounts need reconnection: "A", "B", "C" and 2 more.',
+      suggestion: 'Reconnect them in your ChatGPT accounts, or select another granted connection in session settings.',
+    });
+  });
+
+  test('the personal ChatGPT default names its account', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'ChatGPT · Me', value: null };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: 'Your ChatGPT account "ChatGPT · Me" needs reconnection.',
+      suggestion: 'Reconnect it in your ChatGPT accounts, then retry.',
+    });
+  });
+
+  test('the credential resolver receives the version each account was read at', async () => {
+    pooledEnabled = true;
+    const readAt = new Date('2026-09-25T10:00:00.123Z');
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'account-a', label: 'A', value: JSON.stringify({ openai: { access: 'oauth-a' } }), updatedAt: readAt },
+    ] };
+    await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5');
+    expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ secretId: 'account-a', updatedAt: readAt }));
+  });
+
   test('codex provider without a projectId throws provider_not_connected', async () => {
     await expect(
       resolveCandidates(principal({ projectId: undefined }), 'codex/gpt-5.5'),
@@ -745,6 +808,30 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     sharedSecrets = { coolingDown: false, secrets: [account('a', null), account('b', null)] };
     await expect(resolveCandidates(principal({ sessionId: 's', personalUserId: null }), 'codex/gpt-6'))
       .rejects.toMatchObject({ code: 'provider_reauth_required' });
+  });
+
+  test('the shared accounts whose login fails are named, with who can fix them', async () => {
+    pooledEnabled = true;
+    const unattended = principal({ sessionId: 's', personalUserId: null });
+    sharedSecrets = { coolingDown: false, secrets: [account('Team A', null)] };
+    await expect(resolveCandidates(unattended, 'codex/gpt-6')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: 'The ChatGPT account "Team A" shared with this project needs reconnection.',
+      suggestion: 'The member who connected it must reconnect it, then retry.',
+    });
+    sharedSecrets = { coolingDown: false, secrets: [account('Team A', null), account('Team B', null)] };
+    await expect(resolveCandidates(unattended, 'codex/gpt-6')).rejects.toMatchObject({
+      message: '2 ChatGPT accounts shared with this project need reconnection: "Team A", "Team B".',
+      suggestion: 'The members who connected them must reconnect them, then retry.',
+    });
+  });
+
+  test('the credential resolver receives the version each shared account was read at', async () => {
+    pooledEnabled = true;
+    const readAt = new Date('2026-09-28T08:00:00.000Z');
+    sharedSecrets = { coolingDown: false, secrets: [{ ...account('team', 'team-token'), updatedAt: readAt }] };
+    await resolveCandidates(principal({ sessionId: 's', personalUserId: null }), 'codex/gpt-6');
+    expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ secretId: 'team', updatedAt: readAt }));
   });
 
   test('every shared account expired but a legacy connection exists: the legacy connection serves', async () => {

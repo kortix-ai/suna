@@ -638,4 +638,108 @@ test.describe('30 — pooled provider secrets', () => {
       for (const user of [member, owner]) await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });
+
+  test('a ChatGPT account whose login stopped working says so and reconnects in place', async ({ page }, testInfo) => {
+    // The gateway marks an account whose stored login stopped working
+    // (needs_reauth_at). Its member sees the mark where they manage their
+    // ChatGPT accounts, with the fix beside it; reconnecting clears it.
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(180_000);
+    const runId = Date.now().toString(36);
+    const ownerEmail = `e2e-mark-owner-${runId}@example.test`;
+    const memberEmail = `e2e-mark-member-${runId}@example.test`;
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+    const stale = randomUUID();
+    const working = randomUUID();
+    let project: ManifestProject | null = null;
+    try {
+      const accounts = await api<Array<{ account_id: string }>>(ownerSession.access_token, 'GET', '/accounts');
+      const accountId = accounts[0]!.account_id;
+      await api(ownerSession.access_token, 'POST', `/accounts/${accountId}/members`, { email: memberEmail, role: 'member' }, 201);
+      project = await createManifestProject({ api, accessToken: ownerSession.access_token, accountId, userId: owner.id,
+        name: `ChatGPT reconnection ${runId}`, databaseUrl: databaseUrl! });
+      const projectId = project.id;
+      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
+        await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/features`, { feature, enabled: true });
+      }
+      await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });
+      for (const [secretId, label, mark] of [[stale, 'ChatGPT · Work', "now() - interval '2 hours'"], [working, 'ChatGPT · Home', 'null']]) {
+        await runDatabaseSql(`INSERT INTO kortix.account_secret_resources
+          (secret_id, account_id, project_id, access_mode, label, provider_id, name, value_enc, consumer, strategy, created_by, needs_reauth_at)
+          VALUES ($1, $2, $3, 'members', $4, 'codex', 'CODEX_AUTH_JSON', 'v1:not:a:login', 'llm_gateway', 'broker', $5, ${mark})`,
+        [secretId, accountId, projectId, label, member.id], databaseUrl);
+        await runDatabaseSql('INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by) VALUES ($1, $2, $3, $3)',
+          [secretId, accountId, member.id], databaseUrl);
+      }
+      const memberSession = await signIn(memberEmail, authOptions);
+
+      // The device flow is OpenAI's. What the page sends is the contract; the
+      // poll persists what a completed reconnect writes.
+      const starts: Array<Record<string, unknown>> = [];
+      await page.route(`**/v1/projects/${projectId}/oauth/openai/start`, async (route) => {
+        starts.push(route.request().postDataJSON());
+        await route.fulfill({ status: 200, json: {
+          flow_id: 'mark-flow', verification_url: 'https://example.test/device',
+          user_code: 'MARK-1', expires_at: Date.now() + 60_000, interval_ms: 1000,
+        } });
+      });
+      await page.route(`**/v1/projects/${projectId}/oauth/openai/poll`, async (route) => {
+        await runDatabaseSql('UPDATE kortix.account_secret_resources SET needs_reauth_at = null, updated_at = now() WHERE secret_id = $1',
+          [stale], databaseUrl);
+        await route.fulfill({ status: 200, json: { status: 'success', credential: {
+          provider_id: 'codex', secret_id: stale, label: 'ChatGPT · Work', expires_in_ms: null, updated_at: new Date().toISOString(),
+        } } });
+      });
+
+      await installBrowserSessionDirect(page, memberSession, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, accountId);
+      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      const welcome = page.getByRole('complementary', { name: 'Welcome from Marko' });
+      if (await welcome.isVisible().catch(() => false)) await welcome.getByRole('button', { name: 'Dismiss' }).click();
+      const input = page.getByRole('textbox', { name: 'Message input' });
+      await expect(input).toBeVisible();
+      await input.click();
+      await input.pressSequentially('/model');
+      await page.getByRole('option', { name: /Switch model/ }).click();
+      const accountsRead = page.waitForResponse((response) => response.request().method() === 'GET' &&
+        response.url().includes(`/v1/accounts/${accountId}/secret-resources`) && response.status() === 200);
+      await page.getByRole('option', { name: 'Manage ChatGPT accounts' }).click();
+      const listed = (await (await accountsRead).json()) as { secrets: Array<{ secret_id: string; needs_reauth_at: string | null }> };
+      expect(listed.secrets.find((secret) => secret.secret_id === stale)?.needs_reauth_at).toBeTruthy();
+      expect(listed.secrets.find((secret) => secret.secret_id === working)?.needs_reauth_at).toBeNull();
+
+      const accountsDialog = page.getByRole('dialog', { name: 'ChatGPT subscription' });
+      const staleRow = accountsDialog.getByRole('listitem').filter({ hasText: 'ChatGPT · Work' });
+      const workingRow = accountsDialog.getByRole('listitem').filter({ hasText: 'ChatGPT · Home' });
+      await expect(staleRow.getByText('Needs reconnection', { exact: true })).toBeVisible();
+      await expect(workingRow.getByText('Needs reconnection', { exact: true })).toHaveCount(0);
+      await expect(workingRow.getByRole('button', { name: 'Reconnect ChatGPT · Home' })).toHaveCount(0);
+      const reconnect = staleRow.getByRole('button', { name: 'Reconnect ChatGPT · Work' });
+      await expect(reconnect).toBeVisible();
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate((value) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(value); }, theme);
+        for (const size of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+          await page.setViewportSize(size);
+          await expect(reconnect).toBeInViewport();
+          await accountsDialog.screenshot({ path: testInfo.outputPath(`chatgpt-needs-reconnection-${theme}-${size.width}.png`), animations: 'disabled' });
+        }
+        const accessibility = await new AxeBuilder({ page }).include('[role="dialog"]')
+          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+        expect(accessibility.violations).toEqual([]);
+      }
+      await page.evaluate(() => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add('light'); });
+
+      await reconnect.click();
+      await expect(page.getByRole('dialog', { name: 'Reconnect ChatGPT · Work' })).toHaveCount(0, { timeout: 15_000 });
+      expect(starts).toEqual([{ resource_id: stale }]);
+      await expect(staleRow.getByText('Needs reconnection', { exact: true })).toHaveCount(0, { timeout: 15_000 });
+      await expect(staleRow.getByRole('button', { name: 'Reconnect ChatGPT · Work' })).toHaveCount(0);
+    } finally {
+      await runDatabaseSql('DELETE FROM kortix.account_secret_resources WHERE secret_id = ANY($1::uuid[])', [[stale, working]], databaseUrl).catch(() => {});
+      await project?.dispose();
+      for (const user of [member, owner]) await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
 });

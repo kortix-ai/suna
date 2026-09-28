@@ -1,6 +1,6 @@
 {
-  "id": "21f63a8a-1d70-4051-8b96-679d3c7d1f4d",
-  "prevId": "daca9df9-8eb4-49a2-9c56-edce8fbe538d",
+  "id": "1ef1bf15-44e7-4597-9669-8ee54b65db6b",
+  "prevId": "21f63a8a-1d70-4051-8b96-679d3c7d1f4d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1502,6 +1502,12 @@
         },
         "cooldown_until": {
           "name": "cooldown_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "needs_reauth_at": {
+          "name": "needs_reauth_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
