@@ -20,6 +20,7 @@ import type {
   HarnessAssetsService,
 } from './harness/assets'
 import { logger } from './logger'
+import { fetchArtifactByChunks } from './runtime-asset-chunks'
 import { withReleaseStoreLock } from './boot-config'
 
 /**
@@ -533,7 +534,7 @@ async function localCliSha(cliPath: string, state: RuntimeAssetsState): Promise<
  * baked into the image is the next increment and lands here, in one place, on
  * purpose.
  */
-function verifyArtifact(bytes: Buffer, expectedSha: string): boolean {
+function verifyArtifact(bytes: Uint8Array, expectedSha: string): boolean {
   return createHash('sha256').update(bytes).digest('hex') === expectedSha
 }
 
@@ -666,7 +667,7 @@ export interface ReplaceCliDeps {
 export async function replaceCli(
   cliPath: string,
   expectedSha: string,
-  body: ArrayBuffer,
+  body: Uint8Array,
   deps: ReplaceCliDeps = {},
 ): Promise<'updated' | 'failed' | 'unrunnable'> {
   // Buffered, not streamed. `Bun.write(path, response)` hangs on a streamed
@@ -674,7 +675,7 @@ export async function replaceCli(
   // hash-while-streaming pipeline is more machinery than the numbers justify:
   // the binary is ~100 MB on a sandbox with at least 4 GB, the buffer is
   // transient, and the reconcile runs at most once per session start.
-  const bytes = Buffer.from(body)
+  const bytes = body
   // Verify BEFORE touching the filesystem: a digest mismatch must not even
   // create a temp file, and it must not be mistaken for a permission problem.
   if (!verifyArtifact(bytes, expectedSha)) {
@@ -808,7 +809,7 @@ async function resolveRunningAgentPath(options: RuntimeAssetsOptions): Promise<s
 async function stageAgentBinary(
   stateDir: string,
   expectedSha: string,
-  body: ArrayBuffer,
+  body: Uint8Array,
   execProbe: ExecProbe,
 ): Promise<'staged' | 'failed' | 'unrunnable'> {
   const nextPath = join(stateDir, 'agent.next')
@@ -821,7 +822,7 @@ async function stageAgentBinary(
   const tmpShaPath = `${tmpPath}.sha256`
   try {
     await mkdir(stateDir, { recursive: true })
-    const bytes = Buffer.from(body)
+    const bytes = body
     await writeFile(tmpPath, bytes)
     if (!verifyArtifact(bytes, expectedSha)) {
       logger.warn('[runtime-assets] agent download digest mismatch — nothing staged', {
@@ -931,6 +932,75 @@ async function fetchJson<T>(
  * One reconcile pass. Returns what happened for each half so callers (and tests)
  * can assert on it. NEVER throws.
  */
+/** A downloaded artifact, or the HTTP status that stopped it. */
+type ArtifactFetch = { bytes: Buffer } | { status: number }
+
+/**
+ * Get one artifact's bytes: chunked when this box can supply most of them,
+ * a plain download otherwise.
+ *
+ * The chunk path is a transfer optimization and never a second install path —
+ * it returns bytes or nothing, and the caller runs the SAME `verifyArtifact`
+ * over the result either way. That is deliberate: one place decides whether
+ * bytes are allowed near something that will be executed.
+ */
+async function fetchArtifact(
+  fetchImpl: typeof fetch,
+  base: string,
+  token: string,
+  component: 'agent' | 'cli',
+  expectedSha: string,
+  url: string,
+  localSources: string[],
+): Promise<ArtifactFetch> {
+  const chunked = await fetchArtifactByChunks({
+    fetchImpl,
+    base,
+    token,
+    component,
+    expectedSha,
+    localSources,
+    timeoutMs: DOWNLOAD_TIMEOUT_MS,
+  }).catch((err) => {
+    // Never fatal. The full download below is the path this one is trying to
+    // save, and it is still there.
+    logger.warn('[runtime-assets] chunked fetch failed; falling back to the full download', {
+      component,
+      err: String(err),
+    })
+    return null
+  })
+  if (chunked) return { bytes: chunked }
+  const res = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  })
+  if (!res.ok) return { status: res.status }
+  return { bytes: Buffer.from(await res.arrayBuffer()) }
+}
+
+/**
+ * Every binary this box already holds — the chunk store.
+ *
+ * There is no chunk cache on disk and there should not be one: ~90 MB of both
+ * the CLI and the daemon is the same embedded Bun runtime, so the files the
+ * box RUNS already carry almost everything a new build needs. They are always
+ * current, never stale, and cost no extra disk. Missing entries are skipped by
+ * the indexer, so listing a path that may not exist is free.
+ */
+async function chunkStoreSources(
+  cliPath: string,
+  options: RuntimeAssetsOptions,
+): Promise<string[]> {
+  const stateDir = agentStateDirOf(options)
+  return [
+    cliPath,
+    await resolveRunningAgentPath(options),
+    agentBakedPathOf(options),
+    join(stateDir, 'agent.current'),
+  ]
+}
+
 export async function reconcileRuntimeAssets(
   options: RuntimeAssetsOptions = {},
 ): Promise<RuntimeAssetsResult> {
@@ -1025,22 +1095,27 @@ export async function reconcileRuntimeAssets(
         nextState.cli_mtime_ms = local.mtimeMs
         nextState.cli_path = effectiveCliPath
       } else {
-        const res = await fetchImpl(resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`), {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-        })
-        if (!res.ok) {
-          logger.warn('[runtime-assets] CLI download non-ok', { status: res.status })
+        const fetched = await fetchArtifact(
+          fetchImpl,
+          base,
+          token,
+          'cli',
+          cliSha,
+          resolveArtifactUrl(apiRoot, cliComponent?.path, `${base}/cli`),
+          await chunkStoreSources(effectiveCliPath, options),
+        )
+        if (!('bytes' in fetched)) {
+          logger.warn('[runtime-assets] CLI download non-ok', { status: fetched.status })
           cli = 'failed'
         } else {
-          const body = await res.arrayBuffer()
+          const body = fetched.bytes
           // Verify ONCE, before any location is even chosen: a digest that
           // does not match the manifest is wrong everywhere, and retrying the
           // identical bytes at a second path would not just waste a hash of a
           // ~100 MB buffer — DEF-C's own tests found it reaching this box's
           // REAL `$HOME/.local/bin` in a case that has nothing to do with a
           // permission problem at all.
-          if (!verifyArtifact(Buffer.from(body), cliSha)) {
+          if (!verifyArtifact(body, cliSha)) {
             logger.warn('[runtime-assets] CLI download digest mismatch — keeping the installed binary', {
               expected: cliSha,
             })
@@ -1237,22 +1312,24 @@ export async function reconcileRuntimeAssets(
           // at the resolved path to compare against. Both mean "cannot prove
           // this box is current", and staging is the safe answer to that: the
           // supervisor verifies the artifact again before it installs it.
-          const res = await fetchImpl(
+          const fetched = await fetchArtifact(
+            fetchImpl,
+            base,
+            token,
+            'agent',
+            expectedSha,
             resolveArtifactUrl(apiRoot, component?.path, `${base}/agent`),
-            {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-            },
+            await chunkStoreSources(cliPath, options),
           )
-          if (!res.ok) {
-            logger.warn('[runtime-assets] agent download non-ok', { status: res.status })
+          if (!('bytes' in fetched)) {
+            logger.warn('[runtime-assets] agent download non-ok', { status: fetched.status })
             agent = 'failed'
-            reasons.agent = `agent download returned ${res.status}`
+            reasons.agent = `agent download returned ${fetched.status}`
           } else {
             const stagedOutcome = await stageAgentBinary(
               stateDir,
               expectedSha,
-              await res.arrayBuffer(),
+              fetched.bytes,
               execProbe,
             )
             if (stagedOutcome === 'unrunnable') {

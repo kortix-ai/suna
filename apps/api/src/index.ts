@@ -116,7 +116,7 @@ import {
 } from './projects/suna-migration/suna-migration-worker';
 import { router } from './router';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
+import { runtimeAssetsApp, runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
@@ -1712,6 +1712,9 @@ async function bootServices() {
     // Absent binaries are a legitimate state (a checkout that never built one);
     // the route reports that per component. Nothing to do here.
   });
+  // Same reasoning, same shape, for the chunk index: it reads the same ~200 MB
+  // and would otherwise be built inside the first converging box's request.
+  void warmRuntimeChunkIndex();
 }
 
 // Graceful shutdown

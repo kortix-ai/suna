@@ -19182,7 +19182,9 @@
       "text5176d59f25fd": "Version de configuration de la session résolue",
       "text273c48dbf3b9": "Appareil de notifications push enregistré",
       "textbb666ddf7a57": "Appareil de notifications push supprimé",
-      "text397ab5aecbbf": "Demande d’autorisation de session relayée"
+      "text397ab5aecbbf": "Demande d’autorisation de session relayée",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

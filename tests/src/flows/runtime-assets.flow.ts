@@ -672,3 +672,117 @@ flow(
     });
   },
 );
+
+// ── RTA-7 — content-addressed chunks ───────────────────────────────────────
+//
+// A changed CLI used to cost every box a fresh ~105 MB, of which ~90 MB
+// provably did not change: that prefix is the embedded Bun runtime, identical
+// in every `bun --compile` output. Measured at 1 MiB fixed chunks on real
+// linux-x64 builds — 100 of 102 chunks shared between two CLI builds that
+// differ only in their version stamp (98.0%), and 89 of 102 between the CLI
+// and the daemon (87.3%).
+//
+// These two routes are a TRANSFER optimization and nothing else, which is the
+// property this flow exists to pin. The whole-file digest on `RTA-1` stays the
+// authority; a box assembles, verifies against it, and falls back to the full
+// `RTA-3` download on any doubt. So the contract here is narrow: name the same
+// bytes the digest manifest names, serve a chunk under its own digest, and
+// answer 404 rather than guess.
+flow(
+  'RTA-7',
+  {
+    domain: 'runtime-assets',
+    routes: [
+      'GET /v1/runtime-assets/chunk/:sha256',
+      'GET /v1/runtime-assets/chunks/:component',
+      'GET /v1/runtime-assets/manifest',
+      'POST /v1/projects/:projectId/cli-token',
+    ],
+  },
+  async (ctx) => {
+    const projectPat = await createProjectPat(ctx, 'runtime-assets-chunks-pat');
+
+    await ctx.step('ANON cannot read a chunk manifest or a chunk', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/runtime-assets/chunks/cli')).status(401);
+      (
+        await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/runtime-assets/chunk/0000000000000000000000000000000000000000000000000000000000000000')
+      ).status(401);
+    });
+
+    await ctx.step('the chunk manifest names the same bytes the digest manifest does', async () => {
+      const manifest = await projectPat.get('/v1/runtime-assets/manifest');
+      manifest.status(200);
+      const digests = manifest.json<{ cli_sha256: string | null; cli_size: number | null }>();
+      const chunks = await projectPat.get('/v1/runtime-assets/chunks/cli');
+      if (digests.cli_sha256 === null) {
+        // A checkout that never built apps/cli/dist/kortix. The honest answer
+        // is a 404, exactly as `RTA-3` gives for the binary itself.
+        chunks.status(404);
+        return;
+      }
+      chunks.status(200);
+      const body = chunks.json<{ sha256: string; size: number; chunk_size: number; chunks: string[] }>();
+      if (body.sha256 !== digests.cli_sha256) {
+        throw new Error(
+          `the chunk manifest describes other bytes than the digest manifest: ${body.sha256} vs ${digests.cli_sha256}`,
+        );
+      }
+      if (body.size !== digests.cli_size) {
+        throw new Error(`chunk manifest size ${body.size} must equal cli_size ${digests.cli_size}`);
+      }
+      // Offsets are implied, so the count IS the layout. A manifest whose
+      // arithmetic does not hold would have a box allocate the wrong buffer.
+      const expected = Math.ceil(body.size / body.chunk_size);
+      if (body.chunks.length !== expected) {
+        throw new Error(`${body.chunks.length} chunks for ${body.size} bytes; expected ${expected}`);
+      }
+      if (!body.chunks.every((c) => /^[0-9a-f]{64}$/.test(c))) {
+        throw new Error('every chunk must be named by a sha256');
+      }
+    });
+
+    await ctx.step('a chunk is served under its own digest, at its own length', async () => {
+      const chunks = await projectPat.get('/v1/runtime-assets/chunks/cli');
+      if (chunks.statusCode === 404) return;
+      chunks.status(200);
+      const body = chunks.json<{ size: number; chunk_size: number; chunks: string[] }>();
+      const digest = body.chunks[0]!;
+      const r = await projectPat.get(`/v1/runtime-assets/chunk/${digest}`);
+      r.status(200);
+      // The name IS the content, so the ETag is the path.
+      if (r.header('etag') !== `"${digest}"`) {
+        throw new Error(`ETag ${r.header('etag')} must be the requested digest`);
+      }
+      const length = Math.min(body.chunk_size, body.size);
+      if (r.header('content-length') !== String(length)) {
+        throw new Error(`Content-Length ${r.header('content-length')} must be ${length}`);
+      }
+    });
+
+    await ctx.step('ONE store serves both binaries — a shared chunk resolves either way', async () => {
+      const cli = await projectPat.get('/v1/runtime-assets/chunks/cli');
+      const agent = await projectPat.get('/v1/runtime-assets/chunks/agent');
+      if (cli.statusCode === 404 || agent.statusCode === 404) return;
+      const cliChunks = new Set(cli.json<{ chunks: string[] }>().chunks);
+      const shared = agent.json<{ chunks: string[] }>().chunks.filter((c) => cliChunks.has(c));
+      if (shared.length === 0) {
+        throw new Error(
+          'the CLI and the daemon share no chunk — the embedded Bun runtime they are both built ' +
+            'on is ~90 MB, so zero overlap means the index is not serving one store',
+        );
+      }
+      // Served from whichever binary was indexed first; the caller cannot tell,
+      // and must not need to.
+      (await projectPat.get(`/v1/runtime-assets/chunk/${shared[0]}`)).status(200);
+    });
+
+    await ctx.step('a chunk this deploy does not carry is a 404, never a guess', async () => {
+      const r = await projectPat.get(
+        '/v1/runtime-assets/chunk/1111111111111111111111111111111111111111111111111111111111111111',
+      );
+      r.status(404);
+    });
+  },
+);

@@ -455,3 +455,85 @@ describe('bakeRuntimeAssetsState', () => {
     ).rejects.toThrow(/kortix-agent/)
   })
 })
+
+// ── Chunked transfer, through the real reconcile ───────────────────────────
+//
+// `stubFetch` above answers 500 on the chunk routes, so every case in this file
+// takes the full download and proves the fallback is intact. This block is the
+// other half: the same reconcile, against an API that DOES serve chunks.
+describe('reconcileRuntimeAssets over chunks', () => {
+  const CHUNK = 8
+  const blocks = (letters: string) =>
+    Buffer.concat([...letters].map((ch) => Buffer.alloc(CHUNK, ch.charCodeAt(0))))
+  const shaBytes = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
+
+  function chunkAwareStub(oldCli: Buffer, newCli: Buffer) {
+    const chunks: string[] = []
+    for (let o = 0; o < newCli.length; o += CHUNK) {
+      chunks.push(shaBytes(newCli.subarray(o, o + CHUNK)))
+    }
+    const calls: string[] = []
+    const impl = (async (input: string | URL | Request) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.endsWith('/runtime-assets/manifest')) {
+        return Response.json({
+          cli_version: '0.12.9+abc12345',
+          cli_sha256: shaBytes(newCli),
+          cli_size: newCli.length,
+          managed_skills_hash: SKILLS_HASH,
+        })
+      }
+      if (url.endsWith('/runtime-assets/chunks/cli')) {
+        return Response.json({
+          sha256: shaBytes(newCli),
+          size: newCli.length,
+          chunk_size: CHUNK,
+          chunks,
+        })
+      }
+      if (url.includes('/runtime-assets/chunk/')) {
+        const index = chunks.indexOf(url.slice(url.lastIndexOf('/') + 1))
+        if (index === -1) return new Response('nope', { status: 404 })
+        return new Response(newCli.subarray(index * CHUNK, (index + 1) * CHUNK))
+      }
+      if (url.endsWith('/runtime-assets/cli')) return new Response(newCli)
+      if (url.endsWith('/runtime-assets/managed-skills')) {
+        return Response.json({ hash: SKILLS_HASH, files: SKILL_FILES })
+      }
+      return new Response('unexpected', { status: 500 })
+    }) as unknown as typeof fetch
+    return { impl, calls, chunks }
+  }
+
+  test('a version bump installs the new CLI without refetching the bytes that did not change', async () => {
+    // The measured shape of a real version bump: 1 of 11 chunks differs.
+    const oldCli = blocks('aaaaaaaaaaa')
+    const newCli = blocks('aaaaaXaaaaa')
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, oldCli)
+    const stub = chunkAwareStub(oldCli, newCli)
+
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+
+    expect(result.cli).toBe('updated')
+    expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)
+    // The whole binary was never requested; exactly one chunk was.
+    expect(stub.calls.filter((u) => u.endsWith('/runtime-assets/cli'))).toEqual([])
+    expect(stub.calls.filter((u) => u.includes('/runtime-assets/chunk/'))).toEqual([
+      `${API_URL}/v1/runtime-assets/chunk/${stub.chunks[5]}`,
+    ])
+  })
+
+  test('an API that serves no chunk routes still converges — the full download is intact', async () => {
+    const ws = await workspace()
+    await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
+    const stub = stubFetch()
+
+    const result = await run(ws, stub)
+
+    expect(result.cli).toBe('updated')
+    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(stub.calls).toContain(`${API_URL}/v1/runtime-assets/cli`)
+  })
+})

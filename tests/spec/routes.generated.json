@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 681,
+  "count": 683,
   "routes": [
     {
       "method": "GET",
@@ -2481,6 +2481,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunk/:sha256"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunks/:component"
     },
     {
       "method": "GET",

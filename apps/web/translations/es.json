@@ -19182,7 +19182,9 @@
       "text5176d59f25fd": "Versión de configuración de la sesión resuelta",
       "text273c48dbf3b9": "Dispositivo de notificaciones push registrado",
       "textbb666ddf7a57": "Dispositivo de notificaciones push eliminado",
-      "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida"
+      "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
