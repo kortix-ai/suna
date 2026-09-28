@@ -82,6 +82,23 @@ if [ -n "$new_docs" ]; then
   exit 1
 fi
 
+# Translation catalogs keep their key order (apps/web/scripts/i18n-catalogs.mjs).
+# A conflict resolution that rebuilt them reordered every catalog twice
+# (2026-09-22, and #7337 on 2026-09-28), and CI only saw it after the merge to
+# main. A merge commit may take either parent's order. The check reads the
+# working tree. Set I18N_REORDER=1 for an intentional reorder.
+if [ -z "$I18N_REORDER" ] && git rev-parse --verify --quiet HEAD >/dev/null \
+  && git diff --cached --name-only | grep -qE '^apps/web/translations/[^/]+\.json$'; then
+  i18n_check="node apps/web/scripts/i18n-catalogs.mjs check"
+  if ! $i18n_check --base=HEAD >/dev/null 2>&1 \
+    && ! { git rev-parse --verify --quiet MERGE_HEAD >/dev/null \
+      && $i18n_check --base=MERGE_HEAD >/dev/null 2>&1; }; then
+    $i18n_check --base=HEAD >&2 || true
+    echo "pre-commit: set I18N_REORDER=1 only when the reorder is intentional." >&2
+    exit 1
+  fi
+fi
+
 # A `pnpm worktree` checkout commits only on its own branch (AGENTS.md).
 sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-worktree-branch.sh"
 

@@ -35,7 +35,7 @@
 //   node apps/web/scripts/i18n-catalogs.mjs restore-order --from=<rev> [--from=<rev>]
 //   node apps/web/scripts/i18n-catalogs.mjs merge-driver %O %A %B %L %P %S %X %Y
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -333,11 +333,13 @@ function verifyRevision(rev) {
 }
 
 /** The catalog at `rev`, or `undefined` when the file did not exist there. */
+// The repository root is fixed relative to this file. `git rev-parse
+// --show-toplevel` is not: inside a git hook GIT_DIR is set, git treats the
+// working directory (apps/web) as the top level, every `readAt` misses, and a
+// reorder passes `check`.
+const repoRoot = path.resolve(webRoot, '..', '..');
+
 function readAt(rev, file) {
-  const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-    cwd: webRoot,
-    encoding: 'utf8',
-  }).trim();
   const spec = `${rev}:${path.relative(repoRoot, file).split(path.sep).join('/')}`;
   if (git(['cat-file', '-e', spec]).status !== 0) return undefined;
   return JSON.parse(git(['show', spec]).stdout);
