@@ -84,6 +84,22 @@ test('saving prevents navigation away from the pending selection', () => {
   expect(html).toMatch(/<button[^>]*disabled[^>]*>Manage provider keys<\/button>/);
 });
 
+describe('both pool editors share resource states', () => {
+  for (const selection of [undefined, {}]) {
+    const mode = selection ? 'new' : 'session';
+    test(`${mode} lists the same usable providers and excludes unusable keys`, () => {
+      const html = render({ selection, resources: [key('Primary'), { ...key('Secondary'), provider_id: 'openai' }, { ...key('Inactive'), active: false }] });
+      expect(html).toContain('Primary');
+      expect(html).not.toContain('Inactive');
+      expect(html).toContain('Provider');
+    });
+    test(`${mode} displays the loading state when resources are not ready`, () => {
+      const html = render({ selection, resources: [key('Primary')] });
+      expect(html).not.toContain('Keys could not be loaded.');
+    });
+  }
+});
+
 describe('a session offers only keys it can use when it runs', () => {
   const team = { ...key('Team key'), access_mode: 'project', granted_user_ids: [] };
   const mine = { ...key('My key'), access_mode: 'members', granted_user_ids: ['me'] };
