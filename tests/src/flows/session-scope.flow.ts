@@ -33,6 +33,7 @@ flow(
     const project = await team.project();
     const viewer = await team.addMember('member');
     await team.grantProjectRole(project.id, viewer.userId!, 'user');
+    const session = await ctx.fixtures.session(project);
     const owner = ctx.client.as(ctx.P.OWNER);
     const route = '/v1/projects/:projectId/sessions/:sessionId/scope';
 
@@ -52,7 +53,7 @@ flow(
       const r = await ctx.client.as(viewer).put(
         route,
         { connector_bindings: null },
-        { params: { projectId: project.id, sessionId: UNKNOWN_SESSION_ID } },
+        { params: { projectId: project.id, sessionId: session.id } },
       );
       r.status(403).body().has('$.code', 'project_role_insufficient');
       deepStrictEqual(r.json(), {
