@@ -39,11 +39,9 @@ import { connectorCallId, formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
-  RISK_META,
   STATUS_META,
   VERIFICATION_BADGE,
   reviewKindLabel,
-  reviewRiskLabel,
   reviewStatusLabel,
 } from './review-meta';
 import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } from './types';
@@ -241,9 +239,6 @@ function ApprovalActionRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-foreground text-sm font-medium">{action.title}</span>
-            <Badge variant={RISK_META[action.risk].badge} size="sm">
-              {reviewRiskLabel(action.risk, tI18nComplete)}
-            </Badge>
           </div>
           <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
             {action.consequence}
@@ -805,11 +800,6 @@ export function ReviewDetail({
                 {reviewKindLabel(item.kind, tI18nComplete)}
               </Badge>
             )}
-            {item.risk === 'medium' || item.risk === 'high' ? (
-              <Badge variant={RISK_META[item.risk].badge} size="sm">
-                {reviewRiskLabel(item.risk, tI18nComplete)}
-              </Badge>
-            ) : null}
           </div>
           <div className="mt-10 space-y-2">
             <p className="text-muted-foreground text-xs">
