@@ -32,7 +32,7 @@
  * means "use the full download", never "install this anyway".
  */
 import { createHash } from 'node:crypto'
-import { open, stat } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { logger } from './logger'
 
 /** What the API serves at `GET /v1/runtime-assets/chunks/{component}`. */
@@ -103,17 +103,18 @@ async function indexLocalChunks(
   const index = new Map<string, LocalChunk>()
   const buffer = Buffer.allocUnsafe(chunkSize)
   for (const path of [...new Set(paths)]) {
-    let size: number
-    try {
-      const stats = await stat(path)
-      if (!stats.isFile() || stats.size === 0) continue
-      size = stats.size
-    } catch {
-      continue
-    }
+    // Open FIRST and stat the HANDLE. A stat-then-open pair is a TOCTOU race
+    // (CodeQL js/file-system-race), and the handle answers the same questions.
     let handle
     try {
       handle = await open(path, 'r')
+    } catch {
+      continue
+    }
+    try {
+      const stats = await handle.stat()
+      if (!stats.isFile() || stats.size === 0) continue
+      const size = stats.size
       for (let offset = 0; offset < size; offset += chunkSize) {
         const length = Math.min(chunkSize, size - offset)
         const { bytesRead } = await handle.read(buffer, 0, length, offset)

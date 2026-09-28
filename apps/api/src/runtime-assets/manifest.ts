@@ -449,16 +449,18 @@ async function indexBinary(
   path: string,
   sources: Map<string, ChunkSource>,
 ): Promise<RuntimeChunkManifest | null> {
-  let stats;
+  // Open FIRST and stat the HANDLE, never the path. A stat-then-open pair is a
+  // TOCTOU race (CodeQL js/file-system-race) and the handle already answers
+  // every question the path stat did.
+  let handle;
   try {
-    stats = await stat(path);
+    handle = await open(path, 'r');
   } catch {
     return null;
   }
-  if (!stats.isFile() || stats.size === 0) return null;
-
-  const handle = await open(path, 'r');
   try {
+    const stats = await handle.stat();
+    if (!stats.isFile() || stats.size === 0) return null;
     const buffer = Buffer.allocUnsafe(RUNTIME_CHUNK_SIZE);
     const whole = createHash('sha256');
     const chunks: string[] = [];

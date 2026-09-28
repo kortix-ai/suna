@@ -384,10 +384,13 @@ async function readOverlayFromDisk(dir: string): Promise<OverlayFile[]> {
   }
   const files: OverlayFile[] = []
   for (const rel of [...entries].sort((a, b) => a.localeCompare(b))) {
-    const full = join(dir, rel)
-    const stats = await stat(full).catch(() => null)
-    if (!stats?.isFile()) continue
-    files.push({ path: rel, content: await readFile(full, 'utf8') })
+    // Read directly rather than stat-then-read: a directory answers EISDIR and
+    // an unreadable entry answers its own errno, so the filter costs nothing
+    // and there is no window between the check and the use (CodeQL
+    // js/file-system-race).
+    const content = await readFile(join(dir, rel), 'utf8').catch(() => null)
+    if (content === null) continue
+    files.push({ path: rel, content })
   }
   return files
 }
