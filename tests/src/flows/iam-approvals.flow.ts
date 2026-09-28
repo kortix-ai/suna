@@ -258,10 +258,10 @@ flow(
         r.status(403);
         deepStrictEqual(r.json(), {
           error: true,
-          message: "You don't have permission to manage project members.",
+          message: 'You do not have access to this project',
           status: 403,
-          code: 'project_role_insufficient',
-          action: 'project.members.manage',
+          code: 'no_project_membership',
+          action: 'project.read',
         });
       },
     );
