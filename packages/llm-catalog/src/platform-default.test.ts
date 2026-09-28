@@ -8,7 +8,7 @@ import {
 
 describe('PLATFORM_DEFAULT_MODEL_ID', () => {
   test('is a concrete managed model', () => {
-    expect(PLATFORM_DEFAULT_MODEL_ID).toBe('deepseek-v4.1-flash');
+    expect(PLATFORM_DEFAULT_MODEL_ID).toBe('glm-5.3-flash');
     expect(getManagedModel(PLATFORM_DEFAULT_MODEL_ID)).toBeDefined();
   });
 

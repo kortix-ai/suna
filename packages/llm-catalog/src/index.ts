@@ -587,7 +587,7 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 ).id;
 
 /** Concrete Kortix-managed default used when no account or project default exists. */
-export const PLATFORM_DEFAULT_MODEL_ID = 'deepseek-v4.1-flash';
+export const PLATFORM_DEFAULT_MODEL_ID = 'glm-5.3-flash';
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix',

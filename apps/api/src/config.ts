@@ -481,7 +481,7 @@ const envSchema = z.object({
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
   // Image-capable managed model used when the default receives an image.
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('deepseek-v4.1-flash'),
+  LLM_GATEWAY_VISION_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -493,7 +493,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4.1-flash'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),

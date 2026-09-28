@@ -73,5 +73,9 @@ describe('gateway fallback policy configuration', () => {
       expect([...policy.models, ...policy.fallbackModels].filter((id) => !servable(id))).toEqual([]);
       expect(policy.fallbackModels.filter((id) => policy.models.includes(id))).toEqual([]);
     }
+    expect(policies.flatMap((policy) => [...policy.models, ...policy.fallbackModels]))
+      .not.toContain('deepseek-v4.1-flash');
+    expect(policies.find((policy) => policy.models.includes('codex/gpt-5.6-sol'))?.fallbackModels)
+      .toEqual(['glm-5.3-flash']);
   });
 });
