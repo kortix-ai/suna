@@ -10,8 +10,9 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { config } from '../config';
 import type { AppHostingProvider, AppMachineSpec, AppdStatus } from './hosting';
-import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
+import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
@@ -144,6 +145,31 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   beforeEach(cleanup);
   afterEach(cleanup);
 
+  test('public handler rejects an unsigned edge request before loading the App', async () => {
+    const previous = process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;
+    const previousLocal = process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE;
+    const previousDomain = process.env.KORTIX_APPS_BASE_DOMAIN;
+    process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'false';
+    process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'false';
+    process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.kortix.com';
+    try {
+      // A host `resolveAppHost` accepts: `<env>-<slug>-<route key>.<apps domain>`.
+      const request = new Request('https://example.test/', {
+        headers: { 'x-kortix-app-host': `${config.INTERNAL_KORTIX_ENV}-wake-${ROUTE_KEY}.apps.kortix.com` },
+      });
+      const response = await handleAppPublicRequest(request);
+      expect(response?.status).toBe(403);
+      expect(await response?.json()).toEqual({ error: 'Invalid App edge signature' });
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;
+      else process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE = previous;
+      if (previousLocal === undefined) delete process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE;
+      else process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = previousLocal;
+      if (previousDomain === undefined) delete process.env.KORTIX_APPS_BASE_DOMAIN;
+      else process.env.KORTIX_APPS_BASE_DOMAIN = previousDomain;
+    }
+  });
+
   test('concurrent cold requests acquire one wake lease and both observe the running row', async () => {
     const loaded = await seedStoppedRuntime();
     const readinessStarted = deferred<void>();
@@ -197,6 +223,48 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(ensureCalls).toBe(1);
     const [app] = await testDb().select().from(apps).where(eq(apps.appId, APP_ID));
     expect(app?.desiredState).toBe('running');
+  });
+
+  test('an expired idle deadline wakes a running row before serving it', async () => {
+    const loaded = await seedStoppedRuntime();
+    await testDb().update(appRuntimes).set({
+      status: 'running',
+      idleDeadlineAt: new Date(Date.now() - 1000),
+    }).where(eq(appRuntimes.runtimeId, RUNTIME_ID));
+    const sleeping = await loadPublicApp(ROUTE_KEY);
+    if (!sleeping) throw new Error('sleeping App did not resolve');
+    let ensureCalls = 0;
+    const hosting = {
+      ensureRunning: async () => { ensureCalls += 1; },
+      waitUntilReady: async () => readyStatus(),
+      effectiveMachine,
+    } as unknown as AppHostingProvider;
+
+    const runtime = await ensureAppRuntimeRunning(sleeping, hosting);
+
+    expect(runtime.status).toBe('running');
+    expect(ensureCalls).toBe(1);
+    const [stored] = await testDb().select().from(appRuntimes).where(eq(appRuntimes.runtimeId, RUNTIME_ID));
+    expect(stored?.idleDeadlineAt?.getTime()).toBeGreaterThan(Date.now());
+    expect(stored?.wakeLeaseOwner).toBeNull();
+  });
+
+  test('a deleted runtime rejects wake before calling the provider', async () => {
+    await seedStoppedRuntime();
+    await testDb().update(appRuntimes).set({ status: 'deleted' })
+      .where(eq(appRuntimes.runtimeId, RUNTIME_ID));
+    const deleted = await loadPublicApp(ROUTE_KEY);
+    if (!deleted) throw new Error('deleted runtime did not resolve');
+    let ensureCalls = 0;
+    const hosting = {
+      ensureRunning: async () => { ensureCalls += 1; },
+    } as unknown as AppHostingProvider;
+
+    await expect(ensureAppRuntimeRunning(deleted, hosting)).rejects.toThrow('App runtime cannot wake from deleted');
+    expect(ensureCalls).toBe(0);
+    const [stored] = await testDb().select().from(appRuntimes).where(eq(appRuntimes.runtimeId, RUNTIME_ID));
+    expect(stored?.status).toBe('deleted');
+    expect(stored?.wakeLeaseOwner).toBeNull();
   });
 
   test('a confirmed provider-stop signal forces provider start under the wake lease', async () => {

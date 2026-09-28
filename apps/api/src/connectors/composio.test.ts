@@ -618,7 +618,6 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
 
   const result = await composioCatalogPage({
     projectId: 'project-1',
-    q: 'search',
     cursor: 'cursor-1',
     limit: 20,
     runtime: fakeRuntime({ created, calls }),
@@ -648,9 +647,38 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
     },
     {
       type: 'toolkits',
-      options: { search: 'search', cursor: 'cursor-1', limit: 20 },
+      options: { cursor: 'cursor-1', limit: 20 },
     },
   ]);
+});
+
+// Every search answers from the full catalogue snapshot, whatever its length,
+// so typing a category ("crm", "email") finds that category's apps. The
+// provider's session search matches names only.
+test('composioCatalogPage answers any search from the catalogue, categories included', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const catalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: [
+            { slug: 'hubspot', name: 'HubSpot', meta: { categories: [{ id: 'crm', name: 'CRM' }] } },
+            { slug: 'gmail', name: 'Gmail', meta: { categories: [{ id: 'email', name: 'Email' }] } },
+          ],
+        };
+      },
+    },
+  };
+
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    q: 'crm',
+    catalogClient,
+    runtime: fakeRuntime({ created: session({}), calls }),
+  });
+
+  expect('toolkits' in result && result.toolkits.map((t) => t.slug)).toEqual(['hubspot']);
+  expect(calls).toEqual([]);
 });
 
 test('composioCatalogPage applies category filtering to the provider catalogue', async () => {
@@ -1266,7 +1294,7 @@ test('composioCatalogPage hides a toolkit Composio cannot connect in browse and 
   expect(category.total).toBe(1);
 });
 
-test('composioCatalogPage answers a repeated search from the deployment-wide cache', async () => {
+test('composioCatalogPage answers a repeated page from the deployment-wide cache', async () => {
   const calls: Array<Record<string, unknown>> = [];
   const created = session();
   created.toolkits = async (options) => {
@@ -1275,10 +1303,10 @@ test('composioCatalogPage answers a repeated search from the deployment-wide cac
   };
   const runtime = fakeRuntime({ created, calls });
 
-  const first = await composioCatalogPage({ projectId: 'project-1', q: 'Slack', runtime });
+  const first = await composioCatalogPage({ projectId: 'project-1', runtime });
   // Another project, other casing and whitespace: the catalogue is the same.
-  const second = await composioCatalogPage({ projectId: 'project-2', q: ' slack ', runtime });
-  await composioCatalogPage({ projectId: 'project-1', q: 'slack', cursor: 'page-2', runtime });
+  const second = await composioCatalogPage({ projectId: 'project-2', runtime });
+  await composioCatalogPage({ projectId: 'project-1', cursor: 'page-2', runtime });
 
   expect(second).toEqual(first);
   expect(calls.filter((call) => call.type === 'toolkits')).toHaveLength(2);
@@ -1372,7 +1400,7 @@ test('composioCatalogPage keeps serving the last page when a background refresh 
     return { items: [{ slug: 'gmail', name: 'Gmail', isNoAuth: false }], cursor: undefined, totalPages: 1 };
   };
   const runtime = fakeRuntime({ created });
-  const read = () => composioCatalogPage({ projectId: 'project-1', q: 'gmail', runtime });
+  const read = () => composioCatalogPage({ projectId: 'project-1', runtime });
   const start = Date.now();
   try {
     setSystemTime(new Date(start));
@@ -1415,7 +1443,7 @@ test('composioCatalogPage serves expired toolkit metadata at once and refreshes 
   };
   const describe = (page: Awaited<ReturnType<typeof composioCatalogPage>>) =>
     'items' in page ? page.items.map((item) => item.description) : [];
-  const read = () => composioCatalogPage({ projectId: 'project-1', q: 'gmail', runtime });
+  const read = () => composioCatalogPage({ projectId: 'project-1', runtime });
   const start = Date.now();
   try {
     setSystemTime(new Date(start));

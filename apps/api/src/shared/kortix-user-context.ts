@@ -30,7 +30,7 @@ export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
  *
  * Only for platform→daemon control calls whose blast radius warrants it (today:
  * the destructive `base=1` branch reset). Mirrored, with the same reasoning, in
- * apps/kortix-sandbox-agent-server/src/kortix-user-context.ts.
+ * apps/kortix-sandbox-agent-server/src/lib/kortix-api/kortix-user-context.ts.
  */
 export const KORTIX_SERVICE_CALL_HEADER = 'X-Kortix-Service-Call';
 

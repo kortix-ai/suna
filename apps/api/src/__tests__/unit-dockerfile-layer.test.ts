@@ -34,6 +34,7 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
+  managedSkillsPath: 'managed-skills',
   opencodeWarmupScriptPath: 'kortix-opencode-warmup',
 };
 
@@ -430,5 +431,36 @@ describe('buildDefaultSandboxTemplate', () => {
     const tpl = buildDefaultSandboxTemplate();
     expect(tpl.isDefault).toBe(true);
     expect(tpl.slug).toBe(DEFAULT_SANDBOX_SLUG);
+  });
+});
+
+// kortix.yaml `container_runtime: true` asks for a sandbox that runs Docker with
+// bridge + overlay networking. The layer adds only what the guest needs to load
+// the provider-supplied kernel modules (kmod), lets the runtime user reach the
+// daemon, and marks the image so the entrypoint starts dockerd at boot.
+describe('container_runtime', () => {
+  test('extractSandboxTemplates reads container_runtime: true', () => {
+    const out = extractSandboxTemplates({
+      sandbox: {
+        templates: [
+          { slug: 'dev', dockerfile: '.kortix/Dockerfile.dev', container_runtime: true },
+          { slug: 'plain', image: 'python:3.12-slim' },
+          { slug: 'typo', image: 'python:3.12-slim', container_runtime: 'yes' },
+        ],
+      },
+    });
+    expect(out.map((t) => t.containerRuntime)).toEqual([true, undefined, undefined]);
+  });
+
+  test('the layer installs kmod, joins the docker group and marks the image only when requested', () => {
+    const on = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04\n', containerRuntime: true, ...COMMON });
+    const off = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04\n', ...COMMON });
+    expect(on).toContain('ENV KORTIX_CONTAINER_RUNTIME=1');
+    expect(on).toMatch(/apt-get install -y --no-install-recommends kmod/);
+    expect(on).toContain('usermod -aG docker kortix');
+    expect(off).not.toContain('KORTIX_CONTAINER_RUNTIME');
+    expect(off).not.toContain('kmod');
+    // Runs as root, after the kortix user exists, before the image drops to it.
+    expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd --create-home'));
   });
 });

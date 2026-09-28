@@ -242,7 +242,7 @@ describe('POST /oauth/openai/poll — reconnect writes the new login into the sa
     d: 'device-1', u: 'TEST-CODE', s: null, uid: userId, rid: RESOURCE_ID, rc: 1, e: Date.now() + 60_000,
   })}`;
 
-  test('success replaces the value, re-activates it, clears the cooldown and keeps the id', async () => {
+  test('success replaces the value, re-activates it, clears the cooldown and the reconnection mark, and keeps the id', async () => {
     updatedRows = [{ secretId: RESOURCE_ID, label: 'ChatGPT · Member' }];
     const result = await poll(MEMBER_ID, reconnectHandle());
     expect(result.status).toBe(200);
@@ -256,6 +256,7 @@ describe('POST /oauth/openai/poll — reconnect writes the new login into the sa
       valueEnc: 'account-sealed:{"openai":{"access":"a","refresh":"r","expires":1}}',
       active: true,
       cooldownUntil: null,
+      needsReauthAt: null,
     });
     expect(auditEvents).toContainEqual(expect.objectContaining({
       action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: RESOURCE_ID,

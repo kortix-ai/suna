@@ -37,10 +37,13 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { gridSelectionToTsv } from '@/features/file-renderers/csv/csv-copy';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { ViewerCopyMenu } from '@/features/file-renderers/shared/viewer-copy-menu';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
 import { cn } from '@/lib/utils';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 
 const ZOOM_OPTIONS = [0.75, 1, 1.25, 1.5, 2] as const;
 const CSV_SEARCH_BATCH_ROW_COUNT = 500;
@@ -559,6 +562,28 @@ export function CsvViewer({
   }, []);
 
   const columnCount = Math.max(1, parsed.headers.length);
+  const gridContainerRef = React.useRef<HTMLDivElement>(null);
+  const selectionText = React.useCallback(
+    () => gridSelectionToTsv(gridSelection, parsed.rows, columnCount),
+    [columnCount, gridSelection, parsed.rows],
+  );
+
+  // Glide copies from a window listener and also writes an HTML table. This
+  // capture listener runs first, writes plain tab-separated text only, and
+  // stops Glide's. Focus in the cell overlay (outside this box) copies natively.
+  React.useEffect(() => {
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!gridContainerRef.current?.contains(document.activeElement)) return;
+      const text = selectionText();
+      if (text === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.clipboardData) event.clipboardData.setData('text/plain', text);
+      else void copyToClipboard(text);
+    };
+    document.addEventListener('copy', handleCopy, true);
+    return () => document.removeEventListener('copy', handleCopy, true);
+  }, [selectionText]);
   const scale = React.useCallback((value: number) => Math.round(value * zoom), [zoom]);
   const searchDisabled = Boolean(parsed.error) || parsed.rows.length === 0;
 
@@ -740,27 +765,36 @@ export function CsvViewer({
             <Spinner className="size-4" />
           </div>
         ) : (
-          <glide.DataEditor
-            ref={search ? gridRef : undefined}
-            key={zoom}
-            columns={columns}
-            rows={parsed.rows.length}
-            getCellContent={getCellContent}
-            rowMarkers="number"
-            rowSelectionMode="multi"
-            gridSelection={search ? gridSelection : undefined}
-            onGridSelectionChange={search ? handleGridSelectionChange : undefined}
-            scrollToActiveCell={search}
-            keybindings={{ search: true }}
-            smoothScrollX
-            smoothScrollY
-            getCellsForSelection
-            width="100%"
-            height="100%"
-            theme={theme}
-            rowHeight={scale(34)}
-            headerHeight={scale(36)}
-          />
+          <ViewerCopyMenu
+            onCopy={() => {
+              const text = selectionText();
+              if (text !== null) void copyToClipboard(text);
+            }}
+          >
+            <div ref={gridContainerRef} className="h-full">
+              <glide.DataEditor
+                ref={search ? gridRef : undefined}
+                key={zoom}
+                columns={columns}
+                rows={parsed.rows.length}
+                getCellContent={getCellContent}
+                rowMarkers="number"
+                rowSelectionMode="multi"
+                gridSelection={gridSelection}
+                onGridSelectionChange={handleGridSelectionChange}
+                scrollToActiveCell={search}
+                keybindings={{ search: true }}
+                smoothScrollX
+                smoothScrollY
+                getCellsForSelection
+                width="100%"
+                height="100%"
+                theme={theme}
+                rowHeight={scale(34)}
+                headerHeight={scale(36)}
+              />
+            </div>
+          </ViewerCopyMenu>
         )}
       </div>
     </div>

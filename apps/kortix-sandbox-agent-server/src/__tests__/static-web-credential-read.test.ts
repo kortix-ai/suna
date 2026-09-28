@@ -23,14 +23,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { startStaticWebServer } from '../static-web'
+import { harnessProtectedPathSegments } from '@/harness/harness'
+import { startStaticWebServer } from '@/services/static-web/static-web'
 
 let server: ReturnType<typeof startStaticWebServer>
 let base: string
 let scratch: string
 
 beforeAll(() => {
-  server = startStaticWebServer(0)
+  server = startStaticWebServer(harnessProtectedPathSegments(), 0)
   base = `http://127.0.0.1:${server.port}`
   // Explicitly under `/tmp` — an allowed root. NOT os.tmpdir(), which on macOS
   // is /var/folders/... and would put the fixture outside the roots, making the

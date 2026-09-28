@@ -1,32 +1,24 @@
 ---
 title: MCP server
-description: Connect Claude, ChatGPT, Cursor, Codex or any MCP client to a Kortix project over OAuth. Nothing to install.
+description: Connect Claude, ChatGPT, Cursor, Codex or any MCP client to Kortix over OAuth or a personal access token. One URL reaches every project you can open. Nothing to install.
 ---
 
-> **Experimental.** The MCP server is a [feature flag](/docs/feature-flags), off
-> by default. Its tools and URLs can change without a deprecation.
+> **Experimental.** Its tools can change without a deprecation.
 
-Every Kortix project has a hosted MCP server at:
+Kortix has one hosted MCP server:
 
 ```text
-https://api.kortix.com/v1/projects/<project_id>/mcp
+https://api.kortix.com/v1/mcp
 ```
 
-Add that URL to an MCP client. The first call asks you to sign in to Kortix in
-the browser. After that, the client acts as you, with your permissions, and the
-project in the URL is its default project. There is nothing to install.
+Add that URL to an MCP client once. The first call asks you to sign in to
+Kortix in the browser. After that, the client acts as you, with your
+permissions, across every account and project you can open — the same reach as
+the [CLI](/docs/cli). The URL names no project: the tools take a `project_id`
+or a `session_id`, and `list_projects` lists them. There is nothing to install.
 
-## Turn it on
-
-1. Open **Settings → Feature flags** in the project and switch **MCP server**
-   on. You need `project.customize.write`.
-2. Open the workspace menu (the project name, top left) and select
-   **Connect MCP**. The dialog shows this project's URL and the steps for each
-   client.
-
-While the flag is off, the endpoint answers `403` with
-`{ error, code: "feature_disabled", feature: "mcp" }`, and **Connect MCP** does
-not appear in the menu.
+Open the workspace menu (the project name, top left) and select
+**Connect MCP** to copy the URL and the steps for each client.
 
 ## Add it to a client
 
@@ -46,7 +38,7 @@ does it without configuration:
 1. A call without a token answers `401` with
    `WWW-Authenticate: Bearer resource_metadata="…", scope="kortix"`.
 2. The client reads the RFC 9728 document at
-   `/.well-known/oauth-protected-resource/v1/projects/<project_id>/mcp`. It names
+   `/.well-known/oauth-protected-resource/v1/mcp`. It names
    Kortix as the authorization server.
 3. The client registers itself at `POST /v1/oauth/register` (RFC 7591). It gets
    a public client that authenticates with PKCE alone.
@@ -59,21 +51,54 @@ does it without configuration:
 Kortix has no page yet that lists or revokes the MCP clients you approved.
 Removing the server from the client stops it from using your tokens.
 
+### Personal access token
+
+A client without OAuth, or a script, sends a `kortix_pat_` token instead — the
+token the CLI uses. Create one with `kortix tokens create` or in your account
+settings, then send it as a header:
+
+```json
+{ "mcpServers": { "kortix": { "url": "https://api.kortix.com/v1/mcp", "headers": { "Authorization": "Bearer kortix_pat_…" } } } }
+```
+
 ## Tools
 
 | Tool | What it does |
 | --- | --- |
-| `start_session` | Starts a session in the project with a first prompt. Returns the `session_id`. |
+| `list_projects` | Lists every project you can open, across all your accounts, with its `project_id`. |
+| `start_session` | Starts a session in a project (`project_id`) with a first prompt. Returns the `session_id`. |
 | `send_message` | Queues a message for a session and starts the session if it is stopped. |
-| `read_session` | Returns a session's status and a compact transcript of its latest messages. |
+| `read_session` | Returns a session's status, whether a turn is `running`, and its latest messages with each tool call's input and output. `wait_seconds` (up to 45) waits for the running turn to end. |
+| `list_sessions` | Lists the sessions you can see in a project (`project_id`): id, title, status, agent, owner. |
+| `run_command` | Runs a bash command in a session's sandbox and returns stdout, stderr and the exit code. |
+| `read_file` | Reads a file from a session's sandbox (`session_id`), or from a project's git repository (`project_id`). Images return as images. |
+| `write_file` | Writes a file in a session's sandbox and creates its parent directories. |
+| `list_files` | Lists one directory of a session's sandbox (`session_id`), or every file of a project's repository under a path (`project_id`). |
+| `read_skill` | Lists the Kortix platform guides, or returns one guide and its reference files. |
 | `search_api` | Searches the Kortix API routes by keyword. |
 | `describe_api` | Returns one route's parameters, request body and response schema. |
-| `call_api` | Calls any `/v1/` route as you. `{projectId}` in the path means the connection's project. |
+| `call_api` | Calls any `/v1/` route as you. `project_id` fills `{projectId}` in the path. |
 
 `search_api`, `describe_api` and `call_api` cover everything the web app and the
 [CLI](/docs/cli) do, because both are clients of the same API. `call_api`
-refuses `/v1/oauth/*` and MCP paths. Each call passes the same authorization
-and audit as a request from the web app.
+refuses `/v1/oauth/*` and `/v1/mcp`. Each call passes the same authorization
+and audit as a request from the web app. The audit records each call with
+`client_reported_source: "mcp"`.
+
+### Sandboxes
+
+`run_command`, `read_file`, `write_file` and `list_files` with a `session_id`
+reach the session's live sandbox, the same way the web terminal and file panel
+do. Relative paths resolve under `/workspace`, the session's git checkout. A
+stopped sandbox starts on the first call. The `kortix` CLI in the sandbox is
+signed in as the session.
+
+One tool call answers within 55 seconds. `run_command` stops a command after
+45 seconds. Start longer work in the background and read its log later:
+
+```bash
+nohup npm test > /tmp/test.log 2>&1 &
+```
 
 The server is stateless: it answers `POST` with JSON, and `GET` and `DELETE`
 with `405`.

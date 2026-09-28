@@ -3,6 +3,32 @@ import {
   type MirrorMessage,
 } from "./session-transcript-mirror";
 
+/**
+ * One page of an OpenCode session's messages, newest first.
+ *
+ * The next page is asked for by `before`, holding the previous page's
+ * `x-next-cursor`. That is the spelling OpenCode reads (and the SDK's page
+ * loader sends). OpenCode ignores `cursor=` and answers page one again with
+ * the same cursor, so a capture that sent it stopped after the newest page as
+ * "not advancing": a full-history capture never reached a long session's
+ * head, never proved it, and never re-read anything older. The pi runtime
+ * reads either spelling.
+ */
+export function transcriptPageUrl(
+  baseUrl: string,
+  opencodeSessionId: string,
+  cursor: string | undefined,
+  limit: number,
+): URL {
+  const url = new URL(
+    `${baseUrl.replace(/\/+$/, "")}/session/${encodeURIComponent(opencodeSessionId)}/message`,
+  );
+  url.searchParams.set("directory", "/workspace");
+  url.searchParams.set("limit", String(limit));
+  if (cursor) url.searchParams.set("before", cursor);
+  return url;
+}
+
 /** The result of walking transcript pages. */
 export interface TranscriptPageWalk {
   rows: MirrorMessage[];
