@@ -474,6 +474,31 @@ describe('groupSessionsByCoordinator', () => {
     const groups = groupSessionsByCoordinator([orphan, solo]);
     expect(groups.map((g) => g.session.session_id)).toEqual(['orphan-1', 'solo-1']);
   });
+
+  test('a quiet coordinator takes the position of its newest child', () => {
+    // Newest-first list: the child is working, the coordinator went quiet.
+    const groups = groupSessionsByCoordinator([childA, solo, meta]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
+    expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a']);
+  });
+
+  test('a grandchild nests under the root coordinator instead of vanishing', () => {
+    const grandchild = makeSession({
+      session_id: 'grand-1',
+      metadata: { spawned_by_session: 'child-a' },
+    } as never);
+    const groups = groupSessionsByCoordinator([grandchild, meta, childA]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1']);
+    expect(groups[0].children.map((c) => c.session_id)).toEqual(['grand-1', 'child-a']);
+  });
+
+  test('a parent cycle renders each session once, top-level', () => {
+    const a = makeSession({ session_id: 'a', metadata: { spawned_by_session: 'b' } } as never);
+    const b = makeSession({ session_id: 'b', metadata: { spawned_by_session: 'a' } } as never);
+    const groups = groupSessionsByCoordinator([a, b]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['a', 'b']);
+    expect(groups.every((g) => g.children.length === 0)).toBe(true);
+  });
 });
 
 describe('getSessionDisplayTitle — Teams mention markup', () => {

@@ -697,10 +697,17 @@ describe('groupSessionsByCoordinator', () => {
     const a = makeSession({ session_id: 'a', metadata: { spawned_by_session: 'b' } });
     const b = makeSession({ session_id: 'b', metadata: { spawned_by_session: 'a' } });
     const groups = groupSessionsByCoordinator([a, b]);
-    // Both point at each other, so neither has a parentless entry to become
-    // a `groups` root; the cycle resolves to no group at all rather than an
-    // infinite loop or a crash.
-    expect(groups).toEqual([]);
+    // Both point at each other, so neither has a root. Each renders
+    // top-level, once, instead of looping forever or vanishing.
+    expect(groups.map((g) => g.session.session_id)).toEqual(['a', 'b']);
+    expect(groups.every((g) => g.children.length === 0)).toBe(true);
+  });
+
+  test('a quiet coordinator takes the position of its newest child', () => {
+    // Newest-first list: the child is working, the coordinator went quiet.
+    const groups = groupSessionsByCoordinator([childA, solo, coordinator]);
+    expect(groups.map((g) => g.session.session_id)).toEqual(['coord-1', 'solo-1']);
+    expect(groups[0]?.children.map((c) => c.session_id)).toEqual(['child-a']);
   });
 
   test('never mutates the input array', () => {
