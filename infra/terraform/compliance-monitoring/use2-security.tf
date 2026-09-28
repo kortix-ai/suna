@@ -230,6 +230,11 @@ resource "aws_wafv2_web_acl" "use2" {
             "GenericLFI_BODY",
             "GenericRFI_BODY",
             "SizeRestrictions_BODY",
+            # Setup-link tokens (/v1/setup-links/{secret,connectors}/ksl_…) are
+            # encrypted envelopes that grow with the requested fields and pass
+            # 1024 bytes of path; Block returned a CORS-less 403 to the intake
+            # page. The ALB still caps the request line.
+            "SizeRestrictions_URIPATH",
           ])
           content {
             name = rule_action_override.value

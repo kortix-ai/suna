@@ -233,8 +233,9 @@ connectors. Never add a new Pipedream connector automatically. If Composio
 cannot satisfy the request, stop, explain the gap, and ask the human before any
 explicit `--allow-legacy-pipedream` retry.
 
-Surface the returned connection URL. Never ask the user to paste a credential
-into chat. For an API key, use `kortix secrets request NAME --scope connector`.
+Surface the returned connection URL. For an API key you already have (the user
+gave it in chat), store it now: `kortix secrets set NAME=- --scope connector`.
+For one you lack, use `kortix secrets request NAME --scope connector`.
 
 Slack uses the channel flow. Do not add a Slack connector. Run:
 

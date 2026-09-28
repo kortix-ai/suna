@@ -174,8 +174,8 @@ the exact HTTPS hosts the policy lists.
 | Command | Effect |
 | --- | --- |
 | `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. In a session it lists only your agent's granted secrets; a declared key outside the grant shows `not granted` (set or not, you never receive it — ask the human to enable it under Customize → Agents → your agent → Secrets). |
-| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
-| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
+| `kortix secrets set NAME=VALUE … [--scope runtime\|connector]` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). **Use it whenever you HAVE the value** — including a key the human gave you in chat. `--scope connector` keeps it server-side for a connector. `403` = your agent lacks secret-write permission → use `request`. |
+| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER value(s) you do NOT have.** Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
 | `kortix secrets unset NAME …` | Remove. |
 | `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | (Experimental network enforcement only.) Send one policy-bound HTTPS request. Kortix adds the secret server-side. Use it when a request cannot be relayed transparently. |
 
@@ -186,10 +186,12 @@ a plaintext environment variable. An egress-enforced secret (experimental,
 present only when the project enabled it) is a handle, and a service-spent one
 has no sandbox presence at all.
 
-> **Asking a human for a secret.** You usually don't *have* the value, so don't
-> use `set`. Run `kortix secrets request APOLLO_API_KEY` (or the `request_secret`
-> tool on the `kortix-connectors` MCP), surface the returned URL, end your turn, and
-> when they say "done" confirm with `kortix secrets ls`. See the
+> **Have the value? Set it. Lack it? Request it.** When the human already gave
+> you the value, store it now: `printf '%s' "$V" | kortix secrets set NAME=-`
+> (or the `set_secret` tool) — no link. When you lack it, run
+> `kortix secrets request APOLLO_API_KEY` (or the `request_secret` tool on the
+> `kortix-connectors` MCP), surface the returned URL, end your turn, and when they
+> say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
 ### Connectors — call external tools
