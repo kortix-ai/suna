@@ -40,9 +40,9 @@ export interface SessionSurfaceInput {
   /** The durable first prompt exists, even after this tab loses its local hint. */
   hasPendingFirstPrompt?: boolean;
   /**
-   * The server says this existing session never had a conversation: nothing
-   * saved, no turn ever, nothing queued (`useSession().conversationEmpty`).
-   * It opens like a new one, on its composer: a boot screen would wait for
+   * The saved copy proves this existing session's conversation empty, no turn
+   * ended since, and nothing is queued (`useSession().conversationEmpty`). It
+   * opens like a new one, on its composer: a boot screen would wait for
    * history that does not exist.
    */
   conversationEmpty?: boolean;

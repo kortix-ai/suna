@@ -31,8 +31,8 @@ describe('isNewSessionSurface', () => {
     expect(isNewSessionSurface({ newSessionHint: true, hasTranscript: true })).toBe(false);
   });
 
-  test('an existing session that never had a conversation gets the shell, not the boot screen', () => {
-    // Created through the API and never prompted: nothing saved, no turn ever,
+  test('an existing session proven empty gets the shell, not the boot screen', () => {
+    // Its saved copy proves the conversation empty, no turn ended since,
     // nothing queued. There is nothing for a boot screen to wait for.
     expect(isNewSessionSurface({ newSessionHint: false, hasTranscript: false, conversationEmpty: true })).toBe(true);
     expect(
