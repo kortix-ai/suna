@@ -18,7 +18,7 @@ import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { configReleasesEnabled } from '../../config-releases/enabled';
 import { admitRunningSandbox } from '../../runtime-convergence/admit-running-sandbox';
-import { runtimeAdmissionEnforced } from '../../runtime-convergence/admission';
+import { admissionRefusalIsRepairable } from '../../runtime-convergence/admission';
 import { resolveBranchTip } from '../git';
 import { legacyRehydrateSpec, rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
@@ -1021,6 +1021,54 @@ export async function preserveEstablishedRuntimeOnOpen(
  *  momentary git-mirror hiccup — to self-heal on a fresh box; too few to spin
  *  forever on a systemic failure (a broken image, a missing boot-time
  *  credential) that a fresh box cannot fix either. */
+/**
+ * How many times an in-place repair may be attempted for one admission check
+ * before the box is replaced instead.
+ *
+ * A repairable check says the CLASS of failure has a fix over HTTP. It does not
+ * promise THIS box can be fixed: the learnings entry for admission enforcement
+ * records 152 of 235 sessions in one project whose boxes could neither pass
+ * admission nor self-heal, because convergence needed the very credential they
+ * lacked. Unbounded repair would leave those sessions cycling `starting`
+ * forever — no terminal state, no progress. Two attempts, then replace.
+ */
+export const ADMISSION_REPAIR_MAX_ATTEMPTS = 2;
+
+const ADMISSION_REPAIR_KEY = 'admissionRepairAttempts';
+
+/** Attempts already spent repairing THIS check on THIS box. */
+export function admissionRepairAttempts(
+  metadata: Record<string, unknown>,
+  check: string,
+): number {
+  const record = metadata[ADMISSION_REPAIR_KEY];
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return 0;
+  const value = (record as Record<string, unknown>)[check];
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/** Merge in SQL — never write back a JSONB column read earlier (learnings 2026-09-22). */
+async function noteAdmissionRepairAttempt(
+  sandboxId: string,
+  check: string,
+  attempts: number,
+): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        [ADMISSION_REPAIR_KEY]: { [check]: attempts },
+      })}::jsonb`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId))
+    .catch((err) =>
+      console.warn(
+        '[runtime-convergence] could not record the admission repair attempt:',
+        err instanceof Error ? err.message : err,
+      ),
+    );
+}
+
 export const ADMISSION_REPLACE_MAX_PER_WINDOW = 3;
 export const ADMISSION_REPLACE_WINDOW_MS = 15 * 60 * 1000;
 
@@ -1974,15 +2022,87 @@ async function runOpenSession(args: {
       repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
       sessionId,
     }).catch(() => ({ admitted: true as const }));
-    // `admitRunningSandbox` already logged the refusal (observable from the
-    // moment this ships). ENFORCEMENT — actually replacing the box — is a
-    // separate, deliberate opt-in: see `runtimeAdmissionEnforced`.
-    if (!admission.admitted && runtimeAdmissionEnforced()) {
+    // ENFORCED, always. There is no opt-in switch: a deployment that runs
+    // `config_releases` has promised the session a current runtime, and a
+    // promise with an off-by-default enforcement flag is not a promise.
+    //
+    // The switch that used to stand here (`RUNTIME_ADMISSION_ENFORCE`) existed
+    // because the daemon half of this contract shipped on a parallel branch and
+    // every box alive would have failed the capability check. Both halves
+    // landed 2026-09-27 (#7792 daemon, #7793 API) hours apart, and the catch
+    // outlived its reason by a day. A freshly booted box reports the full
+    // `runtime_truth` document; the gate was protecting against a fleet that no
+    // longer exists.
+    // NEVER replace a box whose repair is still running. `guaranteeCurrentRuntimeOnOpen`
+    // above fires the legacy bootstrap and does NOT await it (a relaunch kills
+    // PTYs), so a repair started on an earlier open is still swapping the agent
+    // binary and entrypoint — the very things admission is about to judge —
+    // while this check runs. Replacing here throws away a box that was already
+    // being fixed in place, and in-place repair is both cheaper (37s measured,
+    // keeps the disk) and the platform's FIRST answer; admission is the backstop
+    // for when it has failed, not a race against it.
+    //
+    // This is the same defect #7954/#7957 fixed on the readiness clock and the
+    // wake fence: a deadline that judges a box while its repair is mid-flight.
+    // Third gate, same rule.
+    if (!admission.admitted && repairInFlight(sandboxMetadata(row))) {
+      console.warn('[runtime-convergence] admission refused, but a repair is still running', {
+        session_id: sessionId,
+        sandbox_id: row.sandboxId,
+        failed_check: admission.failedCheck,
+      });
+    } else if (!admission.admitted) {
       // Rule 5: never pull a box out from under a live turn. Exactly like
       // `guaranteeCurrentRuntimeOnOpen`'s own `defer_turn_running` above — fall
       // through unchanged and let the next open re-check admission once the
       // turn ends, instead of replacing (or parking) a serving box.
       if (!sessionHoldsTurnAuthority(row)) {
+        // A STALE CATALOG is repairable in place, and replacing a serving box
+        // over it throws away its disk to fix what one request fixes. The
+        // converger is the same one the turn-start lane uses; it is idle-gated
+        // and never ends a running turn. The session is handed back as
+        // `starting` so the NEXT open re-checks admission against the repaired
+        // box — the box is never admitted on the strength of a repair that was
+        // only just requested.
+        //
+        // BOUNDED. "Repairable" is a claim about the CHECK, not a promise about
+        // this box: the learnings entry for this very flag records 152 of 235
+        // sessions in one project whose boxes could never pass admission AND
+        // could never self-heal, because convergence itself needed the
+        // credential they were missing. Retrying convergence forever would give
+        // those sessions no terminal state and no progress either — which is
+        // the same trap, wearing the opposite mask. After
+        // ADMISSION_REPAIR_MAX_ATTEMPTS the box has had its chance and falls
+        // through to replacement.
+        const repairAttempts = admissionRepairAttempts(sandboxMetadata(row), admission.failedCheck);
+        if (
+          admissionRefusalIsRepairable(admission.failedCheck) &&
+          repairAttempts < ADMISSION_REPAIR_MAX_ATTEMPTS
+        ) {
+          const { convergeSandboxModelCatalog } = await import('../lib/model-catalog-turn-start');
+          const converged = await convergeSandboxModelCatalog(sessionId).catch(() => null);
+          await noteAdmissionRepairAttempt(row.sandboxId, admission.failedCheck, repairAttempts + 1);
+          console.warn('[runtime-convergence] admission refused on a REPAIRABLE check', {
+            session_id: sessionId,
+            sandbox_id: row.sandboxId,
+            failed_check: admission.failedCheck,
+            cause: admission.cause,
+            converge_outcome: converged?.outcome ?? 'unreachable',
+            attempt: repairAttempts + 1,
+            max: ADMISSION_REPAIR_MAX_ATTEMPTS,
+          });
+          return {
+            stage: 'starting',
+            agent_name: visible.row.agentName ?? 'default',
+            retriable: true,
+            sandbox: serializeSandboxRow(row),
+            opencode_session_id: ensured.pin,
+            runtime_url: sessionRuntimeUrlPath(runningExternalId),
+            reason: 'runtime_updating',
+          };
+        }
+        // Not repairable — no `config.release.v1`, or a daemon below the floor.
+        // Nothing an HTTP call changes, so Rule 4 stands: replace it.
         log.did('provisioned');
         return replaceRefusedRuntimeOnOpen(
           loaded,
