@@ -705,6 +705,7 @@ describe('MCP face', () => {
         'connect',
         'finalize_connection',
         'request_secret',
+        'set_secret',
         'secret_call',
         'add_connector',
         'remove_connector',
