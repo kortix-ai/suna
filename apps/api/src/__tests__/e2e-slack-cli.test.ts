@@ -83,6 +83,7 @@ function slackDataFor(action: string, args: Record<string, unknown>): unknown {
       return { ok: true, ts: args.ts, channel: args.channel };
     case 'delete_message':
     case 'add_reaction':
+    case 'remove_reaction':
       return { ok: true };
     case 'get_history':
       return { ok: true, messages: [{ type: 'message', text: 'history', channel: args.channel }] };
@@ -335,6 +336,11 @@ describe('slack CLI', () => {
         args: ['react', '--channel', 'C1', '--ts', '111.222', '--emoji', 'white_check_mark'],
         action: 'add_reaction',
         expectedArgs: { channel: 'C1', timestamp: '111.222', name: 'white_check_mark' },
+      },
+      {
+        args: ['unreact', '--channel', 'C1', '--ts', '111.222', '--emoji', 'eyes'],
+        action: 'remove_reaction',
+        expectedArgs: { channel: 'C1', timestamp: '111.222', name: 'eyes' },
       },
       {
         args: ['history', '--channel', 'C1', '--limit', '3'],

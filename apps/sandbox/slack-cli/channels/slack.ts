@@ -125,6 +125,7 @@ const METHOD_TO_ACTION: Record<string, string> = {
   'chat.update': 'update_message',
   'chat.delete': 'delete_message',
   'reactions.add': 'add_reaction',
+  'reactions.remove': 'remove_reaction',
   'conversations.history': 'get_history',
   'conversations.replies': 'get_thread',
   'conversations.list': 'list_channels',
@@ -349,8 +350,8 @@ async function del(opts: { channel: string; ts: string }) {
   return { ok: true };
 }
 
-async function react(opts: { channel: string; ts: string; emoji: string }) {
-  const data = await apiPost('reactions.add', {
+async function react(opts: { channel: string; ts: string; emoji: string }, method = 'reactions.add') {
+  const data = await apiPost(method, {
     channel: opts.channel,
     timestamp: opts.ts,
     name: opts.emoji,
@@ -595,6 +596,9 @@ async function main(): Promise<void> {
     case 'react':
       out(await react(requiredFlags(flags, 'channel', 'ts', 'emoji')));
       break;
+    case 'unreact':
+      out(await react(requiredFlags(flags, 'channel', 'ts', 'emoji'), 'reactions.remove'));
+      break;
     case 'typing':
       validateRequired(flags, 'channel');
       out({ ok: true, note: 'Slack Web API does not support typing indicators for bots' });
@@ -678,6 +682,7 @@ Commands:
   edit         (--channel, --ts, --text|--text-file|--blocks|--blocks-file)
   delete       (--channel, --ts)
   react        (--channel, --ts, --emoji)
+  unreact      (--channel, --ts, --emoji)   # remove a reaction you added
   typing       (--channel)               # no-op on Slack Web API
   history      (--channel, [--limit])
   thread       (--channel, --ts, [--limit])

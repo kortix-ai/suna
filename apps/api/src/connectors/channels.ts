@@ -199,6 +199,21 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     required: ['channel', 'timestamp', 'name'],
   },
   {
+    path: 'remove_reaction',
+    method: 'reactions.remove',
+    verb: 'POST',
+    name: 'Remove reaction',
+    description:
+      'Remove an emoji reaction you added to a message. Requires `channel`, the message `timestamp`, and the emoji `name` (without colons).',
+    risk: 'write',
+    properties: {
+      channel: { type: 'string', description: 'Channel ID the message is in.' },
+      timestamp: { type: 'string', description: 'Timestamp (ts) of the target message.' },
+      name: { type: 'string', description: 'Emoji name without colons, e.g. "eyes".' },
+    },
+    required: ['channel', 'timestamp', 'name'],
+  },
+  {
     path: 'get_history',
     method: 'conversations.history',
     verb: 'GET',

@@ -50,8 +50,8 @@ describe('channelCatalog(slack)', () => {
   const action = (path: string) => expectDefined(byPath.get(path));
 
   test('exposes the full native Slack surface as http bindings', () => {
-    // 14 native Web API methods (relay/typing/download/manifest/file-upload are CLI-side).
-    expect(actions.length).toBe(14);
+    // 15 native Web API methods (relay/typing/download/manifest/file-upload are CLI-side).
+    expect(actions.length).toBe(15);
     for (const a of actions) {
       expect(a.binding.kind).toBe('http');
       if (a.binding.kind === 'http') expect(a.binding.path.startsWith('/')).toBe(true);
@@ -76,6 +76,13 @@ describe('channelCatalog(slack)', () => {
     const react = action('add_reaction');
     const props = Object.keys(objectSchema(react.inputSchema).properties);
     expect(props).toEqual(['channel', 'timestamp', 'name']); // not ts/emoji — Slack's own names
+  });
+
+  test('remove_reaction → POST /reactions.remove with the same params as add_reaction', () => {
+    const a = action('remove_reaction');
+    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/reactions.remove' });
+    expect(a.risk).toBe('write');
+    expect(objectSchema(a.inputSchema).required).toEqual(['channel', 'timestamp', 'name']);
   });
 
   test('auth_test has no inputs; unknown platform → empty', () => {
