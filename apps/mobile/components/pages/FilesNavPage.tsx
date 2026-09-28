@@ -30,7 +30,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItem } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import Animated from 'react-native-reanimated';
@@ -56,10 +55,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { FileGlyph } from '@/components/files/file-icons';
-import { DownloadMenu } from '@/components/files/DownloadMenu';
 import { downloadFailureMessage } from '@/lib/files/download-status';
-import { exportMarkdownPdf } from '@/lib/files/export-markdown-pdf';
-import type { DownloadFormat } from '@/lib/files/markdown-export';
+import { saveFileToDevice, type SaveToDeviceResult } from '@/lib/files/save-to-device';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
 import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
@@ -140,10 +137,11 @@ function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[];
 
 /**
  * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
- * to be shared as `name.zip` (COR-155). A non-2xx status deletes the temp
- * file and throws the message; the caller toasts it.
+ * to be saved as `name.zip` (COR-155). A non-2xx status deletes the temp
+ * file and throws the message; the caller toasts it. A good body is saved on
+ * the device (`saveFileToDevice`), never shared.
  */
-async function downloadAndShare(url: string, filename: string, withAuth: boolean) {
+async function downloadAndSave(url: string, filename: string, withAuth: boolean): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   let status: number | undefined;
   try {
@@ -162,13 +160,13 @@ async function downloadAndShare(url: string, filename: string, withAuth: boolean
     await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
     throw new Error(failure);
   }
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
+  return saveFileToDevice(target, filename);
 }
 
-async function saveTextAndShare(content: string, filename: string) {
+async function saveTextToDevice(content: string, filename: string): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   await FileSystem.writeAsStringAsync(target, content);
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
+  return saveFileToDevice(target, filename);
 }
 
 /**
@@ -288,17 +286,15 @@ function FileSheetBody({
     setView(next);
   }, []);
 
-  const download = async (format: DownloadFormat) => {
+  const download = async () => {
     if (downloading) return;
     haptics.tap();
     setDownloading(true);
     try {
-      if (format === 'pdf') {
-        const uri = await exportMarkdownPdf(copyText, basename(file.name));
-        if (uri == null) toast.info('Update the app to save as PDF.');
-        else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
-      } else {
-        await saveTextAndShare(content.data?.content ?? '', basename(file.name));
+      const result = await saveTextToDevice(content.data?.content ?? '', basename(file.name));
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
       }
     } catch (e: any) {
       haptics.warning();
@@ -392,15 +388,15 @@ function FileSheetBody({
 
       {/* The project drawer's pinned bar: Download · History, over a fade. */}
       <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-        {/* A markdown file's Download offers Markdown · PDF (KRTX-605). */}
-        <DownloadMenu fileName={file.name} pdfReady={copyText !== ''} onDownload={(format) => void download(format)} className="flex-1">
-          {(onPress) => (
-            <Button variant="secondary" className="rounded-full" onPress={onPress} disabled={downloading || content.isLoading}>
-              <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
-              <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
-            </Button>
-          )}
-        </DownloadMenu>
+        {/* Download saves the file on the device, as it is (no PDF on mobile). */}
+        <Button
+          variant="secondary"
+          className="flex-1 rounded-full"
+          onPress={() => void download()}
+          disabled={downloading || content.isLoading}>
+          <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
+          <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
+        </Button>
         <Button variant="secondary" className="flex-1 rounded-full" onPress={() => goTo({ kind: 'history' }, false)}>
           <Icon as={ClockCounterClockwiseIcon} size={18} className="text-foreground" />
           <Text>History</Text>
@@ -644,7 +640,11 @@ export function FilesNavPage({
     setDownloadingDir(true);
     try {
       const name = (path ? basename(path) : 'workspace') || 'workspace';
-      await downloadAndShare(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      const result = await downloadAndSave(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch (e: any) {
       haptics.warning();
       toast.error(e?.message || 'Unable to download the folder. Try again.');

@@ -33,10 +33,7 @@ import { showFileTypeIcon } from '@/components/session/tool/shared/show-helpers'
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { DownloadMenu } from '@/components/files/DownloadMenu';
-import { exportMarkdownPdf } from '@/lib/files/export-markdown-pdf';
 import { downloadOpenCodeFileToCache } from '@/lib/files/hooks';
-import { pdfFileName, type DownloadFormat } from '@/lib/files/markdown-export';
 import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
@@ -168,41 +165,24 @@ export function FilePreviewBody({
   }, [copyText, onCopyTextChange]);
 
   const [downloading, setDownloading] = React.useState(false);
-  const handleDownload = async (format: DownloadFormat) => {
+  const handleDownload = async () => {
     if (!sandboxUrl || downloading) return;
     haptics.tap();
     setDownloading(true);
-    const name = format === 'pdf' ? pdfFileName(sandboxFile.name) : sandboxFile.name;
-    let uri: string | null;
     try {
-      uri =
-        format === 'pdf'
-          ? await exportMarkdownPdf(copyText, sandboxFile.name)
-          : // Streams to disk natively, so it works for a file of any size or type.
-            await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
-    } catch {
-      haptics.warning();
-      toast.error(format === 'pdf' ? 'Unable to make the PDF. Try again.' : 'Unable to download the file. Try again.');
-      setDownloading(false);
-      return;
-    }
-    if (uri == null) {
-      toast.info('Update the app to save as PDF.');
-      setDownloading(false);
-      return;
-    }
-    try {
-      // Download saves the file on the device (Jay, 2026-09-28): a folder the
-      // user picks, remembered on Android (`lib/files/save-to-device`). It is
-      // never opened in another app.
-      const result = await saveFileToDevice(uri, name);
+      // The file as it is — same name, same extension, no PDF on mobile —
+      // streamed to the cache natively (any size or type), then saved in a
+      // folder on the device (`lib/files/save-to-device`), never opened in
+      // another app.
+      const uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
+      const result = await saveFileToDevice(uri, sandboxFile.name);
       if (result.status === 'saved') {
         haptics.success();
         toast.success(`Saved to ${result.folder}`);
       }
     } catch {
       haptics.warning();
-      toast.error('Unable to save the file. Try again.');
+      toast.error('Unable to download the file. Try again.');
     } finally {
       setDownloading(false);
     }
@@ -274,24 +254,15 @@ export function FilePreviewBody({
         controlHeight={BAR_CONTROL_HEIGHT}
         background={pageBackground}
         className="gap-2 px-4">
-        {/* A markdown file's Download offers Markdown · PDF (KRTX-605). */}
-        <DownloadMenu
-          fileName={sandboxFile.name}
-          pdfReady={copyText !== ''}
-          onDownload={(format) => void handleDownload(format)}
-          className="flex-1">
-          {(onPress) => (
-            <Button
-              variant="secondary"
-              className="rounded-full"
-              disabled={!sandboxUrl || downloading || failure?.kind === 'missing'}
-              onPress={onPress}
-              accessibilityLabel={downloading ? 'Downloading' : 'Download file'}>
-              {downloading ? <KortixLoader size="small" /> : <Icon as={DownloadSimpleIcon} size={18} />}
-              <Text>Download</Text>
-            </Button>
-          )}
-        </DownloadMenu>
+        <Button
+          variant="secondary"
+          className="flex-1 rounded-full"
+          disabled={!sandboxUrl || downloading || failure?.kind === 'missing'}
+          onPress={() => void handleDownload()}
+          accessibilityLabel={downloading ? 'Downloading' : 'Download file'}>
+          {downloading ? <KortixLoader size="small" /> : <Icon as={DownloadSimpleIcon} size={18} />}
+          <Text>Download</Text>
+        </Button>
         {/* A file that did not load is not offered to the chat either. */}
         {onAdd ? (
           <Button className="flex-1 rounded-full" disabled={failed} onPress={onAdd}>

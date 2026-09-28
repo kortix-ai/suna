@@ -8,7 +8,6 @@ import {
   View,
   Modal,
   Pressable,
-  Share,
   Platform,
   TextInput,
   KeyboardAvoidingView,
@@ -29,13 +28,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { FilePreview } from './FilePreviewRenderers';
 import { useFilePreviewData } from './use-file-preview-data';
-import { DownloadMenu } from './DownloadMenu';
 import { useOpenCodeWriteFile, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
-import { exportMarkdownPdf } from '@/lib/files/export-markdown-pdf';
-import { pdfFileName, type DownloadFormat } from '@/lib/files/markdown-export';
+import { saveFileToDevice } from '@/lib/files/save-to-device';
+import { useToast } from '@/components/kortix/toast-provider';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -87,6 +84,7 @@ export function FileViewer({
   const [draft, setDraft] = useState('');
   const writeMutation = useOpenCodeWriteFile();
   const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
+  const toast = useToast();
 
   const {
     previewType,
@@ -112,84 +110,38 @@ export function FileViewer({
     onClose();
   };
 
-  const handleDownload = async (format: DownloadFormat) => {
+  const handleDownload = async () => {
     if (!file) return;
     setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      // A markdown file saved as PDF (KRTX-605), from the loaded text.
-      if (format === 'pdf') {
-        const uri = await exportMarkdownPdf(textContent ?? '', file.name);
-        if (uri == null) Alert.alert('Save as PDF', 'Update the app to save as PDF.');
-        else if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, { dialogTitle: `Download ${pdfFileName(file.name)}` });
-        }
-        return;
-      }
-
-      // For binary files (images, PDFs, etc.) write to file and share
+      // The file as it is, in the cache first, then saved on the device
+      // (`saveFileToDevice`). No PDF export and no share sheet on mobile.
+      const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+      let source: string | null = null;
       if (imageBlob && isBinaryFile && !blobTooLarge) {
-        // Convert blob to base64
         const reader = new FileReader();
         const base64Data = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            const base64 = result.split(',')[1];
-            resolve(base64);
-          };
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
           reader.onerror = reject;
           reader.readAsDataURL(imageBlob);
         });
-
-        // Write to temporary file
-        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        // Share the file
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        }
-        return;
-      }
-      
-      // For text files, write to file and share
-      if (textContent) {
-        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+        source = fileUri;
+      } else if (textContent) {
         await FileSystem.writeAsStringAsync(fileUri, textContent);
-        
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        } else {
-          await Share.share({
-            message: textContent,
-            title: file.name,
-          });
-        }
-        return;
+        source = fileUri;
+      } else if (sandboxUrl) {
+        // Nothing loaded (over the preview limit, not previewable, or still
+        // loading): stream the file to disk natively.
+        source = await downloadOpenCodeFileToCache(sandboxUrl, file.path, file.name);
       }
-
-      // Nothing loaded (over the preview limit, not previewable, or still
-      // loading): stream the file to disk natively and share it.
-      if (sandboxUrl) {
-        const fileUri = await downloadOpenCodeFileToCache(sandboxUrl, file.path, file.name);
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            dialogTitle: `Download ${file.name}`,
-          });
-        }
-      }
+      if (!source) return;
+      const result = await saveFileToDevice(source, file.name);
+      if (result.status === 'saved') toast.success(`Saved to ${result.folder}`);
     } catch (error) {
       log.error('Download failed:', error);
+      toast.error('Unable to save the file. Try again.');
     } finally {
       setIsDownloading(false);
     }
@@ -395,33 +347,19 @@ export function FileViewer({
                     <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   </AnimatedPressable>
                 )}
-                {/* A markdown file's Download offers Markdown · PDF (KRTX-605). */}
-                <DownloadMenu
-                  fileName={file.name}
-                  pdfReady={typeof textContent === 'string' && textContent !== ''}
-                  onDownload={(format) => void handleDownload(format)}
-                  side="bottom"
-                  portalHost={FILE_VIEWER_PORTAL_HOST}>
-                  {(onPress) => (
-                    <AnimatedPressable
-                      onPress={onPress}
-                      disabled={isDownloading}
-                      className="p-2"
-                      style={{ opacity: isDownloading ? 0.6 : 1 }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Download">
-                      {isDownloading ? (
-                        <KortixLoader size="small" />
-                      ) : (
-                        <Icon
-                          as={Download}
-                          size={22}
-                          color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                        />
-                      )}
-                    </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={() => void handleDownload()}
+                  disabled={isDownloading}
+                  className="p-2"
+                  style={{ opacity: isDownloading ? 0.6 : 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Download">
+                  {isDownloading ? (
+                    <KortixLoader size="small" />
+                  ) : (
+                    <Icon as={Download} size={22} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
                   )}
-                </DownloadMenu>
+                </AnimatedPressable>
                 <AnimatedPressable
                   onPressIn={() => {
                     closeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });

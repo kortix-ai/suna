@@ -12,8 +12,8 @@
  *   iOS grants a picked folder for that session only, so it cannot be
  *   remembered.
  *
- * The file is fetched to the cache first (`downloadOpenCodeFileToCache`,
- * `exportMarkdownPdf`); this copies it into the chosen folder under a name
+ * The file is fetched to the cache first (`downloadOpenCodeFileToCache`);
+ * this copies it into the chosen folder under a name
  * that does not overwrite an existing file.
  */
 
@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File } from 'expo-file-system';
 import { Platform } from 'react-native';
 
-import { availableFileName } from './markdown-export';
+import { availableFileName } from './file-name';
 import { mimeTypeForFile } from './mime-type';
 
 const FOLDER_KEY = 'files.download-folder-uri';
