@@ -28,7 +28,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
-import { HtmlPreview } from '@/features/file-viewer';
+import { HtmlPreview, SaveAsPdfButton } from '@/features/file-viewer';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
@@ -194,6 +194,16 @@ export function FileViewer({
         <span className="flex shrink-0 items-center gap-1">
           {refresh && (
             <RefreshButton onRefresh={refresh.onRefresh} refreshing={refresh.refreshing} />
+          )}
+          {/* A file action like Refresh, so it sits with them before Download.
+              Download itself stays the raw `.md`. */}
+          {markdown && (
+            <SaveAsPdfButton
+              fileName={fileName}
+              content={content}
+              className="size-7"
+              iconClassName="size-3.5"
+            />
           )}
           <ViewerActions
             copy={{

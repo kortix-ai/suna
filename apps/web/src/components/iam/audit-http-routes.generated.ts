@@ -183,6 +183,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|admin|api|sandboxes|:sessionId|migrate",
   "GET|v1|approval-links|:token",
   "GET|v1|apps|edge|tls-check",
+  "GET|v1|auth|client-config",
   "POST|v1|auth|logout",
   "POST|v1|auth|mfa|factors",
   "DELETE|v1|auth|mfa|factors|:factorId",

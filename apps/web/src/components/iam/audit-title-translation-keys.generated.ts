@@ -379,6 +379,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Read MCP server metadata': 'text3ec6c235548a',
   'Read OAuth server metadata': 'text30015841ce75',
   'Read project connector': 'text1550a96d28fa',
+  'Read the sign-in configuration': 'textef01adfb4372',
   'Received AgentMail inbound email': 'textedd7314bf11c',
   'Received Daytona sandbox lifecycle event': 'text9cb53a5e9417',
   'Received Pipedream connection webhook': 'text0d6af7d6f1f4',

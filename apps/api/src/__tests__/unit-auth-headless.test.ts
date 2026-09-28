@@ -7,9 +7,12 @@ import { createHash } from 'crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
-mock.module('../config', () => ({
-  config: { SUPABASE_URL: 'http://supabase.internal:8000', SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt', FRONTEND_URL: 'https://app.example' },
-}));
+const testConfig: Record<string, unknown> = {
+  SUPABASE_URL: 'http://supabase.internal:8000',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt',
+  FRONTEND_URL: 'https://app.example',
+};
+mock.module('../config', () => ({ config: testConfig }));
 mock.module('../shared/auth-audit', () => ({
   auditLoginFail: () => {},
   auditLoginSuccess: () => {},
@@ -184,5 +187,50 @@ describe('POST /v1/auth/sign-in/sso', () => {
     });
     expect(response.status).toBe(404);
     expect((await response.json()).error).toBe('sso_provider_not_found');
+  });
+});
+
+describe('GET /v1/auth/client-config', () => {
+  const get = () =>
+    app().request('/v1/auth/client-config', { headers: { 'x-forwarded-for': '192.0.2.44' } });
+
+  test('returns the public sign-in config: public Supabase URL, anon key, web URL, auth lists; never the service role key', async () => {
+    Object.assign(testConfig, {
+      SUPABASE_PUBLIC_URL: 'https://auth.example',
+      SUPABASE_ANON_KEY: 'anon-jwt',
+      KORTIX_PUBLIC_AUTH_METHODS: 'password, magic',
+      KORTIX_PUBLIC_AUTH_PROVIDERS: '',
+    });
+    const res = await get();
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({
+      supabase_url: 'https://auth.example',
+      supabase_anon_key: 'anon-jwt',
+      frontend_url: 'https://app.example',
+      auth_methods: ['password', 'magic'],
+      auth_providers: [],
+    });
+    expect(text).not.toContain('service-role-jwt');
+    expect(seen).toHaveLength(0);
+  });
+
+  test('unset values are null; without a public URL the Supabase URL is SUPABASE_URL', async () => {
+    Object.assign(testConfig, {
+      SUPABASE_PUBLIC_URL: undefined,
+      SUPABASE_ANON_KEY: '',
+      FRONTEND_URL: '',
+      KORTIX_PUBLIC_AUTH_METHODS: undefined,
+      KORTIX_PUBLIC_AUTH_PROVIDERS: undefined,
+    });
+    const res = await get();
+    expect(await res.json()).toEqual({
+      supabase_url: 'http://supabase.internal:8000',
+      supabase_anon_key: null,
+      frontend_url: null,
+      auth_methods: null,
+      auth_providers: null,
+    });
+    testConfig.FRONTEND_URL = 'https://app.example';
   });
 });
