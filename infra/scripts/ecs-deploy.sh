@@ -36,7 +36,10 @@
 #              2026-09-26: the API served only the new commit ~80 s before the
 #              stable wait returned. Deploy Dev uses serving; staging and prod
 #              keep stable, where a roll must be fully settled before the next
-#              gate runs.
+#              gate runs. Both modes accept only the revision this run
+#              registered. A circuit-breaker rollback, or any PRIMARY on
+#              another revision, exits 1 with the new revision's stopped-task
+#              reasons.
 #   --database-migrated
 #              required for a live prod or prod-use2-shadow rollout. This is an
 #              explicit assertion that the environment's migration job passed.
@@ -157,13 +160,18 @@ describe_service_json() {
 # observation; let the reader combine it with the counts, the events and the
 # live-task breakdown. Capped at ECS_DIAGNOSTIC_TASK_LIMIT tasks — never a
 # megabyte dump. Soft-fails throughout: diagnostics must not mask the verdict.
+#
+# With a task definition in $1, it reads up to 100 stopped tasks and reports
+# only those of that revision: after a rollback, the tasks of the new revision
+# are the ones whose exit reason explains the failure.
 print_stopped_task_diagnostics() {
-  local task_arns tasks_json arn
+  local task_def="${1:-}" task_arns tasks_json arn count scan_limit="$ECS_DIAGNOSTIC_TASK_LIMIT"
   local -a arns=()
+  [ -z "$task_def" ] || scan_limit=100
 
   task_arns="$(aws ecs list-tasks --region "$REGION" --cluster "$CLUSTER" \
     --service-name "$SERVICE" --desired-status STOPPED \
-    --max-items "$ECS_DIAGNOSTIC_TASK_LIMIT" \
+    --max-items "$scan_limit" \
     --query 'taskArns' --output json 2>/dev/null || true)"
 
   # `--query taskArns` yields a bare array, but a paginated call can answer an
@@ -188,7 +196,15 @@ print_stopped_task_diagnostics() {
   tasks_json="$(aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" \
     --tasks "${arns[@]}" --output json 2>/dev/null || true)"
 
-  echo "  stopped tasks (newest ${#arns[@]}):" >&2
+  tasks_json="$(printf '%s' "$tasks_json" | jq -c --arg td "$task_def" --argjson n "$ECS_DIAGNOSTIC_TASK_LIMIT" '
+    {tasks: ([(.tasks // [])[] | select($td == "" or .taskDefinitionArn == $td)] | .[:$n])}' 2>/dev/null || true)"
+  count="$(printf '%s' "$tasks_json" | jq -r '.tasks | length' 2>/dev/null || true)"
+  if [ "${count:-0}" = 0 ]; then
+    echo "  stopped tasks: none of ${task_def:-the service} among the last ${#arns[@]} stopped tasks." >&2
+    return 0
+  fi
+
+  echo "  stopped tasks${task_def:+ of $task_def} (newest $count):" >&2
   printf '%s' "$tasks_json" | jq -r '
     (.tasks // [])[]
     | "    task=\((.taskArn // "?") | split("/") | last) lastStatus=\(.lastStatus // "?") stopCode=\(.stopCode // "-")\n" +
@@ -269,7 +285,7 @@ print_awslogs_hint() {
 }
 
 print_rollout_diagnostics() {
-  local service_json="${1:-}"
+  local service_json="${1:-}" task_def="${2:-}"
   echo "── rollout diagnostics: $CLUSTER/$SERVICE ($REGION) ──" >&2
 
   [ -n "$service_json" ] || service_json="$(describe_service_json)"
@@ -291,7 +307,7 @@ print_rollout_diagnostics() {
     | "    \(.createdAt // "?")  \(.message // "")"' >&2 2>/dev/null || true
 
   print_live_task_diagnostics
-  print_stopped_task_diagnostics
+  print_stopped_task_diagnostics "$task_def"
   print_awslogs_hint
 }
 
@@ -322,24 +338,40 @@ new_revision_serving() {
     >/dev/null 2>&1
 }
 
-# Returns 0 for a COMPLETED rollout whose running count caught up with the
-# desired count. With mode `serving`, it also returns 0 as soon as
-# new_revision_serving holds. A FAILED rolloutState returns immediately — it
-# never burns the remaining budget. Both failure paths print diagnostics.
+# Returns 0 for a COMPLETED rollout of task definition $4 (the revision this
+# roll registered) whose running count caught up with the desired count. With
+# mode `serving`, it also returns 0 as soon as new_revision_serving holds for
+# $4. Returns 1 immediately, without burning the remaining budget, when the
+# deployment of $4 is FAILED or when the PRIMARY deployment runs any other
+# revision: the circuit breaker rolled back, or another roll superseded this
+# one. A rollback deployment reaches COMPLETED with every task RUNNING, so a
+# check that reads only the PRIMARY deployment accepts it as success (dev API,
+# 2026-09-28: five deploys reported SERVING on the old revision). Every failure
+# path prints diagnostics, including the stopped tasks of $4.
 wait_for_stable_rollout() {
-  local budget="$1" delay="$2" mode="${3:-stable}"
+  local budget="$1" delay="$2" mode="${3:-stable}" expected_td="${4:-}"
   local started deadline now remaining service_json summary
   local rollout="" running="" desired="" pending=""
   local primary_td="" primary_running="" primary_desired="" primary_pending=""
+  local expected_state="" expected_reason="" seen_expected=0 grace_end
+  if [ -z "$expected_td" ]; then
+    echo "wait_for_stable_rollout: the registered task definition is required" >&2
+    return 2
+  fi
   started="$(date +%s)"
   deadline=$(( started + budget ))
+  # describe-services is eventually consistent. Until the deployment of
+  # $expected_td shows up once, a PRIMARY on another revision can be a stale
+  # read right after update-service, so it fails only after this grace.
+  grace_end=$(( started + 60 ))
 
   while : ; do
     service_json="$(describe_service_json)"
     if [ -n "$service_json" ]; then
-      summary="$(printf '%s' "$service_json" | jq -r '
+      summary="$(printf '%s' "$service_json" | jq -r --arg td "$expected_td" '
         (.services[0] // {}) as $s
         | (($s.deployments // []) | map(select(.status == "PRIMARY")) | .[0] // {}) as $d
+        | (($s.deployments // []) | map(select(.taskDefinition == $td)) | .[0] // {}) as $e
         | [$d.rolloutState // "UNKNOWN",
            ($s.runningCount // 0 | tostring),
            ($s.desiredCount // 0 | tostring),
@@ -347,32 +379,47 @@ wait_for_stable_rollout() {
            ($d.taskDefinition // "-"),
            ($d.runningCount // 0 | tostring),
            ($d.desiredCount // 0 | tostring),
-           ($d.pendingCount // 0 | tostring)]
+           ($d.pendingCount // 0 | tostring),
+           ($e.rolloutState // "-"),
+           (($e.rolloutStateReason // "-") | gsub("[\t\n]"; " "))]
         | @tsv' 2>/dev/null || true)"
       if [ -n "$summary" ]; then
         IFS=$'\t' read -r rollout running desired pending \
-          primary_td primary_running primary_desired primary_pending <<<"$summary"
+          primary_td primary_running primary_desired primary_pending \
+          expected_state expected_reason <<<"$summary"
+      fi
+
+      [ "${expected_state:--}" = - ] || seen_expected=1
+      now="$(date +%s)"
+      if [ -n "$primary_td" ] && [ "$primary_td" != "$expected_td" ] \
+        && { [ "$seen_expected" = 1 ] || [ "$now" -ge "$grace_end" ] || [ "$now" -ge "$deadline" ]; }; then
+        echo "✖ rollout of $expected_td did not take: the PRIMARY deployment runs $primary_td (rolloutState=$rollout); the deployment of $expected_td is ${expected_state:--} (${expected_reason:--}). ECS rolled back or another roll superseded this one." >&2
+        [ -z "${GITHUB_ACTIONS:-}" ] \
+          || echo "::error title=ECS rollout rolled back::$SERVICE is not on $expected_td; it runs $primary_td. ${expected_reason:-}" >&2
+        print_rollout_diagnostics "$service_json" "$expected_td"
+        return 1
       fi
 
       case "$rollout" in
         COMPLETED)
-          if [ "$running" = "$desired" ] && [ "$pending" = "0" ]; then
+          if [ "$primary_td" = "$expected_td" ] && [ "$running" = "$desired" ] && [ "$pending" = "0" ]; then
             echo "✔ rollout COMPLETED in $(( $(date +%s) - started ))s (running=$running desired=$desired)"
             return 0
           fi
           ;;
         FAILED)
           echo "✖ rollout FAILED after $(( $(date +%s) - started ))s (running=$running desired=$desired pending=$pending) — not waiting out the remaining budget" >&2
-          print_rollout_diagnostics "$service_json"
+          print_rollout_diagnostics "$service_json" "$expected_td"
           return 1
           ;;
       esac
 
-      if [ "$mode" = serving ] && [ "$primary_desired" = "$desired" ] \
+      if [ "$mode" = serving ] && [ "$primary_td" = "$expected_td" ] \
+        && [ "$primary_desired" = "$desired" ] \
         && [ "${primary_desired:-0}" -gt 0 ] 2>/dev/null \
         && [ "$primary_running" = "$primary_desired" ] && [ "$primary_pending" = "0" ] \
-        && new_revision_serving "$primary_td" "$primary_desired"; then
-        echo "✔ rollout SERVING in $(( $(date +%s) - started ))s: all $primary_desired tasks ECS keeps running are on $primary_td; old tasks drain in the background (service running=$running)"
+        && new_revision_serving "$expected_td" "$primary_desired"; then
+        echo "✔ rollout SERVING in $(( $(date +%s) - started ))s: all $primary_desired tasks ECS keeps running are on $expected_td; old tasks drain in the background (service running=$running)"
         return 0
       fi
     fi
@@ -380,7 +427,7 @@ wait_for_stable_rollout() {
     now="$(date +%s)"
     if [ "$now" -ge "$deadline" ]; then
       echo "✖ rollout did not stabilize within ${budget}s (rolloutState=${rollout:-unknown} running=${running:-?} desired=${desired:-?} pending=${pending:-?})" >&2
-      print_rollout_diagnostics "$service_json"
+      print_rollout_diagnostics "$service_json" "$expected_td"
       return 1
     fi
     remaining=$(( deadline - now ))
@@ -629,7 +676,7 @@ echo "✔ update-service issued (desired count unchanged)"
 
 if [ "$WAIT" = "1" ]; then
   echo "⏳ waiting for the rollout (--wait-for ${WAIT_FOR}, budget ${ECS_STABILIZE_TIMEOUT_SECONDS}s, poll ${ECS_STABILIZE_POLL_SECONDS}s) …"
-  wait_for_stable_rollout "$ECS_STABILIZE_TIMEOUT_SECONDS" "$ECS_STABILIZE_POLL_SECONDS" "$WAIT_FOR"
+  wait_for_stable_rollout "$ECS_STABILIZE_TIMEOUT_SECONDS" "$ECS_STABILIZE_POLL_SECONDS" "$WAIT_FOR" "$NEW_TD"
   aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
     --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
     --output table
