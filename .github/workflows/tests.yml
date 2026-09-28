@@ -6,18 +6,21 @@ name: Tests
 # It runs when ANY of these holds:
 #   1. a push to `main`                    — post-merge trunk signal
 #   2. a pull request into `staging`       — the release candidate
-#   3. a `workflow_dispatch`               — manual
+#   3. someone adds the `test` label       — one explicit run on that PR
+#   4. a `workflow_dispatch`               — manual
 #
-# A pull request into `main` runs nothing, with or without a label. The
-# developer runs `pnpm test` in their own box before the merge. The push run
-# blocks nothing: `main` has no required status check.
+# Nothing else runs it. A pull request into `main` runs no lane unless a person
+# adds `test`; that runs the suite ONCE, at the head SHA of that moment. A later
+# push does not re-run it: re-add the label. The developer's box is the
+# pre-merge gate (`pnpm test`). No run blocks a merge into `main`.
 #
 # `trunk-report` comments on the offending commit when a push to `main` is red.
 # A superseded (cancelled) run reports nothing. A green run runs no extra job.
 
 on:
   pull_request:
-    branches: [staging]
+    branches: [main, staging]
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
   push:
     # No `paths-ignore`: the suite parses markdown (`tests/spec/end-to-end.md`
     # feeds route coverage), so a docs-only push can break it.
@@ -39,6 +42,12 @@ permissions:
 jobs:
   lane:
     name: ${{ matrix.lane }} lane
+    # A release pull request runs on every update except a label change. Into
+    # `main`, only the act of adding `test` runs it.
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.base_ref == 'staging' && github.event.action != 'labeled')
+      || (github.event.action == 'labeled' && github.event.label.name == 'test')
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
     # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
@@ -245,6 +254,17 @@ jobs:
           failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
             --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null) | select(.name | endswith("lane")) | .name] | join(", ")' || true)"
 
+          # Merges land faster than the suite and queued runs supersede each
+          # other, so the red commit is often not the culprit. Name every
+          # commit since the last green push run: those are the suspects.
+          green="$(gh api "repos/$REPO/actions/workflows/tests.yml/runs?branch=main&event=push&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty' || true)"
+          suspects=""
+          if [ -n "$green" ]; then
+            suspects="$(gh api "repos/$REPO/compare/${green}...${SHA}" \
+              --jq '.commits[] | "- `\(.sha[0:10])` \(.commit.message | split("\n")[0]) (@\(.author.login // .commit.author.name))"' || true)"
+          fi
+
           {
             echo "## \`main\` @ \`${SHA:0:8}\`: failure"
             echo
@@ -263,6 +283,15 @@ jobs:
             echo "Failing lanes: \`${failed:-see the run}\`"
             echo
             echo "Run: $RUN_URL"
+            echo
+            if [ -n "$suspects" ]; then
+              echo "Commits since the last green run (\`${green:0:10}\`), newest last:"
+              echo
+              echo "$suspects"
+              echo
+            fi
+            echo "The author whose commit broke it fixes forward. If \`main\` is still"
+            echo "red 1 hour after this comment, anyone may revert the culprit PR."
             echo
             echo "This is the post-merge trunk suite (\`tests.yml\`). It did not"
             echo "block the merge — \`main\` is the dev trunk. Reproduce locally with"

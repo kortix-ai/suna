@@ -211,17 +211,21 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('runs the local suite on a push to main and on a release pull request only', () => {
-    // 2026-09-28. Labels made the suite run on nearly every pull request into
-    // `main`: every agent PR carried `preview`. A pull request into `main` now
-    // runs nothing; the developer runs `pnpm test` in their own box.
-    expect(testWorkflow).toMatch(/\n  pull_request:\n    branches: \[staging\]\n/);
+  test('runs the local suite after a merge, on a release pull request, or when a person adds `test`', () => {
+    // 2026-09-28. Labels ran the suite on nearly every pull request into
+    // `main`: every agent PR carried `preview`, and each push re-ran six lanes.
+    // Into `main`, only the act of adding `test` runs it, once; a push does not.
+    expect(testWorkflow).toContain('branches: [main, staging]');
+    expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
     expect(testWorkflow).not.toContain('labels.*.name');
-
+    expect(testWorkflow).not.toContain("'preview'");
     const laneJob = testWorkflow.slice(
       testWorkflow.indexOf('\n  lane:'),
       testWorkflow.indexOf('\n  trunk-report:'),
     );
+    expect(laneJob).toContain("github.event_name != 'pull_request'");
+    expect(laneJob).toContain("|| (github.base_ref == 'staging' && github.event.action != 'labeled')");
+    expect(laneJob).toContain("|| (github.event.action == 'labeled' && github.event.label.name == 'test')");
     expect(laneJob).toContain('fail-fast: false');
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
     expect(laneJob).toContain('name: ${{ matrix.lane }} lane');
@@ -233,14 +237,16 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toMatch(/^  decide:/m);
   });
 
-  test('no workflow runs a job on a pull request into main', () => {
+  test('no workflow runs a job on a pull request into main by itself', () => {
     // A pull request into `main` is mergeable the moment it opens. CI runs on
     // pull requests into `staging` and `prod`, and after the merge on `main`.
-    // deploy-preview.yml is the one exception: every job it runs on a pull
-    // request is gated on the `preview` label.
+    // Two workflows listen to pull requests into `main`, and each runs a job
+    // only when a person adds its label: tests.yml (`test`) and
+    // deploy-preview.yml (`preview`). Both gates are pinned above.
+    const labelGated = new Set(['tests.yml', 'deploy-preview.yml']);
     const dir = resolve(root, '.github/workflows');
     const offenders = readdirSync(dir)
-      .filter((file) => /\.ya?ml$/.test(file) && file !== 'deploy-preview.yml')
+      .filter((file) => /\.ya?ml$/.test(file) && !labelGated.has(file))
       .filter((file) => {
         // Walk the top-level `on:` block line by line: a pull request trigger
         // is an offender unless its `branches:` list exists and omits `main`.
@@ -404,26 +410,24 @@ describe('the preview status tells the truth about the suite', () => {
 });
 
 /**
- * The `preview` label deploys; it never waits on, or starts, a 40-80 min suite.
+ * The `preview` label is one explicit request: deploy, then `--target-full`.
  *
- * 2026-09-28: every label ran `--target-full` inline. Five ran at once, all
- * shared one preview GitHub App, hit its secondary rate limit on repo creation,
- * and each ran ~80 min to red. Pushes queued behind them for up to 67 min, and
- * two queued runs finally deployed — re-creating 16 GB environments for
- * branches that had merged and been torn down minutes earlier.
+ * 2026-09-28: every PR carried the label, so five suites ran at once, shared
+ * one preview GitHub App, hit its secondary rate limit, and each ran ~80 min to
+ * red. The label is now rare by policy and a push never starts a run, so every
+ * run is a person asking for exactly this.
  */
-describe('the preview label is a fast deploy, and a superseded run never deploys', () => {
+describe('the preview label deploys and tests once, and a superseded run never deploys', () => {
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
     previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
   );
 
-  test('only an explicit dispatch runs the suite', () => {
-    expect(previewWorkflow).toContain(
-      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
-    );
-    expect(previewWorkflow).not.toContain("github.event.action == 'labeled' || github.event_name == 'workflow_dispatch'");
+  test('only an explicit act starts a run, and every run tests', () => {
+    expect(previewWorkflow).toContain("PREVIEW_RUN_TESTS: '1'");
+    expect(previewWorkflow).toContain('types: [labeled, unlabeled]');
+    expect(previewWorkflow).not.toContain('synchronize');
   });
 
   test('a moved head, a removed label, or a deleted branch cancels the run instead of deploying', () => {

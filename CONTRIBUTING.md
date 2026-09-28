@@ -26,8 +26,9 @@ Tools every contributor needs:
 
 ## The pull request loop
 
-A pull request into `main` runs **no** CI job. Your development machine runs the tests, the
-stack, and the demo before the PR opens, and the PR is mergeable at once.
+A pull request into `main` runs **no** CI job by itself. Your development machine runs the
+tests, the stack, and the demo before the PR opens, and the PR is mergeable at once. In the
+rare case you want CI before the merge, add the `test` or `preview` label (one run each).
 
 1. **Branch.** One canonical branch per objective, in its own worktree.
 2. **Commit.** Conventional subjects (`fix(api): …`, `feat(web): …`). The hooks must pass.
@@ -50,7 +51,8 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `preview` | Not part of the development flow. On explicit request it deploys a self-host environment for the branch on Platinum. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
+| `test` | Runs the six `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
+| `preview` | Deploys a self-host environment for the branch on Platinum, then runs `pnpm test -- --target-full` against it, once. A push does not redeploy. Removing the label or deleting the branch tears it down. Closing the PR does not. |
 | `i18n-reorder` | Allows an intentional key reorder in the translation catalogs on a release PR. |
 
 - The preview origin appears in the sticky PR comment and in the `preview/pr-<N>` GitHub
@@ -212,7 +214,7 @@ ordinary development stack before either command.
 
 | Event | Runs |
 | --- | --- |
-| Pull request into `main` | nothing |
+| Pull request into `main` | nothing, unless a person adds `test` (six lanes, once) or `preview` (deploy + `--target-full`, once) |
 | Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `ci.yml`, `CodeQL`, secret scans, path-gated migration / i18n / compliance checks. None blocks: a red `Tests` run comments the failing lanes on the commit. |
 | Pull request into `staging` | the six `Tests` lanes, `ci.yml`, `CodeQL`, security, compliance, and migration checks |
 | Pull request into `prod` | the same checks + `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |
