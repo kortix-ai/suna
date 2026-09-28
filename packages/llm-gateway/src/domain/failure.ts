@@ -1,4 +1,10 @@
+/**
+ * Where a candidate failed. `resolve`: the routed model had no usable upstream
+ * (every own key or ChatGPT account paused or needing reconnection), so the
+ * project's chain started without it.
+ */
 export type GatewayAttemptFailureStage =
+  | 'resolve'
   | 'dispatch'
   | 'stream_error'
   | 'stream_probe'
