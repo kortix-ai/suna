@@ -13,7 +13,6 @@
 
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { composerSelectableAgents } from '../core/agents/composer-agents';
-import { featureFlags } from '../core/http/feature-flags';
 import { resolveComposerModel } from '../core/models/composer-model';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -317,10 +316,7 @@ export function useOpenCodeLocal({
   // tools that aren't registered in default mode.
   const visibleAgents = useMemo<Agent[]>(
     () =>
-      composerSelectableAgents(rawAgents, {
-        enableProjects: featureFlags.enableProjects,
-        includeSubagents: true,
-      }),
+      composerSelectableAgents(rawAgents, { includeSubagents: true }),
     [rawAgents],
   );
 

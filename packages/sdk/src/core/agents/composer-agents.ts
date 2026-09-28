@@ -1,6 +1,7 @@
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 
 import type { ProjectConfigSummary } from '../rest/projects-client';
+import { isSelectableAgent } from '../rest/projects-client/project-agents';
 
 /**
  * The session composer's agent list — framework-free, so every host (web,
@@ -34,42 +35,22 @@ function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents']
 }
 
 /**
- * Project-only agents — surfaced only when the projects paradigm is on.
+ * The agents a composer may offer: `isSelectableAgent` (#8007), the one rule
+ * every agent picker applies — not hidden, not disabled, not a subagent, and
+ * project-only agents (`project-manager`) only with `featureFlags.enableProjects`.
  *
- * `project-manager` is the per-project PM slug seeded at
- * /workspace/.opencode/agent/project-manager.md. The file persists on disk
- * after a flag-on cycle even when the flag flips back off, so this filter is
- * what keeps it out of the UI in default mode.
- */
-const PROJECT_ONLY_AGENTS = new Set(['project-manager']);
-
-/**
- * The agents a composer may offer: visible, and not a subagent.
- *
- * Subagents are dispatched BY an agent, never picked as the one to prompt.
- * They are filtered here too so "the roster is empty" means the same thing to
- * `resolveComposerAgent` as it does to the control that renders it — a roster
- * of nothing but subagents is an empty picker.
- *
- * Options:
- *  - `enableProjects: false` also drops project-only agents (`project-manager`);
- *    pass `featureFlags.enableProjects`. Omitted = no project gate.
- *  - `includeSubagents: true` keeps subagents (the runtime roster the composer
- *    cycles through).
+ * Subagents are dispatched BY an agent, never picked as the one to prompt, so
+ * "the roster is empty" means the same thing to `resolveComposerAgent` as to
+ * the control that renders it. `includeSubagents: true` keeps them (the runtime
+ * roster the composer cycles through).
  */
 export function composerSelectableAgents(
   agents: Agent[] | undefined,
-  options?: { enableProjects?: boolean; includeSubagents?: boolean },
+  options?: { includeSubagents?: boolean },
 ): Agent[] {
   if (!Array.isArray(agents)) return [];
-  const hideProjectOnly = options?.enableProjects === false;
   const includeSubagents = options?.includeSubagents === true;
-  return agents.filter(
-    (a) =>
-      !a.hidden &&
-      (includeSubagents || a.mode !== 'subagent') &&
-      !(hideProjectOnly && PROJECT_ONLY_AGENTS.has(a.name)),
-  );
+  return agents.filter((a) => isSelectableAgent(includeSubagents ? { ...a, mode: null } : a));
 }
 
 export type ComposerAgentReason =

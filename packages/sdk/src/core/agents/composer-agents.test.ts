@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 
+import { configureKortix } from '../http/config';
 import type { ProjectConfigSummary } from '../rest/projects-client';
 import {
   composerSelectableAgents,
@@ -78,28 +79,25 @@ describe('composerSelectableAgents', () => {
     agent('project-manager'),
   ];
 
-  test('default: drops hidden agents and subagents, keeps project-manager (web picker contract)', () => {
-    expect(composerSelectableAgents(roster).map((a) => a.name)).toEqual([
-      'kortix',
-      'project-manager',
-    ]);
-  });
+  const base = { backendUrl: '', getToken: async () => null };
+  afterEach(() => configureKortix(base));
 
-  test('enableProjects: false drops project-manager', () => {
-    expect(
-      composerSelectableAgents(roster, { enableProjects: false }).map((a) => a.name),
-    ).toEqual(['kortix']);
+  test('isSelectableAgent (#8007): drops hidden agents and subagents; project-manager only with enableProjects', () => {
+    configureKortix({ ...base, featureFlags: { enableProjects: false } });
+    expect(composerSelectableAgents(roster).map((a) => a.name)).toEqual(['kortix']);
+    configureKortix({ ...base, featureFlags: { enableProjects: true } });
+    expect(composerSelectableAgents(roster).map((a) => a.name)).toEqual(['kortix', 'project-manager']);
   });
 
   test('includeSubagents keeps subagents (the runtime roster), still drops hidden', () => {
-    expect(
-      composerSelectableAgents(roster, { includeSubagents: true, enableProjects: false }).map(
-        (a) => a.name,
-      ),
-    ).toEqual(['kortix', 'helper']);
+    configureKortix({ ...base, featureFlags: { enableProjects: false } });
+    expect(composerSelectableAgents(roster, { includeSubagents: true }).map((a) => a.name)).toEqual([
+      'kortix',
+      'helper',
+    ]);
   });
 
-  test('a non-array roster is empty', () => {
+  test('nothing to offer from no roster', () => {
     expect(composerSelectableAgents(undefined)).toEqual([]);
   });
 });

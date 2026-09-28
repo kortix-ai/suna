@@ -9,7 +9,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMemo, useState } from 'react';
 import {
   composerSelectableAgents,
-  featureFlags,
   resolveComposerAgent,
   resolveComposerModel,
   resolveModelDefault,
@@ -128,7 +127,7 @@ export function useResolvedConfig(i: {
   const [pickedAgent, setPickedAgent] = useState<string | null>(null);
 
   const agents = useMemo(
-    () => composerSelectableAgents(i.agents, { enableProjects: featureFlags.enableProjects, includeSubagents: true }),
+    () => composerSelectableAgents(i.agents, { includeSubagents: true }),
     [i.agents],
   );
   const agentName = resolveComposerAgent({

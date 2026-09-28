@@ -9,6 +9,9 @@
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
 
+import { selectableProjectAgents, type ProjectConfigSummary } from '@kortix/sdk';
+import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+
 export interface PickerOption {
   /** Unique row id: the gateway wire id (home) or `providerID/modelID` (thread). */
   key: string;
@@ -113,6 +116,23 @@ export function homeAgentPick(i: {
   lastUsed: string | null;
 }): string | null {
   return i.picked ?? (i.defaultAgent ? null : i.lastUsed);
+}
+
+/**
+ * The agents a thread can run, from the Kortix project config: the SDK's
+ * `selectableProjectAgents`, default first. Never the sandbox's `/agent` list,
+ * which adds the runtime's built-ins (`build`, `plan`, `explore`, `general`).
+ * A missing `mode` is OpenCode's default, `all`.
+ */
+export function threadAgents(config: ProjectConfigSummary): Agent[] {
+  return selectableProjectAgents(config).map((a) => ({
+    name: a.name,
+    description: a.description ?? undefined,
+    mode: a.mode === 'primary' ? 'primary' : 'all',
+    options: {},
+    // The SDK's `Agent` type (OpenCode's runtime shape) has fields a project
+    // config entry does not carry; the picker reads only these.
+  })) as unknown as Agent[];
 }
 
 /**

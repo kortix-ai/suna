@@ -51,7 +51,7 @@ import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
-import { latestAssistantAgent } from '@/lib/session/composer-config';
+import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
@@ -69,7 +69,6 @@ import {
   compactionTurnInfo,
   createSessionPrompt,
   groupMessagesIntoTurns,
-  projectConfigAgentsToOpenCodeAgents,
   resolveWorkingTurn,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
@@ -134,7 +133,6 @@ import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
-  useOpenCodeAgents,
   useOpenCodeConfig,
   useOpenCodeCommands,
   type Command,
@@ -800,15 +798,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   // Agent/model/variant config — web's inputs, `@kortix/sdk`'s rules.
-  // Agents: the project config's (`/detail`), never OpenCode's built-ins the
-  // sandbox also lists (KRTX-604). A thread without a project reads the
-  // sandbox's `/agent`, as web does.
+  // Agents: the project's own, from the Kortix project config (`threadAgents`,
+  // the SDK's `selectableProjectAgents`, #8007) — never the sandbox's `/agent`
+  // list, which adds the runtime's built-ins. Ready before the sandbox is.
   const projectDetailQuery = useProjectDetail(projectId ?? null);
   const projectConfig = projectDetailQuery.data?.config;
-  const sandboxAgentsQuery = useOpenCodeAgents(projectId ? undefined : sandboxUrl);
   const rawAgents = useMemo(
-    () => (projectId ? (projectConfig ? projectConfigAgentsToOpenCodeAgents(projectConfig) : undefined) : sandboxAgentsQuery.data),
-    [projectId, projectConfig, sandboxAgentsQuery.data],
+    () => (projectConfig ? threadAgents(projectConfig) : undefined),
+    [projectConfig],
   );
   // No roster yet (the project config or the sandbox still loading).
   const agentsLoading = !rawAgents;

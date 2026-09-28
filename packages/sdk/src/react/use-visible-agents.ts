@@ -3,16 +3,15 @@
 import { useMemo } from 'react';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { useOpenCodeAgents } from './use-opencode-sessions';
-import { composerSelectableAgents } from '../core/agents/composer-agents';
-import { featureFlags } from '../core/http/feature-flags';
+import { isSelectableAgent } from '../core/rest/projects-client/project-agents';
 
 /**
- * Returns only visible agents (non-hidden, non-subagent).
- * Use this for agent selectors in UI where users pick which agent to use.
+ * The agents a user can pick, filtered by `isSelectableAgent`.
  *
- * Pass `projectId` for a SERVER-SIDE fetch (the project config is source of
- * truth, works before any sandbox runtime exists) — preferred for selectors.
- * Pass `directory` to scope the sandbox-runtime fetch to a project instead.
+ * Pass `projectId`. It reads the Kortix project config, which lists only the
+ * project's own agents and works before any sandbox exists. Without it the
+ * hook reads the sandbox runtime's agent list, which also contains the
+ * runtime's built-in agents (`build`, `plan`, …) that are not project agents.
  */
 export function useVisibleAgents(options?: {
   directory?: string;
@@ -20,7 +19,7 @@ export function useVisibleAgents(options?: {
 }): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
-    () => composerSelectableAgents(agents, { enableProjects: featureFlags.enableProjects }),
+    () => agents.filter(isSelectableAgent),
     [agents]
   );
 }
@@ -35,11 +34,8 @@ export function useAllVisibleAgents(options?: {
 }): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
-    () =>
-      composerSelectableAgents(agents, {
-        enableProjects: featureFlags.enableProjects,
-        includeSubagents: true,
-      }),
+    // The same rule with the subagent check lifted.
+    () => agents.filter((a) => isSelectableAgent({ ...a, mode: null })),
     [agents]
   );
 }

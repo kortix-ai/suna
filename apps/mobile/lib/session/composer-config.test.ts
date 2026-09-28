@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  composerSelectableAgents,
-  projectConfigAgentsToOpenCodeAgents,
-  resolveComposerAgent,
-  type ProjectConfigSummary,
-} from '@kortix/sdk';
+import { resolveComposerAgent, type ProjectConfigSummary } from '@kortix/sdk';
 
 import {
   PICKER_SEARCH_THRESHOLD,
@@ -13,6 +8,7 @@ import {
   homeAgentPick,
   latestAssistantAgent,
   pickerSections,
+  threadAgents,
   showsPickerSearch,
   nearestStop,
   stopOffset,
@@ -110,7 +106,27 @@ describe('thinking level names', () => {
   });
 });
 
-describe('agents — the SDK roster and resolver, fed mobile\'s inputs', () => {
+describe('agents', () => {
+  test('thread agents: the project config roster, default first, no runtime built-ins', () => {
+    const config = {
+      default_agent: 'kortix',
+      open_code_default_agent: 'kortix',
+      agents: [
+        { name: 'engineering', path: 'a', description: 'Eng', mode: 'primary' },
+        { name: 'explore', path: 'b', description: null, mode: 'subagent' },
+        { name: 'no-mode', path: 'c', description: null, mode: null },
+        { name: 'kortix', path: 'd', description: 'K', mode: 'primary' },
+      ],
+    } as unknown as Parameters<typeof threadAgents>[0];
+    expect(threadAgents(config) as unknown).toEqual([
+      { name: 'kortix', description: 'K', mode: 'primary', options: {} },
+      { name: 'engineering', description: 'Eng', mode: 'primary', options: {} },
+      { name: 'no-mode', description: undefined, mode: 'all', options: {} },
+    ]);
+  });
+});
+
+describe('agents — the SDK resolver over the thread roster', () => {
   // `/projects/:id/detail` config of a local project (synthetic names), plus edge rows.
   const config = {
     default_agent: 'engineering',
@@ -124,17 +140,14 @@ describe('agents — the SDK roster and resolver, fed mobile\'s inputs', () => {
       { name: 'project-manager', mode: 'primary', enabled: true, source: 'config' },
     ],
   } as unknown as ProjectConfigSummary;
-  const roster = projectConfigAgentsToOpenCodeAgents(config);
+  // The roster the thread and project home offer (#8007): `threadAgents`.
+  const roster = threadAgents(config);
 
   test('the Agent tab: config agents only (no OpenCode build/plan), default first, no subagent, no disabled', () => {
-    const names = composerSelectableAgents(roster, { enableProjects: false }).map((a) => a.name);
+    const names = roster.map((a) => a.name);
     expect(names).toEqual(['engineering', 'kortix', 'no-mode']);
     expect(names).not.toContain('build');
     expect(names).not.toContain('plan');
-  });
-
-  test('project-manager shows only with the projects feature on (web featureFlags.enableProjects)', () => {
-    expect(composerSelectableAgents(roster, { enableProjects: true }).map((a) => a.name)).toContain('project-manager');
   });
 
   test('thread: the pick, else the latest assistant turn, else the bound agent, else the project default', () => {

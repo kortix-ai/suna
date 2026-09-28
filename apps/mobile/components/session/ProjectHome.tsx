@@ -29,7 +29,6 @@
 
 import * as React from 'react';
 import {
-  projectConfigAgentsToOpenCodeAgents,
   resolveComposerAgent,
   resolveComposerModel,
   resolveModelDefault,
@@ -63,7 +62,7 @@ import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { isModelUnavailable, opencodeModelRef, selectComposerModel } from '@/lib/session/composer-model';
 import { planComposerSend } from '@/lib/session/send-plan';
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
-import { composerChip, homeAgentPick, type PickerOption } from '@/lib/session/composer-config';
+import { composerChip, homeAgentPick, threadAgents, type PickerOption } from '@/lib/session/composer-config';
 import {
   firstPromptPicks,
   modelOptionKey,
@@ -158,7 +157,7 @@ export function ProjectHome({
   const { data: projectDetail } = useProjectDetail(projectId);
   const projectConfig = projectDetail?.config;
   const projectAgents = React.useMemo(
-    () => (projectConfig ? projectConfigAgentsToOpenCodeAgents(projectConfig) : undefined),
+    () => (projectConfig ? threadAgents(projectConfig) : undefined),
     [projectConfig],
   );
   const defaultAgent = projectConfig?.open_code_default_agent ?? null;
