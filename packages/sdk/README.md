@@ -381,6 +381,9 @@ saved messages by ID. Missing or rejected history falls back to the existing run
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
 `messages`, and `none` when nothing can show until the runtime answers. A host renders
 placeholder rows on `loading` and its boot screen only on `none`.
+`useSession().conversationEmpty` is true when the saved copy proves the conversation empty
+(a complete read of the runtime found no messages), no turn ended since, and nothing is open
+or queued. A host renders the composer then, not a boot screen.
 
 A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
 userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
