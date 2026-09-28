@@ -540,13 +540,17 @@ export async function composioCatalogPage(input: {
       hasMore: false,
     };
   }
+  // Every search answers from the catalogue snapshot: it matches category
+  // names as well as app names, and it has no three-character floor. The
+  // provider's session search matches names only.
   const query = input.q?.trim();
-  if (query && query.length < 3) {
+  if (query) {
     return searchComposioCatalog({ ...input, q: query });
   }
   // The discovery identity never connects anything, so a page is the same for
   // every project and is cached deployment-wide (see `cachedCatalogCall`).
-  const pageKey = `search\u0000${query?.toLowerCase() ?? ''}\u0000${input.cursor ?? ''}\u0000${input.limit ?? ''}`;
+  // Only unsearched pages reach here; every query returned above.
+  const pageKey = `search\u0000\u0000${input.cursor ?? ''}\u0000${input.limit ?? ''}`;
   const [page, meta, hidden] = await Promise.all([
     cachedCatalogCall(runtime, pageKey, async () => {
       const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
@@ -554,7 +558,6 @@ export async function composioCatalogPage(input: {
         sandbox: { enable: false },
       });
       return session.toolkits({
-        ...(query ? { search: query } : {}),
         ...(input.cursor ? { cursor: input.cursor } : {}),
         ...(input.limit != null ? { limit: input.limit } : {}),
       });

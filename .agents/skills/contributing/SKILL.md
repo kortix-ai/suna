@@ -1,6 +1,6 @@
 ---
 name: contributing
-description: "The pull request loop for this repo: branch → commit → verify in your own box (local tests + local stack) → PR into main → demo video recorded with agent-browser on the local stack → `gh --attach` → self-merge → verify on dev. A PR into main runs no CI. Load when opening, updating, or finishing a pull request; when writing a PR body; when asking what CI runs where; when adding or explaining PR labels or the per-PR preview environment; or when attaching an image or video to a PR, issue, or comment."
+description: "The pull request loop for this repo: branch → commit → verify in your own box (local tests + local stack) → PR into main → demo video recorded with agent-browser on the local stack → `gh --attach` → self-merge → verify on dev. A PR into main runs no CI unless a person adds the `test` or `preview` label (one run each). Load when opening, updating, or finishing a pull request; when writing a PR body; when asking what CI runs where; when adding or explaining PR labels or the per-PR preview environment; or when attaching an image or video to a PR, issue, or comment."
 ---
 
 # Contributing: the pull request loop
@@ -129,7 +129,7 @@ gh pr create --base main \
   of tracked paths.
 - Open it as a draft (`--draft`) only when the work is not finished. A verified change goes
   straight to review-ready.
-- The PR runs no CI job, and no label changes that. See "What runs where" below.
+- The PR runs no CI job. Add `test` or `preview` only when you need that one explicit run. See "What runs where" and "Labels" below.
 
 Done when `gh pr view --json url` prints the PR.
 
@@ -181,18 +181,22 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
-| PR into `main` | none. `deploy-preview.yml` fires, and runs only when the PR carries the `preview` label. | no |
+| PR into `main` | none. Adding `test` runs the six `Tests` lanes once; adding `preview` deploys and runs `--target-full` once. A push re-runs neither. | no |
 | Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `drata`, `Desktop`, `deploy-api-router-dev`, `Terraform Apply Global` | no: post-merge safety net |
 | PR into `staging` | the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
 
-`tests/unit/sandbox-workflow.test.ts` fails when a workflow other than `deploy-preview.yml`
-triggers on a pull request into `main`. Move a new check to `push: main` or to the release
+`tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to `push: main` or to the release
 PRs, never to PRs into `main`.
 
 ## Labels
 
 | Label | Effect | Who can add it |
 | --- | --- | --- |
-| `preview` | Not part of the development flow. On explicit request it builds one self-host environment for the branch on Platinum (~7 min) and redeploys it on every push. Removing the label tears it down. See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
+| `test` | Runs the six `Tests` lanes (~9 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
+| `preview` | Builds one self-host environment for the branch on Platinum (~7 min), then runs `pnpm test -- --target-full` against it (40–80 min), once. A push does not redeploy; re-add the label. Removing the label tears it down. See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
+
+Both labels are explicit, rare requests. Never add one by default, from a template, or from
+automation.
 | `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. | Triage access. |

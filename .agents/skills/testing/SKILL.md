@@ -87,12 +87,15 @@ Each root run writes a benchmark to
 
 ## Your machine is the pre-merge gate
 
-A pull request into `main` runs **no** GitHub Actions job, with or without a
-label. Every test for a change runs in the developer's own box before the merge.
-CI runs after the merge (push to `main`, non-blocking) and on release pull
-requests into `staging` and `prod`. `tests/unit/sandbox-workflow.test.ts` fails
-when a workflow other than `deploy-preview.yml` triggers on a pull request into
-`main`: put a new check on `push: main` or on the release pull requests.
+A pull request into `main` runs **no** GitHub Actions job by itself. Every test
+for a change runs in the developer's own box before the merge. CI runs after the
+merge (push to `main`, non-blocking) and on release pull requests into `staging`
+and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
+runs the six lanes once, `preview` deploys and runs `--target-full` once. A push
+re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
+fails when a workflow other than the label-gated `tests.yml` and
+`deploy-preview.yml` triggers on a pull request into `main`: put a new check on
+`push: main` or on the release pull requests.
 
 Before a `main` merge, run the narrowest relevant command first, then
 `pnpm test`. Add the local equivalent of every CI job your change touches:
@@ -113,7 +116,9 @@ Secrets and customer terms need no extra command: the `.githooks` pre-commit
 hook encrypts `.env` files and runs `scripts/check-blocked-terms.sh`.
 
 The post-merge `Tests` run on `main` blocks nothing. A red run comments the
-failing lanes on the commit. When your commit caused it, fixing `main` is yours.
+failing lanes and every commit since the last green run on the commit. The
+author whose commit broke `main` fixes forward; after 1 hour red, anyone may
+revert the culprit PR.
 The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
@@ -172,7 +177,7 @@ the rare explicit request.
 - Run `pnpm test -- --target-full` against the sandbox HTTPS origin.
 - Post the preview URL and `/_tests/` report URL in one sticky PR comment.
 - Keep a failed product-test sandbox. Do not hide its failure with fallback.
-- Redeploy the environment in place on a push. Keep the `preview` label.
+- Deploy and run the suite only when the label is added or the workflow is dispatched. A push starts nothing.
 - Delete the sandbox on unlabel or branch deletion. Closing the PR does not.
 - Tag every preview session box with its host: the preview API runs with
   `KORTIX_INSTANCE_ID=<host sandbox name>` (Platinum `kortix.instance`) and its
