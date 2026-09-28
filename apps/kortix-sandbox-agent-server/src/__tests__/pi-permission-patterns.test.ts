@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PermissionBroker, compilePermissionPolicy } from '../harness/pi/interactions'
+import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
 
 /**
  * A per-pattern rule (`bash: { 'rm -rf *': 'deny', '*': 'allow' }`) is a

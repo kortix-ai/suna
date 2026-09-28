@@ -5,14 +5,14 @@
  * the harness-specific part is trivially cheaper — pi re-reads its settings in
  * place, there is no process to restart and no turn to interrupt.
  */
-import { writeAgentEnvFile } from '../../agent-env-file'
-import { syncEgressShim } from '../../egress-shim'
-import { refreshRepo, syncWorkspaceToBase } from '../../git'
-import { llmProxyBaseUrl, setLlmProxyToken } from '../../llm-proxy'
-import { logger } from '../../logger'
-import { reconcileProjectEnv } from '../../project-env'
-import { scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
-import type { HarnessControlOperations, HarnessControlService, HarnessEnvironmentInput, HarnessRefreshInput } from '../control'
+import { writeAgentEnvFile } from '../shared/agent-env-file'
+import { syncEgressShim } from '@/services/egress-shim'
+import { refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
+import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
+import { logger } from '@/lib/log/logger'
+import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
+import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
+import type { HarnessControlOperations, HarnessControlService, HarnessEnvironmentInput, HarnessRefreshInput } from '../contract/control'
 import type { PiRuntime } from './runtime'
 
 /** The session-runtime values a live `POST /kortix/env` may move. Same allowlist as OpenCode's. */

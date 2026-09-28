@@ -91,7 +91,7 @@ export const KORTIX_USER_PATH_DIRS =
 
 /**
  * Live project secrets on tmpfs. The kortix-agent daemon writes this file
- * (apps/kortix-sandbox-agent-server/src/agent-env-file.ts `AGENT_ENV_SH`).
+ * (apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts `AGENT_ENV_SH`).
  */
 export const KORTIX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
 

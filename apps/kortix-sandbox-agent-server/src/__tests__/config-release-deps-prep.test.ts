@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { prepareConfigDir, preparePlatformConfigDir } from '../harness/open-code/config-release'
+import { prepareConfigDir, preparePlatformConfigDir } from '@/harness/open-code/config-release'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'release-prep-'))

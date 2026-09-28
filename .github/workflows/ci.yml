@@ -225,6 +225,13 @@ jobs:
         with:
           bun-version: latest
 
+      # The import-boundary lint runs under Node: ESLint's config validation
+      # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
@@ -235,6 +242,10 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+        working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Import boundaries
+        run: bun run lint && bun run test:architecture
         working-directory: apps/kortix-sandbox-agent-server
 
       - name: Build Linux sandbox agent daemon
