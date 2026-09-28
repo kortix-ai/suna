@@ -13,7 +13,8 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useIsMobile } from '@/hooks/utils';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useFirstChatPending } from '@/stores/first-chat-store';
+import { isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
+import { useSearchParams } from 'next/navigation';
 import {
   getProjectDetail,
   listProjectAccessRequests,
@@ -69,8 +70,11 @@ export function ProjectHome({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tFirstChat = useTranslations('firstChat');
-  // The first chat never ends: this home keeps the welcome for good.
-  const firstChat = useFirstChatPending(projectId);
+  // The first chat never ends, but it opens only when asked for
+  // (`firstChatHref`: the sidebar row or the onboarding exit). Plain project
+  // home, which "New session" opens, stays the normal home.
+  const searchParams = useSearchParams();
+  const firstChat = useFirstChatPending(projectId) && isFirstChatRequested(searchParams);
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);

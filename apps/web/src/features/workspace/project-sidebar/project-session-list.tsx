@@ -60,7 +60,7 @@ import { SessionTitle } from '@/features/workspace/project-sidebar/session-title
 import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
-import { useFirstChatPending } from '@/stores/first-chat-store';
+import { firstChatHref, isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
 import {
   selectCollapsedSections,
   selectGroupMode,
@@ -348,7 +348,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     if (viewState === 'empty') {
       return firstChatPending ? (
-        <FirstChatRow projectId={projectId} isActive={pathname === `/projects/${projectId}`} />
+        <FirstChatRow
+          projectId={projectId}
+          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+        />
       ) : (
         <SessionsEmptyState className="flex-1 pb-16" />
       );
@@ -531,7 +534,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         {/* The first chat never leaves. It is the oldest conversation, so it
             sits at the very bottom — after the last page, never mid-list. */}
         {firstChatPending && !hasNextPage && (
-          <FirstChatRow projectId={projectId} isActive={pathname === `/projects/${projectId}`} />
+          <FirstChatRow
+          projectId={projectId}
+          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+        />
         )}
         {hasNextPage && (
           <div className="px-2 pt-1 pb-2">
@@ -1140,7 +1146,7 @@ function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: bo
 
   return (
     <HoverPrefetchLink
-      href={`/projects/${projectId}`}
+      href={firstChatHref(projectId)}
       aria-current={isActive ? 'page' : undefined}
       className={cn(
         'flex h-8 items-center gap-2 rounded-md px-2 transition-none',

@@ -7,9 +7,9 @@ import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-
 /**
  * Projects that have a first chat.
  *
- * Onboarding starts it, and it stays. Project home opens on the welcome chat
- * (`project-layout/home/first-chat.tsx`), and the sidebar pins one "Your first
- * chat with Kortix" row above the sessions. Each send from it starts a new
+ * Onboarding starts it, and it stays. `firstChatHref` opens the welcome chat
+ * (`project-layout/home/first-chat.tsx`), and the sidebar keeps one "Your first
+ * chat with Kortix" row at the bottom of the sessions. Each send from it starts a new
  * session; the welcome chat is never replaced by one. `finish` remains for
  * sign-out cleanup and tests.
  *
@@ -58,4 +58,22 @@ registerPersistedStore(STORAGE_KEY, () => resetPersistedStore(useFirstChatStore)
 
 export function useFirstChatPending(projectId: string): boolean {
   return useFirstChatStore((state) => state.projectIds.includes(projectId));
+}
+
+/**
+ * The first chat opens only when asked for: the sidebar's "Your first chat
+ * with Kortix" row, or the onboarding exit. Plain project home and "New
+ * session" show the normal home, so a new session never reopens the welcome.
+ */
+const FIRST_CHAT_PARAM = 'chat';
+const FIRST_CHAT_VALUE = 'first';
+
+export function firstChatHref(projectId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}?${FIRST_CHAT_PARAM}=${FIRST_CHAT_VALUE}`;
+}
+
+export function isFirstChatRequested(
+  params: Pick<URLSearchParams, 'get'> | null | undefined,
+): boolean {
+  return params?.get(FIRST_CHAT_PARAM) === FIRST_CHAT_VALUE;
 }

@@ -17,7 +17,7 @@ import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
-import { useFirstChatStore } from '@/stores/first-chat-store';
+import { firstChatHref, useFirstChatStore } from '@/stores/first-chat-store';
 import { listConnectors, type OnboardingUseCase } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
@@ -113,7 +113,7 @@ export function ProjectOnboardingWizard({
   // swaps pages at once instead of loading one.
   const navigatesOnExit = Boolean(onCompleted || onSkip);
   useEffect(() => {
-    if (navigatesOnExit) router.prefetch(`/projects/${encodeURIComponent(projectId)}`);
+    if (navigatesOnExit) router.prefetch(firstChatHref(projectId));
   }, [navigatesOnExit, projectId, router]);
 
   const reduced = useReducedMotion() ?? false;

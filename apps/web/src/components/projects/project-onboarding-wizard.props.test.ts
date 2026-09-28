@@ -50,10 +50,10 @@ describe('ProjectOnboardingWizard: completion wiring', () => {
 
   // `/new` has no effects by contract, so the wizard prefetches the project
   // route it is about to open.
-  test('prefetches the project route when an exit navigates', () => {
-    expect(code).toContain(
-      'if (navigatesOnExit) router.prefetch(`/projects/${encodeURIComponent(projectId)}`);',
-    );
+  // The exit opens the first chat (`firstChatHref`), so that is the address
+  // worth warming.
+  test('prefetches the first chat when an exit navigates', () => {
+    expect(code).toContain('if (navigatesOnExit) router.prefetch(firstChatHref(projectId));');
   });
 
   test('both exits start the first chat', () => {

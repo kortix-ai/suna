@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { useFirstChatStore } from './first-chat-store';
+import { firstChatHref, isFirstChatRequested, useFirstChatStore } from './first-chat-store';
 
 const pending = (projectId: string) => useFirstChatStore.getState().projectIds.includes(projectId);
 
@@ -41,5 +41,20 @@ describe('first chat store', () => {
     useFirstChatStore.getState().finish('p1');
 
     expect(useFirstChatStore.getState()).toBe(before);
+  });
+});
+
+describe('first chat link', () => {
+  test('opens project home with the first-chat flag, id percent-encoded', () => {
+    expect(firstChatHref('p 1')).toBe('/projects/p%201?chat=first');
+  });
+
+  // The welcome shows only when the person asked for it: the sidebar row or
+  // the onboarding exit. Project home and "New session" stay the normal home.
+  test('only the explicit flag opens the first chat', () => {
+    expect(isFirstChatRequested(new URLSearchParams('chat=first'))).toBe(true);
+    expect(isFirstChatRequested(new URLSearchParams(''))).toBe(false);
+    expect(isFirstChatRequested(new URLSearchParams('chat=other'))).toBe(false);
+    expect(isFirstChatRequested(null)).toBe(false);
   });
 });

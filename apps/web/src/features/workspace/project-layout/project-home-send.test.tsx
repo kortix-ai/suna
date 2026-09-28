@@ -8,6 +8,8 @@ import type { FirstChat } from './home/first-chat';
 let composer!: ComponentProps<typeof ComposerChatInput>;
 let firstChat: ComponentProps<typeof FirstChat> | undefined;
 let firstChatPending = false;
+/** Whether the address carries `?chat=first` (the sidebar row, onboarding). */
+let firstChatRequested = true;
 // `mock.module` is process-wide: every shared module keeps its real exports and
 // overrides only what this test needs, so other suites in the same run still link.
 const realComposerInput = await import('@/features/session/composer-chat-input');
@@ -18,6 +20,11 @@ const realAccountPanel = await import('@/stores/account-panel-store');
 const realSdk = await import('@kortix/sdk');
 const realSdkReact = await import('@kortix/sdk/react');
 const realFirstChatStore = await import('@/stores/first-chat-store');
+const realNavigation = await import('next/navigation');
+mock.module('next/navigation', () => ({
+  ...realNavigation,
+  useSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
+}));
 mock.module('@/features/session/composer-chat-input', () => ({
   ...realComposerInput,
   ComposerChatInput: (props: typeof composer) => {
@@ -98,6 +105,7 @@ function mount(onSend: ComponentProps<typeof ProjectHome>['onSend']) {
 }
 
 afterEach(() => {
+  firstChatRequested = true;
   firstChatPending = false;
 });
 
@@ -156,6 +164,17 @@ test('a pending first chat docks the composer under the welcome', () => {
   expect(composer.placeholder).toBe('firstChat.placeholder');
   expect(composer.underbarPlacement).toBe('below');
   expect(composer.slashMenuPlacement).toBe('above');
+});
+
+// "New session" opens plain project home. The first chat stays pending, but
+// without `?chat=first` the page is the usual home, never the welcome again.
+test('a pending first chat does not open without the explicit link', () => {
+  firstChatPending = true;
+  firstChatRequested = false;
+  mount(mock(async () => {}));
+
+  expect(firstChat).toBeUndefined();
+  expect(composer.placeholder).toBe('Message');
 });
 
 // Neither starter may call `onSend` itself. Both submit through the composer
