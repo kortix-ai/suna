@@ -55,6 +55,8 @@ export interface CaptureOptions {
    * caller the user is waiting on — see `captureScope`.
    */
   scope?: 'auto' | 'tail';
+  /** Use the authenticated caller for a manual stop, not a possibly revoked creator. */
+  actorUserId?: string;
 }
 
 export interface CaptureDeps {
@@ -64,6 +66,7 @@ export interface CaptureDeps {
       fullHistory: boolean;
       projectId?: string;
       retainHistory?: boolean;
+      actorUserId?: string;
     },
   ) => Promise<{
     opencodeSessionId: string;
@@ -81,7 +84,7 @@ export interface CaptureDeps {
 
 const liveCaptureDeps: CaptureDeps = {
   async readMessages(sessionId, options) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionOpencodeEndpoint(sessionId, options?.actorUserId);
     if (!resolved) return null;
     const deadline = AbortSignal.timeout(options?.fullHistory ? 60_000 : CAPTURE_TIMEOUT_MS);
     const previous = options?.retainHistory
@@ -238,6 +241,7 @@ async function captureSessionTranscript(
         fullHistory,
         projectId: session.projectId,
         retainHistory,
+        actorUserId: options?.actorUserId,
       });
       if (!read) return null;
       const rows = mirrorRowsFromOpencodePayload(read.payload);
