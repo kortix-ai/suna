@@ -16,8 +16,8 @@
  * title row (`titleTrailing`). Bottom: the project drawer's pinned bar
  * (`PinnedBar`) — two equal cells, default size, floating over a fade of the
  * surface while the document scrolls under them: Download (fetches the file,
- * then the device opens it: Quick Look on iOS, the file type's app on Android;
- * a toast when no app can) · "Add to chat",
+ * then saves it in a folder the user picks: remembered on Android, the Files
+ * picker every time on iOS; `lib/files/save-to-device`) · "Add to chat",
  * which closes both sheets and picks the file. A failed load says why — a
  * stopped sandbox keeps its transcript but serves no file — with Try again.
  * Closing the preview returns to the list, search text kept.

@@ -69,3 +69,15 @@ export function markdownPrintHtml(
 ): string {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><style>${PRINT_CSS}</style></head><body>${md.render(markdown)}</body></html>`;
 }
+
+/** `notes.md` → `notes (1).md`, `notes (2).md`, … until `taken` says no. */
+export function availableFileName(name: string, taken: (candidate: string) => boolean): string {
+  if (!taken(name)) return name;
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let n = 1; ; n += 1) {
+    const candidate = `${stem} (${n})${ext}`;
+    if (!taken(candidate)) return candidate;
+  }
+}

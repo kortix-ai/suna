@@ -13,8 +13,8 @@
  *
  * The body renders markdown, HTML, CSV, JSON, code, text and images. A file it
  * does not render — a PDF, an Office file, an archive, media
- * (`previewsInline`) — shows its file card and fetches nothing; Download hands
- * it to the device instead.
+ * (`previewsInline`) — shows its file card and fetches nothing; Download saves it on the
+ * device instead (`lib/files/save-to-device`).
  */
 import * as React from 'react';
 import { View } from 'react-native';
@@ -37,7 +37,7 @@ import { DownloadMenu } from '@/components/files/DownloadMenu';
 import { exportMarkdownPdf } from '@/lib/files/export-markdown-pdf';
 import { downloadOpenCodeFileToCache } from '@/lib/files/hooks';
 import { pdfFileName, type DownloadFormat } from '@/lib/files/markdown-export';
-import { openFileOnDevice } from '@/lib/files/open-on-device';
+import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
 import { DownloadSimpleIcon, PlusIcon } from '@/lib/icons';
@@ -192,15 +192,17 @@ export function FilePreviewBody({
       return;
     }
     try {
-      // The device opens it in its own app: the PDF, slides, sheet or text app
-      // on Android, Quick Look on iOS. Never the share sheet, never an in-app
-      // viewer (Jay, 2026-09-22).
-      const result = await openFileOnDevice(uri, name);
-      if (result === 'no-app') toast.info('File downloaded. No app on this device can open it.');
-      else if (result === 'unavailable') toast.info('File downloaded. Update the app to open it.');
+      // Download saves the file on the device (Jay, 2026-09-28): a folder the
+      // user picks, remembered on Android (`lib/files/save-to-device`). It is
+      // never opened in another app.
+      const result = await saveFileToDevice(uri, name);
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch {
       haptics.warning();
-      toast.error('File downloaded, but it did not open. Try again.');
+      toast.error('Unable to save the file. Try again.');
     } finally {
       setDownloading(false);
     }

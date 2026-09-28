@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 import {
+  availableFileName,
   downloadFormats,
   markdownPrintHtml,
   pdfFileName,
@@ -117,5 +118,16 @@ describe('markdownPrintHtml', () => {
     const html = doc('text', '</title><script>x</script>.md');
     expect(html).toContain('<title>&lt;/title&gt;&lt;script&gt;x&lt;/script&gt;.md</title>');
     expect(html).not.toContain('<script>x');
+  });
+});
+
+describe('availableFileName', () => {
+  test('keeps a free name and numbers a taken one before its extension', () => {
+    const taken = new Set(['notes.md', 'notes (1).md', 'README']);
+    const has = (name: string) => taken.has(name);
+    expect(availableFileName('report.pdf', has)).toBe('report.pdf');
+    expect(availableFileName('notes.md', has)).toBe('notes (2).md');
+    expect(availableFileName('README', has)).toBe('README (1)');
+    expect(availableFileName('.env', (name) => name === '.env')).toBe('.env (1)');
   });
 });
