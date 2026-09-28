@@ -659,7 +659,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ]);
   });
 
-  test('materializes non-native staged files before prompt_async', async () => {
+  test('writes every staged file to the computer before prompt_async, an image included', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
@@ -705,16 +705,16 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         text: expect.stringContaining('filename="README.md"'),
       },
       {
-        type: 'file',
-        mime: 'image/png',
-        filename: 'shot.png',
-        url: expect.stringMatching(/^data:image\/png;base64,/),
+        type: 'text',
+        text: expect.stringContaining('filename="shot.png"'),
       },
     ]);
-    expect(JSON.stringify(body.parts)).not.toContain('application/zip;base64');
+    // No file bytes ride on the wire: the edge drops an oversized body.
+    expect(JSON.stringify(body.parts)).not.toContain(';base64,');
     expect(runtimeWrites.map(({ targetPath }) => targetPath)).toEqual([
       '/workspace/uploads/.kortix-inbox/cmd-1/1-bundle.zip',
       '/workspace/uploads/.kortix-inbox/cmd-1/2-README.md',
+      '/workspace/uploads/.kortix-inbox/cmd-1/3-shot.png',
     ]);
   });
 
