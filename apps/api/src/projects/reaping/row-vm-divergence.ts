@@ -45,7 +45,7 @@
  */
 
 import { sessionSandboxes } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import { type ProviderName, getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
