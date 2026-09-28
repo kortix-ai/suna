@@ -70,18 +70,21 @@ describe('getProjectSecretValueForConsumer', () => {
 
     expect(await read()).toBe('plaintext-test-value');
     expect(audits).toHaveLength(1);
-    expect(audits[0]).toMatchObject({
+    expect(audits[0]).toEqual({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
+      actorUserId: '44444444-4444-4444-8444-444444444444',
       actorType: 'agent',
       source: 'llm_gateway',
       action: 'secret.consumer.used',
       resourceType: 'project_secret',
+      resourceId: '33333333-3333-4333-8333-333333333333',
       metadata: {
         identifier: 'provider-primary',
         name: 'PROVIDER_KEY',
         consumer: 'llm_gateway',
+        value_source: 'shared',
       },
     });
     expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
@@ -127,12 +130,24 @@ describe('getProjectSecretValueForConsumer', () => {
 
     expect(await read()).toBeNull();
     expect(audits).toHaveLength(1);
-    expect(audits[0]).toMatchObject({
+    expect(audits[0]).toEqual({
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      actorUserId: '44444444-4444-4444-8444-444444444444',
+      actorType: 'agent',
+      source: 'llm_gateway',
       outcome: 'denied',
       action: 'secret.consumer.denied',
+      resourceType: 'project_secret',
+      resourceId: '33333333-3333-4333-8333-333333333333',
       metadata: {
+        identifier: 'provider-primary',
+        name: 'PROVIDER_KEY',
         requested_consumer: 'llm_gateway',
         configured_consumer: 'sandbox',
+        strategy: 'runtime',
+        value_source: 'shared',
       },
     });
     expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
@@ -242,18 +257,24 @@ describe('getProjectSecretValueForConsumer', () => {
     rows = [secret({ valueEnc: 'not-an-envelope' })];
 
     expect(await read()).toBeNull();
-    expect(audits).toEqual([
-      expect.objectContaining({
-        outcome: 'failure',
-        action: 'secret.consumer.invalid',
-        metadata: {
-          identifier: 'provider-primary',
-          name: 'PROVIDER_KEY',
-          consumer: 'llm_gateway',
-          value_source: 'shared',
-        },
-      }),
-    ]);
+    expect(audits).toEqual([{
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      actorUserId: '44444444-4444-4444-8444-444444444444',
+      actorType: 'agent',
+      source: 'llm_gateway',
+      outcome: 'failure',
+      action: 'secret.consumer.invalid',
+      resourceType: 'project_secret',
+      resourceId: '33333333-3333-4333-8333-333333333333',
+      metadata: {
+        identifier: 'provider-primary',
+        name: 'PROVIDER_KEY',
+        consumer: 'llm_gateway',
+        value_source: 'shared',
+      },
+    }]);
     expect(JSON.stringify(audits)).not.toContain('not-an-envelope');
   });
 });
