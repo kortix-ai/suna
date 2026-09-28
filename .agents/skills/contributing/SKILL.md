@@ -162,9 +162,9 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Keep the PR mergeable: `gh pr view <pr> --json mergeable` must not say `CONFLICTING`.
   While it conflicts, GitHub runs no `pull_request` workflow (CI, `Tests`, secret scans).
   Only the preview runs. Merge `main` into the branch and push.
-- A push redeploys the preview in place. That redeploy skips `--target-full`, and the
-  sticky comment says `live; NOT tested`. Remove and re-add `preview` to test the new
-  head commit.
+- A push redeploys the preview in place (~7 min). The label never runs `--target-full`;
+  the sticky comment says `live; NOT tested`. To test the head commit against the
+  preview, run `gh workflow run deploy-preview.yml -f pr_number=<N>` (40–80 min).
 - When the behaviour in the video changes, record the video again and repeat step 6.
 - Edit the body after an upload from the live copy:
   `gh pr view <pr> --json body --jq .body > output/pr/body.md`. The old local file still holds
@@ -191,7 +191,7 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Label | Effect | Who can add it |
 | --- | --- | --- |
-| `preview` | Builds and deploys one full self-host environment for the branch, then runs `pnpm test -- --target-full` against it. Also runs the six-lane `Tests` suite (`tests.yml`). A push redeploys the environment. Removing the label tears it down. | Needs write access, and a PR from a branch of this repo (not a fork). |
+| `preview` | Builds and deploys one full self-host environment for the branch (~7 min). It does not run `--target-full`; dispatch `deploy-preview.yml` for that. Also runs the six-lane `Tests` suite (`tests.yml`). A push redeploys the environment. Removing the label tears it down. | Needs write access, and a PR from a branch of this repo (not a fork). |
 | `test` | Runs the six-lane `Tests` suite (`core`, `browser-1`…`4`, `packages`, ~8 min) on the PR. Adding the label re-triggers the suite without a push. | Triage access. |
 | `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json`. | Triage access. |
 

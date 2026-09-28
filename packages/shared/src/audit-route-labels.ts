@@ -674,6 +674,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'ALL /v1/router/xai/*': { action: 'router.xai.proxy', title: 'Called xAI through router' },
   'GET /v1/runtime-assets/agent': { action: 'runtime.agent.download', title: 'Downloaded the sandbox agent' },
   'HEAD /v1/runtime-assets/agent': { action: 'runtime.agent.check', title: 'Checked the sandbox agent' },
+  'GET /v1/runtime-assets/chunk/:sha256': { action: 'runtime.chunk.download', title: 'Downloaded a runtime-asset chunk' },
+  'GET /v1/runtime-assets/chunks/:component': { action: 'runtime.chunks.read', title: 'Checked runtime-asset chunks' },
   'GET /v1/runtime-assets/cli': { action: 'runtime.cli.download', title: 'Downloaded the sandbox CLI' },
   'HEAD /v1/runtime-assets/cli': { action: 'runtime.cli.check', title: 'Checked the sandbox CLI' },
   'GET /v1/runtime-assets/entrypoint': { action: 'runtime.entrypoint.download', title: 'Downloaded the sandbox entrypoint' },

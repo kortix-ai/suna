@@ -400,6 +400,21 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   },
 }));
 
+// The private store a staged file is copied into while the project keeps its
+// history (`session_transcript_history`, on by default).
+let savedAttachments: Array<{ projectId: string; sessionId: string; filename: string }> = [];
+const realSessionAttachments = await import('../../lib/session-attachments');
+mock.module('../../lib/session-attachments', () => ({
+  ...realSessionAttachments,
+  sessionAttachmentStore: () => ({
+    put: async (file: { projectId: string; sessionId: string; attachmentId: string; filename: string }) => {
+      savedAttachments.push({ projectId: file.projectId, sessionId: file.sessionId, filename: file.filename });
+      return { url: `kortix-attachment://${file.projectId}/${file.sessionId}/${file.attachmentId}` };
+    },
+    read: async () => null,
+  }),
+}));
+
 mock.module('../runtime-prompt-file', () => ({
   // The materializer imports it for handle-backed parts; these rows carry none.
   importRuntimePromptAttachment: async () => null,
@@ -482,11 +497,16 @@ beforeEach(() => {
   deliveryStarts = [];
   unlandedRequeues = [];
   unlandedBudgetLeft = 2;
+  savedAttachments = [];
   sessionRow = {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
+    // The wire tests pin the path WITHOUT saved history. The flag is on by
+    // default; its one extra step, keeping each staged file in the private
+    // store, is tested below and in prompt-attachment-materializer.test.ts.
+    projectMetadata: { experimental: { session_transcript_history: false } },
     sandboxProvider: 'daytona',
     baseRef: 'main',
     agentName: 'agent',
@@ -607,7 +627,39 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     });
   });
 
-  test('materializes non-native staged files before prompt_async', async () => {
+  test('with saved history on (the default), a staged file is also kept in the private store', async () => {
+    sessionRow = { ...sessionRow!, projectMetadata: {} };
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'Inspect this bundle.',
+          clientMessageId: 'q_saved_files',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [
+            { type: 'text', text: 'Inspect this bundle.' },
+            {
+              type: 'file',
+              mime: 'application/zip',
+              filename: 'bundle.zip',
+              url: 'data:application/zip;base64,UEsDBA==',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(savedAttachments).toEqual([{ projectId: PROJECT_ID, sessionId: SESSION_ID, filename: 'bundle.zip' }]);
+    expect(capturedBodies).toHaveLength(1);
+    // The reference the runtime reads names the saved copy, so saved history
+    // can show the file while the computer is off.
+    expect(capturedBodies[0].parts).toEqual([
+      { type: 'text', text: 'Inspect this bundle.' },
+      { type: 'text', text: expect.stringContaining(`attachment="kortix-attachment://${PROJECT_ID}/${SESSION_ID}/`) },
+    ]);
+  });
+
+  test('writes every staged file to the computer before prompt_async, an image included', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
@@ -653,16 +705,16 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         text: expect.stringContaining('filename="README.md"'),
       },
       {
-        type: 'file',
-        mime: 'image/png',
-        filename: 'shot.png',
-        url: expect.stringMatching(/^data:image\/png;base64,/),
+        type: 'text',
+        text: expect.stringContaining('filename="shot.png"'),
       },
     ]);
-    expect(JSON.stringify(body.parts)).not.toContain('application/zip;base64');
+    // No file bytes ride on the wire: the edge drops an oversized body.
+    expect(JSON.stringify(body.parts)).not.toContain(';base64,');
     expect(runtimeWrites.map(({ targetPath }) => targetPath)).toEqual([
       '/workspace/uploads/.kortix-inbox/cmd-1/1-bundle.zip',
       '/workspace/uploads/.kortix-inbox/cmd-1/2-README.md',
+      '/workspace/uploads/.kortix-inbox/cmd-1/3-shot.png',
     ]);
   });
 

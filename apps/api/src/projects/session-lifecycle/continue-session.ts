@@ -164,7 +164,7 @@ export async function continueSession(
           readAttachment: (scope) => sessionAttachmentStore().read(scope),
           // The runtime already holds this message's native images inline;
           // only the legacy non-native parts need a file behind them.
-          inlineBudgetBytes: Number.POSITIVE_INFINITY,
+          keepNativeInline: true,
         }),
       updatePart: ({ messageId, partId, text: replacementText }) =>
         updateLegacyRuntimePart({

@@ -1,7 +1,7 @@
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { sendCard, updateCard } from '../teams-api';
-import { buildConnectAccountCard, buildRequestAccessCard } from './cards';
-import { buildTeamsLoginUrl } from './login';
+import { buildRequestAccessCard } from './cards';
+import { teamsLoginCard } from './login-card';
 import { createPendingTeamsAuthMessage } from './auth-resume';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
@@ -49,12 +49,8 @@ export async function postTeamsIdentityPrompt(input: {
       teamsUserId: userId,
       activity: input.activity,
     });
-    const loginUrl = buildTeamsLoginUrl({
-      tenantId: input.tenantId,
-      teamsUserId: userId,
-      ...(pendingId ? { pendingId } : {}),
-    });
-    await post(buildConnectAccountCard(loginUrl));
+    // The sign-in link only in a one-to-one chat (login-card.ts).
+    await post(await teamsLoginCard({ activity: input.activity, tenantId: input.tenantId, teamsUserId: userId, pendingId }));
     return;
   }
   await post(buildRequestAccessCard(input.projectId));

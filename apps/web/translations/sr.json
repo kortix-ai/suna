@@ -53,6 +53,7 @@
     "manageChatGptAccounts": "Управљајте ChatGPT налозима",
     "connect": "Повежи",
     "connectChatGpt": "Повежи ChatGPT",
+    "reconnectChatGpt": "Поново повежи ChatGPT",
     "noChatGptAccounts": "Још нема ChatGPT налога",
     "oauthCreationDescription": "Пријавите се својим ChatGPT Plus или Pro налогом. Kortix чува пријаву шифровану и никада је не приказује.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -19190,7 +19191,9 @@
       "text397ab5aecbbf": "Захтев за дозволу сесије прослеђен",
       "text3ec6c235548a": "Pročitani metapodaci MCP servera",
       "text7740934de920": "Registrovan OAuth klijent",
-      "textcd36423ea12a": "Pozvan MCP server"
+      "textcd36423ea12a": "Pozvan MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

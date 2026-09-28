@@ -53,6 +53,7 @@
     "manageChatGptAccounts": "Gestisci account ChatGPT",
     "connect": "Connetti",
     "connectChatGpt": "Connetti ChatGPT",
+    "reconnectChatGpt": "Riconnetti ChatGPT",
     "noChatGptAccounts": "Nessun account ChatGPT",
     "oauthCreationDescription": "Accedi con il tuo account ChatGPT Plus o Pro. Kortix conserva l’accesso crittografato e non lo mostra mai.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -19190,7 +19191,9 @@
       "text397ab5aecbbf": "Richiesta di autorizzazione della sessione inoltrata",
       "text3ec6c235548a": "Metadati del server MCP letti",
       "text7740934de920": "Client OAuth registrato",
-      "textcd36423ea12a": "Server MCP chiamato"
+      "textcd36423ea12a": "Server MCP chiamato",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
