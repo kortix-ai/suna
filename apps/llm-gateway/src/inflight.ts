@@ -1,6 +1,8 @@
 import type { Hono } from 'hono';
 export function trackInflight(app: Hono) {
-  // Count relaying streams so main.ts can drain before exit.
+  // Counts requests still being served, INCLUDING a streaming response that is
+  // still relaying, so `main.ts` can drain before exit instead of cutting every
+  // live turn on a deploy, scale-in or Spot reclaim.
   let count = 0;
   app.use('*', async (c, next) => {
     count += 1;
