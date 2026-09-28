@@ -279,7 +279,8 @@ describe('manifest file compare-and-swap', () => {
     }
 
     expect(visibleDuringPush?.raw.connectors).toEqual([]);
-    expect(await commit).toMatchObject({ status: 502 });
+    // A declining pre-receive hook is a remote push policy (#7819): 409.
+    expect(await commit).toMatchObject({ status: 409 });
     expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).not.toContain(
       'never-landed',
     );
