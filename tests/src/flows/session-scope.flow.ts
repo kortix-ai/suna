@@ -7,6 +7,7 @@
  * provisions a sandbox.
  */
 import { randomUUID } from 'node:crypto';
+import { deepStrictEqual } from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,55 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
 import { createDatabaseSession } from '../fixtures/database-project';
+
+const UNKNOWN_SESSION_ID = '00000000-0000-4000-a000-000000000000';
+
+flow(
+  'SCOPE-7',
+  {
+    domain: 'sessions',
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const viewer = await team.addMember('member');
+    await team.grantProjectRole(project.id, viewer.userId!, 'user');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const route = '/v1/projects/:projectId/sessions/:sessionId/scope';
+
+    await ctx.step('a malformed session id returns the uuid-wall 400 envelope', async () => {
+      const r = await owner.get(route, { params: { projectId: project.id, sessionId: 'not-a-uuid' } });
+      r.status(400);
+      deepStrictEqual(r.json(), { error: 'Invalid session id' });
+    });
+
+    await ctx.step('an unknown session returns the session-wall 404 envelope', async () => {
+      const r = await owner.get(route, { params: { projectId: project.id, sessionId: UNKNOWN_SESSION_ID } });
+      r.status(404);
+      deepStrictEqual(r.json(), { error: 'Not found' });
+    });
+
+    await ctx.step('a reader cannot cross the session-stop capability wall', async () => {
+      const r = await ctx.client.as(viewer).put(
+        route,
+        {},
+        { params: { projectId: project.id, sessionId: UNKNOWN_SESSION_ID } },
+      );
+      r.status(403).body().has('$.code', 'project_role_insufficient');
+      deepStrictEqual(r.json(), {
+        error: true,
+        message: "You don't have permission to perform this action (project.session.stop).",
+        status: 403,
+        code: 'project_role_insufficient',
+        action: 'project.session.stop',
+      });
+    });
+  },
+);
 
 type Db = {
   query<T = Record<string, unknown>>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;

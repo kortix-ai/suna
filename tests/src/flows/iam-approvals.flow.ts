@@ -14,6 +14,7 @@
  * NEVER a billing tier — they must not start 402ing.
  */
 import { flow } from '../core/flow';
+import { deepStrictEqual } from 'node:assert/strict';
 import { asPlatformAdmin, enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 const UNKNOWN_UUID = '00000000-0000-4000-a000-000000000000';
@@ -258,13 +259,22 @@ flow(
       },
     );
 
+    await ctx.step('an unknown project returns the project-param 404 envelope', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/approvals', {
+        params: { projectId: UNKNOWN_UUID },
+      });
+      r.status(404);
+      deepStrictEqual(r.json(), { error: 'Not found' });
+    });
+
     await ctx.step(
       'a granted (non-manager) project member sees their own needs-input → 200',
       async () => {
         const r = await ctx.client.as(viewer).get('/v1/projects/:projectId/approvals/needs-input', {
           params: { projectId: project.id },
         });
-        r.status(200).body().has('$.total', 0).exists('$.sessions');
+        r.status(200);
+        deepStrictEqual(r.json(), { total: 0, sessions: {} });
       },
     );
 
