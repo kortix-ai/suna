@@ -9,7 +9,7 @@
  * The Agent tab's `+` (title row, far right) closes the sheet and starts a
  * new session on the shared "configure a new agent" prompt
  * (`newConfigPrompt('agent')`) — web's Agents page "New" does the same.
- * With fewer than two pickable agents (`pickableAgents`) and no `+` there is
+ * With fewer than two pickable agents (`composerSelectableAgents`) and no `+` there is
  * nothing to do on the Agent tab: no tab bar, the sheet is the model list
  * alone. With a `+`, the tab shows even for one agent — a new one is made there.
  *
@@ -17,7 +17,7 @@
  * carry one). Choosing a model applies and the sheet stays open. `thinking`
  * adds one stepped slider above the list for the active model's thinking
  * levels: Default, then each level. A level applies on release and the sheet
- * stays open. The project home passes no `thinking`: its catalog has no levels.
+ * stays open.
  * `autoContinue` adds one row under Thinking in a thread: AutoContinue is a
  * per-run autonomy setting, so it lives beside Thinking, not in the `+` sheet.
  */
@@ -41,10 +41,11 @@ import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
+import { composerSelectableAgents } from '@kortix/sdk';
+import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 import {
   agentDisplayName,
   nearestStop,
-  pickableAgents,
   stopOffset,
   variantDisplayName,
   type PickerOption,
@@ -69,7 +70,8 @@ export interface ModelThinking {
 }
 
 export interface AgentChoice {
-  agents: Array<{ name: string; mode?: string | null; hidden?: boolean; enabled?: boolean }>;
+  /** The roster (`@kortix/sdk`); the tab lists `composerSelectableAgents` of it. */
+  agents: Agent[];
   /** The agent the next message runs on; its row carries the check. */
   activeName: string | null;
   onSelect: (name: string) => void;
@@ -92,7 +94,7 @@ interface ModelPickerSheetProps {
   thinking?: ModelThinking;
   /** "Connect provider" in the empty state: the project offers no model. */
   onConnect?: () => void;
-  /** The Agent tab. The thread passes the sandbox's agents; project home the project config's. */
+  /** The Agent tab: the project config's agents (`projectConfigAgentsToOpenCodeAgents`). */
   agent?: AgentChoice;
   /** The thread's AutoContinue row, under Thinking. */
   autoContinue?: ModelAutoContinue;
@@ -104,7 +106,7 @@ export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps
     const [tab, setTab] = React.useState(MODEL_TAB);
 
     const agentOptions = React.useMemo<PickerOption[]>(
-      () => pickableAgents(agent?.agents ?? []).map((a) => ({ key: a.name, label: agentDisplayName(a.name) })),
+      () => composerSelectableAgents(agent?.agents).map((a) => ({ key: a.name, label: agentDisplayName(a.name) })),
       [agent?.agents],
     );
     const hasAgentTab = !!agent && (agentOptions.length >= 2 || !!agent.onCreate);

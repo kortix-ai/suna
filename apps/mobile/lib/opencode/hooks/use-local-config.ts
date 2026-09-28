@@ -1,28 +1,33 @@
 /**
- * Local config hook — manages selected agent, model, and variant state.
- *
- * Mirrors the frontend's use-opencode-local.ts pattern:
- * - Persists per-agent model selections
- * - Resolves model fallback chain
- * - Manages variant (thinking mode) cycling
+ * Local config — the persisted picks (per-agent model, thinking level, last-used agent) and
+ * the thread's resolution through `@kortix/sdk`.
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Agent, FlatModel, OpenCodeConfig } from './use-opencode-data';
+import { useMemo, useState } from 'react';
+import {
+  composerSelectableAgents,
+  featureFlags,
+  resolveComposerAgent,
+  resolveComposerModel,
+  resolveModelDefault,
+  type ModelDefaultsResponse,
+} from '@kortix/sdk';
+import type { Agent, FlatModel, ProviderListResponse } from './use-opencode-data';
 
 // ─── Persistent store ────────────────────────────────────────────────────────
 
 interface LocalConfigState {
-  /** Selected agent name */
+  /** The agent last picked or sent with on project home (web's last-used agent). A thread shows it only while its roster loads. */
   selectedAgent: string | null;
   /** Per-agent model selections: agentName -> { providerID, modelID } */
   agentModels: Record<string, { providerID: string; modelID: string }>;
   /** Per-model variant selections: "providerID/modelID" -> variantName */
   modelVariants: Record<string, string>;
-  /** Global default model set during setup wizard — highest priority until user
-   *  explicitly changes model in a session */
+  /** Legacy setup-wizard default model. Nothing sets it now; a stored one ranks
+   *  below `/model-defaults` (`resolveComposerModel`'s `globalDefault`). */
   globalDefault: { providerID: string; modelID: string } | null;
 
   setAgent: (name: string | null) => void;
@@ -82,151 +87,95 @@ export const useLocalConfigStore = create<LocalConfigState>()(
 
 export interface ResolvedConfig {
   agent: Agent | null;
+  /** The roster web's thread lists (subagents included, for @mentions); the Agent tab drops subagents. */
   agents: Agent[];
   model: FlatModel | null;
   modelKey: { providerID: string; modelID: string } | null;
   variant: string | null;
   variants: string[];
   setAgent: (name: string) => void;
-  setModel: (providerID: string, modelID: string, options?: { autoSeed?: boolean; explicit?: boolean }) => void;
-  /** Set a global default model (from setup wizard). Clears per-agent selections. */
-  setGlobalDefault: (model: { providerID: string; modelID: string } | null) => void;
-  cycleVariant: () => void;
+  setModel: (providerID: string, modelID: string) => void;
   setVariant: (variant: string | null) => void;
 }
 
-export function useResolvedConfig(
-  agents: Agent[],
-  models: FlatModel[],
-  config: OpenCodeConfig | undefined,
-  defaults: Record<string, string>,
-): ResolvedConfig {
+/**
+ * A thread's agent, model, and thinking level. The lists and the resolution
+ * are `@kortix/sdk`'s (`composerSelectableAgents`, `resolveComposerAgent`,
+ * `resolveModelDefault`, `resolveComposerModel`), fed web's inputs; this hook
+ * only adds mobile's persisted picks.
+ *
+ * Agent: this thread's pick, else the agent of its latest assistant turn, else
+ * the session's bound agent, else the project default, else the first. The
+ * pick lives for this screen only; after a reload the latest turn carries it.
+ * Model: the persisted per-agent pick, else `/model-defaults` (agent →
+ * project → account → platform), else the legacy global default, else the
+ * agent's own model, the runtime config model, and the provider default.
+ */
+export function useResolvedConfig(i: {
+  /** The raw roster. Undefined while it loads. */
+  agents: Agent[] | undefined;
+  /** The agent the session was created with (`agent_name`). */
+  boundAgent?: string | null;
+  /** The agent of the session's latest assistant message. */
+  latestAgent?: string | null;
+  defaultAgent?: string | null;
+  models: FlatModel[];
+  providers?: ProviderListResponse;
+  modelDefaults?: ModelDefaultsResponse;
+  configModel?: string;
+}): ResolvedConfig {
   const store = useLocalConfigStore();
+  const [pickedAgent, setPickedAgent] = useState<string | null>(null);
 
-  // ── Resolve agent ──
-  const primaryAgents = agents.filter((a) => a.mode === 'primary' || a.mode === 'all');
-  const agent =
-    primaryAgents.find((a) => a.name === store.selectedAgent) ||
-    primaryAgents[0] ||
-    null;
+  const agents = useMemo(
+    () => composerSelectableAgents(i.agents, { enableProjects: featureFlags.enableProjects, includeSubagents: true }),
+    [i.agents],
+  );
+  const agentName = resolveComposerAgent({
+    agents: i.agents,
+    boundAgent: i.boundAgent,
+    defaultAgent: i.defaultAgent,
+    selectedAgent: pickedAgent ?? i.latestAgent,
+  }).selected;
+  // A bound agent outside the roster still runs server-side: name it.
+  const agent = agentName ? (agents.find((a) => a.name === agentName) ?? ({ name: agentName } as Agent)) : null;
 
-  // ── Resolve model (fallback chain) ──
-  const agentName = agent?.name || '_default';
-  let model: FlatModel | null = null;
+  const agentSlot = agentName ?? '_default';
+  const { model: modelKey } = resolveComposerModel({
+    models: i.models,
+    picks: [store.agentModels[agentSlot]],
+    serverDefault: resolveModelDefault(i.modelDefaults, agentName ?? undefined),
+    globalDefault: store.globalDefault ?? undefined,
+    agentModel: agent?.model,
+    configModel: i.configModel,
+    providers: i.providers,
+  });
+  const model = modelKey
+    ? (i.models.find((m) => m.providerID === modelKey.providerID && m.modelID === modelKey.modelID) ?? null)
+    : null;
 
-  // 1. User's global default (set during onboarding setup wizard — wins until
-  //    user explicitly changes model in a session, which clears globalDefault)
-  if (store.globalDefault) {
-    model =
-      models.find(
-        (m) =>
-          m.providerID === store.globalDefault!.providerID &&
-          m.modelID === store.globalDefault!.modelID,
-      ) || null;
-  }
-
-  // 2. Persisted per-agent selection
-  if (!model) {
-    const persisted = store.agentModels[agentName];
-    if (persisted) {
-      model =
-        models.find(
-          (m) => m.providerID === persisted.providerID && m.modelID === persisted.modelID,
-        ) || null;
-    }
-  }
-
-  // 3. Agent's configured model
-  if (!model && agent?.model) {
-    model =
-      models.find(
-        (m) =>
-          m.providerID === agent.model!.providerID &&
-          m.modelID === agent.model!.modelID,
-      ) || null;
-  }
-
-  // 4. Config model ("provider/modelId")
-  if (!model && config?.model) {
-    const [pid, ...rest] = config.model.split('/');
-    const mid = rest.join('/');
-    model = models.find((m) => m.providerID === pid && m.modelID === mid) || null;
-  }
-
-  // 5. Provider defaults
-  if (!model) {
-    for (const [pid, mid] of Object.entries(defaults)) {
-      model = models.find((m) => m.providerID === pid && m.modelID === mid) || null;
-      if (model) break;
-    }
-  }
-
-  // 6. First available
-  if (!model && models.length > 0) {
-    model = models[0];
-  }
-
-  // ── Resolve variant ──
-  const modelKey = model ? `${model.providerID}/${model.modelID}` : '';
+  // ── Variant ──
+  const variantKey = model ? `${model.providerID}/${model.modelID}` : '';
   const variants = model?.variants ? Object.keys(model.variants) : [];
-  const variant = modelKey ? (store.modelVariants[modelKey] ?? null) : null;
+  const variant = variantKey ? (store.modelVariants[variantKey] ?? null) : null;
 
-  // ── Actions ──
-  const setAgent = (name: string) => {
-    store.setAgent(name);
-  };
-
-  const setModel = (
-    providerID: string,
-    modelID: string,
-    options?: { autoSeed?: boolean; explicit?: boolean },
-  ) => {
-    // When auto-seeding from a message and globalDefault is set, skip —
-    // the user's setup wizard choice takes precedence over message-seeded models.
-    if (options?.autoSeed && store.globalDefault) {
-      const gd = store.globalDefault;
-      if (models.find((m) => m.providerID === gd.providerID && m.modelID === gd.modelID)) {
-        return;
-      }
-    }
-
-    store.setModelForAgent(agentName, { providerID, modelID });
-
-    // User explicitly changed model — clear globalDefault so their
-    // per-agent choice takes over going forward.
-    if (options?.explicit && store.globalDefault) {
-      store.setGlobalDefault(null);
-    }
-  };
-
-  const cycleVariant = () => {
-    if (!modelKey || variants.length === 0) return;
-    const currentIdx = variant ? variants.indexOf(variant) : -1;
-    const nextIdx = currentIdx + 1;
-    if (nextIdx >= variants.length) {
-      // Back to default (null)
-      store.setVariant(modelKey, null);
-    } else {
-      store.setVariant(modelKey, variants[nextIdx]);
-    }
-  };
-
-  const setVariantDirect = (v: string | null) => {
-    if (!modelKey) return;
-    store.setVariant(modelKey, v);
+  const setModel = (providerID: string, modelID: string) => {
+    store.setModelForAgent(agentSlot, { providerID, modelID });
+    // An explicit pick retires the legacy setup-wizard default.
+    if (store.globalDefault) store.setGlobalDefault(null);
   };
 
   return {
     agent,
-    agents: primaryAgents,
+    agents,
     model,
     modelKey: model ? { providerID: model.providerID, modelID: model.modelID } : null,
     variant,
     variants,
-    setAgent,
+    setAgent: setPickedAgent,
     setModel,
-    setGlobalDefault: store.setGlobalDefault,
-    cycleVariant,
-    setVariant: setVariantDirect,
+    setVariant: (v) => {
+      if (variantKey) store.setVariant(variantKey, v);
+    },
   };
 }

@@ -50,10 +50,10 @@ import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions'
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
-import { declaredThreadAgents } from '@/lib/session/composer-config';
-import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
+import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
+import { latestAssistantAgent } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
+import { offeredModelCount } from '@/lib/session/model-picker';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
@@ -65,7 +65,13 @@ import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
 import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
 import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
-import { compactionTurnInfo, createSessionPrompt, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import {
+  compactionTurnInfo,
+  createSessionPrompt,
+  groupMessagesIntoTurns,
+  projectConfigAgentsToOpenCodeAgents,
+  resolveWorkingTurn,
+} from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
 import { promptParts } from '@/lib/session/prompt-parts';
 import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
@@ -129,14 +135,9 @@ import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useOpenCodeAgents,
-  useOpenCodeProviders,
   useOpenCodeConfig,
   useOpenCodeCommands,
-  flattenModels,
-  filterToLatestModels,
-  type Agent,
   type Command,
-  type FlatModel,
 } from '@/lib/opencode/hooks/use-opencode-data';
 import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { getAuthToken } from '@/api/config';
@@ -204,6 +205,8 @@ interface SessionPageProps {
   onOpenProjectSession?: (session: ProjectSession) => void;
   /** The model sheet's Agent tab `+`: starts a new session that creates an agent. */
   onCreateAgent?: () => void;
+  /** The agent the project session was created with (`agent_name`): the composer's agent until a pick. */
+  boundAgentName?: string | null;
   /** True when the left drawer is currently open — swaps the menu icon for an X */
   isDrawerOpen?: boolean;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
@@ -220,10 +223,7 @@ const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
 const EMPTY_PERMISSIONS = frozenEmpty<PermissionRequest>();
 const EMPTY_TURNS = frozenEmpty<Turn>();
 const EMPTY_SESSIONS = frozenEmpty<Session>();
-const EMPTY_AGENTS = frozenEmpty<Agent>();
 const EMPTY_COMMANDS = frozenEmpty<Command>();
-const EMPTY_MODELS = frozenEmpty<FlatModel>();
-const EMPTY_DEFAULTS = Object.freeze({}) as Record<string, string>;
 const EMPTY_IDS = frozenEmpty<string>();
 const EMPTY_PROJECT_SESSIONS = frozenEmpty<ProjectSession>();
 
@@ -251,18 +251,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-/** A catalog model the sandbox has not listed (yet), as the composer's `FlatModel`. */
-function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): FlatModel {
-  return {
-    ...model,
-    reasoning: entry.reasoning ?? false,
-    contextWindow: entry.limit?.context,
-    family: entry.family,
-    releaseDate: entry.release_date,
-  };
-}
-
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -812,58 +801,38 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [queueRemove, handleStop, handleSend, isBusy, toast],
   );
 
-  // Agent/model/variant config
-  const agentsQuery = useOpenCodeAgents(sandboxUrl);
-  // Web's list: the agents the project declares (`/detail`), never OpenCode's
-  // built-ins the sandbox also lists (KRTX-604). A failed `/detail` falls back
-  // to the sandbox list rather than leaving the thread with no agent.
+  // Agent/model/variant config — web's inputs, `@kortix/sdk`'s rules.
+  // Agents: the project config's (`/detail`), never OpenCode's built-ins the
+  // sandbox also lists (KRTX-604). A thread without a project reads the
+  // sandbox's `/agent`, as web does.
   const projectDetailQuery = useProjectDetail(projectId ?? null);
-  const projectDetailPending = !!projectId && projectDetailQuery.isPending;
-  const declaredAgents = projectId ? (projectDetailQuery.data?.config?.agents ?? null) : null;
-  const agents = useMemo(
-    () =>
-      agentsQuery.data && !projectDetailPending
-        ? declaredThreadAgents(agentsQuery.data, declaredAgents)
-        : EMPTY_AGENTS,
-    [agentsQuery.data, projectDetailPending, declaredAgents],
+  const projectConfig = projectDetailQuery.data?.config;
+  const sandboxAgentsQuery = useOpenCodeAgents(projectId ? undefined : sandboxUrl);
+  const rawAgents = useMemo(
+    () => (projectId ? (projectConfig ? projectConfigAgentsToOpenCodeAgents(projectConfig) : undefined) : sandboxAgentsQuery.data),
+    [projectId, projectConfig, sandboxAgentsQuery.data],
   );
-  // No list yet (sandbox still starting, its first fetch in flight, or the
-  // project config still loading).
-  const agentsLoading = !agentsQuery.data || projectDetailPending;
-  // Models are derived here from the providers query (the same query
-  // useOpenCodeModels reads) so the arrays keep their identity between
-  // renders and the memoized composer can skip stream renders.
-  const { data: providers } = useOpenCodeProviders(sandboxUrl);
-  const sandboxModels = useMemo(() => (providers ? flattenModels(providers) : EMPTY_MODELS), [providers]);
-  // The models this thread can run on: web's rule (`lib/session/model-picker.ts`).
-  // A gateway project lists its `/model-picker` catalog — the list project home
-  // and web show; any other project lists its sandbox's own providers.
-  const { catalog: modelCatalog, isLoading: catalogLoading, refetch: refetchModelCatalog } =
-    useProjectModelCatalog(projectId ?? null);
-  const allModels = useMemo(
-    () => offeredSessionModels(sandboxModels, modelCatalog, flatModelFromCatalog),
-    [sandboxModels, modelCatalog],
-  );
-  // The catalog is already curated by the server. A native provider list is
-  // not: it keeps the newest model per family.
-  const visibleModels = useMemo(
-    () => (modelCatalog ? allModels : filterToLatestModels(allModels)),
-    [modelCatalog, allModels],
-  );
-  const modelsLoading = catalogLoading || (!modelCatalog && !providers);
-  // A gateway project whose catalog offers no model: Send opens the connect
-  // sheet instead of posting (KRTX-251). No catalog (gateway off) never blocks.
+  // No roster yet (the project config or the sandbox still loading).
+  const agentsLoading = !rawAgents;
+  // Web defaults the picker to the agent of the latest assistant turn.
+  const latestAgent = useMemo(() => latestAssistantAgent(messages ?? EMPTY_MESSAGES), [messages]);
+  // Models: the project's list (`useComposerModels`), the same one project home
+  // and web show; the sandbox's `/provider` joins it off-gateway.
+  const {
+    gatewayEnabled,
+    providers,
+    models,
+    modelDefaults,
+    isLoading: modelsLoading,
+    refetchModelCount,
+  } = useComposerModels(projectId ?? null, sandboxUrl);
+  // A gateway project that offers no model: Send opens the connect sheet
+  // instead of posting (KRTX-251). Gateway off never blocks.
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: modelCatalog !== undefined,
-    loading: catalogLoading,
-    modelCount: visibleModels.length,
+    hasCatalog: gatewayEnabled,
+    loading: modelsLoading,
+    modelCount: offeredModelCount(models),
   });
-  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
-  // "Provider connected" only once the catalog actually turns up a model.
-  const refetchModelCount = useCallback(async () => {
-    const result = await refetchModelCatalog();
-    return catalogPickerModels(result.data?.models).length;
-  }, [refetchModelCatalog]);
   const connectSheetRef = useRef<SheetRef>(null);
   const handleConnectModel = useCallback(() => {
     if (projectId) connectSheetRef.current?.open();
@@ -882,12 +851,19 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     () => ({ projectId: projectId ?? null, requestConnect: requestConnectorConnect }),
     [projectId, requestConnectorConnect],
   );
-  const defaults = providers?.default ?? EMPTY_DEFAULTS;
   const { data: config } = useOpenCodeConfig(sandboxUrl);
   const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
 
-  // Resolution uses ALL models (fallback chain); selector shows only visible
-  const resolved = useResolvedConfig(agents, allModels, config, defaults);
+  const resolved = useResolvedConfig({
+    agents: rawAgents,
+    boundAgent: boundAgentName,
+    latestAgent,
+    defaultAgent: projectConfig?.open_code_default_agent,
+    models,
+    providers,
+    modelDefaults,
+    configModel: config?.model,
+  });
 
   // useResolvedConfig returns new arrays, objects, and setters on every
   // render. Stabilize what the composer receives: arrays by content, setters
@@ -937,8 +913,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
   const handleAgentChange = useCallback((name: string) => resolvedRef.current.setAgent(name), []);
   const handleModelChange = useCallback(
-    (providerID: string, modelID: string) =>
-      resolvedRef.current.setModel(providerID, modelID, { explicit: true }),
+    (providerID: string, modelID: string) => resolvedRef.current.setModel(providerID, modelID),
     [],
   );
   const handleVariantSet = useCallback((v: string | null) => resolvedRef.current.setVariant(v), []);
@@ -947,7 +922,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   // Agent names for mention highlighting in user bubbles
-  const agentNames = useMemo(() => agents.map((a) => a.name), [agents]);
+  const agentNames = useMemo(() => resolvedAgents.map((a) => a.name), [resolvedAgents]);
 
   // Mention click handlers
   const handleSessionMention = useCallback((mentionedSessionId: string) => {
@@ -2076,7 +2051,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             onAgentChange={handleAgentChange}
             onCreateAgent={onCreateAgent}
             model={resolvedModel}
-            models={visibleModels}
+            models={models}
             modelsLoading={modelsLoading}
             agentsLoading={agentsLoading}
             modelUnavailable={modelUnavailable}

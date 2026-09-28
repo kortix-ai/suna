@@ -632,6 +632,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | API client | `backendApi`, the low-level typed HTTP client |
 | Turns | Message-to-turn grouping, cost, and status math — see [Turns](#turns) |
 | Transcripts | `formatTranscript`, a client-side Markdown export |
+| Composer lists | The session composer's agent and model lists: which to offer, which runs |
 
 #### Files
 
@@ -726,6 +727,64 @@ await backendApi.post('/some/endpoint', { name: 'x' });
 
 `backendApi` is the typed HTTP client every REST function builds on. Use it
 only for an endpoint that has no typed wrapper yet.
+
+#### Composer agent and model lists
+
+Build a session composer's agent picker and model picker with the same rules
+the Kortix web app uses. Every function is pure: fetch the inputs with the
+client, then pass them in.
+
+```ts
+import {
+  composerSelectableAgents,
+  createModelVisibility,
+  flattenModels,
+  modelInDefaultView,
+  pickerProviderList,
+  projectConfigAgentsToOpenCodeAgents,
+  resolveComposerAgent,
+  resolveComposerModel,
+  resolveModelDefault,
+} from '@kortix/sdk';
+
+// Agents: the roster, the picker list, and the agent the send carries.
+const roster = projectConfigAgentsToOpenCodeAgents(detail.config);
+const pickerAgents = composerSelectableAgents(roster, { enableProjects: false });
+const agent = resolveComposerAgent({
+  agents: roster,
+  boundAgent: session?.agent,
+  defaultAgent: detail.config.default_agent,
+  selectedAgent: pick,
+});
+if (agent.disabled) {
+  // no accessible agent: refuse the send
+}
+
+// Models: gateway projects read /model-picker, native projects merge the
+// catalog synthesis with the running sandbox's provider list.
+const gatewayEnabled = detail.project.experimental?.llm_gateway === true;
+const providers = pickerProviderList({
+  gatewayEnabled,
+  modelPicker,
+  runtimeProviders,
+  llmCatalogProviders,
+  secretNames,
+});
+const models = flattenModels(providers, { providerMode: gatewayEnabled ? 'gateway' : 'native' });
+const isVisible = createModelVisibility({ catalogModels: models });
+const defaultView = models.filter(
+  (m) => m.enabled !== false && modelInDefaultView(m, { search: '', isStoreVisible: isVisible, selected }),
+);
+const { model, explicit } = resolveComposerModel({
+  models,
+  picks: [sessionPick],
+  serverDefault: resolveModelDefault(modelDefaults, agent.selected ?? undefined),
+  providers,
+});
+```
+
+`resolveComposerModel` returns `explicit: undefined` when the composer is on
+its default. `model` is the key to display and send.
 
 ### Supported subpaths
 

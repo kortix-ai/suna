@@ -2,10 +2,9 @@
  * composer-config — the data behind the composer's chip, the model sheet,
  * and the thread header's agent pill.
  *
- * The project home and the thread share one model sheet. The home lists the
- * project gateway catalog (no provider, no thinking levels); the thread lists
- * the sandbox's models grouped by provider, with the active model's thinking
- * levels. Both map their models to `PickerOption`.
+ * The project home and the thread share one model sheet and one model list
+ * (`useComposerModels`, built by `@kortix/sdk`). Both map their models to
+ * `PickerOption` (`modelPickerOptions`).
  *
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
@@ -18,6 +17,8 @@ export interface PickerOption {
   group?: string;
   /** Extra search text that is not shown, e.g. the raw model id. */
   keywords?: string;
+  /** Listed only for a search query, never in the empty-search view (`modelInDefaultView`). */
+  searchOnly?: boolean;
 }
 
 export interface PickerSection {
@@ -34,13 +35,15 @@ export function showsPickerSearch(optionCount: number): boolean {
 
 /**
  * Rows for the sheet: filtered by the query, then grouped by provider in
- * first-seen order. Row order inside a group is the input order.
+ * first-seen order. Row order inside a group is the input order. A query
+ * reveals `searchOnly` rows; the empty-search view hides them (web: typing is
+ * intent).
  */
 export function pickerSections(options: PickerOption[], query: string): PickerSection[] {
   const q = query.trim().toLowerCase();
   const matches = q
     ? options.filter((o) => `${o.label} ${o.group ?? ''} ${o.keywords ?? ''}`.toLowerCase().includes(q))
-    : options;
+    : options.filter((o) => !o.searchOnly);
 
   const sections: PickerSection[] = [];
   const byGroup = new Map<string | undefined, PickerSection>();
@@ -99,51 +102,27 @@ export function composerChip(i: {
 }
 
 /**
- * Agents a user can run a thread on: primary agents that are not hidden or
- * disabled. Takes the sandbox's agents (thread) and the project config's
- * (`/detail`, project home), whose `mode` is null when the agent file omits
- * it — OpenCode reads that as "all".
+ * The pick project home hands `resolveComposerAgent`: the pick made there,
+ * else the last agent picked anywhere — but only when the project declares no
+ * default. Web's order (`resolveCurrentAgentName` without a session): pick,
+ * project default, last-used.
  */
-export function pickableAgents<T extends { mode?: string | null; hidden?: boolean; enabled?: boolean }>(
-  agents: T[],
-): T[] {
-  return agents.filter((a) => {
-    const mode = a.mode ?? 'all';
-    return (mode === 'primary' || mode === 'all') && !a.hidden && a.enabled !== false;
-  });
+export function homeAgentPick(i: {
+  picked: string | null;
+  defaultAgent: string | null | undefined;
+  lastUsed: string | null;
+}): string | null {
+  return i.picked ?? (i.defaultAgent ? null : i.lastUsed);
 }
 
 /**
- * A thread's agents: the sandbox's (`/agent`, which carries each agent's
- * model), limited to the agents the project declares (`/detail` config
- * agents) that are not `enabled: false`. The sandbox also lists OpenCode's
- * built-ins (build, plan, general, explore); a Kortix project does not run
- * them, and web never lists them because its thread reads the project config
- * (`useRuntimeAgents({ projectId })`, KRTX-604). Sandbox order is kept:
- * OpenCode lists the default agent first. `declared` null (no project): the
- * sandbox list as is.
+ * The agent of a thread's latest assistant message: web defaults the thread's
+ * agent picker to it, and a thread's pick falls back to it after a reload.
  */
-export function declaredThreadAgents<T extends { name: string }>(
-  sandbox: T[],
-  declared: Array<{ name: string; enabled?: boolean }> | null,
-): T[] {
-  if (!declared) return sandbox;
-  const names = new Set(declared.filter((d) => d.enabled !== false).map((d) => d.name));
-  return sandbox.filter((a) => names.has(a.name));
-}
-
-/**
- * The agent project home starts a session on. Web's order
- * (`resolveCurrentAgentName`): the pick made on this screen, else the project's
- * declared default, else the last agent the user picked anywhere. A name the
- * project cannot run is skipped. Null: no agent is sent and the server decides.
- */
-export function homeAgentName(
-  pickableNames: string[],
-  input: { picked: string | null; projectDefault: string | null | undefined; lastUsed: string | null },
-): string | null {
-  for (const name of [input.picked, input.projectDefault, input.lastUsed]) {
-    if (name && pickableNames.includes(name)) return name;
+export function latestAssistantAgent(messages: ReadonlyArray<{ info: { role: string; agent?: string } }>): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const info = messages[i].info;
+    if (info.role === 'assistant' && info.agent) return info.agent;
   }
   return null;
 }

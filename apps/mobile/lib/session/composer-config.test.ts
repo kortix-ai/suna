@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import {
+  composerSelectableAgents,
+  projectConfigAgentsToOpenCodeAgents,
+  resolveComposerAgent,
+  type ProjectConfigSummary,
+} from '@kortix/sdk';
 
 import {
   PICKER_SEARCH_THRESHOLD,
   agentDisplayName,
   composerChip,
-  declaredThreadAgents,
+  homeAgentPick,
+  latestAssistantAgent,
   pickerSections,
-  homeAgentName,
-  pickableAgents,
   showsPickerSearch,
   nearestStop,
   stopOffset,
@@ -41,6 +46,12 @@ describe('picker sheet sections', () => {
     expect(pickerSections(models, 'openai')).toEqual([{ title: 'OpenAI', options: [models[1]] }]);
     expect(pickerSections(models, 'claude-sonnet')).toEqual([{ title: 'Anthropic', options: [models[0]] }]);
     expect(pickerSections(models, 'gemini')).toEqual([]);
+  });
+
+  test('searchOnly rows: hidden from the empty-search view, found by a query (web modelInDefaultView)', () => {
+    const rows = [models[0], { ...models[2], searchOnly: true }];
+    expect(pickerSections(rows, '')).toEqual([{ title: 'Anthropic', options: [models[0]] }]);
+    expect(pickerSections(rows, 'opus')).toEqual([{ title: 'Anthropic', options: [rows[1]] }]);
   });
 
   test('search shows only above the threshold', () => {
@@ -99,61 +110,72 @@ describe('thinking level names', () => {
   });
 });
 
-describe('agents', () => {
-  const agent = (name: string, mode: 'primary' | 'subagent' | 'all', hidden = false) => ({ name, mode, hidden });
+describe('agents — the SDK roster and resolver, fed mobile\'s inputs', () => {
+  // `/projects/:id/detail` config of a local project (synthetic names), plus edge rows.
+  const config = {
+    default_agent: 'engineering',
+    open_code_default_agent: 'engineering',
+    agents: [
+      { name: 'kortix', mode: 'primary', enabled: true, source: 'config' },
+      { name: 'engineering', mode: 'primary', enabled: true, source: 'config' },
+      { name: 'session-reviewer', mode: 'subagent', enabled: true, source: 'config' },
+      { name: 'no-mode', mode: null, source: 'config' },
+      { name: 'off', mode: 'primary', enabled: false, source: 'config' },
+      { name: 'project-manager', mode: 'primary', enabled: true, source: 'config' },
+    ],
+  } as unknown as ProjectConfigSummary;
+  const roster = projectConfigAgentsToOpenCodeAgents(config);
 
-  test('pickable = primary or all, not hidden, not disabled', () => {
-    const list = [agent('kortix', 'primary'), agent('explore', 'subagent'), agent('plan', 'all'), agent('ghost', 'primary', true)];
-    expect(pickableAgents(list).map((a) => a.name)).toEqual(['kortix', 'plan']);
+  test('the Agent tab: config agents only (no OpenCode build/plan), default first, no subagent, no disabled', () => {
+    const names = composerSelectableAgents(roster, { enableProjects: false }).map((a) => a.name);
+    expect(names).toEqual(['engineering', 'kortix', 'no-mode']);
+    expect(names).not.toContain('build');
+    expect(names).not.toContain('plan');
   });
 
-  test('project config agents: a missing mode is "all" (OpenCode default); `enabled: false` is out', () => {
-    // `/projects/:id/detail` of a local project, 2026-09-21, plus the two edge rows.
-    const config = [
-      { name: 'harness-reflector', mode: 'primary', enabled: true },
-      { name: 'kortix', mode: 'primary', enabled: true },
-      { name: 'session-reviewer', mode: 'subagent', enabled: true },
-      { name: 'no-mode', mode: null },
-      { name: 'off', mode: 'primary', enabled: false },
-    ];
-    expect(pickableAgents(config).map((a) => a.name)).toEqual(['harness-reflector', 'kortix', 'no-mode']);
+  test('project-manager shows only with the projects feature on (web featureFlags.enableProjects)', () => {
+    expect(composerSelectableAgents(roster, { enableProjects: true }).map((a) => a.name)).toContain('project-manager');
   });
 
-  test('thread agents: only the project-declared ones, never OpenCode built-ins (KRTX-604)', () => {
-    // The sandbox `/agent` list: the project's agents plus OpenCode's built-ins.
-    const sandbox = [
-      agent('kortix', 'primary'),
-      agent('build', 'primary'),
-      agent('plan', 'primary'),
-      agent('general', 'subagent'),
-      agent('explore', 'subagent'),
-      agent('session-reviewer', 'subagent'),
-      agent('off', 'primary'),
-      agent('engineering', 'primary'),
+  test('thread: the pick, else the latest assistant turn, else the bound agent, else the project default', () => {
+    const messages = [
+      { info: { role: 'user', agent: 'kortix' } },
+      { info: { role: 'assistant', agent: 'kortix' } },
+      { info: { role: 'user' } },
     ];
-    // The project config (`/detail`): what web's picker lists.
-    const declared = [
-      { name: 'engineering', enabled: true },
-      { name: 'kortix' },
-      { name: 'session-reviewer', enabled: true },
-      { name: 'off', enabled: false },
-    ];
-    const agents = declaredThreadAgents(sandbox, declared);
-    // Sandbox order is kept: OpenCode lists the default agent first.
-    expect(agents.map((a) => a.name)).toEqual(['kortix', 'session-reviewer', 'engineering']);
-    expect(pickableAgents(agents).map((a) => a.name)).toEqual(['kortix', 'engineering']);
-    // No project config (a thread without a project): the sandbox list as is.
-    expect(declaredThreadAgents(sandbox, null)).toBe(sandbox);
+    const latest = latestAssistantAgent(messages);
+    expect(latest).toBe('kortix');
+    const thread = (picked: string | null, latestAgent: string | null, bound: string | null) =>
+      resolveComposerAgent({ agents: roster, boundAgent: bound, defaultAgent: 'engineering', selectedAgent: picked ?? latestAgent }).selected;
+    expect(thread('no-mode', latest, 'engineering')).toBe('no-mode');
+    expect(thread(null, latest, 'engineering')).toBe('kortix');
+    expect(thread(null, null, 'kortix')).toBe('kortix');
+    expect(thread(null, null, null)).toBe('engineering');
+    // A built-in the sandbox ran is not in the roster: the bound agent stands.
+    expect(thread(null, 'build', 'kortix')).toBe('kortix');
+    expect(latestAssistantAgent([])).toBeNull();
   });
 
-  test('home agent: the pick, else the project default, else the last used; only a pickable one', () => {
-    const names = ['harness-reflector', 'kortix'];
-    expect(homeAgentName(names, { picked: 'kortix', projectDefault: 'harness-reflector', lastUsed: null })).toBe('kortix');
-    expect(homeAgentName(names, { picked: null, projectDefault: 'harness-reflector', lastUsed: 'kortix' })).toBe('harness-reflector');
-    expect(homeAgentName(names, { picked: null, projectDefault: null, lastUsed: 'kortix' })).toBe('kortix');
-    // A last-used agent of another project, and no default: the server decides.
-    expect(homeAgentName(names, { picked: null, projectDefault: null, lastUsed: 'plan' })).toBeNull();
-    expect(homeAgentName(names, { picked: 'gone', projectDefault: 'also-gone', lastUsed: null })).toBeNull();
+  test('home: the pick, else the project default; the last-used agent counts only without a default', () => {
+    const home = (picked: string | null, defaultAgent: string | null, lastUsed: string | null) =>
+      resolveComposerAgent({
+        agents: roster,
+        defaultAgent,
+        selectedAgent: homeAgentPick({ picked, defaultAgent, lastUsed }),
+      }).selected;
+    expect(home('kortix', 'engineering', null)).toBe('kortix');
+    expect(home(null, 'engineering', 'kortix')).toBe('engineering');
+    expect(home(null, null, 'kortix')).toBe('kortix');
+    // A last-used agent of another project: the first (the default sorts first).
+    expect(home(null, null, 'other')).toBe('engineering');
+  });
+
+  test('while the roster loads nothing is refused, and the pick or bound agent shows', () => {
+    expect(resolveComposerAgent({ agents: undefined, boundAgent: 'kortix' })).toEqual({
+      selected: 'kortix',
+      disabled: false,
+      reason: 'loading',
+    });
   });
 
   test('display name capitalises the first letter; unknown agent says Agent', () => {
