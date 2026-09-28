@@ -51,7 +51,7 @@ flow(
     await ctx.step('a reader cannot cross the session-stop capability wall', async () => {
       const r = await ctx.client.as(viewer).put(
         route,
-        {},
+        { connector_bindings: null },
         { params: { projectId: project.id, sessionId: UNKNOWN_SESSION_ID } },
       );
       r.status(403).body().has('$.code', 'project_role_insufficient');
