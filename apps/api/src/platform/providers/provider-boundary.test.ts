@@ -23,6 +23,42 @@ const GENERIC_DATA_PATHS = [
 ];
 
 describe('sandbox provider architecture boundary', () => {
+  test('concrete providers use the registry helpers without changing their public behavior', async () => {
+    const registry = await import('./index');
+    const opts = { accountId: 'a', userId: 'u', name: 'box' };
+    for (const name of ['daytona', 'e2b', 'platinum'] as const) {
+      const provider = await import(`./${name}.ts`);
+      expect(provider).toBeDefined();
+      expect(registry.sandboxWorkloadType(opts)).toBe('session');
+      expect(registry.sandboxWorkloadType({ ...opts, workloadType: 'app' })).toBe('app');
+      expect(() => registry.assertWorkloadCredential(name, opts, {})).toThrow(
+        `[${name}] create() called without KORTIX_TOKEN for session workload`,
+      );
+      expect(() =>
+        registry.assertWorkloadCredential(
+          name,
+          { ...opts, workloadType: 'app' },
+          { KORTIX_APPD_TOKEN: 'synthetic' },
+        ),
+      ).not.toThrow();
+    }
+    expect(new registry.SandboxTemplateNotFoundError('missing').name).toBe(
+      'SandboxTemplateNotFoundError',
+    );
+    expect(new registry.WarmRuntimeUnavailableError('missing').name).toBe(
+      'WarmRuntimeUnavailableError',
+    );
+  });
+
+  test('concrete providers have no runtime import of the registry', () => {
+    for (const name of ['daytona', 'e2b', 'platinum']) {
+      const source = readFileSync(resolve(import.meta.dir, `${name}.ts`), 'utf8');
+      expect(source, name).not.toMatch(
+        /(?:import|export)\s*(?:type\s*)?(?:\{[^}]*\}|\*\s+from)\s*['"]\.\/index['"]/s,
+      );
+    }
+  });
+
   test('proxy and runtime data paths contain no provider-specific branching or traffic headers', () => {
     for (const relativePath of GENERIC_DATA_PATHS) {
       const source = readFileSync(resolve(API_SRC, relativePath), 'utf8');

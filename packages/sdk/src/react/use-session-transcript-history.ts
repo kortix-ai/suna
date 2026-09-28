@@ -28,9 +28,23 @@ export function useSessionTranscriptHistory(
     data?.available && data.source === 'mirror' && data.opencode_session_id && data.messages.length
       ? data
       : null;
+  // A complete read of the runtime that found NO messages: the server's proof
+  // that the conversation is empty. `total` must say so explicitly; an older
+  // API sends none and never answers an empty window as available.
+  const provenEmpty =
+    data?.available &&
+    data.source === 'mirror' &&
+    data.complete &&
+    data.total === 0 &&
+    data.messages.length === 0 &&
+    data.opencode_session_id
+      ? data.opencode_session_id
+      : null;
   return {
     envelope,
     rootSessionId: envelope?.opencode_session_id ?? null,
+    /** The OpenCode root the saved copy proves empty, or null. */
+    emptyRootSessionId: provenEmpty,
     /** The read has not answered yet, so `envelope: null` is not a "no". A
      *  failed read is an answer: there is no saved copy to show. */
     isLoading: enabled && query.isPending,

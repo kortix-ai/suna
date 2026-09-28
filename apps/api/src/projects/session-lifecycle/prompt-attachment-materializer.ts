@@ -71,22 +71,6 @@ export class PromptAttachmentMaterializationError extends Error {
   }
 }
 
-/**
- * How many bytes of inline attachment one prompt may carry.
- *
- * A model-native attachment rides in the `prompt_async` body as base64. The
- * sandbox provider's edge DISCARDS a body over its size ceiling and answers ok
- * anyway — measured 2026-09-04 on a live box: ~104 KB arrives, ~115 KB does
- * not, and the runtime logged no request at all. A 6.1 MB prompt (two inline
- * JPEGs) therefore vanished with its text and every sibling attachment.
- *
- * So being decodable is no longer enough to be inlined: it also has to FIT.
- * The budget is spent across the whole prompt, because three small images bust
- * the same ceiling one large one does. Anything that does not fit is written
- * to the workspace and referenced, which is a path the agent can still read.
- */
-export const INLINE_PROMPT_BUDGET_BYTES = 64 * 1024;
-
 export function parseStagedPromptDataUrl(input: {
   filename?: string;
   mime?: string;
@@ -116,6 +100,20 @@ export function parseStagedPromptDataUrl(input: {
   };
 }
 
+/**
+ * Every file of a prompt goes to the computer: it is written into the
+ * workspace, and the prompt references it by path.
+ *
+ * Nothing rides inline in the prompt body. A model-native file would travel as
+ * base64, and the sandbox provider's edge DISCARDS a body over its size ceiling
+ * and answers ok anyway (measured 2026-09-04: ~104 KB arrives, ~115 KB does
+ * not). A file the agent can open beats one that may never arrive.
+ *
+ * With saved history on, each file is also copied to the private store, so the
+ * transcript can show it while the computer is off. That copy is best-effort:
+ * the next capture copies the file from the workspace, and the computer gets
+ * the file either way.
+ */
 export async function materializePromptAttachments(input: {
   parts: PromptPartWire[];
   externalId: string;
@@ -130,22 +128,12 @@ export async function materializePromptAttachments(input: {
   resolveAttachments?: PromptAttachmentsResolver;
   importAttachment?: RuntimePromptAttachmentImporter;
   /**
-   * Override the inline budget. The legacy repair passes `Infinity`: it is
-   * patching a message the runtime ALREADY holds, native images included, and
-   * re-uploading those would rewrite parts that were never broken.
+   * The legacy repair passes `true`: it patches a message the runtime ALREADY
+   * holds, native images included, and writing those out would rewrite parts
+   * that were never broken.
    */
-  inlineBudgetBytes?: number;
+  keepNativeInline?: boolean;
 }): Promise<PromptPartWire[]> {
-  // The TEXT rides in the same body as the inline files, so it spends the same
-  // budget — a long prompt beside a mid-size image busts the ceiling exactly
-  // like a large image alone (review finding, 2026-09-05).
-  const textCost = input.parts.reduce(
-    (sum, part) => sum + (part.type === 'text' ? (part.text?.length ?? 0) : 0),
-    0,
-  );
-  // Walked in order so the decision is deterministic: the earliest attachments
-  // keep their native form and the ones that would overflow are written out.
-  let inlineBudget = (input.inlineBudgetBytes ?? INLINE_PROMPT_BUDGET_BYTES) - textCost;
   type Candidate = {
     part: PromptPartWire;
     index: number;
@@ -185,23 +173,11 @@ export async function materializePromptAttachments(input: {
       try {
         const resolved = resolvedHandles.get(index);
         if (!resolved) throw new Error(resolveFailure);
-        const canonical: PromptPartWire = {
-          type: 'file',
-          filename: resolved.filename,
-          mime: resolved.mime,
-        };
-        if (!input.saveAttachment && isModelNativeAttachmentMime(resolved.mime)) {
-          const estimatedCost =
-            `data:${resolved.mime};base64,`.length + 4 * Math.ceil(resolved.size / 3);
-          if (estimatedCost <= inlineBudget) {
-            const bytes = await resolved.readBytes();
-            const url = `data:${resolved.mime};base64,${Buffer.from(bytes).toString('base64')}`;
-            inlineBudget -= url.length;
-            replacements.set(index, { ...canonical, url });
-            continue;
-          }
-        }
-        candidates.push({ part: canonical, index, resolved });
+        candidates.push({
+          part: { type: 'file', filename: resolved.filename, mime: resolved.mime },
+          index,
+          resolved,
+        });
       } catch (error) {
         failures.push({
           filename: part.filename?.trim() || 'File',
@@ -212,19 +188,34 @@ export async function materializePromptAttachments(input: {
     }
 
     const url = part.url ?? '';
-    const staged = url.toLowerCase().startsWith('data:');
-    if (parseSessionAttachmentRef(url) || (staged && input.saveAttachment)) {
+    if (parseSessionAttachmentRef(url)) {
       candidates.push({ part, index });
       continue;
     }
-    if (!isModelNativeAttachmentMime(part.mime ?? '')) {
-      if (staged) candidates.push({ part, index });
-      continue;
-    }
-    if (!staged) continue;
-    if (url.length > inlineBudget) candidates.push({ part, index });
-    else inlineBudget -= url.length;
+    // A remote URL reaches the runtime as it is.
+    if (!url.toLowerCase().startsWith('data:')) continue;
+    if (input.keepNativeInline && isModelNativeAttachmentMime(part.mime ?? '')) continue;
+    candidates.push({ part, index });
   }
+
+  /** The saved-history copy, best-effort: see the function comment. */
+  const saveCopy = async (
+    index: number,
+    file: { filename: string; mime: string },
+    bytes: () => Promise<Uint8Array>,
+  ): Promise<string | undefined> => {
+    if (!input.saveAttachment) return undefined;
+    try {
+      return await input.saveAttachment({ index, filename: file.filename, mime: file.mime, bytes: await bytes() });
+    } catch (error) {
+      console.warn('[prompt-attachments] saved copy failed; the file still goes to the computer', {
+        command_id: input.materializationKey,
+        part_index: index,
+        error: messageWithoutUrls(error),
+      });
+      return undefined;
+    }
+  };
 
   // Two imports cap Storage bandwidth and open files. Message limits permit 20
   // attachments and each can be 50 MiB, so unbounded Promise.all is unsafe.
@@ -240,12 +231,11 @@ export async function materializePromptAttachments(input: {
       });
       try {
         if (candidate.resolved) {
-          let savedBytes: Uint8Array | undefined;
-          if (input.saveAttachment) {
-            savedBytes = await candidate.resolved.readBytes();
-            const attachmentUrl = await input.saveAttachment({
-              index: candidate.index, filename: reference.filename, mime: reference.mime, bytes: savedBytes,
-            });
+          const resolved = candidate.resolved;
+          let read: Promise<Uint8Array> | undefined;
+          const readBytes = () => (read ??= resolved.readBytes());
+          const attachmentUrl = await saveCopy(candidate.index, reference, readBytes);
+          if (attachmentUrl) {
             reference.text = promptFileReferenceXml({
               path: reference.targetPath, filename: reference.filename, mime: reference.mime, attachmentUrl,
             });
@@ -276,7 +266,7 @@ export async function materializePromptAttachments(input: {
             imported = null;
           }
           if (!imported) {
-            const bytes = savedBytes ?? await candidate.resolved.readBytes();
+            const bytes = await readBytes();
             await input.writeFile({
               externalId: input.externalId,
               sessionId: input.sessionId,
@@ -299,10 +289,9 @@ export async function materializePromptAttachments(input: {
             bytes = new Uint8Array(await blob.arrayBuffer());
             attachmentUrl = candidate.part.url;
           } else {
-            bytes = parseStagedPromptDataUrl(candidate.part).bytes;
-            if (input.saveAttachment) attachmentUrl = await input.saveAttachment({
-              index: candidate.index, filename: reference.filename, mime: reference.mime, bytes,
-            });
+            const staged = parseStagedPromptDataUrl(candidate.part).bytes;
+            bytes = staged;
+            attachmentUrl = await saveCopy(candidate.index, reference, async () => staged);
           }
           if (attachmentUrl) reference.text = promptFileReferenceXml({
             path: reference.targetPath, filename: reference.filename, mime: reference.mime, attachmentUrl,

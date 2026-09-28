@@ -85,19 +85,43 @@ work.
 Each root run writes a benchmark to
 `tests/test-results/local/benchmark-<timestamp>.json`.
 
-## CI does not run the suite on a `main` pull request
+## Your machine is the pre-merge gate
 
-`.github/workflows/tests.yml` runs on every push to `main`, on a pull request
-into `staging`, on a pull request labelled `test` or `preview`, and on manual
-dispatch. A plain pull request into `main` skips it. None of those runs is a
-merge gate: `main` and `staging` require no status check. The only required
-check in the repository is `tests-release.yml`'s `full suite + quality gates`,
-on a pull request into `prod`, and it tests DEPLOYED staging.
+A pull request into `main` runs **no** GitHub Actions job by itself. Every test
+for a change runs in the developer's own box before the merge. CI runs after the
+merge (push to `main`, non-blocking) and on release pull requests into `staging`
+and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
+runs the six lanes once, `preview` deploys and runs `--target-full` once. A push
+re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
+fails when a workflow other than the label-gated `tests.yml` and
+`deploy-preview.yml` triggers on a pull request into `main`: put a new check on
+`push: main` or on the release pull requests.
 
-So the local run is the real gate before a `main` merge. Run the narrowest
-relevant command first, then `pnpm test`. Add the `test` label when you want
-CI's lanes on the pull request as well; the label re-triggers an open pull
-request without a push.
+Before a `main` merge, run the narrowest relevant command first, then
+`pnpm test`. Add the local equivalent of every CI job your change touches:
+
+| Change touches | CI job (post-merge / release) | Run locally before the merge |
+| --- | --- | --- |
+| anything | `Tests` core + packages lanes | `pnpm test` (core) and `pnpm test -- --packages-only` |
+| browser-visible behavior | `Tests` browser lanes | `pnpm test -- --browser-only` (or `--full` for everything) |
+| `apps/api` | `CI` → API typecheck | `pnpm --filter kortix-api typecheck` |
+| `apps/web` | `CI` → Frontend build | `pnpm --filter ./apps/web build` |
+| `apps/kortix-sandbox-agent-server` | `CI` → Sandbox agent build | `bun run typecheck && bun run lint && bun run test:architecture` in that directory |
+| `packages/db/migrations` | `DB Migrations` | the four commands in `packages/db/MIGRATIONS.md` → "CI gates" |
+| `apps/web/translations` | `i18n-catalogs` | `node apps/web/scripts/i18n-catalogs.mjs check` |
+| `infra/terraform` | `Terraform CI` | `terraform fmt -check -recursive infra/terraform` |
+| a `package.json` | install in every lane | `pnpm install --frozen-lockfile --lockfile-only --ignore-scripts` |
+
+Secrets and customer terms need no extra command: the `.githooks` pre-commit
+hook encrypts `.env` files and runs `scripts/check-blocked-terms.sh`.
+
+The post-merge `Tests` run on `main` blocks nothing. A red run comments the
+failing lanes and every commit since the last green run on the commit. The
+author whose commit broke `main` fixes forward; after 1 hour red, anyone may
+revert the culprit PR.
+The only required check in the repository is `tests-release.yml`'s
+`full suite + quality gates`, on a pull request into `prod`, and it tests
+DEPLOYED staging.
 
 ## Run CI lanes natively on Blacksmith
 
@@ -108,8 +132,8 @@ browser lanes run shards `1/4` through `4/4` via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
 
-- Check out the requested SHA with `fetch-depth: 1`: a pull request's head, or
-  the pushed `main` commit.
+- Check out the requested SHA with `fetch-depth: 1`: the pushed `main` commit,
+  or a release pull request's head.
 - Run `pnpm install --frozen-lockfile`; Blacksmith serves the pnpm store from
   its cache transparently.
 - Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
@@ -139,6 +163,10 @@ must change together.
 
 ## Run a full-stack pull request preview
 
+The `preview` label is not part of the development flow: verify a change on
+your worktree's local stack. These rules govern the preview infrastructure for
+the rare explicit request.
+
 - Add `preview` only after a writer reviews the exact same-repository PR SHA.
 - Build the API, gateway, and frontend without credentials in separate jobs.
 - Run the trusted preview controller from `main`.
@@ -149,7 +177,7 @@ must change together.
 - Run `pnpm test -- --target-full` against the sandbox HTTPS origin.
 - Post the preview URL and `/_tests/` report URL in one sticky PR comment.
 - Keep a failed product-test sandbox. Do not hide its failure with fallback.
-- Redeploy the environment in place on a push. Keep the `preview` label.
+- Deploy and run the suite only when the label is added or the workflow is dispatched. A push starts nothing.
 - Delete the sandbox on unlabel or branch deletion. Closing the PR does not.
 - Tag every preview session box with its host: the preview API runs with
   `KORTIX_INSTANCE_ID=<host sandbox name>` (Platinum `kortix.instance`) and its
@@ -158,7 +186,7 @@ must change together.
   that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`). A suite
   stops the session boxes it created when it ends, on a branch environment too.
 - Reconcile stale previews each hour. It stops hosts of closed pull requests
-  and hosts idle over 3 hours. Daytona reconciliation only deletes previews
+  and hosts idle over 1 hour. Daytona reconciliation only deletes previews
   created before 2026-09-22.
 
 The preview warm image can contain dependencies and Docker layers. It must not

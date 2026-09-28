@@ -34,9 +34,9 @@ import { cn } from '@/lib/utils/index';
 /** Height of one sub-session row. Fixed, so the trunk length is exact. */
 export const SUBSESSION_ROW_HEIGHT = 40;
 /** Horizontal reach of an elbow; the row box starts where the curve ends (web: 3.5 spacing). */
-const CONNECTOR_RUN = 14;
+export const CONNECTOR_RUN = 14;
 /** Stroke of the trunk and the elbows (web: `border-2`). */
-const CONNECTOR_STROKE = 2;
+export const CONNECTOR_STROKE = 2;
 /**
  * Right inset of the tree: with a row's `px-3` (12) the time ends 16pt from
  * the edge, on the same line as the parent row's content (`px-4`).

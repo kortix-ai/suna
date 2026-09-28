@@ -402,7 +402,7 @@ export async function deployPlatinumPreview(
             auto_archive_days: identity.autoArchiveDays,
             auto_delete_days: identity.autoDeleteDays,
             cpu: 8,
-            ram_mb: 16_384,
+            ram_mb: PREVIEW_HOST_RAM_MB,
             disk_gb: 50,
             expose: [{ port: 8080, public: true }],
             metadata: {
@@ -602,7 +602,7 @@ async function waitForSuiteCapacity(
   superseded?: () => Promise<boolean>,
 ): Promise<boolean> {
   const neededMb = envNumber('PREVIEW_SUITE_POOL_HEADROOM_GB', 64) * 1024;
-  const repoBudget = envNumber('PREVIEW_SUITE_GITHUB_REPOS_PER_HOUR', 40);
+  const repoBudget = envNumber('PREVIEW_SUITE_GITHUB_REPOS_PER_HOUR', 100);
   const owner = process.env.MANAGED_GIT_GITHUB_OWNER?.trim();
   const token = process.env.MANAGED_GIT_GITHUB_TOKEN?.trim();
   const deadline = Date.now() + envNumber('PREVIEW_SUITE_WAIT_MINUTES', 45) * 60_000;

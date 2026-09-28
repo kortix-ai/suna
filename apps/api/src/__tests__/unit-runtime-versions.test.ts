@@ -79,6 +79,7 @@ describe('runtime version drift guards', () => {
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
+      managedSkillsPath: 'managed-skills',
     });
 
     expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);

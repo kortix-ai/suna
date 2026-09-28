@@ -49,8 +49,12 @@ export const PREVIEW_SESSION_MAX_IDLE_MS = 6 * 60 * 60_000;
  */
 export const PLATINUM_POOL_MB_DEFAULT = 524_288;
 
-/** RAM a preview host reserves (deployPlatinumPreview creates it with 16384 MB). */
-export const PREVIEW_HOST_RAM_MB = 16_384;
+/**
+ * RAM a preview host reserves. Measured 2026-09-28 on 6 hosts: a deploy peaks
+ * at 3.8 GB used and a running `--target-full` suite at 5.6 GB (5 s samples, ~100 min per host). 16 GB hosts
+ * left ~10 GB idle each while 28 of them filled the 512 GB pool.
+ */
+export const PREVIEW_HOST_RAM_MB = 8_192;
 
 function meta(sandbox: PlatinumListedSandbox, key: string): string {
   const value = sandbox.metadata?.[key];
@@ -125,8 +129,12 @@ export function selectPreviewSessionsForTeardown(
     .map((sandbox) => sandbox.id);
 }
 
-/** Default idle limit for a running preview HOST (16 GB each). */
-export const PREVIEW_HOST_MAX_IDLE_MS = 3 * 60 * 60_000;
+/**
+ * Default idle limit for a running preview HOST (16 GB each). One hour, not
+ * three: the software factory labels every agent pull request `preview`, and
+ * at 05:56Z 2026-09-28 28 hosts held 448 of 512 GB with 11 of them idle.
+ */
+export const PREVIEW_HOST_MAX_IDLE_MS = 60 * 60_000;
 
 /**
  * Running preview hosts the hourly reconcile stops: every host whose pull

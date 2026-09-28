@@ -7,6 +7,8 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
+import { unwrapError } from './errors';
+import { normalizeName } from './tools/tool-meta';
 import type {
   Diagnostic,
   MessageWithPartsLike,
@@ -15,7 +17,6 @@ import type {
   ToolInfo,
   ToolPartLike,
 } from './types';
-import { unwrapError } from './errors';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -160,35 +161,26 @@ export function shouldShowToolPart(part: Pick<ToolPartLike, 'tool'>): boolean {
 // Child session helpers
 // ============================================================================
 
+const CHILD_SESSION_TOOLS = new Set([
+  'task',
+  'agent_spawn',
+  'agent_message',
+  'agent_task',
+  'agent_task_update',
+  'agent_task_message',
+  'agent_task_start',
+  'task_create',
+  'task_start',
+  'task_update',
+  'task_message',
+]);
+
 /**
  * Extract child session ID from a task tool part's metadata.
  */
 export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): string | undefined {
   // Native task tool, agent_spawn, or agent_task
-  const t = part.tool || '';
-  if (
-    t === 'task' ||
-    t === 'agent_spawn' ||
-    t === 'agent-spawn' ||
-    t === 'agent_message' ||
-    t === 'agent-message' ||
-    t === 'agent_task' ||
-    t === 'agent-task' ||
-    t === 'agent_task_update' ||
-    t === 'agent-task-update' ||
-    t === 'agent_task_message' ||
-    t === 'agent-task-message' ||
-    t === 'agent_task_start' ||
-    t === 'agent-task-start' ||
-    t === 'task_create' ||
-    t === 'task-create' ||
-    t === 'task_start' ||
-    t === 'task-start' ||
-    t === 'task_update' ||
-    t === 'task-update' ||
-    t === 'task_message' ||
-    t === 'task-message'
-  ) {
+  if (!part.tool?.startsWith('oc-') && CHILD_SESSION_TOOLS.has(normalizeName(part.tool || ''))) {
     // 1. Try metadata (ctx.metadata — available immediately for built-in tools)
     const metaSessionId = (part.state?.metadata as { sessionId?: unknown } | undefined)?.sessionId;
     if (typeof metaSessionId === 'string' && metaSessionId) return metaSessionId;
@@ -278,7 +270,7 @@ export function getToolInfo(
   // biome-ignore lint/suspicious/noExplicitAny: tool inputs are free-form wire data with heterogeneous shapes
   input: Record<string, any> = {},
 ): ToolInfo {
-  switch (tool) {
+  switch (normalizeName(tool)) {
     case 'read':
       return { icon: 'glasses', title: 'Read', subtitle: getFilename(input.filePath) };
     case 'list':
@@ -290,18 +282,17 @@ export function getToolInfo(
     case 'webfetch':
       return { icon: 'globe', title: 'Web Fetch', subtitle: input.url };
     case 'websearch':
-    case 'web-search':
     case 'web_search':
       return { icon: 'search', title: 'Web Search', subtitle: input.query };
-    case 'scrape-webpage':
+    case 'scrape_webpage':
       return { icon: 'globe', title: 'Scrape', subtitle: input.urls?.split?.(',')[0] };
-    case 'image-search':
+    case 'image_search':
       return { icon: 'image', title: 'Image Search', subtitle: input.query };
-    case 'image-gen':
+    case 'image_gen':
       return { icon: 'image', title: 'Image Gen', subtitle: input.prompt?.slice?.(0, 40) };
-    case 'video-gen':
+    case 'video_gen':
       return { icon: 'cpu', title: 'Video Gen', subtitle: input.prompt?.slice?.(0, 40) };
-    case 'presentation-gen': {
+    case 'presentation_gen': {
       const action = input.action || '';
       const labels: Record<string, string> = {
         create_slide: 'Create Slide',
@@ -317,7 +308,7 @@ export function getToolInfo(
       };
     }
     case 'show':
-    case 'show-user':
+    case 'show_user':
       return { icon: 'globe', title: 'Output', subtitle: input.title || input.description };
     case 'task':
       return {
@@ -327,12 +318,6 @@ export function getToolInfo(
       };
     case 'session_spawn':
     case 'session_start_background':
-    case 'session-spawn':
-    case 'session-start-background':
-    case 'oc-session_spawn':
-    case 'oc-session-spawn':
-    case 'oc-session_start_background':
-    case 'oc-session-start-background':
       return {
         icon: 'square-kanban',
         title: `Worker (${input.agent || 'KortixWorker'})`,
@@ -368,194 +353,101 @@ export function getToolInfo(
     case 'context_info':
       return { icon: 'scissors', title: 'Context Info' };
     case 'session_read':
-    case 'session-read':
-    case 'oc-session_read':
-    case 'oc-session-read':
       return {
         icon: 'glasses',
         title: `Session Read (${input.mode || 'summary'})`,
         subtitle: input.session_id?.slice(-12),
       };
     case 'session_search':
-    case 'session-search':
-    case 'oc-session_search':
-    case 'oc-session-search':
       return { icon: 'search', title: 'Session Search', subtitle: input.query };
     case 'session_message':
-    case 'session-message':
-    case 'oc-session_message':
-    case 'oc-session-message':
       return {
         icon: 'message-circle',
         title: 'Message → Session',
         subtitle: input.session_id?.slice(-12),
       };
     case 'session_lineage':
-    case 'session-lineage':
-    case 'oc-session_lineage':
-    case 'oc-session-lineage':
       return {
         icon: 'list-tree',
         title: 'Session Lineage',
         subtitle: input.session_id?.slice(-12),
       };
     case 'session_list_background':
-    case 'session-list-background':
     case 'session_list_spawned':
-    case 'session-list-spawned':
-    case 'oc-session_list_background':
-    case 'oc-session-list-background':
-    case 'oc-session_list_spawned':
-    case 'oc-session-list-spawned':
       return { icon: 'layers', title: 'Background Sessions', subtitle: input.project || 'all' };
     case 'session_stats':
-    case 'session-stats':
-    case 'oc-session_stats':
-    case 'oc-session-stats':
       return {
         icon: 'layers',
         title: 'Session Stats',
         subtitle: input.session_id?.slice(-12) || 'current',
       };
     case 'session_list':
-    case 'session-list':
-    case 'oc-session_list':
-    case 'oc-session-list':
       return { icon: 'list', title: 'Session List', subtitle: input.search };
     case 'session_get':
-    case 'session-get':
-    case 'oc-session_get':
-    case 'oc-session-get':
       return { icon: 'book-open', title: 'Session Get', subtitle: input.session_id?.slice(-12) };
     case 'session_context':
-    case 'session-context':
-    case 'oc-session_context':
-    case 'oc-session-context':
       return {
         icon: 'book-open',
         title: 'Session Context',
         subtitle: input.session_id?.slice(-12),
       };
     case 'project_delete':
-    case 'project-delete':
-    case 'oc-project_delete':
-    case 'oc-project-delete':
       return { icon: 'trash-2', title: 'Workspace Delete Disabled', subtitle: input.project };
     case 'project_list':
-    case 'project-list':
-    case 'oc-project_list':
-    case 'oc-project-list':
       return { icon: 'folder', title: 'Projects' };
     case 'project_get':
-    case 'project-get':
-    case 'oc-project_get':
-    case 'oc-project-get':
     case 'project_update':
-    case 'project-update':
-    case 'oc-project_update':
-    case 'oc-project-update':
       return { icon: 'folder', title: 'Project', subtitle: input.name || input.project };
     case 'project_select':
-    case 'project-select':
-    case 'oc-project_select':
-    case 'oc-project-select':
       return { icon: 'folder', title: 'Project Select', subtitle: input.project };
     case 'project_create':
-    case 'project-create':
-    case 'oc-project_create':
-    case 'oc-project-create':
       return { icon: 'folder-plus', title: 'Project Create', subtitle: input.name };
     case 'triggers':
     case 'trigger_create':
-    case 'trigger-create':
-    case 'oc-trigger_create':
-    case 'oc-trigger-create':
       return { icon: 'clock', title: 'Create Trigger', subtitle: input.name };
     case 'trigger_list':
-    case 'trigger-list':
-    case 'oc-trigger_list':
-    case 'oc-trigger-list':
       return { icon: 'clock', title: 'List Triggers' };
     case 'trigger_get':
-    case 'trigger-get':
-    case 'oc-trigger_get':
-    case 'oc-trigger-get':
       return { icon: 'clock', title: 'Trigger Details', subtitle: input.name || input.id };
     case 'trigger_delete':
-    case 'trigger-delete':
-    case 'oc-trigger_delete':
-    case 'oc-trigger-delete':
       return { icon: 'clock', title: 'Delete Trigger', subtitle: input.name || input.id };
     case 'trigger_update':
-    case 'trigger-update':
-    case 'oc-trigger_update':
-    case 'oc-trigger-update':
       return { icon: 'clock', title: 'Update Trigger', subtitle: input.name || input.id };
     case 'trigger_test':
-    case 'trigger-test':
-    case 'oc-trigger_test':
-    case 'oc-trigger-test':
       return { icon: 'clock', title: 'Test Trigger', subtitle: input.name || input.id };
     case 'trigger_pause':
-    case 'trigger-pause':
-    case 'oc-trigger_pause':
-    case 'oc-trigger-pause':
       return { icon: 'clock', title: 'Pause Trigger', subtitle: input.name || input.id };
     case 'trigger_resume':
-    case 'trigger-resume':
-    case 'oc-trigger_resume':
-    case 'oc-trigger-resume':
       return { icon: 'clock', title: 'Resume Trigger', subtitle: input.name || input.id };
     case 'agent_spawn':
-    case 'agent-spawn':
       return {
         icon: 'cpu',
         title: `Agent (${input.agent_type || 'worker'})`,
         subtitle: input.description,
       };
     case 'agent_message':
-    case 'agent-message':
       return { icon: 'message-circle', title: 'Agent Message', subtitle: input.agent_id };
     case 'agent_stop':
-    case 'agent-stop':
       return { icon: 'ban', title: 'Agent Stop', subtitle: input.agent_id };
     case 'agent_status':
-    case 'agent-status':
       return { icon: 'layers', title: 'Agent Status' };
     case 'agent_task':
-    case 'agent-task':
-    case 'oc-agent_task':
-    case 'oc-agent-task':
       return { icon: 'check-square', title: 'Create Task', subtitle: input.title };
     case 'agent_task_update':
-    case 'agent-task-update':
-    case 'oc-agent_task_update':
-    case 'oc-agent-task-update':
       return { icon: 'check-square', title: 'Update Task', subtitle: input.task_id };
     case 'agent_task_list':
-    case 'agent-task-list':
-    case 'oc-agent_task_list':
-    case 'oc-agent-task-list':
       return { icon: 'check-square', title: 'List Tasks' };
     case 'agent_task_get':
-    case 'agent-task-get':
-    case 'oc-agent_task_get':
-    case 'oc-agent-task-get':
       return { icon: 'check-square', title: 'Task Details', subtitle: input.task_id };
     case 'task_create':
-    case 'task-create':
       return { icon: 'plus', title: 'Create Task', subtitle: input.title };
     case 'task_list':
-    case 'task-list':
       return { icon: 'list', title: 'Tasks', subtitle: input.status || 'all' };
     case 'task_update':
-    case 'task-update':
       return { icon: 'refresh-cw', title: 'Update Task', subtitle: input.id };
     case 'task_done':
-    case 'task-done':
       return { icon: 'check-circle', title: 'Task Done', subtitle: input.id };
     case 'task_delete':
-    case 'task-delete':
       return { icon: 'trash-2', title: 'Delete Task', subtitle: input.id };
     case 'pty_spawn':
       return { icon: 'terminal', title: 'Spawn', subtitle: input.title || input.command };
