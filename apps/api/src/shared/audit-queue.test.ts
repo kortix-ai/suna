@@ -693,3 +693,76 @@ describe('AuditQueue never drops a contended batch', () => {
     expect(q.stats().queued).toBe(0);
   });
 });
+
+/**
+ * A request-path reader drains the queue so it observes every event already
+ * emitted (read-your-writes). That barrier must never hold the request past
+ * the server's processing deadline, which is what happened to
+ * `GET /v1/accounts/:id/audit` on 2026-09-28: an unbounded `flush()` waited on
+ * the audit-ingest session locks until the route hit its 25 s deadline (503)
+ * or had its own `audit_events` SELECT cancelled at `statement_timeout`
+ * (500, SQLSTATE 57014). `flush({ timeoutMs })` is the fix: it resolves at the
+ * budget while the drain keeps running in the background, and the rows are
+ * still written once the contention clears. The queue never loses a row.
+ */
+describe('AuditQueue bounded request-path flush', () => {
+  test('a bounded flush resolves at its budget while a session lock is held', async () => {
+    resetAuditSessionLocksForTest();
+    const fake = makeClient();
+    let releaseHolder!: () => void;
+    const holder = withAuditSessionLock(
+      's1',
+      () =>
+        new Promise<void>((resolve) => {
+          releaseHolder = resolve;
+        }),
+    );
+
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    q.enqueue({ action: 'a', resourceType: 'session', sessionId: 's1' } as unknown as AuditRow);
+
+    const started = Date.now();
+    await q.flush({ timeoutMs: 25 });
+
+    // The read returned at its budget; the insert had not run (blocked lock).
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(fake.batches).toHaveLength(0);
+
+    // Release the lock; the background drain finishes and the row is written.
+    releaseHolder();
+    await holder;
+    await q.flush();
+    expect(q.stats().written).toBe(1);
+    expect(q.stats().failed).toBe(0);
+    expect(fake.batches).toHaveLength(1);
+  });
+
+  test('an unbounded flush still waits for the drain', async () => {
+    resetAuditSessionLocksForTest();
+    const fake = makeClient();
+    let releaseHolder!: () => void;
+    const holder = withAuditSessionLock(
+      's2',
+      () =>
+        new Promise<void>((resolve) => {
+          releaseHolder = resolve;
+        }),
+    );
+
+    const q = new AuditQueue(fake.client, { flushMs: 10_000, flushMax: 100 });
+    q.enqueue({ action: 'a', resourceType: 'session', sessionId: 's2' } as unknown as AuditRow);
+
+    let settled = false;
+    const flush = q.flush().then(() => {
+      settled = true;
+    });
+    await sleep(40);
+    expect(settled).toBe(false); // still waiting on the held session lock
+
+    releaseHolder();
+    await holder;
+    await flush;
+    expect(settled).toBe(true);
+    expect(q.stats().written).toBe(1);
+  });
+});

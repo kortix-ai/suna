@@ -11,7 +11,7 @@ import { matchedRoutes } from 'hono/route';
 import { getRequestContext, runWithContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
-import { type AuditRow, getAuditQueue } from './audit-queue';
+import { type AuditFlushOptions, type AuditRow, getAuditQueue } from './audit-queue';
 import { AnonymousAuditBudget, type AnonymousAuditSummary } from './audit-anonymous-budget';
 import {
   type AuditPrincipal,
@@ -531,11 +531,32 @@ async function settlePendingInboundEmissions(): Promise<void> {
   await Promise.allSettled([...pendingInboundEmissions]);
 }
 
-/** Drain buffered audit events. Called on shutdown and by tests. */
-export async function flushAuditEvents(): Promise<void> {
+/**
+ * How long a READ may wait for the audit write queue to drain before it runs
+ * its own query.
+ *
+ * A reader drains the queue so it observes the events already emitted
+ * (read-your-writes). That barrier must stay, but it must not be unbounded:
+ * the queue is off the request path by design and, under the audit-ingest
+ * contention of 2026-09-28, a flush waited on per-session locks long enough
+ * that `GET /v1/accounts/:id/audit` spent its whole 25 s request budget in it
+ * (503) or had its `audit_events` SELECT cancelled at `statement_timeout`
+ * (500, SQLSTATE 57014). The queue never loses a contended batch (it is
+ * requeued), so a reader that stops waiting early only trades freshness for
+ * availability — it can never lose a row.
+ */
+export const AUDIT_READ_FLUSH_BUDGET_MS = 2_000;
+
+/**
+ * Drain buffered audit events. Called on shutdown and by tests.
+ *
+ * Pass `{ timeoutMs }` on a request path: the drain then resolves at the budget
+ * instead of holding the request open (see {@link AUDIT_READ_FLUSH_BUDGET_MS}).
+ */
+export async function flushAuditEvents(options: AuditFlushOptions = {}): Promise<void> {
   await settlePendingInboundEmissions();
   if (auditWritesAreSynchronous()) return;
-  await getAuditQueue(auditDb()).flush();
+  await getAuditQueue(auditDb()).flush(options);
 }
 
 /** Flush and stop the flush timer. Shutdown path only. */

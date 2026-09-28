@@ -18,7 +18,7 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
-import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
+import { AUDIT_READ_FLUSH_BUDGET_MS, flushAuditEvents, recordAuditEvent } from '../shared/audit';
 import { requestClientIp } from '../shared/client-ip';
 import {
   deliverTestEvent,
@@ -171,9 +171,10 @@ auditRouter.openapi(
       return c.json({ error: (error as Error).message }, 400);
     }
 
-    // Flush the snapshot emitted before this read. Traffic that arrives after
-    // this barrier stays asynchronous and cannot delay the request indefinitely.
-    await flushAuditEvents();
+    // Flush the snapshot emitted before this read, bounded: a contended audit
+    // write queue must never hold the request past its processing deadline.
+    // Traffic that arrives after this barrier stays asynchronous.
+    await flushAuditEvents({ timeoutMs: AUDIT_READ_FLUSH_BUDGET_MS });
 
     const conditions = buildFilters(accountId, {
       actor,
@@ -364,7 +365,7 @@ auditRouter.openapi(
       return c.json({ error: (error as Error).message }, 400);
     }
 
-    await flushAuditEvents();
+    await flushAuditEvents({ timeoutMs: AUDIT_READ_FLUSH_BUDGET_MS });
 
     const conditions = buildFilters(accountId, {
       actor,
@@ -732,7 +733,7 @@ auditRouter.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
-    await flushAuditEvents();
+    await flushAuditEvents({ timeoutMs: AUDIT_READ_FLUSH_BUDGET_MS });
     const [hook] = await db
       .select({ webhookId: auditWebhooks.webhookId })
       .from(auditWebhooks)

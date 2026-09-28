@@ -27,7 +27,7 @@ import {
   parseAuditSessionCursor,
   serializeAuditEvent,
 } from '../../shared/audit-query';
-import { flushAuditEvents } from '../../shared/audit';
+import { AUDIT_READ_FLUSH_BUDGET_MS, flushAuditEvents } from '../../shared/audit';
 import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
@@ -192,8 +192,9 @@ projectsApp.openapi(
     }
     // Audit writes are buffered off the request path (shared/audit-queue.ts).
     // A reader must observe every event already emitted, so drain the queue
-    // before querying.
-    await flushAuditEvents();
+    // before querying — bounded, so a contended queue cannot hold the read past
+    // the server's processing deadline.
+    await flushAuditEvents({ timeoutMs: AUDIT_READ_FLUSH_BUDGET_MS });
     const fetched = await db
       .select()
       .from(auditEvents)
@@ -588,7 +589,9 @@ projectsApp.openapi(
     // request hit the 25 s server deadline, and the badge answered 503 twice
     // per session open, forever (sampleco, 2026-08-24). A count of pending
     // connector calls does not depend on the audit queue at all.
-    if (audited && includeEvents) await flushAuditEvents();
+    if (audited && includeEvents) {
+      await flushAuditEvents({ timeoutMs: AUDIT_READ_FLUSH_BUDGET_MS });
+    }
     const fetchedEvents = audited && includeEvents
       ? await db
           .select()

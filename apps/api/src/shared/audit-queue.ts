@@ -98,6 +98,37 @@ function positiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** Options for one `flush()`. */
+export interface AuditFlushOptions {
+  /**
+   * Resolve after this many milliseconds even if the drain has not finished.
+   * ONLY a request-path reader sets it: the queue never loses a row (a
+   * contended batch is requeued, not dropped), so a reader that stops waiting
+   * returns the log as of the last committed flush instead of holding its
+   * request past the server's processing deadline. The drain keeps running in
+   * the background.
+   */
+  timeoutMs?: number;
+}
+
+/**
+ * Resolve when `promise` settles or `timeoutMs` elapses, whichever is first.
+ * The promise is never cancelled — the queue's own `inFlight` chain still
+ * clears and reschedules it when it completes.
+ */
+function withTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
+  if (timeoutMs <= 0) return promise;
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    timer.unref?.();
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    void promise.then(done, done);
+  });
+}
+
 export interface AuditQueueStats {
   queued: number;
   enqueued: number;
@@ -354,8 +385,18 @@ export class AuditQueue {
    * Write a snapshot of the queue. Rows added after this call remain buffered
    * for the next flush, so a read barrier cannot be extended by live traffic.
    * Concurrent snapshots run in order and never race their INSERTs.
+   *
+   * With `options.timeoutMs` this resolves at the budget even when the drain is
+   * still waiting on a contended session lock; the drain continues in the
+   * background. Request-path readers pass it so a slow audit write queue can
+   * never hold a read past the server's processing deadline.
    */
-  flush(): Promise<void> {
+  flush(options: AuditFlushOptions = {}): Promise<void> {
+    const drain = this.drain();
+    return options.timeoutMs === undefined ? drain : withTimeout(drain, options.timeoutMs);
+  }
+
+  private drain(): Promise<void> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
