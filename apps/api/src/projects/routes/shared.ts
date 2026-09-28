@@ -1696,6 +1696,19 @@ async function runOpenSession(args: {
     ensured.reason === 'unreachable' ? 'unreachable' : booting ? 'booting' : 'ready',
     ensured.bootPhase ?? null,
   );
+  if (ensured.reason === 'unreachable') {
+    // `unreachable` is five different failures wearing one word (see
+    // `opencode-mapping.ts`'s `UnreachableCause`). A session that cycles on it
+    // — measured 2026-09-28: 1447s of `starting/unreachable` ->
+    // `failed/runtime_unreachable_timeout` on a box whose daemon answered
+    // `200 {"daemon":"ok","opencode":"ok"}` — is undiagnosable without this.
+    console.warn('[start] opencode session list unreachable', {
+      sandbox_id: row.sandboxId,
+      session_id: row.sessionId,
+      external_id: runningExternalId,
+      cause: ensured.cause ?? 'unspecified',
+    });
+  }
   if (booting) {
     // A daemon that reports a NEW boot phase since the last poll has made
     // progress: its reason clock is restarted below before the next poll
