@@ -209,6 +209,7 @@ describe('dispatch: one attempt plan', () => {
   test.each([
     ['402', () => status(402)],
     ['403', () => status(403)],
+    ['404 (the provider will not serve this model)', () => status(404)],
     ['429', () => status(429)],
     ['500', () => status(500)],
     ['a network error', () => new TypeError('fetch failed')],
