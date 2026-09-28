@@ -928,6 +928,11 @@ async function fetchJson<T>(
     logger.warn('[runtime-assets] non-ok response', { url, status: res.status })
     return null
   }
+  // A 2xx is proof the control plane answers this box again — a rotated
+  // credential, or a repaired sandbox row. Clear the shared dead-token breaker
+  // so the surfaces gated on it (config-release convergence) resume. Reporting
+  // only failures would leave the breaker tripped forever.
+  noteControlPlaneResponse(res.status, null)
   return (await res.json()) as T
 }
 
