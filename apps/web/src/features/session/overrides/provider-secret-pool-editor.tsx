@@ -14,6 +14,7 @@ import Loading from '@/components/ui/loading';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { ChatGptAccountsDialog } from '@/features/providers/chatgpt-accounts-dialog';
+import { needsReconnection } from '@/features/workspace/customize/sections/view/account-secret-access';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { keysForSession, normalizePoolSelection, type ProviderPoolDrafts, sessionPersonalUser } from './provider-pool-draft';
@@ -92,6 +93,9 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
         <Checkbox checked={selected.includes(secret.secret_id)} disabled={disabled || readOnly || (!selected.includes(secret.secret_id) && selected.length >= 10)}
           onCheckedChange={(checked) => onChange(checked === true ? [...selected, secret.secret_id] : selected.filter((value) => value !== secret.secret_id))} />
         <span className="text-foreground min-w-0 break-words">{secret.label}</span>
+        {providerId === 'codex' && needsReconnection(secret) && (
+          <span className="text-muted-foreground ml-auto shrink-0 text-xs">{t('needsReconnection')}</span>
+        )}
       </label>)}
     </div>
     {selected.length >= 10 && <p className="text-muted-foreground text-xs" role="status">{t('selectionLimit')}</p>}
@@ -106,6 +110,32 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
   </>;
 }
 
+function PoolEditorShell({ projectId, usable, providers, loading, error, fetching, retry, shared = false, saving, readOnly, selection, onChange }: {
+  projectId: string; usable: AccountSecretResource[]; providers: string[];
+  loading: boolean; error: boolean; fetching: boolean; retry: () => void;
+  shared?: boolean; saving?: boolean; readOnly?: boolean;
+  selection: (provider: string) => string[] | null | undefined;
+  onChange: (provider: string, ids: string[] | null) => void;
+}) {
+  const t = useTranslations('pooledSecrets');
+  const common = useTranslations('common');
+  const [providerId, setProviderId] = useState('');
+  const activeProvider = providers.includes(providerId) ? providerId : (providers[0] ?? '');
+  const value = selection(activeProvider);
+  if (loading) return <div role="status" aria-label={t('loadingKeys')}><Loading /></div>;
+  if (error) return <ErrorState size="sm" title={t('keysLoadError')}
+    action={<Button size="sm" variant="secondary" disabled={fetching} onClick={retry}>{common('retry')}</Button>} />;
+  if (!providers.length) return <NoPoolKeys projectId={projectId} shared={shared} />;
+  return <div className="space-y-3">
+    <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
+      keys={usable.filter((secret) => secret.provider_id === activeProvider)} selected={value ?? []} configured={value != null}
+      disabled={saving} readOnly={readOnly} personalKeys={!shared}
+      onChange={(ids) => onChange(activeProvider, ids)} onReset={() => onChange(activeProvider, null)} />
+    {shared && <p className="text-muted-foreground text-xs">{t('sharedSessionKeys')}</p>}
+    {readOnly && <p className="text-muted-foreground text-xs">{t('readOnlyPool')}</p>}
+  </div>;
+}
+
 export function ProviderSecretPoolEditor({ projectId, sessionId, drafts, onChange, saving = false }: {
   projectId: string;
   sessionId: string;
@@ -113,8 +143,6 @@ export function ProviderSecretPoolEditor({ projectId, sessionId, drafts, onChang
   onChange: (providerId: string, selection: string[] | null) => void;
   saving?: boolean;
 }) {
-  const t = useTranslations('pooledSecrets');
-  const common = useTranslations('common');
   const { project, resources } = useResources(projectId);
   const pools = useSessionProviderSecretPools(projectId, sessionId);
   // Only keys this session can use when it runs: a shared session never
@@ -123,53 +151,30 @@ export function ProviderSecretPoolEditor({ projectId, sessionId, drafts, onChang
   const shared = personalUser === null;
   const usable = keysForSession(usableKeys(resources.data?.secrets), personalUser);
   const providers = [...new Set([...usable.map((secret) => secret.provider_id!), ...(pools.data?.pools ?? []).map((pool) => pool.provider_id), ...Object.keys(drafts)])].sort();
-  const [providerId, setProviderId] = useState('');
-  const activeProvider = providers.includes(providerId) ? providerId : (providers[0] ?? '');
-  const pool = pools.data?.pools.find((entry) => entry.provider_id === activeProvider);
-  const keys = usable.filter((secret) => secret.provider_id === activeProvider);
-  const selection = activeProvider in drafts ? drafts[activeProvider] : pool?.secret_ids;
-  const selected = selection ?? [];
-  const configured = selection != null;
-  if (project.isLoading || resources.isLoading || pools.isLoading) return <div role="status" aria-label={t('loadingKeys')}><Loading /></div>;
-  if (project.isError || resources.isError || pools.isError) return <ErrorState size="sm" title={t('keysLoadError')}
-    action={<Button size="sm" variant="secondary" disabled={project.isFetching || resources.isFetching || pools.isFetching}
-      onClick={() => { void project.refetch(); void resources.refetch(); void pools.refetch(); }}>{common('retry')}</Button>} />;
-  if (!providers.length) return <NoPoolKeys projectId={projectId} shared={shared} />;
-  return <div className="space-y-3">
-    <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
-      keys={keys} selected={selected} configured={configured} disabled={saving} readOnly={!pools.data?.can_edit}
-      personalKeys={!shared}
-      onChange={(ids) => onChange(activeProvider, ids)} onReset={() => onChange(activeProvider, null)} />
-    {shared && <p className="text-muted-foreground text-xs">{t('sharedSessionKeys')}</p>}
-    {!pools.data?.can_edit && <p className="text-muted-foreground text-xs">{t('readOnlyPool')}</p>}
-  </div>;
+  return <PoolEditorShell projectId={projectId} usable={usable} providers={providers} shared={shared} saving={saving}
+    readOnly={!pools.data?.can_edit} loading={project.isLoading || resources.isLoading || pools.isLoading}
+    error={project.isError || resources.isError || pools.isError}
+    fetching={project.isFetching || resources.isFetching || pools.isFetching}
+    retry={() => { void project.refetch(); void resources.refetch(); void pools.refetch(); }}
+    selection={(provider) => provider in drafts ? drafts[provider] : pools.data?.pools.find((entry) => entry.provider_id === provider)?.secret_ids}
+    onChange={onChange} />;
 }
 
 export function NewProviderSecretPoolEditor({ projectId, selection, onChange }: {
   projectId: string; selection: Record<string, string[]>; onChange: (selection: Record<string, string[]>) => void;
 }) {
-  const t = useTranslations('pooledSecrets');
-  const common = useTranslations('common');
   const { project, resources } = useResources(projectId);
   const usable = usableKeys(resources.data?.secrets);
   const providers = [...new Set([...usable.map((secret) => secret.provider_id!), ...Object.keys(selection)])].sort();
-  const [providerId, setProviderId] = useState('');
-  const activeProvider = providers.includes(providerId) ? providerId : (providers[0] ?? '');
-  if (project.isLoading || resources.isLoading) return <div role="status" aria-label={t('loadingKeys')}><Loading /></div>;
-  if (project.isError || resources.isError) return <ErrorState size="sm" title={t('keysLoadError')}
-    action={<Button size="sm" variant="secondary" onClick={() => { void project.refetch(); void resources.refetch(); }}>{common('retry')}</Button>} />;
-  if (!providers.length) return <NoPoolKeys projectId={projectId} />;
-  return <div className="space-y-3">
-    <PoolChoices projectId={projectId} providers={providers} providerId={activeProvider} onProviderChange={setProviderId}
-      keys={usable.filter((secret) => secret.provider_id === activeProvider)} selected={selection[activeProvider] ?? []}
-      configured={activeProvider in selection}
-      onChange={(ids) => {
+  return <PoolEditorShell projectId={projectId} usable={usable} providers={providers}
+    loading={project.isLoading || resources.isLoading} error={project.isError || resources.isError}
+    fetching={false} retry={() => { void project.refetch(); void resources.refetch(); }}
+    selection={(provider) => selection[provider]}
+    onChange={(provider, ids) => {
         const next = { ...selection };
         const normalized = normalizePoolSelection(ids);
-        if (normalized) next[activeProvider] = normalized;
-        else delete next[activeProvider];
+        if (normalized) next[provider] = normalized;
+        else delete next[provider];
         onChange(next);
-      }}
-      onReset={() => { const next = { ...selection }; delete next[activeProvider]; onChange(next); }} />
-  </div>;
+      }} />;
 }

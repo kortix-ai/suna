@@ -1,7 +1,8 @@
 // Kortix instance chooser — one native window (assets/instance-chooser.html)
 // for three moments:
 //   'setup'        first launch of a new profile, before any app window exists
-//   'change'       Frontend URL → Custom URL…
+//   'change'       the frontend-URL menu entry: "Frontend URL → Custom URL…"
+//                  on dev builds, "Change Kortix Instance…" on production builds
 //   'unreachable'  the app origin failed to load
 //
 // It needs no web page, which is the point: native menus take no text input,
@@ -12,6 +13,8 @@
 const { app, BrowserWindow, ipcMain, net } = require('electron');
 const path = require('node:path');
 const { checkInstanceChoice, describeDefaultInstance, hostOf } = require('./instance-rules');
+const { frontendMenuLabel } = require('./frontend-menu');
+const { resolveChannel } = require('./update-channel');
 
 const WIDTH = 460;
 const CHANNEL = {
@@ -144,7 +147,9 @@ function openInstanceChooser({ mode, error = null, parent, store }) {
         host: hostOf(store.appUrl()),
         defaultInstance: describeDefaultInstance(store.baseUrl()),
         current: override ? { kind: 'custom', url: override } : { kind: 'default', url: '' },
-        menuPath: `${process.platform === 'darwin' ? app.name : 'View'} → Frontend URL`,
+        menuPath: `${process.platform === 'darwin' ? app.name : 'View'} → ${frontendMenuLabel(
+          resolveChannel(require('../package.json')),
+        )}`,
       });
       setTimeout(reveal, 1_500); // never stay hidden if the page reports nothing
     });

@@ -47,6 +47,53 @@ describe('GitHub repository branches', () => {
     ]);
   });
 
+  test('requests an empty page after consecutive full pages', async () => {
+    const pages: number[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      const page = Number(url.searchParams.get('page'));
+      pages.push(page);
+      return Response.json(page < 3
+        ? Array.from({ length: 100 }, (_, index) => ({
+            name: `page-${page}-branch-${index}`,
+            protected: page === 2,
+          }))
+        : []);
+    }) as typeof fetch;
+
+    const branches = await listRepositoryBranches({
+      owner: 'example', repo: 'demo', auth: { token: 'test-token' },
+    });
+
+    expect(pages).toEqual([1, 2, 3]);
+    expect(branches).toHaveLength(200);
+    expect(branches[0]).toEqual({ name: 'page-1-branch-0', protected: false });
+    expect(branches[199]).toEqual({ name: 'page-2-branch-99', protected: true });
+  });
+
+  for (const status of [401, 404] as const) {
+    test(`preserves ${status} from a later branch page`, async () => {
+      const requests: string[] = [];
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        requests.push(url);
+        return url.includes('page=2')
+          ? Response.json({ message: 'GitHub request failed' }, { status })
+          : Response.json(Array.from({ length: 100 }, (_, index) => ({
+              name: `branch-${index}`, protected: false,
+            })));
+      }) as typeof fetch;
+
+      await expect(listRepositoryBranches({
+        owner: 'example', repo: 'demo', auth: { token: 'test-token' },
+      })).rejects.toMatchObject({ status });
+      expect(requests).toEqual([
+        'https://api.github.com/repos/example/demo/branches?per_page=100&page=1',
+        'https://api.github.com/repos/example/demo/branches?per_page=100&page=2',
+      ]);
+    });
+  }
+
   test('looks up a selected branch without confusing slashes for path segments', async () => {
     let requested = '';
     globalThis.fetch = (async (input: string | URL | Request) => {

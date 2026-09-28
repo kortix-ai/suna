@@ -1,5 +1,5 @@
-import { logger } from '../../logger'
-import { sandboxRelayContext } from '../../relay-context'
+import { logger } from '@/lib/log/logger'
+import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import type { PermissionRequest } from './events'
 
 /**

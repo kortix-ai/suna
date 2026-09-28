@@ -3,8 +3,11 @@ import {
   PREVIEW_SUITE_REFUSED,
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
+  PREVIEW_SUITE_PID_PATH,
+  PREVIEW_SUITE_SUPERSEDED,
   buildPreviewSuiteScript,
   previewLockfileHash,
+  previewSuiteSuperseded,
   previewDeploymentStatusPath,
   previewSandboxIdentity,
   previewSandboxName,
@@ -61,6 +64,12 @@ describe('provider-neutral preview lifecycle', () => {
     expect(lock).toBeGreaterThan(-1);
     expect(lock).toBeLessThan(script.indexOf('rm -f "$STATUS" "$PHASE"'));
     expect(lock).toBeLessThan(script.indexOf('git -C "$ROOT" checkout'));
+    // An earlier run's report must not be served or uploaded as this commit's.
+    // Emptied under the lock, with the bind-mounted directory itself kept.
+    const clear = script.indexOf('find "$ROOT/tests/test-results" -mindepth 1 -delete');
+    expect(clear).toBeGreaterThan(lock);
+    expect(clear).toBeLessThan(script.indexOf('exec > >(tee -a "$LOG") 2>&1'));
+    expect(script).not.toContain('rm -rf "$ROOT/tests/test-results"');
   });
 
   it('terminates a cancelled detached worker before host reuse', () => {
@@ -158,6 +167,22 @@ describe('provider-neutral preview lifecycle', () => {
     expect(suite).toContain('/workspace/kortix-test-results.tar.gz');
     expect(statusPath).not.toBe(previewDeploymentStatusPath('1234', '1'));
     expect(() => buildPreviewSuiteScript({ prNumber: 6998, sha: 'nope', statusPath })).toThrow('invalid Git SHA');
+    // The PID is written only while the lock is held and removed on exit, so a
+    // superseding runner never signals a finished suite's recycled PID.
+    const pidWrite = suite.indexOf(`> '${PREVIEW_SUITE_PID_PATH}'`);
+    expect(pidWrite).toBeGreaterThan(suite.indexOf('flock -x 9'));
+    expect(pidWrite).toBeLessThan(suite.indexOf('pnpm test -- --target-full'));
+    expect(suite).toContain(`rm -f '${PREVIEW_SUITE_PID_PATH}'`);
+    expect(PREVIEW_SUITE_SUPERSEDED).not.toBe(PREVIEW_SUITE_REFUSED);
+  });
+
+  it('treats a moved head, a closed pull request, or a removed label as superseded', () => {
+    const sha = 'a'.repeat(40);
+    const open = { state: 'open', head: { sha }, labels: [{ name: 'preview' }] };
+    expect(previewSuiteSuperseded(open, sha)).toBe(false);
+    expect(previewSuiteSuperseded({ ...open, head: { sha: 'b'.repeat(40) } }, sha)).toBe(true);
+    expect(previewSuiteSuperseded({ ...open, state: 'closed' }, sha)).toBe(true);
+    expect(previewSuiteSuperseded({ ...open, labels: [{ name: 'test' }] }, sha)).toBe(true);
   });
 
   it('keeps a branch environment serving through the three ways it went dark', () => {
@@ -178,16 +203,20 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain('pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile');
     // 2. Disk is reclaimed BEFORE the ~2.5 GB pull, gated on the disk being tight.
     const prune = script.indexOf('docker image prune -af');
-    const pull = script.indexOf('pull --policy always');
+    const pull = script.indexOf('pull --policy missing');
     expect(prune).toBeGreaterThan(-1);
     expect(prune).toBeLessThan(pull);
     expect(script).toContain('if [ "${used:-0}" -ge 70 ]; then');
+    // Immutable images are pulled only when missing, and a Docker Hub rate
+    // limit is waited out, never a failed deploy on the first refusal.
+    expect(script).not.toContain('pull --policy always');
+    expect(script).toContain('test "$pull_attempt" -lt 5 || exit 1');
     // 3. A stack that cannot come up puts the last good image set back and
     //    still fails the deploy — a fallback, never a pass.
     expect(script).toContain('restore_last_good() {');
     expect(script).toContain('cp "$STATE/last-good.env"');
     expect(script).toContain('test "$stack_attempt" -lt 2 || restore_last_good');
-    const restoreBody = script.slice(script.indexOf('restore_last_good() {'), script.indexOf('pull --policy always'));
+    const restoreBody = script.slice(script.indexOf('restore_last_good() {'), script.indexOf('pull --policy missing'));
     expect(restoreBody).toContain('exit 1');
     // The copy that makes the fallback possible is taken only AFTER the
     // health check proves this image set on this commit.

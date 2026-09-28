@@ -26,8 +26,16 @@ name: DB Migrations
 # See packages/db/MIGRATIONS.md.
 
 on:
+  # A pull request into `main` runs no CI: the developer runs `pnpm test` in
+  # their box. The push to `main` is the non-blocking post-merge check; release
+  # pull requests (`staging`, `prod`) are the gate.
+  push:
+    branches: [main]
+    paths:
+      - 'packages/db/**'
+      - '.github/workflows/db-migrations.yml'
   pull_request:
-    branches: [main, staging]
+    branches: [staging]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
@@ -78,7 +86,7 @@ jobs:
       - name: Reject edits to already-merged migrations
         run: |
           set -euo pipefail
-          BASE='${{ github.event.pull_request.base.sha }}'
+          BASE='${{ github.event.pull_request.base.sha || github.event.before }}'
           # Modified files directly under migrations/ (depth-1 glob excludes
           # _archive/). Two pathspecs: plain .sql migrations, and the
           # .concurrent.ts CONCURRENTLY escape hatch (see MIGRATIONS.md).
@@ -100,7 +108,7 @@ jobs:
       - name: New migrations must come after every merged migration
         run: |
           set -euo pipefail
-          BASE='${{ github.event.pull_request.base.sha }}'
+          BASE='${{ github.event.pull_request.base.sha || github.event.before }}'
           # Highest 17-digit timestamp already merged (depth-1; _archive is
           # 14-digit, excluded). Matches both .sql and .concurrent.ts.
           BASE_MAX=$(git ls-tree -r --name-only "$BASE" -- packages/db/migrations \

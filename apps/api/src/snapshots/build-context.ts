@@ -581,6 +581,15 @@ export async function stageBuildContext(
     // back to a full fetch through the same code.
     await stageScaffoldRepo(contextDir);
 
+    // The managed `kortix-*` skill overlay, baked like every other artifact.
+    // Only the meta image used to carry it, so an ordinary session sandbox —
+    // dev, prod and preview alike — booted with nothing at
+    // /opt/kortix/managed-skills and downloaded the whole overlay on its first
+    // reconcile. `kortix-starter` is already a snapshot-fingerprint input
+    // (templates.ts NON_AGENT_RUNTIME_ARTIFACTS), so a skill edit mints a new
+    // snapshot and the bake stays current.
+    await stageManagedSkills(join(contextDir, 'managed-skills'));
+
     const dockerfileName = '.kortix-snapshot.Dockerfile';
     const composedPath = join(contextDir, dockerfileName);
     const composed = buildLayeredDockerfile({
@@ -595,6 +604,7 @@ export async function stageBuildContext(
       opencodeConfigPath,
       opencodeWarmupScriptPath: 'kortix-opencode-warmup',
       catalogPath: 'kortix-llm-catalog.json',
+      managedSkillsPath: 'managed-skills',
       isSharedDefault,
     });
 
@@ -605,6 +615,8 @@ export async function stageBuildContext(
     // "Path does not exist", and the auto-build can't tell it's a staging miss to
     // recover from. Assert at the source so a miss is caught here AND is retryable
     // (the daytona adapter re-stages on "staging incomplete").
+    // It was declared and never called, so it guarded nothing.
+    await assertContextComplete(contextDir, dockerfileName);
     console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
     return { contextDir, composedPath, dockerfileName };
   });
@@ -665,6 +677,10 @@ async function assertContextComplete(
     // fetch that gates opencode's port bind. That is invisible in build logs and
     // shows up only as "boot got slower", so assert it here.
     'kortix-llm-catalog.json',
+    // The managed skill overlay. A miss here is the defect this guard exists
+    // for: the image still builds, and every box on it silently downloads the
+    // overlay on its first reconcile instead of booting with it.
+    'managed-skills',
     dockerfileName,
   ];
   for (const rel of required) {

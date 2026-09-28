@@ -428,8 +428,18 @@ There is no separate preview database. Consequences:
 
 ## CI gates (`.github/workflows/db-migrations.yml`)
 
-Runs on every PR touching `packages/db/**`. Six jobs, each closing a failure
-mode we've actually hit:
+Runs on every push to `main` (post-merge, non-blocking) and on every pull
+request into `staging` that touches `packages/db/**`. A pull request into
+`main` runs none of it, so run the same checks in your box before the merge:
+
+```bash
+pnpm --filter @kortix/db lint                                   # lint + squawk
+git diff --diff-filter=M --name-only origin/main... -- 'packages/db/migrations/*.sql'   # immutability: must print nothing
+( cd packages/db && bun scripts/generate.ts __local_schema_sync ) && git status --porcelain -- packages/db/migrations packages/db/drizzle   # schema-sync: must print nothing
+pnpm test -- --db-only                                          # fresh-DB apply + migration suites
+```
+
+Six jobs, each closing a failure mode we've actually hit:
 
 | Job | Enforces | Failure mode it prevents |
 |---|---|---|
@@ -590,7 +600,7 @@ it previously silently produced nothing.
 
 - **`kortix.ts` adoption:** the objects `kortix.ts` does not declare are listed, with a reason, in `scripts/schema-contract-sql-only.ts` (1 legacy table, 3 compatibility views, 21 legacy columns, 62 non-unique indexes). The schema contract keeps the list from growing.
 - **Wallet functions:** the credit arithmetic lives in the private schema `kortix_wallet` (`grant_credits`, `debit_credits`, `reset_expiring_credits`; `20260925013304428_wallet_private_schema.sql`). `public.atomic_add_credits` / `atomic_use_credits` / `atomic_settle_credits` / `atomic_reset_expiring_credits` remain one release as wrappers for pre-rollout API images. Their drop is parked in `migrations-pending/drop_public_wallet_wrappers.sql.pending` with its preconditions.
-- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` or `kortix_wallet` function ever regains two overloads with overlapping callable arity. It spins up its own Postgres (Docker) and runs in the `db-suites` lane of `pnpm test` (the `core` CI lane, which a PR gets only with the `test` or `preview` label); run it alone with `pnpm test -- --db-only credit-rpc-overloads` when touching a wallet function. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
+- ~~**Duplicate function overloads:** `public.atomic_use_credits` and `atomic_grant_renewal_credits` each have a stale extra overload~~ — DONE in `20260730012238065_credit_use_credits_single_overload.sql`. `atomic_use_credits` is now a single 4-parameter function with defaults on `p_description`/`p_ledger_type`, so arities 2–4 all resolve to it; the dead 7-argument `atomic_grant_renewal_credits` overload is gone. `tests/migration/credit-rpc-overloads.test.ts` fails if any `public.atomic_*` or `kortix_wallet` function ever regains two overloads with overlapping callable arity. It spins up its own Postgres (Docker) and runs in the `db-suites` lane of `pnpm test` (the `core` CI lane on a push to `main` and on a pull request into `staging`); run it alone with `pnpm test -- --db-only credit-rpc-overloads` when touching a wallet function. **Note `packages/db/drizzle/0000_bootstrap.sql` still defines only the OLD 5-argument `atomic_use_credits`** — that is fine (bootstrap runs before the baseline and this migration corrects it), but do not treat the bootstrap file as the current shape.
 - **Legacy trackers:** `supabase_migrations.schema_migrations`, `drizzle.__drizzle_migrations`, `kortix.api_schema_migrations` are dead. Drop after prod is also cut over.
 - **No repo-wide git pre-push hook** wires `pnpm --filter @kortix/db lint` automatically yet — it's a documented, not enforced, local step (CI is the real gate).
 
