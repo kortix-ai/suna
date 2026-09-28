@@ -19203,7 +19203,9 @@
       "text397ab5aecbbf": "Relayed session permission request",
       "text3ec6c235548a": "Read MCP server metadata",
       "text7740934de920": "Registered an OAuth client",
-      "textcd36423ea12a": "Called the MCP server"
+      "textcd36423ea12a": "Called the MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

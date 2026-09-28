@@ -197,6 +197,10 @@ mkdir -p "$STATE" "$ROOT/tests/test-results"
 exec 9>"$STATE/deploy.lock"
 flock -x 9
 rm -f "$STATUS" "$PHASE"
+# Results belong to one commit. The preview serves this directory at /_tests/
+# and the run uploads it, so an earlier run's report would read as this one's.
+# Empty it, keep the directory: it is bind-mounted into the edge container.
+find "$ROOT/tests/test-results" -mindepth 1 -delete
 exec > >(tee -a "$LOG") 2>&1
 
 finish() {
