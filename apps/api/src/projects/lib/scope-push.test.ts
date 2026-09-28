@@ -126,7 +126,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
 const ORIGINAL_FETCH = globalThis.fetch;
 (globalThis as { fetch: unknown }).fetch = recordingFetch();
 
-const { pushSessionScopeToSandbox } = await import('./sandbox-env-sync');
+const { pushSessionScopeToSandbox, resolveSandboxEnvSnapshot } = await import('./sandbox-env-sync');
 
 const INPUT = {
   projectId: 'proj-1',
@@ -148,6 +148,15 @@ beforeEach(() => {
 });
 
 describe('pushSessionScopeToSandbox', () => {
+  test('snapshot exposes sanitized env, names, revision, capabilities and scope', async () => {
+    const snapshot = await resolveSandboxEnvSnapshot(INPUT.projectId, INPUT.sessionId);
+    expect(snapshot).toMatchObject({
+      env: { EXAMPLE: 'v' },
+      names: ['EXAMPLE'],
+      revision: expect.any(String),
+      scope: 'inherit',
+    });
+  });
   test('pushes the re-derived snapshot and asks for the opencode restart', async () => {
     // opencode's process env is shaped at spawn, so the snapshot alone changes
     // nothing — `refreshModels: true` is what makes the daemon respawn it and
