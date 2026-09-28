@@ -43,15 +43,13 @@ import {
   type StoredSandboxTurn,
   closeSandboxTurnByMessageId,
 } from '../sandbox-turn-lifecycle';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
+import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
 
-const WORKSPACE = '/workspace';
 /** The stranded prompt and the assistant that proves it both sit at the tip. */
 const TIP_LIMIT = 12;
 const MAX_STRAND_REDELIVERIES = 3;
@@ -117,26 +115,11 @@ const liveDeps: StrandReconcileDeps = {
   },
   async readTip(sessionId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return null;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return null;
-    return parsePlacementTip(await res.json().catch(() => null));
+    return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok || res.status === 404;
+    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
   },
   async requeueStranded(sessionId, messageId) {
     const [row] = await db

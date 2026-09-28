@@ -1,7 +1,5 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-
-const WORKSPACE = '/workspace';
+import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
 
 /**
  * Abort whatever turn the runtime still thinks is running for this session.
@@ -50,12 +48,11 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
+    const res = await sessionRuntimeFetch(
+      resolved.endpoint,
+      'POST',
+      `/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`,
+    );
     return res.ok;
   } catch {
     return false;

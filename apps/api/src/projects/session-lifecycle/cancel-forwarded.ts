@@ -23,10 +23,10 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { reachedPlacement, strandedPlacement } from './forwarded-placement';
+import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
+import { reachedPlacement, strandedPlacement, type PlacementTipMessage } from './forwarded-placement';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
 
@@ -36,7 +36,6 @@ function isOnWire(result: unknown): boolean {
 }
 import type { SessionLifecycleCommandRow } from './store';
 
-const WORKSPACE = '/workspace';
 const TIP_LIMIT = 30;
 
 export type CancelForwardedOutcome =
@@ -44,14 +43,6 @@ export type CancelForwardedOutcome =
   | { outcome: 'answered' }
   | { outcome: 'unreachable' }
   | { outcome: 'not_forwarded' };
-
-interface TipEntry {
-  id: string;
-  role: string;
-  parentID: string | null;
-  completed: number | null;
-  partIds: string[];
-}
 
 /** Find the newest inbox row that ever carried this wire/message id — the
  *  client's handle once the row left the prompt list (confirmed `delivered`
@@ -115,41 +106,17 @@ export async function cancelForwardedPrompt(
     logger.warn('[cancel-forwarded] endpoint unresolved', { session_id: sessionId, prompt_id: promptId });
     return { outcome: 'unreachable' };
   }
-  const headers = sandboxRuntimeRequestHeaders(resolved.endpoint.headers);
-  const base = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}`;
+  const base = `/session/${encodeURIComponent(resolved.opencodeSessionId)}`;
 
-  let tip: TipEntry[];
+  let tip: PlacementTipMessage[] | null;
   try {
-    const res = await fetch(
-      `${base}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`,
-      { method: 'GET', headers, signal: AbortSignal.timeout(5_000) },
-    );
-    if (!res.ok) {
-      logger.warn('[cancel-forwarded] tip read refused', { session_id: sessionId, status: res.status });
-      return { outcome: 'unreachable' };
-    }
-    const body = (await res.json().catch(() => null)) as Array<{
-      info?: { id?: unknown; role?: unknown; parentID?: unknown; time?: { completed?: unknown } };
-      parts?: Array<{ id?: unknown }>;
-    }> | null;
-    if (!Array.isArray(body)) return { outcome: 'unreachable' };
-    tip = body.flatMap((entry) => {
-      const info = entry?.info;
-      if (!info || typeof info.id !== 'string' || typeof info.role !== 'string') return [];
-      return [
-        {
-          id: info.id,
-          role: info.role,
-          parentID: typeof info.parentID === 'string' ? info.parentID : null,
-          completed: typeof info.time?.completed === 'number' ? info.time.completed : null,
-          partIds: (entry.parts ?? []).flatMap((part) =>
-            typeof part?.id === 'string' ? [part.id] : [],
-          ),
-        },
-      ];
-    });
+    tip = await readSessionMessageTip(resolved, { limit: TIP_LIMIT });
   } catch (err) {
     logger.warn('[cancel-forwarded] tip read threw', { session_id: sessionId, error: err instanceof Error ? err.message : String(err) });
+    return { outcome: 'unreachable' };
+  }
+  if (!tip) {
+    logger.warn('[cancel-forwarded] tip read unavailable', { session_id: sessionId });
     return { outcome: 'unreachable' };
   }
 
@@ -167,20 +134,17 @@ export async function cancelForwardedPrompt(
   for (const message of present) {
     let removed = false;
     try {
-      const res = await fetch(
-        `${base}/message/${encodeURIComponent(message.id)}?directory=${encodeURIComponent(WORKSPACE)}`,
-        { method: 'DELETE', headers, signal: AbortSignal.timeout(5_000) },
-      );
-      removed = res.ok || res.status === 404;
+      removed = await removeRuntimeMessage(resolved, message.id);
     } catch {
       removed = false;
     }
     if (removed) continue;
-    for (const partId of message.partIds) {
+    for (const partId of message.partIds ?? []) {
       try {
-        const res = await fetch(
+        const res = await sessionRuntimeFetch(
+          resolved.endpoint,
+          'DELETE',
           `${base}/message/${encodeURIComponent(message.id)}/part/${encodeURIComponent(partId)}?directory=${encodeURIComponent(WORKSPACE)}`,
-          { method: 'DELETE', headers, signal: AbortSignal.timeout(5_000) },
         );
         if (!res.ok && res.status !== 404) {
           logger.warn('[cancel-forwarded] part delete refused', {
