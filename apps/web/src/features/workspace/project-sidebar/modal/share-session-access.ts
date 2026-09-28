@@ -1,6 +1,10 @@
 import type { ProjectSession } from '@kortix/sdk';
 
-import type { SharingMode } from '@/features/workspace/shared/sharing-intent';
+import {
+  selectionToIntent,
+  type SharingMode,
+  type SharingSelection,
+} from '@/features/workspace/shared/sharing-intent';
 
 /**
  * How the viewer stands to ONE session's access policy.
@@ -75,4 +79,18 @@ export function sessionAccessSummary(session: SessionOwnership): string {
     return `${holder === 'you' ? 'You' : holder} and ${parts} can open it.`;
   }
   return owner === 'You' ? 'Only you can open it.' : `Only ${owner} can open it.`;
+}
+
+/** The session as it reads once `selection` is saved — for the summary line. */
+export function withSelection<T extends SessionOwnership>(
+  session: T,
+  selection: SharingSelection,
+): T {
+  const visibility =
+    selection.mode === 'project'
+      ? 'project'
+      : selection.mode === 'members'
+        ? 'restricted'
+        : 'private';
+  return { ...session, visibility, sharing: selectionToIntent(selection) };
 }

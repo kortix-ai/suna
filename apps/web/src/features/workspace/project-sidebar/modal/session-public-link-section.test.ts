@@ -6,42 +6,45 @@ const section = readFileSync(
   fileURLToPath(new URL('./session-public-link-section.tsx', import.meta.url)),
   'utf8',
 );
-const modal = readFileSync(
-  fileURLToPath(new URL('./share-session-modal.tsx', import.meta.url)),
+const panel = readFileSync(
+  fileURLToPath(new URL('./share-session-panel.tsx', import.meta.url)),
   'utf8',
 );
 
-describe('Share dialog public link', () => {
+describe('Share panel public link', () => {
   test('sources are the expected modules', () => {
-    expect(section).toContain('export function SessionPublicLinkSection');
-    expect(modal).toContain('export function ShareSessionModal');
+    expect(section).toContain('export function SessionPublicLinkRow');
+    expect(panel).toContain('export function ShareSessionPanel');
   });
 
-  test('sits in the Share dialog, gated on the same verdict as the in-team picker', () => {
-    expect(modal).toContain(
-      '{view.canEdit && session ? (\n            <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />',
+  test('sits in the Share panel, gated on the same verdict as the access options', () => {
+    expect(panel).toContain(
+      '{view.canEdit ? (\n        <SessionPublicLinkRow projectId={projectId} sessionId={session.session_id} />',
     );
-    // After the picker, inside the dialog body.
-    expect(modal.indexOf('<SharingPicker')).toBeLessThan(
-      modal.indexOf('<SessionPublicLinkSection'),
+    // After the options, before the footer.
+    expect(panel.indexOf('role="radiogroup"')).toBeLessThan(panel.indexOf('<SessionPublicLinkRow'));
+    expect(panel.lastIndexOf('<SessionPublicLinkRow')).toBeLessThan(
+      panel.lastIndexOf('<ShareFooter'),
     );
-    expect(modal.indexOf('<SessionPublicLinkSection')).toBeLessThan(modal.indexOf('</ModalBody>'));
   });
 
-  test('creates a transcript share through the confirmed mint path', () => {
+  test('creates a transcript share only through the confirmed mint path', () => {
     expect(section).toContain('{ transcript: true }');
     expect(section).toContain('usePublicShareLink(');
-    // Every public link is confirmed before it is minted.
-    expect(section).toContain('<PublicShareLinkConfirm confirmation={link.confirmation} />');
+    // Create only opens the confirm; the confirm's button mints.
+    expect(section).toContain('onClick={link.copyLink}');
+    expect(section).toContain('onConfirm={link.confirmation.onConfirm}');
   });
 
   test('shows the live link from the SDK helper, and revokes only after a confirm', () => {
     expect(section).toContain('findActiveTranscriptShare(shares)');
-    expect(section).toContain('<ConfirmDialog');
-    const confirm = section.slice(section.indexOf('<ConfirmDialog'));
-    expect(confirm).toContain('revoke(active.share_id)');
-    // The Revoke button itself only opens the confirm.
-    expect(section).toContain('onClick={() => setConfirmRevoke(true)}');
+    const confirm = section.slice(section.indexOf('if (confirmRevoke && active)'));
+    expect(confirm.slice(0, confirm.indexOf('return (\n    <Row'))).toContain(
+      'revoke(active.share_id)',
+    );
+    // The menu item itself only opens the confirm.
+    expect(section).toContain('onSelect={() => setConfirmRevoke(true)}');
+    expect(section.match(/revoke\(/g)).toHaveLength(1);
   });
 
   test('copies the web page link, never the API proxy path', () => {

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { sessionAccessSummary, sessionAccessView, sessionOwnerName } from './share-session-access';
+import {
+  sessionAccessSummary,
+  sessionAccessView,
+  sessionOwnerName,
+  withSelection,
+} from './share-session-access';
 
 const session = (over: Record<string, unknown> = {}) =>
   ({
@@ -103,5 +108,22 @@ describe('sessionAccessSummary', () => {
         }),
       ),
     ).toBe('Ada and 2 members can open it.');
+  });
+});
+
+describe('withSelection', () => {
+  test('the footer summary reads the pick, not the saved policy', () => {
+    const saved = session();
+    expect(
+      sessionAccessSummary(withSelection(saved, { mode: 'project', memberIds: [], groupIds: [] })),
+    ).toBe('Every member of this project can open it.');
+    expect(
+      sessionAccessSummary(
+        withSelection(saved, { mode: 'members', memberIds: ['m1', 'm2'], groupIds: ['g1'] }),
+      ),
+    ).toBe('You and 2 members and 1 group can open it.');
+    expect(
+      sessionAccessSummary(withSelection(saved, { mode: 'private', memberIds: [], groupIds: [] })),
+    ).toBe('Only you can open it.');
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -13,13 +13,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSidebar } from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
-import { PreviousRepositoryNotice } from '@/features/session/previous-repository-session';
 import {
   SessionConfigIndicator,
   SessionConfigReloadConfirm,
@@ -27,11 +27,12 @@ import {
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
+import { PreviousRepositoryNotice } from '@/features/session/previous-repository-session';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import { ShareSessionPanel } from '@/features/workspace/project-sidebar/modal/share-session-panel';
+import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
@@ -482,26 +483,40 @@ export function SessionSiteHeader({
                 `isMobileViewport`) the label hides, the button goes square
                 like its size-7 siblings, and only then the Hint names it. */}
             {isProjectSession && projectSession && (
-              <Hint
-                side="bottom"
-                sideOffset={4}
-                delayDuration={300}
-                label={shareLabel}
-                open={isMobileViewport ? undefined : false}
-              >
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  aria-label={shareLabel}
-                  onClick={() => setShareOpen(true)}
-                  className="cursor-pointer rounded-md active:scale-[0.96] max-md:w-7 max-md:has-[>svg]:px-0"
+              <Popover open={shareOpen} onOpenChange={setShareOpen}>
+                <Hint
+                  side="bottom"
+                  sideOffset={4}
+                  delayDuration={300}
+                  label={shareLabel}
+                  open={isMobileViewport ? undefined : false}
                 >
-                  <Share />
-                  <span className="hidden md:inline">
-                    {tI18nHardcoded.raw('i18nComplete.text29887a5ff984')}
-                  </span>
-                </Button>
-              </Hint>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      aria-label={shareLabel}
+                      className="data-[state=open]:bg-hover cursor-pointer rounded-md active:scale-[0.96] max-md:w-7 max-md:has-[>svg]:px-0"
+                    >
+                      <Share />
+                      <span className="hidden md:inline">
+                        {tI18nHardcoded.raw('i18nComplete.text29887a5ff984')}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                </Hint>
+                <PopoverContent align="end" className="w-96 overflow-hidden p-0">
+                  <ShareSessionPanel
+                    projectId={projectId!}
+                    session={projectSession}
+                    onSaved={() =>
+                      queryClient.invalidateQueries({
+                        queryKey: qk.project.sessionsScope(projectId ?? ''),
+                      })
+                    }
+                  />
+                </PopoverContent>
+              </Popover>
             )}
 
             {/* The DETAIL panel's toggle used to sit here and is gone on
@@ -571,17 +586,6 @@ export function SessionSiteHeader({
             isPending={reloadConfig.isPending}
             onConfirm={() => reloadConfig.reload({ force: true })}
             onDismiss={reloadConfig.clearBusy}
-          />
-          <ShareSessionModal
-            projectId={projectId!}
-            session={projectSession}
-            open={shareOpen}
-            onOpenChange={setShareOpen}
-            onSaved={() =>
-              queryClient.invalidateQueries({
-                queryKey: qk.project.sessionsScope(projectId ?? ''),
-              })
-            }
           />
           <SessionDeleteModal
             projectId={projectId!}

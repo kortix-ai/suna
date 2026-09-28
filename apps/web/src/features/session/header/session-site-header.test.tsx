@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(
@@ -335,16 +335,16 @@ describe('SessionConfigIndicator wiring', () => {
 describe('SessionSiteHeader Share', () => {
   const menuStart = source.indexOf('const sessionActionItems = (');
   const menu = source.slice(menuStart, source.indexOf('\n  );', menuStart));
+  // The Share button is the trigger of the Share popover.
+  const trigger = '<PopoverTrigger asChild>';
 
   test('Share is a visible header button, not a session-menu item', () => {
     // Anti-vacuity guard: prove the slice is the menu.
     expect(menu).toContain('startRename();');
-    expect(menu).not.toContain('setShareOpen(true)');
-    expect(source.split('setShareOpen(true)').length - 1).toBe(1);
-    const button = source.slice(
-      source.lastIndexOf('<Button', source.indexOf('setShareOpen(true)')),
-      source.indexOf('</Button>', source.indexOf('setShareOpen(true)')),
-    );
+    expect(menu).not.toContain('setShareOpen');
+    expect(source.split(trigger).length - 1).toBe(1);
+    const at = source.indexOf(trigger);
+    const button = source.slice(at, source.indexOf('</Button>', at));
     expect(button).toContain('<Share ');
     // The visible label is "Share"; below `sm` the button is icon-only and
     // keeps its accessible name.
@@ -352,19 +352,30 @@ describe('SessionSiteHeader Share', () => {
     expect(button).toContain('aria-label={shareLabel}');
   });
 
-  test('the button needs a loaded project session, like the dialog it opens', () => {
-    const at = source.indexOf('setShareOpen(true)');
+  test('opens the Share panel in a popover anchored to the button', () => {
+    const popover = source.slice(
+      source.indexOf('<Popover open={shareOpen} onOpenChange={setShareOpen}>'),
+      source.indexOf('</Popover>'),
+    );
+    expect(popover).toContain(trigger);
+    expect(popover).toContain('<PopoverContent align="end"');
+    expect(popover).toContain('<ShareSessionPanel');
+    expect(source).not.toContain('<ShareSessionModal');
+  });
+
+  test('the button needs a loaded project session, like the panel it opens', () => {
+    const at = source.indexOf(trigger);
     const guard = source.lastIndexOf('{isProjectSession && projectSession && (', at);
     expect(guard).toBeGreaterThan(-1);
     expect(at - guard).toBeLessThan(800);
   });
 
   test('matches the 28px row: xs, square when icon-only, and a Hint only then', () => {
-    const at = source.indexOf('setShareOpen(true)');
+    const at = source.indexOf(trigger);
     const hint = source.slice(source.lastIndexOf('<Hint', at), at);
     expect(hint).toContain('open={isMobileViewport ? undefined : false}');
     expect(hint).toContain('label={shareLabel}');
-    const button = source.slice(source.lastIndexOf('<Button', at), source.indexOf('</Button>', at));
+    const button = source.slice(at, source.indexOf('</Button>', at));
     expect(button).toContain('size="xs"');
     expect(button).toContain('max-md:w-7 max-md:has-[>svg]:px-0');
     // The label hides at the same breakpoint the Hint turns on.
