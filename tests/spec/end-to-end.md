@@ -1019,7 +1019,7 @@ account exits non-zero with the manage-connections reason (the API's `403`).
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
 `BILL-4b` `POST /billing/cancel-subscription` · `sync-seat-quantity` → NONMEMBER → 403.
 `DEL-2b` `/billing/account/*` deletion mirror — request → cancel lifecycle.
-`SESS-11` session sub-routes (commit-push/ensure-opencode/restart/wake) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
+`SESS-11` session sub-routes (commit-push/restart) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.
 `CONN-10` `POST /connectors/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
 `CONN-11` `POST /connectors/webhook/pipedream` → public, HMAC-signed. Reads the external user id from `account.external_id` (the real Pipedream CONNECTION_SUCCESS shape) or top-level `external_user_id` (legacy); `event:"CONNECTION_ERROR"` → 200 `{ok,ignored}`; neither id present → 400; bad signature → 401; signed but Pipedream still reports no account → 503. AUXILIARY only — it never notifies a session.
