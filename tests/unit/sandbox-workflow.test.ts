@@ -211,30 +211,17 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('gates the local suite on promotes and on an opt-in label, never on every main PR', () => {
-    // 2026-09-18. Every PR into `main` used to wait ~11 min (68 min worst
-    // case) for a suite that gated nothing: `main` and `staging` have NO
-    // required status checks. Keep this test and the workflow header in sync.
-    expect(testWorkflow).toContain('branches: [main, staging]');
-    expect(testWorkflow).not.toContain('branches: [main, staging, prod]');
+  test('runs the local suite on a push to main and on a release pull request only', () => {
+    // 2026-09-28. Labels made the suite run on nearly every pull request into
+    // `main`: every agent PR carried `preview`. A pull request into `main` now
+    // runs nothing; the developer runs `pnpm test` in their own box.
+    expect(testWorkflow).toMatch(/\n  pull_request:\n    branches: \[staging\]\n/);
+    expect(testWorkflow).not.toContain('labels.*.name');
 
-    // Adding the label to an already-open PR must re-trigger the workflow, or
-    // the opt-in silently needs a push to take effect.
-    expect(testWorkflow).toContain(
-      'types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]',
-    );
-
-    // The four clauses of the gate, asserted inside the `lane` job block so
-    // moving the `if:` onto another job fails here. `contains(<array>, 'test')`
-    // compares whole elements, so `no-tests-needed` cannot match.
     const laneJob = testWorkflow.slice(
       testWorkflow.indexOf('\n  lane:'),
       testWorkflow.indexOf('\n  trunk-report:'),
     );
-    expect(laneJob).toContain("github.event_name != 'pull_request'");
-    expect(laneJob).toContain("|| github.base_ref == 'staging'");
-    expect(laneJob).toContain("|| contains(github.event.pull_request.labels.*.name, 'test')");
-    expect(laneJob).toContain("|| contains(github.event.pull_request.labels.*.name, 'preview')");
     expect(laneJob).toContain('fail-fast: false');
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
     expect(laneJob).toContain('name: ${{ matrix.lane }} lane');
@@ -244,6 +231,33 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toContain('workflow_call');
     expect(testWorkflow).not.toContain('inputs.mode');
     expect(testWorkflow).not.toMatch(/^  decide:/m);
+  });
+
+  test('no workflow runs a job on a pull request into main', () => {
+    // A pull request into `main` is mergeable the moment it opens. CI runs on
+    // pull requests into `staging` and `prod`, and after the merge on `main`.
+    // deploy-preview.yml is the one exception: every job it runs on a pull
+    // request is gated on the `preview` label.
+    const dir = resolve(root, '.github/workflows');
+    const offenders = readdirSync(dir)
+      .filter((file) => /\.ya?ml$/.test(file) && file !== 'deploy-preview.yml')
+      .filter((file) => {
+        // Walk the top-level `on:` block line by line: a pull request trigger
+        // is an offender unless its `branches:` list exists and omits `main`.
+        const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
+        const on = lines.indexOf('on:');
+        if (on < 0) return false;
+        const end = lines.findIndex((line, i) => i > on && /^\S/.test(line));
+        const block = lines.slice(on + 1, end < 0 ? undefined : end);
+        return block.some((line, i) => {
+          if (!/^  pull_request(_target)?:/.test(line)) return false;
+          const next = block.slice(i + 1).findIndex((l) => /^  \S/.test(l));
+          const body = block.slice(i + 1, next < 0 ? undefined : i + 1 + next);
+          const branches = body.find((l) => /^    branches:/.test(l));
+          return !branches || /\bmain\b/.test(branches);
+        });
+      });
+    expect(offenders).toEqual([]);
   });
 
   test('the dev trunk tests its own latest commit, and cannot block anything', () => {

@@ -1,7 +1,10 @@
 # Preview environments (per-PR)
 
-The `preview` label gives a pull request its own complete Kortix deployment. Use it to share,
-review, and record work without merging. The workflow is `.github/workflows/deploy-preview.yml`.
+The `preview` label gives a pull request its own complete Kortix deployment on Platinum.
+**It is not part of the development flow.** Test, preview, and record a change on your
+worktree's local stack (`AGENTS.md` → "Default delivery"). Add the label only when someone
+asks for a hosted environment of a branch; it gates nothing and no step of the PR loop
+waits on it. The workflow is `.github/workflows/deploy-preview.yml`.
 The deploy logic is `tests/bin/sandbox-preview.ts`, `tests/src/core/sandbox-preview.ts`, and
 `tests/src/core/preview-stack.ts`.
 

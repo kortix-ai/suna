@@ -18,8 +18,9 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
+  # A pull request into `main` runs no CI. The push above is the post-merge check.
   pull_request:
-    branches: [main, staging, prod]
+    branches: [staging, prod]
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
