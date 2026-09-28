@@ -1,4 +1,5 @@
 import { config, type SandboxProviderName } from '../config';
+import { escapeHtml } from '../shared/html';
 
 // The `frame-ancestors` directive for App responses. It decides which origins
 // may embed an App in an iframe — the dashboard's App preview does exactly this.
@@ -176,12 +177,6 @@ export function publicDeploymentStatus(deployment: { status: string } | null): {
     return { status: deployment.status };
   }
   return { status: 'starting' };
-}
-
-export function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character]!);
 }
 
 export function appPublicStatusResponse(

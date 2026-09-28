@@ -5,7 +5,8 @@ import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import { appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
-import { appBrowserNavigation, appFrameAncestors, escapeHtml } from './public-proxy-status';
+import { escapeHtml } from '../shared/html';
+import { appBrowserNavigation, appFrameAncestors } from './public-proxy-status';
 import { APP_VIEWER_HEADER, APP_VIEWER_TOKEN_HEADER, appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
 
 function accessTokenMatchesMode(

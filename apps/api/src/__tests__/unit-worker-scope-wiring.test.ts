@@ -49,7 +49,7 @@ const WORKERS: Record<string, string> = {
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
 const NOT_WORKERS: Record<string, string> = {
-  'apps/public-proxy.ts': 'stamps app activity while one proxied request streams; runs inside that request',
+  'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
   'index.ts': 'measures event-loop lag',

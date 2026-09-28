@@ -10,6 +10,7 @@ import {
   projects,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
+import { config } from '../config';
 import type { AppHostingProvider, AppMachineSpec, AppdStatus } from './hosting';
 import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
@@ -147,11 +148,14 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   test('public handler rejects an unsigned edge request before loading the App', async () => {
     const previous = process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE;
     const previousLocal = process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE;
+    const previousDomain = process.env.KORTIX_APPS_BASE_DOMAIN;
     process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'false';
     process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'false';
+    process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.kortix.com';
     try {
+      // A host `resolveAppHost` accepts: `<env>-<slug>-<route key>.<apps domain>`.
       const request = new Request('https://example.test/', {
-        headers: { 'x-kortix-app-host': `test-${ROUTE_KEY}.apps.kortix.com` },
+        headers: { 'x-kortix-app-host': `${config.INTERNAL_KORTIX_ENV}-wake-${ROUTE_KEY}.apps.kortix.com` },
       });
       const response = await handleAppPublicRequest(request);
       expect(response?.status).toBe(403);
@@ -161,6 +165,8 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       else process.env.KORTIX_APPS_ALLOW_DIRECT_EDGE = previous;
       if (previousLocal === undefined) delete process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE;
       else process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = previousLocal;
+      if (previousDomain === undefined) delete process.env.KORTIX_APPS_BASE_DOMAIN;
+      else process.env.KORTIX_APPS_BASE_DOMAIN = previousDomain;
     }
   });
 
