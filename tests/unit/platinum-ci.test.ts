@@ -27,6 +27,7 @@ import {
   platinumWarmReadinessTimeoutMs,
   validatePlatinumCiInput,
 } from '../src/core/platinum-ci';
+import { PREVIEW_HOST_RAM_MB } from '../src/core/preview-session-reaper';
 
 const sha = 'a'.repeat(40);
 const lockHash = 'b'.repeat(64);
@@ -36,6 +37,17 @@ afterEach(() => {
 });
 
 describe('Platinum CI worker plan', () => {
+  // Platinum refuses a sandbox with less RAM than its template was captured
+  // with: `400 "ram_mb=8192 is below the template minimum (16384)"`. A host
+  // below the template size fails every NEW preview; a reused running host
+  // hides it until a `preview` label is removed and re-added.
+  test('a preview host never asks for less RAM than its templates were captured with', () => {
+    const base = buildPlatinumTemplateSpec({ lockHash, repository: 'kortix-ai/suna', cacheSha: sha });
+    const warm = buildPlatinumWarmTemplateRequest(lockHash);
+    expect(PREVIEW_HOST_RAM_MB).toBeGreaterThanOrEqual(base.default_ram_mb);
+    expect(PREVIEW_HOST_RAM_MB).toBeGreaterThanOrEqual(warm.default_ram_mb);
+  });
+
   test('bounds warm restore readiness so auto mode can fail over quickly', () => {
     expect(PLATINUM_CI_WARM_TIMEOUT_MS).toBe(120_000);
     expect(platinumWarmReadinessTimeoutMs('restore')).toBe(120_000);

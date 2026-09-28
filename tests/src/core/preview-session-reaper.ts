@@ -50,11 +50,17 @@ export const PREVIEW_SESSION_MAX_IDLE_MS = 6 * 60 * 60_000;
 export const PLATINUM_POOL_MB_DEFAULT = 524_288;
 
 /**
- * RAM a preview host reserves. Measured 2026-09-28 on 6 hosts: a deploy peaks
- * at 3.8 GB used and a running `--target-full` suite at 5.6 GB (5 s samples, ~100 min per host). 16 GB hosts
- * left ~10 GB idle each while 28 of them filled the 512 GB pool.
+ * RAM a preview host reserves. It must be at least the templates' capture size
+ * (`default_ram_mb` in `platinum-ci.ts`): Platinum refuses a smaller sandbox
+ * with `400 "ram_mb=8192 is below the template minimum (16384)"`, which failed
+ * every new preview host while this was 8 GB against 16 GB templates.
+ *
+ * Measured 2026-09-28 on 6 hosts: a deploy peaks at 3.8 GB and a running
+ * `--target-full` suite at 5.6 GB, so 8 GB would fit. Lowering this needs the
+ * templates re-captured at the smaller size first (template version bump);
+ * `platinum-ci.test.ts` fails if the two drift apart again.
  */
-export const PREVIEW_HOST_RAM_MB = 8_192;
+export const PREVIEW_HOST_RAM_MB = 16_384;
 
 function meta(sandbox: PlatinumListedSandbox, key: string): string {
   const value = sandbox.metadata?.[key];
