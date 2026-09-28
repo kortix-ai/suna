@@ -30,7 +30,9 @@ import { publicUpstreamError, shownModel, shownProvider } from './public-identit
  * 2. The next candidate of the same model: the next pool key after a 429, or
  *    the next provider when the candidates opted into `failover`.
  * 3. The first candidate of the next fallback model, when the failure matches
- *    `fallbackOn`. A BYOK request never falls back to a Kortix-billed model.
+ *    `fallbackOn`. A BYOK request (an own key or ChatGPT plan, billing `none`)
+ *    falls back to a Kortix-billed model only when the project chose that chain;
+ *    a platform-supplied chain never turns it into a Kortix charge.
  *
  * A client that left stops the plan. The final failure is returned unchanged
  * for the caller to present.
@@ -42,6 +44,12 @@ export interface DispatchPlan {
   candidates: readonly UpstreamDescriptor[];
   fallbackModels?: readonly string[];
   fallbackOn?: ModelFallbackCondition;
+  /**
+   * The project set `fallbackModels` itself (Customize → Gateway → Routing), so
+   * its Kortix-billed models may serve a BYOK request. False for the platform's
+   * inherited route.
+   */
+  fallbackChosenByProject?: boolean;
   /** Generation defaults for a model. Applied per attempt, so a fallback model gets its own. */
   defaultsFor?: (model: string) => ModelGenerationDefaults | undefined;
 }
@@ -371,8 +379,9 @@ export async function dispatch(
       );
       return [];
     }
-    // A failed BYOK request must fail as BYOK; it never becomes a Kortix charge.
-    if (primary.billingMode !== 'none') return resolved;
+    // A failed BYOK request becomes a Kortix charge only through a chain the
+    // project chose; a platform-supplied chain keeps it BYOK.
+    if (primary.billingMode !== 'none' || plan.fallbackChosenByProject) return resolved;
     const byok = resolved.filter((candidate) => candidate.billingMode === 'none');
     if (resolved.length > byok.length && !byok.length) {
       logger.warn(
