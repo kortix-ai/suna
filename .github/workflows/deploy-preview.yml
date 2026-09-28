@@ -314,7 +314,7 @@ jobs:
           compression-level: 0
 
   deploy:
-    name: Deploy full self-host preview and run end-to-end tests
+    name: Deploy full self-host preview
     needs: [authorize, build-api, build-gateway, build-web]
     runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 100
@@ -322,6 +322,8 @@ jobs:
       contents: read
       pull-requests: write
       deployments: write
+      # A superseded run cancels itself (see "Revalidate exact preview approval").
+      actions: write
       # OIDC -> AWS Secrets Manager. Safe here: this job runs default-branch
       # code only. The build-* jobs check out the pull request and must never
       # get id-token or an aws-env read.
@@ -332,16 +334,18 @@ jobs:
       APPROVER: ${{ github.actor }}
       NUM: ${{ needs.authorize.outputs.pr_number }}
       COMMIT: ${{ needs.authorize.outputs.sha }}
+      BRANCH: ${{ needs.authorize.outputs.head_branch }}
       # Naming the environment after the BRANCH is what makes it persistent:
       # the sandbox is reused instead of replaced, so its URL survives every
       # push and stays bookmarkable until the label comes off or the branch is
       # deleted. See previewSandboxIdentity in tests/src/core.
-      # The suite is the GATE, so it runs when the label goes on and on an
-      # explicit dispatch. A redeploy from a push skips it: the environment is
-      # persistent now, so pushes are iteration, and paying ~40 min of
-      # --target-full on each one would make the label unusable for working in.
-      # Re-run it any time from the Actions tab with 'Run workflow'.
-      PREVIEW_RUN_TESTS: ${{ (github.event.action == 'labeled' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+      # The label deploys; it does not test. --target-full runs only on an
+      # explicit dispatch (`gh workflow run deploy-preview.yml -f pr_number=N`).
+      # It gates nothing here: merge needs local checks + the six `Tests`
+      # lanes, and the release gate runs --target-full against staging. On
+      # 2026-09-28 five label suites ran at once, rate-limited each other on
+      # the one preview GitHub App, and each ran ~80 min to a red result.
+      PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
       PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}
       PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}
       PREVIEW_PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
@@ -397,16 +401,24 @@ jobs:
             admin|maintain|write) ;;
             *) echo "::error::Preview approver no longer has write, maintain, or admin permission."; exit 1 ;;
           esac
+          # A run can wait here behind another deploy for this PR. When it
+          # finally runs, the world may have moved on: a newer push deploys
+          # instead, and a removed label or deleted branch means no environment.
+          # Cancel (grey), never fail (red), and never deploy: on 2026-09-28 two
+          # queued runs re-created 16 GB environments for branches that merged
+          # and were torn down minutes earlier.
+          supersede() {
+            echo "::notice::Superseded, not deploying: $1"
+            gh run cancel "$GITHUB_RUN_ID"
+            sleep 120
+            exit 1
+          }
           current="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${NUM}" --jq .head.sha)"
-          [ "$current" = "$COMMIT" ] || {
-            echo "::error::Approved SHA ${COMMIT} is stale; current head is ${current}."
-            exit 1
-          }
+          [ "$current" = "$COMMIT" ] || supersede "approved ${COMMIT}; head is now ${current}."
           labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${NUM}/labels" --jq 'map(.name) | join(" ")')"
-          [[ " $labels " == *" preview "* ]] || {
-            echo "::error::The preview label was removed before deployment."
-            exit 1
-          }
+          [[ " $labels " == *" preview "* ]] || supersede "the preview label was removed."
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" --silent 2>/dev/null \
+            || supersede "branch ${BRANCH} no longer exists."
       - uses: actions/download-artifact@v8
         with:
           name: preview-api-${{ needs.authorize.outputs.sha }}
@@ -476,7 +488,7 @@ jobs:
         continue-on-error: true
         run: bun tests/bin/sandbox-preview.ts deploy
       - name: Check out the aws-env action
-        if: always() && needs.authorize.outputs.public_worker != ''
+        if: ${{ !cancelled() && needs.authorize.outputs.public_worker != '' }}
         uses: actions/checkout@v7
         with:
           ref: ${{ github.workflow_sha }}
@@ -484,7 +496,7 @@ jobs:
           sparse-checkout: .github/actions
           persist-credentials: false
       - name: Read the Cloudflare token from AWS Secrets Manager
-        if: always() && needs.authorize.outputs.public_worker != ''
+        if: ${{ !cancelled() && needs.authorize.outputs.public_worker != '' }}
         uses: ./.aws-env/.github/actions/aws-env
         with:
           keys: |
@@ -504,7 +516,7 @@ jobs:
         # It IS gated on the sandbox serving /v1/health: a suite that fails
         # still leaves somewhere to debug, a stack that never came up does not,
         # and re-pointing at one is how the public name goes dark. See below.
-        if: always() && needs.authorize.outputs.public_worker != ''
+        if: ${{ !cancelled() && needs.authorize.outputs.public_worker != '' }}
         env:
           WORKER: ${{ needs.authorize.outputs.public_worker }}
         run: |
@@ -571,7 +583,7 @@ jobs:
             '{state:$state,description:$description,environment_url:$environment_url,log_url:$log_url}' | \
             gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}/statuses" --input - >/dev/null
       - name: Publish the preview on the pull request
-        if: always()
+        if: ${{ !cancelled() }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}

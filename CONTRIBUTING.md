@@ -47,7 +47,7 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `preview` | Deploys a full self-host environment for the branch: its own PostgreSQL, Supabase, API, gateway, frontend, Mailpit, and HTTPS origin. Runs `pnpm test -- --target-full` against it and the six-lane `Tests` suite. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
+| `preview` | Deploys a full self-host environment for the branch: its own PostgreSQL, Supabase, API, gateway, frontend, Mailpit, and HTTPS origin. Runs the six-lane `Tests` suite. It does not run `--target-full`: `gh workflow run deploy-preview.yml -f pr_number=<N>` does. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
 | `test` | Runs the six-lane `Tests` suite (~8 min) without a push. |
 | `i18n-reorder` | Allows an intentional key reorder in the translation catalogs. |
 
@@ -215,7 +215,7 @@ ordinary development stack before either command.
 | --- | --- |
 | `main`, no label | `ci.yml`, security and compliance scans, migration checks. `Tests` shows as skipped. |
 | `main` + `test` | the above + the six-lane `Tests` suite (`core`, `browser-1`…`4`, `packages`) |
-| `main` + `preview` | the above + the preview deploy and `--target-full` against it |
+| `main` + `preview` | the above + the preview deploy (`--target-full` only on dispatch) |
 | `staging` | the no-label checks + `Tests`, always |
 | `prod` | `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |
 

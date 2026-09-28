@@ -44,7 +44,7 @@ Closes #
 ## How was this tested?
 
 <!-- The exact commands and their results. Say whether `pnpm test` ran locally or the
-     `test` / `preview` label ran it in CI, and what the preview's `--target-full` reported. -->
+     `test` / `preview` label ran it in CI, and, if you dispatched it, what the preview's `--target-full` reported. -->
 
 ## Security & data review
 
