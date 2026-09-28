@@ -42,28 +42,28 @@ function parseMinDaemonBuild(): number {
 export const MIN_DAEMON_BUILD = parseMinDaemonBuild();
 
 /**
- * Deployment kill switch — OFF by default, on purpose.
+ * Is this refusal fixable IN PLACE, or does the box have to be replaced?
  *
- * `runtime_truth` (Rule 1's actual document) ships on a parallel daemon
- * branch. Every box that exists the day THIS code merges reports nothing, so
- * `evaluateAdmission` refuses every one of them (a box that cannot prove
- * `daemon_build` cannot pass the floor check — see `buildMeetsFloor`). Ungated,
- * that would park every session on every project running `config_releases`
- * the moment this deploys, independent of whether the daemon side has shipped.
+ * Rule 4 said "a box that fails admission is replaced, not used", and that is
+ * right for a box that cannot be brought up to date at all — one that does not
+ * speak `config.release.v1`, or whose daemon predates the floor. Nothing we can
+ * do over HTTP changes either.
  *
- * So admission is evaluated and LOGGED unconditionally (`admitRunningSandbox`'s
- * `onRefused` always fires — the failure is observable from the moment this
- * ships), but only ENFORCED — replacing the box instead of handing it to the
- * session — once an operator sets this. Same shape as
- * `RUNTIME_AGENT_SELF_UPDATE` (runtime-assets/manifest.ts): flip it on after
- * confirming boxes report `runtime_truth` in practice, no redeploy required.
- * Anything other than a literal `true`/`1` (case-insensitive) leaves it off, so
- * a typo fails SAFE — towards "observe only", not towards bricking every
- * session-open on a fleet that has not shipped the other half of this yet.
+ * A STALE CATALOG is not that. The platform already has a converger for it
+ * (`POST /kortix/catalog/converge`, driven by `convergeSandboxModelCatalog`),
+ * it takes seconds, and the fingerprint legitimately lags for a moment after
+ * every lineup rotation. Replacing a healthy, serving box over it throws away
+ * its disk to fix something a request would have fixed.
+ *
+ * Measured on dev 2026-09-28, the five active boxes on `config_releases`
+ * projects reported FOUR different catalog fingerprints — 447ff76ab843,
+ * b81ffa236475 (×2), 716c5ec48ba2, and a freshly booted box on 5ac40fb45d61 —
+ * all with the same daemon build and all serving. Enforcing an exact match
+ * would have replaced three working boxes and kept the one genuinely dead box
+ * (no capability, no runtime_truth) for exactly as long as it took to notice.
  */
-export function runtimeAdmissionEnforced(): boolean {
-  const raw = process.env.RUNTIME_ADMISSION_ENFORCE?.trim().toLowerCase();
-  return raw === 'true' || raw === '1';
+export function admissionRefusalIsRepairable(check: RuntimeAdmissionCheck): boolean {
+  return check === 'catalog_fingerprint';
 }
 
 export type RuntimeAdmissionCheck = 'config_release_capability' | 'daemon_build_floor' | 'catalog_fingerprint';

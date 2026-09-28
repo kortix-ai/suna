@@ -6,7 +6,12 @@
  * makes "every new session is fresh" true.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { evaluateAdmission, MIN_DAEMON_BUILD, runtimeAdmissionEnforced } from '../admission';
+import {
+  admissionRefusalIsRepairable,
+  evaluateAdmission,
+  MIN_DAEMON_BUILD,
+  type RuntimeAdmissionCheck,
+} from '../admission';
 import { UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../actual';
 
 const CURRENT: ActualRuntimeDocument = {
@@ -105,31 +110,43 @@ describe('evaluateAdmission', () => {
   });
 });
 
-describe('runtimeAdmissionEnforced', () => {
-  const KEY = 'RUNTIME_ADMISSION_ENFORCE';
-  const original = process.env[KEY];
-  afterEach(() => {
-    if (original === undefined) delete process.env[KEY];
-    else process.env[KEY] = original;
+describe('admissionRefusalIsRepairable', () => {
+  /**
+   * Replaced the `runtimeAdmissionEnforced` suite. That function was a
+   * deployment kill switch, OFF by default, because the daemon half of this
+   * contract shipped on a parallel branch and every box alive would have failed
+   * the capability check. Both halves landed 2026-09-27 (#7792, #7793) hours
+   * apart; the catch outlived its reason by a day and admission is now always
+   * enforced. What replaces it is not a switch but a DISTINCTION.
+   */
+
+  test('a stale catalog is repairable — it must NOT cost the box its disk', () => {
+    // Measured on dev 2026-09-28: the five active boxes on `config_releases`
+    // projects reported FOUR different catalog fingerprints, same daemon build,
+    // all serving. An exact-match replacement would have destroyed three
+    // healthy boxes to fix something `POST /kortix/catalog/converge` fixes in
+    // seconds — and the fingerprint legitimately lags after every rotation.
+    expect(admissionRefusalIsRepairable('catalog_fingerprint')).toBe(true);
   });
 
-  test('defaults OFF — unset, empty, or any non-true value never enforces', () => {
-    delete process.env[KEY];
-    expect(runtimeAdmissionEnforced()).toBe(false);
-    process.env[KEY] = '';
-    expect(runtimeAdmissionEnforced()).toBe(false);
-    process.env[KEY] = 'false';
-    expect(runtimeAdmissionEnforced()).toBe(false);
-    process.env[KEY] = 'yes';
-    expect(runtimeAdmissionEnforced()).toBe(false);
+  test('a missing capability or an old daemon is NOT repairable — replace it', () => {
+    // Nothing an HTTP call changes. Rule 4 stands for exactly these.
+    expect(admissionRefusalIsRepairable('config_release_capability')).toBe(false);
+    expect(admissionRefusalIsRepairable('daemon_build_floor')).toBe(false);
   });
 
-  test('an explicit true/1 (case-insensitive) enforces', () => {
-    process.env[KEY] = 'true';
-    expect(runtimeAdmissionEnforced()).toBe(true);
-    process.env[KEY] = 'TRUE';
-    expect(runtimeAdmissionEnforced()).toBe(true);
-    process.env[KEY] = '1';
-    expect(runtimeAdmissionEnforced()).toBe(true);
+  test('every check the evaluator can return is classified', () => {
+    // A new check added to `RuntimeAdmissionCheck` without a decision here
+    // would silently fall into "replace" — the destructive branch. This fails
+    // the moment that happens.
+    const all: RuntimeAdmissionCheck[] = [
+      'config_release_capability',
+      'daemon_build_floor',
+      'catalog_fingerprint',
+    ];
+    for (const check of all) {
+      expect(typeof admissionRefusalIsRepairable(check)).toBe('boolean');
+    }
+    expect(all.filter(admissionRefusalIsRepairable)).toEqual(['catalog_fingerprint']);
   });
 });
