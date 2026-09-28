@@ -55,6 +55,7 @@ else
       ;;
     superseded)
       title='## Preview environment - live; suite superseded'
+      # shellcheck disable=SC2016 # literal backticks are Markdown
       result='A newer commit (or removing the `preview` label) superseded this commit, so the suite stopped and released the preview for the redeploy.'
       report='stopped before it finished'
       ;;
