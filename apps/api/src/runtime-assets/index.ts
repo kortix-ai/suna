@@ -51,8 +51,8 @@ import {
   managedSkillOverlay,
   runtimeAgentBinaryPath,
   runtimeAssetsManifest,
+  runtimeChunkBytes,
   runtimeChunkManifest,
-  runtimeChunkSource,
   runtimeCliBinaryPath,
   runtimeEntrypointPath,
 } from './manifest';
@@ -363,8 +363,10 @@ runtimeAssetsApp.openapi(
   }),
   async (c) => {
     const sha256 = c.req.param('sha256');
-    const source = await runtimeChunkSource(sha256);
-    if (!source) {
+    // Read, do not stream: a sliced `Bun.file(...).stream()` served the WHOLE
+    // file on the API image's Bun and hung on a newer one. See runtimeChunkBytes.
+    const bytes = await runtimeChunkBytes(sha256);
+    if (!bytes) {
       return c.json(
         { error: true as const, message: 'No binary in this deploy carries that chunk', status: 404 as const },
         404,
@@ -374,11 +376,8 @@ runtimeAssetsApp.openapi(
     // The name is the content. Nothing served here can ever change under it.
     c.header('Cache-Control', 'public, max-age=31536000, immutable');
     c.header('Content-Type', 'application/octet-stream');
-    c.header('Content-Length', String(source.length));
-    return c.body(
-      Bun.file(source.path).slice(source.offset, source.offset + source.length).stream(),
-      200,
-    ) as never;
+    c.header('Content-Length', String(bytes.length));
+    return c.body(bytes as unknown as ArrayBuffer, 200) as never;
   },
 );
 

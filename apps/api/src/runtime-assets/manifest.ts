@@ -531,6 +531,43 @@ export async function runtimeChunkSource(sha256: string): Promise<ChunkSource | 
   return (await chunkIndex()).sources.get(sha256) ?? null;
 }
 
+/**
+ * One chunk's bytes, READ not streamed, or null when no binary carries it.
+ *
+ * THE DEFECT THIS REPLACES, found on a deployed preview and by no unit test:
+ * the route returned `Bun.file(path).slice(offset, offset + length).stream()`.
+ * On this image's Bun that streamed the WHOLE FILE — a request for one 1 MiB
+ * chunk answered 200 with all 116,127,104 bytes and no `Content-Length`. The
+ * index was right and the digest check downstream still refused it, so it
+ * degraded safely while delivering the exact opposite of the optimization.
+ * Locally, on a newer Bun, the same handler HUNG instead (the response-stream
+ * hang this repo already knows: drain, never hand a large stream straight on).
+ *
+ * A chunk is 1 MiB. Streaming it buys nothing and costs two Bun-version
+ * behaviours to reason about; one positional read into a Buffer has neither.
+ */
+export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> {
+  const source = await runtimeChunkSource(sha256);
+  if (!source) return null;
+  let handle;
+  try {
+    handle = await open(source.path, 'r');
+  } catch {
+    return null;
+  }
+  try {
+    const buffer = Buffer.allocUnsafe(source.length);
+    const { bytesRead } = await handle.read(buffer, 0, source.length, source.offset);
+    // A short read means the file changed under the index. Answer nothing
+    // rather than bytes that do not hash to the name they were asked for.
+    return bytesRead === source.length ? buffer : null;
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Test-only: drop both memos so a case can recompute against a mutated fixture. */
 export function _resetRuntimeAssetsCache(): void {
   manifestPromise = null;
