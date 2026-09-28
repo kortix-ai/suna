@@ -152,7 +152,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
   // caller's `userId` on the floor. `sandboxOpencodeEndpoint` mints the
   // X-Kortix-User-Context header only when a userId is present, and the daemon's
   // auth gate 401s every non-`/kortix/*` path — `GET /session` included —
-  // without it (apps/kortix-sandbox-agent-server/src/proxy.ts). So the list
+  // without it (apps/kortix-sandbox-agent-server/src/app/server.ts). So the list
   // degraded to `unreachable`, `syncOpencodeSessionSnapshot` returned the row
   // untouched, and `metadata.opencode_sessions` was NEVER written: 0 of 2804
   // staging sessions created in 2026-08 had a populated snapshot. Pin that the

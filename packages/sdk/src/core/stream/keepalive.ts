@@ -1,6 +1,6 @@
 /**
  * The frame the sandbox daemon injects to keep an idle SSE connection warm
- * (`apps/kortix-sandbox-agent-server/src/sse-keepalive.ts`). It is minted one hop
+ * (`apps/kortix-sandbox-agent-server/src/routes/proxy/sse-keepalive.ts`). It is minted one hop
  * ABOVE opencode, so it proves the proxy is reachable and says nothing about the
  * runtime.
  */

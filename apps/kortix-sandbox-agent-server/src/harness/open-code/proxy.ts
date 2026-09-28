@@ -1,12 +1,12 @@
 import { requireOpenCodeConfig } from './config'
-import type { HarnessProxyService } from '../proxy'
+import type { HarnessProxyService } from '../contract/proxy'
 import { bootPhaseLabel } from './boot-phase'
-import { runtimeAssetsActivity } from '../../runtime-assets'
-import { logger } from '../../logger'
-import { isRepoMaterialized } from '../../git'
+import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
+import { logger } from '@/lib/log/logger'
+import { isRepoMaterialized } from '@/lib/git/git'
 import type { Opencode } from './lifecycle'
 import type { OpenCodeBootState } from './boot-state'
-import { stripInlineAttachmentBytes } from '../../inline-attachments'
+import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import {
   abortTargetOf,
   loopStartTargetOf,

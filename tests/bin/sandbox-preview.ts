@@ -156,10 +156,9 @@ if (action === 'deploy') {
   // environment: the sandbox is reused instead of replaced, so the URL is
   // stable across pushes (see branchEnvSandboxName).
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
-  // A PR preview is a gate, so it runs the suite. A branch environment is a
-  // place to work: the suite is ~40 min and proves nothing the stack health
-  // check has not, so it is off by default there. PREVIEW_RUN_TESTS=1 forces it
-  // back on for a deliberate full run. The deploy never runs it: it is the
+  // A branch environment is a place to work: the suite is 40-80 min and proves
+  // nothing the stack health check has not, so it is off by default there.
+  // PREVIEW_RUN_TESTS=1 (the workflow's dispatch) forces a deliberate full run. The deploy never runs it: it is the
   // separate `suite` action, so the workflow publishes the origin first.
   const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
   // PREVIEW_PUBLIC_ORIGIN is the stable name a proxy serves the environment at.

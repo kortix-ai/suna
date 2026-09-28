@@ -77,6 +77,12 @@ as them, with their own credentials, secrets, and connected apps. An unlinked
 sender, or one without access to the project, gets a card to connect or request
 access instead of a session.
 
+The sign-in link appears only in a one-to-one chat with the bot. It links the
+person it was issued for to whoever opens it, so in a channel or group chat,
+where everyone sees the card, the bot instead asks you to open a private chat
+with it and send `/login` there. A message you sent in the channel while
+unlinked runs once you connect, if you do so within 10 minutes.
+
 ## Commands
 
 Type these in a chat with the bot (in a channel, `@`-mention it first):

@@ -4,6 +4,7 @@ import { Modal, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { SessionChat } from '@/features/session/session-chat';
 import { cn } from '@/lib/utils';
 import { KanbanIcon as SquareKanban, XIcon as X } from '@phosphor-icons/react';
+import { useParams } from 'next/navigation';
 import { useTranslations } from '@/i18n/use-translations';
 
 export interface SubSessionModalProps {
@@ -16,6 +17,11 @@ export interface SubSessionModalProps {
 /** Body of `SubSessionModal` — it mounts a whole `SessionChat`, so it loads on first open. */
 export function SubSessionModalContent({ open, onOpenChange, sessionId, title }: SubSessionModalProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // The session page this sub-agent runs under. Its saved history holds the
+  // sub-agent's transcript too, so the view paints while the computer is off.
+  const params = useParams<{ id?: string; sessionId?: string }>();
+  const savedHistoryScope =
+    params?.id && params?.sessionId ? `${params.id}/${params.sessionId}` : undefined;
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent
@@ -52,7 +58,13 @@ export function SubSessionModalContent({ open, onOpenChange, sessionId, title }:
 
         {/* Session chat — read-only, no header */}
         <div className="min-h-0 flex-1 overflow-hidden">
-          <SessionChat sessionId={sessionId} hideHeader readOnly initialScrollTop />
+          <SessionChat
+            sessionId={sessionId}
+            hideHeader
+            readOnly
+            initialScrollTop
+            savedHistoryScope={savedHistoryScope}
+          />
         </div>
       </ModalContent>
     </Modal>

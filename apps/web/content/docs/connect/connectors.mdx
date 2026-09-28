@@ -589,6 +589,31 @@ each group. `call` runs one action, as the named `--account` or, when omitted,
 the same default resolution used before a connector could hold more than one
 account.
 
+### Large results
+
+A list or search call can return more than a model can read: tool output
+above ~50 KB is truncated. Save the result to a file and work through it with
+code:
+
+```text
+kortix connectors call linear graphql.issues '{"first":250}' --out /workspace/output/issues.json
+# → { "ok": true, "account": …, "saved_to": "/workspace/output/issues.json",
+#     "bytes": 93037, "shape": { "issues": { "nodes": "array(250) of {id,title,…}",
+#     "pageInfo": { "hasNextPage": true, "endCursor": "…" } } } }
+jq '.data.issues.nodes[] | {id, title}' /workspace/output/issues.json
+```
+
+`--out` writes the full JSON result, creating parent directories. Stdout gets
+the call envelope without `data`, plus `saved_to`, `bytes`, and `shape`: the
+outline of `data` (keys, array lengths, and every `pageInfo`). The exit code is
+unchanged.
+
+The `kortix-connectors` MCP tool `call` does the same without a flag. A result
+larger than 16 KB is saved under
+`/workspace/.kortix/state/connector-results/` and the tool returns
+`{ saved_to, bytes, shape, preview, hint }`, with a ~2 KB preview. That
+directory ignores itself in git. A smaller result is returned inline.
+
 ### Attach files
 
 A call never carries file bytes in its arguments. Stage the file, then put its

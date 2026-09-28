@@ -1,4 +1,4 @@
-import type { KortixEvent, KortixEventBus } from '../../kortix-event-bus'
+import type { KortixEvent, KortixEventBus } from '@/services/event-bus/kortix-event-bus'
 
 /** Frames whose payload names a session, and where. */
 function sessionOf(payload: unknown): string | undefined {
