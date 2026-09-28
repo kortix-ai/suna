@@ -268,11 +268,13 @@ It is not a save point.
 and demo for a change runs in your own box: the worktree's local stack, the
 local test suite, and agent-browser against the local web app. A pull request
 into `main` runs **no** GitHub Actions job and is mergeable the moment it opens.
-CI runs in two places only:
+Nothing runs automatically before the merge. A person can ask for CI on one PR,
+in the rare case they want it, by adding a label: `test` runs the six `Tests` lanes once, on the head SHA at that moment; `preview` deploys the branch on Platinum and then runs `pnpm test -- --target-full` against it, once. A push never re-runs either: re-add the label.
+Never add a label by default or from automation. CI otherwise runs in two places:
 
 | Where | What runs | Blocks? |
 |---|---|---|
-| Pull request into `main` | nothing | no |
+| Pull request into `main` | nothing, unless a person adds `test` or `preview` (one run) | no |
 | Push to `main` (after the merge) | `Deploy Dev`, `Tests` six lanes, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
@@ -285,7 +287,7 @@ CI runs in two places only:
    no CI lane to catch what you skip.
 3. Open the PR against `main` and follow the **contributing** skill: it fills
    the PR template and attaches the demo video you recorded against your local
-   stack. PR labels run nothing.
+   stack. Do not add `test` or `preview` unless you need that one explicit run.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
 5. **Self-merge to `main` when the change is verified. Do not wait for the
@@ -320,8 +322,12 @@ CI runs in two places only:
    `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
    checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
    `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit and names the failing lanes. A red `main`
-   is yours to fix when your commit caused it.
+   A red run comments on the commit. The comment names the failing lanes and
+   every commit since the last green run, because merges land faster than the
+   suite and the red commit is often not the culprit. The author whose commit
+   broke `main` fixes forward. If `main` is still red 1 hour after the comment,
+   anyone may revert the culprit PR. `main` never blocks a merge or a deploy on
+   a red run.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -496,8 +502,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
 - Run the suite in your box before merging into `main`: the narrowest relevant
-  command first, then `pnpm test`. A pull request into `main` runs no CI job,
-  with or without a label. Your machine is the pre-merge gate.
+  command first, then `pnpm test`. A pull request into `main` runs no CI job
+  unless a person adds `test` or `preview`. Your machine is the pre-merge gate.
 - Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
   || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
   GitHub-hosted label is the kill switch back to GitHub-hosted runners.
@@ -511,20 +517,23 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
 - The six lanes run on every push to `main`, on a pull request into `staging`,
-  and on manual dispatch. Nothing else. A push-to-`main` run blocks nothing: a
+  once when a person adds the `test` label to a pull request, and on manual
+  dispatch. Nothing else. A push-to-`main` run blocks nothing: a
   red run comments the failing lanes on the commit, and a cancelled run means a
   newer commit superseded it. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
-- `tests/unit/sandbox-workflow.test.ts` fails when any workflow except
-  `deploy-preview.yml` triggers on a pull request into `main`.
+- `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
+  label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
+  into `main`, and pins both label gates to the label-added event.
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
   Playwright journey fails.
-- The `preview` label is not part of the development flow. It still deploys a
-  Platinum self-host environment for a PR on explicit request; its mechanics are
+- The `preview` label is not part of the development flow. Adding it deploys a
+  Platinum self-host environment for the PR and then runs `--target-full`
+  against it (~50–90 min), once. A push does not redeploy. Its mechanics are
   in the **contributing** skill (`references/preview-environments.md`). Run a
-  preview of your change on your worktree's local stack instead.
+  preview of your change on your worktree's local stack by default.
 
 ### Product flow source of truth
 
