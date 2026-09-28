@@ -16,8 +16,11 @@ import {
   POLL_CONNECTED,
   POLL_FAILING,
   POLL_UNREACHABLE,
+  POLL_RECHECK,
+  shouldHoldHealthy,
   type ProbeResultLike,
 } from './use-runtime-reconnect';
+import { CONNECTION_FAULT_GRACE_MS } from '../core/session/connection';
 import {
   incrementSandboxFail,
   markRuntimeReadyVerified,
@@ -502,5 +505,74 @@ describe('mount-time ordering: markRuntimeReadyVerified vs resetForServerSwitch'
       status: 'connected',
       healthy: true,
     });
+  });
+});
+
+// KRTX-606: the status flapped unconnected -> unreachable -> reachable on a
+// running session. Every flip below followed a SINGLE probe, and every flip of
+// `status`/`healthy` also tears down the live SSE stream.
+describe('one probe never flips a connected session (KRTX-606)', () => {
+  test('a failure streak inside the grace period keeps a connected session connected', () => {
+    expect(computeFailureStatus(FAIL_THRESHOLD_RECONNECT, true, false, 1_000)).toBeNull();
+  });
+
+  test('a failure streak past the grace period reads unreachable', () => {
+    expect(computeFailureStatus(FAIL_THRESHOLD_RECONNECT, true, false, CONNECTION_FAULT_GRACE_MS)).toBe('unreachable');
+  });
+
+  test('one 502 from a proxy hop during boot is not an outage', () => {
+    expect(computeFailureStatus(1, false, true, 0)).toBeNull();
+    expect(computeFailureStatus(1, false, true, CONNECTION_FAULT_GRACE_MS)).toBe('unreachable');
+  });
+
+  test('a failing streak re-checks within a second, not on the 30s healthy cadence', () => {
+    expect(nextPollDelay('connected', true, false, true)).toBe(POLL_RECHECK);
+    expect(nextPollDelay('connecting', null, false, true)).toBe(POLL_FAILING);
+  });
+
+  test('a healthy runtime is held through a brief not-ready answer', () => {
+    expect(shouldHoldHealthy({ healthy: true, notReadySinceMs: 0, nowMs: 1_000, lastRuntimeEvidenceAt: null })).toBe(true);
+  });
+
+  test('a not-ready answer that persists past the grace period is believed', () => {
+    expect(
+      shouldHoldHealthy({ healthy: true, notReadySinceMs: 0, nowMs: CONNECTION_FAULT_GRACE_MS, lastRuntimeEvidenceAt: null }),
+    ).toBe(false);
+  });
+
+  test('live SSE frames outrank a persisting not-ready answer', () => {
+    const nowMs = CONNECTION_FAULT_GRACE_MS * 3;
+    expect(shouldHoldHealthy({ healthy: true, notReadySinceMs: 0, nowMs, lastRuntimeEvidenceAt: nowMs - 1_000 })).toBe(true);
+  });
+
+  test('a runtime that was never healthy is not held', () => {
+    expect(shouldHoldHealthy({ healthy: null, notReadySinceMs: 0, nowMs: 1, lastRuntimeEvidenceAt: null })).toBe(false);
+    expect(shouldHoldHealthy({ healthy: false, notReadySinceMs: 0, nowMs: 1, lastRuntimeEvidenceAt: null })).toBe(false);
+  });
+});
+
+describe('a poller remount for the same runtime keeps what it knows (KRTX-606)', () => {
+  test('resetting for the URL already probed leaves a connected store alone', () => {
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    setSandboxStatus('connected');
+    setOpenCodeHealth(true);
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
+  });
+
+  test('a different runtime still starts from nothing', () => {
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    setSandboxStatus('connected');
+    setOpenCodeHealth(true);
+    resetForServerSwitch('https://api.test/v1/p/box-b/8000');
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
+  });
+
+  test('a reset without a URL always resets', () => {
+    resetForServerSwitch('https://api.test/v1/p/box-a/8000');
+    setSandboxStatus('connected');
+    setOpenCodeHealth(true);
+    resetForServerSwitch();
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
   });
 });
