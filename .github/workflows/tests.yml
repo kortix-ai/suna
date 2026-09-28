@@ -32,8 +32,11 @@ on:
 # cancelling left busy afternoons with no trunk result at all (2026-09-26: 7 of
 # the last 8 push runs cancelled). Queued, the running commit finishes and the
 # newest waiting commit runs next, so every burst ends with a verdict.
+#
+# A labelled run has its own group: a later push (whose lanes skip) must not
+# cancel the run a person asked for. Only re-adding the label supersedes it.
 concurrency:
-  group: tests-${{ github.ref }}
+  group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:

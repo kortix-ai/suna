@@ -226,6 +226,10 @@ describe('native test-lane workflow', () => {
     expect(laneJob).toContain("github.event_name != 'pull_request'");
     expect(laneJob).toContain("|| (github.base_ref == 'staging' && github.event.action != 'labeled')");
     expect(laneJob).toContain("|| (github.event.action == 'labeled' && github.event.label.name == 'test')");
+    // A later push must not cancel the run a person asked for.
+    expect(testWorkflow).toContain(
+      "group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}",
+    );
     expect(laneJob).toContain('fail-fast: false');
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
     expect(laneJob).toContain('name: ${{ matrix.lane }} lane');
