@@ -2429,6 +2429,33 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(pausedCompute).toEqual([]);
   });
 
+  test('a Daytona org throttle during renewal is transient, never an error line', async () => {
+    candidates = [candidate({ provider: 'daytona', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    const throttled = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
+    throttled.name = 'DaytonaRateLimitError';
+    lifecycleRenewErrorByExternal['ext-1'] = throttled;
+
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => {
+      logged.push(String(args[0]));
+    };
+    let r: Awaited<ReturnType<typeof reapAndReconcileSandboxes>>;
+    try {
+      r = await reapAndReconcileSandboxes(NOW);
+    } finally {
+      console.error = realError;
+    }
+
+    expect(r.transient).toBe(1);
+    expect(r.errors).toBe(0);
+    expect(r.stopped).toBe(0);
+    expect(stops).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+    expect(logged.filter((line) => line.includes('[reaper] failed for sandbox'))).toEqual([]);
+  });
+
   test('the deadline is the WHOLE decision — the box is never consulted', async () => {
     // Identical rows; only the deadline differs. Metadata that used to veto a
     // stop (a live lease, a fresh lastTurnAt) is present on the doomed one and

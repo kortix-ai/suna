@@ -30,7 +30,9 @@ Use the **`kortix connectors` CLI** for normal agent work:
   what gets deleted), a merge. Without it the approver sees only `draft_id`.
   A gated call returns `approval_url`: share it, then stop the turn. The human's
   decision, and any message they add to it, arrives as your next prompt — a
-  deny with a message is an instruction, not a dead end.
+  deny with a message is an instruction, not a dead end. In a Slack or Teams
+  session Kortix posts an approval card in the thread itself
+  (`approval_instructions` says so): do not repost the link, just stop.
 - `kortix connectors call … --attach <file>` attaches a file (see **Attach
   files** below). Never put base64 in args.
 - `kortix connectors call … --out <file>` writes the full JSON result to
