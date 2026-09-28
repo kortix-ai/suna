@@ -5,9 +5,8 @@ dashboard can do — from a terminal, from a coding agent, from a session
 sandbox. It is **always available** inside a Kortix session sandbox:
 
 - the binary is on `PATH` (`/usr/local/bin/kortix`)
-- `KORTIX_CLI_TOKEN` is pre-injected — a project-scoped token the CLI
-  authenticates with automatically (not `KORTIX_SANDBOX_TOKEN` / its
-  deprecated `KORTIX_TOKEN` alias; see "Inside a sandbox" below)
+- `KORTIX_TOKEN` is pre-injected — the session-scoped token the CLI
+  authenticates with automatically (see "Inside a sandbox" below)
 - `KORTIX_API_URL` points at the platform you're running against
 
 So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
@@ -329,6 +328,25 @@ the same state.
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
 
+### Reminders
+
+A reminder re-prompts ONE session later or on repeat. It is a trigger
+scoped to that session and stored in the database — no `kortix.yaml`
+edit. Inside a sandbox `--session` defaults to `$KORTIX_SESSION_ID`.
+
+| Command | What it does |
+| --- | --- |
+| `kortix remind "<text>" --in 24h` | Fire once, 24h from now. `--at <ISO>` for an instant. |
+| `kortix remind "<text>" --in 24h --every 1h` | First fire in 24h, then hourly until removed. `--every` min `5m`. |
+| `kortix reminders add "<text>" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin` | Repeat on a 6-field cron. |
+| `kortix reminders ls [--json]` | This session's reminders: id, state (`active`/`paused`/`done`), next fire. |
+| `kortix reminders pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
+| `kortix reminders rm <id>` | Delete it. Do this as soon as its condition is met. |
+
+Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
+parked session. A fire never starts a new session; if the session is
+deleted or failed the reminder pauses itself. Max 20 active per session.
+
 ### Channels (Slack)
 
 The project's Slack wiring. **Connecting Slack is one command** — never a
@@ -471,25 +489,19 @@ outright.
 The session bootstrap injects:
 
 ```
-KORTIX_CLI_TOKEN=kortix_pat_…       ← project-scoped PAT; what the CLI authenticates with
-KORTIX_SANDBOX_TOKEN=kortix_sb_…    ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
-KORTIX_TOKEN=kortix_sb_…            ← deprecated alias for KORTIX_SANDBOX_TOKEN, same value
+KORTIX_TOKEN=kortix_pat_…     ← the session's one Kortix credential; the CLI authenticates with it
 KORTIX_API_URL=https://<host>/v1
 KORTIX_PROJECT_ID=<uuid>
 KORTIX_SESSION_ID=<uuid>
-KORTIX_BRANCH_NAME=<session-branch>
+KORTIX_AGENT_NAME=<agent>
+KORTIX_BRANCH_NAME=<session-branch>   ← only when the agent has full repository access
 ```
 
-The CLI reads `KORTIX_CLI_TOKEN` automatically and uses `KORTIX_API_URL` as the
-host base. No config file,
-no `kortix login` needed — `kortix …` just works.
-
-> **Don't authenticate with `KORTIX_SANDBOX_TOKEN`** (or its deprecated
-> `KORTIX_TOKEN` alias). That's the sandbox *service key* (used for the LLM
-> gateway, the tool router, and just-in-time git clone credentials). The
-> project-scoped routes the CLI calls (`change-requests`, `secrets`, …)
-> reject it with `401 Invalid or expired token` — it isn't expired, it's
-> simply the wrong token. Use the CLI; it already holds the right one.
+The CLI reads `KORTIX_TOKEN` and uses `KORTIX_API_URL` as the host base. No
+config file, no `kortix login` needed — `kortix …` just works. The token is
+bound to this session: a route that names a session accepts only
+`$KORTIX_SESSION_ID`, and it holds only the agent's `kortix_permissions`.
+Provider, connector, and Git credentials stay server-side.
 
 ### Rotating
 
@@ -575,9 +587,8 @@ conflict story, and data model.
 
 | Variable | Purpose |
 | --- | --- |
-| `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
-| `KORTIX_SANDBOX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
-| `KORTIX_TOKEN` | Deprecated alias for `KORTIX_SANDBOX_TOKEN`, same value. **Not** a CLI token. |
+| `KORTIX_TOKEN` | Session-scoped PAT the CLI authenticates with (injected in sandboxes). |
+| `KORTIX_SESSION_ID` | This session. `kortix reminders`, `cr open`, and `review` default `--session` to it. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |

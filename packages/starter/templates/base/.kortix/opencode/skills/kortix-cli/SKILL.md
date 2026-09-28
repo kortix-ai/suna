@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -8,7 +8,7 @@ description: "Drive Kortix itself from the terminal with the `kortix` CLI — pr
 The **`kortix`** CLI is the control plane for Kortix — the same surface a human
 drives in the dashboard, fully scriptable from a terminal. It is **already
 installed and pre-authenticated** in every session sandbox: the binary is on
-`$PATH` (`/usr/local/bin/kortix`), a project-scoped token (`KORTIX_CLI_TOKEN`)
+`$PATH` (`/usr/local/bin/kortix`), a project-scoped token (`KORTIX_TOKEN`)
 and `KORTIX_API_URL` are pre-injected, so `kortix …` just works with no setup.
 
 ## Start here

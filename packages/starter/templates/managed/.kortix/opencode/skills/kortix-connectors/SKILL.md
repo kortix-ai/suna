@@ -45,7 +45,7 @@ Use the **`kortix connectors` CLI** for normal agent work:
 Durable TypeScript workflows use **`@kortix/sdk`** and `createKortix`. Every
 call runs through the connector gateway. The
 gateway resolves credentials, enforces access and policy, invokes the upstream
-system, and records an audit event. The sandbox carries `KORTIX_CLI_TOKEN`; it
+system, and records an audit event. The sandbox carries `KORTIX_TOKEN`; it
 does not carry raw third-party credentials.
 </overview>
 
@@ -189,7 +189,7 @@ import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
   backendUrl: process.env.KORTIX_API_URL!,
-  getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
+  getToken: async () => process.env.KORTIX_TOKEN ?? null,
 });
 const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors

@@ -234,6 +234,11 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "The project's review inbox: approve, reject, request changes",
           },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
+          {
+            name: 'reminders',
+            args: '<subcommand>',
+            blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
+          },
         ],
       },
       {

@@ -352,6 +352,24 @@ A flow must cover the complete observable sequence. Include authentication,
 setup, action, read-back proof, failure paths, and cleanup when those steps are
 part of the product contract.
 
+### One flow body, every harness
+
+A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
+instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1`, which boots
+OpenCode, and `RUN-1-pi`, which runs the same body on pi. The pi variant uses a
+shared seeded project with the `pi_harness` flag on, maps to spec `RUN-1`
+through `meta.specId`, and carries the `harness-pi` tag
+(`bun bin/ke2e.ts run --tag harness-pi` runs only pi).
+
+Drive these flows through `src/fixtures/session-run.ts`, which speaks only the
+Kortix session routes: `bootSession` (boot, prove the harness from
+`/kortix/health`, wait for the boot prompt's turn to end), `sendPrompt`
+(`POST /prompts`), `waitForTurn` (`GET /turn`), `readTranscript` and
+`waitForAssistantText` (`GET /transcript`), and `watchSessionEvents`
+(`GET /events`). Never call a harness's own REST API from a flow. The one
+exception is `abortTurn`, the Stop the web sends, until a Kortix abort route
+exists.
+
 The local profile uses real local services. It creates confirmed Supabase users,
 PostgreSQL rows, HTTP requests, and temporary bare Git repositories. It disables
 Stripe, managed GitHub repositories, cloud sandboxes, external email delivery,
