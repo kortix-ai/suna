@@ -135,8 +135,8 @@ function CommandBlock({ text }: { text: string }) {
   const t = useTranslations('connectMcp');
   const { copy, copied } = useCopy();
   return (
-    <div className="bg-muted relative rounded-md border">
-      <pre className="scrollbar-hide overflow-x-auto px-3 py-2.5 pr-10 font-mono text-xs leading-relaxed">
+    <div className="bg-muted flex items-start rounded-md border">
+      <pre className="scrollbar-hide min-w-0 flex-1 overflow-x-auto py-2.5 pl-3 font-mono text-xs leading-relaxed">
         <code>{text}</code>
       </pre>
       <Button
@@ -145,7 +145,7 @@ function CommandBlock({ text }: { text: string }) {
         size="icon"
         onClick={() => copy(text)}
         aria-label={t('copy')}
-        className="absolute top-1 right-1 size-7"
+        className="m-1 size-7 shrink-0"
       >
         {copied ? (
           <CheckIcon className="text-kortix-green size-3.5" />
