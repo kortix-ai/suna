@@ -102,10 +102,15 @@ export function lastUsedAtMs(sandbox: PlatinumListedSandbox): number | null {
   return times.length === 0 ? null : Math.max(...times);
 }
 
-/** Running session boxes that belong to the host being torn down. */
+/**
+ * Running session boxes that belong to these hosts. With `createdSinceMs`,
+ * only boxes created at or after it: the boxes one suite run made on a branch
+ * environment, not the sessions people opened there before it.
+ */
 export function selectPreviewSessionsForTeardown(
   sandboxes: readonly PlatinumListedSandbox[],
   hostNames: readonly string[],
+  createdSinceMs?: number,
 ): string[] {
   const owners = new Set(hostNames.filter((name) => name !== ''));
   if (owners.size === 0) return [];
@@ -114,8 +119,41 @@ export function selectPreviewSessionsForTeardown(
       (sandbox) =>
         isRunning(sandbox) &&
         isPreviewSessionSandbox(sandbox) &&
-        owners.has(previewSessionOwner(sandbox) ?? ''),
+        owners.has(previewSessionOwner(sandbox) ?? '') &&
+        (createdSinceMs === undefined || (timestamp(sandbox.createdAt) ?? 0) >= createdSinceMs),
     )
+    .map((sandbox) => sandbox.id);
+}
+
+/** Default idle limit for a running preview HOST (16 GB each). */
+export const PREVIEW_HOST_MAX_IDLE_MS = 3 * 60 * 60_000;
+
+/**
+ * Running preview hosts the hourly reconcile stops: every host whose pull
+ * request is no longer an open `preview` pull request, and every host idle
+ * longer than `maxIdleMs`.
+ *
+ * On 2026-09-28 26 always-on hosts held 416 of the org's 512 GB, so every
+ * preview suite and dev session got `429 pool_exceeded`. A stop keeps the disk
+ * and the Postgres volume. A redeploy starts the host again, and the Platinum
+ * edge wakes it on the next request to its URL (~20 s, first request 502).
+ * A host with no parseable activity time is never judged idle.
+ */
+export function selectIdlePreviewHosts(
+  sandboxes: readonly PlatinumListedSandbox[],
+  input: { openPullRequests: ReadonlySet<number>; nowMs: number; maxIdleMs?: number },
+): string[] {
+  const maxIdleMs = input.maxIdleMs ?? PREVIEW_HOST_MAX_IDLE_MS;
+  return sandboxes
+    .filter((sandbox) => {
+      if (!isRunning(sandbox) || !isPreviewHostSandbox(sandbox)) return false;
+      const pr = Number(meta(sandbox, 'pr_number'));
+      // An empty set reads as "GitHub answered nothing", never as "all closed".
+      const known = input.openPullRequests.size > 0;
+      if (known && Number.isInteger(pr) && pr > 0 && !input.openPullRequests.has(pr)) return true;
+      const usedAt = lastUsedAtMs(sandbox);
+      return usedAt !== null && input.nowMs - usedAt > maxIdleMs;
+    })
     .map((sandbox) => sandbox.id);
 }
 

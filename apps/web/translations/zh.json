@@ -19190,7 +19190,9 @@
       "text397ab5aecbbf": "已转发会话权限请求",
       "text3ec6c235548a": "读取了 MCP 服务器元数据",
       "text7740934de920": "注册了 OAuth 客户端",
-      "textcd36423ea12a": "调用了 MCP 服务器"
+      "textcd36423ea12a": "调用了 MCP 服务器",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

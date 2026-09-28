@@ -19190,7 +19190,9 @@
       "text397ab5aecbbf": "セッションの権限リクエストを中継しました",
       "text3ec6c235548a": "MCP サーバーのメタデータを読み取りました",
       "text7740934de920": "OAuth クライアントを登録しました",
-      "textcd36423ea12a": "MCP サーバーを呼び出しました"
+      "textcd36423ea12a": "MCP サーバーを呼び出しました",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

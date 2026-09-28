@@ -64,6 +64,12 @@ describe('provider-neutral preview lifecycle', () => {
     expect(lock).toBeGreaterThan(-1);
     expect(lock).toBeLessThan(script.indexOf('rm -f "$STATUS" "$PHASE"'));
     expect(lock).toBeLessThan(script.indexOf('git -C "$ROOT" checkout'));
+    // An earlier run's report must not be served or uploaded as this commit's.
+    // Emptied under the lock, with the bind-mounted directory itself kept.
+    const clear = script.indexOf('find "$ROOT/tests/test-results" -mindepth 1 -delete');
+    expect(clear).toBeGreaterThan(lock);
+    expect(clear).toBeLessThan(script.indexOf('exec > >(tee -a "$LOG") 2>&1'));
+    expect(script).not.toContain('rm -rf "$ROOT/tests/test-results"');
   });
 
   it('terminates a cancelled detached worker before host reuse', () => {

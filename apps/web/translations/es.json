@@ -19190,7 +19190,9 @@
       "text397ab5aecbbf": "Solicitud de permiso de sesión retransmitida",
       "text3ec6c235548a": "Metadatos del servidor MCP leídos",
       "text7740934de920": "Cliente OAuth registrado",
-      "textcd36423ea12a": "Servidor MCP llamado"
+      "textcd36423ea12a": "Servidor MCP llamado",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
