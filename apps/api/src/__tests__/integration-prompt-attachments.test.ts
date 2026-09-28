@@ -269,6 +269,7 @@ test('an attachment retry with the same key but another project rejects without 
     ...scope,
     actorUserId: scope.userId,
     projectId: crypto.randomUUID(),
+    sessionId,
     text: 'proof',
     clientMessageId,
     idempotencyKey: `prompt:${sessionId}:${clientMessageId}`,
