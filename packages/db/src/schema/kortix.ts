@@ -2472,6 +2472,11 @@ export const sandboxTemplates = kortixSchema.table(
     cpu: integer('cpu'),
     memoryGb: integer('memory_gb'),
     diskGb: integer('disk_gb'),
+    /**
+     * kortix.yaml `container_runtime: true`: the image carries the guest
+     * kernel's full module tree and starts dockerd at boot.
+     */
+    containerRuntime: boolean('container_runtime').default(false).notNull(),
 
     // ─── Live state (cached; provider is source of truth) ──────────────────
     /** Content hash of the template inputs — the snapshot identity. */

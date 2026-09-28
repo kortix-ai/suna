@@ -1,5 +1,5 @@
 {
-  "id": "b60da8dd-8d8d-499a-9268-a8848d62452e",
+  "id": "3767d9dd-d56d-460c-8eda-a5f67c852f8f",
   "prevId": "1ef1bf15-44e7-4597-9669-8ee54b65db6b",
   "version": "7",
   "dialect": "postgresql",
@@ -473,27 +473,6 @@
           "method": "btree",
           "with": {}
         },
-        "uniq_account_github_installations_owner": {
-          "name": "uniq_account_github_installations_owner",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_login",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_account_github_installations_owner": {
           "name": "idx_account_github_installations_owner",
           "columns": [
@@ -514,128 +493,6 @@
         "account_github_installations_account_id_accounts_account_id_fk": {
           "name": "account_github_installations_account_id_accounts_account_id_fk",
           "tableFrom": "account_github_installations",
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "account_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.account_github_user_tokens": {
-      "name": "account_github_user_tokens",
-      "schema": "kortix",
-      "columns": {
-        "token_row_id": {
-          "name": "token_row_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "github_login": {
-          "name": "github_login",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value_enc": {
-          "name": "value_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "refresh_value_enc": {
-          "name": "refresh_value_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uniq_account_github_user_tokens_account_user": {
-          "name": "uniq_account_github_user_tokens_account_user",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_github_user_tokens_account": {
-          "name": "idx_account_github_user_tokens_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "account_github_user_tokens_account_id_accounts_account_id_fk": {
-          "name": "account_github_user_tokens_account_id_accounts_account_id_fk",
-          "tableFrom": "account_github_user_tokens",
           "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
@@ -17213,6 +17070,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "container_runtime": {
+          "name": "container_runtime",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "content_hash": {
           "name": "content_hash",
