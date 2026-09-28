@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
+import { PREVIEW_HOST_RAM_MB } from './preview-session-reaper';
 
-export const PLATINUM_CI_TEMPLATE_VERSION = 'v14';
-const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v12';
+// v15 / v13: templates are captured at PREVIEW_HOST_RAM_MB. Platinum refuses a
+// sandbox with less RAM than its template was captured with ("ram_mb=8192 is
+// below the template minimum (16384)"), and the template names hash only the
+// lockfile — so a RAM change must bump both versions or the 16 GB templates
+// are reused.
+export const PLATINUM_CI_TEMPLATE_VERSION = 'v15';
+const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v13';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.2-bookworm@sha256:62e4daa6819762bbd3072af77cc282ab72c631c4aed30dd7980192babaf385b3';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
@@ -329,7 +335,7 @@ export function buildPlatinumTemplateSpec(input: {
     ],
     entrypoint: platinumWarmEntrypoint(),
     default_cpu: 8,
-    default_ram_mb: 16_384,
+    default_ram_mb: PREVIEW_HOST_RAM_MB,
     default_disk_gb: 50,
     size_mb: 20_480,
   };
@@ -349,7 +355,7 @@ export function buildPlatinumWarmTemplateRequest(lockHash: string): {
       timeoutSec: WARM_PREPARE_TIMEOUT_MS / 1000,
     },
     default_cpu: 8,
-    default_ram_mb: 16_384,
+    default_ram_mb: PREVIEW_HOST_RAM_MB,
     default_disk_gb: 50,
   };
 }

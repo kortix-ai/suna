@@ -21,7 +21,12 @@ import {
 } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
-import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
+import {
+  canonicalManagedModelId,
+  getRuntimeManagedModel,
+  isKnownManagedModelId,
+  isRetiredManagedModelId,
+} from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
   bedrockByokBaseUrl,
@@ -82,33 +87,58 @@ function codexGrantAllowed(principal: AuthedPrincipal) {
 }
 
 function codexGrantRefusal() {
-  return new GatewayResolutionError('provider_not_connected',
+  return new GatewayResolutionError('agent_grant_excludes',
     'The running agent cannot use ChatGPT connections.',
     'Add CODEX_AUTH_JSON to the agent secret grant, or choose another agent.');
 }
 
-async function codexAccountCandidates(context: Context, secrets: Array<{ secretId: string; value: string }>, selected: boolean) {
+/** Names the ChatGPT accounts whose login failed, three at most. */
+function accountsNeedReconnection(labels: string[], scope: 'selected' | 'shared'): string {
+  const where = scope === 'shared' ? ' shared with this project' : '';
+  if (labels.length === 1) return `The ChatGPT account "${labels[0]}"${where} needs reconnection.`;
+  const named = labels.slice(0, 3).map((label) => `"${label}"`).join(', ');
+  const more = labels.length > 3 ? ` and ${labels.length - 3} more` : '';
+  return scope === 'shared'
+    ? `${labels.length} ChatGPT accounts shared with this project need reconnection: ${named}${more}.`
+    : `${labels.length} selected ChatGPT accounts need reconnection: ${named}${more}.`;
+}
+
+/** Every usable account in pool order; `failed` names the accounts whose login failed. */
+async function codexAccountCandidates(context: Context, secrets: Array<{ secretId: string; value: string | null; label: string; updatedAt: Date }>) {
   const { principal, effectiveModel } = context;
   const candidates: UpstreamDescriptor[] = [];
-  let expired = false;
+  const failed: string[] = [];
   for (const secret of secrets) {
     try {
       const credential = await resolveCodexAccountCredential({
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId ?? null, userId: principal.userId,
-        secretId: secret.secretId, value: secret.value,
+        secretId: secret.secretId, value: secret.value, updatedAt: secret.updatedAt,
       });
-      if (!credential) { if (selected) expired = true; continue; }
+      if (!credential) { failed.push(secret.label); continue; }
+      // `poolSecretId`: a 429 on one account records its cooldown and moves
+      // the request to the next account.
       candidates.push({ ...codexDescriptor(credential, effectiveModel),
         credentialRef: secret.secretId, poolSecretId: secret.secretId });
     } catch (err) {
       if (!(err instanceof CodexRefreshError)) throw err;
-      if (selected) expired = true;
+      failed.push(secret.label);
     }
   }
-  return { candidates, expired };
+  return { candidates, failed };
 }
 
+/**
+ * No explicit pool and no personal account: the ChatGPT accounts shared with
+ * this project that the principal may use — the same accounts the model picker
+ * lists. Unattended sessions (Slack, cron triggers, agent-started workers) have
+ * no pool row, and a member who did not create a shared account has no personal
+ * one. A project gateway API key (`keyId`) carries no member, so it gets only
+ * accounts shared with the whole project (`grantUserId: null`): never its
+ * creator's personal connection or a member-restricted account. An agent whose
+ * grant excludes CODEX_AUTH_JSON still reaches the legacy connection, never a
+ * shared account.
+ */
 async function codexSharedCandidates(context: Context): Promise<UpstreamDescriptor[] | GatewayResolutionError | null> {
   const { principal, personalUserId } = context;
   const shared = await resolveProjectSharedProviderSecrets({
@@ -118,11 +148,14 @@ async function codexSharedCandidates(context: Context): Promise<UpstreamDescript
   });
   if ((shared.secrets.length || shared.coolingDown) && !codexGrantAllowed(principal)) return codexGrantRefusal();
   if (shared.secrets.length) {
-    const { candidates } = await codexAccountCandidates(context, shared.secrets, false);
+    const { candidates, failed } = await codexAccountCandidates(context, shared.secrets);
     if (candidates.length) return candidates;
+    // Only the member who connected a ChatGPT account can reconnect it.
     return new GatewayResolutionError('provider_reauth_required',
-      'The ChatGPT connections shared with this project need reconnection.',
-      'Reconnect a shared ChatGPT account in Models, then retry.');
+      accountsNeedReconnection(failed, 'shared'),
+      failed.length === 1
+        ? 'The member who connected it must reconnect it, then retry.'
+        : 'The members who connected them must reconnect them, then retry.');
   }
   if (shared.coolingDown) return new GatewayResolutionError('provider_pool_rate_limited',
     'All ChatGPT connections shared with this project are cooling down.',
@@ -164,11 +197,14 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
       pool.coolingDown ? 'All selected ChatGPT connections are cooling down.' :
         'No usable ChatGPT connection is selected for this session.',
       'Select a granted ChatGPT connection in session settings.', pool.retryAfterSeconds);
-    const { candidates, expired } = await codexAccountCandidates(context, pool.secrets, true);
+    const { candidates, failed } = await codexAccountCandidates(context, pool.secrets);
     if (candidates.length) return candidates;
-    throw new GatewayResolutionError(expired ? 'provider_reauth_required' : 'provider_not_connected',
-      expired ? 'The selected ChatGPT connections need reconnection.' : 'No ChatGPT connection is available.',
-      'Reconnect a selected ChatGPT account or select another granted connection.');
+    if (!failed.length) {
+      throw new GatewayResolutionError('provider_not_connected', 'No ChatGPT connection is available.',
+        'Reconnect a selected ChatGPT account or select another granted connection.');
+    }
+    throw new GatewayResolutionError('provider_reauth_required', accountsNeedReconnection(failed, 'selected'),
+      `Reconnect ${failed.length === 1 ? 'it' : 'them'} in your ChatGPT accounts, or select another granted connection in session settings.`);
   }
   if (pooledEnabled && personalUserId && !principal.keyId) {
     const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
@@ -178,14 +214,15 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
         const credential = await resolveCodexAccountCredential({
           projectId: principal.projectId, accountId: principal.accountId,
           sessionId: principal.sessionId ?? null, userId: principal.userId,
-          secretId: personal.secretId, value: personal.value,
+          secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
         });
         if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId }];
       } catch (err) {
         if (!(err instanceof CodexRefreshError)) throw err;
       }
-      throw new GatewayResolutionError('provider_reauth_required', 'Your ChatGPT connection needs reconnection.',
-        'Reconnect your ChatGPT account in Models, then retry.');
+      throw new GatewayResolutionError('provider_reauth_required',
+        `Your ChatGPT account "${personal.label}" needs reconnection.`,
+        'Reconnect it in your ChatGPT accounts, then retry.');
     }
   }
   const shared = pooledEnabled ? await codexSharedCandidates(context) : null;
@@ -193,6 +230,12 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
   return codexFallback(context, shared);
 }
 
+/**
+ * BYOK bills the provider account directly (`billingMode: 'none'`). Bedrock has
+ * no static catalog baseUrl: its endpoint and AI-SDK region come from the
+ * project's own AWS_REGION secret, and a wrong-geography inference-profile
+ * prefix is normalized to that region. Pricing looks up the prefix-stripped id.
+ */
 async function byokDescriptors(context: Context, provider: string,
   byok: NonNullable<ReturnType<typeof resolveCatalogUpstream>>,
   keys: Array<{ identifier: string; value: string }>, pooled: boolean): Promise<UpstreamDescriptor[]> {
@@ -230,11 +273,12 @@ async function resolveByokCandidates(context: Context, provider: string,
   const pool = await selectedPool(context, provider, byok.envVar);
   if (pool?.configured && Array.isArray(principal.agentGrant?.env) &&
     !principal.agentGrant.env.some((name) => name.toUpperCase() === byok.envVar.toUpperCase())) {
-    throw new GatewayResolutionError('provider_not_connected', `The running agent cannot use ${provider} keys.`,
+    throw new GatewayResolutionError('agent_grant_excludes', `The running agent cannot use ${provider} keys.`,
       `Add ${byok.envVar} to the agent's secret grant, or choose another agent.`);
   }
   const keys = pool?.configured
-    ? pool.secrets.map((secret) => ({ identifier: secret.secretId, value: secret.value }))
+    // A pooled key this API cannot decrypt is skipped, as if it were not selected.
+    ? pool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, value: secret.value }])
     : await resolveProjectSecretsForConsumer({
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId, actorUserId: principal.userId,
@@ -246,9 +290,17 @@ async function resolveByokCandidates(context: Context, provider: string,
       `No usable ${provider} key is selected for this session.`,
     pool.coolingDown ? 'Retry after the provider cooldown, or select another granted key.' :
       'Select a granted key in session settings.', pool.retryAfterSeconds);
+  // Never append a Kortix-managed fallback to BYOK keys: a failed BYOK key must
+  // fail as BYOK, not silently become a Kortix credit charge.
   return keys.length ? byokDescriptors(context, provider, byok, keys, !!pool?.configured) : [];
 }
 
+/**
+ * The managed route on Kortix's own credentials. Cloud-only:
+ * getRuntimeManagedModel() matches only when KORTIX_MANAGED_PROVIDER_ENABLED is
+ * on, so a self-host falls through to "model not available on this deployment".
+ * An empty result (no transport credential configured) falls through the same way.
+ */
 async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveModel: string,
   access: Awaited<ReturnType<typeof getProjectModelAccess>>): Promise<UpstreamDescriptor[]> {
   const managed = getRuntimeManagedModel(effectiveModel);
@@ -329,9 +381,33 @@ export async function resolveCandidates(
 
   // The model id is a genuine managed-model id (checked against the BUNDLED
   // catalog, which — unlike RUNTIME_MANAGED_MODELS — is never gated by
-  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above: either the
-  // managed provider is off on this deployment, or it's misconfigured.
+  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above. Two distinct
+  // causes collapse into ONE catch-all here on purpose (both are "ask your
+  // operator" for the same reason — a deployment-config gap, never a client
+  // mistake): the managed provider is off on this deployment, or it's on but
+  // misconfigured (managedCandidates() above found no transport credential).
+  //
+  // A THIRD, unrelated cause gets its own code: the id was RETIRED from the
+  // lineup (`RETIRED_MANAGED_MODEL_IDS`, never emptied by
+  // KORTIX_MANAGED_PROVIDER_ENABLED, unlike the other two). Nothing is
+  // disabled or misconfigured — the id is simply gone, and no client-side key
+  // or operator flag fixes it. Pairs with the session-level fix that stops a
+  // session ever reaching this: llm-gateway/resolution/session-model-repoint.ts
+  // (re-point at boot) and its pure decision, session-model.ts.
   if (isKnownManagedModelId(effectiveModel)) {
+    if (isRetiredManagedModelId(effectiveModel)) {
+      const replacement = canonicalManagedModelId(effectiveModel);
+      const named = replacement !== effectiveModel ? replacement : null;
+      throw new GatewayResolutionError(
+        'model_retired',
+        named
+          ? `The "${effectiveModel}" model was retired from Kortix's managed lineup. Use "${named}" instead.`
+          : `The "${effectiveModel}" model was retired from Kortix's managed lineup.`,
+        named
+          ? `Switch to "${named}", or choose another model from the current lineup.`
+          : 'Choose another model from the current managed lineup.',
+      );
+    }
     throw new GatewayResolutionError(
       'model_disabled_on_deployment',
       `The "${effectiveModel}" model requires Kortix's managed provider, which is disabled on this deployment.`,

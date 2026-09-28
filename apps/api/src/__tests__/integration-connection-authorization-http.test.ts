@@ -531,6 +531,22 @@ describe('connection owner authorization over HTTP', () => {
     }
   });
 
+  test('a sole unpinned shared connection uses the shared connect endpoint', async () => {
+    const manager = await mint(MANAGER);
+    for (const operation of ['connect', 'connect/finalize'] as const) {
+      const response = await request(
+        'POST',
+        `/v1/projects/${PROJECT}/connections/${USER_STRATEGY_PROJECT_CONNECTION}/${operation}`,
+        manager,
+        {},
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: 'Use the shared connector connect endpoint for the default connection',
+      });
+    }
+  });
+
   test('members rotate their own credential; managers cannot rotate another member credential', async () => {
     const alice = await mint(ALICE);
     const self = await request(

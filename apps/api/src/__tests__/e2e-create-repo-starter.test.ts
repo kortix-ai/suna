@@ -62,6 +62,7 @@ const BASE_STARTER_PATHS = [
 ];
 
 let repoCreateCalls: any[];
+let personalRepoCreateRefused: boolean;
 let fileShaCalls: any[];
 let commitCalls: any[];
 let insertedProject: any | null;
@@ -105,6 +106,7 @@ function resetState() {
   setTestAuth();
   for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
+  personalRepoCreateRefused = false;
   fileShaCalls = [];
   commitCalls = [];
   insertedProject = null;
@@ -297,6 +299,12 @@ mock.module('../projects/github', () => ({
   },
   createRepo: async (input: any) => {
     repoCreateCalls.push(input);
+    if (personalRepoCreateRefused) {
+      const error = new Error('GitHub /user/repos failed (403): Resource not accessible by integration') as Error & { status: number; path: string };
+      error.status = 403;
+      error.path = '/user/repos';
+      throw error;
+    }
     return {
       id: 7,
       name: 'company-os',
@@ -645,6 +653,24 @@ function createApp() {
 
 describe('create-repo starter scaffold contract', () => {
   beforeEach(() => resetState());
+
+  test('a personal installation creation refusal is an actionable 409, not a raw GitHub error', async () => {
+    installationRows[0]!.ownerType = 'User';
+    personalRepoCreateRefused = true;
+    const res = await createApp().request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'demo', installation_id: '42' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'github_personal_installation_create_unsupported',
+      message: 'GitHub App installations cannot create repositories under personal accounts. Create a repository on GitHub and import it, or connect an organization installation.',
+    });
+    expect(repoCreateCalls).toHaveLength(1);
+    expect(insertedProject).toBeNull();
+  });
 
   test('builds exactly the minimal starter scaffold', () => {
     const files = buildStarterFiles({

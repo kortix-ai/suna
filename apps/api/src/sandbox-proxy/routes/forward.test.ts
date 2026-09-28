@@ -480,3 +480,26 @@ describe('forwardToSandbox — POST /file/import', () => {
     expect(timerDelays).not.toContain(PROXY_IMPORT_ATTEMPT_TIMEOUT_MS);
   });
 });
+
+// `/kortix/env-rpc` answers only when its operation finishes, and its `exec` is
+// not idempotent: a replay runs the shell command a second time.
+describe('forwardToSandbox — POST /kortix/env-rpc', () => {
+  test('on the daemon port: one attempt past the 15 s cap, a 502 is not replayed', async () => {
+    queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
+    recordTimerDelays();
+    const res = await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/kortix/env-rpc',
+      '',
+      new Headers({ 'content-type': 'application/json' }),
+      new TextEncoder().encode('{"op":"exec","args":{"command":"true"}}').buffer,
+      'http://app.local',
+    );
+    expect(fetchCalls).toBe(1);
+    expect(res.status).toBe(502);
+    expect(Math.max(...timerDelays)).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
+  });
+});

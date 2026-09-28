@@ -2,8 +2,7 @@
  * T1–T5 — the boot path is ONE path by construction, not by convention.
  *
  * PLAN-one-boot-path's enforcement section. Each rule is checked against the
- * real source with the TypeScript AST, the way `harness-boundary.test.ts`
- * checks the adapter boundary. The scanners live in
+ * real source with the TypeScript AST. The scanners live in
  * `helpers/boot-path-rules.ts` so the same functions can be pointed at the
  * PRE-refactor tree:
  *
@@ -77,7 +76,7 @@ describe('the one boot path is enforced, not merely intended', () => {
 
   test('T2 negative — a second direct caller is caught', () => {
     const probe: ScannedFile[] = [
-      { name: 'boot-config.ts', source: parse('export async function pointBootLink(){}') },
+      { name: 'services/config-release/boot-config.ts', source: parse('export async function pointBootLink(){}') },
       { name: BOOT_LINK_FILE, source: parse('await pointBootLink(dir, root)') },
       { name: 'harness/open-code/boot.ts', source: parse('await pointBootLink(other)') },
     ]
@@ -169,7 +168,7 @@ describe('the one boot path is enforced, not merely intended', () => {
   test('anti-stale — every rule still has a target in the tree', () => {
     const names = new Set(sources.map((entry) => entry.name))
     for (const required of [
-      'boot-config.ts',
+      'services/config-release/boot-config.ts',
       BOOT_LINK_FILE,
       BOOT_PATH_FILE,
       CONFIG_STATE_FILE,

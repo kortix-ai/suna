@@ -106,11 +106,12 @@ describe('preview-sticky-comment.sh', () => {
     expect(r.body).toContain('- **Preview:** https://preview.example.test');
   });
 
-  it('says NOT tested for a redeploy that skips the suite', () => {
+  it('says NOT tested for a deploy that skips the suite, and how to run it', () => {
     const r = run({ SUITE: '0' });
 
     expect(r.body).toContain('## Preview environment - live; NOT tested');
     expect(r.body).toContain('- **Test report:** not run for this commit');
+    expect(r.body).toContain('gh workflow run deploy-preview.yml -f pr_number=');
     expect(r.body).not.toContain('passed.');
   });
 

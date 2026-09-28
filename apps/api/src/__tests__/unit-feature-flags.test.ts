@@ -135,6 +135,15 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
   });
 
+  test('saved session history defaults ON platform-wide and is turned off only explicitly', () => {
+    // Saved history is how web, mobile and the CLI show a session while its
+    // computer is off, so every project keeps it unless it opts out.
+    expect(resolveFeatureFlag({}, 'session_transcript_history')).toBe(true);
+    expect(
+      resolveFeatureFlag({ experimental: { session_transcript_history: false } }, 'session_transcript_history'),
+    ).toBe(false);
+  });
+
   test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {
     expect(resolveFeatureFlag({}, 'marketplace')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { marketplace: false } }, 'marketplace')).toBe(false);

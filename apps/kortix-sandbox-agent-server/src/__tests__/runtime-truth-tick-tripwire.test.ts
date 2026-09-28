@@ -9,8 +9,8 @@ import { resolve } from 'node:path'
  * (the runtime-convergence contract (PR #7785) §1) and failure #5 (a resumed box never
  * re-runs boot at all).
  *
- * `src/runtime-truth.ts` is host code and must not import a concrete adapter
- * directly (harness-boundary.test.ts), so it drives every component through
+ * `src/services/runtime-assets/runtime-truth.ts` is host code and must not
+ * import a concrete adapter directly (the boundary lint, eslint.config.mjs), so it drives every component through
  * injected closures (`RuntimeTruthDeps`) instead of calling the real
  * materializing functions itself. The check therefore has two halves:
  *
@@ -24,13 +24,13 @@ import { resolve } from 'node:path'
  * unproven: every component the daemon owns is reachable from the recurring
  * tick, not only from boot.
  *
- * In the shape of this package's other tripwires (`harness-boundary.test.ts`,
+ * In the shape of this package's other tripwires (`boot-path-tripwire.test.ts`,
  * `test-state-reset-tripwire.test.ts`): a small reusable checker, tested with
  * both a passing fixture and a NEGATIVE PROBE (a fixture the checker must
  * catch), then applied to the real files.
  */
 
-const runtimeTruthSource = readFileSync(resolve(import.meta.dir, '..', 'runtime-truth.ts'), 'utf8')
+const runtimeTruthSource = readFileSync(resolve(import.meta.dir, '..', 'services', 'runtime-assets', 'runtime-truth.ts'), 'utf8')
 const glueSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'runtime-truth-glue.ts'), 'utf8')
 
 /** Every `name` in `names` must be called (`name(`) somewhere in `source`. Returns the ones that are not. */
