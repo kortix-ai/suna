@@ -10,9 +10,11 @@ const cases: [string, string, { title?: string; text: string }][] = [
   ['whitespace', '<p>  alpha\t beta  </p>\n\n<p> gamma\r\ndelta </p>', { title: undefined, text: 'alpha beta\ngamma\ndelta' }],
 ];
 
-test.each(cases)('web sanitizer: %s', (_name, html, expected) => {
-  expect(extractReadableHtml(html)).toEqual(expected);
-});
+for (const [name, html, expected] of cases) {
+  test(`web sanitizer: ${name}`, () => {
+    expect(extractReadableHtml(html)).toEqual(expected);
+  });
+}
 
 test('web markup stripping and one-pass entity decoding', () => {
   expect(stripMarkupForToolOutput(' A <b>B</b> <!--x--> C ')).toBe('A B C');
