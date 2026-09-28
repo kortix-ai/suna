@@ -66,6 +66,8 @@ export interface ResolvedTemplate {
   cpu: number;
   memoryGb: number;
   diskGb: number;
+  /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
+  containerRuntime: boolean;
   /** Live provider state — refreshed by the caller on demand. */
   providerState: string;
   providerSnapshotName: string | null;
@@ -425,6 +427,7 @@ export async function computeTemplateIdentity(
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
     spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
+    containerRuntime: template.containerRuntime,
   };
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
@@ -585,6 +588,7 @@ function synthesizedDefault(): ResolvedTemplate {
     cpu: DEFAULT_CPU,
     memoryGb: DEFAULT_MEMORY_GB,
     diskGb: DEFAULT_DISK_GB,
+    containerRuntime: false,
     providerState: 'missing',
     providerSnapshotName: null,
     contentHash: null,
@@ -608,6 +612,7 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     cpu: row.cpu ?? DEFAULT_CPU,
     memoryGb: row.memoryGb ?? DEFAULT_MEMORY_GB,
     diskGb: row.diskGb ?? DEFAULT_DISK_GB,
+    containerRuntime: row.containerRuntime,
     providerState: row.providerState ?? 'missing',
     providerSnapshotName: row.providerSnapshotName,
     contentHash: row.contentHash,
@@ -642,6 +647,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
           cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
           memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
           diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
+          containerRuntime: tpl.containerRuntime === true,
           providerState: 'missing',
         })
         .onConflictDoUpdate({
@@ -653,6 +659,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
             cpu: clamp(tpl.spec.cpu, SANDBOX_SPEC_LIMITS.cpu),
             memoryGb: clamp(tpl.spec.memory, SANDBOX_SPEC_LIMITS.memory),
             diskGb: clamp(tpl.spec.disk, SANDBOX_SPEC_LIMITS.disk),
+            containerRuntime: tpl.containerRuntime === true,
             updatedAt: new Date(),
           },
         });
