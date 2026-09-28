@@ -535,8 +535,7 @@ The `packages` lane (`tests/bin/package-quality.ts`, reached by
 `pnpm test -- --packages-only` and by CI through `.github/workflows/tests.yml`)
 additionally runs `scripts/stage-npm-publish.test.mjs`,
 `scripts/publish-npm-package.test.mjs`, this package's `smoke:install`, and a
-stage + **dry-pack** of `@kortix/llm-catalog`, `@kortix/sdk`, and the deprecated
-`@kortix/executor-sdk` adapter.
+stage + **dry-pack** of `@kortix/llm-catalog` and `@kortix/sdk`.
 That is the release gate. It catches a broken `publishConfig` *and* a broken
 install; it does not catch a broken runtime target.
 

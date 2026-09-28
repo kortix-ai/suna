@@ -28,16 +28,22 @@ build/
 .env.keys
 *.env.keys
 
-# Exception: the apps/api dotenvx profiles are ENCRYPTED (values are AES
-# ciphertext + a public key) so they are safe to commit and are the team's
-# source of truth — one file per profile (.env=local, .env.dev, .env.prod), each
-# with its own keypair in .env.keys. The plaintext runtime override
-# apps/api/.env.local stays ignored via the rules above.
+# Every other .env* file stays out of git.
+.env*
+
+# Exception: the apps/api and apps/web dotenvx profiles are ENCRYPTED (values
+# are AES ciphertext + a public key) so they are safe to commit and are the
+# team's source of truth — one file per profile (.env=local, .env.dev,
+# .env.staging, .env.prod), each with its own keypair in .env.keys. These
+# negations must stay BELOW `.env*`: the last matching rule wins. The plaintext
+# runtime override apps/api/.env.local stays ignored.
 !apps/api/.env
 !apps/api/.env.dev
+!apps/api/.env.staging
 !apps/api/.env.prod
 !apps/web/.env
 !apps/web/.env.dev
+!apps/web/.env.staging
 !apps/web/.env.prod
 
 # Secrets & keys (defense-in-depth with secret-scanning push protection + gitleaks)
@@ -149,7 +155,6 @@ headlamp-token.txt
 grafana-creds.txt
 botkube-communication.secret.yaml
 botkube-comm-real.yaml
-.env*
 .cutover-state/
 
 # Playwright MCP session artifacts (console logs, page snapshots)

@@ -1464,19 +1464,6 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
-  packages/executor-sdk:
-    dependencies:
-      '@kortix/sdk':
-        specifier: workspace:*
-        version: link:../sdk
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.1.0
-        version: 1.4.2
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
   packages/llm-catalog:
     devDependencies:
       '@types/bun':
