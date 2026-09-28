@@ -51,29 +51,37 @@ export const ToolNavigationContext = createContext(true);
 interface ToolFilePreviewState {
   path: string | null;
   line: number | undefined;
+  /** The mounted composer's "Add to chat" (mentions the path); null while no composer is mounted. */
+  addToChat: ((path: string) => void) | null;
   openPreview: (path: string, line?: number) => void;
   closePreview: () => void;
+  setAddToChat: (addToChat: ((path: string) => void) | null) => void;
 }
 
 export const useToolFilePreviewStore = create<ToolFilePreviewState>()((set) => ({
   path: null,
   line: undefined,
+  addToChat: null,
   openPreview: (path, line) => set({ path, line }),
   closePreview: () => set({ path: null, line: undefined }),
+  setAddToChat: (addToChat) => set({ addToChat }),
 }));
 
 /**
- * The one file preview tool rows open files into: `FilePreviewSheet`, the
- * sheet Recent files opens (Jay, 2026-09-22 — never the full-screen
+ * The one file preview the transcript opens files into — tool rows, message
+ * attachment tiles and file mentions: `FilePreviewSheet`, the sheet Recent
+ * files opens (Jay, 2026-09-22 and 2026-09-28 — never the full-screen
  * `FileViewer` again). Mount it once on the screen that renders the
  * transcript; without it `openFile` records the request and nothing opens.
  *
- * No "Add to chat" here: that button writes a mention into the composer, which
- * only `SessionChatInput` owns.
+ * "Add to chat" shows while `SessionChatInput` is mounted: it registers its
+ * mention writer as `addToChat` (the composer is swapped out while a question
+ * prompt shows, and the bar keeps Download alone then).
  */
 export function ToolFilePreviewHost() {
   const path = useToolFilePreviewStore((s) => s.path);
   const closePreview = useToolFilePreviewStore((s) => s.closePreview);
+  const addToChat = useToolFilePreviewStore((s) => s.addToChat);
   const { sandboxUrl } = useSandboxContext();
   const sheetRef = useRef<SheetRef>(null);
   const file = useMemo<PreviewFile | null>(() => {
@@ -89,7 +97,13 @@ export function ToolFilePreviewHost() {
   }, [file]);
 
   return (
-    <FilePreviewSheet ref={sheetRef} file={file} sandboxUrl={sandboxUrl} onDismiss={closePreview} />
+    <FilePreviewSheet
+      ref={sheetRef}
+      file={file}
+      sandboxUrl={sandboxUrl}
+      onAdd={addToChat ? (picked) => addToChat(picked.path) : undefined}
+      onDismiss={closePreview}
+    />
   );
 }
 

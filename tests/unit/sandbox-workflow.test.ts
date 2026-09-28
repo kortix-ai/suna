@@ -414,22 +414,24 @@ describe('the preview status tells the truth about the suite', () => {
 });
 
 /**
- * The `preview` label is one explicit request: deploy, then `--target-full`.
+ * The `preview` label is one explicit request for a deploy (~7 min). It never
+ * starts the 40-80 min deployed suite; only a dispatch does.
  *
- * 2026-09-28: every PR carried the label, so five suites ran at once, shared
- * one preview GitHub App, hit its secondary rate limit, and each ran ~80 min to
- * red. The label is now rare by policy and a push never starts a run, so every
- * run is a person asking for exactly this.
+ * 2026-09-28: every PR carried the label and every label ran `--target-full`.
+ * Five ran at once, shared one preview GitHub App, hit its secondary rate
+ * limit, and each ran ~80 min to red. A push never starts a run either.
  */
-describe('the preview label deploys and tests once, and a superseded run never deploys', () => {
+describe('the preview label is one fast deploy, and a superseded run never deploys', () => {
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
     previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
   );
 
-  test('only an explicit act starts a run, and every run tests', () => {
-    expect(previewWorkflow).toContain("PREVIEW_RUN_TESTS: '1'");
+  test('only an explicit act starts a run, and only a dispatch runs the suite', () => {
+    expect(previewWorkflow).toContain(
+      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
+    );
     expect(previewWorkflow).toContain('types: [labeled, unlabeled]');
     expect(previewWorkflow).not.toContain('synchronize');
   });

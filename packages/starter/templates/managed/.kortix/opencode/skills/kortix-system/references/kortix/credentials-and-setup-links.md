@@ -1,9 +1,7 @@
 # Credentials & setup links
 
 How an agent gets the credentials it needs — an API key, a connected app —
-**without ever touching a raw secret and without sending the human to go hunting
-in a dashboard.** You mint a short-lived **setup link** and surface it; the human
-fills it in; you continue.
+**without sending the human to go hunting in a dashboard.**
 
 This is the canonical answer to "I need an API key / I need this app connected."
 
@@ -11,11 +9,21 @@ This is the canonical answer to "I need an API key / I need this app connected."
 
 ## The rule (do this, every time)
 
-> **When you need a credential, mint a setup link and surface the URL in your
-> reply — in the same turn. Never tell the human to "open the dashboard →
-> Customize → Connectors", and never ask them to paste a raw key into chat.**
+1. **You already HAVE the value → set it yourself, now.** The human pasted it
+   in the conversation, attached it in a file, or said "use this key". Store it
+   with the `set_secret` tool (or `kortix secrets set NAME=-`, value on stdin)
+   in the same turn. Do not mint a link. Do not ask them to enter it a second
+   time. Do not lecture them about pasting it. Never echo the value back.
+2. **You do NOT have the value → mint a setup link** and surface the URL in your
+   reply, in the same turn. Never tell the human to "open the dashboard →
+   Customize → Connectors". Do not ASK the human to paste a key into chat — the
+   link is the better channel when you have to ask.
 
-There are exactly two kinds of credential you'll ever need, and one link each:
+Setting a secret needs your project's secret-write permission. A `403` from
+`set_secret` / `kortix secrets set` means your agent does not have it: fall back
+to a secret link (rule 2) for the same name.
+
+When you do need a link, there are exactly two kinds, one each:
 
 | You need… | Mint… | The human gets… |
 | --- | --- | --- |
@@ -34,14 +42,41 @@ Both links render the same way everywhere:
 - **In Slack / Telegram** the same URL is just a **tappable link** — the human
   opens it on their phone, no login required.
 
-You never see the value. For a connector, no key ever touches chat or the repo.
+A value entered through a link never passes through you. For a connector, no
+key ever touches chat or the repo.
+
+---
+
+## Setting a value you already have
+
+```
+set_secret({ values: { APOLLO_API_KEY: "<the value from the conversation>" } })
+set_secret({ values: { BILLING_API_TOKEN: "<value>" }, scope: "connector" })
+→ { ok: true, saved: ["APOLLO_API_KEY"], scope: "runtime" }
+```
+
+**Or from a shell** (equivalent — stdin keeps the value out of shell history):
+
+```sh
+printf '%s' "$VALUE" | kortix secrets set APOLLO_API_KEY=-
+printf '%s' "$VALUE" | kortix secrets set BILLING_API_TOKEN=- --scope connector
+```
+
+- **`scope: runtime`** (default) — loaded into the sandbox env of this session
+  (hot-synced, no restart) and of later sessions whose agent is granted it.
+- **`scope: connector`** — kept server-side, spent only by the connector
+  gateway. Use this when the key backs a connector's credential binding.
+- An agent can store runtime and connector secrets only. Egress/enforced
+  delivery, host lists, and LLM-gateway keys stay human-only (`403`).
+- Then verify exactly as after a link (see "After you surface the link").
 
 ---
 
 ## Minting a secret link
 
-You name the secret(s); the platform mints a link the human opens to type the
-value in. **You never receive the value** — once they submit it, a `runtime`
+Use this only when you do not have the value. You name the secret(s); the
+platform mints a link the human opens to type the value in. **You never receive
+the value** — once they submit it, a `runtime`
 secret simply appears in your session env — when your agent is granted it (see
 "Set, but I can't see it" below).
 
@@ -249,17 +284,17 @@ this session right away, then continue.
 - It is **value-only**: it can only *set* the exact key(s) you named, in *this*
   project. It can't read any existing secret and can't target another key — so a
   leaked link is low-blast-radius and expires on schedule.
-- **You never handle the raw value.** The human enters it directly into an
+- **The value skips the chat.** The human enters it directly into an
   encrypted store; for a connector, the provider authorization remains
   server-side.
 
 This beats the alternatives you might be tempted by:
 
-- ❌ "Paste your API key here" — puts a raw secret in the chat transcript.
+- ❌ "Paste your API key here" — when you have to ASK, ask with a link.
 - ❌ "Go to the dashboard → Customize → Connectors → Connect" — the friction that
   makes the human give up. You have a one-click link; use it.
-- ❌ `kortix secrets set NAME=<value>` — you don't *have* the value, and you
-  shouldn't.
+- ❌ Minting a link for a value already in the conversation — the human gave
+  it to you. Store it with `set_secret`.
 
 ---
 
@@ -267,7 +302,8 @@ This beats the alternatives you might be tempted by:
 
 | Goal | MCP tool | `kortix` CLI |
 | --- | --- | --- |
-| Ask the human for a secret value | `request_secret` | `kortix secrets request <NAME…>` |
+| Store a secret value you already have | `set_secret` | `kortix secrets set <NAME>=- [--scope connector]` |
+| Ask the human for a secret value you lack | `request_secret` | `kortix secrets request <NAME…>` |
 | Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project]` |
 | Verify a secret arrived | — | `kortix secrets ls` (`not granted` = ask the human to enable it for your agent) |
 | Verify a connector connected | `connectors` | `kortix connectors ls` |

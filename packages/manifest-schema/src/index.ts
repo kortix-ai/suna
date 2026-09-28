@@ -852,6 +852,13 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
     expectBoundedIntOrAbsent(entry.cpu, `${where}.cpu`, SANDBOX_CPU_BOUNDS, issues);
     expectBoundedIntOrAbsent(entry.memory, `${where}.memory`, SANDBOX_MEMORY_BOUNDS, issues);
     expectBoundedIntOrAbsent(entry.disk, `${where}.disk`, SANDBOX_DISK_BOUNDS, issues);
+    if (entry.container_runtime !== undefined && typeof entry.container_runtime !== 'boolean') {
+      issues.push({
+        path: `${where}.container_runtime`,
+        message: '`container_runtime` must be true or false.',
+        severity: 'error',
+      });
+    }
     if (entry.gpu !== undefined) {
       issues.push({
         path: `${where}.gpu`,

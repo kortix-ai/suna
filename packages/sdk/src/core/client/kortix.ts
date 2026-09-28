@@ -243,6 +243,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       create: P.createAccountToken,
       revoke: P.revokeAccountToken,
     },
+    /** Connected apps — the OAuth / MCP clients this person approved, across all accounts. */
+    connectedApps: {
+      list: P.listOAuthGrants,
+      revoke: P.revokeOAuthGrant,
+    },
     /** Enterprise audit log — events + CSV/JSONL export + SIEM webhooks. */
     audit: {
       log: P.listAccountAudit,
@@ -420,6 +425,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
+    /** Store this user's GitHub authorization — needed to create a repository
+     *  in a personal GitHub account. */
+    storeUserToken: P.storeGitHubUserToken,
   };
 
   /**

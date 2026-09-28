@@ -59,14 +59,20 @@ Subcommands:
                                     declared key outside the grant shows
                                     \`not granted\`, not \`missing\`.
   set KEY=VALUE [KEY=VALUE …]       Upsert one or more secrets. Identifier
-                                    defaults to KEY.
+                                    defaults to KEY. Use this whenever you
+                                    HAVE the value — an agent included, when
+                                    the human gave it in chat. Needs the
+                                    project's secret-write permission.
                                     Use \`KEY=-\` to read VALUE from stdin.
     --identifier <id>               Store under an explicit identifier (a second
     --id <id>                       value under the same KEY). One KEY=VALUE only.
+    --scope runtime|connector       runtime (default): loaded into the sandbox
+                                    env. connector: server-side only, spent
+                                    by the connector gateway.
   request NAME [NAME …]             Mint a link (valid 7 days) for a human to
-                                    ENTER the value(s) — never pasted into
-                                    chat. Surface the URL (web: fill-in
-                                    modal, Slack: tappable link). Reuse a live
+                                    ENTER value(s) you do NOT have. Surface
+                                    the URL (web: fill-in modal, Slack:
+                                    tappable link). Reuse a live
                                     link across runs — do not re-mint/re-post
                                     while one is unexpired. Warns when this
                                     session's agent will not receive a name.
@@ -938,10 +944,16 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   // KEY=VALUE; omit it and the identifier defaults to the KEY (the common case,
   // where any number of pairs is fine).
   let identifier: string | undefined;
+  let scope: string | undefined;
   try {
     identifier = takeFlagValue(args, ['--identifier', '--id']);
+    scope = takeFlagValue(args, ['--scope']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  if (scope !== undefined && scope !== 'runtime' && scope !== 'connector') {
+    process.stderr.write(`${status.err('--scope must be runtime or connector')}\n`);
     return 2;
   }
   if (identifier !== undefined) {
@@ -1004,6 +1016,9 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
       await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
         name: p.key,
         ...(identifier !== undefined ? { identifier } : {}),
+        // Same two scopes as `secrets request`: connector keeps the value
+        // server-side for the connector gateway; runtime is the API default.
+        ...(scope === 'connector' ? { strategy: 'broker', consumer: 'connector' } : {}),
         value: p.value,
       });
       okCount += 1;
@@ -1063,7 +1078,7 @@ async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Prom
   process.stdout.write(
     `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
       `  ${C.cyan}${resp.url}${C.reset}\n\n` +
-      `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link. The value is never pasted into chat.${C.reset}\n` +
+      `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link.${C.reset}\n` +
       `  ${C.dim}Valid for ${describeLinkValidity(resp.expires_at, Date.now())} (until ${resp.expires_at}).${C.reset}\n` +
       `  ${C.dim}Reuse this link until it expires — do not mint a new one while this one is live.${C.reset}\n\n`,
   );

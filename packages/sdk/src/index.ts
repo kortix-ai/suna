@@ -543,3 +543,39 @@ export {
   type KortixAppViewerSession,
   type KortixAppViewerOptions,
 } from './core/auth/app-viewer';
+
+/**
+ * The session composer's agent and model lists — framework-free, so web
+ * (through the `./react` hooks) and mobile build the pickers and resolve what
+ * to send with the same functions.
+ *
+ * Agents: `projectConfigAgentsToOpenCodeAgents` (project detail → roster,
+ * default first) → `composerSelectableAgents` (picker list) →
+ * `resolveComposerAgent` (what runs, and whether send is allowed).
+ * Models: `pickerProviderList` (raw sources → provider list) →
+ * `flattenModels` → `createModelVisibility` + `modelInDefaultView` (default
+ * view) → `resolveModelDefault` + `resolveComposerModel` (what runs).
+ */
+export {
+  composerSelectableAgents,
+  projectConfigAgentsToOpenCodeAgents,
+  resolveComposerAgent,
+  type ComposerAgentReason,
+  type ComposerAgentResolution,
+} from './core/agents/composer-agents';
+export { flattenModels, isOfferedModel, type FlatModel } from './core/models/model-flatten';
+export type { ModelKey } from './core/models/model-key';
+export {
+  createModelVisibility,
+  modelInDefaultView,
+  type ModelVisibilityPin,
+} from './core/models/model-visibility';
+export {
+  pickerProviderList,
+  type PickerProviderListInput,
+} from './core/models/provider-selection';
+export {
+  resolveComposerModel,
+  resolveModelDefault,
+  type ComposerModelResolution,
+} from './core/models/composer-model';

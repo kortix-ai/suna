@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 async function sessionsSource(): Promise<string> {
-  return Bun.file(new URL('./sessions.ts', import.meta.url)).text();
+  return Bun.file(new URL('./session-create.ts', import.meta.url)).text();
 }
 
 async function monitorBoxProvisionSource(): Promise<string> {

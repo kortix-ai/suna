@@ -17,7 +17,7 @@ const read = (rel: string): Promise<string> =>
 
 describe('provider failover wiring', () => {
   test('createProjectSession marks a balancer pick as UNLOCKED and forwards it', async () => {
-    const source = await read('./sessions.ts');
+    const source = await read('./session-create.ts');
     const locked = source.indexOf('const providerLocked = sessionProviderIsLocked(picked)');
     const provision = source.indexOf('provisionSessionSandbox({', locked);
     expect(locked).toBeGreaterThan(-1);

@@ -229,6 +229,8 @@ keys need `token.create` / `token.revoke` (owner and admin).
 | `kortix tokens ls [--mine] [--json]` | List the account's personal API keys. `--mine` narrows to the ones you minted. |
 | `kortix tokens new <name> [--expires <when>] [--project <id>]` | Mint a key. The secret prints once. `--project` binds it to one project, which it can never leave. |
 | `kortix tokens rm <token-id> [-y\|--yes]` | Revoke a key immediately. |
+| `kortix tokens apps ls [--json]` | List your connected apps: the apps and MCP clients you approved with Sign in with Kortix, across every account. |
+| `kortix tokens apps rm <client-id> [-y\|--yes] [--json]` | Revoke a connected app: its tokens stop working at once, and it must ask you again. |
 | `kortix tokens service-accounts ls [--json]` | List service accounts. |
 | `kortix tokens service-accounts new <name> [--description <t>] [--expires <when>]` | Create one. The bearer prints once. |
 | `kortix tokens service-accounts disable <id>` | Disable a service account. Reversible only by deleting and re-creating. |
@@ -507,8 +509,8 @@ Encrypted values stored on the project. By default a secret injects as a plain e
 | Command | Effect |
 | --- | --- |
 | `kortix secrets ls` | List secrets by identifier and manifest `env` spec. Marks required-but-missing values. |
-| `kortix secrets set NAME=VALUE ... [--identifier <id>]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. |
-| `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value directly — you never see the raw value. |
+| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. |
+| `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value you do not have. |
 | `kortix secrets unset NAME ...` | Remove secrets. |
 | `kortix secrets grant IDENTIFIER --agent <name>` | Let one agent receive this secret: merge the identifier into that agent's `secrets` list in `kortix.yaml`, adding the agent entry when the manifest omits it. |
 

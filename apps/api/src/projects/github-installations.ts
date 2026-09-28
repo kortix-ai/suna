@@ -13,6 +13,27 @@ export async function getGitHubAppInstallation(installationId: string): Promise<
   );
 }
 
+/**
+ * The GitHub login a user access token authorizes, or a throw. One call, used
+ * to verify a token before it is stored and to record whose it is — a token
+ * must never be kept without knowing which account it can act as.
+ */
+export async function resolveGitHubUserLogin(userToken: string): Promise<string> {
+  const token = userToken.trim();
+  if (!token) throw new Error('GitHub authorization is required');
+
+  let user: { login?: string };
+  try {
+    user = await ghFetch<{ login?: string }>('/user', { method: 'GET' }, { token });
+  } catch {
+    throw new Error('GitHub user authorization is invalid or expired');
+  }
+
+  const login = user.login?.trim();
+  if (!login) throw new Error('GitHub did not return the authorized user login');
+  return login;
+}
+
 export async function listLinkableGitHubAppInstallations(
   userToken: string,
 ): Promise<{ githubLogin: string; installations: GitHubAppInstallation[] }> {

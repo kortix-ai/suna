@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 688,
+  "count": 692,
   "routes": [
     {
       "method": "GET",
@@ -727,6 +727,10 @@
       "path": "/v1/apps/edge/tls-check"
     },
     {
+      "method": "GET",
+      "path": "/v1/auth/client-config"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
     },
@@ -1257,6 +1261,14 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/oauth/grants/:clientId"
     },
     {
       "method": "POST",
@@ -2433,6 +2445,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/github/repository-branches"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/user-token"
     },
     {
       "method": "POST",
