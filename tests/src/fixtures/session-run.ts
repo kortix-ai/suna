@@ -12,7 +12,7 @@
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
-import type { FlowContext, Harness } from '../core/types';
+import type { CreatedProject, FlowContext, Harness } from '../core/types';
 
 /** The preview-proxy path of a runtime route. Not a manifest route, so never in `meta.routes`. */
 export function runtimePath(sandboxId: string, suffix: string): string {
@@ -102,13 +102,21 @@ export interface BootedSession {
 export async function bootSession(
   ctx: FlowContext,
   harness: Harness,
-  opts?: { prompt?: string; readinessTimeoutMs?: number; opencodeModel?: string },
+  opts?: {
+    prompt?: string;
+    readinessTimeoutMs?: number;
+    opencodeModel?: string;
+    /** A project already on `harness`; the shared seeded one by default. */
+    project?: CreatedProject;
+    agentName?: string;
+  },
 ): Promise<BootedSession> {
   return ctx.step(`a fresh ${harness} session boots to a ready runtime`, async () => {
-    const project = await ctx.fixtures.sharedSeededProject(harness);
+    const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject(harness));
     const session = await ctx.fixtures.session(project, {
       prompt: opts?.prompt ?? 'say hello',
       opencodeModel: opts?.opencodeModel,
+      agentName: opts?.agentName,
     });
     const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
     const sandboxId = sandboxIdOf(started);

@@ -10,11 +10,11 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 
 // POST /v1/projects/:projectId/turn-permission
-// Sandbox-to-apps/api relay for OpenCode's `permission.asked` event
-// (apps/kortix-sandbox-agent-server/src/harness/open-code/permission-relay.ts).
+// Sandbox-to-apps/api relay for a harness permission request, from OpenCode
+// and pi alike (apps/kortix-sandbox-agent-server/src/harness/shared/permission-relay.ts).
 // It only notifies: the session creator's devices get one "needs your
 // approval" push per request id. It never answers the permission — the user
-// approves in the session UI, over OpenCode's own API. Session resolution
+// approves in the session UI, over the harness's own API. Session resolution
 // matches POST /turn-question (routes/turn-questions.ts), but only a sandbox
 // credential may call it.
 

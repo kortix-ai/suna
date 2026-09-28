@@ -108,7 +108,7 @@ import { describeOpencodeError, isConfigErrorName } from './proven-check'
 import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
-import { AGENT_ENV_SH } from '../shared/agent-env-file'
+import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -1904,13 +1904,13 @@ export function createOpencodeLifecycle(
       // OpenCode reads is one atomic `pointBootLink` and never a second env
       // writer, a hint, or a spawn-time decision.
       OPENCODE_CONFIG_DIR: bootLinkPath(),
-      // Every non-interactive shell opencode spawns (`bash -c`) sources this,
-      // so live project secrets reach the agent's commands without any
-      // opencode plugin/config. Interactive shells + terminals get it from the
-      // image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
-      BASH_ENV: AGENT_ENV_SH,
+      // Every non-interactive shell opencode spawns (`bash -c`) sources the
+      // agent env file, so live project secrets reach the agent's commands
+      // without any opencode plugin/config. Interactive shells + terminals get
+      // it from the image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
+      ...AGENT_SHELL_ENV,
       // Egress shim, when one is running. The agent's SHELLS get these from
-      // AGENT_ENV_SH above; setting them on the opencode process too covers its
+      // the agent env file above; setting them on the opencode process covers its
       // in-process HTTP clients (the built-in webfetch tool), which never go
       // through a shell. Safe for model traffic: NO_PROXY carries 127.0.0.1 (the
       // local LLM proxy) and the Kortix API host.
