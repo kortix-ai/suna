@@ -32,7 +32,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { isRetiredManagedModelId } from '../models/managed-models';
-import { SERVED_MANAGED_MODELS } from '../models/served-managed-models';
+import { SERVED_MANAGED_MODELS, platformDefaultModelId } from '../models/served-managed-models';
 import { resolveEffectiveModel } from './default-model';
 import { toOpencodeModelRef, toWireModel } from './effective';
 import { resolveSessionManagedModel } from './session-model';
@@ -82,8 +82,19 @@ export async function repointRetiredSessionModel(
       explicit: null,
       freeModelsOnly: subject.freeModelsOnly,
     }).catch(() => ({ model: null, source: 'platform' as const }));
+    // …and the PLATFORM default under that. A project that never set a default
+    // (the common case — `projects.metadata.default_model` is null for most)
+    // otherwise left this chain with nothing to return, so a retired id with no
+    // declared successor stayed pinned and every turn on it died. Measured on
+    // one real dev project, 2026-09-28: 20 of 238 sessions were pinned to a
+    // retired id with NO successor and no project default, i.e. permanently
+    // unable to complete a turn until a human changed the model by hand.
     const projectDefault = resolved.model ? toWireModel(resolved.model) : null;
-    decision = resolveSessionManagedModel(wire, SERVED_MANAGED_MODELS, projectDefault);
+    decision = resolveSessionManagedModel(
+      wire,
+      SERVED_MANAGED_MODELS,
+      projectDefault ?? platformDefaultModelId(),
+    );
   }
   if (decision.kind === 'kept') return opencodeModelRef; // nothing usable to move to; the turn error names the cause
 

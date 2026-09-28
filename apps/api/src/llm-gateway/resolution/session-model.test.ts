@@ -65,3 +65,38 @@ describe('resolveSessionManagedModel', () => {
     expect(resolveSessionManagedModel('grok-4.6', served('kimi-k3'), 'grok-4.6')).toEqual({ kind: 'kept' });
   });
 });
+
+/**
+ * The PLATFORM default is the floor under the re-point chain.
+ *
+ * `session-model-repoint.ts` passes `projectDefault ?? platformDefaultModelId()`.
+ * Most projects never set a default model, so before that floor existed a
+ * retired id with no declared successor had nothing to move to and stayed
+ * pinned — a permanently dead turn. Measured 2026-09-28: 20 of one project's
+ * 238 sessions were in exactly that state.
+ */
+describe('the platform-default floor', () => {
+  const served = [{ id: 'deepseek-v4.1-flash' }, { id: 'kimi-k3' }] as never;
+
+  test('an orphan retired id moves to the platform default', () => {
+    // glm-5.2 is retired and has NO entry in LEGACY_MANAGED_IDS.
+    expect(resolveSessionManagedModel('glm-5.2', served, 'deepseek-v4.1-flash')).toEqual({
+      kind: 'repoint',
+      to: 'deepseek-v4.1-flash',
+      reason: 'project_default',
+    });
+  });
+
+  test('with no successor AND no default at all, it is still kept', () => {
+    // The floor is the CALLER's job; the pure decision must not invent one.
+    expect(resolveSessionManagedModel('glm-5.2', served, null)).toEqual({ kind: 'kept' });
+  });
+
+  test('a declared successor still wins over the floor', () => {
+    expect(resolveSessionManagedModel('deepseek-v4-flash', served, 'kimi-k3')).toEqual({
+      kind: 'repoint',
+      to: 'deepseek-v4.1-flash',
+      reason: 'successor',
+    });
+  });
+});

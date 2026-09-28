@@ -1197,6 +1197,43 @@ export async function openSession(args: {
   // payload that claims a negative without a live check is not expressible.
   const log = createStartCallLog();
   const result = await runOpenSession(args, log);
+  // A RETIRED model pin is repaired here, at the open — not only when the box
+  // is provisioned. A resumed box never rebuilds its env, so the model baked
+  // into OpenCode's config at its ORIGINAL provision outlives every later
+  // lineup rotation and every turn on it dies. See
+  // `lib/session-model-repair.ts` for the measurement.
+  //
+  // DYNAMIC import, and the reason is not style: a static edge from this module
+  // pulls `sandbox-env-sync` -> `sandbox-proxy` into this file's module-init
+  // graph, and closing that cycle is exactly what broke the API boot in #7859
+  // (`ReferenceError: Cannot access 'preview' before initialization`) with a
+  // clean typecheck. Only a healthy session's FAST PATH runs, and it does no
+  // import at all.
+  if (result.stage === 'ready') {
+    try {
+      const { pinNeedsRepair, repairRetiredSessionModelOnOpen } = await import(
+        '../lib/session-model-repair'
+      );
+      const metadata = (args.visible.row.metadata ?? null) as Record<string, unknown> | null;
+      if (pinNeedsRepair(metadata)) {
+        await repairRetiredSessionModelOnOpen({
+          projectId: args.projectId,
+          sessionId: args.sessionId,
+          accountId: args.visible.row.accountId,
+          userId: args.loaded.userId,
+          agentName: args.visible.row.agentName,
+          metadata,
+        });
+      }
+    } catch (error) {
+      // Never fails an open. The turn's own `model_retired` error remains the
+      // fallback explanation, exactly as before this ran.
+      console.warn(
+        '[start] retired model repair skipped:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
   return withStartEnvelope(
     result,
     log,
