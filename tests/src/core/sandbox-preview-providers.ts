@@ -602,7 +602,7 @@ async function waitForSuiteCapacity(
   superseded?: () => Promise<boolean>,
 ): Promise<boolean> {
   const neededMb = envNumber('PREVIEW_SUITE_POOL_HEADROOM_GB', 64) * 1024;
-  const repoBudget = envNumber('PREVIEW_SUITE_GITHUB_REPOS_PER_HOUR', 40);
+  const repoBudget = envNumber('PREVIEW_SUITE_GITHUB_REPOS_PER_HOUR', 100);
   const owner = process.env.MANAGED_GIT_GITHUB_OWNER?.trim();
   const token = process.env.MANAGED_GIT_GITHUB_TOKEN?.trim();
   const deadline = Date.now() + envNumber('PREVIEW_SUITE_WAIT_MINUTES', 45) * 60_000;
