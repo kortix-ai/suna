@@ -256,6 +256,13 @@ flow(
           .as(bare)
           .get('/v1/projects/:projectId/approvals', { params: { projectId: project.id } });
         r.status(403);
+        deepStrictEqual(r.json(), {
+          error: true,
+          message: "You don't have permission to manage project members.",
+          status: 403,
+          code: 'project_role_insufficient',
+          action: 'project.members.manage',
+        });
       },
     );
 

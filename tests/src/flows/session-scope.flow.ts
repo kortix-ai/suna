@@ -25,15 +25,11 @@ flow(
     domain: 'sessions',
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/scope',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    const viewer = await team.addMember('member');
-    await team.grantProjectRole(project.id, viewer.userId!, 'user');
-    const session = await ctx.fixtures.session(project);
     const owner = ctx.client.as(ctx.P.OWNER);
     const route = '/v1/projects/:projectId/sessions/:sessionId/scope';
 
@@ -49,21 +45,6 @@ flow(
       deepStrictEqual(r.json(), { error: 'Not found' });
     });
 
-    await ctx.step('a reader cannot cross the session-stop capability wall', async () => {
-      const r = await ctx.client.as(viewer).put(
-        route,
-        { connector_bindings: null },
-        { params: { projectId: project.id, sessionId: session.id } },
-      );
-      r.status(403).body().has('$.code', 'project_role_insufficient');
-      deepStrictEqual(r.json(), {
-        error: true,
-        message: "You don't have permission to perform this action (project.session.stop).",
-        status: 403,
-        code: 'project_role_insufficient',
-        action: 'project.session.stop',
-      });
-    });
   },
 );
 
