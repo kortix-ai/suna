@@ -29,6 +29,15 @@
  * its own OpenCode session, and its row opens that transcript, which only the
  * running computer could answer: while it was off, the view waited. Now saved
  * history holds the sub-agent's transcript too, and the view draws its steps.
+ *
+ * The fifth arm stores a tool call the way saved history stored it before it
+ * kept tool calls 1:1: no input, no output, only the title (OpenCode titles a
+ * command with the command) and the metadata (which keeps its output). The row
+ * drew a bare icon; the server now serves it with what it kept.
+ *
+ * The sixth arm opens a session whose saved copy proves it empty: a complete
+ * read of its runtime found no messages. It opened on the boot screen for the
+ * whole wake; it now opens on its composer.
  */
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
@@ -534,6 +543,88 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     await expect(view.getByText('List the source files.', { exact: true })).toBeVisible();
     await page.waitForTimeout(400); // the view's open animation, for the screenshot only
     await page.screenshot({ path: testInfo.outputPath('saved-subagent.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+/** The same turn, as saved history stored it before it kept tool calls 1:1. */
+const strippedToolTurn: SavedMessages = (root) =>
+  savedToolTurn(root).map((message) => ({
+    ...message,
+    parts: message.parts.map((part) =>
+      part.type === 'tool'
+        ? {
+            ...part,
+            state: {
+              status: 'completed',
+              title: TOOL_COMMAND,
+              metadata: { output: `total 8\n-rw-r--r--  1 kortix  staff  42 ${TOOL_OUTPUT}\n`, exit: 0, truncated: false },
+              time: (part.state as { time: unknown }).time,
+            },
+          }
+        : part,
+    ),
+  }));
+
+test('34 — a tool call saved before tool calls were kept 1:1 shows its command and output', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const { project, sessionId } = await setup(page, 'stripped', strippedToolTurn);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const commandRow = () => page.getByText(TOOL_COMMAND, { exact: true }).first();
+  try {
+    // The computer never comes up: the command can only come from saved history.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect(commandRow()).toBeVisible();
+    await commandRow().click();
+    await expect(page.getByText(TOOL_OUTPUT, { exact: false })).toBeVisible();
+    await page.waitForTimeout(500); // the card's open animation, for the screenshot only
+    await page.screenshot({ path: testInfo.outputPath('stripped-tool-call.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test('34 — a session proven empty opens on its composer, not the boot screen', async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  // A head-complete saved copy with no messages: what a complete read of an
+  // empty runtime stores.
+  const { project, sessionId } = await setup(page, 'empty', () => []);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    // The computer never comes up: nothing but the saved copy can answer.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    await installFirstShown(page, sessionId);
+
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({ timeout: 120_000 });
+    await page.waitForTimeout(1_000); // long enough for a boot screen to paint, were it coming
+    // Never painted in any frame since the navigation. (The collapsed side
+    // panel mounts its own hidden loader, as it does for a new session.)
+    expect((await firstShown(page)).bootScreen).toBeUndefined();
+    await expect(page.getByText(BOOT_HEADING, { exact: true })).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath('empty-session-composer.png') });
   } finally {
     release();
     await page.unrouteAll({ behavior: 'ignoreErrors' });
