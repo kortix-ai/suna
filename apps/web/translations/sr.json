@@ -19227,7 +19227,11 @@
       "text890355ac3800": "Checked runtime-asset chunks",
       "textd88c84258c7a": "Prikazane povezane aplikacije",
       "text37698a37f9d2": "Opozvana povezana aplikacija",
-      "text8c8fb214b592": "GitHub je autorizovan kao korisnik"
+      "text8c8fb214b592": "GitHub je autorizovan kao korisnik",
+      "text4192bb1e9ee5": "Излистани подсетници сесије",
+      "texteee2410ea3db": "Креиран подсетник сесије",
+      "text33954223cc7e": "Подсетник сесије укључен или искључен",
+      "textb7ece0360b75": "Обрисан подсетник сесије"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

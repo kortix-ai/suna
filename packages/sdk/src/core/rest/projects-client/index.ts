@@ -38,6 +38,7 @@ export * from './review';
 export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
+export * from './session-reminders';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
