@@ -4,6 +4,8 @@
 
 # Kortix
 
+<!-- Temporary attachment probe; do not merge. -->
+
 **The open-source AI Management System**
 
 **The leading open-source alternative to Claude Cowork and ChatGPT Work.**
