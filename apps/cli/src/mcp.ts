@@ -152,8 +152,29 @@ function write(payload: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...payload })}\n`);
 }
 
+const HELP = `Usage: kortix mcp
+
+Serve every kortix command as a tool over MCP (stdio JSON-RPC). The server acts
+as this CLI's login on the active host, or as KORTIX_TOKEN when it is set.
+
+Add it to a client:
+  claude mcp add --scope user kortix -- kortix mcp
+  codex mcp add kortix -- kortix mcp
+  JSON: { "mcpServers": { "kortix": { "command": "kortix", "args": ["mcp"] } } }
+
+Docs: https://kortix.com/docs/mcp
+`;
+
 /** Serve JSON-RPC on stdio until stdin closes. Calls run concurrently. */
-export async function runMcpServer(): Promise<number> {
+export async function runMcpServer(argv: string[] = []): Promise<number> {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  // A person ran it in a terminal: say what it is instead of waiting silently.
+  if (process.stdin.isTTY) {
+    process.stderr.write(`${HELP}\nWaiting for an MCP client on stdin (Ctrl+C to exit).\n`);
+  }
   const decoder = new TextDecoder();
   let buffer = '';
   for await (const chunk of Bun.stdin.stream()) {

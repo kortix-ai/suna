@@ -109,4 +109,14 @@ describe('kortix mcp', () => {
     expect(res.get(3)!.result.content[0].text).toBe('args must be an array of strings');
     expect(res.get(4)!.error!.code).toBe(-32601);
   });
+
+  test('--help prints setup instead of waiting for a client', async () => {
+    const proc = Bun.spawn([process.execPath, CLI_ENTRY, 'mcp', '--help'], {
+      stdin: 'ignore',
+      stdout: 'pipe',
+    });
+    const out = await new Response(proc.stdout).text();
+    expect(await proc.exited).toBe(0);
+    expect(out).toContain('claude mcp add --scope user kortix -- kortix mcp');
+  });
 });

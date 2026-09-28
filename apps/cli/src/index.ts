@@ -210,7 +210,7 @@ async function main(argv: string[]): Promise<number> {
   }
   // stdout is the MCP JSON-RPC channel; no notice may be written ahead of it.
   if (argv[0] === 'mcp') {
-    return runMcpServer();
+    return runMcpServer(argv.slice(1));
   }
   const connectorMachineCommand =
     argv[0] === 'connectors' &&
