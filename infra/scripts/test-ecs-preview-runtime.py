@@ -513,8 +513,11 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn(
             "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
         )
-        # Every run is an explicit request, so every run deploys and tests.
-        self.assertIn("PREVIEW_RUN_TESTS: '1'", job("deploy"))
+        # The label deploys only (~7 min). Only a dispatch runs --target-full.
+        self.assertIn(
+            "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
+            job("deploy"),
+        )
 
         teardown = job("teardown")
         # A push must no longer tear anything down, and must not strip the label.

@@ -181,7 +181,7 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
-| PR into `main` | none. Adding `test` runs the six `Tests` lanes once; adding `preview` deploys and runs `--target-full` once. A push re-runs neither. | no |
+| PR into `main` | none. Adding `test` runs the six `Tests` lanes once (~9 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
 | Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `drata`, `Desktop`, `deploy-api-router-dev`, `Terraform Apply Global` | no: post-merge safety net |
 | PR into `staging` | the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
@@ -195,7 +195,7 @@ PRs, never to PRs into `main`.
 | Label | Effect | Who can add it |
 | --- | --- | --- |
 | `test` | Runs the six `Tests` lanes (~9 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
-| `preview` | Builds one self-host environment for the branch on Platinum (~7 min), then runs `pnpm test -- --target-full` against it (40–80 min), once. A push does not redeploy; re-add the label. Removing the label tears it down. See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
+| `preview` | Builds one self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy; re-add the label. Removing the label tears it down. `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs `pnpm test -- --target-full` (40–80 min). See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
 
 Both labels are explicit, rare requests. Never add one by default, from a template, or from
 automation.

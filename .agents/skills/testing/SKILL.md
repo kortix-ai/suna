@@ -91,7 +91,7 @@ A pull request into `main` runs **no** GitHub Actions job by itself. Every test
 for a change runs in the developer's own box before the merge. CI runs after the
 merge (push to `main`, non-blocking) and on release pull requests into `staging`
 and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
-runs the six lanes once, `preview` deploys and runs `--target-full` once. A push
+runs the six lanes once (~9 min), `preview` deploys once (~7 min) with no tests. A push
 re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
 fails when a workflow other than the label-gated `tests.yml` and
 `deploy-preview.yml` triggers on a pull request into `main`: put a new check on
@@ -174,10 +174,10 @@ the rare explicit request.
   Platinum failure fails the preview. Never fall back to Daytona.
 - Generate the regular `kortix self-host` Compose distribution in the sandbox.
 - Give each preview a fresh PostgreSQL and Supabase data plane.
-- Run `pnpm test -- --target-full` against the sandbox HTTPS origin.
+- On a dispatch, run `pnpm test -- --target-full` against the sandbox HTTPS origin.
 - Post the preview URL and `/_tests/` report URL in one sticky PR comment.
 - Keep a failed product-test sandbox. Do not hide its failure with fallback.
-- Deploy and run the suite only when the label is added or the workflow is dispatched. A push starts nothing.
+- Deploy only when the label is added or the workflow is dispatched. A push starts nothing. Run `--target-full` only on a dispatch.
 - Delete the sandbox on unlabel or branch deletion. Closing the PR does not.
 - Tag every preview session box with its host: the preview API runs with
   `KORTIX_INSTANCE_ID=<host sandbox name>` (Platinum `kortix.instance`) and its
