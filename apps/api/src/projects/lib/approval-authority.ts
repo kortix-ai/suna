@@ -58,6 +58,20 @@ export function mayResolveApproval(input: {
     return { allowed: false, reason: 'session_bound_caller' };
   }
 
+  return humanMayResolveApproval(input);
+}
+
+/**
+ * The rule for a caller already known to be a human (a Supabase session, or a
+ * chat identity a person linked by signing in): a project manager, or the
+ * person who launched the session.
+ */
+export function humanMayResolveApproval(input: {
+  isManager: boolean;
+  targetSessionOrigin: string | null;
+  targetSessionCreatedBy: string | null;
+  callerUserId: string;
+}): { allowed: true } | { allowed: false; reason: 'not_launcher_or_manager' } {
   // A manager is a human with project authority; that stands.
   if (input.isManager) return { allowed: true };
 
