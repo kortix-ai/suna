@@ -213,7 +213,9 @@ async function recordTriggerExecutionResult(
     // reason immediately.
     const terminal = result.errorCode === 'insufficient_credits'
       || result.errorCode === 'subscription_required'
-      || result.errorCode === 'no_account';
+      || result.errorCode === 'no_account'
+      // The fire already paused the reminder; a retry cannot bring the session back.
+      || result.errorCode === 'reminder_session_gone';
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
     return state === 'queued' ? 'queued' : 'failed';

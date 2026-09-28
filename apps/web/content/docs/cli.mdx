@@ -509,8 +509,8 @@ Encrypted values stored on the project. By default a secret injects as a plain e
 | Command | Effect |
 | --- | --- |
 | `kortix secrets ls` | List secrets by identifier and manifest `env` spec. Marks required-but-missing values. |
-| `kortix secrets set NAME=VALUE ... [--identifier <id>]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. |
-| `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value directly — you never see the raw value. |
+| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. |
+| `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value you do not have. |
 | `kortix secrets unset NAME ...` | Remove secrets. |
 | `kortix secrets grant IDENTIFIER --agent <name>` | Let one agent receive this secret: merge the identifier into that agent's `secrets` list in `kortix.yaml`, adding the agent entry when the manifest omits it. |
 
@@ -767,6 +767,20 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 Live-only options — valid on `add --apply`, and on every `set`: `--model <provider/model>`, `--session-mode <fresh\|keyed\|pinned\|reuse>`, `--session-key <tmpl>` (bucket one session per key, e.g. `"{{ body.data.chat_jid }}"`; implies `keyed`), `--session-id <id>` (the session a `pinned` trigger loops; must be this project's session), `--session-access <private\|project\|members>` (default `private`), `--member <uuid>` and `--group <uuid>` (repeatable; each implies `members`), and `--filter <path=value>` (repeatable; every one must match, e.g. `--filter body.type=push`).
 
 `set` takes every live-only option plus `--name`, `--prompt`, `--cron`, `--run-at`, `--timezone`, `--secret-env`, `--agent`, and `--enabled true|false`. `--cron` and `--run-at` are exclusive: setting one clears the other. Monitor fields are add-only.
+
+### Reminders
+
+A reminder re-prompts one session later, once or on repeat. It is stored in the database, not `kortix.yaml`. Inside a session, `--session` defaults to `$KORTIX_SESSION_ID`. See [Reminders](/docs/connect/reminders).
+
+| Command | Effect |
+| --- | --- |
+| `kortix remind "<text>" [schedule]` | Create a reminder. Same as `kortix reminders add`. |
+| `kortix reminders add "<text>" [schedule]` | Create a reminder. Prints its id and next fire. |
+| `kortix reminders ls [--json]` | List the session's reminders. |
+| `kortix reminders pause <id>` / `resume <id>` | Turn one reminder off or on. `resume` re-arms from now. |
+| `kortix reminders rm <id>` | Delete a reminder. Aliases: `stop`, `delete`. |
+
+Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire once), `--every <duration>` (repeat, min `5m`), `--cron "<expr>"` with `--timezone <tz>`. Other options: `--name <label>`, `--session <id>` (a unique prefix works), `--project <id>`, `--host <name>`, `--json`.
 
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 

@@ -46,6 +46,7 @@ import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
+import { useToolFilePreviewStore } from './tool/shared/navigation';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
@@ -66,7 +67,7 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ModelPickerSheet } from './ModelPickerSheet';
 import { composerChip, type PickerOption } from '@/lib/session/composer-config';
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
-import { modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
+import { modelOptionKey, modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -608,17 +609,18 @@ function SessionChatInputImpl({
     }
   }, [submitNow]);
 
-  // Web's groups and order (`lib/session/model-picker.ts`): the real upstream
-  // provider, never the raw provider name (always "Kortix" under the gateway).
+  // Web's groups, order, and empty-search view (`lib/session/model-picker.ts`):
+  // the real upstream provider, never the raw provider name (always "Kortix"
+  // under the gateway).
   const modelOptions = useMemo<PickerOption[]>(
-    () => modelPickerOptions(models, (m) => `${m.providerID}/${m.modelID}`),
-    [models],
+    () => modelPickerOptions(models, modelKey ?? null),
+    [models, modelKey],
   );
 
   const handleModelSelect = useCallback(
     (key: string) => {
       // A model id can contain "/", so the key is looked up, not split.
-      const picked = models.find((m) => `${m.providerID}/${m.modelID}` === key);
+      const picked = models.find((m) => modelOptionKey(m) === key);
       if (picked) onModelChange?.(picked.providerID, picked.modelID);
     },
     [models, onModelChange],
@@ -656,6 +658,17 @@ function SessionChatInputImpl({
     },
     [mention, text],
   );
+
+  // "Add to chat" in the transcript's file preview (attachments, mentions, tool
+  // rows): the same mention Recent files writes. Held in a ref so the
+  // registration does not churn on every keystroke.
+  const addFileMentionRef = useRef((path: string) => handleSelectSessionFile({ path } as SessionFile));
+  addFileMentionRef.current = (path: string) => handleSelectSessionFile({ path } as SessionFile);
+  useEffect(() => {
+    const { setAddToChat } = useToolFilePreviewStore.getState();
+    setAddToChat((path) => addFileMentionRef.current(path));
+    return () => setAddToChat(null);
+  }, []);
 
   const cardHeader =
     inputSlot || stagedCommand ? (
@@ -792,7 +805,7 @@ function SessionChatInputImpl({
       <ModelPickerSheet
         ref={modelSheetRef}
         options={modelOptions}
-        activeKey={model ? `${model.providerID}/${model.modelID}` : null}
+        activeKey={model ? modelOptionKey(model) : null}
         onSelect={handleModelSelect}
         thinking={thinking}
         onConnect={onConnectModel}

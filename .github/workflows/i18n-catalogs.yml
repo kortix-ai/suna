@@ -12,7 +12,9 @@ name: i18n-catalogs
 # script, so the same check runs locally:
 #   node apps/web/scripts/i18n-catalogs.mjs check --base=origin/main
 # An intentional reorder (for example STARTER_PROMPTS changed order) is allowed
-# by the `i18n-reorder` label; the canonical check still runs.
+# by the `i18n-reorder` label on a release pull request, and on a push by the
+# commit trailer `I18n-Reorder: intentional`; the canonical check still runs.
+# `.githooks/pre-commit` runs the same order check before the commit exists.
 
 on:
   # A pull request into `main` runs no CI: the developer runs `pnpm test` in
@@ -58,9 +60,9 @@ jobs:
           node-version: 22
 
       - name: Catalogs are canonical and keep the base branch's key order
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'i18n-reorder') }}
+        if: "${{ !contains(github.event.pull_request.labels.*.name, 'i18n-reorder') && !contains(github.event.head_commit.message, 'I18n-Reorder: intentional') }}"
         run: node apps/web/scripts/i18n-catalogs.mjs check --base=HEAD^1
 
-      - name: Catalogs are canonical (reorder allowed by the i18n-reorder label)
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'i18n-reorder') }}
+      - name: Catalogs are canonical (reorder allowed by the i18n-reorder label or trailer)
+        if: "${{ contains(github.event.pull_request.labels.*.name, 'i18n-reorder') || contains(github.event.head_commit.message, 'I18n-Reorder: intentional') }}"
         run: node apps/web/scripts/i18n-catalogs.mjs check

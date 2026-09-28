@@ -93,6 +93,10 @@ export function channelPrompterForOnBehalfOf(input: {
   teamsRequiresUserIdentity: boolean;
 }): string | null | undefined {
   if (typeof input.source !== 'string') return undefined;
+  // A reminder prompt is text its creator wrote earlier. The reminder create route
+  // already cleared `on_behalf_of` when that creator was another human, so a
+  // fire is like `system:connector-connected`: the session's own human caused it.
+  if (input.source === 'trigger:reminder') return undefined;
   if (input.source.startsWith('trigger:')) return null;
   if (input.source === 'email' || input.source === 'telegram') return null;
   if (input.source === 'slack') return input.slackRequiresUserIdentity ? input.userId : null;

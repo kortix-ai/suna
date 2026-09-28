@@ -240,7 +240,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   if (!blobUrl) {
     return (
       <View className="flex-1 items-center justify-center p-8">
-        <KortixLoader size="large" />
+        <KortixLoader size="small" />
         <Text className="text-sm text-muted-foreground mt-4">
           Loading image...
         </Text>
@@ -270,7 +270,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
         <View className="items-center">
           {isLoading && (
             <View className="absolute inset-0 items-center justify-center z-10">
-              <KortixLoader size="large" />
+              <KortixLoader size="small" />
             </View>
           )}
           <Image
@@ -364,7 +364,7 @@ function JsonPreview({ content }: { content: string }) {
             className="absolute inset-0 items-center justify-center"
             style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
           </View>
         )}
       />
@@ -539,7 +539,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
             className="absolute inset-0 items-center justify-center"
             style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
           </View>
         )}
       />
@@ -609,7 +609,7 @@ function HtmlPreview({
           startInLoadingState={true}
           renderLoading={() => (
             <View className="flex-1 items-center justify-center">
-              <KortixLoader size="large" />
+              <KortixLoader size="small" />
               <Text
                 className="text-sm mt-4 font-roobert"
                 style={{ color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5) }}
@@ -941,7 +941,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   if (!blobUrl) {
     return (
       <View className="flex-1 items-center justify-center p-8">
-        <KortixLoader size="large" />
+        <KortixLoader size="small" />
         <Text className="text-sm text-muted-foreground mt-4">
           Loading PDF...
         </Text>
@@ -952,7 +952,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-        <KortixLoader size="large" />
+        <KortixLoader size="small" />
         <Text className="text-sm text-muted-foreground mt-4">
           Preparing PDF...
         </Text>
@@ -994,7 +994,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           startInLoadingState={true}
           renderLoading={() => (
             <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-              <KortixLoader size="large" />
+              <KortixLoader size="small" />
               <Text className="text-sm text-muted-foreground mt-4">
                 Rendering PDF...
               </Text>
@@ -1023,7 +1023,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
         startInLoadingState={true}
         renderLoading={() => (
           <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering PDF...
             </Text>
@@ -1309,7 +1309,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
   if (!blobUrl) {
     return (
       <View className="flex-1 items-center justify-center p-8">
-        <KortixLoader size="large" />
+        <KortixLoader size="small" />
         <Text className="text-sm text-muted-foreground mt-4">
           Loading document...
         </Text>
@@ -1320,7 +1320,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-        <KortixLoader size="large" />
+        <KortixLoader size="small" />
         <Text className="text-sm text-muted-foreground mt-4">
           Preparing document...
         </Text>
@@ -1359,7 +1359,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
         startInLoadingState={true}
         renderLoading={() => (
           <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering document...
             </Text>
