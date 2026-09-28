@@ -46,6 +46,7 @@ import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
+import { useToolFilePreviewStore } from './tool/shared/navigation';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
@@ -657,6 +658,17 @@ function SessionChatInputImpl({
     },
     [mention, text],
   );
+
+  // "Add to chat" in the transcript's file preview (attachments, mentions, tool
+  // rows): the same mention Recent files writes. Held in a ref so the
+  // registration does not churn on every keystroke.
+  const addFileMentionRef = useRef((path: string) => handleSelectSessionFile({ path } as SessionFile));
+  addFileMentionRef.current = (path: string) => handleSelectSessionFile({ path } as SessionFile);
+  useEffect(() => {
+    const { setAddToChat } = useToolFilePreviewStore.getState();
+    setAddToChat((path) => addFileMentionRef.current(path));
+    return () => setAddToChat(null);
+  }, []);
 
   const cardHeader =
     inputSlot || stagedCommand ? (

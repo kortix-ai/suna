@@ -160,12 +160,10 @@ import { CompactionMarker } from './turn/compaction-divider';
 import { QuestionPrompt } from './QuestionPrompt';
 import { PermissionPromptCard } from './PermissionPromptCard';
 import { useSessions } from '@/lib/platform/hooks';
-import { FileViewer } from '@/components/files/FileViewer';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
-import { ToolFilePreviewHost } from '@/components/session/tool/shared/navigation';
+import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
-import type { SandboxFile } from '@/api/types';
 import type { Session } from '@/lib/platform/types';
 import { ProjectHero } from '@/components/session/ProjectHero';
 
@@ -929,15 +927,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     useTabStore.getState().navigateToSession(mentionedSessionId);
   }, []);
 
-  // File mention viewer
-  const [mentionFileViewerVisible, setMentionFileViewerVisible] = useState(false);
-  const [mentionViewerFile, setMentionViewerFile] = useState<SandboxFile | null>(null);
-
+  // A file mention or attachment tile opens the transcript's file preview
+  // (`ToolFilePreviewHost`, the Recent files sheet), like a tool row's file.
   const handleFileMention = useCallback((path: string) => {
-    const name = path.split('/').pop() || path;
-    const fullPath = path.startsWith('/') ? path : `/workspace/${path}`;
-    setMentionViewerFile({ name, path: fullPath, type: 'file' });
-    setMentionFileViewerVisible(true);
+    useToolFilePreviewStore.getState().openPreview(path);
   }, []);
 
   // ── Edit a sent message ────────────────────────────────────────────────
@@ -2082,19 +2075,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
       <ConnectorAuthSheet ref={connectorAuthSheetRef} request={connectorHandoffRequest} />
 
-      {/* File mention viewer */}
-      <FileViewer
-        visible={mentionFileViewerVisible}
-        onClose={() => {
-          setMentionFileViewerVisible(false);
-          setMentionViewerFile(null);
-        }}
-        file={mentionViewerFile}
-        sandboxId=""
-        sandboxUrl={sandboxUrl}
-      />
-
-      {/* File taps inside tool rows (ToolNavigation.openFile) */}
+      {/* File taps: tool rows (ToolNavigation.openFile), attachment tiles, file mentions */}
       <ToolFilePreviewHost />
 
       {/* The activity summary rows' sheet (ActivityBurst) */}
