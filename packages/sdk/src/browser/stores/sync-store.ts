@@ -20,6 +20,7 @@ import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
+import { reconcileHydratedParts } from "./sync-store/reconcile-parts";
 import { writeStreamCache } from "./sync-store/stream-cache";
 import type {
 	FileDiff,
@@ -2204,90 +2205,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				newParts[echoId] = bridge;
 				trackId(bridgedPartIds, sessionID, echoId);
 			}
-			for (const m of msgs) {
-				if (!m?.info?.id) continue;
-				const mid = m.info.id;
-				if (isOptimistic(sessionID, mid)) continue; // Don't touch optimistic parts
-
-				// Parts, not messages: this sort is untouched by the message-order
-				// work and keeps its own byte-order comparison.
-				const inParts = m.parts
-					.filter((p) => !!p?.id)
-					.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-				// If this message still carries bridged optimistic parts, a hydrate
-				// snapshot with real parts should replace them immediately. Otherwise
-				// reconcile-by-extras can keep both copies and duplicate user text.
-				if (hasTrackedId(bridgedPartIds, sessionID, mid) && inParts.length > 0) {
-					untrackId(bridgedPartIds, sessionID, mid);
-					newParts[mid] = inParts;
-					continue;
-				}
-				const exParts = newParts[mid];
-				if (!exParts || exParts.length === 0) {
-					newParts[mid] = inParts;
-					continue;
-				}
-				// Reconcile by key: incoming parts are generally authoritative,
-				// but for text/reasoning parts during active streaming, SSE-accumulated
-				// parts may have MORE content than the server snapshot (the
-				// server may return empty/stale text for in-progress parts).
-				// In that case, prefer the existing (SSE) version.
-				const exById = new Map(exParts.map((p) => [p.id, p]));
-				const inIds = new Set(inParts.map((p) => p.id));
-				const extras = exParts.filter((p) => !inIds.has(p.id));
-				const reconciled = inParts.map((inP) => {
-					const exP = exById.get(inP.id);
-					if (!exP) return inP;
-					// For text/reasoning parts: prefer whichever has more text content.
-					// This prevents hydrate from clobbering SSE-streamed content
-					// with an empty/stale server snapshot during active streaming.
-					if (
-						isTextLikePart(inP) &&
-						isTextLikePart(exP) &&
-						exP.text.length > inP.text.length
-					) {
-						return exP;
-					}
-					return inP;
-				});
-				// T16 — dedupe extras by content identity. An "extra" is an
-				// existing part whose id the incoming snapshot no longer has — the
-				// server may simply not have persisted it yet (kept, as before), OR
-				// the server RE-ISSUED the same content under a NEW part id (a real
-				// defect: the old SSE-accumulated twin stayed in `exParts` forever,
-				// duplicating the text inside this one message). Distinguish the two
-				// conservatively: drop an extra only when it is text-like AND its own
-				// accumulated text is a PREFIX of (or equal to) some incoming
-				// text-like part of the SAME type — i.e. the incoming copy confidently
-				// re-issues it, not merely resembles it. Non-text-like extras (tool,
-				// permission, file, step, …) are never dropped by content — they carry
-				// distinct identity per id and a coincidental text match doesn't apply
-				// to them at all.
-				//
-				// F1 review finding: an extra still tracked in `deltaActiveParts` (this
-				// session is actively applying deltas to it right now) is EXEMPT from
-				// this filter regardless of what it prefixes. The heuristic above
-				// assumes a text-prefix match means the server re-issued the SAME
-				// content under a new id and the extra is an abandoned twin — but a
-				// live streaming target is never abandoned, and dropping it here also
-				// permanently blocks its later deltas (their event ids would already
-				// be recorded as applied — see `applyPartDelta`'s not-found path).
-				const survivingExtras = extras.filter((extra) => {
-					if (hasTrackedId(deltaActiveParts, sessionID, extra.id)) return true;
-					if (!isTextLikePart(extra) || extra.text.length === 0) return true;
-					return !inParts.some(
-						(inP) =>
-							inP.type === extra.type &&
-							isTextLikePart(inP) &&
-							inP.text.startsWith(extra.text),
-					);
-				});
-				for (const ep of survivingExtras) {
-					const r = Binary.search(reconciled, ep.id, (p) => p.id);
-					if (!r.found) reconciled.splice(r.index, 0, ep);
-				}
-				newParts[mid] = reconciled;
-			}
+			reconcileHydratedParts(msgs, newParts, {
+				isOptimistic: (id) => isOptimistic(sessionID, id),
+				isBridged: (id) => hasTrackedId(bridgedPartIds, sessionID, id),
+				clearBridge: (id) => untrackId(bridgedPartIds, sessionID, id),
+				isDeltaActive: (id) => hasTrackedId(deltaActiveParts, sessionID, id),
+			});
 			return {
 				messages: { ...s.messages, [sessionID]: merged },
 				parts: newParts,
