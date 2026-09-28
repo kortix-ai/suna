@@ -12,15 +12,15 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pointBootLink, quarantineRelease, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '../boot-config'
-import type { ConfigReleaseApi } from '../config-release/api-client'
-import type { OpenCodeConfig } from '../harness/open-code/config'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '../config-release/notice'
+import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
+import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
 import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
-} from '../shutdown'
+} from '@/lib/shutdown-state'
 import {
   ConvergeBusyError,
   configReleaseReport,
@@ -29,14 +29,14 @@ import {
   resetConfigReleaseStateForTests,
   runningSourceCommit,
   setRunningConfig,
-} from '../harness/open-code/config-release'
+} from '@/harness/open-code/config-release'
 import {
   registerAgentSwapBlocker,
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
-} from '../runtime-assets'
-import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../harness/open-code/lifecycle'
-import { provenCheck, toolNamesFromFiles } from '../harness/open-code/proven-check'
+} from '@/services/runtime-assets/runtime-assets'
+import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
+import { provenCheck, toolNamesFromFiles } from '@/harness/open-code/proven-check'
 import {
   buildRelease,
   commitAll,
@@ -1051,7 +1051,7 @@ describe('the session is told which commit it runs', () => {
     // every spawn, so the note survives the restart the convergence performs.
     const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-release/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
   })

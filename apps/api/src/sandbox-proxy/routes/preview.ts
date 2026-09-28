@@ -1835,7 +1835,7 @@ export async function forwardToSandbox(
 
       // The transcript list leaves the API WITHOUT its attachment bytes.
       //
-      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // The daemon strips these too (kortix-sandbox-agent-server/src/app/server.ts)
       // and that is the right home. This second pass exists for every sandbox
       // still running an older daemon image — a self-host does not rebuild
       // its templates on our schedule, and the read that motivated this
