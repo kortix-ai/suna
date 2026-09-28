@@ -42,6 +42,8 @@ export interface SnapshotHashInputs {
    * digest entirely when empty so unspecced projects keep their hashes.
    */
   spec?: SandboxSpec;
+  /** `container_runtime: true` bakes kernel modules; hashed only when true. */
+  containerRuntime?: boolean;
   /**
    * Override of the runtime fingerprint. Defaults to SANDBOX_VERSION
    * — the platform-wide constant that bumps on every Kortix release.
@@ -83,6 +85,7 @@ export function computeSnapshotHash(inputs: SnapshotHashInputs): SnapshotHashRes
   // this field existed — no surprise rebuild of every project's snapshot.
   const specSegment = serializeSpec(inputs.spec);
   if (specSegment) blob.push(`spec=${specSegment}`);
+  if (inputs.containerRuntime) blob.push('container_runtime=1');
 
   const contentHash = createHash('sha256').update(blob.join('\n')).digest('hex');
   return {
