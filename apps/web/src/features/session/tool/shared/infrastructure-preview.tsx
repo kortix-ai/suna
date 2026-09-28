@@ -116,6 +116,11 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
           path: parsed.path,
         }),
       });
+      // Route through the shared, mode-aware entry point rather than writing
+      // `viewBySession` directly: that key is read only by Advanced mode, so
+      // in Easy — the only mode that ships — this opened the panel on the Easy
+      // home and dropped the page entirely. The target carries WHICH page, so
+      // the browser lands on this preview instead of the first running app.
       openSessionQuickView('browser', 'preview', {
         url: proxy.proxyUrl,
         title: label || 'App preview',

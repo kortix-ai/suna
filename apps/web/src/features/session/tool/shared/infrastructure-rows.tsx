@@ -314,6 +314,16 @@ export function BasicTool({
     [locked],
   );
 
+  // Side-panel surface: a disclosure row, closed unless the caller seeded it
+  // open. It runs on the SAME state the inline branch does — `defaultOpen`
+  // seeds it, `forceOpen` latches it, `locked` refuses the close — because the
+  // panel is a second presentation of one behavior, not a second behavior. The
+  // branch used to ignore all three (plus `icon` and `outcome`) and render an
+  // always-expanded page header instead.
+  //
+  // `onClick` stays inline-only: a panel row's click is its disclosure, and the
+  // two tools that pass one (project-create / project-select) have no body, so
+  // they render as the plain, non-interactive rows they already were here.
   if (surface === 'panel') {
     return (
       <ToolOpenContext.Provider value={open}>
