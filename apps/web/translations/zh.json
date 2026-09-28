@@ -1066,6 +1066,24 @@
         "empty": "尚无构建记录。平台默认模板只在全局构建一次；自定义模板在首次使用时构建。"
       }
     },
+    "connectedApps": {
+      "title": "已连接的应用",
+      "description": "你通过 Kortix 登录的应用，例如 MCP 客户端。在你撤销之前，每个应用都以你的身份操作。",
+      "emptyTitle": "没有已连接的应用",
+      "emptyDescription": "你通过「使用 Kortix 登录」批准的应用（例如通过 MCP 的 Claude、Cursor 或 Codex）会显示在这里。",
+      "loadFailed": "无法加载已连接的应用",
+      "retry": "重试",
+      "unverified": "未验证的应用",
+      "lastActive": "活跃于 {time}",
+      "approved": "批准于 {time}",
+      "revokeApp": "撤销访问",
+      "actionsFor": "{name} 的操作",
+      "revokeTitle": "撤销此应用？",
+      "revokeDescription": "{name} 将立即失去对你的 Kortix 账户的访问权限。要再次使用，请重新批准。",
+      "revoke": "撤销",
+      "revoked": "已撤销应用的访问权限",
+      "revokeFailed": "无法撤销该应用"
+    },
     "featureFlags": {
       "stability": {
         "experimental": "实验性",
@@ -19206,7 +19224,10 @@
       "text7740934de920": "注册了 OAuth 客户端",
       "textcd36423ea12a": "调用了 MCP 服务器",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "列出了已连接的应用",
+      "text37698a37f9d2": "撤销了已连接的应用",
+      "text8c8fb214b592": "以用户身份授权了 GitHub"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

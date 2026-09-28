@@ -15,7 +15,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, isNull, lt, or } from 'drizzle-orm';
+import { eq, and, desc, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync } from '../shared/token-hash';
@@ -37,6 +37,9 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { requestClientKey } from '../shared/client-ip';
 import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
 import { isUuid } from '../shared/validate';
+import { actsAsFullIdentity } from '../accounts/core/tokens';
+import { actorOf } from '../iam/actor';
+import { resolveAccountId } from '../shared/resolve-account';
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
 
@@ -338,6 +341,8 @@ export const oauthApp = makeOpenApiApp();
 oauthApp.use('/authorize/consent/:requestId', supabaseAuth);
 oauthApp.use('/authorize/consent', supabaseAuth);
 oauthApp.use('/userinfo', oauthTokenAuth);
+oauthApp.use('/grants', supabaseAuth);
+oauthApp.use('/grants/*', supabaseAuth);
 
 // ─── GET /.well-known/oauth-authorization-server (mirror) ───────────────────
 
@@ -868,6 +873,144 @@ oauthApp.openapi(
     // RFC 7009 §2.2: an unknown token is still a 200 — the outcome the caller
     // wants (the token is not usable) already holds.
     return c.json({ revoked });
+  },
+);
+
+// ─── GET /grants, DELETE /grants/:clientId — the apps a person approved ─────
+//
+// "Connected apps": every client the caller approved (a consent row) or that
+// still holds a live token for them — MCP clients, "Sign in with Kortix" apps.
+// Revoking one deletes the consent, so the app must ask again, and revokes its
+// live access and refresh tokens, which stop working on their next request
+// (the verifier reads the token row every time). Only a browser session or an
+// unscoped personal access token may do either, the rule personal tokens
+// follow: an app holding a kortix_oat_ token must not list or revoke the
+// others.
+
+const GrantSchema = z.object({
+  client_id: z.string(),
+  name: z.string(),
+  client_type: z.string(),
+  /** Registered by the app itself (RFC 7591): its name is its own claim. */
+  self_registered: z.boolean(),
+  /** Where the app sends you back after sign-in: identifies an unverified app. */
+  redirect_hosts: z.array(z.string()),
+  scopes: z.array(z.string()),
+  granted_at: z.string().nullable(),
+  /** When the app last got a token. A connected app refreshes about hourly while in use. */
+  last_active_at: z.string().nullable(),
+  /** Holds a live refresh or access token right now. */
+  active: z.boolean(),
+});
+
+async function requireFullIdentity(c: Context): Promise<Response | null> {
+  const userId = c.get('userId') as string;
+  const actor = await actorOf(c, await resolveAccountId(userId));
+  if (actsAsFullIdentity(c.get('authType') as string | undefined, actor)) return null;
+  return c.json({ error: 'Connected apps are managed from a browser session or an unscoped personal access token.' }, 403);
+}
+
+oauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/grants',
+    tags: ['oauth'],
+    summary: 'List the apps you approved (connected apps)',
+    ...auth,
+    responses: {
+      200: json(z.object({ grants: z.array(GrantSchema) }), 'Connected apps, most recently active first'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+    const denied = await requireFullIdentity(c);
+    if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const now = new Date();
+    const [consents, accessTokens, refreshTokens] = await Promise.all([
+      db.select().from(oauthConsents).where(eq(oauthConsents.userId, userId)),
+      db
+        .select({ clientId: oauthAccessTokens.clientId, createdAt: oauthAccessTokens.createdAt, expiresAt: oauthAccessTokens.expiresAt, revokedAt: oauthAccessTokens.revokedAt })
+        .from(oauthAccessTokens)
+        .where(eq(oauthAccessTokens.userId, userId))
+        .orderBy(desc(oauthAccessTokens.createdAt)),
+      db
+        .select({ clientId: oauthRefreshTokens.clientId })
+        .from(oauthRefreshTokens)
+        .where(and(eq(oauthRefreshTokens.userId, userId), isNull(oauthRefreshTokens.revokedAt), gt(oauthRefreshTokens.expiresAt, now))),
+    ]);
+    const live = new Set(refreshTokens.map((t) => t.clientId));
+    const lastActive = new Map<string, Date>();
+    for (const t of accessTokens) {
+      if (!lastActive.has(t.clientId)) lastActive.set(t.clientId, t.createdAt);
+      if (!t.revokedAt && t.expiresAt > now) live.add(t.clientId);
+    }
+    const consentByClient = new Map(consents.map((row) => [row.clientId, row]));
+    // An app with neither a consent nor a live token is not connected: tokens
+    // it held before a revoke stay in history, not in this list.
+    const clientIds = [...new Set([...consentByClient.keys(), ...live])];
+    if (clientIds.length === 0) return c.json({ grants: [] });
+    const clients = await db.select().from(oauthClients).where(inArray(oauthClients.clientId, clientIds));
+    const grants = clients.map((client) => {
+      const consent = consentByClient.get(client.clientId);
+      return {
+        client_id: client.clientId,
+        name: client.name,
+        client_type: client.clientType,
+        self_registered: isSelfRegistered(client),
+        redirect_hosts: [...new Set(((client.redirectUris as string[] | null) ?? []).map(redirectTarget))],
+        scopes: (consent?.scopes as string[] | null) ?? [],
+        granted_at: consent?.grantedAt.toISOString() ?? null,
+        last_active_at: lastActive.get(client.clientId)?.toISOString() ?? null,
+        active: live.has(client.clientId),
+      };
+    });
+    grants.sort((a, b) => (b.last_active_at ?? b.granted_at ?? '').localeCompare(a.last_active_at ?? a.granted_at ?? ''));
+    return c.json({ grants });
+  },
+);
+
+oauthApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/grants/{clientId}',
+    tags: ['oauth'],
+    summary: 'Revoke an app you approved: its consent and every live token it holds for you',
+    ...auth,
+    request: { params: z.object({ clientId: z.string() }) },
+    responses: {
+      200: json(z.object({ ok: z.literal(true), revoked_tokens: z.number() }), 'Revoked'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const denied = await requireFullIdentity(c);
+    if (denied) return denied;
+    const userId = c.get('userId') as string;
+    const clientId = c.req.param('clientId');
+    const now = new Date();
+    // Every row is filtered by the caller's own user id: a client id alone
+    // never reaches another person's grant.
+    const [consents, refresh, access] = await db.transaction(async (tx) => [
+      await tx
+        .delete(oauthConsents)
+        .where(and(eq(oauthConsents.userId, userId), eq(oauthConsents.clientId, clientId)))
+        .returning({ id: oauthConsents.id }),
+      await tx
+        .update(oauthRefreshTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthRefreshTokens.userId, userId), eq(oauthRefreshTokens.clientId, clientId), isNull(oauthRefreshTokens.revokedAt), gt(oauthRefreshTokens.expiresAt, now)))
+        .returning({ id: oauthRefreshTokens.id }),
+      await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthAccessTokens.userId, userId), eq(oauthAccessTokens.clientId, clientId), isNull(oauthAccessTokens.revokedAt), gt(oauthAccessTokens.expiresAt, now)))
+        .returning({ id: oauthAccessTokens.id }),
+    ]);
+    if (consents.length === 0 && refresh.length === 0 && access.length === 0) {
+      return c.json({ error: 'No connected app with that client_id' }, 404);
+    }
+    return c.json({ ok: true as const, revoked_tokens: refresh.length + access.length });
   },
 );
 

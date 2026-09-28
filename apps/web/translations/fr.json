@@ -1066,6 +1066,24 @@
         "empty": "Aucune création enregistrée. Le modèle par défaut de la plateforme est créé une fois globalement ; les modèles personnalisés le sont à la première utilisation."
       }
     },
+    "connectedApps": {
+      "title": "Apps connectées",
+      "description": "Les apps auxquelles tu t’es connecté avec Kortix, comme les clients MCP. Chacune agit en ton nom jusqu’à ce que tu la révoques.",
+      "emptyTitle": "Aucune app connectée",
+      "emptyDescription": "Les apps que tu approuves avec Se connecter avec Kortix, comme Claude, Cursor ou Codex via MCP, apparaissent ici.",
+      "loadFailed": "Impossible de charger les apps connectées",
+      "retry": "Réessayer",
+      "unverified": "App non vérifiée",
+      "lastActive": "Active {time}",
+      "approved": "Approuvée {time}",
+      "revokeApp": "Révoquer l’accès",
+      "actionsFor": "Actions pour {name}",
+      "revokeTitle": "Révoquer cette app ?",
+      "revokeDescription": "{name} perd immédiatement l’accès à ton compte Kortix. Pour l’utiliser à nouveau, approuve-la de nouveau.",
+      "revoke": "Révoquer",
+      "revoked": "Accès de l’app révoqué",
+      "revokeFailed": "Impossible de révoquer l’app"
+    },
     "featureFlags": {
       "stability": {
         "experimental": "Expérimental",
@@ -19206,7 +19224,10 @@
       "text7740934de920": "Client OAuth enregistré",
       "textcd36423ea12a": "Serveur MCP appelé",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "A listé les apps connectées",
+      "text37698a37f9d2": "A révoqué une app connectée",
+      "text8c8fb214b592": "A autorisé GitHub en tant qu’utilisateur"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
