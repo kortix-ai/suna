@@ -9,12 +9,6 @@ import {
 } from '@/components/markdown/markdown-frontmatter';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
@@ -23,6 +17,7 @@ import { openSessionQuickView } from '@/features/session/open-session-quick-view
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { isEmptyShowPart } from '@/features/session/session-activity-groups';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import {
   ToolSurfaceContext,
   useToolCardFrame,
@@ -49,7 +44,6 @@ import {
   CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
-  DotsThreeIcon,
   GlobeIcon as Globe,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
@@ -256,65 +250,20 @@ export function ServicePreviewActions({
     </Hint>
   );
 
-  if (compact) {
-    return (
-      <div className="flex shrink-0 items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              type="button"
-              aria-label={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
-              className="active:scale-[0.96]"
-            >
-              <DotsThreeIcon className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-40">
-            <DropdownMenuItem onSelect={handleRefresh}>
-              <ArrowClockwiseIcon className={cn(isLoading && 'animate-spinner-spin')} />
-              {tHardcodedUi.raw('i18nComplete.text0e9161011702')}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!navigationEnabled || !previewUrl} onSelect={openInBrowser}>
-              <ArrowSquareOutIcon />
-              {tHardcodedUi.raw(
-                'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
-              )}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {previewButton}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <Hint label={tHardcodedUi.raw('i18nComplete.text0e9161011702')} side="top">
-        <Button variant="ghost" size="icon-sm" type="button" onClick={handleRefresh}>
-          <ArrowClockwiseIcon className={cn('size-4', isLoading && 'animate-spinner-spin')} />
-        </Button>
-      </Hint>
-      <Hint
-        label={tHardcodedUi.raw(
-          'autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929',
-        )}
-        side="top"
-      >
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          type="button"
-          disabled={!navigationEnabled || !previewUrl}
-          onClick={openInBrowser}
-          className={cn(navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-50')}
-        >
-          <ArrowSquareOutIcon className="size-4.5" />
-        </Button>
-      </Hint>
-      {previewButton}
-    </div>
+    <ToolActionBar
+      compact={compact}
+      loading={isLoading}
+      refreshLabel={tHardcodedUi.raw('i18nComplete.text0e9161011702')}
+      menuLabel={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
+      onRefresh={handleRefresh}
+      secondaryLabel={tHardcodedUi.raw('autoFeaturesSessionToolRenderersJsxTextOpenPrivatePreview0d54e929')}
+      secondaryIcon={ArrowSquareOutIcon}
+      onSecondary={openInBrowser}
+      secondaryDisabled={!navigationEnabled || !previewUrl}
+      secondaryDisabledClassName="cursor-not-allowed opacity-50"
+      primary={previewButton}
+    />
   );
 }
 
