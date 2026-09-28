@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 689,
+  "count": 691,
   "routes": [
     {
       "method": "GET",
@@ -1257,6 +1257,14 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/oauth/grants/:clientId"
     },
     {
       "method": "POST",

@@ -1283,6 +1283,24 @@
         "blocked": "Novas sessões não podem iniciar aqui",
         "ready": "Pronto para novas sessões"
       }
+    },
+    "connectedApps": {
+      "title": "Apps conectados",
+      "description": "Apps em que você entrou com o Kortix, como clientes MCP. Cada um age em seu nome até você revogá-lo.",
+      "emptyTitle": "Nenhum app conectado",
+      "emptyDescription": "Os apps que você aprova com Entrar com o Kortix, como Claude, Cursor ou Codex via MCP, aparecem aqui.",
+      "loadFailed": "Não foi possível carregar os apps conectados",
+      "retry": "Tentar novamente",
+      "unverified": "App não verificado",
+      "lastActive": "Ativo {time}",
+      "approved": "Aprovado {time}",
+      "revokeApp": "Revogar acesso",
+      "actionsFor": "Ações para {name}",
+      "revokeTitle": "Revogar este app?",
+      "revokeDescription": "{name} perde o acesso à sua conta Kortix imediatamente. Para usá-lo de novo, aprove-o novamente.",
+      "revoke": "Revogar",
+      "revoked": "Acesso do app revogado",
+      "revokeFailed": "Não foi possível revogar o app"
     }
   },
   "triggers": {
@@ -19206,7 +19224,10 @@
       "text7740934de920": "Cliente OAuth registrado",
       "textcd36423ea12a": "Servidor MCP chamado",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Listou os apps conectados",
+      "text37698a37f9d2": "Revogou um app conectado",
+      "text8c8fb214b592": "Autorizou o GitHub como usuário"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

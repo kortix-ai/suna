@@ -254,6 +254,15 @@ flow(
         const result = r.json<any>().result;
         if (!result.isError || !result.content[0].text.startsWith("HTTP 404")) throw new Error(`${name}: ${JSON.stringify(result)}`);
       }
+      // A command runs as a job; its id is the 16-hex id a running result returned.
+      for (const [id, args] of [
+        [23, { job_id: "../../etc" }],
+        [24, {}],
+      ] as const) {
+        const r = await mcp(rpc(id, "tools/call", { name: "run_command", arguments: { session_id: "00000000-0000-4000-a000-000000000000", ...args } }));
+        const result = r.json<any>().result;
+        if (!result.isError || result.content[0].text.startsWith("HTTP")) throw new Error(`run_command ${JSON.stringify(args)}: ${JSON.stringify(result)}`);
+      }
     });
     await ctx.step("a session read by id names its owner exactly as the list does; list_sessions and read_session show it", async () => {
       const session = await ctx.fixtures.session(p);

@@ -22,6 +22,17 @@ import { mcpResourceMetadataUrl, oauthIssuer } from '../oauth/discovery';
 import { OAUTH_SCOPE_KORTIX } from '../oauth/access-token';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import {
+  JOB_CANCEL,
+  JOB_DEFAULT_TIMEOUT_SECONDS,
+  JOB_LAUNCH,
+  JOB_MAX_TIMEOUT_SECONDS,
+  JOB_POLL,
+  JOB_TAIL_BYTES,
+  parseJobPoll,
+  renderJob,
+  type JobState,
+} from './jobs';
 
 type Dispatch = (request: Request) => Promise<Response>;
 
@@ -183,9 +194,6 @@ async function sessionPath(sessionId: string): Promise<string> {
 
 /** Time budget of one MCP request, under the load balancer's 60 s idle cut. */
 const REQUEST_BUDGET_MS = 55_000;
-/** `run_command` ceiling. The proxy gives one daemon call at most ~50 s. */
-const EXEC_MAX_SECONDS = 45;
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** `…/v1/p/<external_id>/8000` or `/p/<external_id>/8000` → the proxy path. */
@@ -240,6 +248,15 @@ function envRpcResult(r: { status: number; body: string }, render: (value: any) 
   const reply = JSON.parse(r.body);
   if (!reply.ok) return text(`${reply.error?.code ?? 'error'}: ${reply.error?.message ?? r.body}`, true);
   return text(render(reply.value));
+}
+
+// ─── Commands as jobs (./jobs.ts) ───────────────────────────────────────────
+
+/** Run a short shell script in the session's sandbox (env-rpc exec). */
+function sandboxScript(ctx: ToolContext, sessionId: string, script: string, env: Record<string, string>, cwd?: string) {
+  return callSandbox(ctx, sessionId, 'POST', '/kortix/env-rpc', {
+    body: { op: 'exec', args: { command: script, env, timeout: 15_000, ...(cwd ? { cwd } : {}) } },
+  });
 }
 
 // ─── Sessions ───────────────────────────────────────────────────────────────
@@ -346,16 +363,18 @@ const TOOLS = [
   {
     name: 'run_command',
     description:
-      "Run a bash command in a session's sandbox (its git checkout is /workspace) and return stdout, stderr and the exit code. A stopped sandbox is started first. Commands run up to 45 s: start longer work in the background (`nohup cmd > /tmp/out.log 2>&1 &`) and read the log later. The kortix CLI is preinstalled and signed in as the session.",
+      "Run a bash command in a session's sandbox (its git checkout is /workspace) and return stdout, stderr and the exit code. A stopped sandbox is started first. A command may run for minutes: when it outlasts one call (~50 s), the result says `status: running` with a job_id and the output so far; call again with that job_id to keep waiting, or with cancel: true to stop it. The kortix CLI is preinstalled and signed in as the session.",
     inputSchema: {
       type: 'object',
       properties: {
         session_id: SESSION_ID,
         command: { type: 'string', description: 'A bash command line.' },
         cwd: { type: 'string', description: 'Working directory (default /workspace).' },
-        timeout_seconds: { type: 'number', description: 'Kill the command after this long (default and max 45).' },
+        timeout_seconds: { type: 'number', description: `Kill the command after this long (default ${JOB_DEFAULT_TIMEOUT_SECONDS}, max ${JOB_MAX_TIMEOUT_SECONDS}).` },
+        job_id: { type: 'string', description: 'Keep waiting on a command an earlier call returned as still running (instead of command).' },
+        cancel: { type: 'boolean', description: 'With job_id: stop that command.' },
       },
-      required: ['session_id', 'command'],
+      required: ['session_id'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
@@ -597,19 +616,43 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       return text(JSON.stringify(rows, null, 2));
     }
     case 'run_command': {
-      const requested = bounded(input.timeout_seconds, EXEC_MAX_SECONDS, EXEC_MAX_SECONDS) * 1000;
-      const command = arg(input, 'command');
-      const cwd = optionalArg(input, 'cwd');
-      const r = await callSandbox(ctx, arg(input, 'session_id'), 'POST', '/kortix/env-rpc', {
-        // A wake spends budget first, so the command gets what is left of it.
-        body: () => ({
-          op: 'exec',
-          args: { command, timeout: Math.max(1_000, Math.min(requested, ctx.deadline - Date.now() - 3_000)), ...(cwd ? { cwd } : {}) },
-        }),
-      });
-      return envRpcResult(r, (v) =>
-        [`exit_code: ${v.exitCode}`, v.stdout ? `stdout:\n${v.stdout}` : '', v.stderr ? `stderr:\n${v.stderr}` : ''].filter(Boolean).join('\n'),
-      );
+      const started = Date.now();
+      const sessionId = arg(input, 'session_id');
+      const existing = optionalArg(input, 'job_id');
+      if (existing && !/^[0-9a-f]{16}$/.test(existing)) throw new ToolInputError('job_id is the 16-character id a running result returned');
+      const jobId = existing ?? crypto.randomUUID().replaceAll('-', '').slice(0, 16);
+      const dir = { KMCP_JOB: jobId };
+      const exec = async (script: string, env: Record<string, string>, cwd?: string): Promise<{ error: ToolResult } | { stdout: string }> => {
+        const r = await sandboxScript(ctx, sessionId, script, { ...dir, ...env }, cwd);
+        if (r.status >= 400) return { error: apiResult(r) };
+        const reply = JSON.parse(r.body);
+        if (!reply.ok) return { error: text(`${reply.error?.code ?? 'error'}: ${reply.error?.message ?? r.body}`, true) };
+        return { stdout: String(reply.value.stdout ?? '') };
+      };
+      if (existing && input.cancel === true) {
+        const r = await exec(JOB_CANCEL, {});
+        if ('error' in r) return r.error;
+      } else if (!existing) {
+        const timeout = bounded(input.timeout_seconds, JOB_DEFAULT_TIMEOUT_SECONDS, JOB_MAX_TIMEOUT_SECONDS);
+        const r = await exec(JOB_LAUNCH, { KMCP_CMD: arg(input, 'command'), KMCP_TIMEOUT: String(timeout) }, optionalArg(input, 'cwd'));
+        if ('error' in r) return r.error;
+      }
+      // Wait for the exit file, fast at first (most commands finish in well
+      // under a second), then every second, leaving ~6 s for the final read.
+      const sep = `--kortix-mcp-${crypto.randomUUID()}--`;
+      const poll = async (): Promise<{ error: ToolResult } | { job: JobState }> => {
+        const r = await exec(JOB_POLL, { KMCP_TAIL: String(JOB_TAIL_BYTES), KMCP_SEP: sep });
+        return 'error' in r ? r : { job: parseJobPoll(r.stdout, sep) };
+      };
+      let delay = 200;
+      for (;;) {
+        const r = await poll();
+        if ('error' in r) return r.error;
+        if (r.job.state === 'missing') return text(`No job ${jobId} in this session's sandbox (a restarted sandbox loses its jobs).`, true);
+        if (r.job.state === 'done' || Date.now() + delay > ctx.deadline - 6_000) return text(renderJob(jobId, r.job, Date.now() - started));
+        await sleep(delay);
+        delay = Math.min(delay * 2, 1_000);
+      }
     }
     case 'read_file': {
       const path = arg(input, 'path');

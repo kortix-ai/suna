@@ -1283,6 +1283,24 @@
         "blocked": "Neue Sitzungen können damit nicht starten",
         "ready": "Bereit für neue Sitzungen"
       }
+    },
+    "connectedApps": {
+      "title": "Verbundene Apps",
+      "description": "Apps, bei denen du dich mit Kortix angemeldet hast, zum Beispiel MCP-Clients. Jede handelt in deinem Namen, bis du sie widerrufst.",
+      "emptyTitle": "Keine verbundenen Apps",
+      "emptyDescription": "Apps, die du mit „Mit Kortix anmelden“ freigibst, etwa Claude, Cursor oder Codex über MCP, erscheinen hier.",
+      "loadFailed": "Verbundene Apps konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "unverified": "Nicht verifizierte App",
+      "lastActive": "Aktiv {time}",
+      "approved": "Freigegeben {time}",
+      "revokeApp": "Zugriff widerrufen",
+      "actionsFor": "Aktionen für {name}",
+      "revokeTitle": "Diese App widerrufen?",
+      "revokeDescription": "{name} verliert sofort den Zugriff auf dein Kortix-Konto. Um sie wieder zu nutzen, gibst du sie erneut frei.",
+      "revoke": "Widerrufen",
+      "revoked": "App-Zugriff widerrufen",
+      "revokeFailed": "Die App konnte nicht widerrufen werden"
     }
   },
   "triggers": {
@@ -19206,7 +19224,10 @@
       "text7740934de920": "OAuth-Client registriert",
       "textcd36423ea12a": "MCP-Server aufgerufen",
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
-      "text890355ac3800": "Checked runtime-asset chunks"
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Verbundene Apps aufgelistet",
+      "text37698a37f9d2": "Verbundene App widerrufen",
+      "text8c8fb214b592": "GitHub als Benutzer autorisiert"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
