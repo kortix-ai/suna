@@ -255,7 +255,7 @@ Only the canonical branch does.
 Carve-outs where you just proceed: read-only investigation and questions, and
 trivial single-file typo/comment fixes on the current branch.
 
-## Default delivery: share by preview, merge to `main` only when told
+## Default delivery: share by preview, self-merge to `main` when verified
 
 `main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
 It is not a save point, and it is not how you show someone your work.
@@ -276,13 +276,25 @@ It is not a save point, and it is not how you show someone your work.
    the PR green as you go, not at the end.
 4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
-5. **Never merge to `main` without the user's explicit approval of that merge.**
-   Not "the task is done", not "the checks are green" — the user says merge.
+5. **Self-merge to `main` when the change is verified. Do not wait for the
+   user's approval.** Speed matters: a verified change that sits unmerged is
+   waste. Verified means all of these are true:
+   - the relevant local checks ran with real inputs and outputs (rule 3), and
+     they passed;
+   - the PR is mergeable, and the `Tests` lanes are green (the `preview` or
+     `test` label runs them);
+   - rule 6 holds when the change touches a client-facing runtime contract.
+   A failing or skipped check blocks the merge until you fix it or state why it
+   is unrelated (for example, the same test fails on `main`). Squash-merge
+   (`gh pr merge <pr> --squash`), then finish rules 7 and 8. A merge is not
+   the end of the work: dev verification is still yours.
    The only machine-enforced rule is that every change reaches `main` and
    `staging` through a pull request — no required approvals, no required status
-   checks, no bypass actors. Anyone may merge their own PR. The discipline is
-   yours, not the ruleset's, so the bar is what you verified, not what CI let
-   through.
+   checks, no bypass actors. The discipline is yours, not the ruleset's, so the
+   bar is what you verified, not what CI let through.
+   **The release gates do not change.** Merging into `staging` or `prod`,
+   running Promote to Production, and moving the `:stable` tag each need the
+   user's explicit approval (the **kortix-release** skill).
 6. **A change to a client-facing runtime contract** — the `@kortix/sdk` public
    surface, session/thread transport, the streaming protocol — merges only after
    the whole objective ran on its own preview origin through a real session.
