@@ -13,7 +13,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import ts from 'typescript'
-import { ADAPTERS, SERVICES } from '../eslint.config.mjs'
+import { ADAPTERS, OPENCODE_NAMES_ALLOWED, SERVICES } from '../eslint.config.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const eslint = new ESLint({ cwd: root })
@@ -174,6 +174,45 @@ for (const [name, code, allowed] of typeOnlyCases) {
     assert.equal(violations.length === 0, allowed, JSON.stringify(result.messages))
   })
 }
+
+// [name, file, code, words the rule must report as unexpected] — E18: OpenCode
+// names only inside harness/open-code/ (kortixd/opencode-names).
+const opencodeNameCases = [
+  ['a new identifier in a route', 'src/routes/kortix/health.ts', 'const opencodePort = 1', ['opencodePort']],
+  ['a string in lib', 'src/lib/log/logger.ts', "const name = 'opencode'", ['opencode']],
+  ['a template literal', 'src/services/monitor/monitor-runner.ts', "const path = `x-${1}/opt/opencode.current`", ['opencode.current']],
+  ['a type reference in the contract', 'src/harness/contract/diagnostics.ts', 'type Probe = OpencodeClient', ['OpencodeClient']],
+  ['a word inside a sentence', 'src/app/server.ts', "const e = 'prompt_id and opencode_session_id are required'", ['opencode_session_id']],
+  ['a comment', 'src/routes/kortix/health.ts', '// opencode\nexport {}', []],
+  ['the OpenCode adapter', 'src/harness/open-code/boot.ts', 'const opencodePort = 1', []],
+  ['the pi adapter, until E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', []],
+  ['the resolver', 'src/harness/harness.ts', 'const opencodePort = 1', []],
+  ['a test file', 'src/__tests__/pi-harness.test.ts', 'const opencodePort = 1', []],
+  ['an allowlisted word in its own file', 'src/routes/kortix/env.ts', 'const opencodeEnv = 1', []],
+  ['an allowlisted word in another file', 'src/routes/kortix/health.ts', 'const opencodeEnv = 1', ['opencodeEnv']],
+]
+for (const [name, file, code, words] of opencodeNameCases) {
+  test(`opencode names: ${name}`, async () => {
+    const [result] = await eslint.lintText(code, { filePath: resolve(root, file) })
+    assert.equal(result.fatalErrorCount, 0, JSON.stringify(result.messages))
+    const found = result.messages.filter((m) => m.ruleId === 'kortixd/opencode-names' && m.messageId === 'unexpected').map((m) => m.message.split("'")[1])
+    assert.deepEqual(found, words, JSON.stringify(result.messages))
+  })
+}
+
+test('opencode names: an allowlisted word that no longer occurs is stale', async () => {
+  const file = 'src/lib/config/config.ts'
+  const [result] = await eslint.lintText('export {}', { filePath: resolve(root, file) })
+  const stale = result.messages.filter((m) => m.ruleId === 'kortixd/opencode-names' && m.messageId === 'stale').map((m) => m.message.split("'")[1])
+  assert.deepEqual(stale, OPENCODE_NAMES_ALLOWED[file])
+})
+
+test('opencode names: every allowlist entry names an existing file and at least one word', async () => {
+  for (const [file, words] of Object.entries(OPENCODE_NAMES_ALLOWED)) {
+    assert.ok((await stat(resolve(root, file))).isFile(), file)
+    assert.ok(words.length > 0, file)
+  }
+})
 
 test('architecture: every registered service and adapter folder exists', async () => {
   for (const name of Object.keys(SERVICES)) assert.ok((await stat(resolve(root, 'src/services', name))).isDirectory(), name)

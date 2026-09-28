@@ -220,14 +220,71 @@ const importStyle = {
   },
 }
 
+// E18: OpenCode names live in harness/open-code/ only. Outside both adapters a
+// new OpenCode-named identifier or string fails; the names that exist today are
+// allowlisted per file. The list only shrinks: an entry whose word no longer
+// occurs in its file fails too, so the PR that removes a name deletes its entry.
+// harness/pi/ joins the scope after E2 (pi stops emitting the OpenCode wire).
+// Comments are not checked.
+const OPENCODE_NAME = /open.?code/i
+const OPENCODE_WORD = /[A-Za-z0-9_.$-]*open.?code[A-Za-z0-9_.$-]*/gi
+const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|harness\/shared)\/.*|main\.ts)$/
+/** Allowed OpenCode words per file, package-relative. Delete entries; never add. @type {Record<string, string[]>} */
+export const OPENCODE_NAMES_ALLOWED = {
+  'src/harness/contract/control.ts': ['opencode', 'opencodeSessionId', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_reload', 'opencode_session_id', 'opencode_turn_ended'],
+  'src/harness/shared/memory-guard-relay.ts': ['opencodeRssMb', 'opencodeSessionId', 'opencode_session_id'],
+  'src/lib/config/config.ts': ['opencode'],
+  'src/routes/kortix/abort.ts': ['opencodeSessionId', 'opencode_session_id'],
+  'src/routes/kortix/env.ts': ['opencodeEnv'],
+  'src/routes/kortix/harness-control.ts': ['opencode'],
+  'src/services/config-release/notice.ts': ['opencode'],
+  'src/services/resources/resources.ts': ['opencode', 'opencode-kortix', 'opencode.exe'],
+  'src/services/runtime-assets/port.ts': ['opencode'],
+  'src/services/runtime-assets/runtime-assets.ts': ['DEFAULT_OPENCODE_CURRENT_LINK', 'bakedOpencodeVersion', 'opencode', 'opencode.current', 'opencodeVersion', 'opencode_version'],
+  'src/services/runtime-assets/runtime-truth.ts': ['opencode'],
+}
+/** @type {import('eslint').Rule.RuleModule} */
+const opencodeNames = {
+  meta: {
+    type: 'problem',
+    messages: {
+      unexpected: "OpenCode name '{{word}}' outside harness/open-code/. Use a harness-neutral name or move the code into the adapter (E18, ARCHITECTURE.md).",
+      stale: "E18 allowlist entry '{{word}}' no longer occurs in this file. Delete it from OPENCODE_NAMES_ALLOWED.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const rel = posixPath(relative(SRC, context.filename))
+    if (rel.startsWith('..') || isAbsolute(rel) || !OPENCODE_SCOPE.test(rel) || rel.endsWith('.test.ts') || rel.includes('__tests__/')) return {}
+    const allowed = new Set(OPENCODE_NAMES_ALLOWED[`src/${rel}`] ?? [])
+    const seen = new Set()
+    /** @param {any} node @param {unknown} text */
+    const check = (node, text) => {
+      if (typeof text !== 'string' || !OPENCODE_NAME.test(text)) return
+      for (const [word] of text.matchAll(OPENCODE_WORD)) {
+        seen.add(word)
+        if (!allowed.has(word)) context.report({ node, messageId: 'unexpected', data: { word } })
+      }
+    }
+    return {
+      Identifier: (node) => check(node, node.name),
+      Literal: (node) => check(node, node.value),
+      TemplateElement: (node) => check(node, node.value.cooked),
+      'Program:exit': (node) => {
+        for (const word of allowed) if (!seen.has(word)) context.report({ node, messageId: 'stale', data: { word } })
+      },
+    }
+  },
+}
+
 export default tseslint.config(
   { ignores: ['dist/**', 'node_modules/**'] },
   {
     files: ['src/**/*.ts'],
     languageOptions: { parser: tseslint.parser },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
-    plugins: { 'project-structure': projectStructurePlugin, kortixd: { rules: { 'import-style': importStyle } } },
-    rules: { 'project-structure/independent-modules': ['error', independentModules], 'kortixd/import-style': 'error' },
+    plugins: { 'project-structure': projectStructurePlugin, kortixd: { rules: { 'import-style': importStyle, 'opencode-names': opencodeNames } } },
+    rules: { 'project-structure/independent-modules': ['error', independentModules], 'kortixd/import-style': 'error', 'kortixd/opencode-names': 'error' },
   },
   {
     // The boundary plugin resolves a built-in only with the `node:` prefix. A
