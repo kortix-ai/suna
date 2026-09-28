@@ -1707,7 +1707,31 @@ async function runOpenSession(args: {
       session_id: row.sessionId,
       external_id: runningExternalId,
       cause: ensured.cause ?? 'unspecified',
+      responder: ensured.responder ?? 'unnamed',
+      detail: ensured.detail ?? '',
     });
+    // A `bad_signature` is not a transport problem — it means the row's
+    // serviceKey is not the key the daemon holds. The provider's create-time
+    // KORTIX_TOKEN is immutable (Platinum exposes no env update, only exec) and
+    // is re-asserted on every start, so the BOX is the authority and the row is
+    // the stale copy. Ask the box and correct the row; the next open then signs
+    // with a key the daemon accepts.
+    //
+    // Gated on the exact cause so a healthy box never pays an exec: this runs
+    // only when the daemon has explicitly told us the signature did not verify.
+    if (
+      ensured.cause === 'unsigned_context' &&
+      typeof ensured.detail === 'string' &&
+      ensured.detail.includes('bad_signature')
+    ) {
+      const { reconcileServiceKeyFromBox } = await import('../lib/service-key-reconcile');
+      const outcome = await reconcileServiceKeyFromBox(row.sandboxId);
+      console.warn('[start] bad_signature — reconciled the service key against the box', {
+        session_id: row.sessionId,
+        sandbox_id: row.sandboxId,
+        outcome,
+      });
+    }
     // …and DURABLY, on the row. A log line is only reachable by someone with
     // log access at the moment it scrolls past; the row is queryable later, by
     // anyone, for a box that has been cycling for an hour. #7962 made the cause
@@ -1727,6 +1751,11 @@ async function runOpenSession(args: {
           metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
             opencodeUnreachableCause: nextCause,
             opencodeUnreachableCauseAt: new Date().toISOString(),
+            // WHO answered, and what it said. Without these the cause names a
+            // status code and nothing else, which is what left five competing
+            // explanations alive for one 401.
+            ...(ensured.responder ? { opencodeUnreachableResponder: ensured.responder } : {}),
+            ...(ensured.detail ? { opencodeUnreachableDetail: ensured.detail } : {}),
           })}::jsonb`,
         })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))

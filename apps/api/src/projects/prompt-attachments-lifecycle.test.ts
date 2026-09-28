@@ -402,6 +402,28 @@ test('chunked cleanup splits object names across Storage calls of at most 1000 n
   expect(removals.flat()).toContain(`${rows[1]!.objectPath}/chunks/799`);
 });
 
+test('chunked expiry cleanup retries metadata after a Storage failure', async () => {
+  config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'chunked';
+  config.PROMPT_ATTACHMENT_CHUNK_BYTES = 4;
+  const rows = expiredRows(1, { sizeBytes: 6, status: 'ready' });
+  scriptClaims(rows);
+  failRemove = true;
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({ deleted: 0, errors: 1 });
+  expect(removals).toEqual([[
+    `${rows[0]!.objectPath}/file`,
+    `${rows[0]!.objectPath}/chunks/0`,
+    `${rows[0]!.objectPath}/chunks/1`,
+  ]]);
+  expect(events).not.toContain('db:delete');
+
+  removals.length = 0;
+  failRemove = false;
+  scriptClaims(rows);
+  expect(await attachments.cleanupExpiredPromptAttachments()).toEqual({ deleted: 1, errors: 0 });
+  expect(removals[0]).toHaveLength(3);
+  expect(events.filter((event) => event === 'db:delete')).toHaveLength(1);
+});
+
 test('a session release locks the released attachments in attachment_id order before expiring them', async () => {
   results.delete = [[{ attachmentId: ids[2]! }, { attachmentId: ids[0]! }, { attachmentId: ids[2]! }]];
   expect(

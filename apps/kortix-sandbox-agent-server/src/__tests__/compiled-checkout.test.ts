@@ -5,14 +5,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { loadConfig } from '../config'
+import { loadConfig } from '@/harness/harness'
 import {
   COMPILED_CHECKOUT_CONTENT_TYPE,
   COMPILED_CHECKOUT_FORMAT,
   buildCompiledCheckoutUrl,
   materializeCompiledCheckoutToStage,
-} from '../compiled-checkout'
-import { materializeRepo } from '../git'
+} from '@/lib/git/compiled-checkout'
+import { materializeRepo } from '@/lib/git/git'
 
 const roots: string[] = []
 const realFetch = globalThis.fetch

@@ -297,6 +297,33 @@ test('an expired load that fails cannot evict a newer successful catalogue', asy
   }
 });
 
+test('a search matches category names and ids, after name matches', async () => {
+  const catalogClient: ComposioCatalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: [
+            { slug: 'hubspot', name: 'HubSpot', meta: { categories: [{ id: 'crm', name: 'CRM' }] } },
+            { slug: 'crm_tool', name: 'CRM Tool', meta: {} },
+            {
+              slug: 'pipedrive',
+              name: 'Pipedrive',
+              meta: { categories: [{ id: 'sales-and-crm', name: 'Sales & CRM' }] },
+            },
+            { slug: 'gmail', name: 'Gmail', meta: { categories: [{ id: 'email', name: 'Email' }] } },
+          ],
+        };
+      },
+    },
+  };
+
+  const byName = await searchComposioCatalog({ q: 'crm', catalogClient });
+  expect(byName.toolkits.map((t) => t.slug)).toEqual(['crm_tool', 'hubspot', 'pipedrive']);
+
+  const byLabel = await searchComposioCatalog({ q: 'Email', catalogClient });
+  expect(byLabel.toolkits.map((t) => t.slug)).toEqual(['gmail']);
+});
+
 // Composio holds no OAuth app for these toolkits (X since 2026-02-12). Tool
 // Router refuses them with 400 code 4300 until the project has an auth config
 // carrying the operator's own app. Live check on 2026-09-26: 47 of 47 toolkits

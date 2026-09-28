@@ -5,10 +5,10 @@
  * pi itself loads inside `PiRuntime.start()` (runtime.ts), never here.
  */
 import { homedir } from 'node:os'
-import type { ProjectEnvStore } from '../../project-env'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
-import { isRepoMaterialized } from '../../git'
-import { runtimeAssetsActivity } from '../../runtime-assets'
+import { isRepoMaterialized } from '@/lib/git/git'
+import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
 import { createPiAssetsService } from './assets'
 import { startPiBackground } from './background'
 import type { PiBootState } from './boot-state'

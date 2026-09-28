@@ -97,8 +97,8 @@ control. `Auto` clears the variant.
 - The sandbox learns the project's servable model set from the API at every
   boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
   picker), so a model the picker offers always resolves in the runtime.
-- A project default per model lives in Customize → Gateway → Routing →
-  **Generation defaults** (`model_generation_config`). It fills only a field
+- A project default per model lives in Customize → Models → Routing →
+  Advanced → **Generation defaults** (`model_generation_config`). It fills only a field
   the request left unset, so a session's variant always wins.
 
 ## How auto picks a model
@@ -124,9 +124,13 @@ Two costs are easy to miss on a paid cloud account:
 
 - **Platform fee.** Kortix adds a 10% fee, billed as credits, on top of what
   your own provider charges. Free-tier and self-hosted accounts are exempt.
-- **Silent failover.** If your BYOK key hits a rate limit or billing error
-  mid-turn, Kortix retries on a managed model and bills your credits instead
-  of failing the session.
+- **Fallback chains.** If your BYOK key or ChatGPT plan fails, for example on
+  its usage limit, Kortix runs the fallback chain you set in **Customize →
+  Models → Routing**. The chain also runs when every key or ChatGPT account the
+  request may use is paused after a rate limit. With **Retry on: Any error**, it
+  also runs when they need reconnection. A Kortix model in that chain bills your
+  credits, and runs only when your account can pay for it. The platform's own
+  fallback never moves a BYOK or ChatGPT request onto credits.
 
 If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.

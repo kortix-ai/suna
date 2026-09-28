@@ -44,6 +44,12 @@ export interface BuildableTemplate {
   runtimeProfile?: 'standard' | 'meta' | 'app' | 'pi-worker';
   /** Required when runtimeProfile is app. */
   appContext?: AppBuildContext;
+  /**
+   * kortix.yaml `container_runtime: true`: the sandbox runs Docker with bridge
+   * + overlay networking. Platinum bakes the full guest kernel module tree;
+   * Daytona runs nested Docker without it; E2B rejects it.
+   */
+  containerRuntime?: boolean;
 }
 
 export type ProviderState =
