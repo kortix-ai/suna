@@ -42,19 +42,22 @@ export const ToolRegistry = {
       if (component) return component;
     }
 
-    const allRegistered = Array.from(registry.keys());
+    // A prefixed name (`oc-trigger-list`, `mcp/foo_bar`) resolves to the
+    // LONGEST registered suffix, so `trigger-list` wins over `list`.
+    let match: string | undefined;
     for (const candidate of candidates) {
-      for (const key of allRegistered) {
+      for (const key of registry.keys()) {
+        if (match && key.length <= match.length) continue;
         if (
           candidate.endsWith(`/${key}`) ||
           candidate.endsWith(`-${key}`) ||
           candidate.endsWith(`_${key}`)
         ) {
-          return registry.get(key);
+          match = key;
         }
       }
     }
 
-    return undefined;
+    return match ? registry.get(match) : undefined;
   },
 };

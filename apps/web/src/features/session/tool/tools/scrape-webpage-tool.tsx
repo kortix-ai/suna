@@ -167,5 +167,4 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
   );
 }
 ToolRegistry.register('scrape-webpage', ScrapeWebpageTool);
-ToolRegistry.register('scrape_webpage', ScrapeWebpageTool);
 ToolRegistry.register('scrapewebpage', ScrapeWebpageTool);
