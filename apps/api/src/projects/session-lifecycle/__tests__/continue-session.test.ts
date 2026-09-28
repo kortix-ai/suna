@@ -17,6 +17,10 @@ let boxRow: Record<string, unknown> | null = null;
 let actor: string | null = 'automation-user-1';
 let titleCalls: Array<Record<string, unknown>> = [];
 let forwardedAccess: Array<Record<string, unknown>> = [];
+let opens = 0;
+let transitions: string[] = [];
+let openedStage: 'ready' | 'stopped' | null = null;
+let syncs = 0;
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://kortix.test' },
@@ -72,7 +76,36 @@ mock.module('../../lib/sessions', () => ({
 
 mock.module('../../routes/shared', () => ({
   openSession: async () => {
+    opens++;
+    if (openedStage)
+      return {
+        stage: openedStage,
+        sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
+        opencode_session_id: OC_SESSION_ID,
+      };
     throw new Error('openSession: reached');
+  },
+}));
+mock.module('../status-transitions', () => ({
+  sessionTransitionLeaves: (_action: string, status: string) => status === 'stopped',
+  transitionSession: async (action: string) => {
+    transitions.push(action);
+    return true;
+  },
+}));
+mock.module('../../../platform/service-key', () => ({
+  serviceKeyForExternalId: async () => 'key',
+}));
+mock.module('../../../sandbox-proxy/backend', () => ({
+  resolveSandboxIngress: async () => ({
+    url: 'https://sandbox.test',
+    headers: {},
+  }),
+  resolveServiceKey: async () => 'key',
+}));
+mock.module('../../lib/sandbox-env-sync', () => ({
+  syncSandboxEnvForPrompt: async () => {
+    syncs++;
   },
 }));
 
@@ -115,18 +148,76 @@ mock.module('../store', () => ({
 const { continueSession } = await import('../continue-session');
 
 beforeEach(() => {
-  sessionRow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'running', metadata: {} };
+  sessionRow = {
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    status: 'running',
+    metadata: {},
+  };
   boxRow = null;
   actor = 'automation-user-1';
   titleCalls = [];
   forwardedAccess = [];
+  transitions = [];
+  opens = 0;
+  openedStage = null;
+  syncs = 0;
+});
+
+describe('delivery path characterization', () => {
+  test('awake box delivers without opening or waking', async () => {
+    sessionRow = { ...sessionRow, opencodeSessionId: OC_SESSION_ID };
+    boxRow = { status: 'active', externalId: EXTERNAL_ID };
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('delivered');
+    expect(opens).toBe(0);
+    expect(transitions).toEqual([]);
+    expect(forwardedAccess).toHaveLength(1);
+  });
+
+  test('stopped box that cannot wake takes back its wake claim', async () => {
+    sessionRow = { ...sessionRow, status: 'stopped' };
+    openedStage = 'stopped';
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('unreachable');
+    expect(opens).toBe(1);
+    expect(transitions).toEqual(['wake', 'unwake']);
+    expect(forwardedAccess).toHaveLength(0);
+  });
+  test('stopped box that wakes syncs before forwarding', async () => {
+    sessionRow = { ...sessionRow, status: 'stopped' };
+    openedStage = 'ready';
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('delivered');
+    expect(opens).toBe(1);
+    expect(syncs).toBe(1);
+    expect(transitions).toEqual(['wake']);
+    expect(forwardedAccess).toHaveLength(1);
+  });
 });
 
 // The title fires before the runtime opens; these cases stop at the open.
 describe('continueSession — server-side delivery titles the session', () => {
+  test.each([
+    ['deleted', { deletedAt: '2026-01-01' }, 'no-session'],
+    ['failed', {}, 'unreachable'],
+  ] as const)('%s session never opens or titles', async (_name, metadata, expected) => {
+    sessionRow = {
+      ...sessionRow,
+      status: _name === 'failed' ? 'failed' : 'stopped',
+      metadata,
+    };
+    expect(
+      await continueSession({
+        sessionId: SESSION_ID,
+        text: 'hello',
+      } as never),
+    ).toEqual(expected);
+    expect(titleCalls).toEqual([]);
+  });
   test('a server-side delivery titles the session with the prompt and the actor', async () => {
     await expect(
-      continueSession({ sessionId: SESSION_ID, text: 'bump the node version in CI' } as never),
+      continueSession({
+        sessionId: SESSION_ID,
+        text: 'bump the node version in CI',
+      } as never),
     ).rejects.toThrow(/openSession/);
 
     expect(titleCalls).toHaveLength(1);
@@ -136,7 +227,11 @@ describe('continueSession — server-side delivery titles the session', () => {
 
   test('an explicit command.userId is preferred over the resolved automation actor', async () => {
     await expect(
-      continueSession({ sessionId: SESSION_ID, text: 'hello', userId: 'user-42' } as never),
+      continueSession({
+        sessionId: SESSION_ID,
+        text: 'hello',
+        userId: 'user-42',
+      } as never),
     ).rejects.toThrow(/openSession/);
     expect(titleCalls[0]?.userId).toBe('user-42');
   });
@@ -144,9 +239,7 @@ describe('continueSession — server-side delivery titles the session', () => {
   test('no actor → returns pending and never titles', async () => {
     actor = null;
 
-    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe(
-      'pending',
-    );
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('pending');
     expect(titleCalls).toEqual([]);
   });
 });
@@ -167,7 +260,11 @@ describe('continueSession — trigger delivery access carries no agent binding',
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       status: 'running',
-      metadata: { source: 'trigger:cron', trigger_kind: 'git', trigger_slug: 'hourly-heartbeat' },
+      metadata: {
+        source: 'trigger:cron',
+        trigger_kind: 'git',
+        trigger_slug: 'hourly-heartbeat',
+      },
       opencodeSessionId: OC_SESSION_ID,
     };
     boxRow = { status: 'active', externalId: EXTERNAL_ID };

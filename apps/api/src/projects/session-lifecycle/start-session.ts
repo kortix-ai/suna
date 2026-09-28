@@ -1,10 +1,8 @@
 /** `/start`: open a session's runtime, optionally long-polling until it is ready. */
 
-import { projectSessions } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { db } from '../../shared/db';
 import { openSession } from '../routes/shared';
 import { awaitTerminalStage } from './await-stage';
+import { reloadVisibleSessionRow } from './visible-session-row';
 import type { SessionLifecycleResult, StartSessionCommand } from './types';
 
 export async function startSession(command: StartSessionCommand) {
@@ -22,19 +20,7 @@ export async function startSession(command: StartSessionCommand) {
   const start = await awaitTerminalStage(
     first,
     async () => {
-      const [fresh] = await db
-        .select({
-          status: projectSessions.status,
-          sandboxProvider: projectSessions.sandboxProvider,
-          baseRef: projectSessions.baseRef,
-          agentName: projectSessions.agentName,
-          opencodeSessionId: projectSessions.opencodeSessionId,
-          accountId: projectSessions.accountId,
-          metadata: projectSessions.metadata,
-        })
-        .from(projectSessions)
-        .where(eq(projectSessions.sessionId, command.sessionId))
-        .limit(1);
+      const fresh = await reloadVisibleSessionRow(command.sessionId);
       if (!fresh) return null;
       return openSession({
         loaded: command.loaded,
