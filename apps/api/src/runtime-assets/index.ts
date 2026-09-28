@@ -295,7 +295,10 @@ runtimeAssetsApp.openapi(
 // every `bun --compile` output. These two routes let a box move only what it
 // does not already have. Measured at 1 MiB chunks on real linux-x64 builds:
 // 100 of 102 chunks shared between two CLI builds that differ only in their
-// version stamp (98.0%), and 89 of 102 between the CLI and the daemon (87.3%).
+// version stamp (98.0%), and 89 of 102 between the CLI and the daemon (87.3%)
+// when both are compiled by the same Bun — which the shipped API image does
+// not do today, so cross-artifact reuse measures 0% on a real deploy. See
+// manifest.ts. The same-artifact case is the one that matters and it holds.
 //
 // The whole-file digest on /manifest stays the authority. These routes are an
 // optimization and nothing more: a box that cannot use them, or whose assembly

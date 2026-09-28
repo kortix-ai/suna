@@ -680,7 +680,9 @@ flow(
 // in every `bun --compile` output. Measured at 1 MiB fixed chunks on real
 // linux-x64 builds — 100 of 102 chunks shared between two CLI builds that
 // differ only in their version stamp (98.0%), and 89 of 102 between the CLI
-// and the daemon (87.3%).
+// and the daemon (87.3%) — the latter only when one Bun compiled both, which
+// the shipped API image does not do today (two pins, 0 of 111 shared measured
+// on a deployed preview). That is why the sharing step below is a soft check.
 //
 // These two routes are a TRANSFER optimization and nothing else, which is the
 // property this flow exists to pin. The whole-file digest on `RTA-1` stays the
@@ -761,21 +763,33 @@ flow(
       }
     });
 
-    await ctx.step('ONE store serves both binaries — a shared chunk resolves either way', async () => {
+    // ONE INDEX, BOTH BINARIES — asserted as the CONTRACT, not as an overlap.
+    //
+    // An earlier version of this step required the two to share a chunk, on the
+    // reasoning that ~90 MB of each is the same embedded Bun runtime. That is
+    // true of two binaries compiled by the SAME Bun and false of what we ship:
+    // `apps/api/Dockerfile` builds the daemon on `SANDBOX_AGENT_BUN_VERSION`
+    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.2), so they
+    // embed different runtimes. Measured on a deployed preview: 0 of 111 chunks
+    // shared, first MiB already different. Requiring overlap would have pinned a
+    // build coincidence rather than a contract — and would go red on a green
+    // deploy. What the route actually promises is that ONE index answers for
+    // BOTH components, which is what this asserts.
+    await ctx.step('ONE index answers for both binaries', async () => {
       const cli = await projectPat.get('/v1/runtime-assets/chunks/cli');
       const agent = await projectPat.get('/v1/runtime-assets/chunks/agent');
       if (cli.statusCode === 404 || agent.statusCode === 404) return;
-      const cliChunks = new Set(cli.json<{ chunks: string[] }>().chunks);
-      const shared = agent.json<{ chunks: string[] }>().chunks.filter((c) => cliChunks.has(c));
-      if (shared.length === 0) {
-        throw new Error(
-          'the CLI and the daemon share no chunk — the embedded Bun runtime they are both built ' +
-            'on is ~90 MB, so zero overlap means the index is not serving one store',
-        );
+      for (const [name, res] of [['cli', cli], ['agent', agent]] as const) {
+        const first = res.json<{ chunks: string[] }>().chunks[0]!;
+        const r = await projectPat.get(`/v1/runtime-assets/chunk/${first}`);
+        if (r.statusCode !== 200) {
+          throw new Error(`the ${name} chunk index and the chunk route disagree: ${r.statusCode}`);
+        }
+        // The caller never says which component it wants; the digest is enough.
+        if (r.header('etag') !== `"${first}"`) {
+          throw new Error(`ETag ${r.header('etag')} must be the requested digest`);
+        }
       }
-      // Served from whichever binary was indexed first; the caller cannot tell,
-      // and must not need to.
-      (await projectPat.get(`/v1/runtime-assets/chunk/${shared[0]}`)).status(200);
     });
 
     await ctx.step('a chunk this deploy does not carry is a 404, never a guess', async () => {

@@ -4,7 +4,9 @@
  * THE MEASUREMENT THIS IS BUILT ON. Two `bun --compile` linux-x64 CLI builds
  * that differ only in `KORTIX_CLI_VERSION` share 100 of 102 one-MiB chunks
  * (98.0%); the CLI and the daemon share 89 of 102 (87.3%), because ~90 MB of
- * each is the embedded Bun runtime. So a changed CLI is ~2 MiB of new bytes,
+ * each is the embedded Bun runtime — but only when the SAME Bun compiled both.
+ * The shipped API image compiles them with two different pins and measures 0
+ * of 111 shared on a real deploy; see manifest.ts. So a changed CLI is ~2 MiB of new bytes,
  * not 105 MB — but only if the API can name the chunks and serve one.
  *
  * FIXED-SIZE, not content-defined. A 400-byte source addition to apps/cli also

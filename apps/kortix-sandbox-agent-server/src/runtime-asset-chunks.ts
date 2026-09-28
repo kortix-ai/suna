@@ -8,13 +8,27 @@
  * builds differing only in `KORTIX_CLI_VERSION` share 100 of 102 chunks
  * (98.0%), and the CLI and the daemon share 89 of 102 (87.3%).
  *
+ * THE CROSS-ARTIFACT NUMBER IS CONDITIONAL, AND TODAY THE CONDITION DOES NOT
+ * HOLD. 87.3% is what two binaries compiled by the SAME Bun share. The shipped
+ * API image compiles them with two different ones — `apps/api/Dockerfile`
+ * builds the daemon on `SANDBOX_AGENT_BUN_VERSION=1.3.11` (a deliberate pin:
+ * Bun 1.2 breaks `Bun.spawn({terminal})`) and the CLI on `BUN_VERSION=1.2`,
+ * the API's own runtime. Different runtimes, different bytes: measured against
+ * a deployed preview, the two share 0 of 111 chunks, and even their FIRST MiB
+ * differs. So cross-artifact reuse is 0% until those two pins agree, and that
+ * alignment is its own change with its own risk, not a line in this one. The
+ * same-artifact case — a box that holds the previous build of the SAME binary,
+ * which is what a CLI update actually is — is unaffected and is where the
+ * 98.0% lives.
+ *
  * WHERE THE CHUNK STORE IS. There is no chunk cache directory, and adding one
  * would be the wrong shape: the box already holds ~210 MB of chunks in the
  * binaries it RUNS. `/usr/local/bin/kortix`, the running daemon, and the baked
  * floor beside it are the store — always current, never stale, needing no
  * eviction policy, no garbage collection and not one extra byte of disk. One
  * index over all of them serves both components, which is where the
- * cross-artifact 87.3% comes from.
+ * cross-artifact 87.3% would come from once the two build stages agree on a
+ * Bun version (see above); it costs nothing while they do not.
  *
  * FIXED-SIZE, and a rolling hash is not the next increment. The usual argument
  * for content-defined chunking is that an insertion shifts every later byte out
