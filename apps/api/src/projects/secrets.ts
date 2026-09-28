@@ -268,15 +268,6 @@ export async function materializeSecretDelivery(
   const delivered: ResolvedProjectSecret[] = [];
   for (const row of rows) {
     if (!(row.key in env)) continue;
-    // A gateway-managed NAME is not the same thing as a gateway-managed ROW.
-    // `isGatewayManagedEnv` asks the models.dev catalog, which today maps the
-    // `github-copilot` provider to `GITHUB_TOKEN` — so a project's own
-    // `GITHUB_TOKEN` (stored `consumer: 'sandbox'`, the shape the secrets UI
-    // creates) was silently deleted from every sandbox env while the capability
-    // catalog kept advertising it. The platform stamps `consumer` when it
-    // stores a model credential (`routes/provider-oauth.ts` defaultToGateway); trust that
-    // stamp, not a third-party name table. `consumer == null` is a legacy row
-    // with no stamp to trust, so it keeps today's strip.
     if (
       gatewayStripsRow({
         llmGatewayEnabled: input.llmGatewayEnabled,
@@ -288,10 +279,6 @@ export async function materializeSecretDelivery(
       continue;
     }
     if (!input.llmGatewayEnabled && row.consumer === 'llm_gateway') {
-      // Native mode: the row was stored `broker`/`llm_gateway` only because the
-      // platform defaulted provider keys there (routes/provider-oauth.ts `defaultToGateway`,
-      // the provider-connect UI). With no gateway in the path it delivers like a
-      // `runtime` row — plaintext, so toggling the flag never strands the key.
       delivered.push(row);
       continue;
     }
@@ -313,40 +300,10 @@ export async function materializeSecretDelivery(
       delivered.push(row);
       continue;
     }
-    if (
-      delivery.emit === 'handle' &&
-      delivery.strategy === 'broker' &&
-      consumer === 'http_broker' &&
-      row.egressPolicy?.backend === 'kortix_fetch'
-    ) {
-      env[row.key] = await input.mintHandleFor(row);
-      delivered.push(row);
-      continue;
-    }
-    // Egress-enforced: the KEY holds the HANDLE, never the value.
-    //
-    // This used to mint the handle row and export nothing, on the theory that
-    // an empty env is the strongest possible boundary. It is also a boundary
-    // the agent cannot use: an ordinary HTTP client has nothing to send, so
-    // every SDK that reads `os.environ[...]` fails with an unset variable and
-    // the model's only way forward is to ask a human for the real value.
-    //
-    // The handle is what makes the mechanism transparent: the client sends it, the
-    // relay swaps it for the value server-side on an approved host, and a
-    // handle that leaks anywhere else is a self-describing string worth
-    // nothing. Same per-session rotation and same revocation as a broker
-    // handle — it is the same minting path.
-    //
-    // A row with no policy is dropped rather than minted: there is nothing to
-    // freeze into the handle's snapshot, so the mint would throw and take the
-    // whole env snapshot — and with it the session boot — down with it. The
-    // broker branch above already fails closed the same way.
-    if (
-      delivery.emit === 'handle' &&
-      delivery.strategy === 'egress' &&
-      consumer === 'network' &&
-      row.egressPolicy
-    ) {
+    if (delivery.emit === 'handle' && (
+      (delivery.strategy === 'broker' && consumer === 'http_broker' && row.egressPolicy?.backend === 'kortix_fetch') ||
+      (delivery.strategy === 'egress' && consumer === 'network' && row.egressPolicy)
+    )) {
       env[row.key] = await input.mintHandleFor(row);
       delivered.push(row);
       continue;
@@ -389,8 +346,7 @@ async function mintSessionSecretHandle(
       .orderBy(desc(projectSessionSecretHandles.revision))
       .limit(1);
 
-    const policyMatches =
-      latest && JSON.stringify(latest.policySnapshot) === JSON.stringify(egressPolicy);
+    const policyMatches = latest && JSON.stringify(latest.policySnapshot) === JSON.stringify(egressPolicy);
     const notExpired = !latest?.expiresAt || latest.expiresAt.getTime() > Date.now();
     if (latest?.status === 'active' && policyMatches && notExpired) {
       const handle = sessionSecretHandle(latest.lookupId, row);
@@ -409,7 +365,6 @@ async function mintSessionSecretHandle(
         revision: latest.revision,
       };
     }
-
     if (latest?.status === 'active') {
       await tx
         .update(projectSessionSecretHandles)
