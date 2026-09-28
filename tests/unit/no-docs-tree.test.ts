@@ -36,8 +36,7 @@ describe('the top-level documentation tree', () => {
   });
 
   it('is cited by no tracked file', () => {
-    const offenders = git([
-      'grep', '-l', '-E', CITATION, '--',
+    const scope = [
       // Migrations are immutable once applied, so their old comments stay.
       ':!packages/db/migrations/',
       // Rendered into EC2 user_data, which is not in ignore_changes: any edit
@@ -45,7 +44,13 @@ describe('the top-level documentation tree', () => {
       ':!infra/terraform/modules/selfhost-ec2/templates/user-data.sh.tftpl',
       // Its fixture path sits inside a skill's own directory, not the repo root.
       ':!packages/sdk/src/core/turns/tools/skill-helpers.test.ts',
-    ]);
+    ];
+    // A literal pass first: the extended regex over the whole tree took 3.2 to
+    // 4.6 s of this test's 5 s budget in the CI core lane, and timed out under
+    // local load. The literal pass leaves ~200 files for the regex.
+    const candidates = git(['grep', '-l', '-F', `${TREE}/`, '--', ...scope]);
+    const offenders =
+      candidates.length === 0 ? [] : git(['grep', '-l', '-E', CITATION, '--', ...candidates]);
     expect(offenders).toEqual([]);
   });
 });
