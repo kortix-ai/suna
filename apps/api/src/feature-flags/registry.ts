@@ -398,22 +398,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
       'the change-request merge governance guard.',
   },
-  {
-    key: 'mcp',
-    name: 'MCP server',
-    description:
-      'Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls the Kortix API with your permissions. Settings shows the URL under Connect MCP in the workspace menu.',
-    stability: 'experimental',
-    available: () => true,
-    // OFF until the hosted MCP is proven with real clients (Marko, 2026-09-28:
-    // "the entire thing should be a feature flag because this ain't ready yet").
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'POST /projects/:id/mcp answers 403 `feature_disabled` when off (mcp/index.ts). ' +
-      'The OAuth client registration and discovery documents are user-scoped and stay ' +
-      'reachable; a token they produce opens no MCP endpoint on a project with the flag off.',
-  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

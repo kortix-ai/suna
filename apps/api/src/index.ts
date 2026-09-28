@@ -648,13 +648,11 @@ app.get('/.well-known/oauth-authorization-server', (c) => {
   });
 });
 
-// RFC 9728 protected-resource metadata for a project's MCP endpoint — what an
-// MCP client reads after the endpoint's 401 challenge to find the authorization
+// RFC 9728 protected-resource metadata for the MCP endpoint — what an MCP
+// client reads after the endpoint's 401 challenge to find the authorization
 // server above.
-app.get('/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp', (c) => {
-  const projectId = c.req.param('projectId');
-  if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
-  return c.json(mcpProtectedResourceMetadata(projectId, new URL(c.req.url).origin), 200, {
+app.get('/.well-known/oauth-protected-resource/v1/mcp', (c) => {
+  return c.json(mcpProtectedResourceMetadata(new URL(c.req.url).origin), 200, {
     'cache-control': 'public, max-age=3600',
   });
 });
@@ -989,9 +987,10 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-// Before projectsApp: the MCP route answers its own 401 with an OAuth challenge.
-app.route('/v1/projects', createMcpApp(dispatchInProcess));
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+// /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
+// It answers its own 401 with an OAuth challenge, so no auth middleware here.
+app.route('/v1/mcp', createMcpApp(dispatchInProcess));
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served
