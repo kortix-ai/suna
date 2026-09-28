@@ -454,7 +454,8 @@ jobs:
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
   # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
-  # one-shot publish-and-deprecate job was removed with the NPM_TOKEN secret.
+  # one-shot publish-and-deprecate job was removed with the NPM_TOKEN secret,
+  # and its source was removed on 2026-09-28.
   #
   # Each package declares its published layout in its own
   # publishConfig. scripts/publish-npm-package.sh builds it, stages that manifest

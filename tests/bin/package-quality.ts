@@ -156,7 +156,7 @@ await runAll([
   run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
 ]);
 await runAll([
-  ...['llm-catalog', 'sdk', 'executor-sdk'].map((directory) =>
+  ...['llm-catalog', 'sdk'].map((directory) =>
     verifyPublishablePackage(directory, false),
   ),
   verifyAgentTunnelCli(),
