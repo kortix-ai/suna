@@ -120,18 +120,6 @@ export interface FeatureFlagDef {
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
-    key: 'session_transcript_history',
-    name: 'Session Transcript History',
-    description:
-      'Save the whole chat history after each turn, tool calls and sub-agents included, and show it from the database while the session computer starts.',
-    stability: 'beta',
-    available: () => true,
-    // On by default: saved history is how web, mobile and the CLI show a
-    // session while its computer is off. A project can still turn it off.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-  },
-  {
     key: 'marketplace',
     name: 'Marketplace',
     description:
@@ -341,9 +329,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
     stability: 'experimental',
-    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
-    // Settings row disappears and the surface is dark for every project.
-    available: () => config.CONFIG_RELEASES_ENABLED,
+    available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
     // "its off for now, as its untested"). The behaviour it gates is the
     // intended one; the default is a rollout decision, not a design opinion.

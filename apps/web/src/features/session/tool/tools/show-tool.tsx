@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
-import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
   isShowContentUnavailable,
   isShowPayloadEmpty,
@@ -36,7 +36,6 @@ import {
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useTranslations } from '@/i18n/use-translations';
-import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { GlobeIcon as Globe } from '@phosphor-icons/react';

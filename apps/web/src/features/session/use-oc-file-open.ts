@@ -102,6 +102,13 @@ async function fetchPrefixesFromSdkUncached(
   return unique;
 }
 
+/** Merge a newly discovered prefix into the cache, longest-first, no duplicates */
+function rememberPrefix(prefix: string): void {
+  if (cachedPrefixes?.includes(prefix)) return;
+  cachedPrefixes = [prefix, ...(cachedPrefixes ?? [])];
+  cachedPrefixes.sort((a, b) => b.length - a.length);
+}
+
 /**
  * Last-resort fallback: discover the project root by probing the file API
  * with progressively shorter suffixes of the absolute path.
@@ -124,14 +131,7 @@ async function discoverPrefixViaFileApi(absPath: string): Promise<string | null>
         // Derive the prefix from the original path minus the working suffix
         const prefix = '/' + segments.slice(0, segments.length - depth).join('/');
         // Merge into cache
-        if (cachedPrefixes) {
-          if (!cachedPrefixes.includes(prefix)) {
-            cachedPrefixes = [prefix, ...cachedPrefixes];
-            cachedPrefixes.sort((a, b) => b.length - a.length);
-          }
-        } else {
-          cachedPrefixes = [prefix];
-        }
+        rememberPrefix(prefix);
         return candidate;
       }
     } catch {

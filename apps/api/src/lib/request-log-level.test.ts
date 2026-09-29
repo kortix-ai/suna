@@ -13,9 +13,19 @@
  *   parked-box read burst as route 5xx (about 40 such 503s a day on the
  *   data-path GET routes alone). A 503 the proxy dialled for, or a mutation,
  *   stays logged.
+ *
+ * - KRTX-468: the line carries the per-stage `Server-Timing` breakdown on the
+ *   slow or failed tail. A p95 anomaly used to leave one opaque `duration`;
+ *   the breakdown answers "DB stretch or app-side work" from the line itself.
  */
 import { describe, expect, test } from 'bun:test';
-import { requestLogLevel, shouldSuppressRequestLog } from './request-log-level';
+import { runWithContext } from './request-context';
+import {
+  requestLogLevel,
+  requestTimingLogField,
+  shouldSuppressRequestLog,
+} from './request-log-level';
+import { beginStage } from './server-timing';
 
 describe('requestLogLevel', () => {
   test('a successful or client-error request is INFO, however slow', () => {
@@ -105,5 +115,52 @@ describe('shouldSuppressRequestLog', () => {
     };
     expect(shouldSuppressRequestLog(longPoll)).toBe(true);
     expect(shouldSuppressRequestLog({ ...longPoll, durationMs: 400 })).toBe(false);
+  });
+});
+
+describe('requestTimingLogField', () => {
+  test('a fast success carries no stage breakdown', () => {
+    expect(requestTimingLogField(30, 200)).toBe('');
+    expect(requestTimingLogField(999, 200)).toBe('');
+  });
+
+  test('a slow request carries the stage entries it recorded', async () => {
+    const line = await runWithContext('GET', '/v1/projects/<project>/sessions', async () => {
+      const end = beginStage('db');
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      end();
+      return requestTimingLogField(1_100, 200);
+    });
+
+    expect(line).toMatch(/^db;dur=\d+;desc="n=1"$/);
+    const duration = /db;dur=(\d+)/.exec(line)?.[1] ?? '0';
+    expect(Number(duration)).toBeGreaterThanOrEqual(10);
+  });
+
+  test('a 5xx carries the breakdown even when fast', async () => {
+    const line = await runWithContext('GET', '/x', async () => {
+      const end = beginStage('db');
+      end();
+      return requestTimingLogField(30, 500);
+    });
+    expect(line).toContain('db;dur=');
+  });
+
+  test('outside a request context it is empty, not a throw', () => {
+    expect(requestTimingLogField(1_100, 200)).toBe('');
+    expect(requestTimingLogField(30, 500)).toBe('');
+  });
+
+  test('KORTIX_SLOW_REQUEST_TIMING_MS moves the slow tail threshold', () => {
+    const previous = process.env.KORTIX_SLOW_REQUEST_TIMING_MS;
+    process.env.KORTIX_SLOW_REQUEST_TIMING_MS = '1';
+    try {
+      // No request context: the 1 ms threshold puts the request on the slow
+      // tail, and the breakdown of zero stages is an empty string.
+      expect(requestTimingLogField(5, 200)).toBe('');
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_SLOW_REQUEST_TIMING_MS;
+      else process.env.KORTIX_SLOW_REQUEST_TIMING_MS = previous;
+    }
   });
 });

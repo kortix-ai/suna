@@ -1144,10 +1144,6 @@
           "name": "网络强制保护的机密",
           "description": "控制哪些工具和目标可以接收项目机密。"
         },
-        "session_transcript_history": {
-          "name": "会话聊天记录",
-          "description": "每轮对话后保存聊天记录，并在会话计算机启动时显示。"
-        },
         "pooled_provider_secrets": {
           "name": "共享提供商密钥",
           "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
@@ -1740,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "连接模型以开始聊天",
-      "description": "此会话需要先连接 LLM 才能响应。你可以使用任意提供商的 API 密钥。",
-      "upgradeDescription": "此会话需要先连接 LLM 才能响应。升级即可立即使用 Kortix 托管模型，也可以使用任意提供商的 API 密钥。",
       "upgrade": "升级",
-      "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
       "connectModel": "连接模型",
@@ -15629,7 +15621,6 @@
       "textb139c4cffca9": "信息横幅",
       "textb13bbdebd165": "暂无 SCIM tokens",
       "textb13c564cdf28": "{value0} 已停止",
-      "textb14f19afe19f": "· 已跳过",
       "textb16288742d59": "- 用客户的语气起草续约摘要",
       "textb169cfa6f00f": "删除“{value0}”？此操作无法撤消。会员保留其帐户访问权限。",
       "textb16ecefb1aec": "正在准备新机器。现在启动的会话会等待准备完成——不会失败。",
@@ -18678,6 +18669,7 @@
       "text7ca079c260d4": "已扣除代理运行积分",
       "text2fa5960eb241": "已删除 Kortix App",
       "text8a18f907f571": "已删除 LLM 网关预算",
+      "text3fb4073453fc": "已删除 Microsoft Teams 消息",
       "texta5022956d571": "已删除电脑隧道",
       "text5be61028cb32": "已删除连接器",
       "textc3ab70838004": "已删除网关路由策略",
@@ -18703,6 +18695,7 @@
       "text46bf87f15165": "已下载快速启动 Git 包",
       "text3f83682cacbc": "已下载会话附件",
       "text21d6e0d7c87a": "已下载沙盒入口程序",
+      "textda0af072ec8c": "已编辑 Microsoft Teams 消息",
       "textf2b760a63dfe": "已注册第二因素",
       "text32c94e9eb5f4": "已使角色过期",
       "text7bc76ea5ba38": "已使电脑隧道权限过期",
@@ -18856,6 +18849,7 @@
       "textd7e9422246ca": "已记录代理运行时事件",
       "text24bd93cb9282": "已记录沙盒启动时间线",
       "text8124518133b5": "已记录会话创建",
+      "text6882f8a71aff": "已刷新被拒绝的 ChatGPT 登录",
       "text5b075f5d4491": "已刷新登录会话",
       "text7e2c4b63962f": "已刷新密钥凭据",
       "textaa64846a875f": "已拒绝密钥句柄",

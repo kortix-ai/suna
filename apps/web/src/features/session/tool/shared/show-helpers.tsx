@@ -21,7 +21,7 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolActionBar } from '@/features/session/tool/shared/tool-action-bar';
 import { useTranslations } from '@/i18n/use-translations';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';

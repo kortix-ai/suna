@@ -1144,10 +1144,6 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
-        "session_transcript_history": {
-          "name": "Chatverlauf der Sitzung",
-          "description": "Speichere den Chatverlauf nach jedem Durchlauf und zeige ihn an, während der Sitzungscomputer startet."
-        },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."
@@ -1740,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Modell verbinden, um den Chat zu starten",
-      "description": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
-      "upgradeDescription": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Führe ein Upgrade durch, um sofort auf die verwalteten Modelle von Kortix zuzugreifen, oder verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
       "upgrade": "Upgrade",
-      "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
       "connectModel": "Modell verbinden",
@@ -15629,7 +15621,6 @@
       "textb139c4cffca9": "Info-Banner",
       "textb13bbdebd165": "Noch keine SCIM-Tokens",
       "textb13c564cdf28": "{value0} wird gestoppt",
-      "textb14f19afe19f": "· Übersprungen",
       "textb16288742d59": "- Zusammenfassung der Verlängerung im Ton des Accounts entwerfen",
       "textb169cfa6f00f": "„{value0}“ löschen? Dies kann nicht rückgängig gemacht werden. Mitglieder behalten ihren Kontozugriff.",
       "textb16ecefb1aec": "Eine neue Maschine wird vorbereitet. Jetzt gestartete Sitzungen warten, bis sie fertig ist — sie schlagen nicht fehl.",
@@ -18678,6 +18669,7 @@
       "text7ca079c260d4": "Guthaben für Agent-Ausführung abgebucht",
       "text2fa5960eb241": "Kortix App gelöscht",
       "text8a18f907f571": "LLM-Gateway-Budget gelöscht",
+      "text3fb4073453fc": "Nachricht in Microsoft Teams gelöscht",
       "texta5022956d571": "Computer-Tunnel gelöscht",
       "text5be61028cb32": "Connector gelöscht",
       "textc3ab70838004": "Gateway-Routing-Richtlinie gelöscht",
@@ -18703,6 +18695,7 @@
       "text46bf87f15165": "Fast-Boot-Git-Bundle heruntergeladen",
       "text3f83682cacbc": "Sitzungsanhang heruntergeladen",
       "text21d6e0d7c87a": "Sandbox-Einstiegspunkt heruntergeladen",
+      "textda0af072ec8c": "Nachricht in Microsoft Teams bearbeitet",
       "textf2b760a63dfe": "Zweiten Faktor registriert",
       "text32c94e9eb5f4": "Rolle ablaufen lassen",
       "text7bc76ea5ba38": "Computer-Tunnel-Berechtigung ablaufen lassen",
@@ -18856,6 +18849,7 @@
       "textd7e9422246ca": "Agent-Laufzeitereignis erfasst",
       "text24bd93cb9282": "Sandbox-Boot-Zeitachse erfasst",
       "text8124518133b5": "Sitzungserstellung erfasst",
+      "text6882f8a71aff": "Abgelehnte ChatGPT-Anmeldung erneuert",
       "text5b075f5d4491": "Anmeldesitzung erneuert",
       "text7e2c4b63962f": "Secret-Anmeldedaten erneuert",
       "textaa64846a875f": "Secret-Handle abgewiesen",

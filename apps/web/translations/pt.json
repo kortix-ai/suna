@@ -1144,10 +1144,6 @@
           "name": "Segredos protegidos pela rede",
           "description": "Controle quais ferramentas e destinos podem receber os segredos do projeto."
         },
-        "session_transcript_history": {
-          "name": "Histórico da sessão",
-          "description": "Salva o histórico do chat após cada turno e o mostra enquanto o computador da sessão inicia."
-        },
         "pooled_provider_secrets": {
           "name": "Segredos de provedor compartilhados",
           "description": "Os membros conectam as próprias assinaturas do ChatGPT e chaves de provedor, compartilham quando necessário e escolhem quais cada sessão usa."
@@ -1740,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Conecte um modelo para começar a conversar",
-      "description": "Esta sessão precisa de um LLM conectado antes de poder responder. Use sua própria chave de API de qualquer provedor.",
-      "upgradeDescription": "Esta sessão precisa de um LLM conectado antes de poder responder. Faça upgrade para ter acesso instantâneo aos modelos gerenciados da Kortix ou use sua própria chave de API de qualquer provedor.",
       "upgrade": "Fazer upgrade",
-      "bringKey": "Usar sua própria chave",
       "barTitle": "Nenhum modelo conectado",
       "barDescription": "conecte um para começar a conversar",
       "connectModel": "Conectar modelo",
@@ -15629,7 +15621,6 @@
       "textb139c4cffca9": "Banner informativo",
       "textb13bbdebd165": "Ainda não há tokens SCIM",
       "textb13c564cdf28": "{value0} está parado",
-      "textb14f19afe19f": "· Ignorado",
       "textb16288742d59": "- Rascunhe o resumo da renovação na voz da conta",
       "textb169cfa6f00f": "Excluir \"{value0}\"? Isto não pode ser desfeito. Os membros mantêm o acesso à sua conta.",
       "textb16ecefb1aec": "Uma nova máquina está sendo preparada. As sessões iniciadas agora aguardam a conclusão — elas não falham.",
@@ -18678,6 +18669,7 @@
       "text7ca079c260d4": "Créditos deduzidos pela execução do agente",
       "text2fa5960eb241": "Kortix App excluído",
       "text8a18f907f571": "Orçamento do gateway LLM excluído",
+      "text3fb4073453fc": "Mensagem do Microsoft Teams excluída",
       "texta5022956d571": "Túnel do computador excluído",
       "text5be61028cb32": "Conector excluído",
       "textc3ab70838004": "Política de roteamento do gateway excluída",
@@ -18703,6 +18695,7 @@
       "text46bf87f15165": "Pacote Git de inicialização rápida baixado",
       "text3f83682cacbc": "Anexo da sessão baixado",
       "text21d6e0d7c87a": "Ponto de entrada do sandbox baixado",
+      "textda0af072ec8c": "Mensagem do Microsoft Teams editada",
       "textf2b760a63dfe": "Segundo fator cadastrado",
       "text32c94e9eb5f4": "Função expirada",
       "text7bc76ea5ba38": "Permissão do túnel do computador expirada",
@@ -18856,6 +18849,7 @@
       "textd7e9422246ca": "Evento de runtime do agente registrado",
       "text24bd93cb9282": "Linha do tempo de inicialização do sandbox registrada",
       "text8124518133b5": "Criação da sessão registrada",
+      "text6882f8a71aff": "Login do ChatGPT atualizado após uma recusa",
       "text5b075f5d4491": "Sessão de login atualizada",
       "text7e2c4b63962f": "Credencial do segredo atualizada",
       "textaa64846a875f": "Handle de segredo recusado",
