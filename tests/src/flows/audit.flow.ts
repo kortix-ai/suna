@@ -510,7 +510,7 @@ flow(
     const base = { params: { accountId: team.id } };
     const correlationId = ctx.fixtures.name('audit-reconstruction');
 
-    await ctx.step('an allowlisted client header attributes the SDK surface', async () => {
+    await ctx.step('a spoofed client header changes nothing: the row records the credential', async () => {
       const action = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
         params: { projectId: project.id },
         headers: {
@@ -534,9 +534,11 @@ flow(
             query: {
               project_id: project.id,
               actor_type: 'human',
-              source: 'cli',
+              source: 'human',
+              credential_kind: 'browser_session',
               outcome: 'success',
               correlation_id: correlationId,
+              action: 'project.read',
             },
           }),
         {
@@ -559,13 +561,25 @@ flow(
         event.project_id !== project.id ||
         event.actor_type !== 'human' ||
         event.authoritative_source !== 'human' ||
-        event.client_reported_source !== 'cli' ||
+        event.credential_kind !== 'browser_session' ||
+        event.client_reported_source != null ||
         event.outcome !== 'success' ||
         event.correlation_id !== correlationId ||
         typeof event.request_id !== 'string' ||
         typeof event.trace_id !== 'string'
       ) {
         throw new Error(`centralized audit envelope mismatch: ${JSON.stringify(event)}`);
+      }
+    });
+
+    await ctx.step('a credential_kind filter that matches no row returns none', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        ...base,
+        query: { project_id: project.id, credential_kind: 'scim_token', correlation_id: correlationId },
+      });
+      r.status(200);
+      if (r.json<{ events: unknown[] }>().events.length !== 0) {
+        throw new Error('credential_kind=scim_token matched a browser request');
       }
     });
 
@@ -1190,5 +1204,120 @@ flow(
         });
       }
     }
+  },
+);
+
+// AUD-CRED — the audit records the credential the API authenticated, never a
+// label the client reports. The same read done with a browser JWT and with a
+// personal access token yields rows whose `credential_kind` / `credential_id`
+// name each credential, and a PAT that sends `X-Kortix-Client: web` is still a
+// PAT. (An OAuth app is asserted in MCP-3, which owns the OAuth dance.)
+flow(
+  'AUD-CRED',
+  {
+    domain: 'audit',
+    routes: [
+      'GET /v1/projects/:projectId',
+      'GET /v1/accounts/:accountId/audit',
+      'POST /v1/accounts/tokens',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+
+    type Row = Record<string, unknown>;
+    // Do one project read as `send`, then return its audit row (see AUD-FILTER
+    // for why this polls: the audit queue flushes per API task).
+    const readAndFind = async (
+      label: string,
+      send: (correlationId: string) => Promise<{ status(code: number): unknown }>,
+    ): Promise<Row> => {
+      const correlationId = ctx.fixtures.name(`audit-cred-${label}`);
+      (await send(correlationId)).status(200);
+      const r = await waitFor(
+        async () =>
+          ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+            params: { accountId: team.id },
+            query: { project_id: project.id, correlation_id: correlationId, action: 'project.read' },
+          }),
+        {
+          until: (res) =>
+            res.statusCode === 200 &&
+            (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
+          timeoutMs: 15_000,
+          intervalMs: 500,
+          description: `the ${label} audit event for ${correlationId}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
+      return r.json<{ events: Row[] }>().events[0]!;
+    };
+
+    let patSecret = '';
+    let patId = '';
+    const patName = ctx.fixtures.name('aud-cred-pat');
+    await ctx.step('mint a personal access token as OWNER → 201', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: patName });
+      r.status(201).body().exists('$.secret_key').exists('$.token_id');
+      const j = r.json<{ secret_key: string; token_id: string }>();
+      patSecret = j.secret_key;
+      patId = j.token_id;
+    });
+
+    await ctx.step('browser JWT → credential_kind browser_session, no reported client', async () => {
+      const row = await readAndFind('jwt', (correlationId) =>
+        ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', {
+          params: { projectId: project.id },
+          headers: { 'x-correlation-id': correlationId },
+        }),
+      );
+      if (row.credential_kind !== 'browser_session' || row.client_reported_source != null) {
+        throw new Error(`jwt row: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('PAT → credential_kind personal_access_token with the token id and name', async () => {
+      const row = await readAndFind('pat', (correlationId) =>
+        ctx.client.withBearer(patSecret, 'PAT').get(`/v1/projects/${project.id}`, {
+          headers: { 'x-correlation-id': correlationId },
+        }),
+      );
+      if (
+        row.credential_kind !== 'personal_access_token' ||
+        row.credential_id !== patId ||
+        row.credential_name !== patName ||
+        row.client_reported_source != null
+      ) {
+        throw new Error(`pat row: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('PAT that sends X-Kortix-Client: web is still a personal_access_token', async () => {
+      const row = await readAndFind('spoof', (correlationId) =>
+        ctx.client.withBearer(patSecret, 'PAT').get(`/v1/projects/${project.id}`, {
+          headers: { 'x-correlation-id': correlationId, 'x-kortix-client': 'web' },
+        }),
+      );
+      if (
+        row.credential_kind !== 'personal_access_token' ||
+        row.credential_id !== patId ||
+        row.client_reported_source != null
+      ) {
+        throw new Error(`spoofed row: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('credential_kind filter selects the PAT rows only', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        params: { accountId: team.id },
+        query: { project_id: project.id, action: 'project.read', credential_kind: 'personal_access_token' },
+      });
+      r.status(200);
+      const rows = r.json<{ events: Row[] }>().events;
+      if (rows.length < 2 || rows.some((e) => e.credential_kind !== 'personal_access_token')) {
+        throw new Error(`filter: ${JSON.stringify(rows.map((e) => e.credential_kind))}`);
+      }
+    });
   },
 );

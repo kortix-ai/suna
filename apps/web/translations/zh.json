@@ -19028,7 +19028,13 @@
       "textd71a0c697cce": "分段",
       "text9ae34cca7f2d": "由 Kortix 管理",
       "textafecbae4466e": "Kortix 会为此项目创建并管理一个私有仓库。",
-      "text6cb9b40da8a0": "Kortix 会在你的 GitHub 账户中创建一个私有仓库。"
+      "text6cb9b40da8a0": "Kortix 会在你的 GitHub 账户中创建一个私有仓库。",
+      "text2ed8b8066255": "通过",
+      "texta6d0f740e426": "个人访问令牌",
+      "text2bbd1ec2197d": "已连接应用",
+      "textda3d3fb8f598": "代理会话",
+      "text4dcb7e3b10a9": "SCIM 令牌",
+      "text36fe0f55b7f5": "任意凭据"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

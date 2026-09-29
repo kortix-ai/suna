@@ -64,7 +64,7 @@ export async function reconcileAuditEvents(
                CASE s.origin::text WHEN 'trigger' THEN 'automation' WHEN 'schedule' THEN 'automation'
                     WHEN 'backend' THEN 'api' WHEN 'system' THEN 'system' ELSE 'human' END
              ),
-             NULLIF(s.metadata #>> '{audit_v2,client_reported_source}', ''),
+             NULL::text,
              'success', 'session.created', 'created', 'project_session', s.session_id,
              s.session_id, NULL::text, NULL::text, 'project_sessions', s.session_id, 'created',
              jsonb_build_object(

@@ -86,10 +86,16 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
             `INSERT INTO kortix.audit_events
              (account_id, project_id, session_id, action, resource_type,
               source_ledger, source_record_id, phase, authoritative_source,
-              on_behalf_of_user_id)
+              on_behalf_of_user_id, credential_kind, credential_id)
            VALUES ($1, $2, $3, 'test.sequence', 'project_session',
-                   'audit_v2_test', $4, 'completed', 'system', $5::uuid)`,
-            [ACCOUNT, PROJECT, SESSION, id, index === 2 ? 'a7300000-0000-4000-a000-0000000000b1' : null],
+                   'audit_v2_test', $4, 'completed', 'system', $5::uuid, $6, $7)`,
+            [
+              ACCOUNT, PROJECT, SESSION, id,
+              index === 2 ? 'a7300000-0000-4000-a000-0000000000b1' : null,
+              // Row two carries a credential; rows one and three keep it NULL.
+              index === 1 ? 'personal_access_token' : null,
+              index === 1 ? 'token-id-1' : null,
+            ],
           ),
         ),
       );
@@ -110,6 +116,8 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
                 convert_to((
                   to_jsonb(a) - 'integrity_hash'
                     - (CASE WHEN a.on_behalf_of_user_id IS NULL THEN 'on_behalf_of_user_id' ELSE '' END)
+                    - (CASE WHEN a.credential_kind IS NULL THEN 'credential_kind' ELSE '' END)
+                    - (CASE WHEN a.credential_id IS NULL THEN 'credential_id' ELSE '' END)
                 )::text, 'UTF8'), 'sha256'
               ), 'hex') AS recomputed_hash
        FROM kortix.audit_events
@@ -370,7 +378,8 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
     expect(result.rows[0]).toMatchObject({
       actor_type: 'agent',
       authoritative_source: 'agent',
-      client_reported_source: 'cli',
+      // Legacy session metadata still says "cli"; reconciliation no longer reads it.
+      client_reported_source: null,
       initiator_actor_type: 'agent',
       initiator_actor_id: 'parent-session',
       delegation_depth: 1,

@@ -17,7 +17,7 @@ Status: **experimental**. Not in the release CLI bundle. Run from the repo.
    with raw `fetch`, never imports `@opencode-ai/sdk`, never hand-rolls
    transport. Missing capability → add it to the SDK (load the `sdk` skill:
    TDD, three synchronized edits per new export, no version bump).
-2. One client per host: `createKortix({ backendUrl, getToken, clientSource: 'tui' })`
+2. One client per host: `createKortix({ backendUrl, getToken })`
    created once at boot. Auth is `getToken` only.
 3. A whole session is one hook: `useSession(projectId, sessionId)` from
    `@kortix/sdk/react`. No separate `/start` driver, no separate SSE provider,

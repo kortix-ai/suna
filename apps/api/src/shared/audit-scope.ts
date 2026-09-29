@@ -41,6 +41,7 @@
  * import their binding API from here, never from `shared/audit`.
  */
 import * as requestContext from '../lib/request-context';
+import type { AuditCredential } from './audit-credential';
 import { clientIpFromHeaders } from './client-ip';
 
 // Namespace import, resolved at call time: several test files replace
@@ -65,7 +66,7 @@ export type InboundEntrypoint = 'http' | 'preview_origin' | 'app_origin' | 'ws_u
  * authenticator bound. `null` is a statement — "known to be none" — and is
  * kept.
  */
-export interface AuditPrincipal {
+export interface AuditPrincipal extends AuditCredential {
   accountId?: string | null;
   projectId?: string | null;
   sessionId?: string | null;
@@ -118,6 +119,8 @@ export interface HonoIdentitySnapshot {
   hasAgentGrant: boolean;
   /** `c.get('actor')` — the canonical IAM actor, when auth built one. */
   actor: unknown;
+  /** What the API authenticated, derived from the same context variables. */
+  credential: AuditCredential;
   /** `c.get('onBehalfOfUserId')`; `undefined` when the variable was never set. */
   onBehalfOfUserIdVar: string | null | undefined;
   /** The raw request path. Used to derive ids; never written to the row. */
@@ -143,7 +146,6 @@ export interface InboundAuditScope {
   /** Request-level facts, captured once when the scope opens. */
   ip: string | null;
   userAgent: string | null;
-  clientSourceHeader: string | null;
   correlationId: string | null;
   /** Account id from `?account_id=` / `?accountId=`; the only query value read. */
   queryAccountId: string | null;
@@ -194,7 +196,6 @@ export function attachInboundAuditScope(init: InboundAuditScopeInit): InboundAud
     hono: null,
     ip: headers ? clientIpFromHeaders((name) => headers.get(name)) : null,
     userAgent: headers?.get('user-agent') || null,
-    clientSourceHeader: headers?.get('x-kortix-client') ?? null,
     correlationId: headers?.get('x-correlation-id') || headers?.get('idempotency-key') || null,
     queryAccountId:
       init.url?.searchParams.get('account_id') || init.url?.searchParams.get('accountId') || null,

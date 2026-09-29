@@ -26,7 +26,10 @@ export interface AuditFilterInput {
   projectId?: string | null;
   sessionId?: string | null;
   actorType?: string | null;
+  /** Trusted, server-derived source (`human`, `agent`, `api_key`, ...). */
   source?: string | null;
+  /** What the API authenticated: `browser_session`, `personal_access_token`, ... */
+  credentialKind?: string | null;
   phase?: string | null;
   outcome?: string | null;
   requestId?: string | null;
@@ -47,18 +50,8 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.projectId) push(eq(auditEvents.projectId, input.projectId));
   if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
   if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
-  if (input.source) {
-    // `source` is the trusted server-derived execution source. CLI/mobile/web
-    // are client-reported surfaces and never overwrite it. One ergonomic
-    // filter matches either field so `source=cli` remains useful without
-    // trusting the client as provenance.
-    push(
-      or(
-        eq(auditEvents.authoritativeSource, input.source),
-        eq(auditEvents.clientReportedSource, input.source),
-      ),
-    );
-  }
+  if (input.source) push(eq(auditEvents.authoritativeSource, input.source));
+  if (input.credentialKind) push(eq(auditEvents.credentialKind, input.credentialKind));
   if (input.phase) push(eq(auditEvents.phase, input.phase));
   if (input.outcome) push(eq(auditEvents.outcome, input.outcome));
   if (input.requestId) push(eq(auditEvents.requestId, input.requestId));

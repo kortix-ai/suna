@@ -23,6 +23,7 @@ import {
   flushAuditEvents,
   recordAuditEvent,
 } from '../shared/audit';
+import { auditCredentialNames } from '../shared/audit-credential-names';
 import { requestClientIp } from '../shared/client-ip';
 import {
   deliverTestEvent,
@@ -100,7 +101,8 @@ export { buildFilters, type AuditFilterInput } from './audit-filters';
 //   ?actor_type=agent       — human, agent, service_account, system, or anonymous
 //   ?project_id=<uuid>      — one project
 //   ?session_id=<id>        — one session
-//   ?source=cli             — one client or execution source
+//   ?source=api_key         — one trusted execution source (authoritative_source)
+//   ?credential_kind=oauth_app — one credential class the API authenticated
 //   ?outcome=failure        — success, failure, denied, or pending
 //   ?request_id=<id>        — one API request
 //   ?correlation_id=<id>    — one cross-system operation
@@ -127,6 +129,7 @@ auditRouter.openapi(
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -156,6 +159,7 @@ auditRouter.openapi(
     const projectId = c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
+    const credentialKind = c.req.query('credential_kind')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
     const outcome = c.req.query('outcome')?.trim() || null;
     const requestId = c.req.query('request_id')?.trim() || null;
@@ -187,6 +191,7 @@ auditRouter.openapi(
       projectId,
       sessionId,
       source,
+      credentialKind,
       phase,
       outcome,
       requestId,
@@ -215,9 +220,10 @@ auditRouter.openapi(
     const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    const names = await auditCredentialNames(page);
 
     return c.json({
-      events: page.map(serializeAuditEvent),
+      events: page.map((row) => serializeAuditEvent(row, names)),
       next_cursor: nextCursor,
     });
   },
@@ -265,6 +271,8 @@ const CSV_HEADERS = [
   'source',
   'authoritative_source',
   'client_reported_source',
+  'credential_kind',
+  'credential_id',
   'outcome',
   'action',
   'phase',
@@ -311,6 +319,7 @@ auditRouter.openapi(
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -351,6 +360,7 @@ auditRouter.openapi(
     const projectId = c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
+    const credentialKind = c.req.query('credential_kind')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
     const outcome = c.req.query('outcome')?.trim() || null;
     const requestId = c.req.query('request_id')?.trim() || null;
@@ -378,6 +388,7 @@ auditRouter.openapi(
       projectId,
       sessionId,
       source,
+      credentialKind,
       phase,
       outcome,
       requestId,
