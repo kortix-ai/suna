@@ -130,10 +130,15 @@ export function decideStoppedObservation(
  *
  * Best-effort by construction — a lost marker costs one more pass of
  * confirmation, never a wrong park.
+ *
+ * Returns whether THIS call armed a fresh observation: true only when the CAS
+ * matched a row (no readable marker existed), false when a marker was already
+ * counting or the write failed. The warn sites key on it so an unchanged
+ * episode logs one line instead of one per pass.
  */
-export async function markPendingStopObservation(sandboxId: string): Promise<void> {
+export async function markPendingStopObservation(sandboxId: string): Promise<boolean> {
   const observedAt = new Date();
-  await db
+  const armed = await db
     .update(sessionSandboxes)
     .set({
       metadata: mergeMetadata({ pendingStopObservedAtMs: observedAt.getTime() }),
@@ -148,12 +153,15 @@ export async function markPendingStopObservation(sandboxId: string): Promise<voi
           OR ${sessionSandboxes.metadata}->>'pendingStopObservedAtMs' !~ '^[0-9]+$')`,
       ),
     )
-    .catch((err) =>
+    .returning({ sandboxId: sessionSandboxes.sandboxId })
+    .catch((err) => {
       console.warn(
         `[reaper] pending stop marker failed for ${sandboxId}:`,
         err instanceof Error ? err.message : err,
-      ),
-    );
+      );
+      return [];
+    });
+  return armed.length > 0;
 }
 
 /**
@@ -471,11 +479,16 @@ export async function reconcileSandboxStoppedByExternalId(
     options.confirmMidTurnStop === true &&
     decideStoppedObservation(row.metadata, now) === 'await_confirmation'
   ) {
-    console.warn(
-      `[reaper] provider reported ${externalId} stopped mid-turn; awaiting confirmation`,
-      { sandboxId: row.sandboxId, sessionId: row.sessionId },
-    );
-    await markPendingStopObservation(row.sandboxId);
+    // One line per stop episode — the arming call. A repeated observed stop
+    // inside the window re-runs the CAS, which matches nothing and stays
+    // silent; the polled access path would otherwise warn once per second
+    // for the whole 60 s window.
+    if (await markPendingStopObservation(row.sandboxId)) {
+      console.warn(
+        `[reaper] provider reported ${externalId} stopped mid-turn; awaiting confirmation`,
+        { sandboxId: row.sandboxId, sessionId: row.sessionId },
+      );
+    }
     return false;
   }
   // A stopped box stays stopped: passive /v1/p traffic (markSandboxUsed heal /
