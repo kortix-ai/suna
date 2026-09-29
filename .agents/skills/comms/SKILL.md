@@ -128,7 +128,7 @@ Use these; don't invent others.
 - **SSO is SAML 2.0 only** — no enterprise OIDC. Never write "SAML/OIDC". SCIM 2.0 is first-party but pages beyond the first are unimplemented.
 - **Merge is default-deny for agents, not human-only.** An admin can grant `project.cr.merge`. Say the grant lives in `kortix.yaml` and cannot be widened without an approved change — do not say "only a human can merge".
 - **"Air-gapped" is not a self-host capability today.** `kortix self-host start` pulls images from docker.io and reaches a sandbox provider over egress. Route isolated topologies to Enterprise.
-- Bring your own models — any provider, your own keys — or the ChatGPT, Claude, or Cursor subscription you already pay for.
+- Bring your own models — any provider, your own keys — or the ChatGPT subscription you already pay for. **Only ChatGPT is wired** (Codex device-grant OAuth, `apps/api/src/projects/codex-device-auth.ts`). There is no Claude or Cursor subscription auth path; never name either as a subscription you can bring.
 - Open source and self-hostable; runs on Kortix Cloud, your servers, or fully on-prem.
 - Three ways work runs: on-demand, human-assisted, and automated.
 - 20,000+ GitHub stars on `kortix-ai/suna`. Cite the number, never "the go-to" or "the leading."

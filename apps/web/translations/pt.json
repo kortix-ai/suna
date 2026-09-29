@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "Servidor MCP",
           "description": "Conecte Claude, ChatGPT, Cursor, Codex ou qualquer cliente MCP a este projeto via OAuth. O cliente entra como você e chama o Kortix com as suas permissões. A URL fica em Conectar MCP, no menu do espaço de trabalho."
+        },
+        "reminders": {
+          "name": "Lembretes",
+          "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona a página Lembretes, o indicador de lembretes da sessão e `kortix remind`."
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "A carregar…",
-    "loadMoreSessions": "Carregar mais sessões"
+    "loadMoreSessions": "Carregar mais sessões",
+    "reminders": "Lembretes"
   },
   "dashboard": {
     "title": "Painel",
@@ -3903,7 +3908,7 @@
       "openRow1Title": "Código aberto",
       "openRow1Body": "Uma das maiores plataformas abertas de IA para trabalho. Leia cada linha – nada é uma caixa preta.",
       "openRow2Title": "Qualquer modelo, suas chaves",
-      "openRow2Body": "Traga qualquer provedor ou a assinatura Claude, ChatGPT ou Cursor que você já pagou.",
+      "openRow2Body": "Traga qualquer provedor ou a assinatura ChatGPT que você já pagou.",
       "openRow3Title": "Hospede-se sozinho em qualquer lugar",
       "openRow3Body": "Nuvem gerenciada, sua VPC, no local e até mesmo isolada. Nada telefona para casa.",
       "openRow4Title": "Fork uma empresa inteira",
@@ -15040,7 +15045,7 @@
       "text9d48410d14d3": "Recurso empresarial",
       "text9d4b2eae7c42": "O padrão enviado é permissivo — uma ação é executada, a menos que você diga o contrário. Em um projeto de vendas, a primeira coisa a fazer é definir as ações de saída como Perguntar e as destrutivas como Bloquear. Estamos dizendo isso em vez de deixar você presumir que o padrão mais seguro foi escolhido por você.",
       "text9d53e28e9e39": "O acesso por projeto está listado na seção Projetos desta página.",
-      "text9d54b2fd9149": "Use qualquer provider ou a assinatura do ChatGPT, Claude ou Cursor que você já paga. O modelo é configuração no seu repo, não uma decisão que um vendor toma por você.",
+      "text9d54b2fd9149": "Use qualquer provider ou a assinatura do ChatGPT que você já paga. O modelo é configuração no seu repo, não uma decisão que um vendor toma por você.",
       "text9d5adef979f7": "Legado",
       "text9d6304b7f8dc": "Gerenciamento → Configuração de Identidade",
       "text9d74727714db": "Descartada",
@@ -19238,7 +19243,8 @@
       "textb7ece0360b75": "Lembrete de sessão excluído",
       "text9dcde51d9ff2": "Descrição do agente",
       "textfa0db737cb09": "Escrita pelo agente e não verificada. O conector recebe os parâmetros abaixo.",
-      "text2edf70730233": "Mensagem para o agente (opcional)"
+      "text2edf70730233": "Mensagem para o agente (opcional)",
+      "texte88286ad9739": "Lembretes do projeto listados"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20116,8 +20122,8 @@
     "textOnly": "Apenas texto",
     "zdrTitle": "Retenção zero de dados",
     "zdrDescription": "Retenção zero de dados (ZDR) significa que o provedor processa seus textos e imagens, mas não guarda a entrada nem a resposta após a solicitação. A Kortix armazena seus projetos e conversas separadamente.",
-    "usProvidersTitle": "Provedores sediados nos EUA",
-    "usProvidersDescription": "Cada modelo da Kortix usa um único provedor de inferência fixo, sediado nos EUA. As solicitações nunca passam para outro provedor.",
+    "usProvidersTitle": "Hospedado nos EUA",
+    "usProvidersDescription": "Os modelos da Kortix rodam em data centers nos EUA. Trabalhamos apenas com provedores de inferência americanos.",
     "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
     "hidden": "Oculto no seletor",
     "disableModel": "Desativar modelo",
@@ -20321,5 +20327,46 @@
     "unverifiedTitle": "App não verificado",
     "unverifiedBody": "{client} se registrou sozinho no Kortix. O Kortix não verificou quem o opera. Permita apenas se você mesmo estiver conectando agora.",
     "redirectsTo": "Leva você de volta para"
+  },
+  "reminders": {
+    "title": "Lembretes",
+    "description": "Verificações agendadas que voltam a acionar uma sessão. Os agentes as criam enquanto trabalham; cada uma dispara até ser removida.",
+    "docs": "Como funcionam os lembretes",
+    "tabActive": "Ativos",
+    "tabPaused": "Pausados",
+    "tabDone": "Concluídos",
+    "emptyTitle": "Nenhum lembrete",
+    "emptyDescription": "Quando um agente ou uma pessoa define um lembrete em uma sessão, ele aparece aqui.",
+    "emptyTabDescription": "Esta lista está vazia.",
+    "loadFailed": "Não foi possível carregar os lembretes",
+    "retry": "Tentar novamente",
+    "sessionFilter": "Sessão: {name}",
+    "clearFilter": "Mostrar todas as sessões",
+    "untitledSession": "Sessão sem título",
+    "once": "Uma vez",
+    "every": "A cada {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Próximo {time}",
+    "firedAt": "Disparado {time}",
+    "pausedLabel": "Pausado",
+    "doneLabel": "Concluído",
+    "pause": "Pausar",
+    "resume": "Retomar",
+    "remove": "Remover",
+    "openSession": "Abrir sessão",
+    "removeTitle": "Remover este lembrete?",
+    "removeDescription": "Ele deixa de disparar e é excluído. A sessão mantém o histórico.",
+    "paused": "Lembrete pausado",
+    "resumed": "Lembrete retomado",
+    "removed": "Lembrete removido",
+    "updateFailed": "Não foi possível atualizar o lembrete",
+    "chipLabel": "{count, plural, one {# lembrete ativo} other {# lembretes ativos}}",
+    "chipTitle": "Lembretes desta sessão",
+    "manage": "Gerenciar lembretes",
+    "cardLabel": "Lembrete",
+    "cardOneTime": "Uma vez",
+    "cardRecurring": "Recorrente",
+    "cardManage": "Gerenciar",
+    "gateDescription": "Ative Lembretes para que agentes e pessoas agendem verificações que voltam a acionar uma sessão."
   }
 }

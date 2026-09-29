@@ -23,9 +23,12 @@
 # Enable once per clone:  git config core.hooksPath .githooks
 set -e
 
-# Resolve dotenvx: global, then workspace, then npx.
-if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
-elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+# Resolve dotenvx: the repo-pinned workspace binary first, then global, then
+# npx. Pinned first on purpose: a global dotenvx 2.14 answers `encrypt -f …
+# --no-armor` with "no change" and leaves a plaintext value in place, so the
+# auto-encrypt below depended on whatever happened to be installed.
+if [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+elif command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
 ENV_RE='(^|/)\.env($|\.[A-Za-z0-9_-]+$)'
@@ -40,6 +43,23 @@ for f in $staged_envs; do
   $DX encrypt -f "$f" --no-armor >/dev/null 2>&1 || true
   git add "$f"
 done
+
+# (1b) Verify, independent of any dotenvx version: every non-empty value in a
+#      staged .env must now be `encrypted:…`. `encrypt` above swallows its own
+#      failure, so this is what actually stops a plaintext secret.
+plaintext=$(for f in $staged_envs; do
+  git show ":$f" 2>/dev/null \
+    | grep -E '^[A-Za-z_][A-Za-z0-9_]*=.+' \
+    | grep -vE '^DOTENV_PUBLIC_KEY[A-Za-z0-9_]*=' \
+    | grep -vE '^[A-Za-z_][A-Za-z0-9_]*="?encrypted:' \
+    | sed -e 's/=.*//' -e "s|^|  $f: |"
+done)
+if [ -n "$plaintext" ]; then
+  echo "pre-commit: these staged .env values are not encrypted:" >&2
+  printf '%s\n' "$plaintext" >&2
+  echo "  Store them with: dotenvx set KEY value -f <file>   (the dotenvx-secrets skill)" >&2
+  exit 1
+fi
 
 # (2) Any OTHER committable .env present but unstaged (modified) or untracked →
 #     encrypt IN PLACE only. Not re-staged: encryption is the default, but we
@@ -114,4 +134,17 @@ sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" staged
 # `SUPABASE_URL=encrypted:…`. `protect` guards the `.env*` files that hold real
 # secrets and leaves that one alone, so the guard keeps its job and stops
 # refusing a file the repo is required to keep readable.
-exec $DX protect
+#
+# `protect` exists only from dotenvx 2.29. An older dotenvx — the repo pins
+# 1.x, and a global install is often older — prints "unknown command
+# 'protect'" and EXITS 0, which turned this backstop into a silent pass. So
+# pick by version: `protect` from 2.29, otherwise the deprecated
+# `ext precommit` this hook ran before (it blocks a staged plaintext .env; its
+# one false positive is a staged apps/api/scripts/test.env).
+dx_version=$($DX --version 2>/dev/null | tr -dc '0-9.')
+dx_major=${dx_version%%.*}
+dx_minor=${dx_version#*.}; dx_minor=${dx_minor%%.*}
+if [ "${dx_major:-0}" -gt 2 ] 2>/dev/null || { [ "${dx_major:-0}" -eq 2 ] && [ "${dx_minor:-0}" -ge 29 ]; } 2>/dev/null; then
+  exec $DX protect
+fi
+exec $DX ext precommit

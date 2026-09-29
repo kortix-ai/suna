@@ -43,6 +43,7 @@ import {
   type StoredSandboxTurn,
   closeSandboxTurnByMessageId,
 } from '../sandbox-turn-lifecycle';
+import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
@@ -307,8 +308,21 @@ export async function reconcileForwardedTurnsAtEnd(
   // row is a send still on the wire), the message must actually be on the
   // tip, and the tip must not be mid-step (an open newest assistant is a
   // fresh turn that will read it).
+  // AND OLD ENOUGH — the same floor the reaper's own redelivery defers on.
+  // "Accepted, unanswered, tip idle" is also what the seconds between the box
+  // accepting a FRESH prompt and starting its step look like, and the end
+  // relay lands in exactly that window (prod 2026-09-28: a ~20 h spike of
+  // orphan deletions where every deleted prompt was ≤3 s old, 99% of them
+  // non-redeliverable, so each deletion was a lost message the client then
+  // re-sent). Below ORPHANED_PROMPT_MIN_AGE_MS the verdict is not
+  // established: leave the row open — the next turn end re-asks it, and the
+  // reaper's redelivery runs this same gate at ≥ the floor. A row that
+  // proves no age never qualifies, like the reaper's legacy records.
   for (const { turn, verdict } of verdicts) {
+    const orphanAgeMs = turn.startedAtMs === null ? null : Date.now() - turn.startedAtMs;
     const orphanedAtTip =
+      orphanAgeMs !== null &&
+      orphanAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS &&
       !verdict.stranded &&
       !verdict.answered &&
       turn.state === 'active' &&

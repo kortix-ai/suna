@@ -34,8 +34,18 @@ describe('film grid', () => {
     expect(pyConst('FPS')).toBe(FPS);
   });
 
-  test('the launch film and its score are the same length', () => {
-    expect(filmSources).toContain(`frames: bars(${pyConst('BARS')})`);
+  test('every film and its score are the same length', () => {
+    // Per film file: each `frames: bars(N)` has a score of `bars: N`, and back.
+    const files = readdirSync(FILMS, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('index.tsx'))
+      .map((f) => readFileSync(join(FILMS, f), 'utf8'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const src of files) {
+      const picture = new Set([...src.matchAll(/frames: bars\((\d+)\)/g)].map((m) => m[1]));
+      const sound = new Set([...src.matchAll(/^\s*bars: (\d+),/gm)].map((m) => m[1]));
+      expect([...sound].sort()).toEqual([...picture].sort());
+    }
   });
 });
 
@@ -46,10 +56,26 @@ describe('film assets', () => {
     expect(paths.filter((p) => !existsSync(join(WEB, 'public', p)))).toEqual([]);
   });
 
+  test('every product capture a film shows exists', () => {
+    const shots = [...filmSources.matchAll(/\$\{M\}\/([\w-]+\.webp)/g)].map((m) => m[1]);
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.filter((n) => !existsSync(join(WEB, 'public/media/film', n)))).toEqual([]);
+  });
+
   test('every cue names a sound effect on disk', () => {
     const names = new Set([...filmSources.matchAll(/sfx: '(\w+)'/g)].map((m) => m[1]));
     expect(names.size).toBeGreaterThan(0);
     const missing = [...names].filter((n) => !existsSync(join(WEB, 'scripts/film/sfx', `${n}.mp3`)));
     expect(missing).toEqual([]);
+  });
+});
+
+describe('film route', () => {
+  // A production build 500s every /presentations/<x> page with
+  // DYNAMIC_SERVER_USAGE when the tree is not generated per locale: the
+  // middleware rewrites unprefixed URLs onto /en/… (dev.kortix.com, 2026-09-29).
+  test('the presentations tree is generated per locale', () => {
+    const layout = readFileSync(join(import.meta.dir, '../../layout.tsx'), 'utf8');
+    expect(layout).toContain('export const generateStaticParams = localeStaticParams');
   });
 });

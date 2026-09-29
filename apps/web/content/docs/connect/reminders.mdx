@@ -17,6 +17,16 @@ A reminder is a [trigger](/docs/connect/triggers) scoped to one session. The dif
 
 Use a trigger for project work anyone should see, such as a daily digest. Use a reminder for a follow-up that belongs to one task.
 
+## Turn reminders on
+
+Reminders are a per-project [feature flag](/docs/feature-flags), `reminders`, off by default. Turn it on in **Settings → Feature flags**, or:
+
+```sh
+kortix projects features enable reminders
+```
+
+While the flag is off, every reminder route answers `403` with `code: "feature_disabled"`, the Reminders page shows how to turn it on, and existing reminders do not fire. Turning the flag back on fires a slot missed while it was off once, then the schedule continues.
+
 ## Set a reminder
 
 Inside a session, the CLI targets the current session. Outside one, pass `--session <id>`.

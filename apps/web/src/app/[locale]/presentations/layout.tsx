@@ -1,5 +1,12 @@
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
+import { localeStaticParams } from '@/i18n/static-params';
+
+// Prerender every deck and film once per locale, like the marketing pages. The
+// middleware rewrites an unprefixed URL onto /en/… with request headers; a page
+// that was not prerendered for that locale then renders on demand, calls a
+// dynamic API, and fails with DYNAMIC_SERVER_USAGE (500) in production builds.
+export const generateStaticParams = localeStaticParams;
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('hardcodedUi.i18nComplete');

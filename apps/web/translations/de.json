@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "MCP-Server",
           "description": "Verbinde Claude, ChatGPT, Cursor, Codex oder einen anderen MCP-Client per OAuth mit diesem Projekt. Der Client meldet sich als du an und ruft Kortix mit deinen Berechtigungen auf. Die URL findest du unter „MCP verbinden“ im Workspace-Menü."
+        },
+        "reminders": {
+          "name": "Erinnerungen",
+          "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Wird geladen …",
-    "loadMoreSessions": "Weitere Sitzungen laden"
+    "loadMoreSessions": "Weitere Sitzungen laden",
+    "reminders": "Erinnerungen"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -3903,7 +3908,7 @@
       "openRow1Title": "Open Source",
       "openRow1Body": "Eine der größten offenen KI-for-Work-Plattformen. Lesen Sie jede Zeile – nichts ist eine Blackbox.",
       "openRow2Title": "Jedes Modell, Ihre Schlüssel",
-      "openRow2Body": "Bringen Sie einen beliebigen Anbieter oder das Claude, ChatGPT oder Cursor-Abonnement mit, für das Sie bereits bezahlen.",
+      "openRow2Body": "Bringen Sie einen beliebigen Anbieter oder das ChatGPT-Abonnement mit, für das Sie bereits bezahlen.",
       "openRow3Title": "Überall selbst hosten",
       "openRow3Body": "Verwaltete Cloud, Ihre VPC, vor Ort, sogar Air Gap. Nichts ruft nach Hause.",
       "openRow4Title": "Forken Sie ein ganzes Unternehmen",
@@ -15040,7 +15045,7 @@
       "text9d48410d14d3": "Enterprise-Funktion",
       "text9d4b2eae7c42": "Der ausgelieferte Standard ist permissiv — eine Aktion läuft, sofern Sie nichts anderes festgelegt haben. In einem Vertriebsprojekt sollten Sie zuerst ausgehende Aktionen auf Ask und destruktive Aktionen auf Block setzen. Wir sagen Ihnen das, statt Sie annehmen zu lassen, dass automatisch die sicherere Einstellung gewählt wurde.",
       "text9d53e28e9e39": "Der projektweise Zugriff ist im Abschnitt „Projekte“ auf dieser Seite aufgeführt.",
-      "text9d54b2fd9149": "Bring jeden Anbieter oder das ChatGPT-, Claude- oder Cursor-Abonnement mit, für das du bereits bezahlst. Das Modell ist Konfiguration in deinem Repo, keine Entscheidung eines Anbieters.",
+      "text9d54b2fd9149": "Bring jeden Anbieter oder das ChatGPT-Abonnement mit, für das du bereits bezahlst. Das Modell ist Konfiguration in deinem Repo, keine Entscheidung eines Anbieters.",
       "text9d5adef979f7": "Bestandskunde",
       "text9d6304b7f8dc": "Identitätsmanagement → Konfiguration",
       "text9d74727714db": "Verworfen",
@@ -19238,7 +19243,8 @@
       "textb7ece0360b75": "Sitzungserinnerung gelöscht",
       "text9dcde51d9ff2": "Beschreibung des Agenten",
       "textfa0db737cb09": "Vom Agenten verfasst und nicht geprüft. Der Connector erhält die Parameter unten.",
-      "text2edf70730233": "Nachricht an den Agenten (optional)"
+      "text2edf70730233": "Nachricht an den Agenten (optional)",
+      "texte88286ad9739": "Projekterinnerungen aufgelistet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20116,8 +20122,8 @@
     "textOnly": "Nur Text",
     "zdrTitle": "Keine Datenspeicherung",
     "zdrDescription": "Zero Data Retention (ZDR) bedeutet: Der Modellanbieter verarbeitet deine Texte und Bilder, speichert aber Eingaben und Antworten nach der Anfrage nicht. Kortix speichert deine Projekte und Unterhaltungen separat.",
-    "usProvidersTitle": "Anbieter mit Sitz in den USA",
-    "usProvidersDescription": "Jedes Kortix-Modell läuft bei genau einem festgelegten Inferenzanbieter mit Sitz in den USA. Anfragen weichen nie auf einen anderen Anbieter aus.",
+    "usProvidersTitle": "In den USA gehostet",
+    "usProvidersDescription": "Kortix-Modelle laufen in Rechenzentren in den USA. Wir arbeiten nur mit amerikanischen Inferenzanbietern zusammen.",
     "hiddenHint": "In der Auswahl ausgeblendet. Direkte Anfragen sind weiterhin erlaubt; deaktivieren Sie diese im Modellmenü.",
     "hidden": "In Auswahl ausgeblendet",
     "disableModel": "Modell deaktivieren",
@@ -20321,5 +20327,46 @@
     "unverifiedTitle": "Nicht verifizierte App",
     "unverifiedBody": "{client} hat sich selbst bei Kortix registriert. Kortix hat nicht geprüft, wer sie betreibt. Erlaube den Zugriff nur, wenn du sie gerade selbst verbindest.",
     "redirectsTo": "Leitet dich zurück zu"
+  },
+  "reminders": {
+    "title": "Erinnerungen",
+    "description": "Geplante Rückfragen, die eine Sitzung erneut ansprechen. Agenten setzen sie während der Arbeit; jede wird ausgelöst, bis sie entfernt wird.",
+    "docs": "So funktionieren Erinnerungen",
+    "tabActive": "Aktiv",
+    "tabPaused": "Pausiert",
+    "tabDone": "Erledigt",
+    "emptyTitle": "Keine Erinnerungen",
+    "emptyDescription": "Wenn ein Agent oder eine Person eine Erinnerung für eine Sitzung setzt, erscheint sie hier.",
+    "emptyTabDescription": "Diese Liste ist leer.",
+    "loadFailed": "Erinnerungen konnten nicht geladen werden",
+    "retry": "Erneut versuchen",
+    "sessionFilter": "Sitzung: {name}",
+    "clearFilter": "Alle Sitzungen anzeigen",
+    "untitledSession": "Unbenannte Sitzung",
+    "once": "Einmalig",
+    "every": "Alle {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Nächste {time}",
+    "firedAt": "Ausgelöst {time}",
+    "pausedLabel": "Pausiert",
+    "doneLabel": "Erledigt",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "remove": "Entfernen",
+    "openSession": "Sitzung öffnen",
+    "removeTitle": "Diese Erinnerung entfernen?",
+    "removeDescription": "Sie wird nicht mehr ausgelöst und gelöscht. Der Verlauf der Sitzung bleibt erhalten.",
+    "paused": "Erinnerung pausiert",
+    "resumed": "Erinnerung fortgesetzt",
+    "removed": "Erinnerung entfernt",
+    "updateFailed": "Die Erinnerung konnte nicht aktualisiert werden",
+    "chipLabel": "{count, plural, one {# aktive Erinnerung} other {# aktive Erinnerungen}}",
+    "chipTitle": "Erinnerungen dieser Sitzung",
+    "manage": "Erinnerungen verwalten",
+    "cardLabel": "Erinnerung",
+    "cardOneTime": "Einmalig",
+    "cardRecurring": "Wiederkehrend",
+    "cardManage": "Verwalten",
+    "gateDescription": "Aktiviere Erinnerungen, damit Agenten und Personen geplante Rückfragen für eine Sitzung festlegen können."
   }
 }

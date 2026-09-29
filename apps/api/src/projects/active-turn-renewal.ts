@@ -75,7 +75,7 @@ async function tick(
   const startedAtMs = monotonicNowMs();
   try {
     const result = await runActiveTurnRenewal(dependencies);
-    if (result.candidates > 0 || result.errors > 0) {
+    if (result.candidates > 0 || result.errors > 0 || result.transient > 0) {
       logger.info('[active-turn-renewal] pass', {
         candidates: result.candidates,
         matching: result.matching,
@@ -83,6 +83,7 @@ async function tick(
         lifecycleRenewed: result.lifecycleRenewed,
         reconciled: result.reconciled,
         errors: result.errors,
+        transient: result.transient,
       });
     }
   } catch (error) {

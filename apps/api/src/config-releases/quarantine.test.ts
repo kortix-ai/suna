@@ -63,6 +63,7 @@ const deps = (): DesiredReleaseDeps => ({
   },
   resolveBase: async () => tip,
   loadRoster: async () => ({ enabled: [], defaultAgent: null, readable: true, governed: false }),
+  invalidate: () => {},
 });
 
 const desired = (recordAssignment = true) =>
