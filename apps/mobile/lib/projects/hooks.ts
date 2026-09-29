@@ -7,6 +7,7 @@ import { useCallback, useMemo, useRef } from 'react';
 import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -14,6 +15,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
+import { normalizeSessionListFilter, type SessionListFilter } from '@/lib/session/session-tree';
 import {
   createdSessionListRow,
   upsertIntoSessionCache,
@@ -100,6 +102,7 @@ import {
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
+  type ProjectSession,
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
@@ -128,8 +131,15 @@ export const projectKeys = {
    * own key: a flat `useQuery` and an infinite query under one key would hand
    * each other the wrong data shape.
    */
-  projectSessionsPaged: (projectId: string | null | undefined) =>
-    ['project-sessions', projectId, 'paged'] as const,
+  projectSessionsPaged: (projectId: string | null | undefined, filter?: SessionListFilter) => {
+    const normalized = normalizeSessionListFilter(filter);
+    return Object.keys(normalized).length === 0
+      ? (['project-sessions', projectId, 'paged'] as const)
+      : (['project-sessions', projectId, 'paged', normalized] as const);
+  },
+  /** One parent's children (`parent=<id>`), optionally narrowed by a search. */
+  sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
+    ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
@@ -180,27 +190,51 @@ export const projectKeys = {
 };
 
 /**
- * Both cached shapes of a project's session list, for a write that must reach
- * every reader (lib/session/session-cache-write): the flat first page (the
- * thread's lookups) and the paged list (the drawer, the Sessions page).
+ * Every cached session list of a project, for a write that must reach every
+ * reader (lib/session/session-cache-write): the flat first page (the thread's
+ * lookups), each paged list (the drawer's three sections, the Sessions page
+ * and its searches) and each parent's children.
  */
-export function sessionListKeys(projectId: string) {
-  return [
-    projectKeys.projectSessions(projectId),
-    projectKeys.projectSessionsPaged(projectId),
-  ] as const;
+export function sessionListKeys(queryClient: QueryClient, projectId: string) {
+  return queryClient
+    .getQueryCache()
+    .findAll({ queryKey: projectKeys.projectSessions(projectId) })
+    .map((query) => query.queryKey);
 }
+
+/** A session's freshest cached row, from any cached list of the project. */
+export function cachedSessionRow(queryClient: QueryClient, projectId: string, sessionId: string): ProjectSession | null {
+  for (const key of sessionListKeys(queryClient, projectId)) {
+    const data = queryClient.getQueryData(key);
+    const rows = Array.isArray(data)
+      ? (data as ProjectSession[])
+      : flattenSessionPages(data as Parameters<typeof flattenSessionPages<ProjectSession>>[0]);
+    const row = rows.find((r) => r.session_id === sessionId);
+    if (row) return row;
+  }
+  return null;
+}
+
+/** Where a session the viewer just started belongs: their top-level "Sessions" list. */
+const CREATED_SESSION_FILTER: SessionListFilter = { parent: 'root', startedBy: 'me' };
 
 /**
  * A created session, in the cached lists now: the top of page one, or in
  * place where a refetch already brought it. A 202 (create only queued) is not
- * a row and waits for the refetch.
+ * a row and waits for the refetch. Only lists it belongs to: the flat lookup
+ * list and the viewer's top-level list, never "Shared", "Automated", a search
+ * or a parent's children.
  */
 export function listCreatedSession(queryClient: QueryClient, projectId: string, created: unknown) {
   const row = createdSessionListRow(created, projectId);
   if (!row) return;
-  writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
-    upsertIntoSessionCache(cached, row)
+  writeSessionLists(
+    queryClient,
+    [
+      projectKeys.projectSessions(projectId),
+      projectKeys.projectSessionsPaged(projectId, CREATED_SESSION_FILTER),
+    ],
+    (cached) => upsertIntoSessionCache(cached, row)
   );
 }
 
@@ -488,15 +522,21 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
  * (poll, pull to refresh, invalidation) refetches every loaded page, so the
  * cost is bounded by what the user scrolled to.
  */
-export function useProjectSessionsPaged(projectId: string | null, { poll = true }: PollOptions = {}) {
+export function useProjectSessionsPaged(
+  projectId: string | null,
+  { poll = true, enabled = true, limit, ...filter }: PollOptions & SessionListFilter & { enabled?: boolean; limit?: number } = {}
+) {
   const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
+  const normalized = normalizeSessionListFilter(filter);
   const query = useInfiniteQuery({
-    queryKey: projectKeys.projectSessionsPaged(projectId),
+    queryKey: projectKeys.projectSessionsPaged(projectId, normalized),
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => listProjectSessionsPage(projectId!, { cursor: pageParam }),
+    queryFn: ({ pageParam }) => listProjectSessionsPage(projectId!, { ...normalized, limit, cursor: pageParam }),
     getNextPageParam: sessionsNextCursor,
-    enabled: !!projectId,
+    enabled: !!projectId && enabled,
     staleTime: 10_000,
+    // A new search or scope keeps the previous rows on screen until its answer lands.
+    placeholderData: keepPreviousData,
     // The same 4-minute provisioning poll as `useProjectSessions`, judged on the rows loaded so far.
     refetchInterval: (q) => {
       const rows = flattenSessionPages(q.state.data);
@@ -506,6 +546,36 @@ export function useProjectSessionsPaged(projectId: string | null, { poll = true 
       if (!poll || !pollWindow) return false;
       return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
     },
+  });
+  const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
+  return { ...query, sessions };
+}
+
+/** Rows a parent shows per "Show more". */
+export const SESSION_CHILDREN_PAGE_SIZE = 20;
+
+/**
+ * One parent's children, newest first, 20 at a time (`parent=<id>`). Runs only
+ * while `enabled`: a collapsed parent fetches nothing. `q` narrows it to the
+ * children a search matched.
+ */
+export function useSessionChildren(
+  projectId: string | null,
+  parentSessionId: string | null,
+  { enabled = true, q }: { enabled?: boolean; q?: string } = {}
+) {
+  const query = useInfiniteQuery({
+    queryKey: projectKeys.sessionChildren(projectId, parentSessionId, q),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      listProjectSessionsPage(projectId!, {
+        ...normalizeSessionListFilter({ parent: parentSessionId!, q }),
+        limit: SESSION_CHILDREN_PAGE_SIZE,
+        cursor: pageParam,
+      }),
+    getNextPageParam: sessionsNextCursor,
+    enabled: !!projectId && !!parentSessionId && enabled,
+    staleTime: 10_000,
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
   return { ...query, sessions };

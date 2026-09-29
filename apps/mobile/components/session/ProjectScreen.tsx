@@ -116,7 +116,13 @@ import {
 import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { countReviewItemsBySegment, getProjectSession, SESSION_NOTICE, sessionConnectionLabel } from '@kortix/sdk';
+import {
+  countReviewItemsBySegment,
+  getProjectSession,
+  SESSION_NOTICE,
+  sessionConnectionLabel,
+  sessionParentId,
+} from '@kortix/sdk';
 import { queuePromptWhileWaking } from '@/lib/session/connecting-send';
 import { loadSavedCopy } from '@/lib/session/saved-copy';
 import * as Crypto from 'expo-crypto';
@@ -1207,6 +1213,7 @@ export function ProjectScreen() {
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
         activeOpenCodeSessionId={shownOpenCodeId}
+        activeParentSessionId={activeProjectSession ? sessionParentId(activeProjectSession) : null}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
@@ -1567,7 +1574,7 @@ export function ProjectScreen() {
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the
           Sessions page's long press, and the drawer's session row long press
           all open it through `openSessionActions` (ProjectRouteValue). */}
-      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} poll={isFocused} />
+      <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} />
 
       {/* The project/account switcher (COR-124), opened by the drawer's
           switcher row. A picked project closes the drawer too. */}

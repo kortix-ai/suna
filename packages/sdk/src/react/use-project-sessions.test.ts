@@ -69,3 +69,33 @@ describe('flattenProjectSessionPages', () => {
     ]);
   });
 });
+
+describe('filtered session-list query keys (KRTX-639)', () => {
+  test('an unfiltered key is unchanged, so legacy readers still hit it', () => {
+    expect(qk.project.sessionsPaged('P1', 'visible', {})).toEqual([
+      ...qk.project.sessionsPaged('P1'),
+    ] as never);
+  });
+
+  test('each filter gets its own cache slot', () => {
+    const root = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me' });
+    const shared = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'others' });
+    const searched = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me', q: 'x' });
+    expect(root).not.toEqual([...shared] as never);
+    expect(root).not.toEqual([...searched] as never);
+    expect(root).not.toEqual([...qk.project.sessionsPaged('P1')] as never);
+  });
+
+  test('a filtered key nests under the sessions prefix', () => {
+    const prefix = qk.project.sessionsScope('P1');
+    const key = qk.project.sessionsPaged('P1', 'visible', { parent: 'root' });
+    expect(key.slice(0, prefix.length)).toEqual([...prefix]);
+  });
+
+  test('children get a key per parent and per query', () => {
+    const a = qk.project.sessionChildren('P1', 'S1');
+    expect(a).not.toEqual([...qk.project.sessionChildren('P1', 'S2')] as never);
+    expect(a).not.toEqual([...qk.project.sessionChildren('P1', 'S1', 'q')] as never);
+    expect(a.slice(0, qk.project.sessionsScope('P1').length)).toEqual([...qk.project.sessionsScope('P1')]);
+  });
+});

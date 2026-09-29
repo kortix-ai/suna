@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { SESSION_SOURCE_FILTERS } from '@/components/projects/session-label';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 
 const menuSource = readFileSync(resolve(import.meta.dir, 'session-filter-menu.tsx'), 'utf8');
 
@@ -59,7 +60,8 @@ describe('the filter menu can render every source it offers', () => {
   });
 
   test('every offered source has an icon', () => {
-    expect(mapKeys('SOURCE_FILTER_ICONS').sort()).toEqual(offered);
+    // `...SOURCE_ICONS` is spread into the menu's map, so its keys count too.
+    expect([...mapKeys('SOURCE_FILTER_ICONS'), ...Object.keys(SOURCE_ICONS)].sort()).toEqual(offered);
   });
 
   test('every offered source has a label', () => {

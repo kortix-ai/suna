@@ -261,35 +261,6 @@ export function groupSessionsByActivity(
   return { sections, showHeaders: sections.length > 1 };
 }
 
-// ── Search ────────────────────────────────────────────────────────────────
-
-/**
- * What a search matches (KRTX-250): the display title, the agent name, and
- * the session id, lowercased. Web's haystack (`sessionSearchText`) adds owner,
- * branch and source fields the mobile row never shows; a match on a field
- * the user cannot see reads as a wrong result, so mobile keeps these three.
- */
-export function sessionSearchText(session: ProjectSession): string {
-  return [sessionDisplayTitle(session), session.agent_name, session.session_id]
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .join(' ')
-    .toLowerCase();
-}
-
-/**
- * Trimmed, case-insensitive substring match on `sessionSearchText`. An empty
- * (or whitespace-only) query returns `sessions` unchanged.
- */
-export function filterSessionsBySearch(
-  sessions: ProjectSession[],
-  query: string,
-): ProjectSession[] {
-  const trimmed = query.trim();
-  if (!trimmed) return sessions;
-  const needle = trimmed.toLowerCase();
-  return sessions.filter((session) => sessionSearchText(session).includes(needle));
-}
-
 // ── Status filter ─────────────────────────────────────────────────────────
 
 /** A status the filter sheet offers. `starting` is not one: Running covers it. */
@@ -330,14 +301,6 @@ export function filterSessionsByStatus(
   });
 }
 
-/** True when a search or a status filter hides some sessions. */
-export function isSessionFilterActive(
-  query: string,
-  statuses: ReadonlySet<SessionStatusFilter>,
-): boolean {
-  return query.trim().length > 0 || statuses.size > 0;
-}
-
 /** The picked statuses as the filter chip reads them, in sheet order: "Needs you, Failed". */
 export function sessionStatusFilterSummary(statuses: ReadonlySet<SessionStatusFilter>): string {
   return SESSION_STATUS_FILTERS.filter((status) => statuses.has(status))
@@ -358,134 +321,6 @@ export function recentSessions(sessions: ProjectSession[], limit: number): Proje
     .sort((a, b) => b.at - a.at)
     .slice(0, limit)
     .map((entry) => entry.session);
-}
-
-// ── Sub-agent (coordinator) grouping ────────────────────────────────────────
-
-/** A coordinator (parent agent) session plus the sub-agent sessions it spawned. */
-export interface SessionGroup {
-  session: ProjectSession;
-  children: ProjectSession[];
-}
-
-/**
- * Fold a flat, already-ordered session list into coordinator groups: a
- * session spawned by another session in `sessions`
- * (`metadata.spawned_by_session`, read through `sessionParentId` from
- * `@kortix/sdk`) nests under it as a sub-agent session — the drawer and the
- * Sessions page render the coordinator as a parent row and its children
- * indented beneath it.
- *
- * Mirrors web's `groupSessionsByCoordinator`
- * (`apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts`):
- * every session resolves to its topmost ancestor STILL PRESENT in `sessions`
- * (`rootIdOf`, cycle-safe) and nests there, so a deeper chain flattens under
- * its real root instead of disappearing.
- *
- * A child whose coordinator is absent from `sessions` — deleted, a different
- * project, or simply not loaded onto this page yet, since the Sessions page
- * and the drawer both load sessions a page at a time and a parent can land on
- * a LATER page than its child — stays top-level rather than disappearing.
- * Membership is recomputed fresh from `sessions` on every call, so a session
- * that was an orphan on one render re-nests automatically once its
- * coordinator's page has loaded.
- *
- * Order: a group takes the position of its FIRST member in `sessions`, not of
- * its coordinator. The list is newest-first, so a quiet coordinator whose
- * sub-agent is working sits where that sub-agent would, instead of below it.
- * A group's children keep their order in `sessions`. Never mutates `sessions`.
- */
-export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
-  const present = new Set(sessions.map((session) => session.session_id));
-  const parentBySessionId = new Map<string, string | null>();
-  for (const session of sessions) {
-    const parent = sessionParentId(session);
-    parentBySessionId.set(session.session_id, parent && present.has(parent) ? parent : null);
-  }
-
-  // Walk the parent chain to the topmost ancestor still present in
-  // `sessions`. A cycle (metadata pointing back into its own chain) has no
-  // root: every session on it renders top-level, once.
-  const rootIdOf = (sessionId: string): string => {
-    let current = sessionId;
-    const seen = new Set<string>([current]);
-    for (;;) {
-      const parent = parentBySessionId.get(current) ?? null;
-      if (!parent) return current;
-      if (seen.has(parent)) return sessionId;
-      seen.add(parent);
-      current = parent;
-    }
-  };
-
-  const byId = new Map(sessions.map((session) => [session.session_id, session]));
-  const groups = new Map<string, SessionGroup>();
-  const order: SessionGroup[] = [];
-  for (const session of sessions) {
-    const rootId = rootIdOf(session.session_id);
-    let group = groups.get(rootId);
-    if (!group) {
-      group = { session: byId.get(rootId)!, children: [] };
-      groups.set(rootId, group);
-      order.push(group);
-    }
-    if (rootId !== session.session_id) group.children.push(session);
-  }
-  return order;
-}
-
-/**
- * `groupSessionsByCoordinator` across sections. Nesting per section left a
- * sub-agent stranded whenever its coordinator sorted into another section
- * (a running child under a completed coordinator, a child active today under
- * a coordinator last touched yesterday). Groups are built over the whole list,
- * and each group renders in the FIRST section any of its members sits in. A
- * section left with no group is dropped.
- */
-export function groupSectionsByCoordinator<T extends { sessions: ProjectSession[] }>(
-  sections: T[],
-): Array<T & { groups: SessionGroup[] }> {
-  const sectionIndexOf = new Map<string, number>();
-  sections.forEach((section, index) => {
-    for (const session of section.sessions) sectionIndexOf.set(session.session_id, index);
-  });
-  const bySection = sections.map(() => [] as SessionGroup[]);
-  for (const group of groupSessionsByCoordinator(sections.flatMap((section) => section.sessions))) {
-    const index = Math.min(
-      ...[group.session, ...group.children].map((s) => sectionIndexOf.get(s.session_id)!),
-    );
-    bySection[index]!.push(group);
-  }
-  return sections
-    .map((section, index) => ({ ...section, groups: bySection[index]! }))
-    .filter((section) => section.groups.length > 0);
-}
-
-/** One row of a flattened coordinator tree: a session plus whether it renders
- *  indented under its coordinator, joined to it by a connector. */
-export interface SessionListRow {
-  session: ProjectSession;
-  /** True for a sub-agent session rendered under its coordinator. */
-  nested: boolean;
-  /** True for the last sub-agent row of its group: its connector ends there. */
-  last: boolean;
-}
-
-/**
- * Flattens `groupSessionsByCoordinator`'s tree into one linear list — a
- * coordinator row immediately followed by its sub-agent sessions' rows — for
- * a flat-list UI with no tree renderer (the project drawer's `FlatList`).
- * Preserves `groupSessionsByCoordinator`'s order.
- */
-export function flattenSessionGroups(sessions: ProjectSession[]): SessionListRow[] {
-  const rows: SessionListRow[] = [];
-  for (const group of groupSessionsByCoordinator(sessions)) {
-    rows.push({ session: group.session, nested: false, last: false });
-    group.children.forEach((child, index) =>
-      rows.push({ session: child, nested: true, last: index === group.children.length - 1 }),
-    );
-  }
-  return rows;
 }
 
 // ── OpenCode sub-sessions ──────────────────────────────────────────────────
