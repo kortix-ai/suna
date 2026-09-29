@@ -10,7 +10,7 @@
  *   • label   — duplicate machine names get a numbered label.
  */
 import { describe, expect, test } from 'bun:test';
-import { computerCatalog, uniqueComputerLabel } from '../connectors/computers';
+import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../connectors/computers';
 import { extractConnectors } from '../projects/connectors';
 import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../projects/triggers';
 import {
@@ -202,5 +202,38 @@ describe('handleCall — computer (tunnel)', () => {
     const { deps } = makeDeps({ ok: false, kind: 'error', message: 'ENOENT' });
     const res = await handleCall(deps, input({ path: '/x' }));
     expect(res).toEqual({ status: 'error', reason: 'ENOENT' });
+  });
+});
+
+/* ─── stored catalog never wins ───────────────────────────────────────────── */
+
+describe('withComputerCatalog()', () => {
+  // An older API (mid-rollout replica, or an old stack on a shared database)
+  // writes its own catalog to connector_actions. Agents must still see this one.
+  const stale = [
+    {
+      actionId: '00000000-0000-4000-8000-000000000001',
+      connectorId: 'c1',
+      path: 'list_computers',
+      name: 'List computers',
+      description: null,
+      inputSchema: null,
+      outputSchema: null,
+      risk: 'read' as const,
+      binding: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ];
+
+  test('replaces a stale stored catalog for computer connectors', () => {
+    const paths = withComputerCatalog('c1', 'computer', stale).map((row) => row.path);
+    expect(paths).not.toContain('list_computers');
+    expect(paths).toContain('status');
+    expect(paths).toEqual(computerCatalog().map((action) => action.path));
+  });
+
+  test('leaves every other provider untouched', () => {
+    expect(withComputerCatalog('c1', 'composio', stale)).toBe(stale);
   });
 });

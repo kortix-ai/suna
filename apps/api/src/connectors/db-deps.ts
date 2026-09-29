@@ -138,6 +138,7 @@ import type {
   ConnectorRouterDeps,
   ListCatalogOptions,
 } from './router';
+import { withComputerCatalog } from './computers';
 import { resolveShareSubject } from './share';
 import {
   connectorCatalogSections,
@@ -571,7 +572,12 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     },
     explainMissingConnector: async (projectId, slug) => {
       const [row] = await db
-        .select({ enabled: connectors.enabled, status: connectors.status })
+        .select({
+          connectorId: connectors.connectorId,
+          enabled: connectors.enabled,
+          status: connectors.status,
+          providerType: connectors.providerType,
+        })
         .from(connectors)
         .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
         .limit(1);
@@ -591,16 +597,49 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         account: principal.requestedConnectorAccount ?? null,
         agentPrincipal: principal.agentPrincipal ?? null,
       });
-      return outcome.kind === 'ambiguous' ? 'account_required' : 'connector_not_connected';
+      if (outcome.kind === 'ambiguous') return 'account_required';
+      // Unpairing revokes the machine's accounts and nulls their tunnel_id
+      // (DELETE /tunnel/connections/:id). The caller's own such account, or the
+      // one they named, says why: the computer is gone, not unconnected.
+      if (row.providerType === 'computer') {
+        const named = principal.requestedConnectorAccount?.trim();
+        const [unpaired] = await db
+          .select({ connectionId: connectorConnections.connectionId })
+          .from(connectorConnections)
+          .where(
+            and(
+              eq(connectorConnections.connectorId, row.connectorId),
+              eq(connectorConnections.status, 'revoked'),
+              isNull(connectorConnections.tunnelId),
+              eq(connectorConnections.ownerType, 'member'),
+              eq(connectorConnections.ownerId, principal.userId),
+              named ? eq(connectorConnections.label, named) : undefined,
+            ),
+          )
+          .limit(1);
+        if (unpaired) return 'computer_unpaired';
+      }
+      return 'connector_not_connected';
     },
     loadAction: async (connectorId, relPath) => {
-      const [a] = await db
-        .select()
-        .from(connectorActions)
-        .where(
-          and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
-        )
-        .limit(1);
+      const [[stored], [owner]] = await Promise.all([
+        db
+          .select()
+          .from(connectorActions)
+          .where(
+            and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
+          )
+          .limit(1),
+        db
+          .select({ providerType: connectors.providerType })
+          .from(connectors)
+          .where(eq(connectors.connectorId, connectorId))
+          .limit(1),
+      ]);
+      const a =
+        owner?.providerType === 'computer'
+          ? withComputerCatalog(connectorId, 'computer', []).find((row) => row.path === relPath)
+          : stored;
       if (!a) return null;
       return {
         path: a.path,
@@ -1196,6 +1235,10 @@ async function listCatalog(
             if (list) list.push(row);
             else map.set(row.connectorId, [row]);
           }
+          for (const conn of conns) {
+            if (conn.providerType !== 'computer') continue;
+            map.set(conn.connectorId, withComputerCatalog(conn.connectorId, 'computer', []));
+          }
           return map;
         }),
       loadConnectorPoliciesForMany(connectorIds),
@@ -1384,13 +1427,41 @@ async function resolveSecretReader(
  * nobody whose own account could make the difference); the project-wide
  * checks below still apply either way.
  */
+/**
+ * A computer connector that never held a machine (the legacy aggregate the old
+ * sync created in every project) or whose machines were all unpaired is not
+ * shown: it has nothing to manage, and adding a computer recreates the view.
+ */
+async function hideMachinelessComputers<T extends { connectorId: string; providerType: string }>(
+  rows: T[],
+): Promise<T[]> {
+  const computerIds = rows.filter((row) => row.providerType === 'computer').map((row) => row.connectorId);
+  if (computerIds.length === 0) return rows;
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(connectorConnections.connectorId, computerIds),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
+  );
+  return rows.filter((row) => row.providerType !== 'computer' || withMachine.has(row.connectorId));
+}
+
 async function listConnectors(
   projectId: string,
   actingUserId?: string | null,
   options: { includeSchemas?: boolean } = {},
 ): Promise<AdminConnectorView[]> {
-  const conns = hideSupersededSlack(
-    await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
+  const conns = await hideMachinelessComputers(
+    hideSupersededSlack(
+      await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
+    ),
   );
   if (conns.length === 0) return [];
 
@@ -1417,6 +1488,9 @@ async function listConnectors(
         .filter((identifier): identifier is string => Boolean(identifier)),
     ),
   ];
+  const computerConnectorIds = new Set(
+    conns.filter((row) => row.providerType === 'computer').map((row) => row.connectorId),
+  );
   const [
     actions,
     credentialConnectorIds,
@@ -1434,7 +1508,11 @@ async function listConnectors(
             connectorActions.connectorId,
             conns.map((row) => row.connectorId),
           ),
-        ),
+        )
+        .then((stored) => [
+          ...stored.filter((action) => !computerConnectorIds.has(action.connectorId)),
+          ...[...computerConnectorIds].flatMap((id) => withComputerCatalog(id, 'computer', [])),
+        ]),
       connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
       actingUserId
         ? connectorIdsWithReachableMemberCredential(
@@ -1739,7 +1817,11 @@ async function getConnectorPolicies(
   const [projectPolicies, defaultMode, actions] = await Promise.all([
     loadProjectPoliciesFor(projectId),
     loadDefaultModeFor(projectId),
-    db.select().from(connectorActions).where(eq(connectorActions.connectorId, row.connectorId)),
+    db
+      .select()
+      .from(connectorActions)
+      .where(eq(connectorActions.connectorId, row.connectorId))
+      .then((stored) => withComputerCatalog(row.connectorId, row.providerType, stored)),
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
   const connectorPolicies: Policy[] = policies.map((p) => ({

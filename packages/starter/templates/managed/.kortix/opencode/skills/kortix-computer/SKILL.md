@@ -21,7 +21,10 @@ credential, resolved server-side.
 
 Tools on the `computer` connector:
 
-- `status` — the selected computer's name, `online`, platform, capabilities
+- `status` — **call it first.** The selected computer's name, `online`,
+  platform, capabilities, `home_dir`, and `allowed_paths`. File tools only work
+  inside `allowed_paths` (by default the user's home folder); start there,
+  never at `/` or `/Users`.
 - **filesystem** — `fs.read` / `fs.write` / `fs.list` / `fs.stat` / `fs.delete`
 - **shell** — `shell.exec` (stdout / stderr / exitCode)
 - **desktop** — `desktop.cua.click` / `type_text` / `press_key` / `hotkey` /

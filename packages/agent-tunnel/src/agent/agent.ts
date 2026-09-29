@@ -449,6 +449,10 @@ export class TunnelAgent {
           arch: arch(),
           osVersion: release(),
           agentVersion: AGENT_VERSION,
+          // Where file and shell work may happen, so a cloud agent starts in
+          // the right place instead of probing paths the local ceiling denies.
+          homeDir: this.config.workingDir,
+          allowedPaths: this.config.allowedPaths,
         },
       },
     });

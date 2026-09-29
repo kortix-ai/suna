@@ -10,7 +10,7 @@
  * the gateway relays through the shared tunnel RPC core
  * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
-import { connectorConnections } from '@kortix/db';
+import { connectorActions, connectorConnections, connectors } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
@@ -47,7 +47,7 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     method: 'status',
     name: 'Computer status',
     description:
-      'Show the computer this call resolves to — name, online status, platform, and approved capabilities. Select another computer with the account flag.',
+      'Call this first. Shows the computer this call resolves to: name, online status, platform, approved capabilities, home_dir, and allowed_paths (file tools only work inside these). Select another computer with the account flag.',
     risk: 'read',
     properties: {},
     required: [],
@@ -304,6 +304,36 @@ export function computerCatalog(): NormalizedAction[] {
   return COMPUTER_ACTIONS.map(toAction);
 }
 
+type ActionRow = typeof connectorActions.$inferSelect;
+
+/**
+ * Computer actions always come from this code, never from `connector_actions`.
+ * An older API (a replica mid-rollout, or an old stack sharing the database)
+ * re-materializes its own catalog into that table, and an agent reading it
+ * then calls tools that no longer exist.
+ */
+export function withComputerCatalog(
+  connectorId: string,
+  providerType: string | null | undefined,
+  stored: ActionRow[],
+): ActionRow[] {
+  if (providerType !== 'computer') return stored;
+  const epoch = new Date(0);
+  return computerCatalog().map((action) => ({
+    actionId: `computer:${action.path}`,
+    connectorId,
+    path: action.path,
+    name: action.name,
+    description: action.description ?? null,
+    inputSchema: (action.inputSchema ?? null) as Record<string, unknown> | null,
+    outputSchema: null,
+    risk: action.risk,
+    binding: (action.binding ?? {}) as Record<string, unknown>,
+    createdAt: epoch,
+    updatedAt: epoch,
+  }));
+}
+
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type ConnectionRow = typeof connectorConnections.$inferSelect;
 
@@ -328,9 +358,8 @@ export function uniqueComputerLabel(name: string, taken: ReadonlySet<string>): s
  * account is created with a unique label; it becomes the owner's default when
  * the owner has none.
  *
- * ponytail: check-then-insert. Two concurrent attaches of the same machine can
- * both insert (different labels); add a unique index on (connector, owner,
- * tunnel_id) if that ever matters.
+ * Attaches to one connector serialize on its row lock, so two concurrent
+ * approvals for the same owner cannot both pin a default or pick one label.
  */
 export async function attachComputerConnection(
   tx: Tx,
@@ -353,6 +382,11 @@ export async function attachComputerConnection(
       ? isNull(connectorConnections.ownerId)
       : eq(connectorConnections.ownerId, input.ownerId),
   );
+  await tx
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(eq(connectors.connectorId, input.connectorId))
+    .for('update');
   const rows = await tx.select().from(connectorConnections).where(owner);
   const hasDefault = rows.some((row) => row.isDefault);
   const reactivate = async (row: ConnectionRow) => {

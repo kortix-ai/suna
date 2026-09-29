@@ -277,6 +277,10 @@ export async function executeComputerCall(input: {
         online,
         platform: typeof info.platform === 'string' ? info.platform : null,
         hostname: typeof info.hostname === 'string' ? info.hostname : null,
+        home_dir: typeof info.homeDir === 'string' ? info.homeDir : null,
+        allowed_paths: Array.isArray(info.allowedPaths)
+          ? info.allowedPaths.filter((path): path is string => typeof path === 'string')
+          : null,
         capabilities: effectiveMachineCapabilities(machine),
         last_heartbeat_at: machine.lastHeartbeatAt?.toISOString() ?? null,
       },
