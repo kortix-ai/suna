@@ -58,3 +58,21 @@ export async function scopedProjectAgents(
     return agents;
   }
 }
+
+/**
+ * May `userId` start a session on `agentName`? The per-resource agent gate
+ * the web session create and Slack apply, so a person scoped out of an agent
+ * cannot launch it from a chat either. The non-binding `default` agent runs
+ * with the least-privileged grant, so it is anyone's.
+ */
+export async function userMayLaunchAgent(
+  project: { projectId: string; accountId: string },
+  userId: string,
+  agentName: string | null | undefined,
+): Promise<boolean> {
+  if (!agentName || agentName === 'default') return true;
+  const allowed = await filterAccessibleObjects(actorForUser(userId, project.accountId), project.projectId, 'agent', [
+    agentName,
+  ]);
+  return allowed.length > 0;
+}

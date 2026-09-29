@@ -105,7 +105,11 @@ resource "aws_kms_key" "use2_alerts" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.use2_alerts_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "use2_alerts" {
@@ -118,7 +122,11 @@ resource "aws_sns_topic" "use2_alerts" {
   provider          = aws.use2
   name              = "kortix-compliance-alerts"
   kms_master_key_id = aws_kms_key.use2_alerts.arn
-  tags              = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "use2_alerts" {
@@ -420,7 +428,11 @@ resource "aws_kms_key" "use2_logs" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.use2_logs_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "use2_logs" {
@@ -541,9 +553,12 @@ resource "aws_default_security_group" "use2" {
   ingress = []
   egress  = []
 
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-default"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-prod-use2-default"
+  }
 }
 
 resource "aws_network_acl" "use2_restricted" {
@@ -631,9 +646,12 @@ resource "aws_network_acl" "use2_restricted" {
     to_port    = 0
   }
 
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-restricted"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-prod-use2-restricted"
+  }
 
   lifecycle {
     prevent_destroy = true

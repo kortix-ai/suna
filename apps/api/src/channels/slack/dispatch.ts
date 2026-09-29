@@ -740,11 +740,16 @@ const FOREIGN_THREAD_NOTICE =
 // `ownThreadsOnly`: the per-project (BYO) webhook. Its requests may reach only
 // its own project, so a thread another project owns is refused, not joined.
 // `threadProjectResolved`: internal — set on the re-dispatch below.
+// `authorizedResume`: the decision this message reports (a review verdict, an
+// approval) was already authorized for this project. The join policy governs
+// who may TALK in a thread; it must not strand the agent after a manager who
+// is not a participant decided. The sender is still resolved as a linked
+// member below. Not carried into another project's thread on re-dispatch.
 export async function spawnAgentTurn(
   projectId: string,
   envelope: SlackEnvelope,
   event: SlackEvent,
-  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean } = {},
+  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean; authorizedResume?: boolean } = {},
 ): Promise<void> {
   const teamId = envelope.team_id ?? event.team ?? '';
   const threadId = event.thread_ts ?? event.ts ?? '';
@@ -818,7 +823,7 @@ export async function spawnAgentTurn(
       return;
     }
     if (existing) {
-      if (config.SLACK_REQUIRE_USER_IDENTITY) {
+      if (config.SLACK_REQUIRE_USER_IDENTITY && !opts.authorizedResume) {
         const selection = event.channel
           ? await currentChannelSelection({ teamId, channelId: event.channel })
           : null;

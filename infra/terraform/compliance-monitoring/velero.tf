@@ -60,7 +60,11 @@ resource "aws_kms_key" "velero" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.velero_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "velero" {
@@ -77,7 +81,11 @@ resource "aws_s3_bucket" "velero" {
   # checkov:skip=CKV2_AWS_62:Velero validates the backup storage location and owns backup lifecycle; no separate object-event consumer exists.
   bucket        = local.velero_bucket
   force_destroy = false
-  tags          = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 
   lifecycle {
     prevent_destroy = true

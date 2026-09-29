@@ -17,13 +17,11 @@ import { AttachmentTiles, attachmentTileCopy, subscribeWhenDue } from './attachm
 import type { AttachedFile } from './types';
 
 /**
- * `renderToStaticMarkup` never commits effects, so the HEIC-decode and
- * text-preview `useEffect`s in `attachment-tiles.tsx` never run here — these
- * assertions cover the synchronous shape: the sent message's own tile
- * surfaces, two-line-clamped filenames, a positioning anchor the remove
- * button can actually use, and the always-reachable remove button. The
- * effect itself (HEIC conversion) is exercised indirectly via
- * `attachment-tiles-logic.test.ts`, which covers its pure decision logic.
+ * `renderToStaticMarkup` never commits effects, so the HEIC-decode
+ * `useEffect` in `attachment-tiles.tsx` never runs here — these assertions
+ * cover the synchronous shape: the sent message's own tile surfaces,
+ * two-line-clamped filenames, a positioning anchor the remove button can
+ * actually use, and the always-reachable remove button.
  */
 
 const localImage = (name: string, localUrl = 'blob:local-1'): AttachedFile => ({
