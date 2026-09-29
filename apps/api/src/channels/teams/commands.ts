@@ -1,6 +1,7 @@
 import { config } from '../../config';
-import { formatRelativeTime, repoOgImage, sessionWebUrl } from '../slack/util';
-import { projectRows } from './project-rows';
+import { formatRelativeTime, sessionWebUrl } from '../slack/util';
+import { repoPreviewImages } from '../repo-preview';
+import { PREVIEW_WAIT_MS, projectRows } from './project-rows';
 import { buildTeamsHomeCard } from './home';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { currentChannelSelection } from '../slack/selection';
@@ -338,13 +339,14 @@ async function buildRecentSessionsCard(actor: ChatUser, projectId?: string) {
   const rows = await listVisibleChatSessions(actor, { limit: RECENT_SESSIONS, projectId });
   if (rows === null) return buildNoticeCard('Connect your Kortix account to see your recent sessions: run `/login`.', '🔑');
   if (rows.length === 0) return buildNoticeCard('No recent sessions from this Teams tenant yet. @-mention me with a task to start one.', '🗂️');
+  const images = await repoPreviewImages(rows.map((r) => r.repoUrl), { waitMs: PREVIEW_WAIT_MS });
   return buildSessionsCard(rows.map((r) => ({
     title: r.title || 'Untitled session',
     projectName: r.projectName,
     status: SESSION_STATUS[r.status]?.label,
     when: formatRelativeTime(r.lastMessageAt),
     url: sessionWebUrl(config.FRONTEND_URL, r.projectId, r.sessionId),
-    imageUrl: r.repoUrl ? repoOgImage(r.repoUrl) : null,
+    imageUrl: images.get(r.repoUrl) ?? null,
   })));
 }
 
@@ -450,7 +452,7 @@ async function buildProjectsCard(tenantId: string, currentProjectId: string) {
   if (projects.length === 0) {
     return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.', '📁');
   }
-  return buildProjectsPickerCard(projectRows(projects, currentProjectId));
+  return buildProjectsPickerCard(await projectRows(projects, currentProjectId));
 }
 
 
