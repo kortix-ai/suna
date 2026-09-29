@@ -72,7 +72,7 @@ export async function handleAdaptiveCardAction(
     case 'teams_request_access':
       return handleRequestAccess(activity, action.data);
     case 'teams_thread_join':
-      return handleThreadJoin(activity, action.data);
+      return handleThreadJoin(activity, action.data, inbound);
     case 'teams_set_model':
       return handleSetModel(activity, action.data, inbound);
     case 'teams_set_agent':
@@ -480,32 +480,29 @@ async function handleApproval(
 async function handleThreadJoin(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   const decider = teamsUserId(activity);
   const decision = data.decision === 'approved' ? 'approved' : data.decision === 'denied' ? 'denied' : null;
-  const sessionId = typeof data.sessionId === 'string' ? data.sessionId : null;
-  const projectId = typeof data.projectId === 'string' ? data.projectId : null;
-  const requesterUserId = typeof data.requesterUserId === 'string' ? data.requesterUserId : null;
+  // Only the requester's Teams id is read from the card; the session and the
+  // requester's Kortix account come from the pending request itself.
   const requesterTeamsUserId = typeof data.requesterTeamsUserId === 'string' ? data.requesterTeamsUserId : null;
-  if (!convo || !decider || !decision || !sessionId || !projectId || !requesterUserId || !requesterTeamsUserId || !activity.serviceUrl) {
+  if (!convo || !decider || !decision || !requesterTeamsUserId || !activity.serviceUrl) {
     return cardResponse(buildNoticeCard("I couldn't apply that decision."));
   }
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const ref: TeamsConversationRef = {
     serviceUrl: activity.serviceUrl,
     conversationId: convo.conversationId,
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId: convo.tenantId,
-    projectId,
   };
   const result = await decideTeamsThreadJoin({
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     deciderTeamsUserId: decider,
-    projectId,
-    sessionId,
-    requesterUserId,
     requesterTeamsUserId,
     decision,
     ref,

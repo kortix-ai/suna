@@ -27,7 +27,7 @@ import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
-import { verifyLoginState } from './login';
+import { buildSlackLoginUrl, verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { handleSlashCommand } from './commands';
 import { agentChangeText, currentChannelProjectId } from './settings-commands';
@@ -538,28 +538,16 @@ async function handleThreadJoinDecision(
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
   const deciderSlackUserId = payload.user?.id ?? '';
-  let parsed: {
-    projectId?: string;
-    sessionId?: string;
-    threadId?: string;
-    requesterUserId?: string;
-    requesterSlackUserId?: string;
-  } = {};
+  // Only the thread and the requester's Slack id are read from the value; the
+  // session comes from the thread mapping and the requester's Kortix account
+  // from the pending request (decideSlackThreadJoin).
+  let parsed: { threadId?: string; requesterSlackUserId?: string } = {};
   try {
     parsed = JSON.parse(value || '{}') as typeof parsed;
   } catch {
     parsed = {};
   }
-  if (
-    !teamId ||
-    !channelId ||
-    !deciderSlackUserId ||
-    !parsed.projectId ||
-    !parsed.sessionId ||
-    !parsed.threadId ||
-    !parsed.requesterUserId ||
-    !parsed.requesterSlackUserId
-  ) {
+  if (!teamId || !channelId || !deciderSlackUserId || !parsed.threadId || !parsed.requesterSlackUserId) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       text: 'I could not read that approval request. Ask the person to request access again.',
@@ -567,22 +555,19 @@ async function handleThreadJoinDecision(
     return;
   }
 
-  if (!inboundAllowsProject(inbound, parsed.projectId)) {
-    await respondViaUrl(payload.response_url, { response_type: 'ephemeral', text: OTHER_PROJECT_NOTICE });
-    return;
-  }
-
-  const result = await decideSlackThreadJoin({
-    teamId,
-    channelId,
-    deciderSlackUserId,
-    projectId: parsed.projectId,
-    sessionId: parsed.sessionId,
-    threadId: parsed.threadId,
-    requesterUserId: parsed.requesterUserId,
-    requesterSlackUserId: parsed.requesterSlackUserId,
-    decision,
-  });
+  // A per-project app finds only its own project's threads.
+  const thread = await findSlackThread(inbound, teamId, parsed.threadId);
+  const result = thread
+    ? await decideSlackThreadJoin({
+        teamId,
+        channelId,
+        deciderSlackUserId,
+        sessionId: thread.sessionId,
+        threadId: parsed.threadId,
+        requesterSlackUserId: parsed.requesterSlackUserId,
+        decision,
+      })
+    : { ok: false as const, text: 'This request is no longer open.' };
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     replace_original: true,
@@ -616,9 +601,18 @@ async function handleSlackLoginConnect(
   payload: SlackInteractionPayload,
   action: NonNullable<SlackInteractionPayload['actions']>[number],
 ): Promise<void> {
-  const login = loginActionValue(action);
+  const parsed = loginActionValue(action);
   const teamId = payload.team?.id ?? '';
   const slackUserId = payload.user?.id ?? '';
+  // The link is built here, for the person who clicked. A button value is not
+  // proof: an agent can post a look-alike "Connect" button through the same
+  // bot, and Kortix would then present its URL as its own sign-in page.
+  const login = {
+    pendingId: parsed.pendingId,
+    url: teamId && slackUserId
+      ? buildSlackLoginUrl({ teamId, slackUserId, ...(parsed.pendingId ? { pendingId: parsed.pendingId } : {}) })
+      : undefined,
+  };
   await attachPendingSlackAuthResponseUrl({
     pendingId: login.pendingId,
     teamId,

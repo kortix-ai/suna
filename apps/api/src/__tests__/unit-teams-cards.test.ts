@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  withoutPostbackActions,
   buildAccessRequestNoticeCard,
   buildAgentPickerCard,
   buildAnswerCard,
@@ -339,5 +340,52 @@ describe('Slack parity cards, part 2', () => {
     expect(actions(notice)).toEqual([expect.objectContaining({ type: 'Action.OpenUrl', url: 'https://app/projects/p1/customize/members' })]);
     expect(texts(buildConnectSentPrivatelyCard({ botName: 'Kortix', resumes: true })).join(' ')).toContain('private chat with Kortix');
     expect(actions(buildOpenSessionCard('https://app/s/1'))).toEqual([expect.objectContaining({ type: 'Action.OpenUrl', url: 'https://app/s/1' })]);
+  });
+});
+
+// An agent can post any Adaptive Card (`teams send --card-file`, `teams post
+// --card-file`). A look-alike of Kortix's own Stop, Approve or join card would
+// post Kortix's verbs when a person clicks it. Agent cards keep links only.
+describe('agent-built cards cannot post back to Kortix', () => {
+  const forged = {
+    type: 'AdaptiveCard',
+    version: '1.5',
+    selectAction: { type: 'Action.Execute', verb: 'teams_stop', data: { verb: 'teams_stop', sessionId: 's1' } },
+    body: [
+      { type: 'TextBlock', text: 'Marko wants to join' },
+      {
+        type: 'ActionSet',
+        actions: [
+          { type: 'Action.Execute', title: 'Approve', verb: 'teams_thread_join', data: { verb: 'teams_thread_join', requesterUserId: 'attacker' } },
+          { type: 'Action.Submit', title: 'Submit', data: { verb: 'teams_review' } },
+        ],
+      },
+      {
+        type: 'Container',
+        selectAction: { type: 'Action.Submit', data: { verb: 'teams_approval' } },
+        items: [{ type: 'ActionSet', actions: [{ type: 'Action.OpenUrl', title: 'Docs', url: 'https://example.test/docs' }] }],
+      },
+    ],
+    actions: [
+      { type: 'Action.Execute', title: 'Approve', verb: 'teams_approval' },
+      { type: 'Action.OpenUrl', title: 'Open', url: 'https://example.test' },
+      { type: 'Action.ShowCard', title: 'More', card: { type: 'AdaptiveCard', actions: [{ type: 'Action.Execute', verb: 'teams_review' }] } },
+    ],
+  };
+
+  test('post-back buttons are removed everywhere; links and show-cards stay', () => {
+    const clean = withoutPostbackActions(forged);
+    const json = JSON.stringify(clean);
+    expect(json).not.toContain('Action.Execute');
+    expect(json).not.toContain('Action.Submit');
+    expect(json).toContain('https://example.test/docs');
+    expect((clean.actions as Array<{ type: string }>).map((a) => a.type)).toEqual(['Action.OpenUrl', 'Action.ShowCard']);
+    // An action set left empty is dropped, since Teams refuses one.
+    expect((clean.body as Array<{ type: string }>).map((e) => e.type)).toEqual(['TextBlock', 'Container']);
+  });
+
+  test('an agent card delivered as the answer carries no post-back button', () => {
+    const answer = buildAnswerCard('', 'https://app/s', forged);
+    expect(JSON.stringify(answer)).not.toMatch(/Action\.(Execute|Submit)/);
   });
 });
