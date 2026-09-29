@@ -10,15 +10,18 @@ import {
   markCommandFailed,
   markCommandSucceeded,
   requeueForAdmission,
+  MAX_RUNTIME_UNREACHABLE_RETRIES,
+  parkPromptForUnreachableRuntime,
   type QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
+import { admitInboxPrompt, hasLaterReleasedSibling, sessionHoldsLiveTurn } from './inbox-admission';
 import { openUserAbove } from './forwarded-placement';
 import {
   armQuickQueueInterrupt,
   queuedContinueHasStagedRevert,
   readInboxTranscriptState,
 } from './runtime-client';
+import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
 } from './inbox-placement';
@@ -41,6 +44,20 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
     return 'failed';
   }
   if (admission.admit) return 'admitted';
+  // Arm BEFORE the requeue: the arm's result picks the requeue's clock. A
+  // runtime that will not serve the interrupt cannot end the turn this row
+  // waits behind — re-arming it every 2 s is the unreachable-ladder's
+  // condition (one wedged session warned on that loop 1.8k times in 82 min,
+  // 2026-09-28), so the ladder paces the retries and then dead-letters the row
+  // with the same honest failure a delivery into a dead runtime gets.
+  if (admission.interruptAtBoundary &&
+      !(await armQuickQueueInterrupt(row, admission.interruptAtBoundary))) {
+    const parked = await parkPromptForUnreachableRuntime(row, DELIVERY_FAILURE_COPY.unreachable, { sessionId: row.sessionId });
+    if (parked.parked) return 'queued';
+    await markCommandFailed(row, `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+      { retryable: false, attempts: row.attempts, sessionId: row.sessionId });
+    return 'failed';
+  }
   try {
     await requeueForAdmission(row, admission.reason, new Date(Date.now() + admission.retryAfterMs));
   } catch (err) {
@@ -49,7 +66,6 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
     });
     return 'failed';
   }
-  if (admission.interruptAtBoundary) await armQuickQueueInterrupt(row, admission.interruptAtBoundary);
   if (admission.reason === 'turn_active') await wakeAfterAdmission(row);
   return 'queued';
 }
@@ -84,6 +100,17 @@ export async function executeQueuedContinue(
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   const admitted = await admitQueuedContinue(row, tl);
   if (admitted !== 'admitted') return admitted;
+  // A non-final prompt of a released Stop batch (KRTX-683) goes out without
+  // starting a turn, and once it lands hands off to the batch's next row
+  // through the same wake a finished turn uses: no turn will end to do it, as
+  // a noReply POST opens none. A failed read sends the row normally — at
+  // worst the batch is answered in two turns, never wedged.
+  const noReply = await hasLaterReleasedSibling(row).catch((error) => {
+    logger.warn('[session-lifecycle] released-batch read failed; sending with a reply', {
+      sessionId: row.sessionId, commandId: row.commandId, error,
+    });
+    return false;
+  });
 
   if (payload.executionId) {
     const [exec] = await db
@@ -103,9 +130,14 @@ export async function executeQueuedContinue(
   }
 
   const placement = await placeQueuedContinue(row, payload, tl);
-  if ('outcome' in placement) return placement.outcome;
-  return deliverQueuedContinue(row, payload, text, placement.wireMessageId,
-    placement.placedIntoLiveTurn, placement.underPlaced, tl);
+  const outcome = 'outcome' in placement
+    ? placement.outcome
+    : await deliverQueuedContinue(row, payload, text, placement.wireMessageId,
+      placement.placedIntoLiveTurn, placement.underPlaced, tl, noReply);
+  // If the batch's LAST row then fails for good, the rows already posted
+  // noReply stay unanswered until the user retries it or sends again.
+  if (noReply && outcome === 'succeeded') await wakeAfterAdmission(row);
+  return outcome;
 }
 
 type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | {
@@ -152,9 +184,16 @@ async function checkTranscript(row: SessionLifecycleCommandRow,
 
 async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   tl: ProvisionTimeline): Promise<Placement> {
-  const waited =
-    payload.remintOnDelivery === true ||
-    typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
+  // A released Stop batch row (KRTX-683) waits behind its own siblings by
+  // design, and picks up the usual wait markers doing so. Whether it waited
+  // from BEFORE the session went idle — and so predates a rewind staged while
+  // stopped — is what the release recorded: held rows did, the send that
+  // released them did not, and that send may commit the rewind.
+  const batch = typeof payload.releasedBatchId === 'string';
+  const waited = batch
+    ? payload.releasedFromHold === true
+    : payload.remintOnDelivery === true ||
+      typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   const mayCommitStagedRevert = !!payload.clientMessageId && (promoted || !waited);
   const stagedRevertPromise = mayCommitStagedRevert
@@ -162,7 +201,8 @@ async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: Que
     : queuedContinueHasStagedRevert(row);
   const redeliveries = Number(payload.redeliveries ?? 0);
   const deliveryAttempt = Number(payload.deliveryAttempt ?? 0);
-  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
+  // Every batch row takes a fresh id above the sibling posted before it.
+  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited || batch;
   let turnLive = false;
   if (payload.wireMessageId && !remintKnown) {
     try {
@@ -210,9 +250,14 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
     tl.mark('transcript-read');
     const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries);
     if (checked) return { outcome: checked };
+    // A released Stop batch row never stays under: the open user message
+    // above it is the sibling posted `noReply` just before it (KRTX-683), and
+    // OpenCode orders by id — kept, the batch renders out of order with its
+    // first prompt under the answer. Re-minting puts each row above the last.
     if (
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
+      !payload.releasedBatchId &&
       payload.wireMessageId &&
       transcript.read &&
       transcript.tip &&

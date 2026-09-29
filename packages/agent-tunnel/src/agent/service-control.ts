@@ -2,7 +2,9 @@ import {
   type ServiceStatus,
   getServiceStatus,
   installService,
+  pauseService,
   restartService,
+  resumeService,
   startService,
   stopService,
   uninstallService,
@@ -39,8 +41,8 @@ export function acquireTunnelLease(): TunnelLease {
 
 /** Service verbs that map one-to-one onto a supervisor operation. */
 export const SERVICE_ACTIONS = {
-  start: { run: startService, label: 'started' },
-  stop: { run: stopService, label: 'stopped' },
+  start: { run: resumeService, label: 'started' },
+  stop: { run: pauseService, label: 'paused until `agent-tunnel start`' },
   restart: { run: restartService, label: 'restarted' },
   uninstall: { run: uninstallService, label: 'removed' },
   install: { run: installService, label: 'installed' },
@@ -50,6 +52,7 @@ export type ServiceAction = keyof typeof SERVICE_ACTIONS;
 
 export function describeService(status: ServiceStatus): string {
   if (!status.installed) return `${glyph.off} not installed`;
+  if (status.enabled === false) return `${c.yellow}○${c.reset} paused ${c.dim}· stays stopped until \`agent-tunnel start\`${c.reset}`;
   if (status.active) return `${glyph.on} running ${c.dim}· starts at login${c.reset}`;
   return `${c.yellow}○${c.reset} installed ${c.dim}· stopped${c.reset}`;
 }

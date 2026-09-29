@@ -133,6 +133,32 @@ describe('project config agent discovery', () => {
     expect(result.agents.every((a) => a.scope === undefined)).toBe(true);
   });
 
+  test('root layout: a declared agent resolves to the .md that exists, wherever it is', () => {
+    const rootAgents = [
+      { name: 'kortix', path: 'agents/kortix.md', description: 'Root agent', mode: 'primary' },
+      { name: 'support', path: 'team/support.md', description: 'Explicit file', mode: 'subagent' },
+    ];
+    const spec = (name: string, file: string | null) => ({
+      name,
+      path: `kortix.yaml#agents.${name}`,
+      enabled: true,
+      connectors: [] as string[],
+      permissions: [] as string[],
+      env: 'all' as const,
+      file,
+      model: null,
+    });
+    const result = resolveConfigAgents(
+      rootAgents,
+      { errors: [], specs: [spec('kortix', null), spec('support', 'team/support.md')] },
+      (s) => (s.name === 'kortix' ? 'agents/kortix.md' : undefined),
+    );
+    expect(result.agents.map((a) => [a.name, a.path, a.description])).toEqual([
+      ['kortix', 'agents/kortix.md', 'Root agent'],
+      ['support', 'team/support.md', 'Explicit file'],
+    ]);
+  });
+
   test('invalid agents: adoption disables legacy discovery instead of silently exposing all agents', () => {
     const result = resolveConfigAgents(nativeAgents, {
       specs: [],

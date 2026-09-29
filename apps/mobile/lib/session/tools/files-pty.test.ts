@@ -12,8 +12,9 @@ import {
   ptyWriteView,
   ptyKillId,
   splitTerminalBuffer,
-  stripMarkupForToolOutput,
 } from './files-pty';
+
+import { stripMarkupForToolOutput } from '@kortix/shared';
 
 const LONG_BUFFER = `<pty_output id="pty-1" status="running">
 ${Array.from({ length: 40 }, (_, i) => `line-${i + 1}`).join('\n')}
@@ -136,7 +137,7 @@ describe('PtyWriteTool / PtyKillTool fields', () => {
   });
 });
 
-describe('stripMarkupForToolOutput (web tool-renderers-sanitization)', () => {
+describe('stripMarkupForToolOutput (shared @kortix/shared)', () => {
   test('drops tags and collapses whitespace onto one line', () => {
     expect(stripMarkupForToolOutput('<pty_killed>\n  Killed  pty-1\n</pty_killed>')).toBe('Killed pty-1');
   });

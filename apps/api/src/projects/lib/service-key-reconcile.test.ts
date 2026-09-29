@@ -104,6 +104,39 @@ describe('reconcileServiceKeyFromBox', () => {
     expect(joined).toContain('environ');
     expect(joined).not.toContain('/etc/environment');
   });
+
+  test('falls back to a full-cmdline match for a supervised daemon', async () => {
+    // `pgrep -x kortix-agent` only matches the baked daemon's comm name. A box
+    // the legacy repair supervised runs the daemon from
+    // /opt/kortix/agent.{current,prev,next}, whose comm name it never matches
+    // — so every reconcile on such a box returned a silent `unreadable`, the
+    // row was never corrected, and the session looped on bad_signature (the
+    // 2026-09-29 prod warn spike). The probe must fall back to the same
+    // full-cmdline match the bootstrap's own stop path uses.
+    let command: string[] = [];
+    const { deps: d } = deps({
+      exec: async (_ext, cmd) => {
+        command = cmd;
+        return { stdout: BOX_KEY, exitCode: 0 };
+      },
+    });
+    expect(await reconcileServiceKeyFromBox('sb-1', d)).toBe('reconciled');
+    const joined = command.join(' ');
+    expect(joined).toContain(
+      "pgrep -f '/usr/local/bin/kortix-age[n]t|/opt/kortix/agent[.](current|prev|next)'",
+    );
+    // The bracket escapes keep the pattern from matching the `sh -lc` wrapper
+    // that carries it — a self-match would read the wrong /proc/<pid>/environ.
+    expect(joined).toContain('kortix-age[n]t');
+  });
+
+  test('an empty report stays unreadable even when the box explains why', async () => {
+    const { deps: d, written } = deps({
+      exec: async () => ({ stdout: '', stderr: 'no process found', exitCode: 3 }),
+    });
+    expect(await reconcileServiceKeyFromBox('sb-1', d)).toBe('unreadable');
+    expect(written).toEqual([]);
+  });
 });
 
 describe('isPlausibleServiceKey', () => {

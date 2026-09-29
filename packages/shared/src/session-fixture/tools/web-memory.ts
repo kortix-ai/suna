@@ -498,7 +498,7 @@ export const WEB_MEMORY_TOOL_GROUP: FixtureToolGroup = {
       title: `${FETCH_HTML_URL} (text/html; charset=utf-8)`,
       error: 'Request failed with status code: 403',
       durationMs: 1100,
-      note: 'HTML format: the readable branch. Web `extractReadableHtml` (tool-renderers-sanitization.ts) and mobile `extractReadableHtml` (lib/session/tools/web-fetch.ts) take the `<title>` as the trigger title, decode `&amp;`, drop `<style>`/`<script>`, and show "View raw HTML".',
+      note: 'HTML format: the readable branch. Web and mobile both render through the shared `extractReadableHtml` (`@kortix/shared`), which takes the `<title>` as the trigger title, decode `&amp;`, drop `<style>`/`<script>`, and show "View raw HTML".',
     },
     // ── scrape_webpage ──
     {

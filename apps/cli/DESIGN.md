@@ -142,7 +142,7 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix secrets ls`                             | List secret names + manifest `[env]` requirements                    | `GET /v1/projects/:id/secrets`                                      |
 | `kortix secrets set <NAME>=<VALUE>...`          | Upsert one or more secrets (read VALUE from stdin if `-`)            | `POST /v1/projects/:id/secrets` (per entry)                         |
 | `kortix secrets unset <NAME>...`                | Remove                                                               | `DELETE /v1/projects/:id/secrets/:name`                             |
-| `kortix sessions ls`                            | List sessions                                                        | `GET /v1/projects/:id/sessions`                                     |
+| `kortix sessions ls`                            | List sessions with their starter; `--mine/--shared/--automated` list top-level sessions, `--search`, `--children` | `GET /v1/projects/:id/sessions`                                     |
 | `kortix sessions new [--prompt "..."]`          | Start a session                                                      | `POST /v1/projects/:id/sessions`                                    |
 | `kortix sessions open <session-id>`             | Print / open the dashboard URL for one session                       | none                                                                |
 | `kortix sessions logs <session-id> [-f]`        | Stream session output                                                | `GET /v1/projects/:id/sessions/:sid/events` (SSE — exists)          |

@@ -55,10 +55,12 @@ const isRule = (value: unknown): value is PermissionRule => typeof value === 'st
  * Pattern maps are KEPT whole and matched per call by {@link resolveRule} —
  * collapsing them to their `*` entry would turn an explicit
  * `bash: { 'rm -rf *': 'deny', '*': 'allow' }` into an unconditional allow.
- * A tool with no rule is `allow`, OpenCode's default.
+ * A tool with no rule is `allow`, OpenCode's default. A bare action
+ * (`permission: deny`) is OpenCode's whole-agent form: it covers every tool.
  */
 export function compilePermissionPolicy(raw: unknown): PermissionPolicy {
   const policy: PermissionPolicy = {}
+  if (isRule(raw)) return { '*': raw }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return policy
   for (const [tool, value] of Object.entries(raw as Record<string, unknown>)) {
     if (isRule(value)) policy[tool] = value
@@ -106,12 +108,12 @@ function matchPatterns(subject: string, patterns: Record<string, PermissionRule>
 
 /**
  * The string a pattern is tested against, per tool — the subject OpenCode sends
- * as the permission request's pattern: the command line for `bash`, the target
- * path for the workspace tools.
+ * as the permission request's pattern: the command line for `bash`, the skill
+ * name for `skill`, the target path for the workspace tools.
  */
 export function permissionSubject(tool: string, args: unknown): string | undefined {
   if (!args || typeof args !== 'object') return undefined
-  const value = (args as Record<string, unknown>)[tool === 'bash' ? 'command' : 'path']
+  const value = (args as Record<string, unknown>)[tool === 'bash' ? 'command' : tool === 'skill' ? 'name' : 'path']
   return typeof value === 'string' ? value : undefined
 }
 
@@ -126,9 +128,22 @@ function resolveRule(config: PermissionRuleConfig | undefined, tool: string, arg
   return config['*']
 }
 
-/** One call's rule under `policy`: the tool's entry, else `*`. `undefined` means the policy says nothing. */
+/** OpenCode's `edit` permission governs every tool that writes a file; pi names one of them `write`. */
+const PERMISSION_KEY: Record<string, string> = { write: 'edit' }
+
+/** One call's rule under `policy`: the tool's entry, else its OpenCode key's, else `*`. `undefined` means the policy says nothing. */
 export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
-  return resolveRule(policy[tool] !== undefined ? policy[tool] : policy['*'], tool, args)
+  const key = PERMISSION_KEY[tool]
+  return resolveRule(policy[tool] ?? (key ? policy[key] : undefined) ?? policy['*'], tool, args)
+}
+
+/**
+ * Whether an agent may see a skill. The manifest `skills:` grant compiles to
+ * OpenCode's `permission.skill` rule; only a `deny` hides a skill. pi has no
+ * skill tool to gate on load, so an `ask` skill stays listed.
+ */
+export function skillGranted(policy: PermissionPolicy, name: string): boolean {
+  return resolvePolicyRule(policy, 'skill', { name }) !== 'deny'
 }
 
 export class PermissionBroker {
@@ -139,6 +154,7 @@ export class PermissionBroker {
     private readonly sessionID: string,
     private readonly publish: (frame: WireFrame) => void,
     private policy: PermissionPolicy = {},
+    private readonly onAsked?: (request: PermissionRequestWire) => void,
   ) {}
 
   setPolicy(policy: PermissionPolicy): void {
@@ -168,6 +184,7 @@ export class PermissionBroker {
     return new Promise<PermissionReply>((resolve) => {
       this.pending.set(request.id, { request, resolve })
       this.publish({ type: 'permission.asked', properties: { ...request } })
+      this.onAsked?.(request)
     })
   }
 

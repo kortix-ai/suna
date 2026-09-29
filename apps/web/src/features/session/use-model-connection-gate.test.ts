@@ -117,7 +117,7 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
   });
 
   /**
-   * The four callers that predate the options argument must keep behaving
+   * The callers that predate the options argument must keep behaving
    * EXACTLY as they did: none passes options, so the route stays their single
    * source of truth. If one of them ever starts passing an id, that is a
    * behaviour change on `/projects/[id]` that somebody has to decide on.
@@ -132,8 +132,8 @@ describe('useModelConnectionGate: the options argument is backward compatible', 
     expect(selectorSource).not.toContain('useModelConnectionGate(models,');
   });
 
-  test('both model-connection-gate call sites still pass no live data and no options', () => {
-    expect(chatGateSource.match(/useModelConnectionGate\(EMPTY_MODELS\)/g)?.length).toBe(2);
+  test('the model-connection-gate call site still passes no live data and no options', () => {
+    expect(chatGateSource.match(/useModelConnectionGate\(EMPTY_MODELS\)/g)?.length).toBe(1);
     expect(chatGateSource).not.toContain('useModelConnectionGate(EMPTY_MODELS,');
   });
 });

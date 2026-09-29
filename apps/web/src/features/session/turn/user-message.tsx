@@ -1,5 +1,6 @@
 'use client';
 
+import { ReminderTurnCard } from './reminder-turn-card';
 import { toast } from 'sonner';
 import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
 
@@ -73,6 +74,7 @@ import {
   parseReplyContexts,
   parseSessionReferences,
   parseSystemNotifications,
+  parseReminderPrompt,
   parseTriggerEvent,
   QUOTE_MARKER_RE,
   quoteMarker,
@@ -1256,6 +1258,9 @@ export function UserMessage({
   // Detect trigger_event in user message
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
 
+  // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
+  const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
+
   // Check if any text part was edited
   const isEdited = message.parts.some(
     (part) =>
@@ -1520,6 +1525,15 @@ export function UserMessage({
             </div>
           )}
         </div>
+        {actions}
+      </div>
+    );
+  }
+
+  if (reminderInfo) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <ReminderTurnCard info={reminderInfo} />
         {actions}
       </div>
     );

@@ -11,11 +11,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { SKILLS_DIR } from '@kortix/manifest-schema/layout';
 import { getManagedSkillFiles, getStarterFiles, isKortixManagedSkillName } from '../src/index';
 
 const outDir = process.argv[2] ?? join(import.meta.dir, '..', 'dist', 'managed-skills');
 
-const SKILLS_PREFIX = '.kortix/opencode/skills/';
+const SKILLS_PREFIX = `${SKILLS_DIR}/`;
 
 function skillNameOf(path: string): string | null {
   if (!path.startsWith(SKILLS_PREFIX)) return null;

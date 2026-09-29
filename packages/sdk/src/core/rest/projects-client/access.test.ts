@@ -393,6 +393,14 @@ test('resolveApproval POSTs only the decision', async () => {
 // A decision covers exactly the call that asked for it. The 'session' /
 // 'session_all' scopes were removed because one click pre-authorised every later
 // call of the tool, whatever its arguments — the gate's whole purpose.
+test('resolveApproval sends the approver note to the agent when given', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await resolveApproval('P1', 'ex1', 'deny', { note: '  Reword the second paragraph  ' });
+  expect(last().body).toEqual({ decision: 'deny', note: 'Reword the second paragraph' });
+  await resolveApproval('P1', 'ex1', 'deny', { note: '   ' });
+  expect(last().body).toEqual({ decision: 'deny' });
+});
+
 test('resolveApproval sends no scope, so nothing can widen a decision', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await resolveApproval('P1', 'ex1', 'deny');

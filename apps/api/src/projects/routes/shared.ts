@@ -315,7 +315,7 @@ export async function resumeStoppedSandbox(
       // provider-running precedes the guest daemon binding its port.
       scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
       // The project's half of the same problem. The woken VM still holds the
-      // `.kortix/opencode` tree and compiled agent config of its provision day;
+      // config dir, skills and compiled agent config of its provision day;
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
       // a no-op — no opencode restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');
@@ -539,6 +539,8 @@ const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
 // OpenCode itself a wider window to finish booting.
 const STALE_RUNTIME_UNREACHABLE_MS = 30_000;
 const STALE_OPENCODE_NOT_READY_MS = 90_000;
+/** A reconcile that did not heal the row waits this long before it execs again. */
+const SERVICE_KEY_RECONCILE_RETRY_MS = 5 * 60_000;
 
 function parseTimestampMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
@@ -1702,14 +1704,23 @@ async function runOpenSession(args: {
     // — measured 2026-09-28: 1447s of `starting/unreachable` ->
     // `failed/runtime_unreachable_timeout` on a box whose daemon answered
     // `200 {"daemon":"ok","opencode":"ok"}` — is undiagnosable without this.
-    console.warn('[start] opencode session list unreachable', {
-      sandbox_id: row.sandboxId,
-      session_id: row.sessionId,
-      external_id: runningExternalId,
-      cause: ensured.cause ?? 'unspecified',
-      responder: ensured.responder ?? 'unnamed',
-      detail: ensured.detail ?? '',
-    });
+    //
+    // Only when the cause CHANGES, though: a stuck session polls every ~3s,
+    // and one warn per poll was a prod log spike (2026-09-29: 1119 lines/hour
+    // from 20 bad_signature sessions). The durable stamp below carries the
+    // same cause/responder/detail for whoever reads the row later.
+    const previousCause = sandboxMetadata(row).opencodeUnreachableCause;
+    const nextCause = ensured.cause ?? 'unspecified';
+    if (previousCause !== nextCause) {
+      console.warn('[start] opencode session list unreachable', {
+        sandbox_id: row.sandboxId,
+        session_id: row.sessionId,
+        external_id: runningExternalId,
+        cause: nextCause,
+        responder: ensured.responder ?? 'unnamed',
+        detail: ensured.detail ?? '',
+      });
+    }
     // A `bad_signature` is not a transport problem — it means the row's
     // serviceKey is not the key the daemon holds. The provider's create-time
     // KORTIX_TOKEN is immutable (Platinum exposes no env update, only exec) and
@@ -1724,13 +1735,41 @@ async function runOpenSession(args: {
       typeof ensured.detail === 'string' &&
       ensured.detail.includes('bad_signature')
     ) {
-      const { reconcileServiceKeyFromBox } = await import('../lib/service-key-reconcile');
-      const outcome = await reconcileServiceKeyFromBox(row.sandboxId);
-      console.warn('[start] bad_signature — reconciled the service key against the box', {
-        session_id: row.sessionId,
-        sandbox_id: row.sandboxId,
-        outcome,
-      });
+      // One exec per poll is a spike of its own (2026-09-29: ~2200 execs in
+      // 2 h across 20 stuck sessions, each holding the /start response open).
+      // An attempt that did not heal backs off; a healed row stops being
+      // unreachable on the next poll anyway.
+      const lastFailedMs = parseTimestampMs(
+        sandboxMetadata(row).serviceKeyReconcileFailedAt,
+      );
+      if (
+        lastFailedMs === null ||
+        Date.now() - lastFailedMs >= SERVICE_KEY_RECONCILE_RETRY_MS
+      ) {
+        const { reconcileServiceKeyFromBox } = await import('../lib/service-key-reconcile');
+        const outcome = await reconcileServiceKeyFromBox(row.sandboxId);
+        console.warn('[start] bad_signature — reconciled the service key against the box', {
+          session_id: row.sessionId,
+          sandbox_id: row.sandboxId,
+          outcome,
+        });
+        if (outcome !== 'reconciled') {
+          await db
+            .update(sessionSandboxes)
+            .set({
+              metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+                serviceKeyReconcileFailedAt: new Date().toISOString(),
+              })}::jsonb`,
+            })
+            .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+            .catch((err) =>
+              console.warn(
+                '[start] could not stamp the service-key reconcile attempt:',
+                err instanceof Error ? err.message : err,
+              ),
+            );
+        }
+      }
     }
     // …and DURABLY, on the row. A log line is only reachable by someone with
     // log access at the moment it scrolls past; the row is queryable later, by
@@ -1738,10 +1777,8 @@ async function runOpenSession(args: {
     // observable and stopped there, which left it unreadable from outside the
     // process — a diagnostic nobody can reach does not diagnose anything.
     //
-    // Written only when it CHANGES: these sessions poll every ~10s, and this
-    // must not become a write per poll.
-    const previousCause = sandboxMetadata(row).opencodeUnreachableCause;
-    const nextCause = ensured.cause ?? 'unspecified';
+    // Written only when it CHANGES — the warn above shares this gate, so a
+    // stuck session costs one write, not one per poll.
     if (previousCause !== nextCause) {
       // Merge in SQL, never a read-modify-write of the JSONB column (learnings
       // 2026-09-22): a concurrent wake claim on this row would be clobbered.

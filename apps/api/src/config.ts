@@ -623,13 +623,6 @@ const envSchema = z.object({
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
   // ── Config releases (optional) ──────────────────────────────────────────
-  // Operator kill switch for the whole config-release feature (the
-  // `config_releases` per-project flag). Default ON: a session runs the base branch's current
-  // config. Set to false and the flag is unavailable platform-wide — the
-  // Settings row disappears, both routes answer 403 `feature_disabled` for
-  // every project, no convergence is scheduled, and every session falls back
-  // to reading its workspace config dir, whatever a project chose.
-  CONFIG_RELEASES_ENABLED: optBoolFalse,
   // Config archives go through the API's ONE object store
   // (src/object-store/s3.ts), same as project snapshots above, with their own
   // bucket/prefix so that naming a config bucket never starts the snapshot
@@ -640,8 +633,8 @@ const envSchema = z.object({
   //   local/preview/self-host: Supabase Storage's S3 PROTOCOL endpoint
   //     (`<supabase>/storage/v1/s3`) with the S3 protocol key pair, bucket
   //     `kortix-config-releases` (created by database migration).
-  // Required when CONFIG_RELEASES_ENABLED is on — see the conditional check in
-  // validateEnv(); without it every archive request rebuilds from the mirror.
+  // Unset ⇒ validateEnv() warns and every archive request rebuilds from the
+  // Git mirror.
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: optStr,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: optStr,
   /** S3-compatible endpoint. Empty = the AWS regional endpoint. */
@@ -770,6 +763,10 @@ const envSchema = z.object({
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: optInt(120),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
+  // Per-credential bound on the LLM gateway mount (/v1/llm and its
+  // /v1/llm-gateway alias). Defence-in-depth at the boundary, not a quota:
+  // 600/min is ~10/s per credential, far above any real inference pattern.
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
   // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
   // the entry this many places from the right; everything to its left was
@@ -1013,22 +1010,14 @@ function validateEnv(): z.infer<typeof envSchema> {
       });
   }
 
-  // ── Conditional: config releases on → need the ONE object store ────────
-  // `CONFIG_RELEASES_ENABLED` is the operator switch and defaults to FALSE
-  // while the rollout runs. An environment turns it on together with the
-  // bucket, and only then can a project opt in
-  // (the per-project flag itself is OFF by default) and publish config
-  // archives from that moment on. They go through the API's one
-  // object store (src/object-store/s3.ts); there is no second store and no
-  // fallback path that quietly writes somewhere else. Unset ⇒ every archive
-  // request rebuilds from the Git mirror, every time, for every box.
-  // Managed cloud (billing on) is a hard error — a deploy that forgot the
-  // bucket must not reach users. Self-host warns and boots: the store is a
-  // cache, and an operator upgrading a container with a stale env block must
-  // not be locked out of their own dashboard.
-  const configReleasesOn =
-    (raw as any).CONFIG_RELEASES_ENABLED === 'true' || (raw as any).CONFIG_RELEASES_ENABLED === true;
-  if (configReleasesOn) {
+  // ── Config archives → the ONE object store ──────────────────────────────
+  // A project that turns on `config_releases` publishes config archives
+  // through the API's one object store (src/object-store/s3.ts); there is no
+  // second store and no fallback path that quietly writes somewhere else.
+  // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
+  // for every box. A warning, not an error: the store is a cache, and a
+  // container with a stale env block must still boot.
+  {
     const bucket = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_BUCKET ?? '').trim();
     const endpoint = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT ?? '').trim();
     const keyId = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID ?? '').trim();
@@ -1036,10 +1025,9 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!bucket) {
       issues.push({
         var: 'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
-        message: billingOn
-          ? 'Required when CONFIG_RELEASES_ENABLED is on — no config archive is stored and every box rebuilds from the Git mirror'
-          : 'Not set — config archives are not cached; every box rebuilds them from the Git mirror (set the KORTIX_CONFIG_ARCHIVE_S3_* block, or CONFIG_RELEASES_ENABLED=false)',
-        level: billingOn ? 'error' : 'warn',
+        message:
+          'Not set — config archives are not cached; every box rebuilds them from the Git mirror (set the KORTIX_CONFIG_ARCHIVE_S3_* block)',
+        level: 'warn',
       });
     } else if (endpoint && !(keyId && keySecret)) {
       // A custom S3 endpoint (Supabase Storage, MinIO) never has a task role.
@@ -1364,7 +1352,6 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
-  CONFIG_RELEASES_ENABLED: env.CONFIG_RELEASES_ENABLED,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,
@@ -1471,6 +1458,7 @@ export const config = {
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: env.KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: env.KORTIX_LLM_GATEWAY_REQS_PER_MIN,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
   KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
   KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,

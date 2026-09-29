@@ -190,6 +190,49 @@ describe('POST /v1/auth/sign-in/sso', () => {
   });
 });
 
+describe('bodyless POSTs are a 400, never a 500 TypeError', () => {
+  // @hono/zod-openapi skips validation without content-type unless the body is required.
+  const BODY_ROUTES = [
+    '/signup',
+    '/sign-in/password',
+    '/sign-in/magic-link',
+    '/verify-otp',
+    '/sign-in/oauth',
+    '/oauth/exchange',
+    '/refresh',
+    '/sign-in/sso',
+    '/password/reset',
+  ];
+
+  test('no body and no content-type → 400 validation failure on every body route, upstream never called', async () => {
+    for (const path of BODY_ROUTES) {
+      const res = await app().request(`/v1/auth${path}`, {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '198.51.100.77' },
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: true, message: 'Validation failed' });
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  test('empty JSON body and malformed JSON are also a 400, not a 500', async () => {
+    const empty = await app().request('/v1/auth/sign-in/password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.78' },
+      body: '{}',
+    });
+    expect(empty.status).toBe(400);
+    const malformed = await app().request('/v1/auth/sign-in/password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.78' },
+      body: '',
+    });
+    expect(malformed.status).toBe(400);
+    expect(seen).toHaveLength(0);
+  });
+});
+
 describe('GET /v1/auth/client-config', () => {
   const get = () =>
     app().request('/v1/auth/client-config', { headers: { 'x-forwarded-for': '192.0.2.44' } });

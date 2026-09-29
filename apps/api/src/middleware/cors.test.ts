@@ -169,4 +169,17 @@ describe('createCorsMiddleware', () => {
       'https://change-123.preview.kortix.com',
     );
   });
+
+  test('a browser MCP client may send Mcp-Protocol-Version and Mcp-Session-Id', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware({ internalEnvironment: 'prod', extraOrigins: [] }));
+    app.post('/v1/mcp', (context) => context.json({ ok: true }));
+    const response = await app.request('/v1/mcp', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://kortix.com', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,mcp-protocol-version,mcp-session-id' },
+    });
+    const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase() ?? '';
+    expect(allowed).toContain('mcp-protocol-version');
+    expect(allowed).toContain('mcp-session-id');
+  });
 });

@@ -61,7 +61,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/agents/{agentName}/scope',
     tags: ['projects'],
-    summary: 'PUT /:projectId/agents/:agentName/scope',
+    summary: 'Set which secrets and connectors an agent may use',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), agentName: z.string() }),
@@ -240,7 +240,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secrets/{identifier}/grant',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secrets/:identifier/grant',
+    summary: 'Grant a secret to an agent',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), identifier: z.string() }),

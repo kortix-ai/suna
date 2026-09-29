@@ -11,19 +11,23 @@
  *   equivalent. `ToolFilePreviewHost` renders that viewer and must be mounted
  *   once per screen that shows tool rows (the session screen);
  * - a SESSION opens through `useTabStore().navigateToSession`;
- * - a sandbox PREVIEW (localhost URL) opens the Browser page tab
- *   (`page:browser`) on the sandbox proxy URL, as `SandboxPreviewCard` does;
+ * - a sandbox PREVIEW (localhost URL) opens the in-session sheet
+ *   (`SandboxPreviewSheet`, `useToolPreviewStore`) over the session — never the
+ *   Browser page tab, which replaces the session and loses the reader's place
+ *   (KRTX-602). The explicit "open in the full browser" control still opens the
+ *   Browser page tab (`page:browser`);
  * - an EXTERNAL link opens with `openLink` (http/https only): kortix.com in
  *   the in-app browser, any other site in the system browser.
  *
- * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card that
- * opens the Browser tab instead of an embedded page.
+ * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card: its tap
+ * opens the in-session sheet instead of an embedded page.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { create } from 'zustand';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 import type { SandboxFile } from '@/api/types';
 import { FilePreviewSheet, type PreviewFile } from '@/components/files/FilePreviewSheet';
 import type { SheetRef } from '@/components/kortix/sheet';
@@ -39,6 +43,7 @@ import { ArrowSquareOutIcon, CaretRightIcon, GlobeIcon, MonitorIcon } from '@/li
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { webSpace } from '@/lib/session/user-message';
 import { useTabStore } from '@/stores/tab-store';
+import { useToolPreviewStore } from '@/stores/tool-preview-store';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './styles';
 import { ToolSurfaceContext } from './surface';
 import { openLink } from '@/lib/utils/open-link';
@@ -109,25 +114,11 @@ export function ToolFilePreviewHost() {
 
 // ─── useToolNavigation ───────────────────────────────────────────────────────
 
-/** Web's `openTabAndNavigate` tab shape; mobile reads `type` to pick the target. */
-export interface ToolNavigationTab {
-  id: string;
-  title: string;
-  type: 'session' | 'preview' | 'file' | (string & {});
-  href?: string;
-  metadata?: Record<string, unknown>;
-}
-
+/** The Browser page tab, for the explicit "open in the full browser" control. */
 function openBrowserTab(url: string, display: string) {
   const tabs = useTabStore.getState();
   tabs.navigateToPage('page:browser');
   tabs.setTabState('page:browser', { savedUrl: url, savedDisplay: display });
-}
-
-function safeHttpUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  const trimmed = url.trim();
-  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
 }
 
 export function useToolNavigation() {
@@ -158,27 +149,16 @@ export function useToolNavigation() {
     [enabled],
   );
 
-  const openTab = useCallback(
-    (tab: ToolNavigationTab) => {
-      if (!enabled) return;
-      if (tab.type === 'session') {
-        useTabStore.getState().navigateToSession(tab.id);
-        return;
-      }
-      if (tab.type === 'preview') {
-        const url = typeof tab.metadata?.url === 'string' ? tab.metadata.url : undefined;
-        if (url) openBrowserTab(url, tab.title);
-        return;
-      }
-      if (tab.type === 'file') {
-        const path = typeof tab.metadata?.path === 'string' ? tab.metadata.path : tab.id;
-        useToolFilePreviewStore.getState().openPreview(path);
-      }
+  /** A sandbox / HTML preview opens in the in-session sheet, over the session (KRTX-602). */
+  const openPreview = useCallback(
+    (previewUrl: string, label?: string) => {
+      if (!enabled || !previewUrl) return;
+      useToolPreviewStore.getState().openPreview(previewUrl, label);
     },
     [enabled],
   );
 
-  return { enabled, openTab, openExternal, openFile, openSession };
+  return { enabled, openExternal, openFile, openSession, openPreview };
 }
 
 // ─── Sandbox previews ────────────────────────────────────────────────────────
@@ -197,7 +177,7 @@ export function useProxyUrl(localhostUrl: string): { proxyUrl: string; port: num
 }
 
 export function useServicePreview(url: string, label?: string, _sessionId?: string) {
-  const { enabled: navigationEnabled, openExternal } = useToolNavigation();
+  const { enabled: navigationEnabled, openExternal, openPreview } = useToolNavigation();
   const proxy = useProxyUrl(url);
   const externalUrl = proxy ? null : safeHttpUrl(url);
   const previewUrl = proxy ? proxy.proxyUrl : externalUrl;
@@ -206,19 +186,29 @@ export function useServicePreview(url: string, label?: string, _sessionId?: stri
   const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
   const displayLabel = label || (proxy ? 'App preview' : url);
 
-  const navigateToPreviewTab = useCallback(() => {
+  // The primary tap: the in-session sheet over the session (KRTX-602). A public
+  // URL, which the sandbox proxy does not cover, opens externally as before.
+  const openInSession = useCallback(() => {
     if (!navigationEnabled || !previewUrl) return;
-    const parsed = parseLocalhostUrl(url);
-    openBrowserTab(previewUrl, parsed ? `localhost:${parsed.port}${parsed.path === '/' ? '' : parsed.path}` : displayLabel);
-  }, [displayLabel, navigationEnabled, previewUrl, url]);
+    if (proxy) openPreview(previewUrl, displayLabel);
+    else openExternal(previewUrl);
+  }, [displayLabel, navigationEnabled, openExternal, openPreview, previewUrl, proxy]);
 
-  // A sandbox proxy URL needs the app's auth, which the system browser does
-  // not carry, so it opens in the in-app Browser tab; a public URL opens
-  // externally.
+  // The explicit "open in the full browser" control. A sandbox proxy URL needs
+  // the app's auth, which the system browser does not carry, so it opens in the
+  // in-app Browser page tab; a public URL opens externally.
   const openInBrowser = useCallback(() => {
-    if (proxy) navigateToPreviewTab();
-    else openExternal(previewUrl ?? undefined);
-  }, [navigateToPreviewTab, openExternal, previewUrl, proxy]);
+    if (!navigationEnabled || !previewUrl) return;
+    if (!proxy) {
+      openExternal(previewUrl);
+      return;
+    }
+    const parsed = parseLocalhostUrl(url);
+    openBrowserTab(
+      previewUrl,
+      parsed ? `localhost:${parsed.port}${parsed.path === '/' ? '' : parsed.path}` : displayLabel,
+    );
+  }, [displayLabel, navigationEnabled, openExternal, previewUrl, proxy, url]);
 
   return {
     navigationEnabled,
@@ -230,7 +220,7 @@ export function useServicePreview(url: string, label?: string, _sessionId?: stri
     refreshKey,
     handleRefresh,
     displayLabel,
-    navigateToPreviewTab,
+    openInSession,
     openInBrowser,
     onLoad: noop,
     onError: noop,
@@ -241,10 +231,10 @@ function noop() {}
 
 export type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
-/** Web: refresh · open externally · "Open as tab". Mobile: open externally · Open. */
+/** Web: refresh · open externally · "Open as tab". Mobile: arrow = full browser, "Open" = in-session sheet. */
 export function ServicePreviewActions({ preview }: { preview: ServicePreviewState }) {
   const palette = useTurnPalette();
-  const { navigationEnabled, previewUrl, navigateToPreviewTab, openInBrowser } = preview;
+  const { navigationEnabled, previewUrl, openInSession, openInBrowser } = preview;
   const disabled = !navigationEnabled || !previewUrl;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: webSpace(1), flexShrink: 0 }}>
@@ -257,7 +247,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
       >
         <Icon as={ArrowSquareOutIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />
       </Button>
-      <Button variant="secondary" size="sm" disabled={disabled} onPress={navigateToPreviewTab}>
+      <Button variant="secondary" size="sm" disabled={disabled} onPress={openInSession}>
         <Text>Open</Text>
       </Button>
     </View>
@@ -273,7 +263,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
  * the port under it, a chevron. The token-bearing proxy URL is never shown.
  */
 export function ServicePreviewRow({ preview, url }: { preview: ServicePreviewState; url: string }) {
-  const { displayLabel, navigationEnabled, previewUrl, navigateToPreviewTab } = preview;
+  const { displayLabel, navigationEnabled, previewUrl, openInSession } = preview;
   const disabled = !navigationEnabled || !previewUrl;
   const parsed = parseLocalhostUrl(url);
   const where = parsed
@@ -285,7 +275,7 @@ export function ServicePreviewRow({ preview, url }: { preview: ServicePreviewSta
       icon={MonitorIcon}
       title={displayLabel && displayLabel !== url ? displayLabel : 'App preview'}
       subtitle={where}
-      onPress={disabled ? undefined : navigateToPreviewTab}
+      onPress={disabled ? undefined : openInSession}
     />
   );
 }
@@ -293,12 +283,12 @@ export function ServicePreviewRow({ preview, url }: { preview: ServicePreviewSta
 /** The tappable body of a preview: label + Open. Never renders the token-bearing URL. */
 export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
   const palette = useTurnPalette();
-  const { displayLabel, navigationEnabled, previewUrl, navigateToPreviewTab } = preview;
+  const { displayLabel, navigationEnabled, previewUrl, openInSession } = preview;
   return (
     <Button
       variant="outline"
       disabled={!navigationEnabled || !previewUrl}
-      onPress={navigateToPreviewTab}
+      onPress={openInSession}
       accessibilityLabel={`Open ${displayLabel}`}
     >
       <Icon as={ArrowSquareOutIcon} size={TURN_SPACE.icon} color={palette.mutedForeground} />

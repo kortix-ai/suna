@@ -12,6 +12,10 @@ flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   await ctx.step("GET /v1/health", async () => {
     const r = await ctx.client.get("/v1/health");
     r.status(200).body().has("$.status", "ok").has("$.service", "kortix-api");
+    const body = JSON.parse(r.text()) as Record<string, unknown>;
+    for (const field of ["instance", "region", "database_region", "scheduler_leader", "trigger_scheduler"]) {
+      if (field in body) throw new Error(`public health exposed ${field}`);
+    }
   });
 });
 

@@ -215,6 +215,8 @@ export {
 
 // One copy for web and mobile: `@kortix/shared/trigger-event`.
 export { parseTriggerEvent, type TriggerEventInfo } from '@kortix/shared';
+// The reminder fire header, also shared with the API that writes it.
+export { parseReminderPrompt, type ReminderPromptInfo } from '@kortix/shared';
 
 // ── Generic XML notification parsing ──────────────────────────────────
 //

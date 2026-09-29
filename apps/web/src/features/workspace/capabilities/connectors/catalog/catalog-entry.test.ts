@@ -55,12 +55,12 @@ const conn = (over: Partial<AdminConnector> = {}): AdminConnector =>
   }) as AdminConnector;
 
 describe('normalising the two catalogues', () => {
-  test('Computer Tunnels is a native connector catalogue entry', () => {
+  test('Computer is a native connector catalogue entry', () => {
     const entry = computersCatalogEntry(testUiTranslator);
     expect(entry).toMatchObject({
       source: 'computer',
       slug: 'computers',
-      name: 'Computer Tunnels',
+      name: 'Computer',
       categories: ['developer-tools'],
     });
   });
@@ -117,7 +117,7 @@ describe('connected join', () => {
     expect(isCatalogEntryConnected(catalogEntryFromDiscover(connector()), keys)).toBe(false);
   });
 
-  test('Computer Tunnels stays connected when every profile has a custom name and slug', () => {
+  test('Computer stays connected when the connector has a custom name and slug', () => {
     const keys = connectedCatalogKeys([
       conn({ provider: 'computer', slug: 'studio-machines', name: 'Studio' }),
     ]);

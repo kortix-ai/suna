@@ -108,7 +108,7 @@ import { describeOpencodeError, isConfigErrorName } from './proven-check'
 import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
-import { AGENT_ENV_SH } from '../shared/agent-env-file'
+import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -122,9 +122,10 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { configReleaseNoticePath } from '@/services/config-release/notice'
-import { bootLinkPath } from '@/services/config-release/boot-config'
+import { bootLinkPath, readBootLinkTarget } from '@/services/config-release/boot-config'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from './fallback-models'
+import { SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -323,6 +324,8 @@ export async function buildOpencodeConfigContent(
   env: NodeJS.ProcessEnv,
   opts: {
     injectedSkillsDir?: string | null
+    /** The project root's `skills/`, only while OpenCode serves the working tree. */
+    projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
     /** The config-release notice, when one exists (config-release/notice.ts). */
     configReleaseNoticePath?: string | null
@@ -373,6 +376,11 @@ export async function buildOpencodeConfigContent(
   // box with no project config (the platform meta sandbox).
   const injectedSkillsDir =
     opts.injectedSkillsDir && existsSync(opts.injectedSkillsDir) ? opts.injectedSkillsDir : null
+  // (5b) The project root's `skills/` (the harness-neutral layout). Declared
+  // only while OpenCode serves the working tree: a config release carries its
+  // skills inside the release, and `/workspace` never decides a release's config.
+  const projectSkillsDir =
+    opts.projectSkillsDir && existsSync(opts.projectSkillsDir) ? opts.projectSkillsDir : null
   const secretCapabilitiesInstructionPath =
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
@@ -444,9 +452,10 @@ export async function buildOpencodeConfigContent(
     out.instructions = instructions.includes(instructionPath) ? instructions : [...instructions, instructionPath]
   }
 
-  // (5) Injected managed skills — append to whatever `skills.paths` the base
-  // config already declares; never clobber.
-  if (injectedSkillsDir) {
+  // (5) Injected managed skills and the project root's skills — append to
+  // whatever `skills.paths` the base config already declares; never clobber.
+  const extraSkillDirs = [injectedSkillsDir, projectSkillsDir].filter((dir): dir is string => dir !== null)
+  if (extraSkillDirs.length > 0) {
     const skills =
       out.skills && typeof out.skills === 'object' && !Array.isArray(out.skills)
         ? (out.skills as Record<string, unknown>)
@@ -454,10 +463,7 @@ export async function buildOpencodeConfigContent(
     const paths = Array.isArray(skills.paths)
       ? skills.paths.filter((p): p is string => typeof p === 'string')
       : []
-    out.skills = {
-      ...skills,
-      paths: paths.includes(injectedSkillsDir) ? paths : [...paths, injectedSkillsDir],
-    }
+    out.skills = { ...skills, paths: [...paths, ...extraSkillDirs.filter((dir) => !paths.includes(dir))] }
   }
 
   // (1) Optional Kortix Connector MCP server. CLI remains the primary agent path.
@@ -639,6 +645,7 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
   // reconcile diffs the live managed set against it to decide whether one
   // controlled restart is warranted.
   lastConfiguredProviderModelIds = new Set(Object.keys(catalog))
+  lastConfiguredCapabilities = new Map(Object.entries(catalog).map(([id, model]) => [id, capabilityKey(model)]))
   const models = Object.fromEntries(
     Object.entries(catalog).map(([id, model]) => {
       // The gateway catalog's string `provider` is UI metadata describing the
@@ -876,12 +883,14 @@ export async function writeKortixOpencodeConfig(
   opts: {
     configPath?: string
     injectedSkillsDir?: string | null
+    projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
     configReleaseNoticePath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
+    projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
   })
@@ -991,6 +1000,13 @@ let managedCacheAt = 0
 /** The kortix-provider model ids the most recently WRITTEN config registers.
  *  Written on every spawn, so it is what the running OpenCode holds. */
 let lastConfiguredProviderModelIds: Set<string> | null = null
+let lastConfiguredCapabilities: Map<string, string> | null = null
+
+// The fields OpenCode turns into image input and thinking variants. A box that
+// booted on the baked catalog keeps stale values here until it restarts.
+function capabilityKey(model: KortixGatewayModel): string {
+  return JSON.stringify([model.attachment ?? null, model.modalities ?? null, model.reasoning_options ?? null])
+}
 
 /**
  * Why the most recent LIVE managed fetch (`fetchManagedModels`) did not
@@ -1192,17 +1208,22 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
 }
 
 /**
- * Managed ids the live gateway serves that the running OpenCode does NOT have.
+ * Managed ids the live gateway serves that the running OpenCode does NOT have,
+ * or has with stale image/thinking capabilities.
  *
- * Each one is a model the picker offers and the runtime answers `ModelNotFound`
- * for — the 2026-08-19 outage, exactly. An empty result means the boot config
+ * A missing id is a model the picker offers and the runtime answers
+ * `ModelNotFound` for — the 2026-08-19 outage, exactly. A stale id is a model
+ * whose `modalities` changed: OpenCode replaces every image with "Cannot read
+ * image" until it restarts (2026-09-29). An empty result means the boot config
  * was already complete and nothing has to be restarted.
  */
 export function missingManagedModelIds(live: Record<string, KortixGatewayModel> | null): string[] {
   if (!live) return []
   const configured = lastConfiguredProviderModelIds
   if (!configured) return []
-  return Object.keys(live).filter((id) => !configured.has(id))
+  return Object.keys(live).filter(
+    (id) => !configured.has(id) || lastConfiguredCapabilities?.get(id) !== capabilityKey(live[id]!),
+  )
 }
 
 /**
@@ -1241,6 +1262,7 @@ export function resetManagedModelsStateForTests(): void {
   managedCache = null
   managedCacheAt = 0
   lastConfiguredProviderModelIds = null
+  lastConfiguredCapabilities = null
   lastManagedFetchFailureReason = null
 }
 
@@ -1716,7 +1738,7 @@ export interface OpencodeLifecycleOptions {
    * Instance created before the checkout landed keeps a tool registry whose
    * imports failed, for the life of the process (dev, 2026-08-27:
    * `ResolveMessage: Cannot find module '@mendable/firecrawl-js' from
-   * /workspace/.kortix/opencode/tools/scrape_webpage.ts`). The early-spawn
+   * /workspace/harnesses/opencode/tools/scrape_webpage.ts`). The early-spawn
    * boot path therefore probes liveness on a non-Instance route until
    * `markWorkspaceReady()`.
    */
@@ -1872,9 +1894,15 @@ export function createOpencodeLifecycle(
         err: err instanceof Error ? err.message : String(err),
       })
     }
+    // The project root's `skills/` joins only while the boot link names a dir
+    // in the working tree (config releases off). A release carries its own.
+    const served = await readBootLinkTarget()
+    const projectRoot = currentCfg.projectTarget
+    const servesWorkingTree = !!served && !!projectRoot && served.startsWith(`${projectRoot}/`)
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(bootLinkPath(), 'skills'),
+      projectSkillsDir: servesWorkingTree ? join(projectRoot, SKILLS_DIR) : null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
     })
@@ -1904,13 +1932,13 @@ export function createOpencodeLifecycle(
       // OpenCode reads is one atomic `pointBootLink` and never a second env
       // writer, a hint, or a spawn-time decision.
       OPENCODE_CONFIG_DIR: bootLinkPath(),
-      // Every non-interactive shell opencode spawns (`bash -c`) sources this,
-      // so live project secrets reach the agent's commands without any
-      // opencode plugin/config. Interactive shells + terminals get it from the
-      // image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
-      BASH_ENV: AGENT_ENV_SH,
+      // Every non-interactive shell opencode spawns (`bash -c`) sources the
+      // agent env file, so live project secrets reach the agent's commands
+      // without any opencode plugin/config. Interactive shells + terminals get
+      // it from the image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
+      ...AGENT_SHELL_ENV,
       // Egress shim, when one is running. The agent's SHELLS get these from
-      // AGENT_ENV_SH above; setting them on the opencode process too covers its
+      // the agent env file above; setting them on the opencode process covers its
       // in-process HTTP clients (the built-in webfetch tool), which never go
       // through a shell. Safe for model traffic: NO_PROXY carries 127.0.0.1 (the
       // local LLM proxy) and the Kortix API host.

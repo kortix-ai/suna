@@ -175,7 +175,12 @@ export function extractPreviewToken(req: Request, url: URL): string | null {
   if (qp) return qp;
   const cookieHeader = req.headers.get('Cookie') || '';
   const m = cookieHeader.match(/(?:^|;\s*)__preview_session=([^;]+)/);
-  if (m) return decodeURIComponent(m[1]);
+  if (m) {
+    try {
+      return decodeURIComponent(m[1]);
+    } catch (err) {
+      if (!(err instanceof URIError)) throw err;
+    }
+  }
   return null;
 }
-

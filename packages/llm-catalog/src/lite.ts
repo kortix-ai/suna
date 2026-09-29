@@ -271,6 +271,10 @@ export interface CatalogModel {
   modalities?: CatalogModalities;
   limit?: { context?: number; input?: number; output?: number };
   cost?: CatalogCost;
+  // models.dev's per-model override of the provider's transport: a model served
+  // on another wire format (`npm`) or endpoint (`api`) than its provider's
+  // default — e.g. OpenCode Go's MiniMax on `@ai-sdk/anthropic`.
+  provider?: { npm?: string; api?: string };
 }
 
 // ─── Generation controls — capability-gated, single source of truth ────────
@@ -473,8 +477,12 @@ export interface ManagedModel {
     };
   };
   tier: 'flagship' | 'balanced' | 'fast';
-  // Image input supported by the upstream model.
+  // Image input supported by the upstream model. Also sets the served
+  // `modalities`: OpenCode drops image parts for a model without `image` input.
   vision: boolean;
+  // Effort values the upstream accepts, probed live through the gateway. They
+  // become the thinking control's variants. Wins over the models.dev record.
+  reasoningOptions?: CatalogReasoningOption[];
   // A conservative OpenCode output ceiling inside the upstream context window.
   limit: { context: number; output: number };
   // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
@@ -521,6 +529,14 @@ export const VERIFIED_US_MANAGED_ENDPOINTS = [
   'coreweave/fp8', 'decart/fp4', 'coreweave/nvfp4', 'fireworks/us',
 ] as const;
 
+// Customer-facing name of the US inference provider behind each route. The
+// picker shows this name, never the aggregator or the quantization tag.
+// `morph` is the direct Morph route (off by default; see MORPH_MANAGED_MODELS).
+export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_US_MANAGED_ENDPOINTS)[number] | 'morph', string> = {
+  'coreweave/fp8': 'CoreWeave', 'decart/fp4': 'Decart', 'coreweave/nvfp4': 'CoreWeave', 'fireworks/us': 'Fireworks',
+  morph: 'Morph',
+};
+
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash',
@@ -530,6 +546,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
     openrouterEndpointPricing: { 'coreweave/fp8': { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 } },
     tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
     openrouterProvider: {
       only: ['coreweave/fp8'],
       ...OPENROUTER_POOL_PRIVACY,
@@ -547,6 +564,8 @@ export const MANAGED_MODELS: ManagedModel[] = [
       'coreweave/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
     },
     tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    // `none` returns 400 upstream, so GLM has no off switch.
+    reasoningOptions: [{ type: 'effort', values: ['low', 'high', 'max'] }],
     openrouterProvider: {
       only: ['decart/fp4', 'coreweave/nvfp4'],
       ...OPENROUTER_POOL_PRIVACY,

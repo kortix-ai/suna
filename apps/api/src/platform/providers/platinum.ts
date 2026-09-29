@@ -890,7 +890,9 @@ export class PlatinumProvider implements SandboxProvider {
       const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
       const state = String(sandbox.state ?? '').toLowerCase();
       if (state === 'running') return 'running';
-      if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
+      // A stop ACK is not power-off. Keep the token and compute row alive
+      // until the provider confirms a terminal state.
+      if (state === 'stopped' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
       // reported as `unknown` is a box `decideReconcile` never acts on, and

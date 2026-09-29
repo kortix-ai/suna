@@ -17,17 +17,13 @@
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { resolveScrapeResults, wsDomain, type ScrapeResult } from '@kortix/sdk';
+import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { GlobeIcon, WarningIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import {
-  extractReadableHtml,
-  getScrapeContent,
-  safeHttpUrl,
-  scrapeResultKeys,
-} from '@/lib/session/tools/web-fetch';
+import { getScrapeContent, scrapeResultKeys } from '@/lib/session/tools/web-fetch';
 import { webSpace } from '@/lib/session/user-message';
 import {
   BasicTool,

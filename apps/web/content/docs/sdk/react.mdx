@@ -99,6 +99,8 @@ need a running session. Each mirrors a method on the
 |---|---|
 | `useProjectModels(projectId)` | Selectable models for the project. |
 | `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) and `managedPricingRoutes` customer price estimates for each eligible managed route. The server includes its configured markup; the serving route determines the final charge. |
+| `useProjectSessions(projectId, { parent, startedBy, q, limit })` | One project's sessions, paged. `parent: 'root'` returns top-level sessions with `child_count`; `startedBy: 'me' \| 'others' \| 'automated'` filters by who started the run; `q` searches every session the viewer may open, not only loaded pages. Each filter set has its own cache entry. |
+| `useSessionChildren(projectId, parentSessionId, { q, limit, enabled })` | The sessions one parent spawned (`parent=<id>`), newest first, paged. Set `enabled: false` until the parent is opened. |
 | `useVisibleAgents({ projectId })` | The project's visible agents. |
 | `useProjectConfig(projectId)` | The project's runtime config: default agent, commands. |
 | `useProjectSecrets(projectId)` | Secrets: list, add, remove, and personal overrides. |
@@ -206,13 +208,10 @@ restores data for a different user, but a signed-out device should not keep it.
 
 ## Saved history during startup
 
-**Session Transcript History** is on by default: `useSession(projectId, sessionId)` shows
-saved chat history while its computer starts. A project can turn it off in
-**Settings → Feature flags**.
+`useSession(projectId, sessionId)` shows saved chat history while its computer starts.
 The SDK reads the database independently of runtime readiness. Live messages then reconcile
 by their original IDs. Hosts do not need a separate history request or message store.
 
-Sessions of a project that turned the flag off use the existing runtime read.
 Saved history renders exactly like the live transcript: text, reasoning, and every tool call
 with its input, output and error. A sub-agent's full view reads the sub-agent's own saved
 transcript: pass the parent's scope and `savedChild: true` to

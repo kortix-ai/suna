@@ -618,7 +618,7 @@ env:
 sandbox:
   templates:
     - slug: ops
-      dockerfile: .kortix/Dockerfile
+      dockerfile: Dockerfile.ops
       cpu: 4
       memory: 8
 
@@ -1233,11 +1233,11 @@ const aiTransformationCompanyOs: BlogPostEntry = {
       type: 'code',
       code: `acme-ai-workspace/
 ├─ kortix.yaml              # project, sandboxes, triggers, connectors, policy
-├─ .kortix/opencode/
-│  ├─ agents/               # role-specific agents: finance, support, sales, legal
-│  ├─ skills/               # repeatable client playbooks and workflows
-│  └─ commands/             # approved operating motions
+├─ agents/                  # role-specific agents: finance, support, sales, legal
+├─ skills/                  # repeatable client playbooks and workflows
 ├─ memory/                  # durable company context and decisions
+├─ harnesses/opencode/
+│  └─ commands/             # approved operating motions
 ├─ artifacts/               # reports, briefs, packets, launch plans
 └─ docs/                    # source-of-truth operating docs`,
     },
@@ -1617,7 +1617,7 @@ for (const dispute of open.data?.disputes ?? []) {
         '**Agents and skills are files.** An agent is a markdown persona. A skill is a `SKILL.md` plus the scripts beside it. There is no console where the real definition secretly lives; the file *is* the definition, which is why an agent can propose an edit to its own configuration as a change request.',
         '**Work lands through review.** A session runs on its own isolated cloud computer on its own branch. It reaches `main` only through a change request someone approves.',
         '**You can self-host it.** Kortix is open source. Run it on your own infrastructure with your own keys and your own models. This is not an air-gapped story — `kortix self-host start` pulls images and reaches a sandbox provider over the network — but the data, the config and the model are yours.',
-        '**Any model.** Bring your own key, or the ChatGPT, Claude or Cursor subscription you already pay for.',
+        '**Any model.** Bring your own key, or the ChatGPT subscription you already pay for.',
       ],
     },
     {
@@ -1817,9 +1817,9 @@ default_agent: kortix
 project:
   name: acme
 
-# OpenCode keeps agents, skills, commands, tools, plugins and models here.
+# Files only OpenCode reads: commands, tools, plugins and models.
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
 
 # An omitted grant resolves to \`none\`. Grant explicitly.
 agents:
@@ -1841,7 +1841,7 @@ triggers:
     timezone: UTC
     prompt: |
       Reflect on the last 24 hours of project activity, update
-      .kortix/memory/, and open one change request.`,
+      memory/, and open one change request.`,
     },
     {
       type: 'p',

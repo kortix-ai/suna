@@ -330,6 +330,7 @@ function ApprovalBody({
           argsPreview: adaptedAction.rawArgsPreview ?? null,
           reviewComplete: adaptedAction.reviewComplete === true,
           previewAuthorized: adaptedAction.previewAuthorized !== false,
+          approvalContext: adaptedAction.approvalContext ?? null,
           pending: item.status === 'needs_you',
           resolution:
             item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,
@@ -340,11 +341,12 @@ function ApprovalBody({
                 ? 'denied'
                 : 'pending_approval',
         }}
-        onDecision={(decision) =>
+        onDecision={(decision, note) =>
           actions.resolve(
             item.id,
             decision === 'approve' ? 'approved' : 'rejected',
             decision === 'approve' ? tI18nComplete.raw('text24234d557d8d') : 'Denied',
+            note,
           )
         }
         busyDecision={busyDecision}
@@ -792,6 +794,15 @@ export function ReviewDetail({
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="text-muted-foreground hover:text-foreground -ml-2.5"
+            >
+              <ArrowLeft className="size-3.5 shrink-0" />
+              {tI18nComplete.raw('text76900f1bfd16')}
+            </Button>
             <Badge variant={statusBadge} size="sm">
               {statusLabel}
             </Badge>
@@ -816,7 +827,7 @@ export function ReviewDetail({
             <span>{formatItemAgeLong(item.createdAt)}</span>
           </div>
         </div>
-        <div className="shrink-0 sm:pt-1">
+        <div className="shrink-0">
           <ActionBar
             item={item}
             actions={actions}

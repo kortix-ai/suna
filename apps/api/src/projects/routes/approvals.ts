@@ -3,14 +3,12 @@
  * the per-session "needs input" summary, and the resolve endpoint.
  */
 
-import { approvalPreviewReviewable } from '../../connectors/args-preview';
-import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
-import { inferAuditSource, recordAuditEvent } from '../../shared/audit';
+import { inferAuditSource } from '../../shared/audit';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { connectorCalls, projectSessions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
@@ -21,7 +19,13 @@ import {
   parseBoundedPositiveInt,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
-import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
+import {
+  approvalTargetSession,
+  decideConnectorApproval,
+  isPendingApproval,
+  loadApprovalRow,
+  normalizeApprovalNote,
+} from '../lib/connector-approval-decision';
 import { callerKortixSessionId } from '../lib/caller-session';
 
 // GET /v1/projects/:projectId/approvals
@@ -36,7 +40,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/approvals',
     tags: ['access'],
-    summary: 'GET /:projectId/approvals',
+    summary: 'List approvals of a project',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -116,7 +120,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/approvals/needs-input',
     tags: ['access'],
-    summary: 'GET /:projectId/approvals/needs-input',
+    summary: 'List approvals waiting for input',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -217,7 +221,7 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/approvals/:executionId
-// Resolve a pending approval — { decision: 'approve' | 'deny' }. Allowed for a
+// Resolve a pending approval — { decision: 'approve' | 'deny', note?: string }. Allowed for a
 // project MANAGER or the LAUNCHER of the session the action belongs to (the two
 // principals a human-in-the-loop approval should recognise). Records who decided
 // + when; idempotent-safe (a non-pending row 409s).
@@ -227,11 +231,14 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/approvals/{executionId}',
     tags: ['access'],
-    summary: 'POST /:projectId/approvals/:executionId',
+    summary: 'Approve or deny a gated action',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), executionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          decision: z.enum(['approve,deny']).openapi({ description: 'Approve or deny exactly this gated call.' }),
+          note: z.string().optional().openapi({ description: 'Note the agent receives with the decision.' }),
+        }) } } },
     },
     responses: {
       200: json(OkSchema, 'Resolved'),
@@ -247,6 +254,9 @@ projectsApp.openapi(
     if (decision !== 'approve' && decision !== 'deny') {
       return c.json({ error: "decision must be 'approve' or 'deny'" }, 400);
     }
+    // Optional message from the human to the agent ("deny — reword the second
+    // paragraph"). Rides into the resume prompt so a deny can steer, not just stop.
+    const note = normalizeApprovalNote(body.note);
     // NO SCOPES. A decision applies to exactly the call that asked for it.
     //
     // This used to accept 'session' ("stop asking for this tool") and
@@ -264,25 +274,9 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    const [row] = await db
-      .select({
-        executionId: connectorCalls.executionId,
-        sessionId: connectorCalls.sessionId,
-        actingUserId: connectorCalls.actingUserId,
-        connectorId: connectorCalls.connectorId,
-        actionPath: connectorCalls.actionPath,
-        status: connectorCalls.status,
-        approvedBy: connectorCalls.approvedBy,
-        resolvedAt: connectorCalls.resolvedAt,
-        resultSummary: connectorCalls.resultSummary,
-      })
-      .from(connectorCalls)
-      .where(
-        and(eq(connectorCalls.executionId, executionId), eq(connectorCalls.projectId, projectId)),
-      )
-      .limit(1);
+    const row = await loadApprovalRow(projectId, executionId);
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (row.status !== 'pending_approval' || row.approvedBy || row.resolvedAt) {
+    if (!isPendingApproval(row)) {
       return c.json({ error: 'Approval already resolved' }, 409);
     }
 
@@ -305,28 +299,11 @@ projectsApp.openapi(
     } catch {
       isManager = false;
     }
-    let targetCreatedBy: string | null = row.sessionId ? null : row.actingUserId;
-    let targetOrigin: string | null = row.sessionId ? null : 'user';
-    if (row.sessionId) {
-      const [session] = await db
-        .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
-        .from(projectSessions)
-        // Scope to THIS project too — sessionId is a PK so it's globally unique,
-        // but making the project bound explicit keeps the gate self-documenting.
-        .where(
-          and(
-            eq(projectSessions.sessionId, row.sessionId),
-            eq(projectSessions.projectId, projectId),
-          ),
-        )
-        .limit(1);
-      targetCreatedBy = session?.createdBy ?? null;
-      targetOrigin = session?.origin ?? null;
-    }
+    const target = await approvalTargetSession(projectId, row);
     const verdict = mayResolveApproval({
       isManager,
-      targetSessionOrigin: targetOrigin,
-      targetSessionCreatedBy: targetCreatedBy,
+      targetSessionOrigin: target.origin,
+      targetSessionCreatedBy: target.createdBy,
       callerUserId: loaded.userId,
       callerAuthType: (c.get('authType') as string | undefined) ?? null,
       callerSessionId: callerKortixSessionId(c),
@@ -348,14 +325,17 @@ projectsApp.openapi(
       );
     }
 
-    const existingDetail =
-      typeof row.resultSummary === 'object' && row.resultSummary ? row.resultSummary : {};
-    // Blind approval stays impossible — but only when the row genuinely shows
-    // NOTHING. This used to test `args_preview_complete`, which the preview
-    // builder turns off for any elision at all (a long URL, an 11th recipient,
-    // an attachment body), so a fully legible call could be denied and never
-    // approved. See `approvalPreviewReviewable`.
-    if (decision === 'approve' && !approvalPreviewReviewable(existingDetail)) {
+    const outcome = await decideConnectorApproval({
+      projectId,
+      accountId: loaded.row.accountId,
+      row,
+      decision,
+      note,
+      actorUserId: loaded.userId,
+      auditSource: inferAuditSource(c, 'human'),
+      resume: 'queue',
+    });
+    if (outcome === 'preview_unavailable') {
       return c.json(
         {
           error: 'This call recorded no parameters to review, so it cannot be approved',
@@ -364,97 +344,8 @@ projectsApp.openapi(
         409,
       );
     }
-
-    const detail = {
-      ...existingDetail,
-      decision,
-      decided_by: loaded.userId,
-    };
-    // Atomic resolve — guard the UPDATE on the still-pending state so two
-    // concurrent resolvers can't both win (TOCTOU): approve clears the gate to
-    // the terminal `ok` (the real retried call re-audits as its own row), deny
-    // flips it to `denied`. Both stamp approvedBy (= who resolved) + resolvedAt,
-    // so the row leaves the pending inbox. A lost race matches 0 rows → 409.
-    const resumeText = row.sessionId
-      ? decision === 'approve'
-        ? `Your pending approval to run ${row.actionPath} was approved — continue.`
-        : `Your request to run ${row.actionPath} was denied — continue without it.`
-      : null;
-    const callbackValues =
-      row.sessionId && resumeText
-      ? buildContinueSessionCommandValues({
-          source: 'system:approval-resume',
-          projectId,
-          accountId: loaded.row.accountId,
-          sessionId: row.sessionId,
-          actorUserId: loaded.userId,
-          text: resumeText,
-          executionId,
-          availableAt: new Date(),
-          idempotencyKey: `approval-resume:${executionId}`,
-        })
-      : null;
-    const resolved = await db.transaction(async (tx) => {
-      const updated = await tx
-        .update(connectorCalls)
-        .set({
-          status: decision === 'approve' ? 'ok' : 'denied',
-          approvedBy: loaded.userId,
-          resolvedAt: new Date(),
-          resultSummary: detail,
-        })
-        .where(
-          and(
-            eq(connectorCalls.executionId, executionId),
-            eq(connectorCalls.projectId, projectId),
-            eq(connectorCalls.status, 'pending_approval'),
-            isNull(connectorCalls.approvedBy),
-            isNull(connectorCalls.resolvedAt),
-          ),
-        )
-        .returning({ id: connectorCalls.executionId });
-      if (updated.length > 0 && callbackValues) {
-        await tx
-          .insert(sessionLifecycleCommands)
-          .values(callbackValues)
-          .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
-      }
-      return updated;
-    });
-
-    if (resolved.length === 0) {
+    if (outcome === 'already_resolved') {
       return c.json({ error: 'Approval already resolved' }, 409);
-    }
-
-    try {
-      await recordAuditEvent(
-        approvalResolvedAuditEvent({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId: row.sessionId,
-          executionId,
-          actorUserId: loaded.userId,
-          actionPath: row.actionPath,
-          connectorId: row.connectorId,
-          decision,
-          source: inferAuditSource(c, 'human'),
-        }),
-      );
-    } catch (error) {
-      console.error('[approvals] failed to record central audit event', error);
-    }
-
-    // Decision callback. The connector HTTP call returned the approval URL and
-    // ended. A human decision now enqueues one durable continue_session command
-    // and starts a drain immediately. The next exact call claims the approved
-    // request digest once. A changed payload creates a new approval instead.
-    if (row.sessionId) {
-      // Best-effort immediate webhook-like delivery. The transaction above
-      // already persisted the callback with the decision as one atomic outbox.
-      void drainSessionLifecycleQueue({
-        limit: 1,
-        idempotencyKey: `approval-resume:${executionId}`,
-      }).catch(() => {});
     }
 
     return c.json({ ok: true });

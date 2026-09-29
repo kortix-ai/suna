@@ -114,6 +114,8 @@ describe('refetchKortixSessionMirrors', () => {
       // only at `'list'` never reached them: `session.created` and title events
       // waited for the next poll (up to 60 s) to show up in the sidebar.
       { queryKey: [...qk.project.sessionsScope('proj_1'), 'list-paged'], type: 'active' },
+      // Expanded parents' children (KRTX-639): a new child shows without a poll.
+      { queryKey: [...qk.project.sessionsScope('proj_1'), 'list-children'], type: 'active' },
     ]);
     const touched = JSON.stringify(calls);
     expect(touched).not.toContain('"turn"');

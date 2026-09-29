@@ -300,6 +300,11 @@ const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
+// Top-level sessions the caller started; spawned sessions load under their parent.
+const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy: "me" });
+const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
+const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
+// React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
@@ -359,10 +364,9 @@ persisted session default.
 
 ### Saved session attachments
 
-With `session_transcript_history` enabled, `session.attachments.upload(file)` stores up to
-50 MiB in private object storage. It returns `{ attachment_id, filename, mime, size, url }`.
-Use `url` in a file part sent to the prompt inbox. The API copies those bytes into the
-sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
+`session.attachments.upload(file)` stores up to 50 MiB in private object storage. It
+returns `{ attachment_id, filename, mime, size, url }`. Use `url` in a file part sent to
+the prompt inbox. The API copies those bytes into the sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
 sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
 reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
 
@@ -372,10 +376,10 @@ reuse the successful upload; an explicit `attachmentId` supports caller-managed 
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
-`session_transcript_history` is on by default; a project can turn it off in Settings →
-Feature flags. `useSession` reads saved messages from the platform database while `/start`
-continues. It uses the server-validated OpenCode root and lets the live read reconcile the
-saved messages by ID. Missing or rejected history falls back to the existing runtime path.
+Every session saves its transcript at the end of each turn. `useSession` reads saved
+messages from the platform database while `/start` continues. It uses the
+server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
+Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -827,6 +831,8 @@ Native cannot consume the SDK's fetch-based SSE stream.
 `Authorization: Bearer <token>` — a Supabase JWT (user sessions), a Kortix PAT
 (`kortix_pat_…`) for server-side / automation use, or an OAuth access token
 (`kortix_oat_…`) minted by "Sign in with Kortix" — supplied via `getToken`.
+
+To use Kortix from an MCP client (Claude, ChatGPT, Cursor, Codex) instead of code, see the hosted MCP server: <https://kortix.com/docs/connect/mcp>.
 
 ### Sign in with Kortix (your app, their Kortix account)
 

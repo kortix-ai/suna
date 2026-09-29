@@ -32,7 +32,7 @@ since the last checkpoint, whether that's one release or several.
 ```sh
 # Read the durable ledger first — the last release tag covered, and any open
 # changelog PR from a prior run.
-cat .kortix/memory/changelog-sync-log.md 2>/dev/null || echo "(no ledger yet — first run)"
+cat memory/changelog-sync-log.md 2>/dev/null || echo "(no ledger yet — first run)"
 
 # Check for an open changelog PR before opening a new one.
 gh pr list --repo {{target_repo}} --state open \
@@ -49,7 +49,7 @@ the newer release instead of opening a second one.
 cd /workspace/repo 2>/dev/null || { git clone --filter=blob:none https://github.com/{{target_repo}}.git /workspace/repo && cd /workspace/repo; }
 git fetch origin --tags
 
-LAST_TAG=$(grep -m1 '^checkpoint:' .kortix/memory/changelog-sync-log.md | awk '{print $2}')
+LAST_TAG=$(grep -m1 '^checkpoint:' memory/changelog-sync-log.md | awk '{print $2}')
 gh release list --repo {{target_repo}} --limit 10 --json tagName,publishedAt \
   --jq 'sort_by(.publishedAt)'
 ```
@@ -122,7 +122,7 @@ them as separate PRs in shipped order rather than combining entries.
 
 ## Step 6 — Update the ledger
 
-Append a dated entry to `.kortix/memory/changelog-sync-log.md` (see
+Append a dated entry to `memory/changelog-sync-log.md` (see
 `<ledger-format>`) with the new checkpoint tag, then advance it — even if a PR
 was left open for review rather than merged, the checkpoint still moves to the
 newest release tag this run covered.
@@ -130,7 +130,7 @@ newest release tag this run covered.
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/changelog-sync-log.md`. Every run appends/updates the
+Lives at `memory/changelog-sync-log.md`. Every run appends/updates the
 current entry with: run timestamp, `checkpoint: <tag>` (the newest release tag
 this run covered — the next run's starting point), the release(s) processed
 this run, PR link per release (or "not opened — no user-facing PRs in range"),

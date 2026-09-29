@@ -8,6 +8,7 @@ import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
 import { handleAdaptiveCardAction } from './interactivity';
+import { handleOpenInKortixAction } from './message-action';
 import type { TeamsActivity } from './types';
 import { MANAGED_TEAMS_INBOUND, scopeProjectTeamsActivity, type TeamsInbound } from './inbound';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
@@ -46,6 +47,14 @@ async function processActivity(
       } catch (err) {
         console.error('[teams-webhook] adaptive card action failed', err);
         return c.json({ statusCode: 500, type: 'application/vnd.microsoft.error', value: {} }, 200);
+      }
+    }
+    if (activity.name === 'composeExtension/fetchTask') {
+      try {
+        return c.json(await handleOpenInKortixAction(activity, inbound), 200);
+      } catch (err) {
+        console.error('[teams-webhook] message action failed', err);
+        return c.json({ task: { type: 'message', value: 'Something went wrong. Try again in a moment.' } }, 200);
       }
     }
     if (activity.name === 'fileConsent/invoke') {

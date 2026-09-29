@@ -142,6 +142,63 @@ test("the server's newer copy reconciles into the local one and is kept for the 
   expect(kept.messages).toHaveLength(3);
 });
 
+/** Mount with a host-supplied `mirror` that the test can change between renders. */
+async function mountWithHostCopy(sessionId: string) {
+  touched.push(sessionId);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  let mirror: SessionTranscriptSyncEnvelope | null = null;
+  let value!: ReturnType<typeof useSessionSync>;
+  function Probe() {
+    value = useSessionSync(sessionId, { ...offline, mirror });
+    return null;
+  }
+  await act(async () => {
+    root = create(React.createElement(Probe));
+  });
+  return {
+    value: () => value,
+    answer: async (envelope: SessionTranscriptSyncEnvelope) => {
+      mirror = envelope;
+      await act(async () => {
+        root?.update(React.createElement(Probe));
+      });
+      await settle();
+    },
+  };
+}
+
+test("the host's saved copy reconciles into the local one when it arrives after the first paint", async () => {
+  // `useSession` reads saved history itself and hands the answer in as
+  // `mirror`: null while that read is in flight, then the envelope. A hard
+  // reload painted the device's older copy first and then kept it on screen
+  // until the computer woke, although the newer copy had arrived.
+  const store = await seeded('ses_host_copy', 2);
+  heldFetch();
+  const hook = await mountWithHostCopy('ses_host_copy');
+  expect(hook.value().messages).toHaveLength(2);
+
+  await hook.answer(envelope('ses_host_copy', 3, '2026-09-26T00:00:00Z'));
+
+  expect(hook.value().messages).toHaveLength(3);
+  const kept = store.read(PROJECT, SESSION) as SessionTranscriptSyncEnvelope;
+  expect(kept.messages).toHaveLength(3);
+});
+
+test("the host's saved copy never replaces a runtime read", async () => {
+  await seeded('ses_host_after_runtime', 2);
+  heldFetch();
+  const hook = await mountWithHostCopy('ses_host_after_runtime');
+  const live = envelope('ses_host_after_runtime', 4).messages;
+  await act(async () => {
+    useSyncStore.getState().hydrate('ses_host_after_runtime', live as never);
+  });
+  expect(hook.value().messages).toHaveLength(4);
+
+  await hook.answer(envelope('ses_host_after_runtime', 3, '2026-09-26T00:00:00Z'));
+
+  expect(hook.value().messages).toHaveLength(4);
+});
+
 test('a local copy captured from another root is refused', async () => {
   await seeded('ses_old_root', 2);
   heldFetch();

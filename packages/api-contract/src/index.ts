@@ -50,7 +50,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * below are deprecated aliases kept for published-SDK compatibility.
  */
 export const FeatureFlagMapSchema = z.object({
-  agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
@@ -59,10 +58,10 @@ export const FeatureFlagMapSchema = z.object({
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),
+  reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),
-  session_transcript_history: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
@@ -495,6 +494,28 @@ export const ConnectionShareSchema = z.object({
 });
 export type ConnectionShare = z.infer<typeof ConnectionShareSchema>;
 
+/** Live status of the machine behind a computer account. */
+export const ComputerMachineStatusSchema = z.object({
+  online: z.boolean(),
+  last_heartbeat_at: z.string().nullable(),
+  hostname: z.string().optional(),
+  platform: z.string().optional(),
+  /**
+   * The access mode the machine last reported (`tunnel.access.state`):
+   * `ask` needs its owner to allow each grant on the computer, `always` runs,
+   * `off` refuses every call. `granted_until` is the end of the current `ask`
+   * grant. `null` or absent: the agent never reported one (treat as `always`).
+   */
+  access: z
+    .object({
+      mode: z.enum(['ask', 'always', 'off']),
+      granted_until: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+export type ComputerMachineStatus = z.infer<typeof ComputerMachineStatusSchema>;
+
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
@@ -522,6 +543,16 @@ export const ConnectionSchema = z.object({
    * a session. Absent on older servers: treat as `true`.
    */
   usable: z.boolean().optional(),
+  /**
+   * Computer accounts only: the paired machine this account reaches. `null`
+   * when the machine was unpaired. Absent on every other connector.
+   */
+  tunnel_id: z.string().uuid().nullable().optional(),
+  /**
+   * Computer accounts only: live status of the paired machine, or `null` when
+   * it was unpaired. Absent on every other connector.
+   */
+  machine: ComputerMachineStatusSchema.nullable().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 
@@ -1000,6 +1031,21 @@ export const ProjectSessionSchema = z.object({
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
+  /** The session that spawned this one (a coordinator's worker); null for a top-level session. */
+  parent_session_id: z.string().nullable().optional(),
+  /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
+  initiator: z
+    .object({
+      type: z.enum(['member', 'trigger', 'channel', 'api', 'system']),
+      id: z.string().nullable(),
+      label: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+  /** List with `parent=root` only: the session's non-deleted children. */
+  child_count: z.number().int().optional(),
+  /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */
+  search_match: z.enum(['self', 'child']).optional(),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,

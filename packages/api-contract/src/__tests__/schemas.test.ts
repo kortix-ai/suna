@@ -69,6 +69,31 @@ describe('connection terminology', () => {
         metadata: {},
       }),
     ).toMatchObject({ connector_alias: 'gmail', status: 'active' });
+    const computer = {
+      connection_id: '11111111-2222-4333-8444-555555555556',
+      connector_alias: 'computer',
+      owner_type: 'member' as const,
+      owner_id: '11111111-2222-4333-8444-555555555557',
+      label: 'Studio Mac',
+      status: 'active' as const,
+      is_default: true,
+      metadata: {},
+      tunnel_id: '11111111-2222-4333-8444-555555555558',
+      machine: { online: true, last_heartbeat_at: '2026-09-28T00:00:00.000Z', platform: 'darwin' },
+    };
+    expect(ConnectionSchema.parse(computer)).toEqual(computer);
+    const asking = {
+      ...computer,
+      machine: { ...computer.machine, access: { mode: 'ask' as const, granted_until: null } },
+    };
+    expect(ConnectionSchema.parse(asking)).toEqual(asking);
+    expect(() =>
+      ConnectionSchema.parse({ ...computer, machine: { ...computer.machine, access: { mode: 'sometimes' } } }),
+    ).toThrow();
+    expect(ConnectionSchema.parse({ ...computer, tunnel_id: null, machine: null })).toMatchObject({
+      tunnel_id: null,
+      machine: null,
+    });
     expect(
       ReconcileConnectionInputSchema.parse({
         connector_alias: 'gmail',
@@ -107,7 +132,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     effective_project_role: 'manager',
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
-      agent_tunnel: false,
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
@@ -116,10 +140,10 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       meta_agent: false,
       apps: false,
       monitors: false,
+      reminders: false,
       warm_sessions: false,
       secrets_egress: false,
       pi_worker: false,
-      session_transcript_history: false,
       pooled_provider_secrets: false,
       pi_harness: false,
       config_releases: true,
@@ -684,7 +708,6 @@ describe('envelopes', () => {
 
   test('feature flag keys stay in sync with the map schema', () => {
     expect(FEATURE_FLAG_KEYS).toEqual([
-      'agent_tunnel',
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
@@ -693,10 +716,10 @@ describe('envelopes', () => {
       'meta_agent',
       'apps',
       'monitors',
+      'reminders',
       'warm_sessions',
       'secrets_egress',
       'pi_worker',
-      'session_transcript_history',
       'pooled_provider_secrets',
       'pi_harness',
       'config_releases',

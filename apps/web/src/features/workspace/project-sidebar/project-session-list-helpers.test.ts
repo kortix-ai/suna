@@ -4,14 +4,13 @@ import type { ChangeRequest, ProjectSession } from '@kortix/sdk';
 import {
   getSessionDisplayTitle,
   groupChangeRequestsBySession,
-  groupSectionsByCoordinator,
-  groupSessionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
   sessionLastActivityAt,
   shortRelative,
   shouldPollProjectSessions,
   sortSessionsByLastActivity,
+  starterSectionOf,
 } from './project-session-list-helpers';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
@@ -448,60 +447,6 @@ describe('resolveSessionListViewState', () => {
   });
 });
 
-describe('groupSessionsByCoordinator', () => {
-  const meta = makeSession({ session_id: 'meta-1', agent_name: 'meta' } as never);
-  const childA = makeSession({
-    session_id: 'child-a',
-    metadata: { spawned_by_session: 'meta-1' },
-  } as never);
-  const childB = makeSession({
-    session_id: 'child-b',
-    metadata: { spawned_by_session: 'meta-1' },
-  } as never);
-  const solo = makeSession({ session_id: 'solo-1' });
-  const orphan = makeSession({
-    session_id: 'orphan-1',
-    metadata: { spawned_by_session: 'gone-1' },
-  } as never);
-
-  test('nests children under their coordinator, in list order', () => {
-    const groups = groupSessionsByCoordinator([meta, childA, solo, childB]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
-    expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a', 'child-b']);
-    expect(groups[1].children).toEqual([]);
-  });
-
-  test('a child whose coordinator is not in the list renders top-level', () => {
-    const groups = groupSessionsByCoordinator([orphan, solo]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['orphan-1', 'solo-1']);
-  });
-
-  test('a quiet coordinator takes the position of its newest child', () => {
-    // Newest-first list: the child is working, the coordinator went quiet.
-    const groups = groupSessionsByCoordinator([childA, solo, meta]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1', 'solo-1']);
-    expect(groups[0].children.map((c) => c.session_id)).toEqual(['child-a']);
-  });
-
-  test('a grandchild nests under the root coordinator instead of vanishing', () => {
-    const grandchild = makeSession({
-      session_id: 'grand-1',
-      metadata: { spawned_by_session: 'child-a' },
-    } as never);
-    const groups = groupSessionsByCoordinator([grandchild, meta, childA]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['meta-1']);
-    expect(groups[0].children.map((c) => c.session_id)).toEqual(['grand-1', 'child-a']);
-  });
-
-  test('a parent cycle renders each session once, top-level', () => {
-    const a = makeSession({ session_id: 'a', metadata: { spawned_by_session: 'b' } } as never);
-    const b = makeSession({ session_id: 'b', metadata: { spawned_by_session: 'a' } } as never);
-    const groups = groupSessionsByCoordinator([a, b]);
-    expect(groups.map((g) => g.session.session_id)).toEqual(['a', 'b']);
-    expect(groups.every((g) => g.children.length === 0)).toBe(true);
-  });
-});
-
 describe('getSessionDisplayTitle — Teams mention markup', () => {
   test('a title created from a channel mention shows the words, not <at> tags', () => {
     const title = getSessionDisplayTitle({
@@ -512,28 +457,21 @@ describe('getSessionDisplayTitle — Teams mention markup', () => {
   });
 });
 
-describe('groupSectionsByCoordinator', () => {
-  const coord = makeSession({ session_id: 'coord' });
-  const child = makeSession({ session_id: 'child', metadata: { spawned_by_session: 'coord' } } as never);
-  const solo = makeSession({ session_id: 'solo' });
-
-  test('a child in an earlier section pulls its coordinator group there', () => {
-    // e.g. child is "Running"/"Today", coordinator is "Completed"/"Last week".
-    const out = groupSectionsByCoordinator([
-      { id: 'running', sessions: [child] },
-      { id: 'done', sessions: [solo, coord] },
-    ]);
-    expect(out.map((s) => s.id)).toEqual(['running', 'done']);
-    expect(out[0]!.groups.map((g) => g.session.session_id)).toEqual(['coord']);
-    expect(out[0]!.groups[0]!.children.map((c) => c.session_id)).toEqual(['child']);
-    expect(out[1]!.groups.map((g) => g.session.session_id)).toEqual(['solo']);
+describe('starterSectionOf', () => {
+  const at = (initiator: ProjectSession['initiator'], is_owner?: boolean) => ({ initiator, is_owner });
+  test('the viewer\'s own run belongs to neither section', () => {
+    expect(starterSectionOf(at({ type: 'member', id: 'u1', label: 'Ann' }), 'u1')).toBeNull();
   });
-
-  test('a section left with no group is dropped', () => {
-    const out = groupSectionsByCoordinator([
-      { id: 'running', sessions: [child] },
-      { id: 'done', sessions: [coord] },
-    ]);
-    expect(out.map((s) => s.id)).toEqual(['running']);
+  test('another member\'s run is Shared', () => {
+    expect(starterSectionOf(at({ type: 'member', id: 'u2', label: 'Bo' }), 'u1')).toBe('shared');
+  });
+  test('trigger, channel, api and system runs are Automated', () => {
+    for (const type of ['trigger', 'channel', 'api', 'system'] as const) {
+      expect(starterSectionOf(at({ type, id: 'x', label: 'x' }), 'u1')).toBe('automated');
+    }
+  });
+  test('an unclassified row falls back to is_owner', () => {
+    expect(starterSectionOf(at(null, false), 'u1')).toBe('shared');
+    expect(starterSectionOf(at(null, true), 'u1')).toBeNull();
   });
 });

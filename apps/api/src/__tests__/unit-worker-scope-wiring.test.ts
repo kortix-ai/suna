@@ -8,7 +8,7 @@
  *  1. a registered worker module stops calling `runWorkerTick('<name>'`;
  *  2. a file in `apps/api/src` starts a `setInterval` and is neither a
  *     registered worker nor a classified non-job timer below;
- *  3. `startSingletonWorkers` / `startReplicaServices` in `index.ts` starts
+ *  3. `startSingletonWorkers` / `startReplicaServices` in `bootstrap.ts` starts
  *     something that is neither.
  *
  * Adding a background job: wrap its tick in `runWorkerTick('<name>', …)` and
@@ -52,7 +52,7 @@ const NOT_WORKERS: Record<string, string> = {
   'apps/public-proxy-handler.ts': 'stamps app activity while one proxied request streams; runs inside that request',
   'apps/ws-proxy.ts': 'stamps app activity for one open WebSocket; runs inside that connection',
   'channels/teams-auth.ts': 'refreshes the in-memory Teams bot token',
-  'index.ts': 'measures event-loop lag',
+  'routes/system.ts': 'measures event-loop lag',
   'llm-gateway/models/runtime-catalog.ts': 'refreshes the in-memory models.dev catalog',
   'oauth/index.ts': 'expires in-memory OAuth state',
   'projects/lib/session-control-reconciler.ts': 'read-only reconcile of one open session stream',
@@ -66,7 +66,6 @@ const NOT_WORKERS: Record<string, string> = {
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
   'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',
   'snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
-  'tunnel/routes/permission-requests.ts': 'keepalive on one open SSE stream',
 };
 
 /** Start calls in index.ts → the worker they run, or why they are not one. */
@@ -102,7 +101,7 @@ function sourceFiles(dir: string): string[] {
 
 function functionBody(source: string, name: string): string {
   const start = source.indexOf(`function ${name}(`);
-  if (start < 0) throw new Error(`index.ts has no function ${name}`);
+  if (start < 0) throw new Error(`no function ${name}`);
   const open = source.indexOf('{', start);
   let depth = 0;
   for (let i = open; i < source.length; i += 1) {
@@ -130,10 +129,10 @@ describe('background jobs run as named workers', () => {
     expect(stale).toEqual([]);
   });
 
-  test('everything index.ts starts on the leader or every replica is classified', () => {
-    const index = read('index.ts');
+  test('everything bootstrap.ts starts on the leader or every replica is classified', () => {
+    const bootstrap = read('bootstrap.ts');
     const started = ['startSingletonWorkers', 'startReplicaServices'].flatMap((fn) =>
-      [...functionBody(index, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
+      [...functionBody(bootstrap, fn).matchAll(/\b((?:start|kick)[A-Z]\w*)\(/g)].map((m) => m[1]!),
     );
     expect(started.filter((call) => !(call in STARTS))).toEqual([]);
     for (const worker of Object.values(STARTS)) {

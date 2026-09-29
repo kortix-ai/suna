@@ -134,6 +134,11 @@ const META_TOOLS = [
           description:
             'Which connected account to run as, when this connector has more than one (a shared project account and each member\'s own). Give the account label or its connection id exactly as `accounts` returns it, or the selector word `me` (the caller\'s own default private account) or `project` (the project\'s default shared account). Omit to use the default account. A name that matches nothing is refused and the refusal lists the available names — it never silently runs as a different account.',
         },
+        approval_context: {
+          type: 'string',
+          description:
+            'What this call does, in plain words, shown to the human if a policy holds it for approval. Always pass it for writes whose args are only ids: for send_draft say who it goes to, the subject, and the body; for a delete say what gets deleted. The approver sees it labelled as your description next to the real arguments.',
+        },
         attachment_files: {
           type: 'array',
           description:
@@ -518,7 +523,10 @@ function content(data: unknown) {
 async function runMetaTool(client: ConnectorClient, name: string, args: Record<string, unknown>) {
   switch (name) {
     case 'connectors': {
-      const connectors = await client.catalog();
+      // The summary reads no `inputSchema` — opt out, or the API's
+      // include-by-default ships the whole catalog's schemas (439KB on prod)
+      // to count actions.
+      const connectors = await client.catalog({ includeSchemas: false });
       return {
         content: content({
           connectors: connectors.map((c) => {
@@ -644,6 +652,8 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       try {
         result = await callWithApprovalHandoff(client, connector, action, callArgs, {
           account: typeof args.account === 'string' ? args.account : null,
+          approvalContext:
+            typeof args.approval_context === 'string' ? args.approval_context : null,
         });
       } catch (err) {
         // A denial is an HTTP 403, so the SDK THROWS it. Left to the JSON-RPC

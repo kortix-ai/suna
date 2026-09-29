@@ -214,7 +214,7 @@ test.describe("23 — Composio managed connector", () => {
       await expect(page.locator('[data-testid="catalog-add"]')).toHaveCount(0);
       await search.fill("");
       await expect(
-        page.getByRole("button", { name: /^Computer Tunnels\b/ }).first(),
+        page.getByRole("button", { name: /^Computer\b/ }).first(),
       ).toBeVisible();
     }
     expect(pageErrors).toEqual([]);

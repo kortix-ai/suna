@@ -30,6 +30,9 @@ interface GatewayModel {
   // group/brand by without parsing `<provider>/<model>` out of the wire id.
   // See apps/web/src/features/session/model-selector.tsx's `pickerGroupId`.
   provider?: string;
+  // The provider's display name from models.dev ("OpenCode Go"). Clients label
+  // a BYOK group with it instead of the synthetic `kortix` provider's name.
+  provider_name?: string;
   reasoning?: boolean;
   // Present iff the model exposes a tunable reasoning-effort knob — the
   // chat runtime's PRIORITY field for offering an effort control without a
@@ -230,6 +233,8 @@ export function managedModels(): Record<string, GatewayModel> {
       ...(caps ?? {}),
       // Curated fields always win over the models.dev record.
       attachment: m.vision,
+      modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+      ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
       limit: m.limit,
       ...(cost ? { cost } : {}),
     };
@@ -252,6 +257,7 @@ export function gatewayModelsAll(
       out[`${provider.id}/${model.id}`] = {
         name: model.name,
         provider: provider.id,
+        provider_name: provider.name,
         released: model.released,
         release_date: model.released,
         family: (model as { family?: string }).family,

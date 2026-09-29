@@ -37,7 +37,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/slack/installation',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/slack/installation',
+    summary: 'Get the Slack installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -66,7 +66,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/slack/mode',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/slack/mode',
+    summary: 'Get the Slack connection mode',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -103,7 +103,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/slack/oauth/complete',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/slack/oauth/complete',
+    summary: 'Complete the Slack OAuth connection',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -151,7 +151,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/slack/connect',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/slack/connect',
+    summary: 'Connect Slack',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -236,7 +236,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/channels/slack/installation',
     tags: ['channels'],
-    summary: 'DELETE /:projectId/channels/slack/installation',
+    summary: 'Disconnect Slack',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -274,7 +274,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/slack/file',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/slack/file (download proxy)',
+    summary: 'Download a Slack file',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -307,7 +307,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/slack/file/upload',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/slack/file/upload (upload proxy)',
+    summary: 'Upload a file to Slack',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -370,7 +370,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/slack/bind-thread',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/slack/bind-thread',
+    summary: 'Bind a Slack thread to a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),

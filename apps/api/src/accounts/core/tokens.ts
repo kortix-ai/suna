@@ -249,6 +249,10 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
+  // A connected app's revocable `kortix_oat_` token must not mint a durable one.
+  if (c.get('authType') === 'oauth') {
+    return c.json({ error: 'Connected apps cannot mint personal access tokens.' }, 403);
+  }
   const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) {

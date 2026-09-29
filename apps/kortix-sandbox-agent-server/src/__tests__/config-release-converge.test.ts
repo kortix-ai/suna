@@ -16,6 +16,7 @@ import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantin
 import type { ConfigReleaseApi } from '@/services/config-release/api-client'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
@@ -37,6 +38,12 @@ import {
 } from '@/services/runtime-assets/runtime-assets'
 import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
 import { provenCheck, toolNamesFromFiles } from '@/harness/open-code/proven-check'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
 import {
   buildRelease,
   commitAll,
@@ -225,6 +232,7 @@ function baseRelease(governance: string | null = GOV_V1): BuiltRelease {
 
 beforeEach(() => {
   resetConfigReleaseStateForTests()
+  resetSessionTokenHealthForTests()
   prepared.length = 0
   served.droppedTools = new Set()
   served.toolRoute = true
@@ -270,6 +278,7 @@ afterEach(() => {
   resetConfigReleaseStateForTests()
   resetDaemonShutdownStateForTests()
   resetAgentSwapBlockersForTests()
+  resetSessionTokenHealthForTests()
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
@@ -671,6 +680,34 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     expect(response.reason).toMatch(/404/)
   })
 
+  test('a dead session credential pauses convergence: no API call, then resumes when it clears', async () => {
+    // KRTX-613: the runtime-truth tick called config-release every 60 s forever
+    // against a credential the API can never accept, so the API logged one
+    // `401 Session token is not active` warn per minute per box. The shared
+    // breaker is the signal built for exactly this; convergence must obey it.
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(401, 'Session token is not active')
+    }
+    expect(sessionTokenPresumedDead()).toBe(true)
+
+    const before = api.descriptorRequests.length
+    const oc = fakeOpencode()
+    const paused = await converge(oc)
+    expect(paused).toMatchObject({ ok: false, outcome: 'failed' })
+    expect(paused.reason).toMatch(/credential is not active/)
+    // The hopeless request is never re-issued: this is the fix for the spike.
+    expect(api.descriptorRequests.length).toBe(before)
+    expect(oc.state.reloads).toBe(0)
+
+    // A rotated credential answers again; the next tick converges.
+    noteControlPlaneResponse(200, null)
+    expect(sessionTokenPresumedDead()).toBe(false)
+    serveRelease(api, baseRelease())
+    const resumed = await converge(oc)
+    expect(resumed.outcome).toBe('applied')
+    expect(api.descriptorRequests.length).toBe(before + 1)
+  })
+
   test('single flight: a second convergence while one runs is refused', async () => {
     serveRelease(api, baseRelease())
     const oc = fakeOpencode()
@@ -998,7 +1035,7 @@ describe('the session is told which commit it runs', () => {
   const readNotice = () => (existsSync(noticePath) ? readFileSync(noticePath, 'utf8') : null)
   const noteFor = (descriptor: { source_commit: string | null; config_dir: string | null }) =>
     writeConfigReleaseNotice(
-      { sourceCommit: descriptor.source_commit, configDir: descriptor.config_dir, sessionId: 'ses-1' },
+      { sourceCommit: descriptor.source_commit, sourcePaths: releaseSourcePaths(descriptor.config_dir), sessionId: 'ses-1' },
       noticePath,
     )
 

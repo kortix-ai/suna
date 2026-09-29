@@ -618,6 +618,14 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Frontend design standard — Jay/Kortix bar
 
+#### Canonical design references
+
+| Surface | Read before changing UI | Implemented source |
+|---|---|---|
+| Web (`apps/web`) | `.agents/skills/kortix-brand-guidelines/SKILL.md` for values, then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens, `apps/web/src/components/ui/`, the live `/design-system` route |
+| Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
+| Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
+
 #### Desktop parity is a UI gate
 
 The Electron app loads `apps/web`. Keep product components, routes, tokens,

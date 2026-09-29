@@ -267,6 +267,37 @@ async function main(): Promise<void> {
       );
       break;
     }
+    case 'edit':
+    case 'delete': {
+      // A message this bot posted with `post` (its `messageId`), as
+      // `slack edit` / `slack delete`. Teams gives a bot no way to react.
+      const projectId = kortixProjectId();
+      if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.');
+      const conversationId = flags.conversation ?? flags.to;
+      const messageId = flags.message ?? flags.id;
+      if (!conversationId || !messageId) throw new CliError('--conversation <id> and --message <messageId from `post`> required');
+      const target = { conversation_id: conversationId, message_id: messageId };
+      if (command === 'delete') {
+        out(await kortixPost(`/projects/${projectId}/channels/teams/message/delete`, target));
+        break;
+      }
+      let card: Record<string, unknown> | undefined;
+      if (flags['card-file']) {
+        try {
+          card = JSON.parse(readFileSync(flags['card-file'], 'utf-8')) as Record<string, unknown>;
+        } catch {
+          throw new CliError(`Cannot read/parse --card-file: ${flags['card-file']}`);
+        }
+      }
+      const text = readTextFlag(flags) ?? args[0];
+      if (!text && !card) throw new CliError('new message text or --card-file required');
+      out(await kortixPost(`/projects/${projectId}/channels/teams/message/edit`, {
+        ...target,
+        ...(text ? { text } : {}),
+        ...(card ? { card } : {}),
+      }));
+      break;
+    }
     case 'download':
       if (!flags.url || !flags.out) throw new CliError('--url and --out required');
       out(await downloadFile(flags.url, flags.out));
@@ -359,7 +390,9 @@ Turn commands (use these when answering a Teams message):
 Posting somewhere else (proactive — NOT this turn's reply):
   conversations                                     # chats/channels this project may post into
   post --conversation <id> "<text>"                 # post there now
-  post --conversation <id> --card-file <path>       # ...as an Adaptive Card
+  post --conversation <id> --card-file <path>       # ...as an Adaptive Card (prints its messageId)
+  edit --conversation <id> --message <messageId> "<new text>"   # replace a message you posted (or --card-file)
+  delete --conversation <id> --message <messageId>              # remove a message you posted
 
 Files:
   send     --file <path> [--text "<description>"]   # an image is shown inline everywhere; other files: consent card (personal) / team-drive link (channel)

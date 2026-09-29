@@ -40,6 +40,25 @@ describe('buildTeamsManifest', () => {
     const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
     // 1.3.0 is the manifest without /new.
     expect(m.version).not.toBe('1.3.0');
+    // 1.4.0 is the manifest without /sessions; 1.5.0 the one without "Open in Kortix".
+    expect(m.version).not.toBe('1.4.0');
+    expect(m.version).not.toBe('1.5.0');
+  });
+
+  test('a message\'s ⋯ menu offers "Open in Kortix", answered by the message-action handler', async () => {
+    const { OPEN_IN_KORTIX_COMMAND } = await import('../channels/teams/message-action');
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    expect(m.composeExtensions).toEqual([{
+      botId: 'app-123',
+      commands: [expect.objectContaining({ id: OPEN_IN_KORTIX_COMMAND, type: 'action', context: ['message'], fetchTask: true, title: 'Open in Kortix' })],
+    }]);
+  });
+
+  test('the command menu offers /sessions, within Teams\' 10-command limit', () => {
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    const commands = m.bots[0]!.commandLists![0]!.commands;
+    expect(commands.map((c) => c.title)).toContain('/sessions');
+    expect(commands.length).toBeLessThanOrEqual(10);
   });
 });
 

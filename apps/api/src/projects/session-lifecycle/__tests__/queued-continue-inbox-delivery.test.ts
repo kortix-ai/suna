@@ -20,8 +20,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
-import { drizzle } from 'drizzle-orm/pg-proxy';
-import type { SQL } from 'drizzle-orm';
 import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
@@ -56,7 +54,6 @@ let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
-let projectMetadataExpression: SQL | undefined;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
 /** The newest id the inbox's OWN rows say this session has already delivered,
@@ -65,12 +62,14 @@ let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+/** When set, the daemon never answers the interrupt arm — the wedged-box case. */
+let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
 // A delivered row that carries a wire id no longer closes — it stays OPEN as
 // `forwarded` until the session_turns ledger confirms a turn consumed that id.
-let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId: string }> = [];
+let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId: string; noReply?: true }> = [];
 let failedCalls: Array<{
   commandId: string;
   message: string;
@@ -109,6 +108,16 @@ let promptResponsePlan: Array<'failed' | 'deduplicated' | 'permanent-refusal'> =
 // sit out the loop's 45s deadline.
 let runtimeDropsFirstDelivery = false;
 let promotionCalls: string[] = [];
+/** Runs inside every `promoteNextInboxRow` — lets a test change the world
+ *  between one delivery of a chain and the next. */
+let onPromotion: (() => void) | null = null;
+/** What each `claimDueSessionInboxSiblings` call hands back, in call order.
+ *  The real sweep reads Postgres; this harness's db mock cannot answer it. */
+let siblingSweeps: SessionLifecycleCommandRow[][] = [];
+/** The session's released-batch rows the DATABASE still holds as queued or
+ *  running — what `hasLaterReleasedSibling` reads. A row leaves it once it is
+ *  forwarded or failed. */
+let releasedPending: SessionLifecycleCommandRow[] = [];
 let promotionResult: string | null = null;
 let claimInputs: Array<{ idempotencyKey?: string }> = [];
 let promotionResults: Array<string | null> = [];
@@ -132,7 +141,6 @@ mock.module('../../../shared/db', () => ({
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
-          if (projection?.projectMetadata) projectMetadataExpression = projection.projectMetadata as SQL;
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
               return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
@@ -299,6 +307,7 @@ mock.module('../backpressure', () => ({
 mock.module('../store', () => ({
   promoteNextInboxRow: async (sessionId: string) => {
     promotionCalls.push(sessionId);
+    onPromotion?.();
     return promotionResults.length > 0 ? (promotionResults.shift() ?? null) : promotionResult;
   },
   loadLegacyPendingFirstPrompt: async () => {
@@ -365,8 +374,13 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
-  markCommandForwarded: async ({ commandId }: { commandId: string }, sessionId: string, wireMessageId: string) => {
-    forwardedCalls.push({ commandId, sessionId, wireMessageId });
+  markCommandForwarded: async (
+    { commandId }: { commandId: string },
+    sessionId: string,
+    wireMessageId: string,
+    opts?: { noReply?: boolean },
+  ) => {
+    forwardedCalls.push({ commandId, sessionId, wireMessageId, ...(opts?.noReply ? { noReply: true as const } : {}) });
   },
   markCommandSucceeded: async ({ commandId }: { commandId: string }, result: unknown) => {
     events.push('command-succeeded');
@@ -405,8 +419,8 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   },
 }));
 
-// The private store a staged file is copied into while the project keeps its
-// history (`session_transcript_history`, on by default).
+// The private store every staged file is also copied into, so saved history
+// can show it while the computer is off.
 let savedAttachments: Array<{ projectId: string; sessionId: string; filename: string }> = [];
 const realSessionAttachments = await import('../../lib/session-attachments');
 mock.module('../../lib/session-attachments', () => ({
@@ -439,8 +453,31 @@ mock.module('../runtime-prompt-file', () => ({
   },
 }));
 
+const realInboxRows = await import('../inbox-rows');
+mock.module('../inbox-rows', () => ({
+  ...realInboxRows,
+  claimDueSessionInboxSiblings: async () => siblingSweeps.shift() ?? [],
+}));
+
+const realInboxAdmission = await import('../inbox-admission');
+const { compareInboxSendOrder } = await import('../inbox-order');
+mock.module('../inbox-admission', () => ({
+  ...realInboxAdmission,
+  hasLaterReleasedSibling: async (row: SessionLifecycleCommandRow) => {
+    const batchOf = (r: SessionLifecycleCommandRow) =>
+      (r.payload as { releasedBatchId?: string }).releasedBatchId;
+    const closed = new Set([...forwardedCalls, ...failedCalls].map((call) => call.commandId));
+    return !!batchOf(row) && releasedPending.some((other) =>
+      other.commandId !== row.commandId &&
+      !closed.has(other.commandId) &&
+      batchOf(other) === batchOf(row) &&
+      compareInboxSendOrder(other, row) > 0);
+  },
+}));
+
 const { drainSessionLifecycleQueue } = await import('../drain');
 const { executeQueuedContinue } = await import('../queued-continue');
+const { continueSession } = await import('../continue-session');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
  *  merge parameter the UPDATE bound. */
@@ -494,7 +531,6 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 beforeEach(() => {
   serviceKeyAvailable = true;
   envSyncCalls = 0;
-  projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
   unverifiedRequeues = [];
@@ -508,10 +544,6 @@ beforeEach(() => {
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
-    // The wire tests pin the path WITHOUT saved history. The flag is on by
-    // default; its one extra step, keeping each staged file in the private
-    // store, is tested below and in prompt-attachment-materializer.test.ts.
-    projectMetadata: { experimental: { session_transcript_history: false } },
     sandboxProvider: 'daytona',
     baseRef: 'main',
     agentName: 'agent',
@@ -523,6 +555,7 @@ beforeEach(() => {
   transcript = [];
   capturedBodies = [];
   quickQueueControlRequests = [];
+  quickQueueArmFails = false;
   capturedKeys = [];
   seenKeys.clear();
   succeededCalls = [];
@@ -548,6 +581,9 @@ beforeEach(() => {
   promptResponsePlan = [];
   runtimeDropsFirstDelivery = false;
   promotionCalls = [];
+  onPromotion = null;
+  siblingSweeps = [];
+  releasedPending = [];
   promotionResult = null;
   claimInputs = [];
   promotionResults = [];
@@ -564,6 +600,7 @@ beforeEach(() => {
         method: init?.method ?? 'GET',
         body: JSON.parse(String(init?.body)) as Record<string, unknown>,
       });
+      if (quickQueueArmFails) return new Response(null, { status: 503 });
       return Response.json({ armed: true }, { status: 202 });
     }
     // The staged-revert guard reads the session row; the re-mint and the
@@ -621,16 +658,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(0);
   });
 
-  test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
-    expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
-    expect(projectMetadataExpression).toBeDefined();
-    const query = drizzle(async () => ({ rows: [] }))
-      .select({ projectMetadata: projectMetadataExpression! })
-      .from(projectSessions)
-      .toSQL();
-    expect(query.sql).toContain('p.project_id = "kortix"."project_sessions"."project_id"');
-  });
-
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',
@@ -649,6 +676,44 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('a runtime that will not serve the interrupt parks the row on the unreachable ladder, not the 2 s order backoff', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(quickQueueControlRequests).toHaveLength(1);
+    expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
+    expect(requeues).toHaveLength(0);
+    expect(failedCalls).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('after the unreachable budget the interrupted row fails honestly instead of waiting for ever', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    parkBudgetLeft = false;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('failed');
+    expect(parkedCalls).toHaveLength(1);
+    expect(failedCalls.at(-1)).toMatchObject({
+      message: "the session's machine could not be reached after 3 attempts",
+      options: { retryable: false },
+    });
+    expect(requeues).toHaveLength(0);
   });
 
   test('Stop during a transient delivery failure prevents another POST', async () => {
@@ -670,8 +735,21 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     });
   });
 
-  test('with saved history on (the default), a staged file is also kept in the private store', async () => {
-    sessionRow = { ...sessionRow!, projectMetadata: {} };
+  test('noReply reaches the runtime only when the command asks for it', async () => {
+    const command = {
+      source: 'ui' as const, sessionId: SESSION_ID, projectId: PROJECT_ID, text: 'held', userId: null,
+      wireMessageId: SUBMITTED_WIRE_ID,
+    };
+    expect(await continueSession({ ...command, noReply: true }, 'cmd-nr')).toBe('delivered');
+    expect(capturedBodies[0].noReply).toBe(true);
+
+    capturedBodies = [];
+    expect(await continueSession(command, 'cmd-plain')).toBe('delivered');
+    expect(capturedBodies).toHaveLength(1);
+    expect('noReply' in capturedBodies[0]).toBe(false);
+  });
+
+  test('every staged file is also kept in the private store', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
@@ -1293,6 +1371,53 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
   });
 
+  // KRTX-683, live 2026-09-29: ALPHA went out `noReply`, re-minted above the
+  // stopped turn. BRAVO then saw ALPHA as an OPEN user message above its own
+  // typing-time id and kept that id (the under-placed branch), and so did
+  // CHARLIE. OpenCode orders by id, so ALPHA rendered LAST, under the answer.
+  const stoppedTurnAnswer = mintWireMessageId({ nowMs: NOW_MS - 2 * 60_000, random: () => 0.5 }).id;
+  const alphaPosted = mintWireMessageId({ nowMs: NOW_MS - 30_000, random: () => 0.5 }).id;
+  const bravoTyped = mintWireMessageId({ nowMs: NOW_MS - 5 * 60_000, random: () => 0.6 }).id;
+  const siblingAboveTranscript = () => [
+    { info: { id: 'msg_other', role: 'user' } },
+    { info: { id: stoppedTurnAnswer, role: 'assistant', parentID: 'msg_other' } },
+    // ALPHA: posted `noReply`, so open and unanswered, above BRAVO's own id.
+    { info: { id: alphaPosted, role: 'user' } },
+  ];
+
+  test('a released batch row is re-minted above the sibling posted just before it, never kept under it', async () => {
+    transcript = siblingAboveTranscript();
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          ...baseRow().payload,
+          wireMessageId: bravoTyped,
+          // The batch id alone forces the re-mint: the send made while
+          // stopped carries no `remintOnDelivery`.
+          releasedBatchId: 'b1',
+        },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(bravoTyped);
+    expect(sent > alphaPosted).toBe(true);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(alphaPosted)!);
+  });
+
+  test('outside a released batch a prompt under an open user message still keeps its send-ordered id', async () => {
+    transcript = siblingAboveTranscript();
+
+    const outcome = await executeQueuedContinue(
+      baseRow({ payload: { ...baseRow().payload, wireMessageId: bravoTyped, remintOnDelivery: true } }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies[0].messageID).toBe(bravoTyped);
+  });
+
   test('a re-mint whose transcript read FAILED still sorts above OpenCode’s own clock', async () => {
     // The fallback used to mint `now - WIRE_ID_BACKDATE_MS` (2 min). OpenCode
     // mints from a raw `Date.now()`, with no backdate, so every message it
@@ -1697,6 +1822,236 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       'queue-b',
       'queue-c',
     ]);
+    // A queue that no Stop released keeps one prompt per turn: nothing on the
+    // wire asks OpenCode to hold its reply.
+    expect(capturedBodies.every((body) => !('noReply' in body))).toBe(true);
+    expect(forwardedCalls.every((call) => !('noReply' in call))).toBe(true);
+  });
+
+  // KRTX-683. Stop held A and B; C is a message sent while stopped, and
+  // sending it released the hold, which stamped all three with one
+  // `releasedBatchId`. The owner's contract: OpenCode gets A, B and C as three
+  // SEPARATE user messages, in the order the user sent them, answered in ONE
+  // turn. So A and B go out `noReply` (persisted, no loop) and only C starts
+  // the turn — one POST at a time, each next one re-minted after the last
+  // landed so the ids ascend in queue order.
+  const releasedRow = (
+    name: 'a' | 'b' | 'c' | 'd',
+    clientSentAtMs: number,
+    extra: { releasedBatchId?: string; result?: Record<string, unknown> } = {},
+  ) =>
+    baseRow({
+      commandId: `cmd-${name}`,
+      idempotencyKey: `queue-${name}`,
+      createdAt: new Date(NOW_MS - 60_000),
+      result: extra.result ?? {},
+      payload: {
+        text: `PROMPT-${name.toUpperCase()}`,
+        parts: [{ type: 'text', text: `PROMPT-${name.toUpperCase()}` }],
+        clientMessageId: `client-${name}`,
+        wireMessageId: mintWireMessageId({ nowMs: clientSentAtMs, random: () => 0.5 }).id,
+        clientSentAtMs,
+        // No `remintOnDelivery`: a batch row re-mints at delivery because it
+        // is a batch row (`placeQueuedContinue`), even the send that never waited.
+        ...(extra.releasedBatchId ? { releasedBatchId: extra.releasedBatchId } : {}),
+      },
+    });
+  /** What a row looks like when the chain's wake claims it after the lane put
+   *  it back: refused once for order, so its wire id is re-minted. */
+  const waited = { result: { admission_reason: 'older_prompt_pending' } };
+  const settle = async (posts: number) => {
+    for (let i = 0; i < 100 && capturedBodies.length < posts; i += 1) await Bun.sleep(10);
+    await Bun.sleep(50);
+  };
+
+  test('prompts released after Stop plus a message sent while stopped reach OpenCode as separate messages answered in one turn (KRTX-683)', async () => {
+    const a = releasedRow('a', NOW_MS - 9 * 60_000, { releasedBatchId: 'b1' });
+    const b = releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1' });
+    const c = releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1' });
+    // C's own POST kicks the drain; the sweep pulls in A and B out of order.
+    targetedClaims.set('queue-c', [c]);
+    siblingSweeps = [[b, a]];
+    // The chain: after A lands, B is promoted and claimed (the sweep brings C
+    // along again); after B lands, C is promoted and claimed alone.
+    promotionResults = ['queue-b', 'queue-c2'];
+    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', ...waited })]);
+    const cAgain = releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited });
+    targetedClaims.set('queue-c2', [cAgain]);
+    siblingSweeps.push([cAgain], []);
+    releasedPending = [a, b, c];
+    postDelayMs = 10;
+
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c', coalesce: false });
+    await settle(3);
+
+    expect(capturedBodies.map((body) => (body.parts as Array<{ text: string }>)[0].text)).toEqual([
+      'PROMPT-A',
+      'PROMPT-B',
+      'PROMPT-C',
+    ]);
+    expect(capturedBodies.map((body) => body.noReply ?? null)).toEqual([true, true, null]);
+    expect('noReply' in capturedBodies[2]).toBe(false);
+    expect(maxActivePosts).toBe(1);
+    // A and B close as delivered-without-a-turn; C is the turn.
+    expect(forwardedCalls.map((call) => [call.commandId, call.noReply ?? null])).toEqual([
+      ['cmd-a', true],
+      ['cmd-b', true],
+      ['cmd-c', null],
+    ]);
+    // One hand-off per noReply row, none after the row that starts the turn.
+    expect(promotionCalls).toEqual([SESSION_ID, SESSION_ID]);
+    // OpenCode orders a session's messages by id, so ascending ids ARE the
+    // transcript order.
+    const ids = capturedBodies.map((body) => body.messageID as string);
+    expect(new Set(ids).size).toBe(3);
+    expect([...ids].sort()).toEqual(ids);
+  });
+
+  test('a released batch mixing Queue List and Quick Queue sends goes out in typing order, the last-typed row carrying the turn', async () => {
+    // Live, 2026-09-29: ALPHA and BRAVO queued with Cmd+Enter (Queue List),
+    // Stop, then CHARLIE sent with Enter (Quick Queue). The inbox's lane-first
+    // order put CHARLIE before BRAVO, so BRAVO carried the turn while the ids
+    // ascended A, B, C: the answer rendered under BRAVO and CHARLIE after it.
+    const composer = (row: SessionLifecycleCommandRow) => {
+      (row.payload as Record<string, unknown>).placement = 'composer';
+      return row;
+    };
+    const transcriptPlaced = (row: SessionLifecycleCommandRow) => {
+      (row.payload as Record<string, unknown>).placement = 'transcript';
+      return row;
+    };
+    const a = composer(releasedRow('a', NOW_MS - 9 * 60_000, { releasedBatchId: 'b1' }));
+    const b = composer(releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1' }));
+    const c = transcriptPlaced(releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1' }));
+    targetedClaims.set('queue-c', [c]);
+    siblingSweeps = [[b, a]];
+    const bAgain = composer(releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', ...waited }));
+    const cAgain = transcriptPlaced(releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited }));
+    promotionResults = ['queue-b', 'queue-c2'];
+    targetedClaims.set('queue-b', [bAgain]);
+    targetedClaims.set('queue-c2', [cAgain]);
+    siblingSweeps.push([cAgain], []);
+    releasedPending = [a, b, c];
+    postDelayMs = 10;
+    // The transcript as the box holds it: the stopped turn's answer (newer
+    // than every typing-time id), then each prompt this chain has posted —
+    // `noReply`, so open and unanswered. Refreshed at every hand-off, which
+    // is when the next row reads it.
+    const stoppedTurnAnswer = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: () => 0.5 }).id;
+    const boxTranscript = () => [
+      { info: { id: 'msg_other', role: 'user' } },
+      { info: { id: stoppedTurnAnswer, role: 'assistant', parentID: 'msg_other' } },
+      ...capturedBodies.map((body) => ({ info: { id: body.messageID as string, role: 'user' } })),
+    ];
+    transcript = boxTranscript();
+    onPromotion = () => {
+      transcript = boxTranscript();
+    };
+
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c', coalesce: false });
+    await settle(3);
+
+    expect(capturedBodies.map((body) => (body.parts as Array<{ text: string }>)[0].text)).toEqual([
+      'PROMPT-A',
+      'PROMPT-B',
+      'PROMPT-C',
+    ]);
+    expect(capturedBodies.map((body) => body.noReply ?? null)).toEqual([true, true, null]);
+    expect(capturedBodies.every((body) => (body.messageID as string) > stoppedTurnAnswer)).toBe(true);
+    const ids = capturedBodies.map((body) => body.messageID as string);
+    expect(new Set(ids).size).toBe(3);
+    expect([...ids].sort()).toEqual(ids);
+  });
+
+  test('Resume after Stop with no new message sends every released prompt, answered in one turn', async () => {
+    const a = releasedRow('a', NOW_MS - 9 * 60_000, { releasedBatchId: 'b1' });
+    const b = releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1' });
+    // Resume kicks `drain({ limit: 1 })`: an untargeted claim that takes only
+    // A, and sweeps nothing. The decision reads the database, where B waits.
+    claimed = [a];
+    releasedPending = [a, b];
+    promotionResults = ['queue-b'];
+    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', ...waited })]);
+
+    await drainSessionLifecycleQueue({ limit: 1 });
+    await settle(2);
+
+    expect(capturedBodies.map((body) => (body.parts as Array<{ text: string }>)[0].text)).toEqual([
+      'PROMPT-A',
+      'PROMPT-B',
+    ]);
+    expect(capturedBodies[0].noReply).toBe(true);
+    expect('noReply' in capturedBodies[1]).toBe(false);
+    expect(promotionCalls).toEqual([SESSION_ID]);
+  });
+
+  test('a released prompt claimed alone still holds its reply while another drain holds a later prompt of its batch', async () => {
+    // Concurrent drains split one batch: this drain claimed B in a lane of
+    // one, while the 1 s tick (or another instance) claimed C. B must not
+    // start a turn of its own — C, still unsent, carries the one turn.
+    const b = releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', ...waited });
+    const c = releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited });
+    claimed = [b];
+    releasedPending = [b, c];
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+    await Bun.sleep(50);
+
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0].noReply).toBe(true);
+    expect(forwardedCalls).toEqual([expect.objectContaining({ commandId: 'cmd-b', noReply: true })]);
+    expect(promotionCalls).toEqual([SESSION_ID]);
+  });
+
+  test('a released prompt with no later sibling of its batch starts its own turn', async () => {
+    // A was released after Stop; D was queued later (Queue List) and never
+    // held. Only rows sharing A's batch may ride along without a reply, so A
+    // answers alone and D keeps the normal one-per-turn contract.
+    const d = releasedRow('d', NOW_MS - 8 * 60_000);
+    (d.payload as Record<string, unknown>).placement = 'composer';
+    claimed = [releasedRow('a', NOW_MS - 9 * 60_000, { releasedBatchId: 'b1' }), d];
+
+    await drainSessionLifecycleQueue({ limit: 10 });
+    await Bun.sleep(50);
+
+    expect(capturedBodies).toHaveLength(1);
+    expect((capturedBodies[0].parts as Array<{ text: string }>)[0].text).toBe('PROMPT-A');
+    expect('noReply' in capturedBodies[0]).toBe(false);
+    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
+      { commandId: 'cmd-d', reason: 'older_prompt_pending' },
+    ]);
+    expect(promotionCalls).toEqual([]);
+  });
+
+  test('a released batch stops at the prompt that failed and never posts past it', async () => {
+    const a = releasedRow('a', NOW_MS - 9 * 60_000, { releasedBatchId: 'b1' });
+    const b = releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1' });
+    const c = releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1' });
+    targetedClaims.set('queue-c', [c]);
+    siblingSweeps = [[a, b], [releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited })]];
+    promotionResults = ['queue-b'];
+    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', ...waited })]);
+    releasedPending = [a, b, c];
+    // The box stops answering between A and B: B's delivery ends retryable.
+    onPromotion = () => {
+      serviceKeyAvailable = false;
+    };
+
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c', coalesce: false });
+    await settle(2);
+    await Bun.sleep(100);
+
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0].noReply).toBe(true);
+    expect(failedCalls).toEqual([
+      expect.objectContaining({ commandId: 'cmd-b', options: expect.objectContaining({ retryable: true }) }),
+    ]);
+    // C was put back twice (once per lane) and never reached the wire.
+    expect(requeues.filter((r) => r.commandId === 'cmd-c').map((r) => r.reason)).toEqual([
+      'older_prompt_pending',
+      'older_prompt_pending',
+    ]);
+    expect(promotionCalls).toEqual([SESSION_ID]);
   });
 });
 

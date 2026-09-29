@@ -27,9 +27,11 @@ import {
 import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
 import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
 import { MAX_SWAP_DELAY_MS } from '../contract/control'
+import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import { isDaemonShuttingDown } from '@/lib/shutdown-state'
+import { managedOverlayRoot, releaseSourcePaths } from './project-layout'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
@@ -233,14 +235,18 @@ export interface ConvergeDeps {
 
 type ConfigDepsOptions = Omit<NonNullable<Parameters<typeof ensureOpencodeConfigDeps>[1]>, 'platformOwned'>
 
-/** Dependencies and the managed-skill overlay, the preparation every config dir gets. */
+/** Dependencies and the managed-skill overlay, the preparation every config dir in the working tree gets. */
 export async function prepareConfigDir(
   dir: string,
   managedSkillsDir?: string,
   depsOptions: ConfigDepsOptions = {},
+  projectRoot?: string,
 ): Promise<void> {
   await ensureOpencodeConfigDeps(dir, depsOptions)
-  await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
+  await ensureInjectedManagedSkills(
+    managedOverlayRoot(dir, projectRoot),
+    managedSkillsDir ? { bakedDir: managedSkillsDir } : {},
+  )
 }
 
 /**
@@ -349,6 +355,19 @@ async function toolNamesInDir(dir: string): Promise<string[]> {
  */
 export function convergeConfigRelease(deps: ConvergeDeps): Promise<ConvergeResponse> {
   if (inFlight) return Promise.reject(new ConvergeBusyError())
+  // A dead session credential can never converge: the API answers every call
+  // `401 Session token is not active`, and no retry can change that. Without
+  // this gate the 60 s runtime-truth tick re-issued the request forever, one
+  // warn line per minute per box (KRTX-613). The shared breaker clears the
+  // moment a control-plane call succeeds again — it lets one call through as a
+  // probe every SESSION_TOKEN_DEAD_PROBE_MS — so this resumes by itself after a
+  // rotation.
+  // Nothing is lost: with a dead credential the fetch below would fail anyway.
+  if (sessionTokenPresumedDead()) {
+    return Promise.resolve(
+      respond('failed', null, 'the session credential is not active; config convergence is paused'),
+    )
+  }
   const run = applyDesiredRelease(deps)
     .catch((err: unknown): ConvergeResponse => {
       const reason = `convergence failed: ${err instanceof Error ? err.message : String(err)}`
@@ -396,7 +415,7 @@ export function noteRunningConfig(
   try {
     return writeConfigReleaseNotice({
       sourceCommit: descriptor.source_commit,
-      configDir: descriptor.config_dir,
+      sourcePaths: releaseSourcePaths(descriptor.config_dir),
       releaseDir: releaseDirPath,
       sessionId,
       agentRepoint: descriptor.agent_repoint_reason ?? null,
@@ -466,7 +485,7 @@ async function revertToPreReleaseConfig(
 
   // No release runs any more: the notice would be a false statement.
   clearConfigReleaseNotice()
-  await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
+  await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir, {}, cfg.projectTarget)))(dir)
   const toolNames = await toolNamesInDir(dir)
   const pluginFiles = await pluginFilesInDir(dir)
   // The check above ran before `prepare`, which walks and rewrites a config

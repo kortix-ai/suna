@@ -324,7 +324,7 @@ usageApp.openapi(
     method: 'get',
     path: '/',
     tags: ['router'],
-    summary: 'GET /v1/usage — OpenRouter-parity usage rollup, scoped to the authenticated account',
+    summary: 'Get account usage rollup',
     description:
       'Aggregates usage_events for the caller’s account over an optional [start,end] window, ' +
       'with an optional breakdown grouped by model, provider, or day.',
