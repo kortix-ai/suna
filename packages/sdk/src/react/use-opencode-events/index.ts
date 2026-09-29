@@ -316,8 +316,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       }
     };
 
-    // Hydrate on initial connect — permissions, questions, and statuses
-    hydrateCore();
+    // A revived handle has no record of the previous handle's outage. Re-read
+    // the held transcripts so a response completed during the park appears
+    // without requiring a page refresh.
+    hydrateCore({ rehydrateMessages: streamGeneration > 0 });
 
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
