@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
@@ -133,6 +134,22 @@ async function auditRateLimitHit(c: Context, context: AuditContext, result: Rate
   });
 }
 
+async function rateLimitExceededResponse(
+  c: Context,
+  result: RateLimitResult,
+  auditContext: AuditContext,
+): Promise<Response> {
+  await auditRateLimitHit(c, auditContext, result);
+  return c.json(
+    {
+      error: 'rate_limit_exceeded',
+      message: 'Rate limit exceeded. Please retry shortly.',
+      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+    },
+    429,
+  );
+}
+
 export async function enforceRateLimit(
   c: Context,
   limiter: TokenBucketRateLimiter,
@@ -145,15 +162,7 @@ export async function enforceRateLimit(
 
   if (result.allowed) return null;
 
-  await auditRateLimitHit(c, auditContext, result);
-  return c.json(
-    {
-      error: 'rate_limit_exceeded',
-      message: 'Rate limit exceeded. Please retry shortly.',
-      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
-    },
-    429,
-  );
+  return rateLimitExceededResponse(c, result, auditContext);
 }
 
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
@@ -167,6 +176,7 @@ const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
 );
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
+const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 /**
@@ -414,6 +424,53 @@ export function consumeProjectWebhookManifestRefreshBudget(projectId: string): b
   }).allowed;
 }
 
+/**
+ * Bucket key for the LLM gateway mount. One presented credential is one
+ * principal (a gateway key or a PAT belongs to exactly one account/project),
+ * so the credential is the key, hashed so no raw secret is retained in the
+ * bucket Map. This avoids a per-request identity database read on the
+ * inference hot path. A request without a bearer falls back to the client
+ * address, so omitting the header cannot escape the limit.
+ */
+function llmGatewayBucketKey(c: Context): string {
+  const bearer = /^Bearer\s+(\S+)$/i.exec((c.req.header('authorization') ?? '').trim());
+  const token = bearer?.[1];
+  if (token) return `tok:${createHash('sha256').update(token).digest('hex')}`;
+  return `ip:${requestClientKey(c)}`;
+}
+
+/**
+ * Per-principal budget on the LLM gateway mount (`/v1/llm/*` and its
+ * `/v1/llm-gateway/*` alias), the reverse proxy to the standalone gateway.
+ * The standalone gateway meters spend and sheds on memory pressure, but
+ * nothing throttles a principal at this boundary. This is defence-in-depth,
+ * not a quota: in-limit traffic keeps its exact behavior plus the standard
+ * `X-RateLimit-*` headers.
+ *
+ * The proxy answers with a raw `Response` that replaces Hono's prepared one,
+ * so headers set before `next()` would be dropped. They are applied again
+ * after `next()`, when `c` points at the final response.
+ */
+export function createLlmGatewayRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const result = llmGatewayLimiter.check(llmGatewayBucketKey(c), {
+      limit: positiveInt((config as any).KORTIX_LLM_GATEWAY_REQS_PER_MIN, 600),
+      windowMs: 60_000,
+    });
+    if (!result.allowed) {
+      setHeaders(c, result);
+      return rateLimitExceededResponse(c, result, {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'llm_gateway',
+        resourceId: null,
+        metadata: { limiter: 'llm_gateway' },
+      });
+    }
+    await next();
+    setHeaders(c, result);
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
@@ -424,5 +481,6 @@ export function resetRateLimiters() {
   projectWebhookManifestRefreshLimiter.reset();
   projectSecretWriteLimiter.reset();
   projectSessionCreateLimiter.reset();
+  llmGatewayLimiter.reset();
   sessionLlmLimiter.reset();
 }
