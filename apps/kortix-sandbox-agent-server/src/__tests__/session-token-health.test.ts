@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 
 import {
+  SESSION_TOKEN_DEAD_PROBE_MS,
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
   resetSessionTokenHealthForTests,
@@ -59,6 +60,25 @@ describe('session-token-health', () => {
     noteControlPlaneResponse(200, null);
 
     expect(sessionTokenPresumedDead()).toBe(false);
+  });
+
+  test('while tripped, one call per probe window goes through, so an idle box can see a rotation', () => {
+    setSystemTime(new Date('2026-09-28T00:00:00Z'));
+    try {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'Session token is not active');
+      }
+      expect(sessionTokenPresumedDead()).toBe(true);
+
+      setSystemTime(new Date(Date.now() + SESSION_TOKEN_DEAD_PROBE_MS));
+      expect(sessionTokenPresumedDead()).toBe(false); // the probe
+      expect(sessionTokenPresumedDead()).toBe(true); // everyone else still skips
+
+      noteControlPlaneResponse(401, 'Session token is not active'); // probe refused
+      expect(sessionTokenPresumedDead()).toBe(true);
+    } finally {
+      setSystemTime();
+    }
   });
 
   test('is case-insensitive and ignores surrounding text', () => {
