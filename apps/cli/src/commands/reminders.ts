@@ -24,6 +24,9 @@ import { C, help, pad, status } from '../style.ts';
 const HELP = help`Usage: kortix reminders <subcommand> [options]
        kortix remind "<prompt>" [schedule]        (= reminders add)
 
+Reminders are a per-project feature flag, off by default. Turn them on with
+\`kortix projects features enable reminders\` (or Settings → Feature flags).
+
 A reminder re-prompts ONE session on a schedule — "in 24h, check whether the
 email arrived", "every hour until the deploy is green". It is a trigger scoped
 to that session and stored in the database, not kortix.yaml: no commit, no
@@ -182,6 +185,10 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     else process.stdout.write(`${status.ok(`Removed ${id}`)}\n`);
     return 0;
   } catch (err) {
-    return surfaceApiError(err);
+    const code = surfaceApiError(err);
+    if ((err as { body?: { code?: unknown } })?.body?.code === 'feature_disabled') {
+      process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable reminders${C.reset}\n`);
+    }
+    return code;
   }
 }

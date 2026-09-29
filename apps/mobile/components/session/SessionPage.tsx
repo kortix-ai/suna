@@ -160,6 +160,7 @@ import { PermissionPromptCard } from './PermissionPromptCard';
 import { useSessions } from '@/lib/platform/hooks';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
+import { SandboxPreviewSheet } from '@/components/session/SandboxPreviewSheet';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 import type { Session } from '@/lib/platform/types';
@@ -2074,6 +2075,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
       {/* File taps: tool rows (ToolNavigation.openFile), attachment tiles, file mentions */}
       <ToolFilePreviewHost />
+
+      {/* Show/preview taps (ToolNavigation.openPreview): in-session over the
+          thread, so a one-tap close returns to the same position (KRTX-602). */}
+      <SandboxPreviewSheet />
 
       {/* The activity summary rows' sheet (ActivityBurst) */}
       {/* Given the connector hand-off so a Connect inside it dismisses the

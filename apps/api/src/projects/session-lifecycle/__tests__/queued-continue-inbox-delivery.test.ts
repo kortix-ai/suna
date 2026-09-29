@@ -65,6 +65,8 @@ let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+/** When set, the daemon never answers the interrupt arm — the wedged-box case. */
+let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
@@ -523,6 +525,7 @@ beforeEach(() => {
   transcript = [];
   capturedBodies = [];
   quickQueueControlRequests = [];
+  quickQueueArmFails = false;
   capturedKeys = [];
   seenKeys.clear();
   succeededCalls = [];
@@ -564,6 +567,7 @@ beforeEach(() => {
         method: init?.method ?? 'GET',
         body: JSON.parse(String(init?.body)) as Record<string, unknown>,
       });
+      if (quickQueueArmFails) return new Response(null, { status: 503 });
       return Response.json({ armed: true }, { status: 202 });
     }
     // The staged-revert guard reads the session row; the re-mint and the
@@ -649,6 +653,44 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('a runtime that will not serve the interrupt parks the row on the unreachable ladder, not the 2 s order backoff', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(quickQueueControlRequests).toHaveLength(1);
+    expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
+    expect(requeues).toHaveLength(0);
+    expect(failedCalls).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('after the unreachable budget the interrupted row fails honestly instead of waiting for ever', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    parkBudgetLeft = false;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('failed');
+    expect(parkedCalls).toHaveLength(1);
+    expect(failedCalls.at(-1)).toMatchObject({
+      message: "the session's machine could not be reached after 3 attempts",
+      options: { retryable: false },
+    });
+    expect(requeues).toHaveLength(0);
   });
 
   test('Stop during a transient delivery failure prevents another POST', async () => {
