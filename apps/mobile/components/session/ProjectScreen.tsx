@@ -1,4 +1,3 @@
-import { useProjectSessionConnect } from '@/lib/session/project-connect';
 /**
  * ProjectScreen — single-column project screen.
  *
@@ -25,6 +24,7 @@ import { useProjectSessionConnect } from '@/lib/session/project-connect';
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { useProjectSessionConnect } from '@/lib/session/project-connect';
 import { newConfigPrompt } from '@kortix/shared';
 import { View, BackHandler, Platform } from 'react-native';
 import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
