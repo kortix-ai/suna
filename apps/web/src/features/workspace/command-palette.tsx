@@ -80,6 +80,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { copyToClipboard } from '@/lib/utils/clipboard';
+import { isDesktop } from '@/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import {
@@ -1649,6 +1650,15 @@ export function CommandPalette() {
    * should not need a search. Off a session there is none, and no row.
    */
   const suggestedSessionIdCopy = copyItems.find((item) => item.id === 'session-id') ?? null;
+  /**
+   * Desktop only, right under it: the Electron shell has no address bar, so
+   * there is no other way to take a session's link out of the app. The copy
+   * is `window.location.href` — the shell loads the real web origin, so the
+   * link opens in any browser. The web keeps its address bar and one row.
+   */
+  const suggestedSessionLinkCopy = isDesktop()
+    ? (copyItems.find((item) => item.id === 'session-link') ?? null)
+    : null;
 
   // Copy rows ride along with ordinary root search: "email" offers the email,
   // "project" offers the project id under the projects it finds, "session" the
@@ -2394,6 +2404,19 @@ export function CommandPalette() {
                                   </span>
                                   <span className="text-muted-foreground max-w-40 truncate font-mono text-xs">
                                     {suggestedSessionIdCopy.value}
+                                  </span>
+                                </CommandItem>
+                              ) : null}
+                              {index === 2 && suggestedSessionLinkCopy ? (
+                                <CommandItem
+                                  value={sanitizeCmdkValue(
+                                    `suggestion copy-session-link ${suggestedSessionLinkCopy.keywords}`,
+                                  )}
+                                  onSelect={() => void handleCopyValue(suggestedSessionLinkCopy)}
+                                >
+                                  <Copy className="size-4" />
+                                  <span className="flex-1">
+                                    {tPalette('copyAction', { label: suggestedSessionLinkCopy.label })}
                                   </span>
                                 </CommandItem>
                               ) : null}
