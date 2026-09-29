@@ -1436,7 +1436,7 @@
       "actions": "Sitzungsaktionen",
       "actionsFor": "Aktionen für {title}",
       "reviewCount": "Zur Prüfung: {count}",
-      "expandChildren": "{count} gestartete Sessions anzeigen",
+      "expandChildren": "{count, plural, one {# gestartete Session} other {# gestartete Sessions}} anzeigen",
       "collapseChildren": "Gestartete Sessions ausblenden",
       "showMore": "Mehr anzeigen",
       "brief": {

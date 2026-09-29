@@ -1436,7 +1436,7 @@
       "actions": "Acciones de la sesión",
       "actionsFor": "Acciones para {title}",
       "reviewCount": "Pendientes de revisión: {count}",
-      "expandChildren": "Mostrar {count} sesiones iniciadas",
+      "expandChildren": "Mostrar {count, plural, one {# sesión iniciada} other {# sesiones iniciadas}}",
       "collapseChildren": "Ocultar sesiones iniciadas",
       "showMore": "Mostrar más",
       "brief": {
