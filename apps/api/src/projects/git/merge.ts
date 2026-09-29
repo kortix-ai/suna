@@ -1,6 +1,7 @@
 // Branch diffing & merging (powers the change-request layer) + diffStat.
 
 import { validateRef, validateSha } from '../git-ref';
+import { authGitPush } from './commit-writer';
 import {
   hostFromRepoUrl,
   refreshMirror,
@@ -337,16 +338,7 @@ export async function mergeBranches(
       repoPath,
       false,
     );
-    await runGit(
-      ['push', 'origin', `${headSha}:refs/heads/${baseRef}`],
-      repoPath,
-      true,
-      project.gitAuthToken,
-      undefined,
-      hostFromRepoUrl(project.repoUrl),
-      undefined,
-      project.gitAuthHeaders,
-    );
+    await authGitPush(['push', 'origin', `${headSha}:refs/heads/${baseRef}`], repoPath, project);
     return {
       merge_commit_sha: headSha,
       fast_forward: true,
@@ -398,15 +390,10 @@ export async function mergeBranches(
     repoPath,
     false,
   );
-  await runGit(
+  await authGitPush(
     ['push', 'origin', `${mergeCommitSha}:refs/heads/${baseRef}`],
     repoPath,
-    true,
-    project.gitAuthToken,
-    undefined,
-    hostFromRepoUrl(project.repoUrl),
-    undefined,
-    project.gitAuthHeaders,
+    project,
   );
 
   return {
