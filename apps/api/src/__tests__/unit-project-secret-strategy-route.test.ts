@@ -20,7 +20,11 @@ const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realIam = await import('../iam');
+mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
 let authType: 'service_account' | 'supabase' | 'pat' = 'supabase';
@@ -218,7 +222,9 @@ mock.module('../projects/lib/access', () => ({
   assertProjectCapability: async () => undefined,
 }));
 
+const realSync = await import('../projects/lib/sandbox-env-sync');
 mock.module('../projects/lib/sandbox-env-sync', () => ({
+  ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
     propagations.push({ projectId, options });
     if (propagationGate) await propagationGate;

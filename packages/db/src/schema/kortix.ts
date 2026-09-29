@@ -399,7 +399,49 @@ export const accountGithubInstallations = kortixSchema.table(
       table.accountId,
       table.installationId,
     ),
+    // One connection per (account, owner). A reconnect mints a NEW installation
+    // id for the same owner, so the index above admits the retired row too —
+    // both render as `github.com/<owner>` and a create could pick the dead one
+    // (prod, 2026-09-25). Built by
+    // 20260925164209388_github_installations_one_per_owner_index.concurrent.ts.
+    uniqueIndex('uniq_account_github_installations_owner').on(
+      table.accountId,
+      table.ownerLogin,
+    ),
     index('idx_account_github_installations_owner').on(table.ownerLogin),
+  ],
+);
+
+/**
+ * One GitHub App USER access token per (account, user).
+ *
+ * GitHub refuses `POST /user/repos` from an App installation token, so a
+ * personal account can only get a new repository through a user access token
+ * (it is on GitHub's "endpoints available for user access tokens" list). The
+ * token is the user's own credential: encrypted at rest with the account-salted
+ * envelope, never returned to a browser, and deleted with the connection.
+ *
+ * `expires_at` and `refresh_value_enc` are null unless the App is configured to
+ * expire user tokens.
+ */
+export const accountGithubUserTokens = kortixSchema.table(
+  'account_github_user_tokens',
+  {
+    tokenRowId: uuid('token_row_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    githubLogin: varchar('github_login', { length: 255 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    refreshValueEnc: text('refresh_value_enc'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uniq_account_github_user_tokens_account_user').on(table.accountId, table.userId),
+    index('idx_account_github_user_tokens_account').on(table.accountId),
   ],
 );
 
@@ -1686,6 +1728,7 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_project').on(table.projectId),
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
+    index('idx_session_lifecycle_commands_account').on(table.accountId),
   ],
 );
 
@@ -2376,6 +2419,8 @@ export const providerEvents = kortixSchema.table(
     index('idx_provider_events_kind').on(table.kind),
     index('idx_provider_events_outcome').on(table.outcome),
     index('idx_provider_events_created').on(table.createdAt),
+    // `reconcileAuditEvents` filters by `account_id` alone (see the test).
+    index('idx_provider_events_account').on(table.accountId),
   ],
 );
 
@@ -2430,6 +2475,11 @@ export const sandboxTemplates = kortixSchema.table(
     cpu: integer('cpu'),
     memoryGb: integer('memory_gb'),
     diskGb: integer('disk_gb'),
+    /**
+     * kortix.yaml `container_runtime: true`: the image carries the guest
+     * kernel's full module tree and starts dockerd at boot.
+     */
+    containerRuntime: boolean('container_runtime').default(false).notNull(),
 
     // ─── Live state (cached; provider is source of truth) ──────────────────
     /** Content hash of the template inputs — the snapshot identity. */
@@ -3272,9 +3322,19 @@ export const auditEvents = kortixSchema.table(
     // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one
     // index write on every audit row. A filter on (authoritative_source, phase)
     // uses `idx_audit_events_account_time` for the account+time prefix.
-    index('idx_audit_events_account_client_source_time')
-      .on(table.accountId, table.clientReportedSource, table.occurredAt)
-      .where(sql`${table.clientReportedSource} is not null`),
+    //
+    // `idx_audit_events_account_client_source_time` (account_id,
+    // client_reported_source, occurred_at WHERE client_reported_source IS NOT
+    // NULL) was dropped 2026-09-29 (migration
+    // 20260929004450093_drop_audit_events_account_client_source_time_index):
+    // 0 scans since the last stats reset, 1.3 GB, one index write on every
+    // audit row. The only query shaped to use it (`source` filter in
+    // apps/api/src/accounts/audit-filters.ts) is an OR across
+    // authoritative_source and client_reported_source, which Postgres cannot
+    // push through a single composite index on one of those two columns --
+    // EXPLAIN on prod confirmed the planner already used
+    // `idx_audit_events_account_time` + a Filter for that OR, identically
+    // with and without this index reachable.
     uniqueIndex('idx_audit_events_source_phase')
       .on(
         table.sourceLedger,
@@ -4305,6 +4365,9 @@ export const tunnelConnections = kortixSchema.table(
   {
     tunnelId: uuid('tunnel_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
+    /** The human who paired this machine. NULL only on machines paired before
+     *  2026-09-28 under a team account; those are managed by account managers. */
+    ownerUserId: uuid('owner_user_id'),
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
     name: varchar('name', { length: 255 }).notNull(),
     status: tunnelStatusEnum('status').default('offline').notNull(),
@@ -4321,6 +4384,7 @@ export const tunnelConnections = kortixSchema.table(
   },
   (table) => [
     index('idx_tunnel_connections_account').on(table.accountId),
+    index('idx_tunnel_connections_owner_user').on(table.ownerUserId),
     index('idx_tunnel_connections_sandbox').on(table.sandboxId),
     index('idx_tunnel_connections_status').on(table.status),
     index('idx_tunnel_connections_relay_owner').on(table.relayOwnerId),
@@ -4449,6 +4513,9 @@ export const tunnelDeviceAuthRequests = kortixSchema.table(
     status: tunnelDeviceAuthStatusEnum('status').default('pending').notNull(),
     machineHostname: varchar('machine_hostname', { length: 255 }),
     accountId: uuid('account_id'),
+    /** Project the machine asked to join (`connect --project-id`). Untrusted
+     *  until a human approves; the approver's project access is checked then. */
+    projectId: uuid('project_id'),
     tunnelId: uuid('tunnel_id').references(() => tunnelConnections.tunnelId, {
       onDelete: 'set null',
     }),
@@ -5629,6 +5696,11 @@ export const connectorConnections = kortixSchema.table(
     status: connectorConnectionStatusEnum('status').default('active').notNull(),
     isDefault: boolean('is_default').default(false).notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    /** The paired machine this account reaches. Set only on connections of a
+     *  `computer` connector; unpairing the machine sets it NULL. */
+    tunnelId: uuid('tunnel_id').references(() => tunnelConnections.tunnelId, {
+      onDelete: 'set null',
+    }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -5676,6 +5748,12 @@ export const connectorConnections = kortixSchema.table(
       .where(sql`${table.ownerId} is null`),
     index('idx_connector_connections_project').on(table.projectId),
     index('idx_connector_connections_connector').on(table.connectorId),
+    index('idx_connector_connections_tunnel').on(table.tunnelId),
+    // One computer account per (connector, owner, machine). The lazy
+    // per-project ensure upserts on it (connectors/sync.ts ensureProjectComputer).
+    uniqueIndex('idx_connector_connections_owner_tunnel')
+      .on(table.connectorId, table.ownerType, table.ownerId, table.tunnelId)
+      .where(sql`${table.tunnelId} is not null`),
     check(
       'connector_connections_owner_check',
       sql`(${table.ownerType} = 'project' AND ${table.ownerId} IS NULL) OR (${table.ownerType} <> 'project' AND ${table.ownerId} IS NOT NULL AND btrim(${table.ownerId}) <> '')`,
@@ -6078,6 +6156,7 @@ export const connectorCalls = kortixSchema.table(
     index('idx_connector_calls_connector').on(table.connectorId),
     index('idx_connector_calls_connection').on(table.connectionId),
     index('idx_connector_calls_status').on(table.status),
+    index('idx_connector_calls_account').on(table.accountId),
   ],
 );
 

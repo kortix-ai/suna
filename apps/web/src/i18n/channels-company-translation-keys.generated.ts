@@ -169,7 +169,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Approve, deny, ask for changes': 'textab2b05077241',
   'Ask for changes': 'text705364916412',
   Auditable: 'text54d0252c76b0',
-  'Bring any provider, or the ChatGPT, Claude or Cursor subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.':
+  'Bring any provider, or the ChatGPT subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.':
     'text9d54b2fd9149',
   'by amount. When you cannot, open a change request': 'text4519d948c0e6',
   'Change request': 'text6946efe81c08',

@@ -303,6 +303,39 @@ describe('FileViewer actions', () => {
   });
 });
 
+describe('FileViewer — Save as PDF (markdown only)', () => {
+  /** The rendered `<button …>` opening tag that carries `marker`. */
+  function buttonTag(html: string, marker: string): string {
+    const at = html.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    return html.slice(html.lastIndexOf('<button', at), html.indexOf('>', at) + 1);
+  }
+
+  test('a markdown file offers one Save as PDF button, and Download stays the raw file', () => {
+    for (const name of ['notes.md', 'guide.mdx']) {
+      const md = renderShareable(name, '# Title');
+      expect(count(md, 'data-save-as-pdf=""')).toBe(1);
+      expect(count(md, 'aria-label="Save as PDF"')).toBe(1);
+      expect(buttonTag(md, 'data-save-as-pdf=""')).not.toContain(' disabled=""');
+      // One click each: the PDF is not hidden behind Download, and Download is
+      // not replaced by a menu.
+      expect(count(md, 'data-viewer-download=""')).toBe(1);
+      expect(md.indexOf('data-save-as-pdf=""')).toBeLessThan(md.indexOf('data-viewer-download=""'));
+    }
+  });
+
+  test('no other text file gets it', () => {
+    for (const name of ['notes.txt', 'page.html', 'diagram.mmd', 'logo.svg', 'app.ts']) {
+      expect(renderShareable(name, 'x')).not.toContain('data-save-as-pdf');
+    }
+  });
+
+  test('an empty markdown file shows the button disabled — there is nothing to print', () => {
+    const md = renderShareable('empty.md', '  \n');
+    expect(buttonTag(md, 'data-save-as-pdf=""')).toContain(' disabled=""');
+  });
+});
+
 // ── The two toolbars are one toolbar ───────────────────────────────────────
 // `FileViewer` (text) and `PreviewShell` (everything else) are contractually
 // required to render the same controls. The regression that contract exists

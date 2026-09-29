@@ -111,7 +111,7 @@ export const LEGACY_OPENCODE_HOME = 'auto';
  * stopped looking.
  *
  * THE GROUND TRUTH, per the daemon's own contract
- * (`apps/kortix-sandbox-agent-server/src/runtime-assets.ts`,
+ * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts`,
  * `RuntimeConvergenceReport.running`): `build` and `components` describe a
  * PASS — an attempt — not what is running now; a daemon restart reports
  * `build: null` until its first pass completes, and `build` is written even
@@ -267,7 +267,11 @@ export function classifyDaemonHealth(
   const capabilities = Array.isArray(h.capabilities)
     ? h.capabilities.filter((c): c is string => typeof c === 'string')
     : [];
-  const missingCapabilities = REQUIRED_RUNTIME_CAPABILITIES.filter((cap) => !capabilities.includes(cap));
+  // Config releases are an OpenCode-runtime capability. pi has none yet
+  // (decoupling plan B6), and a pi box that answers is as current as its
+  // daemon build: requiring it relaunched every idle pi box on session open.
+  const required = h.harness === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
+  const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {
     staleReasons.push('missing_capability');
     detail.push(`missing required capabilit${missingCapabilities.length === 1 ? 'y' : 'ies'}: ${missingCapabilities.join(', ')}`);

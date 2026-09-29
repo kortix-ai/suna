@@ -20,6 +20,10 @@ export interface SSEStream {
   removeEventListener: (event: string, handler: (data: string) => void) => void;
 }
 
+/**
+ * @deprecated The API deleted `/tunnel/permission-requests/stream` with tunnel
+ * permission requests. Removed in the next major.
+ */
 export function buildTunnelEventStreamUrl(apiUrl: string): string {
   let trimmed = apiUrl;
   while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);

@@ -290,6 +290,17 @@ export function isTransientGitMirrorError(err: unknown): err is GitOperationErro
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
 }
 
+/** Grant-resolution wrappers retain the original git failure via Error.cause. */
+export function transientGitMirrorCause(err: unknown): GitOperationError | null {
+  const seen = new Set<unknown>();
+  while (err instanceof Error && !seen.has(err)) {
+    if (isTransientGitMirrorError(err)) return err;
+    seen.add(err);
+    err = err.cause;
+  }
+  return null;
+}
+
 /**
  * Stable error code the platform API returns (HTTP 503) when a project's git
  * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
@@ -752,7 +763,12 @@ async function lockedRefreshMirror(
   const current = refreshLocks.get(project.projectId);
   if (current) {
     if (!force || current.forced) return current.promise;
-    await current.promise;
+    // The in-flight refresh belongs to another caller, often with another
+    // credential: create-repo's template prebuild clones with the token it
+    // held. Its failure is not this caller's. Wait for it to settle, then run
+    // this caller's own forced refresh — rethrowing it failed the first
+    // session on a new project with 503 git_mirror_unavailable.
+    await current.promise.catch(() => {});
     return refreshMirror(project, true);
   }
   const next = doRefreshMirror(project, force, opts?.freshRef)

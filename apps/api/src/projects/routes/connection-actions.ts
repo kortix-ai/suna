@@ -12,14 +12,10 @@ import {
   upsertConnectionCredential,
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
-import { connectedAsOf, validateConnectionLabel } from '../../connectors/connection-identity';
+import { validateConnectionLabel } from '../../connectors/connection-identity';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
-import {
-  finalizePipedreamConnectionAuthorization,
-  pipedreamConfigured,
-  pipedreamConnectUrl,
-} from '../../connectors/pipedream';
+import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -30,6 +26,10 @@ import { readJsonObject } from '../../shared/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
 import { actorOf } from '../../iam/actor';
 import { assignRole } from '../../iam/assignments';
+import {
+  startComposioConnect, finalizeComposioConnect,
+  startPipedreamConnect, finalizePipedreamConnect,
+} from '../lib/connection-hosted-connect';
 
 const ShareConnectionInput = z
   .object({
@@ -90,6 +90,16 @@ projectsApp.openapi(
     }
     if (connection.ownerType !== 'member' || connection.ownerId !== loaded.userId) {
       return c.json({ error: 'Not found' }, 404);
+    }
+    // A computer account follows its owner into every project, including
+    // projects of other workspaces. Sharing one goes through the computers
+    // route, which checks the machine's workspace and refuses session and
+    // agent tokens; this generic route checks neither.
+    if (connection.providerType === 'computer') {
+      return c.json(
+        { error: "Share a computer with POST /projects/{projectId}/computers { tunnel_id, share: 'project' }" },
+        409,
+      );
     }
     if (!mutable.mayManageSystemConnections) {
       return c.json(
@@ -441,119 +451,10 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
       }
       if (connection.providerType === 'composio') {
         if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
-        const {
-          composioConnectUrl,
-          finalizeComposioConnection,
-          composioUserId,
-          probeComposioIdentity,
-        } = await import('../../connectors/composio');
-        const { relabelToIdentity, resolveConnectedAs } = await import(
-          '../../connectors/connection-identity'
-        );
-        const { composioConnectionMetadata } = await import('../../connectors/db-deps');
-        const stableUserId = composioUserId(connectionId);
-        const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
         if (operation === 'connect') {
-          const body = await readJsonObject(c);
-          const redirects =
-            body.success_redirect_uri || body.error_redirect_uri
-              ? {
-                  success:
-                    typeof body.success_redirect_uri === 'string'
-                      ? body.success_redirect_uri
-                      : undefined,
-                  error:
-                    typeof body.error_redirect_uri === 'string'
-                      ? body.error_redirect_uri
-                      : undefined,
-                }
-              : undefined;
-          const result = await composioConnectUrl({
-            projectId,
-            slug: connection.connectorAlias,
-            app,
-            connectionId,
-            stableUserId,
-            redirects,
-          });
-          await db
-            .update(connectorConnections)
-            .set({
-              status: 'active',
-              metadata: composioConnectionMetadata({
-                toolkit: app,
-                stableUserId,
-                sessionId: result.sessionId,
-                authRequestId: result.authRequestId,
-                connectedAccountId: result.connectedAccountId,
-                isNoAuth: result.isNoAuth,
-                previous: metadata,
-                connectedAs:
-                  result.connectedAccountId &&
-                  result.connectedAccountId === metadata.connected_account_id
-                    ? connectedAsOf(metadata)
-                    : null,
-              }),
-              updatedAt: sql`now()`,
-            })
-            .where(eq(connectorConnections.connectionId, connectionId));
-          return c.json({
-            app,
-            connectUrl: result.connectUrl,
-            connected: result.connected,
-            isNoAuth: result.isNoAuth,
-          });
+          return c.json(await startComposioConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
         }
-        const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
-        if (!sessionId) return c.json({ connected: false });
-        const result = await finalizeComposioConnection({
-          projectId,
-          slug: connection.connectorAlias,
-          app,
-          connectionId,
-          stableUserId,
-          sessionId,
-          ...(typeof metadata.auth_request_id === 'string'
-            ? { authRequestId: metadata.auth_request_id }
-            : {}),
-        });
-        const connectedAs = result.connected
-          ? await resolveConnectedAs({
-              previous: metadata,
-              connectedAccountId: result.connectedAccountId,
-              isNoAuth: result.isNoAuth,
-              probe: () =>
-                probeComposioIdentity({
-                  app,
-                  sessionId: result.sessionId,
-                  connectedAccountId: result.connectedAccountId!,
-                }),
-            })
-          : null;
-        await db
-          .update(connectorConnections)
-          .set({
-            status: 'active',
-            metadata: composioConnectionMetadata({
-              toolkit: app,
-              stableUserId,
-              sessionId: result.sessionId,
-              authRequestId: result.authRequestId,
-              connectedAccountId: result.connectedAccountId,
-              isNoAuth: result.isNoAuth,
-              previous: metadata,
-              connectedAs,
-            }),
-            updatedAt: sql`now()`,
-          })
-          .where(eq(connectorConnections.connectionId, connectionId));
-        const label = connectedAs ? await relabelToIdentity({ connectionId, identity: connectedAs }) : null;
-        return c.json({
-          connected: result.connected,
-          accountId: result.connectedAccountId,
-          connected_as: connectedAs,
-          ...(label ? { label } : {}),
-        });
+        return c.json(await finalizeComposioConnect(projectId, connectionId, connection, app));
       }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
@@ -562,41 +463,9 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
-        const body = await readJsonObject(c);
-        const redirects =
-          body.success_redirect_uri || body.error_redirect_uri
-            ? {
-                success:
-                  typeof body.success_redirect_uri === 'string'
-                    ? body.success_redirect_uri
-                    : undefined,
-                error:
-                  typeof body.error_redirect_uri === 'string' ? body.error_redirect_uri : undefined,
-              }
-            : undefined;
-        const result = await pipedreamConnectUrl(
-          projectId,
-          connection.connectorAlias,
-          app,
-          connectionId,
-          redirects,
-        );
-        return c.json({
-          token: result.token,
-          app,
-          connectUrl: result.connectUrl,
-          expiresAt: result.expiresAt,
-        });
+        return c.json(await startPipedreamConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
       }
-      const result = await finalizePipedreamConnectionAuthorization({
-        projectId,
-        slug: connection.connectorAlias,
-        app,
-        connectorId: connection.connectorId,
-        connectionId,
-        createdBy: loaded.userId,
-      });
-      return c.json(result);
+      return c.json(await finalizePipedreamConnect(projectId, connectionId, connection, app, loaded.userId));
     },
   );
 }

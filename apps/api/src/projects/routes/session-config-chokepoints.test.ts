@@ -38,6 +38,13 @@ describe('GET /config authorizes before it reads session state', () => {
     expect(CONFIG.indexOf('const releasesEnabled')).toBeLessThan(CONFIG.indexOf('resolveDesiredRelease('));
     expect(CONFIG).toContain('if (releasesEnabled && running.configReleases && running.release)');
   });
+
+  test('the release resolve never refreshes the mirror a second time (KRTX-629)', () => {
+    // The etag compile above it already invalidated + fetched the mirror in
+    // THIS request. `resolveDesiredRelease` must not drop the stamp again:
+    // that made every read of this polled route pay a second `git fetch`.
+    expect(CONFIG).toContain('refreshProjectMirror: false');
+  });
 });
 
 describe('every session is compared the same way', () => {

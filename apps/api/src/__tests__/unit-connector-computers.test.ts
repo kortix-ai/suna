@@ -1,16 +1,16 @@
 /**
- * Computer connectors (the Agent Computer Tunnel as a first-class Connector
- * connector).
- *   • catalog — the tunnel RPC method set normalizes to `tunnel` bindings. Each
- *     relayed action accepts a selector from the profile's machine allowlist.
- *   • parse   — `provider="computer"` cannot be declared in kortix.yaml (it is
- *     synth-only; connecting a machine materializes it).
- *   • gateway — a computer call routes through executeComputerCall (NOT an HTTP
- *     call); the connector's machine allowlist is used; a permission_required
- *     outcome becomes pending_approval; missing-machine / relay errors become errors.
+ * Computer connectors (the Agent Computer Tunnel as a first-class connector).
+ *   • catalog — the tunnel RPC method set normalizes to `tunnel` bindings. No
+ *     action takes a machine selector: the account IS the machine.
+ *   • parse   — `provider="computer"` cannot be declared in kortix.yaml.
+ *   • gateway — a computer call relays to the resolved account's machine
+ *     (`connectionTunnelId`) through executeComputerCall (NOT an HTTP call);
+ *     an unpaired account fails `computer_unpaired` without relaying; typed
+ *     machine failures surface their code.
+ *   • label   — duplicate machine names get a numbered label.
  */
 import { describe, expect, test } from 'bun:test';
-import { computerCatalog, computerLabel } from '../connectors/computers';
+import { computerCatalog, uniqueComputerLabel, withComputerCatalog } from '../connectors/computers';
 import { extractConnectors } from '../projects/connectors';
 import { parseManifestString, KNOWN_SCHEMA_VERSION } from '../projects/triggers';
 import {
@@ -36,19 +36,25 @@ describe('computerCatalog()', () => {
     }
   });
 
-  test('exposes profile-scoped machine discovery', () => {
-    const action = byPath.get('list_computers');
-    expect(action).toBeDefined();
+  test('status replaces list_computers and takes no input', () => {
+    expect(byPath.get('list_computers')).toBeUndefined();
+    const action = byPath.get('status');
+    expect(action?.binding).toEqual({ kind: 'tunnel', method: 'status' });
+    expect(action?.risk).toBe('read');
     expect(action?.inputSchema).toBeNull();
   });
 
-  test('fs.read → tunnel fs.read, read, path required, optional machine selector', () => {
+  test('no action accepts a machine selector', () => {
+    for (const a of actions) {
+      const props = Object.keys(((a.inputSchema as any)?.properties ?? {}) as object);
+      expect(props).not.toContain('computer');
+    }
+  });
+
+  test('fs.read → tunnel fs.read, read, path required', () => {
     const a = byPath.get('fs.read')!;
     expect(a.binding).toEqual({ kind: 'tunnel', method: 'fs.read' });
     expect(a.risk).toBe('read');
-    const props = Object.keys((a.inputSchema as any).properties);
-    expect(props).toContain('computer');
-    expect(props).toContain('path');
     expect((a.inputSchema as any).required).toEqual(['path']);
   });
 
@@ -60,13 +66,18 @@ describe('computerCatalog()', () => {
   test('desktop.cua.call is the generic passthrough (tool + args)', () => {
     const a = byPath.get('desktop.cua.call')!;
     expect(a.binding).toEqual({ kind: 'tunnel', method: 'desktop.cua.call' });
-    const props = Object.keys((a.inputSchema as any).properties);
-    expect(props).toContain('tool');
-    expect(props).toContain('computer');
+    expect(Object.keys((a.inputSchema as any).properties)).toEqual(['tool', 'args']);
   });
+});
 
-  test('label', () => {
-    expect(computerLabel()).toBe('Computer Tunnel');
+describe('uniqueComputerLabel()', () => {
+  test('keeps a free name, numbers a taken one case-insensitively', () => {
+    expect(uniqueComputerLabel('Studio Mac', new Set())).toBe('Studio Mac');
+    expect(uniqueComputerLabel('Studio Mac', new Set(['studio mac']))).toBe('Studio Mac (2)');
+    expect(uniqueComputerLabel('Studio Mac', new Set(['Studio Mac', 'Studio Mac (2)']))).toBe(
+      'Studio Mac (3)',
+    );
+    expect(uniqueComputerLabel('   ', new Set())).toBe('Computer');
   });
 });
 
@@ -78,25 +89,28 @@ function parse(body: string) {
 }
 
 describe('connectors: provider="computer"', () => {
-  test('cannot be declared in kortix.yaml because profiles are API-managed', () => {
+  test('cannot be declared in kortix.yaml because pairing creates it', () => {
     const { specs, errors } = parse(`
 connectors:
   - slug: computer
     provider: computer
 `);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/managed through the connector API|cannot be declared/);
+    expect(errors[0]!.error).toMatch(/cannot be declared/);
   });
 });
 
 /* ─── gateway execution ───────────────────────────────────────────────────── */
 
+const TUNNEL = '22222222-2222-4222-8222-222222222222';
 const COMPUTER: GatewayConnector = {
   connectorId: 'conn-computer',
-  slug: 'studio-computers',
+  connectionId: 'conn-account-1',
+  connectionLabel: 'Studio Mac',
+  connectionOwnerType: 'member',
+  connectionTunnelId: TUNNEL,
+  slug: 'computer',
   provider: 'computer',
-  tunnelIds: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
-  tunnelAccountIds: ['acct-1', 'personal-account-1'],
   baseUrl: null,
   auth: { type: 'none', in: 'header', name: null, prefix: null },
   hasAuth: false, // no credential — the relay is the credential
@@ -105,22 +119,18 @@ const COMPUTER: GatewayConnector = {
 };
 
 const FS_READ: GatewayAction = {
-  path: 'studio-computers.fs.read',
+  path: 'computer.fs.read',
   relPath: 'fs.read',
-  inputSchema: {
-    type: 'object',
-    properties: { computer: {}, path: {} },
-    required: ['path'],
-  },
+  inputSchema: { type: 'object', properties: { path: {} }, required: ['path'] },
   risk: 'read',
   binding: { kind: 'tunnel', method: 'fs.read' },
 };
 
-function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ) {
+function makeDeps(outcome: ComputerCallOutcome, connector: GatewayConnector = COMPUTER) {
   const calls: Array<Parameters<NonNullable<GatewayDeps['executeComputerCall']>>[0]> = [];
   const deps: GatewayDeps = {
-    loadConnectorBySlug: async () => COMPUTER,
-    loadAction: async () => action,
+    loadConnectorBySlug: async () => connector,
+    loadAction: async () => FS_READ,
     resolveCredential: async () => null, // never called — hasAuth is false
     loadPolicies: async () => [],
     loadProjectPolicies: async () => [],
@@ -137,92 +147,93 @@ function makeDeps(outcome: ComputerCallOutcome, action: GatewayAction = FS_READ)
   return { deps, calls };
 }
 
-function input(args: Record<string, unknown>, actionPath = 'fs.read'): CallInput {
+function input(args: Record<string, unknown>): CallInput {
   return {
     projectId: 'proj-1',
     accountId: 'acct-1',
     subject: { userId: 'u1', groupIds: [] },
     sessionId: 'sess-1',
     connectorSlug: COMPUTER.slug,
-    actionPath,
+    actionPath: 'fs.read',
     args,
   };
 }
 
 describe('handleCall — computer (tunnel)', () => {
-  test('passes the profile allowlist and strips the selector from relay arguments', async () => {
+  test("relays to the resolved account's machine and echoes the account", async () => {
     const { deps, calls } = makeDeps({ ok: true, data: { content: 'hello' } });
-    const res = await handleCall(
-      deps,
-      input({
-        computer: '22222222-2222-4222-8222-222222222222',
-        path: '/tmp/x',
-      }),
-    );
-    expect(res.status).toBe('ok');
-    if (res.status === 'ok') expect(res.data).toEqual({ content: 'hello' });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual({
-      accountId: 'acct-1',
-      actorUserId: 'u1',
-      projectId: 'proj-1',
-      sessionId: 'sess-1',
-      allowedTunnelIds: [
-        '11111111-1111-4111-8111-111111111111',
-        '22222222-2222-4222-8222-222222222222',
-      ],
-      allowedTunnelAccountIds: ['acct-1', 'personal-account-1'],
-      selector: '22222222-2222-4222-8222-222222222222',
-      method: 'fs.read',
-      args: { path: '/tmp/x' },
-    });
-  });
-
-  test('list_computers uses the same profile allowlist', async () => {
-    const action: GatewayAction = {
-      path: 'studio-computers.list_computers',
-      relPath: 'list_computers',
-      inputSchema: null,
-      risk: 'read',
-      binding: { kind: 'tunnel', method: 'list_computers' },
-    };
-    const { deps, calls } = makeDeps({ ok: true, data: { computers: [] } }, action);
-    const res = await handleCall(deps, input({}, 'list_computers'));
-    expect(res.status).toBe('ok');
-    expect(calls[0]?.allowedTunnelIds).toEqual(COMPUTER.tunnelIds!);
-    expect(calls[0]?.selector).toBeNull();
-  });
-
-  test('permission_required → pending_approval, requestId surfaced', async () => {
-    const { deps } = makeDeps({
-      ok: false,
-      kind: 'permission_required',
-      requestId: 'req-9',
-      message: 'no grant',
-    });
-    const res = await handleCall(deps, input({ path: '/etc/hosts' }));
-    expect(res.status).toBe('pending_approval');
-    if (res.status === 'pending_approval') expect(res.reason).toMatch(/req-9/);
-  });
-
-  test('no_machine → error', async () => {
-    const { deps } = makeDeps({
-      ok: false,
-      kind: 'no_machine',
-      message: 'No machine is online',
-    });
-    const res = await handleCall(deps, input({ path: '/x' }));
-    expect(res.status).toBe('error');
-    if (res.status === 'error') expect(res.reason).toMatch(/online/);
-  });
-
-  test('a connector without assigned machines fails closed', async () => {
-    const { deps } = makeDeps({ ok: true, data: {} });
-    deps.loadConnectorBySlug = async () => ({ ...COMPUTER, tunnelIds: [] });
     const res = await handleCall(deps, input({ path: '/tmp/x' }));
     expect(res).toEqual({
-      status: 'error',
-      reason: 'computer connector has no assigned machines',
+      status: 'ok',
+      data: { content: 'hello' },
+      risk: 'read',
+      account: { connection_id: 'conn-account-1', label: 'Studio Mac', owner_type: 'member' },
     });
+    expect(calls).toEqual([
+      {
+        tunnelId: TUNNEL,
+        accountId: 'acct-1',
+        actorUserId: 'u1',
+        projectId: 'proj-1',
+        sessionId: 'sess-1',
+        method: 'fs.read',
+        args: { path: '/tmp/x' },
+      },
+    ]);
+  });
+
+  test('an account whose machine was unpaired fails computer_unpaired without relaying', async () => {
+    const { deps, calls } = makeDeps({ ok: true, data: {} }, { ...COMPUTER, connectionTunnelId: null });
+    const res = await handleCall(deps, input({ path: '/tmp/x' }));
+    expect(res.status).toBe('error');
+    if (res.status === 'error') expect(res.reason).toMatch(/^computer_unpaired: /);
+    expect(calls).toHaveLength(0);
+  });
+
+  for (const kind of ['computer_offline', 'computer_capability_not_approved'] as const) {
+    test(`${kind} → error reason starts with the code`, async () => {
+      const { deps } = makeDeps({ ok: false, kind, message: 'detail' });
+      const res = await handleCall(deps, input({ path: '/x' }));
+      expect(res).toEqual({ status: 'error', reason: `${kind}: detail` });
+    });
+  }
+
+  test('a relay failure → error with the machine message', async () => {
+    const { deps } = makeDeps({ ok: false, kind: 'error', message: 'ENOENT' });
+    const res = await handleCall(deps, input({ path: '/x' }));
+    expect(res).toEqual({ status: 'error', reason: 'ENOENT' });
+  });
+});
+
+/* ─── stored catalog never wins ───────────────────────────────────────────── */
+
+describe('withComputerCatalog()', () => {
+  // An older API (mid-rollout replica, or an old stack on a shared database)
+  // writes its own catalog to connector_actions. Agents must still see this one.
+  const stale = [
+    {
+      actionId: '00000000-0000-4000-8000-000000000001',
+      connectorId: 'c1',
+      path: 'list_computers',
+      name: 'List computers',
+      description: null,
+      inputSchema: null,
+      outputSchema: null,
+      risk: 'read' as const,
+      binding: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ];
+
+  test('replaces a stale stored catalog for computer connectors', () => {
+    const paths = withComputerCatalog('c1', 'computer', stale).map((row) => row.path);
+    expect(paths).not.toContain('list_computers');
+    expect(paths).toContain('status');
+    expect(paths).toEqual(computerCatalog().map((action) => action.path));
+  });
+
+  test('leaves every other provider untouched', () => {
+    expect(withComputerCatalog('c1', 'composio', stale)).toBe(stale);
   });
 });

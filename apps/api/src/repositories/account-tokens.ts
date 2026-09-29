@@ -11,6 +11,7 @@ import {
 } from '../shared/crypto';
 import type { AgentGrant } from '@kortix/db';
 import { isUuid } from '../shared/validate';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,14 @@ export interface AccountTokenValidationResult {
    *  on every request (this query is not memoized). */
   onBehalfOfUserId?: string | null;
   error?: string;
+  /** True = the credential itself can never come back (missing, revoked,
+   *  expired, or its sandbox lease closed). The auth middleware turns this
+   *  into a typed 401 (`code:'session_token_revoked'`) so a retrying client
+   *  can stop: a revoked session credential that keeps retrying hammers the
+   *  gate forever (prod 2026-09-26/27: ~10k 401s/h across runtime-projection,
+   *  turn-stream and audit/events from boxes that outlived their token).
+   *  Absent on success and on 'Validation error' (a DB failure IS transient). */
+  credentialDead?: boolean;
 }
 
 export interface CreateAccountTokenParams {
@@ -85,8 +94,15 @@ export interface AccountTokenListEntry {
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((tokenId) =>
+  db.update(accountTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(and(
+      eq(accountTokens.tokenId, tokenId),
+      eq(accountTokens.status, 'active'),
+      isNull(accountTokens.revokedAt),
+    )),
+);
 
 // ─── CRUD Operations ─────────────────────────────────────────────────────────
 
@@ -486,11 +502,11 @@ async function validateAccountTokenMatching(
       .limit(1);
 
     if (!row) {
-      return { isValid: false, error: 'PAT not found or revoked' };
+      return { isValid: false, error: 'PAT not found or revoked', credentialDead: true };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {
-      return { isValid: false, error: 'PAT expired' };
+      return { isValid: false, error: 'PAT expired', credentialDead: true };
     }
 
     // A session credential is authority for one live sandbox, not a durable
@@ -510,7 +526,8 @@ async function validateAccountTokenMatching(
           ),
         )
         .limit(1);
-      if (!lease) return { isValid: false, error: SESSION_LEASE_REFUSAL };
+      if (!lease)
+        return { isValid: false, error: SESSION_LEASE_REFUSAL, credentialDead: true };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
@@ -529,7 +546,11 @@ async function validateAccountTokenMatching(
           .catch((err) => {
             console.warn('PAT idle auto-revoke failed:', err);
           });
-        return { isValid: false, error: 'PAT auto-revoked due to inactivity' };
+        return {
+          isValid: false,
+          error: 'PAT auto-revoked due to inactivity',
+          credentialDead: true,
+        };
       }
     }
 
@@ -548,40 +569,5 @@ async function validateAccountTokenMatching(
   } catch (err) {
     console.error('Account token validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-// ─── Internal ────────────────────────────────────────────────────────────────
-
-async function updateLastUsedThrottled(tokenId: string): Promise<void> {
-  const now = Date.now();
-  const lastUpdate = lastUsedCache.get(tokenId) || 0;
-  if (now - lastUpdate < THROTTLE_MS) return;
-
-  lastUsedCache.set(tokenId, now);
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) lastUsedCache.delete(k);
-    }
-  }
-
-  try {
-    await db
-      .update(accountTokens)
-      .set({ lastUsedAt: new Date() })
-      // Same liveness predicate as the validation query. A revoked token must
-      // not keep refreshing its own idle clock: without this, a token revoked
-      // between the read and this write looks freshly used, which defeats the
-      // idle-revoke sweep above and makes the token appear live in the UI.
-      .where(
-        and(
-          eq(accountTokens.tokenId, tokenId),
-          eq(accountTokens.status, 'active'),
-          isNull(accountTokens.revokedAt),
-        ),
-      );
-  } catch (err) {
-    console.warn('Failed to update account_tokens.last_used_at:', err);
   }
 }

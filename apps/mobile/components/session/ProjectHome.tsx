@@ -11,10 +11,11 @@
  * The chip names the agent (KRTX-247) and opens the agent and model sheet.
  * Each file uploads when it is picked (`useComposerAttachments`, COR-185), so
  * the send waits for the uploads and hands their parts to ProjectScreen,
- * which creates the session with them. The model comes from the project
- * catalog and is sent as `opencode_model`. A project whose catalog offers no
- * model never starts a session: Send opens the connect-provider sheet and
- * keeps the draft (KRTX-251, `planComposerSend`).
+ * which creates the session with them. The agents and models are web's,
+ * built by `@kortix/sdk` (`useComposerModels`); a model pick is sent as
+ * `opencode_model`. A gateway project that offers no model never starts a
+ * session: Send opens the connect-provider sheet and keeps the draft
+ * (KRTX-251, `planComposerSend`).
  *
  * Layout:
  * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
@@ -27,7 +28,12 @@
  */
 
 import * as React from 'react';
-import type { SessionPromptPart } from '@kortix/sdk';
+import {
+  resolveComposerAgent,
+  resolveComposerModel,
+  resolveModelDefault,
+  type SessionPromptPart,
+} from '@kortix/sdk';
 import { newConfigPrompt } from '@kortix/shared';
 import { Keyboard, Pressable, View } from 'react-native';
 import {
@@ -47,30 +53,27 @@ import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useComposerAttachments } from '@/components/session/useComposerAttachments';
 import { useRecoverPendingPick } from '@/components/session/useRecoverPendingPick';
-import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
+import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { uploadErrorMessage } from '@/lib/session/composer-uploads';
 import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
-import {
-  composerModelLabel,
-  effectiveComposerModel,
-  isModelUnavailable,
-  selectComposerModel,
-} from '@/lib/session/composer-model';
+import { isModelUnavailable, opencodeModelRef, selectComposerModel } from '@/lib/session/composer-model';
 import { planComposerSend } from '@/lib/session/send-plan';
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import { composerChip, homeAgentPick, threadAgents, type PickerOption } from '@/lib/session/composer-config';
 import {
-  composerChip,
-  homeAgentName,
-  pickableAgents,
-  type PickerOption,
-} from '@/lib/session/composer-config';
-import { catalogPickerModels, firstPromptPicks, modelPickerOptions } from '@/lib/session/model-picker';
+  firstPromptPicks,
+  modelOptionKey,
+  modelPickerOptions,
+  offeredModelCount,
+  pickerModelName,
+} from '@/lib/session/model-picker';
+import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 
-/** One identity while the project detail loads, so the agent memo does not churn. */
-const EMPTY_AGENTS: NonNullable<ReturnType<typeof useProjectDetail>['data']>['config']['agents'] = [];
+/** One identity while the project detail loads, so the sheet's agent memo does not churn. */
+const EMPTY_AGENTS: Agent[] = [];
 
 /** The thread composer's own bottom padding (SessionChatInput's `pb-3`), so
  *  this composer rests at the same distance from the safe-area bottom. `pb-3`
@@ -84,7 +87,7 @@ export interface ProjectHomeSubmit {
   files: AttachedFile[];
   /** The uploaded files' prompt parts, in `files` order (`takeForSend`). */
   fileParts: SessionPromptPart[];
-  /** Gateway wire id, or null to use the project default. */
+  /** The `opencode_model` of a pick (`opencodeModelRef`), or null to use the project default. */
   model: string | null;
   /**
    * The thinking level to run the first message on, with the model it belongs
@@ -140,77 +143,32 @@ export function ProjectHome({
   const files = attachments.files;
   // Waiting for the uploads before the create: the send slot shows the loader.
   const [preparing, setPreparing] = React.useState(false);
+  /** The picked row (`modelOptionKey`), or null to follow the default. */
   const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
   const connectSheetRef = React.useRef<SheetRef>(null);
   const attachSheetRef = React.useRef<AttachSheetRef>(null);
 
-  // The same catalog, groups, and order as web and the thread
-  // (`lib/session/model-picker.ts`).
-  const { catalog, defaultModel, isLoading: catalogLoading, refetch: refetchCatalog } =
-    useProjectModelCatalog(projectId);
-  const catalogModels = React.useMemo(() => catalogPickerModels(catalog), [catalog]);
-  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
-  // "Provider connected" only once the catalog actually turns up a model.
-  const refetchModelCount = React.useCallback(async () => {
-    const result = await refetchCatalog();
-    return catalogPickerModels(result.data?.models).length;
-  }, [refetchCatalog]);
-  const modelOptions = React.useMemo<PickerOption[]>(
-    () => modelPickerOptions(catalogModels, (m) => m.modelID),
-    [catalogModels],
-  );
-  // Thinking: the active model's levels, from the catalog. The level lives in
-  // the store the thread reads (`modelVariants["kortix/<modelID>"]`), so a
-  // level set here is the thread's level, and the other way round.
-  const activeModel = effectiveComposerModel(model, defaultModel);
-  const levels = React.useMemo(
-    () => Object.keys(catalogModels.find((m) => m.modelID === activeModel)?.variants ?? {}),
-    [catalogModels, activeModel],
-  );
-  const variantKey = activeModel ? `kortix/${activeModel}` : '';
-  const storedVariant = useLocalConfigStore((s) => (variantKey ? (s.modelVariants[variantKey] ?? null) : null));
-  const setStoredVariant = useLocalConfigStore((s) => s.setVariant);
-  const variant = storedVariant && levels.includes(storedVariant) ? storedVariant : null;
-  const thinking = React.useMemo(
-    () => ({
-      levels,
-      selected: variant,
-      onSelect: (level: string | null) => {
-        if (variantKey) setStoredVariant(variantKey, level);
-      },
-    }),
-    [levels, variant, variantKey, setStoredVariant],
-  );
-  // A gateway project that offers no model: the chip asks to connect one, and
-  // Send opens the connect sheet instead of starting a session (KRTX-251).
-  const modelUnavailable = isModelUnavailable({
-    hasCatalog: catalog !== undefined,
-    loading: catalogLoading,
-    modelCount: modelOptions.length,
-  });
-
-  // Agent: home has no sandbox, so the choices are the project config's agents
-  // (`/detail`). Web's order: the pick made here, else the project default,
-  // else the last agent picked anywhere (`homeAgentName`). A pick also becomes
-  // the store's last-used agent, which the thread's header reads.
+  // Agent: web's order (`resolveComposerAgent`): the pick made here, else the
+  // project default, else — only when the project declares none — the last
+  // agent picked anywhere, else the first. Home has no sandbox: the roster is
+  // the project config's (`/detail`). A pick also becomes the store's
+  // last-used agent, which the thread's chip reads while its roster loads.
   const { data: projectDetail } = useProjectDetail(projectId);
-  const projectAgents = projectDetail?.config?.agents ?? EMPTY_AGENTS;
+  const projectConfig = projectDetail?.config;
+  const projectAgents = React.useMemo(
+    () => (projectConfig ? threadAgents(projectConfig) : undefined),
+    [projectConfig],
+  );
+  const defaultAgent = projectConfig?.open_code_default_agent ?? null;
   const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
   const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
   const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
-  const agentName = React.useMemo(
-    () =>
-      homeAgentName(
-        pickableAgents(projectAgents).map((a) => a.name),
-        {
-          picked: pickedAgent,
-          projectDefault: projectDetail?.config?.default_agent ?? projectDetail?.config?.open_code_default_agent,
-          lastUsed: lastUsedAgent,
-        },
-      ),
-    [projectAgents, pickedAgent, projectDetail, lastUsedAgent],
-  );
+  const agentName = resolveComposerAgent({
+    agents: projectAgents,
+    defaultAgent,
+    selectedAgent: homeAgentPick({ picked: pickedAgent, defaultAgent, lastUsed: lastUsedAgent }),
+  }).selected;
   const handleAgentChange = React.useCallback(
     (name: string) => {
       setPickedAgent(name);
@@ -232,24 +190,68 @@ export function ProjectHome({
     });
   }, [onSubmitNewSession]);
   const agentChoice = React.useMemo(
-    () => ({ agents: projectAgents, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
+    () => ({ agents: projectAgents ?? EMPTY_AGENTS, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
     [projectAgents, agentName, handleAgentChange, handleCreateAgent],
   );
+
+  // Models: the list web and the thread show (`useComposerModels`). The
+  // default is `@kortix/sdk`'s: `/model-defaults` for this agent, then the
+  // provider defaults. A pick equal to the default is no pick
+  // (`selectComposerModel`): the session keeps following the default.
+  const { gatewayEnabled, providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
+    useComposerModels(projectId);
+  const globalDefault = useLocalConfigStore((s) => s.globalDefault) ?? undefined;
+  const modelInput = {
+    models,
+    serverDefault: resolveModelDefault(modelDefaults, agentName ?? undefined),
+    globalDefault,
+    providers,
+  };
+  const defaultModel = resolveComposerModel(modelInput).model;
+  const pickedModel = model ? models.find((m) => modelOptionKey(m) === model) : undefined;
+  const { model: activeKey, explicit } = resolveComposerModel({ ...modelInput, picks: [pickedModel] });
+  const activeModel = activeKey
+    ? models.find((m) => m.providerID === activeKey.providerID && m.modelID === activeKey.modelID)
+    : undefined;
+  const modelOptions = React.useMemo<PickerOption[]>(
+    () => modelPickerOptions(models, activeModel ?? null),
+    [models, activeModel],
+  );
+  // Thinking: the active model's levels. The level lives in the store the
+  // thread reads (`modelVariants["<providerID>/<modelID>"]`), so a level set
+  // here is the thread's level, and the other way round.
+  const levels = React.useMemo(() => Object.keys(activeModel?.variants ?? {}), [activeModel]);
+  const variantKey = activeModel ? modelOptionKey(activeModel) : '';
+  const storedVariant = useLocalConfigStore((s) => (variantKey ? (s.modelVariants[variantKey] ?? null) : null));
+  const setStoredVariant = useLocalConfigStore((s) => s.setVariant);
+  const variant = storedVariant && levels.includes(storedVariant) ? storedVariant : null;
+  const thinking = React.useMemo(
+    () => ({
+      levels,
+      selected: variant,
+      onSelect: (level: string | null) => {
+        if (variantKey) setStoredVariant(variantKey, level);
+      },
+    }),
+    [levels, variant, variantKey, setStoredVariant],
+  );
+  // A gateway project that offers no model: the chip asks to connect one, and
+  // Send opens the connect sheet instead of starting a session (KRTX-251).
+  const modelUnavailable = isModelUnavailable({
+    hasCatalog: gatewayEnabled,
+    loading: modelsLoading,
+    modelCount: offeredModelCount(models),
+  });
   // The chip names the agent; the model name stands in when no agent
-  // resolves. While the catalog loads, and for a project without the gateway
-  // (no catalog), the chip stays hidden.
-  const chip =
-    catalogLoading || catalog === undefined
-      ? null
-      : composerChip({
-          connectModel: modelUnavailable,
-          agentName,
-          modelName: composerModelLabel(
-            modelOptions.map((o) => ({ modelID: o.key, modelName: o.label })),
-            model,
-            defaultModel,
-          ),
-        });
+  // resolves. While the agents or the models load, the chip stays hidden.
+  const chip = modelsLoading
+    ? null
+    : composerChip({
+        connectModel: modelUnavailable,
+        agentName,
+        agentsLoading: !projectAgents,
+        modelName: activeModel ? pickerModelName(activeModel) : null,
+      });
   const openConnectSheet = React.useCallback(() => {
     Keyboard.dismiss();
     connectSheetRef.current?.open();
@@ -304,8 +306,8 @@ export function ProjectHome({
       text,
       files: sent.files,
       fileParts: sent.fileParts,
-      model,
-      picks: firstPromptPicks(activeModel, variant, levels),
+      model: explicit ? opencodeModelRef(explicit) : null,
+      picks: firstPromptPicks(activeKey ?? null, variant, levels),
       agent: agentName,
     });
     if (!ok) {
@@ -321,8 +323,8 @@ export function ProjectHome({
     openConnectSheet,
     attachments,
     toast,
-    model,
-    activeModel,
+    explicit,
+    activeKey,
     variant,
     levels,
     agentName,
@@ -397,9 +399,9 @@ export function ProjectHome({
       <ModelPickerSheet
         ref={modelSheetRef}
         options={modelOptions}
-        activeKey={activeModel}
+        activeKey={activeKey ? modelOptionKey(activeKey) : null}
         thinking={thinking}
-        onSelect={(modelID) => setModel(selectComposerModel(modelID, defaultModel))}
+        onSelect={(key) => setModel(selectComposerModel(key, defaultModel ? modelOptionKey(defaultModel) : null))}
         onConnect={openConnectSheet}
         agent={agentChoice}
       />

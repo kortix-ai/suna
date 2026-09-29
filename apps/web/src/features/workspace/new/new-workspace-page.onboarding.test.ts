@@ -53,9 +53,7 @@ describe('/new hosts the onboarding wizard', () => {
     expect(code).toContain('<ProjectOnboardingWizard');
     const wizardBlock = code.slice(code.indexOf('<ProjectOnboardingWizard'));
     expect(wizardBlock.length).toBeGreaterThan(0);
-    expect(wizardBlock).toContain(
-      'router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)',
-    );
+    expect(wizardBlock).toContain('router.replace(firstChatHref(onboardingProjectId))');
     expect(wizardBlock).not.toContain('router.push(');
   });
 
@@ -64,13 +62,11 @@ describe('/new hosts the onboarding wizard', () => {
    * too. Asymmetric encoding would build a broken URL for any id carrying a
    * character that is not URL-safe.
    */
-  test('every trip into the workspace percent-encodes the id, matching onboardingPath', () => {
+  // Both exits land on the first chat through `firstChatHref`, which encodes
+  // the id (`first-chat-store.test.ts`). A hand-built path would skip both.
+  test('every trip into the workspace goes through firstChatHref', () => {
     expect(code).not.toContain('`/projects/${onboardingProjectId}`');
-    // Two here — the wizard's `onCompleted` and `onSkip`. The third exit, the
-    // escape link, moved into `workspace-handoff.tsx` and encodes there.
-    expect(code.match(/\/projects\/\$\{encodeURIComponent\(onboardingProjectId\)\}/g)?.length).toBe(
-      2,
-    );
+    expect(code.match(/router\.replace\(firstChatHref\(onboardingProjectId\)\)/g)?.length).toBe(2);
   });
 
   /**

@@ -150,6 +150,15 @@ const envSchema = z.object({
     .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+  // The Supabase anon key. PUBLIC by design (every browser gets it from the
+  // web runtime config); the API only hands it to clients through
+  // GET /v1/auth/client-config so a native app can sign in from the API URL.
+  SUPABASE_ANON_KEY: optStr,
+  // Sign-in options the web auth page renders (apps/web/src/lib/env-config.ts
+  // reads the same names). Unset = not reported (client-config returns null);
+  // set to '' = none.
+  KORTIX_PUBLIC_AUTH_METHODS: z.string().optional(),
+  KORTIX_PUBLIC_AUTH_PROVIDERS: z.string().optional(),
   // Legacy symmetric (HS256) JWT secret of the Supabase project. When set, the
   // API checks an HS256 access token's signature and expiry locally instead of
   // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
@@ -761,6 +770,10 @@ const envSchema = z.object({
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: optInt(120),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
+  // Per-credential bound on the LLM gateway mount (/v1/llm and its
+  // /v1/llm-gateway alias). Defence-in-depth at the boundary, not a quota:
+  // 600/min is ~10/s per credential, far above any real inference pattern.
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
   // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
   // the entry this many places from the right; everything to its left was
@@ -1222,6 +1235,9 @@ export const config = {
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_ANON_KEY: env.SUPABASE_ANON_KEY,
+  KORTIX_PUBLIC_AUTH_METHODS: env.KORTIX_PUBLIC_AUTH_METHODS,
+  KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
   SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
   SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
@@ -1459,6 +1475,7 @@ export const config = {
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: env.KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: env.KORTIX_LLM_GATEWAY_REQS_PER_MIN,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
   KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
   KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,

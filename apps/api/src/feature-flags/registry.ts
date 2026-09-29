@@ -115,13 +115,8 @@ export interface FeatureFlagDef {
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: paired machines are selectable accounts inside a
- * regular `computer` connector profile. A profile can contain one or more
- * machines and uses the normal connector grant, policy, call, and audit paths.
- * Pairing does not auto-create project access. This flag gates the dedicated
- * fleet surface (Customize → Computers, device auth, and tunnel permissions).
- * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration.
+ * Computers need no flag: a paired machine is an account on the project's
+ * `computer` connector. The platform-wide `TUNNEL_ENABLED` env is the only gate.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
@@ -146,22 +141,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // On by default for every project — no longer gated behind an opt-in toggle.
     platformDefault: () => true,
     enforcement: 'routes',
-  },
-  {
-    key: 'agent_tunnel',
-    name: 'Agent Computer Tunnel',
-    description:
-      'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
-    stability: 'experimental',
-    // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
-    // Explicit opt-in: off by default even where the service is available.
-    platformDefault: () => false,
-    enforcement: 'ui-only',
-    enforcementNote:
-      'Tunnel state is account-scoped (device auth, machines) and the computer ' +
-      'connector deliberately materializes independent of this flag — see the ' +
-      'registry header. The platform-wide TUNNEL_ENABLED env is the hard gate.',
   },
   {
     key: 'connectors_api_discover',
@@ -263,6 +242,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Explicit opt-in: off by default even where Platinum is available.
     platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
   },
   {
@@ -397,22 +389,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
       'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
       'the change-request merge governance guard.',
-  },
-  {
-    key: 'mcp',
-    name: 'MCP server',
-    description:
-      'Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls the Kortix API with your permissions. Settings shows the URL under Connect MCP in the workspace menu.',
-    stability: 'experimental',
-    available: () => true,
-    // OFF until the hosted MCP is proven with real clients (Marko, 2026-09-28:
-    // "the entire thing should be a feature flag because this ain't ready yet").
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'POST /projects/:id/mcp answers 403 `feature_disabled` when off (mcp/index.ts). ' +
-      'The OAuth client registration and discovery documents are user-scoped and stay ' +
-      'reachable; a token they produce opens no MCP endpoint on a project with the flag off.',
   },
 ];
 

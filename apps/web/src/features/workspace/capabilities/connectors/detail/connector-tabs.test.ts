@@ -59,8 +59,10 @@ describe('connectorTabs', () => {
     expect(tabs).not.toContain('settings');
   });
 
-  test('a computer profile keeps regular profile settings', () => {
-    expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: true })).toContain('settings');
+  test('the built-in computer connector has no settings: nothing to configure or remove', () => {
+    expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: true })).not.toContain(
+      'settings',
+    );
   });
 
   test('channel connectors keep settings for their channel connection form', () => {
@@ -71,11 +73,10 @@ describe('connectorTabs', () => {
     expect(connectorTabs(conn({ provider: 'mcp' }), { canWrite: true })).toContain('accounts');
   });
 
-  test('a writer on a computer connector gets all regular connector tabs', () => {
+  test('a writer on the computer connector gets accounts and tools (its approval policies)', () => {
     expect(connectorTabs(conn({ provider: 'computer' }), { canWrite: true })).toEqual([
       'accounts',
       'tools',
-      'settings',
     ]);
   });
 

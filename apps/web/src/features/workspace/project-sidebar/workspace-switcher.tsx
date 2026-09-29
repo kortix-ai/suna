@@ -53,16 +53,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   SidebarContext,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
+import {
+  ComputerStateDot,
+  useDesktopComputer,
+  useThisComputerState,
+} from '@/features/tunnel/computer-connect';
+import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
@@ -75,13 +81,14 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   DownloadSimple,
   SignOutIcon as LogOut,
+  MonitorIcon,
   PlugsConnectedIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
@@ -115,8 +122,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const accountsQueryKey = useAccountsQueryKey();
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
-  // Experimental: the row and the hosted MCP endpoint both follow the project's `mcp` flag.
-  const mcpEnabled = useFeatureFlag(projectId, 'mcp').enabled;
+  const [localComputerOpen, setLocalComputerOpen] = useState(false);
+  // Non-null only inside a desktop app that bundles the computer agent.
+  const desktopComputer = useDesktopComputer();
   const { data: adminRole } = useAdminRole();
   // Self-host hides the row for non-admins when account creation is restricted
   // — admins are exempt (see `isAccountCreationRestricted()` /
@@ -307,15 +315,19 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </Link>
               </DropdownMenuItem>
 
-              {mcpEnabled && (
-                <DropdownMenuItem
-                  onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
-                  size="sm"
-                >
-                  <PlugsConnectedIcon />
-                  {t('workspace.connectMcp')}
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
+                size="sm"
+              >
+                <PlugsConnectedIcon />
+                {t('workspace.connectMcp')}
+              </DropdownMenuItem>
+
+              {desktopComputer.data ? (
+                <YourComputerMenuItem
+                  onSelect={() => deferAfterClose(() => setLocalComputerOpen(true))}
+                />
+              ) : null}
 
               <ThemeSubmenu />
 
@@ -338,7 +350,12 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
 
-      <ConnectMcpModal projectId={projectId} open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
+      <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
+      <LocalComputerModal
+        projectId={projectId}
+        open={localComputerOpen}
+        onOpenChange={setLocalComputerOpen}
+      />
 
       <CreateAccountModal
         open={createAccountOpen}
@@ -371,5 +388,22 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
         }}
       />
     </>
+  );
+}
+
+/**
+ * Desktop app only: mounted only there, so a browser never polls machine
+ * status. Hidden on a deployment with computers disabled, like the promo.
+ */
+function YourComputerMenuItem({ onSelect }: { onSelect: () => void }) {
+  const t = useI18nTranslations('sidebar');
+  const { state, computersEnabled } = useThisComputerState();
+  if (!computersEnabled) return null;
+  return (
+    <DropdownMenuItem onSelect={onSelect} size="sm">
+      <MonitorIcon />
+      {t('workspace.localComputer')}
+      {state ? <ComputerStateDot state={state} className="ml-auto" /> : null}
+    </DropdownMenuItem>
   );
 }

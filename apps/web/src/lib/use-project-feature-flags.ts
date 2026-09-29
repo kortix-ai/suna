@@ -27,7 +27,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   flags: Partial<Record<FeatureFlagKey, boolean>>;
   isLoading: boolean;
 } {
-  const agentTunnel = useFeatureFlag(projectId, 'agent_tunnel');
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
@@ -36,6 +35,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
+  const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const piWorker = useFeatureFlag(projectId, 'pi_worker');
@@ -44,11 +44,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const configReleases = useFeatureFlag(projectId, 'config_releases');
   const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
-  const mcp = useFeatureFlag(projectId, 'mcp');
 
   return {
     flags: {
-      agent_tunnel: agentTunnel.enabled,
       marketplace: marketplace.enabled,
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
@@ -57,6 +55,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
       monitors: monitors.enabled,
+      reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pi_worker: piWorker.enabled,
@@ -65,9 +64,8 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pi_harness: piHarness.enabled,
       config_releases: configReleases.enabled,
       agent_principal: agentPrincipal.enabled,
-      mcp: mcp.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: mcp.isLoading,
+    isLoading: agentPrincipal.isLoading,
   };
 }

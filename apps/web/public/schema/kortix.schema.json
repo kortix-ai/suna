@@ -141,6 +141,9 @@
                     "disk": {
                       "type": "integer",
                       "minimum": 1
+                    },
+                    "container_runtime": {
+                      "type": "boolean"
                     }
                   },
                   "oneOf": [
@@ -1656,6 +1659,9 @@
                     "disk": {
                       "type": "integer",
                       "minimum": 1
+                    },
+                    "container_runtime": {
+                      "type": "boolean"
                     }
                   },
                   "oneOf": [

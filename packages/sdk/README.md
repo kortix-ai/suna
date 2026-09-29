@@ -649,6 +649,30 @@ for a no-React plain-text version of the same classification see
 `openEventStream` down to the curated `KortixChatEvent` union (~14 members) a
 chat UI actually dispatches on.
 
+## Composer agent and model lists (no React)
+
+The session composer's pickers are built from pure functions on the root
+entry, so every host — the web app through its hooks, React Native through
+the root import — offers the same agents and models and sends the same pick.
+`@kortix/sdk/react`'s `useRuntimeAgents`, `useRuntimeProviders`,
+`useRuntimeLocal`, and `useModelStore` call these.
+
+| Function | Input → output |
+|---|---|
+| `projectConfigAgentsToOpenCodeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
+| `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
+| `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
+| `flattenModels(providers, { providerMode })` | provider list → `FlatModel[]` |
+| `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
+| `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
+| `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
+| `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
+
+The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
+never includes the ~7.6 MB models.dev snapshot, so a bundler that does not
+tree-shake (Metro) stays small.
+
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the

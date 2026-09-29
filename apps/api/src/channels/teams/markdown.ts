@@ -135,6 +135,100 @@ function table(lines: string[]): CardElement {
   };
 }
 
+// ── Call-to-action links → buttons ──────────────────────────────────────────
+// "[Connect Gmail](…) using the existing connector" reached a Teams card as a
+// small underlined word in a sentence (dev, 2026-09-28). A link the user is
+// meant to click gets an `Action.OpenUrl` button instead: a line that is only
+// a link, or a Kortix connect link anywhere in prose. Everything else stays an
+// inline link, which Teams renders natively.
+
+/** Buttons one paragraph may carry. More links than this are a reference list, not a call to action. */
+const MAX_PARAGRAPH_BUTTONS = 3;
+/** A longer label is a sentence, not a button title. */
+const MAX_BUTTON_TITLE = 40;
+/** A Kortix connector connect link (`kortix connectors connect`) is always a call to action. */
+const CONNECT_URL = /^https:\/\/[^/\s]+\/connect\/ksl_/;
+
+type Link = { start: number; end: number; label: string; url: string };
+
+/**
+ * Every `[label](https://…)` in one line. A hand-written scan, not a regex: an
+ * unanchored `\[[^\]]+\]` retries from every `[` and goes quadratic on a long
+ * run of them (the message-tag ReDoS, 2026-09). Each character is visited a
+ * bounded number of times.
+ */
+function findLinks(line: string): Link[] {
+  const links: Link[] = [];
+  let i = line.indexOf('[');
+  while (i !== -1) {
+    let j = i + 1;
+    while (j < line.length && line[j] !== '[' && line[j] !== ']') j++;
+    if (line[j] === ']' && line[j + 1] === '(' && j > i + 1) {
+      let k = j + 2;
+      while (k < line.length && !/[\s()[\]]/.test(line[k])) k++;
+      const url = line.slice(j + 2, k);
+      if (line[k] === ')' && url.startsWith('https://')) {
+        links.push({ start: i, end: k + 1, label: line.slice(i + 1, j), url });
+        i = line.indexOf('[', k + 1);
+        continue;
+      }
+    }
+    // Nothing between `i` and `j` is a `[`, so no link starts there either.
+    i = line[j] === '[' ? j : line.indexOf('[', j + 1);
+  }
+  return links;
+}
+
+/** The label as a button title: emphasis markers dropped, since a title renders no markdown. */
+function buttonTitle(label: string): string {
+  return label.replace(/\\([*_[\]`\\])/g, '$1').replace(/[*_`]/g, '').trim();
+}
+
+function openUrl(link: Link): CardElement {
+  return { type: 'Action.OpenUrl', title: buttonTitle(link.label), url: link.url };
+}
+
+function buttonable(link: Link): boolean {
+  const title = buttonTitle(link.label);
+  return title.length > 0 && title.length <= MAX_BUTTON_TITLE;
+}
+
+/**
+ * The paragraph's lines with its call-to-action links taken out, and the
+ * buttons they became. `null` when there is nothing to convert, or more than
+ * a button row's worth of links.
+ */
+function extractButtons(lines: string[]): { lines: string[]; actions: CardElement[] } | null {
+  const actions: CardElement[] = [];
+  const kept: string[] = [];
+  for (const line of lines) {
+    const links = findLinks(line);
+    let rest = '';
+    let text = '';
+    let at = 0;
+    for (const l of links) {
+      rest += line.slice(at, l.start);
+      text += line.slice(at, l.start);
+      // The connect link's label stays in the sentence; its button follows the paragraph.
+      text += CONNECT_URL.test(l.url) ? `**${buttonTitle(l.label) || 'Connect account'}**` : line.slice(l.start, l.end);
+      at = l.end;
+    }
+    rest += line.slice(at);
+    text += line.slice(at);
+    // A line of nothing but links, give or take bullets, emphasis, arrows and emoji.
+    if (links.length > 0 && !/[\p{L}\p{N}]/u.test(rest.replace(LIST_ITEM, '')) && links.every(buttonable)) {
+      actions.push(...links.map(openUrl));
+      continue;
+    }
+    for (const l of links) {
+      if (CONNECT_URL.test(l.url)) actions.push(buttonable(l) ? openUrl(l) : { ...openUrl(l), title: 'Connect account' });
+    }
+    kept.push(text);
+  }
+  if (actions.length === 0 || actions.length > MAX_PARAGRAPH_BUTTONS) return null;
+  return { lines: kept, actions };
+}
+
 /** One paragraph of ordinary markdown, or a quote, or a heading. */
 function paragraph(lines: string[], separator: boolean): CardElement[] {
   const raw = lines.join('\n').trim();
@@ -152,7 +246,11 @@ function paragraph(lines: string[], separator: boolean): CardElement[] {
     return [{ ...table(lines), ...extra }];
   }
 
-  return lineBlocks(lines, extra);
+  const cta = extractButtons(lines);
+  if (!cta) return lineBlocks(lines, extra);
+  const blocks = lineBlocks(cta.lines, extra);
+  const row: CardElement = { type: 'ActionSet', actions: cta.actions };
+  return [...blocks, blocks.length === 0 ? { ...row, ...extra } : row];
 }
 
 const ENTITIES: Record<string, string> = {

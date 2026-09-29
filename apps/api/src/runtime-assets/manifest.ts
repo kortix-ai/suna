@@ -183,7 +183,7 @@ export interface RuntimeComponents {
    *
    * OUT-OF-BAND REPAIR ONLY — stated here because it was advertised and
    * unconsumed, which reads as a fifth convergeable component and is not one.
-   * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+   * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
    * apps/kortix-sandbox-agent-server/src/harness` returns doc comments and
    * nothing else: `reconcileRuntimeAssets` handles cli, skills, agent and the
    * harness `opencode` component, and no box has ever fetched this.
@@ -230,7 +230,7 @@ export interface RuntimeAssetsPolicy {
  * V1 KEYS ARE PERMANENT. Daemons already running in the field read
  * `cli_version` / `cli_sha256` / `cli_size` / `managed_skills_hash` /
  * `managed_skills_count` off this document (see
- * apps/kortix-sandbox-agent-server/src/runtime-assets.ts). Removing or renaming
+ * apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts). Removing or renaming
  * one breaks every box that already exists — the same failure class as the
  * accept-encoding two-list divergence. New daemons prefer `components`; old
  * daemons keep working because their keys are still here. `runtime-assets/

@@ -5,6 +5,9 @@
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
+import { runWithContext } from '../../lib/request-context';
+import { attachInboundAuditScope } from '../../shared/audit-scope';
 import {
   SESSION_EVENT_RATE_LIMITED_ACTION,
   __resetAuditRateGuardForTest,
@@ -32,6 +35,8 @@ let insertedValues: Array<Record<string, unknown>> = [];
 let insertStatements: Array<Array<Record<string, unknown>>> = [];
 /** When set, the Nth (0-based) statement rejects with this error. */
 let failStatementAt: { index: number; error: unknown } | null = null;
+/** Wall-clock milliseconds each mocked INSERT consumes; 0 by default. */
+let insertDelayMs = 0;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
@@ -75,6 +80,7 @@ mock.module('../../shared/db', () => ({
         return {
           onConflictDoNothing: () => ({
             returning: async () => {
+              if (insertDelayMs > 0) await Bun.sleep(insertDelayMs);
               if (failStatementAt?.index === index) throw failStatementAt.error;
               return values.map((value) => ({ eventId: value.eventId }));
             },
@@ -93,7 +99,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-await import('./project-audit');
+const { auditIngestChunkSize } = await import('./project-audit');
 
 function hostileEvent() {
   return {
@@ -122,6 +128,7 @@ beforeEach(() => {
   insertedValues = [];
   insertStatements = [];
   failStatementAt = null;
+  insertDelayMs = 0;
 });
 
 afterAll(() => {
@@ -212,13 +219,25 @@ describe('relay batch ceiling', () => {
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   }
 
-  test('accepts a full 200-event relay batch and writes it in 25-row chunks', async () => {
+  test('accepts a full 200-event relay batch and writes it as one statement', async () => {
     insertStatements.length = 0;
     const accepted = await post(200);
     expect(accepted.status).toBe(200);
     expect(accepted.body).toMatchObject({ accepted: 200, inserted: 200 });
-    // Eight bounded statements, never one 200-row lock hold.
-    expect(insertStatements.map((batch) => batch.length)).toEqual([25, 25, 25, 25, 25, 25, 25, 25]);
+    // One bounded statement per accepted batch: every extra statement is one
+    // more lock acquisition and round trip a concurrent writer for the same
+    // session can interleave at. See `auditIngestChunkSize`.
+    expect(insertStatements.map((batch) => batch.length)).toEqual([200]);
+  });
+
+  test('the default chunk equals the route batch ceiling so a batch is one statement', () => {
+    // Fails while the default still splits a batch (prod 2026-09-29: hot
+    // sessions posted full 200-event batches, 8 statements each, and the
+    // interleaved lock acquisitions drove audit/events past the request
+    // deadline). The route reads the ceiling through `auditIngestChunkSize`.
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+    expect(auditIngestChunkSize()).toBe(MAX_BATCH_SIZE);
+    expect(MAX_BATCH_SIZE).toBe(200);
   });
 
   test('rejects one event past the ceiling', async () => {
@@ -320,13 +339,15 @@ describe('per-session ingest ceiling', () => {
 });
 
 /**
- * The SampleCo convoy (2026-08-26): `kortix.audit_prepare_event` locks this
+ * The 2026-08-26 convoy: `kortix.audit_prepare_event` locks this
  * session's `audit_session_sequences` row for every row inserted, and
- * PostgreSQL holds that lock until COMMIT. One 200-row statement therefore
- * pinned the session for its whole duration, and a rollback threw away all 200
- * rows' work — which the relay then re-sent in full, every second, for 3 hours.
+ * PostgreSQL holds that lock until COMMIT. One long statement pinned the
+ * session for its whole duration, and a rollback threw away the whole batch's
+ * work — which the relay then re-sent in full, every second, for 3 hours.
  *
- * These fixtures use the production default chunk size (25 rows/statement).
+ * These fixtures pin the operator-override shape
+ * (`KORTIX_AUDIT_INGEST_CHUNK=25`) so the multi-statement loop stays covered
+ * even though the default writes one statement per accepted batch.
  */
 describe('audit ingest contention', () => {
   const CHUNK = 25;
@@ -362,9 +383,14 @@ describe('audit ingest contention', () => {
 
   beforeEach(() => {
     __resetAuditRateGuardForTest();
+    // Route down to 25-row statements so the bounded multi-statement loop and
+    // the keep-committed-rows property stay exercised at the small-chunk
+    // setting an operator can still choose.
+    process.env.KORTIX_AUDIT_INGEST_CHUNK = String(CHUNK);
   });
 
   afterAll(() => {
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
     __resetAuditRateGuardForTest();
   });
 
@@ -429,5 +455,102 @@ describe('audit ingest contention', () => {
 
     expect(response.status).toBe(500);
     expect(response.headers.get('retry-after')).toBeNull();
+  });
+});
+
+/**
+ * The ingest loop against the request's 25s server deadline
+ * (`remainingIngestBudgetMs` in project-audit.ts). A multi-chunk batch under a
+ * slow database used to run past the deadline mid-loop and die with the
+ * error-level `request exceeded the 25s server processing deadline` abort
+ * (prod 2026-09-28: the route's dominant error class, hours of 700-1000
+ * lines/h against a 141/h baseline). Now the loop stops at a chunk boundary
+ * and answers with the same controlled contended 503 the lock path returns.
+ */
+describe('audit ingest request-deadline budget', () => {
+  beforeEach(() => {
+    process.env.KORTIX_AUDIT_INGEST_CHUNK = '25';
+  });
+
+  afterAll(() => {
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+  });
+
+  function event(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `budget-${n}`,
+      type: 'tool.execute.after',
+      occurred_at: '2026-09-28T12:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'd'.repeat(64),
+    };
+  }
+
+  /**
+   * Drive the route inside a request context whose inbound audit scope carries
+   * the given `startedAt` — exactly what the edge does in production
+   * (`shared/audit-edge.ts`).
+   */
+  async function postWithStartedAt(count: number, startedAtMsAgo: number) {
+    return runWithContext(
+      'POST',
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      async () => {
+        attachInboundAuditScope({
+          owner: 'hono',
+          method: 'POST',
+          startedAt: Date.now() - startedAtMsAgo,
+        });
+        const response = await projectsApp.request(
+          `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ events: Array.from({ length: count }, (_, i) => event(i + 1)) }),
+          },
+        );
+        return {
+          status: response.status,
+          retryAfter: response.headers.get('retry-after'),
+          body: (await response.json()) as Record<string, unknown>,
+        };
+      },
+    );
+  }
+
+  test('a request with no budget left for another chunk 503s before any insert', async () => {
+    // 20s spent before the handler: ~5s left, under the ~23s one-chunk budget.
+    const { status, retryAfter, body } = await postWithStartedAt(200, 20_000);
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({ accepted: 200, inserted: 0, retry_after_seconds: 5 });
+    expect(typeof body.error).toBe('string');
+    // Nothing reached the database; the relay's spool keeps the whole batch.
+    expect(insertStatements).toHaveLength(0);
+  });
+
+  test('a fresh request still writes a full 200-row batch', async () => {
+    const { status, body } = await postWithStartedAt(200, 1_000);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ accepted: 200, inserted: 200 });
+    expect(insertStatements.map((batch) => batch.length)).toEqual(
+      Array.from({ length: 8 }, () => 25),
+    );
+  });
+
+  test('stops at a chunk boundary once the budget is spent, keeping committed rows', async () => {
+    // Chunk 1 is attempted (~23.8s left) and consumes 1.5s in a slow
+    // statement; the ~22.3s left can no longer cover another chunk.
+    insertDelayMs = 1_500;
+    const { status, retryAfter, body } = await postWithStartedAt(200, 1_200);
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({ accepted: 200, inserted: 25, retry_after_seconds: 5 });
+    expect(insertStatements).toHaveLength(1);
   });
 });

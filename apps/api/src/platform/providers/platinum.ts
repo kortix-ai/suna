@@ -52,7 +52,7 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
@@ -73,13 +73,13 @@ import type {
   SandboxProvider,
   SandboxStartOptions,
   SandboxStatus,
-} from './index';
+} from './contract';
 import {
   SandboxTemplateNotFoundError,
   assertWorkloadCredential,
   sandboxWorkloadType,
-} from './index';
-import { providerAutoStopBackstopMinutes } from './index';
+} from './contract';
+import { providerAutoStopBackstopMinutes } from './contract';
 import { classifyPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
@@ -890,7 +890,9 @@ export class PlatinumProvider implements SandboxProvider {
       const sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
       const state = String(sandbox.state ?? '').toLowerCase();
       if (state === 'running') return 'running';
-      if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
+      // A stop ACK is not power-off. Keep the token and compute row alive
+      // until the provider confirms a terminal state.
+      if (state === 'stopped' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       // Terminal, not transitional. Same audit as Daytona's `error`: a dead box
       // reported as `unknown` is a box `decideReconcile` never acts on, and

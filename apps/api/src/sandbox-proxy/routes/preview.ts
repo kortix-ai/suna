@@ -85,6 +85,7 @@ import {
 import {
   PROXY_RETRY_BUDGET_MS,
   PROXY_RETRY_DELAYS_MS,
+  isEnvRpcRequest,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -218,7 +219,7 @@ export function bindSandboxRequestContext(
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
 // Returns null if nothing meaningful remains (so the header can be dropped).
-function stripFrameAncestors(csp: string): string | null {
+export function stripFrameAncestors(csp: string): string | null {
   const kept = csp
     .split(';')
     .map((d) => d.trim())
@@ -1255,7 +1256,8 @@ export async function forwardToSandbox(
   // on the daemon port — `/file/import` elsewhere is the user's own route.
   const uploadDelivery =
     isUploadRequest({ method, path: remainingPath }) ||
-    isFileImportRequest({ method, path: remainingPath, port: upstreamPort });
+    isFileImportRequest({ method, path: remainingPath, port: upstreamPort }) ||
+    isEnvRpcRequest({ method, path: remainingPath, port: upstreamPort });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.
@@ -1835,7 +1837,7 @@ export async function forwardToSandbox(
 
       // The transcript list leaves the API WITHOUT its attachment bytes.
       //
-      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // The daemon strips these too (kortix-sandbox-agent-server/src/app/server.ts)
       // and that is the right home. This second pass exists for every sandbox
       // still running an older daemon image — a self-host does not rebuild
       // its templates on our schedule, and the read that motivated this

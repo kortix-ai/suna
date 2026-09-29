@@ -1,8 +1,9 @@
 import { chmodSync, existsSync, lstatSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import { homedir } from 'os';
 import { isTunnelCapability } from '../shared/permissions';
 import type { TunnelCapability } from '../shared/types';
+import { agentTunnelHome, defaultAgentTunnelHome } from './service-paths';
 
 export interface TunnelConfig {
   token: string;
@@ -23,7 +24,7 @@ export interface TunnelConfig {
   enabledCapabilities?: TunnelCapability[];
 }
 
-const CONFIG_DIR = join(homedir(), '.agent-tunnel');
+const CONFIG_DIR = agentTunnelHome();
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS: Partial<TunnelConfig> = {
@@ -213,6 +214,19 @@ export function buildTunnelWsUrl(
   return `${base}${wsPath}?${params.toString()}`;
 }
 
+/**
+ * Directories no RPC may read or write, whatever config.json says. The agent
+ * home holds the credential, access.json (the owner's answer to the access
+ * prompt) and desktop-app.json (what the agent launches). A file grant must
+ * never rewrite them into a permanent grant or a command to run. A desktop
+ * home `<userData>/agent-tunnel/<sha8>` also protects its sibling homes.
+ */
+export function protectedAgentPaths(home: string = CONFIG_DIR): string[] {
+  const paths = new Set([home, defaultAgentTunnelHome()]);
+  if (basename(dirname(home)) === 'agent-tunnel') paths.add(dirname(home));
+  return [...paths];
+}
+
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
   let fileConfig: Partial<TunnelConfig> = {};
   if (existsSync(CONFIG_FILE)) {
@@ -250,6 +264,7 @@ export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig 
   merged.apiUrl = normalizeApiUrl(merged.apiUrl);
   merged.wsPath = absoluteWsPath(merged.wsPath);
   validateConfigValues(merged);
+  merged.blockedPaths = [...merged.blockedPaths, ...protectedAgentPaths()];
 
   return merged;
 }

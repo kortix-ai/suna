@@ -140,6 +140,12 @@ const ignoredPathParts = [
   '/src/app/[locale]/(system)/debug/',
   '/src/types/',
   '/__harness__/',
+  // Unannounced, noindex launch film and /launch page (#8023, #8045): the copy
+  // is still being cut. Remove these three entries and move the copy into i18n
+  // keys when /launch is announced (the #8023 rollout step).
+  '/src/app/[locale]/presentations/film/',
+  '/src/features/marketing/launch/',
+  '/src/app/[locale]/(public)/(marketing)/launch/',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -827,7 +833,7 @@ function scanFile(file) {
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
       const coveredOnboardingProfileFixture =
         file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
-        ['USE_CASE_OPTIONS', 'STARTER_PROMPTS', 'ENGLISH_KICKOFF_COPY'].includes(catalogRoot);
+        ['USE_CASE_OPTIONS', 'STARTER_PROMPTS'].includes(catalogRoot);
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
@@ -940,10 +946,6 @@ function scanFile(file) {
           catalogRoot === 'SLOTS') ||
         (file === path.join(srcDir, 'features/marketing/hero-surfaces.tsx') &&
           catalogRoot === 'SURFACES') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/filesystem-scope-editor.tsx') &&
-          catalogRoot === 'MAX_FILE_SIZE_OPTIONS') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/shell-scope-editor.tsx') &&
-          catalogRoot === 'TIMEOUT_OPTIONS') ||
         (file ===
           path.join(
             srcDir,

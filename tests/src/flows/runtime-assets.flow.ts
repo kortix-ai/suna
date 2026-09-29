@@ -289,7 +289,7 @@ flow(
 // ── RTA-4 — entrypoint: served, never converged ─────────────────────────────
 //
 // The manifest advertised `components.entrypoint` and NO box has ever consumed
-// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
 // apps/kortix-sandbox-agent-server/src/harness` returns doc comments only. An
 // advertised-but-unconsumed component reads as a fifth convergeable asset, which
 // is how a "current" box can be quietly wrong. This pins the decision that was
@@ -422,6 +422,25 @@ interface RunningAssets {
   agent_sha256: string | null;
   staged_agent_sha256: string | null;
   opencode_version: string | null;
+}
+
+/**
+ * The WHICH-BYTES identity a "reading must not change it" check may compare.
+ * The raw `runtime.running` payload also carries `build`/`at` (the daemon's
+ * last reconciliation PASS) and other operational fields (managed model ids,
+ * catalog fallback reason, agent path) that legitimately advance between two
+ * health reads a few seconds apart — this file's own comment on `bootBox`
+ * says so: "`build`/`at` describe the last PASS and may legitimately be null
+ * on a box whose daemon restarted; `running` may not." Comparing the full raw
+ * object caught that legitimate advance as a false "the lane applied
+ * something" (gate run 36497729410: `build` went `null` → `1790636576`
+ * between two reads 8s apart on a real Platinum box; every earlier gate ran
+ * against a stub that always reported `null`, so this never fired). Compare
+ * only the typed identity fields.
+ */
+function identityOf(running: RunningAssets): RunningAssets {
+  const { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, opencode_version } = running;
+  return { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, opencode_version };
 }
 
 interface BootedBox {
@@ -557,9 +576,12 @@ flow(
 
     await ctx.step('and the lane APPLIED nothing while it was being read', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(running)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const before = identityOf(running);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(before)) {
         throw new Error(
-          `reading a current box must not change it: ${JSON.stringify(running)} → ${JSON.stringify(after)}`,
+          `reading a current box must not change it: ${JSON.stringify(before)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });

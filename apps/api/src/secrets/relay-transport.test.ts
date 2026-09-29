@@ -301,6 +301,26 @@ describe('the byte budgets are the ONLY inbound guard, so they are asserted', ()
     expect((error as SecretBrokerError).status).toBe(502);
   });
 
+  // Headers and an over-budget body can arrive in one read, before the caller
+  // holds the stream. The transport read ahead, destroyed the stream with no
+  // listener, and the error escaped as an uncaught exception (CI 2026-09-28).
+  test('an over-budget burst before the caller reads fails the read, not the process', async () => {
+    handler = (_req, res) => {
+      res.writeHead(200);
+      res.write(Buffer.alloc(64 * 1024, 0x62));
+    };
+    const upstream = await openUpstream(head('/burst', 'GET'), null, {
+      seam: seam(),
+      maxResponseBytes: 8192,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50)); // the caller is busy
+    const error = await drain(upstream.body).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect((error as SecretBrokerError).code).toBe('relay_response_too_large');
+  });
+
   test('a budget of 0 means unlimited, for self-host operators', async () => {
     handler = (_req, res) => {
       res.writeHead(200);

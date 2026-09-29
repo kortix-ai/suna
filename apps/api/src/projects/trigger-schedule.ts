@@ -22,6 +22,8 @@ export interface TriggerScheduleSpec {
   monitorMode?: 'poll' | 'stream' | null;
   intervalSeconds?: number | null;
   expectEventWithinSeconds?: number | null;
+  /** Session reminder only — see GitTriggerSpec.reminder. */
+  reminder?: { everySeconds: number | null } | null;
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
@@ -79,6 +81,8 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
           expectEventWithinSeconds: spec.expectEventWithinSeconds ?? null,
         }
       : {}),
+    // Same rule as the monitor fields: absent for every manifest trigger.
+    ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
   };
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');
 }
@@ -131,7 +135,7 @@ function cronJitterMs(cron: Cron, after: Date, key: string, windowMs: number): n
 }
 
 export function nextTriggerScheduleSlot(
-  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone'>,
+  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone' | 'reminder'>,
   after: Date,
   options: { includePastOneOff?: boolean; jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
@@ -142,6 +146,9 @@ export function nextTriggerScheduleSlot(
     if (runAtMs > after.getTime()) return new Date(runAtMs);
     return options.includePastOneOff ? new Date(runAtMs) : null;
   }
+  // A reminder's period runs from the claim, so a missed slot never bunches up.
+  const everySeconds = spec.reminder?.everySeconds;
+  if (everySeconds) return new Date(after.getTime() + everySeconds * 1000);
   if (!spec.cron) return null;
   const error = validateTriggerCron(spec.cron, spec.timezone);
   if (error) throw new Error(error);

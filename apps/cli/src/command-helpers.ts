@@ -344,7 +344,7 @@ const SESSION_UUID_RE =
 
 /** Expand a short session-id prefix against the project's session list,
  *  returning the matched row (the list already carries it — no re-fetch). */
-async function expandSessionIdPrefix(
+export async function expandSessionIdPrefix(
   client: ApiClient,
   projectId: string,
   reference: string,

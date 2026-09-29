@@ -20,6 +20,8 @@
  * between that pair and the two controls.
  */
 
+import { githubOwnerKind } from '@/lib/github-installations';
+
 import { withRepositoryChoice } from './github-source';
 import type { NewWorkspaceFormState, RepositorySource } from './new-workspace-form';
 
@@ -114,6 +116,20 @@ export function parseGitAccount(
 /** The action the form state encodes. `create` for anything that is not an import. */
 export function repositoryAction(state: Pick<NewWorkspaceFormState, 'source'>): RepositoryAction {
   return state.source === 'github-import' ? 'import' : 'create';
+}
+
+/**
+ * Whether creating a repository under this git account needs the user's own
+ * GitHub authorization first.
+ *
+ * A personal account does. GitHub accepts the account's App installation token
+ * on `POST /orgs/{org}/repos` but not on `POST /user/repos`, so a personal
+ * create runs on a GitHub App USER access token instead. The server asks for
+ * one with `409 github_user_authorization_required`, and `/new` answers it with
+ * a single popup (`github-user-authorization.ts`).
+ */
+export function createNeedsGitHubAuthorization(option: GitAccountOption): boolean {
+  return githubOwnerKind(option.ownerType) === 'personal';
 }
 
 function sourceFor(kind: GitAccountOption['kind'], action: RepositoryAction): RepositorySource {

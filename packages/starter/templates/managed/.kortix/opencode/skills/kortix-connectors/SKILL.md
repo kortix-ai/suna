@@ -23,6 +23,16 @@ Use the **`kortix connectors` CLI** for normal agent work:
 - `kortix connectors call <connector> <action> '<json>' [--account <label>]`
   invokes one action. Every successful result echoes `account`: say which one
   ran when it matters.
+- `kortix connectors call … --reason "<what this does>"` tells the human what
+  the call does if a policy holds it for approval. The approver sees it next
+  to the real arguments. **Always pass it on a write whose args are only ids**
+  — `send_draft` (say who it goes to, the subject, and the body), a delete (say
+  what gets deleted), a merge. Without it the approver sees only `draft_id`.
+  A gated call returns `approval_url`: share it, then stop the turn. The human's
+  decision, and any message they add to it, arrives as your next prompt — a
+  deny with a message is an instruction, not a dead end. In a Slack or Teams
+  session Kortix posts an approval card in the thread itself
+  (`approval_instructions` says so): do not repost the link, just stop.
 - `kortix connectors call … --attach <file>` attaches a file (see **Attach
   files** below). Never put base64 in args.
 - `kortix connectors call … --out <file>` writes the full JSON result to
@@ -37,7 +47,7 @@ Use the **`kortix connectors` CLI** for normal agent work:
 Durable TypeScript workflows use **`@kortix/sdk`** and `createKortix`. Every
 call runs through the connector gateway. The
 gateway resolves credentials, enforces access and policy, invokes the upstream
-system, and records an audit event. The sandbox carries `KORTIX_CLI_TOKEN`; it
+system, and records an audit event. The sandbox carries `KORTIX_TOKEN`; it
 does not carry raw third-party credentials.
 </overview>
 
@@ -181,7 +191,7 @@ import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
   backendUrl: process.env.KORTIX_API_URL!,
-  getToken: async () => process.env.KORTIX_CLI_TOKEN ?? null,
+  getToken: async () => process.env.KORTIX_TOKEN ?? null,
 });
 const connectors = process.env.KORTIX_PROJECT_ID
   ? kortix.project(process.env.KORTIX_PROJECT_ID).connectors
@@ -233,8 +243,9 @@ connectors. Never add a new Pipedream connector automatically. If Composio
 cannot satisfy the request, stop, explain the gap, and ask the human before any
 explicit `--allow-legacy-pipedream` retry.
 
-Surface the returned connection URL. Never ask the user to paste a credential
-into chat. For an API key, use `kortix secrets request NAME --scope connector`.
+Surface the returned connection URL. For an API key you already have (the user
+gave it in chat), store it now: `kortix secrets set NAME=- --scope connector`.
+For one you lack, use `kortix secrets request NAME --scope connector`.
 
 Slack uses the channel flow. Do not add a Slack connector. Run:
 

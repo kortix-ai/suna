@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Config as HostConfig } from '../../config'
-import { resolveKortixRuntimeStateDirectory } from '../../runtime-state-dir'
+import type { Config as HostConfig } from '@/lib/config/config'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 
 /** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
 const TURN_RETRY_DEFAULT_BASE_MS = 2_000

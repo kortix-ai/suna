@@ -26,7 +26,7 @@ import * as Linking from 'expo-linking';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
 import { THEME } from '@/lib/utils/theme';
-import { allowBrowserNavigation } from '@/lib/utils/html-embed';
+import { allowBrowserNavigation, isTrustedProxyUrl } from '@/lib/utils/html-embed';
 
 interface BrowserPageProps {
   page: PageTab;
@@ -164,20 +164,6 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     setUrlInput(formatDisplayUrl(url));
   }, [urlInput, getProxyUrl]);
 
-  // Only the trusted sandbox-proxy/API origin may ever see the live Supabase
-  // Authorization header. Any other origin (a typed URL, an external link
-  // followed inside the WebView, a redirect off-host) must not receive it —
-  // otherwise the session token leaks to arbitrary third-party servers.
-  const isTrustedProxyOrigin = useCallback((url: string): boolean => {
-    try {
-      const target = new URL(url);
-      const trusted = new URL(API_URL);
-      return target.protocol === trusted.protocol && target.host === trusted.host;
-    } catch {
-      return false;
-    }
-  }, []);
-
   const background = isDark ? THEME.dark.background : THEME.light.background;
   const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   // iOS: the site's last line can scroll up to rest 16pt over the controls.
@@ -230,7 +216,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               ref={webViewRef}
               source={{
                 uri: currentUrl,
-                headers: isTrustedProxyOrigin(currentUrl)
+                // Only the trusted sandbox-proxy/API origin ever sees the live
+                // Supabase token; any other origin (a typed URL, a followed
+                // external link, a redirect off-host) must not, or it leaks.
+                headers: isTrustedProxyUrl(currentUrl, API_URL)
                   ? { Authorization: `Bearer ${authToken}` }
                   : undefined,
               }}
@@ -242,7 +231,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               startInLoadingState
               renderLoading={() => (
                 <View className="absolute inset-0 items-center justify-center bg-background">
-                  <KortixLoader size="large" />
+                  <KortixLoader size="small" />
                 </View>
               )}
               contentInset={{ bottom: toolbarInset }}

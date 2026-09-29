@@ -50,6 +50,9 @@ describe('catalogModelForWireModel', () => {
       reasoning: true,
       tool_call: true,
       temperature: true,
+      attachment: managed.vision,
+      modalities: { input: managed.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+      ...(managed.reasoningOptions ? { reasoning_options: managed.reasoningOptions } : {}),
       limit: managed.limit,
     });
   });

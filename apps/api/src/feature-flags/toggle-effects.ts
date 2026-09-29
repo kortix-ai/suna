@@ -12,7 +12,7 @@
  * they call are themselves idempotent and re-run on their periodic sweeps.
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
-import { reconcileChannelConnectors, reconcileComputerConnectors } from '../connectors/sync';
+import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 
@@ -36,12 +36,6 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
  * disappears with the flag instead of waiting for the next periodic sweep.
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
-  // Kept for parity with the historical route behavior: the computer connector
-  // is deliberately NOT flag-gated (see registry header), but a toggle still
-  // re-syncs account connectors so any UI-adjacent drift converges promptly.
-  agent_tunnel: async ({ accountId }) => {
-    await reconcileComputerConnectors(accountId);
-  },
   teams: reconcileProjectChannels,
   agentmail_email: reconcileProjectChannels,
   llm_gateway: async ({ projectId, metadata }) => {

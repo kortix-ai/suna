@@ -20,6 +20,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import { apiRegion, databaseRegion } from './lib/deployment-region';
+import { requestLogLevel } from './lib/request-log-level';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -36,8 +37,6 @@ import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 
 // ─── Sub-Service Imports ────────────────────────────────────────────────────
 
-import { platformSettings } from '@kortix/db';
-import { eq } from 'drizzle-orm';
 import { accessControlApp } from './access-control';
 import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
@@ -102,7 +101,7 @@ import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
-  isTransientGitMirrorError,
+  transientGitMirrorCause,
   pushPolicyWarning,
 } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
@@ -150,8 +149,9 @@ import {
 // hot reloads — the promise never settles, the handler hangs, and Bun's
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
-import { db, hasDatabase } from './shared/db';
+import { hasDatabase } from './shared/db';
 import { computeEtag, etagMatches } from './shared/http-cache';
+import { createCachedPlatformSetting } from './platform/services/platform-setting-cache';
 import {
   isLeader,
   runsSingletonWorkers,
@@ -434,7 +434,11 @@ app.use('*', async (c, next) => {
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
-    const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
+    // WARN only for a real failure. A slow-but-successful request stays INFO —
+    // paging on it fired on ordinary contention (KRTX-627: 174 WARN lines on
+    // one read route, none 5xx). Latency regressions stay covered by the
+    // infra-sweep's p95 detector, and the line still carries `duration`.
+    const level = requestLogLevel(status);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
@@ -648,13 +652,11 @@ app.get('/.well-known/oauth-authorization-server', (c) => {
   });
 });
 
-// RFC 9728 protected-resource metadata for a project's MCP endpoint — what an
-// MCP client reads after the endpoint's 401 challenge to find the authorization
+// RFC 9728 protected-resource metadata for the MCP endpoint — what an MCP
+// client reads after the endpoint's 401 challenge to find the authorization
 // server above.
-app.get('/.well-known/oauth-protected-resource/v1/projects/:projectId/mcp', (c) => {
-  const projectId = c.req.param('projectId');
-  if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
-  return c.json(mcpProtectedResourceMetadata(projectId, new URL(c.req.url).origin), 200, {
+app.get('/.well-known/oauth-protected-resource/v1/mcp', (c) => {
+  return c.json(mcpProtectedResourceMetadata(new URL(c.req.url).origin), 200, {
     'cache-control': 'public, max-age=3600',
   });
 });
@@ -715,16 +717,6 @@ app.openapi(
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public
 // (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
 const MAINTENANCE_KEY = 'maintenance_config';
-const DEFAULT_MAINTENANCE = {
-  level: 'none' as const,
-  title: '',
-  message: '',
-  startTime: null,
-  endTime: null,
-  statusUrl: null,
-  affectedServices: [] as string[],
-  updatedAt: new Date(0).toISOString(),
-};
 
 const MaintenanceSchema = z
   .object({
@@ -740,6 +732,34 @@ const MaintenanceSchema = z
   .partial()
   .openapi('MaintenanceConfig');
 
+type MaintenanceConfigValue = Required<z.infer<typeof MaintenanceSchema>>;
+
+const DEFAULT_MAINTENANCE: MaintenanceConfigValue = {
+  level: 'none',
+  title: '',
+  message: '',
+  startTime: null,
+  endTime: null,
+  statusUrl: null,
+  affectedServices: [],
+  updatedAt: new Date(0).toISOString(),
+};
+
+function parseMaintenance(value: unknown): MaintenanceConfigValue {
+  if (!value || typeof value !== 'object') return DEFAULT_MAINTENANCE;
+  return { ...DEFAULT_MAINTENANCE, ...(value as Partial<MaintenanceConfigValue>) };
+}
+
+// The config is one singleton row that changes only when an admin flips it, but
+// the GET is public and polled. Read it through the shared cached
+// platform-setting reader, so the route never blocks on a DB round trip. The
+// admin PUT writes through the cache, so the writing process serves the new
+// value at once; other replicas converge within the reader's TTL.
+const maintenanceSetting = createCachedPlatformSetting<MaintenanceConfigValue>(
+  MAINTENANCE_KEY,
+  parseMaintenance,
+);
+
 app.openapi(
   createRoute({
     method: 'get',
@@ -749,26 +769,14 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
   // Cacheable: the response never varies per tenant/user (no auth, same row
-  // for every caller), so `public` is safe. `max-age=5` + ETag revalidation
-  // shaves the repeat-poll DB roundtrip most callers pay without risking a
-  // stale kill switch — this is the platform's emergency maintenance toggle,
-  // so a long `stale-while-revalidate` (which would let a just-flipped-on
-  // lockdown keep serving the OLD state to clients for minutes) is
-  // deliberately not used here.
+  // for every caller), so `public` is safe. The config comes from the
+  // in-process cache, so the route pays no DB round trip; `max-age=5` + ETag
+  // still shave the repeat poll at the client. A just-flipped lockdown reaches
+  // every replica within the reader's TTL and the writing replica at once, so
+  // a long `stale-while-revalidate` (which would let a flip keep serving the
+  // OLD state for minutes) stays deliberately out.
   async (c: any) => {
-    if (!hasDatabase) {
-      const etag = computeEtag(DEFAULT_MAINTENANCE);
-      c.header('Cache-Control', 'public, max-age=5, must-revalidate');
-      c.header('ETag', etag);
-      if (etagMatches(c.req.header('If-None-Match'), etag)) return c.body(null, 304);
-      return c.json(DEFAULT_MAINTENANCE);
-    }
-    const [row] = await db
-      .select({ value: platformSettings.value })
-      .from(platformSettings)
-      .where(eq(platformSettings.key, MAINTENANCE_KEY))
-      .limit(1);
-    const payload = row?.value ?? DEFAULT_MAINTENANCE;
+    const payload = maintenanceSetting.read();
     const etag = computeEtag(payload);
     c.header('Cache-Control', 'public, max-age=5, must-revalidate');
     c.header('ETag', etag);
@@ -801,22 +809,12 @@ app.openapi(
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
     const body = await readJsonObject(c);
-    const maintenanceConfig = {
+    const maintenanceConfig: MaintenanceConfigValue = {
       ...DEFAULT_MAINTENANCE,
-      ...body,
+      ...(body as Partial<MaintenanceConfigValue>),
       updatedAt: new Date().toISOString(),
     };
-    await db
-      .insert(platformSettings)
-      .values({
-        key: MAINTENANCE_KEY,
-        value: maintenanceConfig,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: platformSettings.key,
-        set: { value: maintenanceConfig, updatedAt: new Date() },
-      });
+    await maintenanceSetting.write(maintenanceConfig);
     return c.json(maintenanceConfig);
   },
 );
@@ -989,9 +987,10 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-// Before projectsApp: the MCP route answers its own 401 with an OAuth challenge.
-app.route('/v1/projects', createMcpApp(dispatchInProcess));
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+// /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
+// It answers its own 401 with an OAuth challenge, so no auth middleware here.
+app.route('/v1/mcp', createMcpApp(dispatchInProcess));
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served
@@ -1108,12 +1107,23 @@ app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
 import { warmPipedreamCatalog } from './connectors/pipedream';
+// TUNNEL_ENABLED=false: the relay never starts, so every tunnel route answers
+// 503. The web hides its computer surfaces when the machine list fails.
+app.use('/v1/tunnel/*', async (c, next) => {
+  if (config.TUNNEL_ENABLED) return next();
+  return c.json({ error: 'Computers are disabled on this deployment', code: 'tunnel_disabled' }, 503);
+});
+
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
+// Machine self-unpair: authenticated by the machine's own token, not a user.
+import { createTunnelSelfRouter } from './tunnel/routes/connections';
+app.route('/v1/tunnel/self', createTunnelSelfRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
   // Skip auth for public device-auth routes: POST /device-auth and GET /device-auth/:code/status
+  if (c.req.path === '/v1/tunnel/self') return next();
   const path = c.req.path.replace('/v1/tunnel/device-auth', '');
   if (c.req.path.startsWith('/v1/tunnel/device-auth')) {
     if (c.req.method === 'POST' && (path === '' || path === '/')) return next();
@@ -1216,14 +1226,15 @@ app.onError((err, c) => {
   // request-deadline). A PERMANENT failure (bad ref, real auth denial, corrupt
   // local repo) still falls through to Sentry with a meaningful `fatal:`
   // message. See projects/git/mirror.ts.
-  if (isTransientGitMirrorError(err)) {
-    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${err.kind}] ${err.message}`, {
+  const transientGitError = transientGitMirrorCause(err);
+  if (transientGitError) {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${transientGitError.kind}] ${transientGitError.message}`, {
       method,
       path,
       errorType: 'GitOperationError',
-      gitKind: err.kind,
-      gitArgs: err.gitArgs,
-      signal: err.signal,
+      gitKind: transientGitError.kind,
+      gitArgs: transientGitError.gitArgs,
+      signal: transientGitError.signal,
     });
     c.header('Retry-After', '10');
     return c.json(
@@ -1594,6 +1605,9 @@ async function startReplicaServices() {
   await import('./platform/services/managed-git-backend')
     .then((m) => m.refreshGitBackend())
     .catch(() => {});
+  // Warm the maintenance config, so a fresh pod serves the stored config from
+  // request #1, not the cold-cache default.
+  await maintenanceSetting.refresh().catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).

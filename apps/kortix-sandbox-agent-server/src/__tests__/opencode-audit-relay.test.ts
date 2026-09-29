@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +15,12 @@ import {
   createAuditRelay,
   retryAfterMs,
   sanitizeOpenCodeEvent,
-} from '../harness/open-code/opencode-audit-relay';
+} from '@/harness/open-code/opencode-audit-relay';
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+} from '@/lib/kortix-api/session-token-health';
 
 describe('OpenCode canonical audit relay', () => {
   test('uses deterministic ids and never forwards prompts, credentials, or raw output', () => {
@@ -786,5 +791,52 @@ describe('audit relay emission volume', () => {
     // `session.status` busy repeats across turns collapse to one.
     expect(count('session.status')).toBe(1);
     expect(count('session.idle')).toBe(20);
+  });
+
+  // KRTX-446: a box that outlives its session keeps emitting OpenCode events,
+  // and the relay re-POSTed `.../audit/events -> 401` on its retry ladder for
+  // as long as the box lives. Once the shared breaker reports the credential
+  // dead (here the revoked-token refusal — session delete revokes the token
+  // ROW), the relay must drop at the source: no POST, and no spool growth from
+  // events that can never land.
+  describe('dead session credential', () => {
+    beforeEach(() => resetSessionTokenHealthForTests());
+    afterEach(() => resetSessionTokenHealthForTests());
+
+    test('drops events and issues no POST while the credential is dead', async () => {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'PAT not found or revoked');
+      }
+      let posts = 0;
+      const relay = createAuditRelay(
+        async () => {
+          posts += 1;
+        },
+        { flushMs: 5 },
+      );
+      relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_dead' } });
+      await Bun.sleep(40);
+      expect(posts).toBe(0);
+      expect(relay.stats().dropped).toBe(1);
+      await relay.stop({ flush: false });
+    });
+
+    test('resumes once the control plane answers anything else', async () => {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'PAT not found or revoked');
+      }
+      noteControlPlaneResponse(200, null);
+      const sent: OpenCodeAuditEvent[][] = [];
+      const relay = createAuditRelay(
+        async (events) => {
+          sent.push(events);
+        },
+        { flushMs: 5 },
+      );
+      relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_alive' } });
+      await Bun.sleep(40);
+      expect(sent).toHaveLength(1);
+      await relay.stop();
+    });
   });
 });

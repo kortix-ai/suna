@@ -2,9 +2,10 @@
 //
 // A thin native wrapper around the remote web app: window sizing, the kortix://
 // deep-link auth flow, a navigation gate (logged-in product + auth pages in-app;
-// everything else in the user's real browser), the "Frontend URL" dev menu, and
-// the native bridge (zoom / open-external / window controls / frontend-url
-// override).
+// everything else in the user's real browser), the frontend-URL menu (the dev
+// preset switcher, or the one "Change Kortix Instance…" entry on production
+// builds), and the native bridge (zoom / open-external / window controls /
+// frontend-url override).
 //
 // Why Electron: a prior Tauri/WKWebView shell routed EVERY navigation —
 // including cross-origin IFRAME loads — through one hook, so embedded overlays
@@ -25,6 +26,8 @@ const { menuContextForUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
 const { backgroundForTheme, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
+const { buildFrontendMenu } = require('./frontend-menu');
+const { resolveChannel } = require('./update-channel');
 const { openInstanceChooser, focusInstanceChooser } = require('./instance-chooser');
 const { explainNetError, hostOf, normalizeInstanceUrl } = require('./instance-rules');
 const { createInstanceStore } = require('./instance-store');
@@ -33,6 +36,7 @@ const { isAppPath, isPreviewHost } = require('./nav-rules');
 const { rendererGoneNeedsRecovery } = require('./renderer-recovery');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
+const { setupComputer } = require('./computer-tray');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -66,9 +70,10 @@ function bakedDefaultUrl() {
 // A runtime KORTIX_DESKTOP_URL / the Frontend-URL menu still overrides this.
 const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/projects';
 
-const PRESET_PROD = 'https://kortix.com/projects';
-const PRESET_DEV = 'https://dev.kortix.com/projects';
-const PRESET_LOCAL = 'http://localhost:3000/projects';
+// The update channel baked into the bundle decides whether the frontend-URL
+// menu is the developer preset switcher or the single production
+// "Change Kortix Instance…" entry (frontend-menu.js).
+const CHANNEL = resolveChannel(require('../package.json'));
 
 const URL_SCHEME = 'kortix';
 // Matches DESKTOP_UA_TOKEN in apps/web/src/lib/desktop.ts and the
@@ -231,6 +236,8 @@ function handleDeepLink(deepLink) {
 let mainWindow = null;
 /** @type {BrowserWindow | null} */
 let splashWindow = null;
+/** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
+let computerShell = null;
 
 function launchSize() {
   // ~85% of the primary display, clamped to [1280,1700] × [820,1080] — same as
@@ -849,45 +856,22 @@ async function answerBasicChallenge(authInfo, callback) {
   callback(result.user, result.password);
 }
 
-/* ─── Native menu (incl. hidden "Frontend URL" switcher) ───────────────────*/
+/* ─── Native menu (incl. the frontend-URL entry) ───────────────────────────*/
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const shortcuts = isMac ? NAVIGATION_SHORTCUTS.darwin : NAVIGATION_SHORTCUTS.other;
 
-  // Hidden, nested dev switcher so the backend the app points at can change
-  // without a rebuild — mirrors the Tauri "Frontend URL" submenu.
-  const preset = (label, url) => ({
-    label,
-    click: () => switchInstance({ kind: 'custom', url }),
+  // Dev builds keep the nested preset switcher (mirrors the Tauri "Frontend
+  // URL" submenu). Production builds show ONE "Change Kortix Instance…" item
+  // that opens the native chooser; frontend-menu.js owns the split.
+  const frontendMenu = buildFrontendMenu({
+    channel: CHANNEL,
+    onPreset: (url) => switchInstance({ kind: 'custom', url }),
+    onChange: () => void changeInstance('change'),
+    onReset: () => switchInstance({ kind: 'default' }),
+    onForgetPassword: () => forgetBasicCredentialForAppHost(),
   });
-  const frontendSubmenu = {
-    label: 'Frontend URL',
-    submenu: [
-      preset('Production (kortix.com)', PRESET_PROD),
-      preset('Dev (dev.kortix.com)', PRESET_DEV),
-      preset('Local (localhost:3000)', PRESET_LOCAL),
-      { type: 'separator' },
-      {
-        label: 'Custom URL…',
-        // The native instance chooser, not the web app's prompt: it also
-        // works when the current page failed to load. (Older shells dispatch
-        // `kortix-open-frontend-url`; the web prompt stays for them.)
-        click: () => void changeInstance('change'),
-      },
-      {
-        label: 'Reset to Default',
-        click: () => switchInstance({ kind: 'default' }),
-      },
-      { type: 'separator' },
-      {
-        // Drops the HTTP Basic credential remembered for the current app host
-        // (dev/staging environment password) so the next challenge asks again.
-        label: 'Forget Saved Environment Password',
-        click: () => forgetBasicCredentialForAppHost(),
-      },
-    ],
-  };
 
   const template = [
     ...(isMac
@@ -907,7 +891,7 @@ function buildMenu() {
                 click: () => checkForUpdatesInteractive(),
               },
               { type: 'separator' },
-              frontendSubmenu,
+              frontendMenu,
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -992,7 +976,7 @@ function buildMenu() {
                 label: 'Check for Updates…',
                 click: () => checkForUpdatesInteractive(),
               },
-              frontendSubmenu,
+              frontendMenu,
             ]),
       ],
     },
@@ -1095,6 +1079,11 @@ function registerIpc() {
         return null;
       }
       default:
+        // computer_status / _connect / _pause / _resume / _disconnect / _open_logs.
+        // Same trusted-sender gate as every command above.
+        if (typeof cmd === 'string' && cmd.startsWith('computer_') && computerShell) {
+          return computerShell.invoke(cmd, args);
+        }
         throw new Error(`Unknown command: ${cmd}`);
     }
   });
@@ -1148,6 +1137,16 @@ function applyUserAgent() {
 
 /* ─── App lifecycle ───────────────────────────────────────────────────────*/
 
+/** Show the app window, recreating it when only the tray is left. */
+function openMainWindow() {
+  if (needsMainWindow(mainWindow)) {
+    createSplash();
+    createMainWindow();
+  } else {
+    revealMainWindow(mainWindow);
+  }
+}
+
 // Single-instance lock: a second launch (incl. a kortix:// deep link on
 // Windows/Linux where the URL arrives as an argv) routes to the running window
 // instead of spawning a new process.
@@ -1190,7 +1189,12 @@ if (!gotLock) {
 
   app.on('second-instance', (_event, argv) => {
     const deepLink = argv.find((a) => a.startsWith(`${URL_SCHEME}://`));
-    if (deepLink) handleDeepLink(deepLink);
+    // Running in the tray with no window (a paired computer): open one again.
+    // Not during first-launch setup, where the chooser is the only window.
+    const reopened = needsMainWindow(mainWindow) && app.isReady() && !instanceStore.needsSetup();
+    if (reopened) openMainWindow();
+    if (deepLink && reopened) mainWindow?.webContents.once('did-finish-load', () => handleDeepLink(deepLink));
+    else if (deepLink) handleDeepLink(deepLink);
     revealMainWindow(mainWindow);
     // First launch: the chooser is the only window.
     focusInstanceChooser();
@@ -1212,6 +1216,15 @@ if (!gotLock) {
     }
 
     applyUserAgent();
+    computerShell = setupComputer({
+      channel: CHANNEL,
+      appUrl: () => instanceStore.appUrl(),
+      isConfiguredAppUrl,
+      shouldLoadInApp,
+      getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+      openMainWindow,
+      backgroundColor: currentBackgroundColor,
+    });
     registerIpc();
     nativeTheme.themeSource = readTheme();
     nativeTheme.on('updated', () => {
@@ -1247,17 +1260,15 @@ if (!gotLock) {
       });
     }
 
-    app.on('activate', () => {
-      if (needsMainWindow(mainWindow)) {
-        createSplash();
-        createMainWindow();
-      } else {
-        revealMainWindow(mainWindow);
-      }
-    });
+    app.on('activate', openMainWindow);
+
+    // Tray + state watch. After the window, so a slow status never delays it.
+    computerShell.start();
   });
 
+  // With a paired computer the app stays in the tray on every platform; the
+  // agent itself is an OS service and keeps running either way.
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin' && !computerShell?.keepRunning()) app.quit();
   });
 }

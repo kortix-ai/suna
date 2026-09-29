@@ -30,6 +30,7 @@
 
 import React from 'react';
 import { ScrollView, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { groupMessagesIntoTurns } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,8 +46,10 @@ import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton
 import { AttachmentTile } from '@/components/session/attachment-tile';
 import { UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
+import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
 import type { MessageWithParts, Turn } from '@/lib/opencode/types';
-import { THEME } from '@/lib/utils/theme';
+import { turnTopGap } from '@/lib/session/auto-scroll';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
@@ -223,13 +226,17 @@ function WakingComposer({ onSend, draftSessionId }: { onSend?: (text: string) =>
   );
 }
 
-/** What the computer is doing: the composer card, as `SandboxHealthPill` draws it. */
+/**
+ * What the computer is doing: `SandboxHealthPill`'s bar, the composer card with
+ * the dot on the text inset. Two lines, not one: the queue notice
+ * (`SESSION_NOTICE.waking`) does not fit one line on a phone.
+ */
 function WakingStatus({ label }: { label: string | null }) {
   if (!label) return null;
   return (
     <View className="px-4 pb-2" accessibilityLiveRegion="polite">
       <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
-        <View className="flex-1 flex-row items-center gap-2 px-2 py-2">
+        <View className="flex-1 flex-row items-center gap-2 px-2">
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
           <Text variant="muted" className="shrink" numberOfLines={2}>
             {label}
@@ -266,25 +273,42 @@ function SavedThread({
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
+  const { colorScheme } = useColorScheme();
+  const background = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
+  // turn pads itself, `px-4` in `SessionTurn`), web's `mt-12` between turns
+  // (`turnTopGap`), and attachment tiles / file mentions opening the Recent
+  // files sheet (`ToolFilePreviewHost`).
   return (
     <View style={{ flex: 1 }} className="bg-background">
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: 12 }}
-        className="px-4"
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
-        {turns.map((turn) => (
-          <SessionTurn
-            key={turn.userMessage.info.id}
-            turn={turn}
-            isWorkingTurn={false}
-            isBusy={false}
-            sessionId={sessionId}
-            rewindDisabled
-          />
-        ))}
+        {turns.map((turn, index) => {
+          const gap = turnTopGap({ index, working: false, pending: false, previousPending: false });
+          return (
+            <View key={turn.userMessage.info.id} style={gap > 0 ? { marginTop: gap } : undefined}>
+              <SessionTurn
+                turn={turn}
+                isWorkingTurn={false}
+                isBusy={false}
+                sessionId={sessionId}
+                onFileMention={openFilePreview}
+                rewindDisabled
+              />
+            </View>
+          );
+        })}
       </ScrollView>
+
+      {/* The thread's fade above the input (`SessionPage`). */}
+      <LinearGradient
+        colors={[withAlpha(background, 0), withAlpha(background, 1)]}
+        style={{ height: 24, marginTop: -24, zIndex: 1 }}
+        pointerEvents="none"
+      />
 
       <View style={{ paddingBottom: insets.bottom }}>
         {error ? (
@@ -300,8 +324,14 @@ function SavedThread({
           </>
         )}
       </View>
+
+      <ToolFilePreviewHost />
     </View>
   );
+}
+
+function openFilePreview(path: string) {
+  useToolFilePreviewStore.getState().openPreview(path);
 }
 
 function ConnectErrorState({

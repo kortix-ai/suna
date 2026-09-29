@@ -14,16 +14,17 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 import {
   buildOpenCodeTestApp,
   signTestUserContext,
   TEST_SANDBOX_TOKEN,
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
-import { finalizeInitialSession } from '../harness/open-code/boot'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { egressShimPort } from '../egress-shim'
+import { finalizeInitialSession } from '@/harness/open-code/boot'
+import { readHostHealth } from '@/harness/shared/host-health'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { egressShimPort } from '@/services/egress-shim'
 
 const TEST_TOKEN = TEST_SANDBOX_TOKEN
 const baseConfig = testOpenCodeConfig
@@ -71,6 +72,16 @@ describe('daemon proxy auth gate', () => {
     expect(body.compiled_boot_mode).toBe('off')
     expect(body.compiled_checkout).toBe(false)
     expect(body.compiled_runtime).toBe(false)
+  })
+
+  it('reports the same host facts as every harness, naming itself', async () => {
+    const cfg = baseConfig()
+    const app = buildOpenCodeTestApp(cfg, fakeOpencode(), Date.now())
+    const body = (await (await app.request('/kortix/health')).json()) as Record<string, unknown>
+    expect(body.harness).toBe('opencode')
+    expect(body.runtime_truth).toBeDefined()
+    const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
+    expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))
   })
 
   it('reports when the workspace came from a compiled checkout', async () => {

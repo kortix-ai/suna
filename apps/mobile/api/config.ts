@@ -1,8 +1,13 @@
 import { supabase } from './supabase';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
+import { resolveEndpoints } from '@/lib/deployment/deployment';
+import { activeDeployment } from '@/lib/deployment/store';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8008/v1';
+// A private deployment chosen on the auth screen replaces the build's API URL.
+const BACKEND_URL = resolveEndpoints(activeDeployment, {
+  EXPO_PUBLIC_BACKEND_URL: process.env.EXPO_PUBLIC_BACKEND_URL,
+}).backendUrl;
 
 export function getServerUrl(): string {
   const url = resolveLocalUrl(BACKEND_URL);

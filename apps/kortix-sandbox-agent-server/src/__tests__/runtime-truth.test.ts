@@ -19,7 +19,7 @@
  *   5. a Platinum box resumes with `uptime_s` in the tens of millions of
  *      seconds — every boot-only decision above never re-runs.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import {
   DEFAULT_RUNTIME_TRUTH_TICK_MS,
   RUNTIME_TRUTH_COMPONENT_NAMES,
@@ -36,22 +36,29 @@ import {
   runtimeTruthReport,
   startRuntimeTruthTicker,
   type RuntimeTruthComponent,
-} from '../runtime-truth'
+} from '@/services/runtime-assets/runtime-truth'
 import {
   noteRuntimeConvergence,
   resetRuntimeConvergenceReportForTests,
   type RuntimeAssetsResult,
-} from '../runtime-assets'
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
+} from '@/services/runtime-assets/runtime-assets'
 import {
   configReleaseReport,
   resetConfigReleaseStateForTests,
   setRunningConfig,
-} from '../harness/open-code/config-release'
+} from '@/harness/open-code/config-release'
+import { resolveHarness } from '@/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 /**
- * The fake wiring `harness/open-code/runtime-truth-glue.ts` would install on a
- * real box. Test files are exempt from the harness-boundary rule (they scan
- * only production sources), so this can import the real config-release module
+ * The fake wiring `harness/open-code/runtime-truth-glue.ts` would
+ * install on a real box. Test files are exempt from the boundary lint
+ * (eslint.config.mjs), so this can import the real config-release module
  * directly — the point is to prove `runReconcileTick` reads whatever the
  * closure reports, not to re-mock it.
  */

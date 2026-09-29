@@ -319,6 +319,38 @@ flow(
   },
 );
 
+// The success path stores a real GitHub user access token, verified against
+// GitHub. The local profile has no GitHub, so this flow pins the refusals.
+flow(
+  "GH-20",
+  { domain: "git", routes: ["POST /v1/projects/github/user-token"] },
+  async (ctx) => {
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/github/user-token", { github_user_token: "ghu_x" });
+      r.status(401);
+    });
+    await ctx.step("NONMEMBER cannot store a token on the OWNER account → 403/404", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/github/user-token", {
+        account_id: ctx.P.OWNER.accountId,
+        github_user_token: "ghu_x",
+      });
+      r.status([403, 404]);
+    });
+    await ctx.step("OWNER without github_user_token → 400, and no token is echoed", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/github/user-token", { account_id: ctx.P.OWNER.accountId });
+      r.status(400);
+      const body = r.json<any>();
+      if (body.error !== "github_user_token is required") {
+        throw new Error(`expected the missing-token error, got: ${JSON.stringify(body)}`);
+      }
+    });
+  },
+);
+
 flow(
   "GH-3",
   {

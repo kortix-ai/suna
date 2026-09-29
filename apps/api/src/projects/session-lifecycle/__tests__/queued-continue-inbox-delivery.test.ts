@@ -65,6 +65,8 @@ let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+/** When set, the daemon never answers the interrupt arm — the wedged-box case. */
+let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
@@ -76,6 +78,8 @@ let failedCalls: Array<{
   message: string;
   options?: { retryable?: boolean };
 }> = [];
+let parkedCalls: Array<{ commandId: string; reason: string }> = [];
+let parkBudgetLeft = true;
 let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
@@ -348,7 +352,10 @@ mock.module('../store', () => ({
   // The delivery path parks a prompt whose RUNTIME was down instead of
   // dead-lettering it. Present so the module mock stays complete.
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
-  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  parkPromptForUnreachableRuntime: async ({ commandId }: { commandId: string }, reason: string) => {
+    parkedCalls.push({ commandId, reason });
+    return { parked: parkBudgetLeft, retries: parkBudgetLeft ? 1 : 3 };
+  },
   reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (
     { commandId }: { commandId: string },
@@ -518,11 +525,14 @@ beforeEach(() => {
   transcript = [];
   capturedBodies = [];
   quickQueueControlRequests = [];
+  quickQueueArmFails = false;
   capturedKeys = [];
   seenKeys.clear();
   succeededCalls = [];
   forwardedCalls = [];
   failedCalls = [];
+  parkedCalls = [];
+  parkBudgetLeft = true;
   payloadPatches = [];
   claimed = [];
   openDelayBySession = {};
@@ -557,6 +567,7 @@ beforeEach(() => {
         method: init?.method ?? 'GET',
         body: JSON.parse(String(init?.body)) as Record<string, unknown>,
       });
+      if (quickQueueArmFails) return new Response(null, { status: 503 });
       return Response.json({ armed: true }, { status: 202 });
     }
     // The staged-revert guard reads the session row; the re-mint and the
@@ -569,6 +580,42 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('delivery outcomes write the matching terminal command status and return it', async () => {
+    const cases = [
+      { delivery: 'delivered', setup: () => {}, result: 'succeeded', write: 'succeeded', reason: null, retryable: null },
+      { delivery: 'unreachable', setup: () => { sessionRow!.status = 'failed'; }, result: 'queued', write: 'parked', reason: "the session's machine could not be reached", retryable: null },
+      { delivery: 'not-landed', setup: () => { runtimeDropsFirstDelivery = true; }, result: 'queued', write: 'requeued', reason: 'prompt accepted by the runtime but never became a message', retryable: null },
+      { delivery: 'pending', setup: () => { serviceKeyAvailable = false; }, result: 'queued', write: 'failed', reason: 'the session was not ready in time', retryable: true },
+      { delivery: 'no-session', setup: () => { sessionRow = null; }, result: 'failed', write: 'failed', reason: 'that session no longer exists', retryable: false },
+      { delivery: 'failed', setup: () => { promptResponsePlan = ['permanent-refusal']; }, result: 'failed', write: 'failed', reason: 'The runtime rejected this prompt.', retryable: false },
+    ] as const;
+    for (const scenario of cases) {
+      scenario.setup();
+      expect(await executeQueuedContinue(baseRow({ payload: {
+        text: 'say hi',
+        ...(scenario.delivery === 'not-landed' ? { wireMessageId: SUBMITTED_WIRE_ID } : {}),
+      } }))).toBe(scenario.result);
+      expect({
+        succeeded: succeededCalls.length,
+        parked: parkedCalls.length,
+        requeued: unlandedRequeues.length,
+        failed: failedCalls.length,
+      }[scenario.write]).toBe(1);
+      if (scenario.write === 'succeeded') expect(succeededCalls[0]?.result).toEqual({ status: 'delivered' });
+      if (scenario.write === 'parked') expect(parkedCalls[0]).toEqual({ commandId: 'cmd-1', reason: scenario.reason });
+      if (scenario.write === 'requeued') expect(unlandedRequeues[0]).toEqual({ commandId: 'cmd-1', reason: scenario.reason });
+      if (scenario.write === 'failed') expect(failedCalls[0]).toMatchObject({ message: scenario.reason, options: { retryable: scenario.retryable } });
+      succeededCalls = [];
+      parkedCalls = [];
+      unlandedRequeues = [];
+      failedCalls = [];
+      sessionRow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'running', metadata: {}, opencodeSessionId: OC_SESSION_ID };
+      serviceKeyAvailable = true;
+      runtimeDropsFirstDelivery = false;
+      capturedBodies = [];
+      seenKeys.clear();
+    }
+  });
   // A box whose env cannot be converged would run the prompt against a stale
   // gateway URL, stale secrets and a stale model catalog. It waits instead.
   test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
@@ -606,6 +653,44 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('a runtime that will not serve the interrupt parks the row on the unreachable ladder, not the 2 s order backoff', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(quickQueueControlRequests).toHaveLength(1);
+    expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
+    expect(requeues).toHaveLength(0);
+    expect(failedCalls).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('after the unreachable budget the interrupted row fails honestly instead of waiting for ever', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    parkBudgetLeft = false;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('failed');
+    expect(parkedCalls).toHaveLength(1);
+    expect(failedCalls.at(-1)).toMatchObject({
+      message: "the session's machine could not be reached after 3 attempts",
+      options: { retryable: false },
+    });
+    expect(requeues).toHaveLength(0);
   });
 
   test('Stop during a transient delivery failure prevents another POST', async () => {

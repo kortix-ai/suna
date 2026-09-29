@@ -198,6 +198,25 @@ async function sandboxDeadline(id: string): Promise<Date> {
 }
 
 describe('writes that end a claim are fenced by the lease', () => {
+  test('two workers racing to reclaim one expired row get one lease and one attempt', async () => {
+    const row = await enqueue('two-worker-race');
+    const [initial] = await claim(row, 'worker-initial');
+    expect(initial?.attempts).toBe(1);
+    await expireLock(row);
+
+    const [a, b] = await Promise.all([
+      claim(row, 'worker-race-a'),
+      claim(row, 'worker-race-b'),
+    ]);
+    expect(a.length + b.length).toBe(1);
+    const winner = a[0] ?? b[0];
+    expect(winner?.lockedBy).toBe(a.length ? 'worker-race-a' : 'worker-race-b');
+    const persisted = await read(row.commandId);
+    expect(persisted.status).toBe('running');
+    expect(persisted.locked_by).toBe(winner.lockedBy);
+    expect(persisted.attempts).toBe(2);
+  });
+
   test("a reclaimed row ignores the first worker's late failure", async () => {
     const { byA, byB } = await reclaimed('late-fail');
     await markCommandFailed(byA, 'drain failed: stale worker', { retryable: true, attempts: 1 });

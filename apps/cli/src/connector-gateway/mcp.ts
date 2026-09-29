@@ -28,6 +28,7 @@ import {
   mintConnectLink,
   mintSecretLink,
   removeConnector,
+  setSecrets,
   type BrokerMethod,
   type ConnectorClient,
   type SecretLinkResult,
@@ -132,6 +133,11 @@ const META_TOOLS = [
           type: 'string',
           description:
             'Which connected account to run as, when this connector has more than one (a shared project account and each member\'s own). Give the account label or its connection id exactly as `accounts` returns it, or the selector word `me` (the caller\'s own default private account) or `project` (the project\'s default shared account). Omit to use the default account. A name that matches nothing is refused and the refusal lists the available names — it never silently runs as a different account.',
+        },
+        approval_context: {
+          type: 'string',
+          description:
+            'What this call does, in plain words, shown to the human if a policy holds it for approval. Always pass it for writes whose args are only ids: for send_draft say who it goes to, the subject, and the body; for a delete say what gets deleted. The approver sees it labelled as your description next to the real arguments.',
         },
         attachment_files: {
           type: 'array',
@@ -282,7 +288,7 @@ const META_TOOLS = [
   {
     name: 'request_secret',
     description:
-      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. The value is never pasted into chat. In the web UI the link opens a fill-in modal; in Slack it is a tappable link. The default connector scope keeps the value server-side. Use runtime scope only when a sandbox process must receive the value.',
+      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key) that you do NOT have, and SURFACE the returned url in your reply. If the value is already in the conversation, call set_secret instead — do not make the human enter it twice. Never send the human to hunt through the dashboard. In the web UI the link opens a fill-in modal; in Slack it is a tappable link. The default connector scope keeps the value server-side. Use runtime scope only when a sandbox process must receive the value.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -311,6 +317,28 @@ const META_TOOLS = [
         },
       },
       required: ['names'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'set_secret',
+    description:
+      'Store project SECRET value(s) you already HAVE — e.g. an API key the human gave in the conversation. Saves directly, no link. Needs your project secret-write permission; a 403 means you lack it, so fall back to request_secret. Do not echo the value back in your reply. runtime scope (default) loads it into the sandbox env; connector scope keeps it server-side for the connector gateway.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        values: {
+          type: 'object',
+          description: 'Map of env var name to value, e.g. { "APOLLO_API_KEY": "<value>" }. Names are UPPER_SNAKE_CASE.',
+        },
+        scope: {
+          type: 'string',
+          enum: ['runtime', 'connector'],
+          description: 'runtime (default, sandbox environment) or connector (server-side only).',
+        },
+      },
+      required: ['values'],
       additionalProperties: false,
     },
     readOnly: false,
@@ -495,7 +523,10 @@ function content(data: unknown) {
 async function runMetaTool(client: ConnectorClient, name: string, args: Record<string, unknown>) {
   switch (name) {
     case 'connectors': {
-      const connectors = await client.catalog();
+      // The summary reads no `inputSchema` — opt out, or the API's
+      // include-by-default ships the whole catalog's schemas (439KB on prod)
+      // to count actions.
+      const connectors = await client.catalog({ includeSchemas: false });
       return {
         content: content({
           connectors: connectors.map((c) => {
@@ -621,6 +652,8 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       try {
         result = await callWithApprovalHandoff(client, connector, action, callArgs, {
           account: typeof args.account === 'string' ? args.account : null,
+          approvalContext:
+            typeof args.approval_context === 'string' ? args.approval_context : null,
         });
       } catch (err) {
         // A denial is an HTTP 403, so the SDK THROWS it. Left to the JSON-RPC
@@ -814,6 +847,37 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
             ok: false,
             error: err instanceof Error ? err.message : String(err),
           }),
+          isError: true,
+        };
+      }
+    }
+
+    case 'set_secret': {
+      const values = Object.fromEntries(
+        Object.entries(asRecord(args.values)).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '',
+        ),
+      );
+      if (Object.keys(values).length === 0)
+        return { content: content({ ok: false, error: 'values is required' }), isError: true };
+      const scope = args.scope === 'connector' ? 'connector' : 'runtime';
+      try {
+        const saved = await setSecrets({ values, scope });
+        return {
+          content: content({
+            ok: true,
+            saved,
+            scope,
+            instructions:
+              scope === 'runtime'
+                ? 'Saved. The value is pushed to this session; check the variable in a new shell or run kortix secrets ls. "not granted" there means your agent grant excludes it — tell the human the fix.'
+                : 'Saved server-side for the connector gateway. It never appears in the sandbox env.',
+          }),
+          isError: false,
+        };
+      } catch (err) {
+        return {
+          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
           isError: true,
         };
       }
