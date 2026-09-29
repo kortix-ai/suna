@@ -79,7 +79,4 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
     </BasicTool>
   );
 }
-ToolRegistry.register('session_search', SessionSearchTool);
 ToolRegistry.register('session-search', SessionSearchTool);
-ToolRegistry.register('oc-session_search', SessionSearchTool);
-ToolRegistry.register('oc-session-search', SessionSearchTool);

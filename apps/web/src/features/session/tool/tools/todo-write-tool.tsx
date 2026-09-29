@@ -116,5 +116,4 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
   );
 }
 ToolRegistry.register('todowrite', TodoWriteTool);
-ToolRegistry.register('todo_write', TodoWriteTool);
 ToolRegistry.register('todo-write', TodoWriteTool);

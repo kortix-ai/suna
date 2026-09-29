@@ -104,15 +104,6 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
     </BasicTool>
   );
 }
-ToolRegistry.register('session_list', SessionListBackgroundTool);
 ToolRegistry.register('session-list', SessionListBackgroundTool);
-ToolRegistry.register('oc-session_list', SessionListBackgroundTool);
-ToolRegistry.register('oc-session-list', SessionListBackgroundTool);
-ToolRegistry.register('session_list_background', SessionListBackgroundTool);
 ToolRegistry.register('session-list-background', SessionListBackgroundTool);
-ToolRegistry.register('oc-session_list_background', SessionListBackgroundTool);
-ToolRegistry.register('oc-session-list-background', SessionListBackgroundTool);
-ToolRegistry.register('session_list_spawned', SessionListBackgroundTool);
 ToolRegistry.register('session-list-spawned', SessionListBackgroundTool);
-ToolRegistry.register('oc-session_list_spawned', SessionListBackgroundTool);
-ToolRegistry.register('oc-session-list-spawned', SessionListBackgroundTool);

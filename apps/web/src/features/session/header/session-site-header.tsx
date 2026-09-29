@@ -16,6 +16,7 @@ import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { copyToClipboard } from '@/lib/utils/clipboard';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
@@ -50,6 +51,8 @@ import { qk, useProjectSession } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
+  CopyIcon,
+  LinkSimpleIcon,
   CaretDownIcon,
   CodeSimpleIcon as Code2,
   FileArrowDownIcon as FileDown,
@@ -98,6 +101,7 @@ export function SessionSiteHeader({
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tPalette = useTranslations('commandPalette');
   const devTools = useLocalizedUiCatalog(DEV_TOOLS);
   const router = useRouter();
   const pathname = usePathname();
@@ -232,6 +236,13 @@ export function SessionSiteHeader({
   const toggleActionPanel = useToggleActionPanel();
   const readyChip = useReadyChip();
 
+  // The desktop shell has no address bar, so the menu is the only way to
+  // share a session: the ID for support and the CLI, the link for people.
+  const copyValue = async (label: string, value: string) => {
+    if (await copyToClipboard(value)) successToast(tPalette('copied', { label }));
+    else errorToast(tPalette('copyFailed'));
+  };
+
   const sessionActionItems = (
     <>
       {isProjectSession && (
@@ -284,6 +295,25 @@ export function SessionSiteHeader({
           )}
 
           <DropdownMenuSeparator />
+        </>
+      )}
+
+      {isProjectSession && (
+        <>
+          <DropdownMenuItem
+            className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+            onClick={() => copyValue(tPalette('copySessionId'), projectSessionId!)}
+          >
+            <CopyIcon />
+            {tPalette('copyAction', { label: tPalette('copySessionId') })}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+            onClick={() => copyValue(tPalette('copySessionLink'), window.location.href)}
+          >
+            <LinkSimpleIcon />
+            {tPalette('copyAction', { label: tPalette('copySessionLink') })}
+          </DropdownMenuItem>
         </>
       )}
 

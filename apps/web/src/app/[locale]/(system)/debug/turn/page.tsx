@@ -390,7 +390,6 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
         900,
       ),
       tool('bash', { command: 'bun test enrichment' }, 3400),
-      tool('dcp_compress', {}),
       tool('get_mem', {}),
     ],
   },
@@ -426,7 +425,7 @@ const BURSTS: Array<{ label: string; parts: Part[]; working: boolean }> = [
   {
     label: 'plumbing only · renders NOTHING — no rows means no burst',
     working: false,
-    parts: [tool('dcp_prune', {}), tool('context_info', {})],
+    parts: [tool('get_mem', {}), tool('memory_search', {})],
   },
   {
     label: 'icon mix · read/bash/write vs glob/grep/list',
