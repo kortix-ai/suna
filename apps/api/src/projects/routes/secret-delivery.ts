@@ -36,7 +36,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/secrets/{identifier}/strategy',
     tags: ['secrets'],
-    summary: 'PUT /:projectId/secrets/:identifier/strategy',
+    summary: 'Set how a secret is delivered to sandboxes',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), identifier: z.string() }),

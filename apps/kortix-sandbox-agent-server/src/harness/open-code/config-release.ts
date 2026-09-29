@@ -31,6 +31,7 @@ import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import { isDaemonShuttingDown } from '@/lib/shutdown-state'
+import { managedOverlayRoot, releaseSourcePaths } from './project-layout'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
@@ -234,14 +235,18 @@ export interface ConvergeDeps {
 
 type ConfigDepsOptions = Omit<NonNullable<Parameters<typeof ensureOpencodeConfigDeps>[1]>, 'platformOwned'>
 
-/** Dependencies and the managed-skill overlay, the preparation every config dir gets. */
+/** Dependencies and the managed-skill overlay, the preparation every config dir in the working tree gets. */
 export async function prepareConfigDir(
   dir: string,
   managedSkillsDir?: string,
   depsOptions: ConfigDepsOptions = {},
+  projectRoot?: string,
 ): Promise<void> {
   await ensureOpencodeConfigDeps(dir, depsOptions)
-  await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
+  await ensureInjectedManagedSkills(
+    managedOverlayRoot(dir, projectRoot),
+    managedSkillsDir ? { bakedDir: managedSkillsDir } : {},
+  )
 }
 
 /**
@@ -410,7 +415,7 @@ export function noteRunningConfig(
   try {
     return writeConfigReleaseNotice({
       sourceCommit: descriptor.source_commit,
-      configDir: descriptor.config_dir,
+      sourcePaths: releaseSourcePaths(descriptor.config_dir),
       releaseDir: releaseDirPath,
       sessionId,
       agentRepoint: descriptor.agent_repoint_reason ?? null,
@@ -480,7 +485,7 @@ async function revertToPreReleaseConfig(
 
   // No release runs any more: the notice would be a false statement.
   clearConfigReleaseNotice()
-  await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir)))(dir)
+  await (deps.prepare ?? ((target: string) => prepareConfigDir(target, deps.managedSkillsDir, {}, cfg.projectTarget)))(dir)
   const toolNames = await toolNamesInDir(dir)
   const pluginFiles = await pluginFilesInDir(dir)
   // The check above ran before `prepare`, which walks and rewrites a config

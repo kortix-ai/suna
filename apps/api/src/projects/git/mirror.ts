@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { invalidateBranchList } from './branch-list-cache';
 import type { GitBackedProject } from './types';
@@ -446,6 +447,12 @@ export function isGitPathNotFoundError(err: unknown): boolean {
   if (!isGitOperationError(err)) return false;
   const text = `${err.message}\n${err.stderr}`;
   return text.includes('does not exist in');
+}
+
+/** `git` could not resolve the ref itself (a branch, tag or commit that does not exist). */
+export function isGitRefNotFoundError(err: unknown): boolean {
+  if (!isGitOperationError(err)) return false;
+  return /invalid object name|not a valid object name|unknown revision|bad revision/i.test(`${err.message}\n${err.stderr}`);
 }
 
 export async function runGit(
@@ -993,14 +1000,14 @@ async function scrubGeneratedSnapshotFiles(root: string): Promise<void> {
     await fs.rm(path.join(root, relativePath), { recursive: true, force: true }).catch(() => {});
   };
 
-  await Promise.all([
-    removeIfPresent('.kortix/opencode/node_modules'),
-    removeIfPresent('.kortix/opencode/package-lock.json'),
-    removeIfPresent('.kortix/opencode/npm-shrinkwrap.json'),
-    removeIfPresent('.kortix/opencode/pnpm-lock.yaml'),
-    removeIfPresent('.kortix/opencode/yarn.lock'),
-    removeIfPresent('.kortix/opencode/bun.lockb'),
-  ]);
+  // Both the current and the legacy default OpenCode config dir.
+  await Promise.all(
+    [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].flatMap((dir) =>
+      ['node_modules', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'].map(
+        (name) => removeIfPresent(`${dir}/${name}`),
+      ),
+    ),
+  );
 
   async function walk(dir: string): Promise<void> {
     let entries: import('node:fs').Dirent[];

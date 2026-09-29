@@ -35,6 +35,9 @@ function row(
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -353,11 +356,17 @@ describe('backend credential session isolation', () => {
     createdBy: WRAPPER,
     origin: 'backend',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
   });
   const bob = row('bbbb2222-2222-4222-8222-222222222222', {
     createdBy: WRAPPER,
     origin: 'backend',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
   });
 
   const select = (callerSessionId: string | null) =>

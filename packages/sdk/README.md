@@ -300,6 +300,11 @@ const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
+// Top-level sessions the caller started; spawned sessions load under their parent.
+const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy: "me" });
+const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
+const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
+// React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
@@ -826,6 +831,8 @@ Native cannot consume the SDK's fetch-based SSE stream.
 `Authorization: Bearer <token>` — a Supabase JWT (user sessions), a Kortix PAT
 (`kortix_pat_…`) for server-side / automation use, or an OAuth access token
 (`kortix_oat_…`) minted by "Sign in with Kortix" — supplied via `getToken`.
+
+To use Kortix from an MCP client (Claude, ChatGPT, Cursor, Codex) instead of code, see the hosted MCP server: <https://kortix.com/docs/connect/mcp>.
 
 ### Sign in with Kortix (your app, their Kortix account)
 

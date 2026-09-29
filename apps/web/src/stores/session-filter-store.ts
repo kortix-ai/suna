@@ -317,6 +317,21 @@ export const useSessionFilterStore = create<State & Actions>()(
     }),
     {
       name: STORAGE_KEY,
+      // v1 dropped the client-side 'mine' source facet (the server's
+      // `started_by` replaced it). A persisted 'mine' would match nothing.
+      version: 1,
+      migrate: (persisted) => {
+        const state = persisted as Partial<State>;
+        const clean = (map?: Record<string, SessionSourceFilter[]>) =>
+          Object.fromEntries(
+            Object.entries(map ?? {}).map(([key, list]) => [
+              key,
+              list.filter((value) => (value as string) !== 'mine'),
+            ]),
+          );
+        return { ...state, sourceFiltersByProject: clean(state.sourceFiltersByProject) } as State &
+          Actions;
+      },
       storage: createSafeJSONStorage(),
       partialize: (state) => ({
         groupByProject: pruneProjects(state.groupByProject),
