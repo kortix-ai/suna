@@ -19,12 +19,12 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { cn } from '@/lib/utils';
+import { DisclosureContent } from '@/components/ui/disclosure';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
-import { CaretRightIcon, ChatTeardropTextIcon } from '@phosphor-icons/react';
+import { ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';
 import { isQuestionTool } from '../session-activity-groups';
+import { ChainStepTrigger } from './chain-step-trigger';
 
 interface QuestionInput {
   question: string;
@@ -62,27 +62,15 @@ function AnsweredQuestionStepImpl({ part, bare }: { part: ToolPart; bare?: boole
     <>
       {/* One child only — DisclosureTrigger clones each child into its own
           clickable node, so a sibling caret would stack as a separate row. */}
-      <DisclosureTrigger>
-        <div
-          className={cn(
-            'text-foreground/80 hover:text-foreground',
-            'flex w-full cursor-pointer items-center gap-3',
-            'text-left text-sm leading-[1.5] transition-colors',
-          )}
-        >
-          <ChatTeardropTextIcon className="text-muted-foreground size-4 flex-none" />
-          <span className="font-medium">{tI18nComplete.raw('text9a72221a2747')}</span>
+      <ChainStepTrigger
+        icon={<ChatTeardropTextIcon className="text-muted-foreground size-4 flex-none" />}
+        label={<span className="font-medium">{tI18nComplete.raw('text9a72221a2747')}</span>}
+        trailing={
           <span className="text-muted-foreground tabular-nums">
             {answeredCount} {tI18nComplete.raw('text68c780cd132a')}
           </span>
-          <CaretRightIcon
-            className={cn(
-              'text-muted-foreground/40 size-3.5 flex-none',
-              'transition-transform group-data-[state=open]/step:rotate-90',
-            )}
-          />
-        </div>
-      </DisclosureTrigger>
+        }
+      />
       <DisclosureContent>
         <div className="mt-3 space-y-2 pl-7">
           {questions.map((q, i) => {

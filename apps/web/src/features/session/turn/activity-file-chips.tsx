@@ -16,9 +16,9 @@ import { useTranslations } from '@/i18n/use-translations';
  * agent opened or produced, not about edits.
  */
 
-import { CaretRightIcon, WarningIcon } from '@phosphor-icons/react';
+import { WarningIcon } from '@phosphor-icons/react';
 
-import { DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { DisclosureContent } from '@/components/ui/disclosure';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
@@ -34,6 +34,7 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
 import { memo } from 'react';
 import { normalizeActivityToolName } from '../session-activity-groups';
+import { ChainStepTrigger } from './chain-step-trigger';
 
 import { ActivityStep, iconFor } from './activity-step';
 import { samePartsList } from './same-parts';
@@ -308,16 +309,7 @@ function ActivityFileChipStepImpl({
     <>
       {/* One child only — DisclosureTrigger clones each child into its own
 			    clickable node, so a sibling caret would stack as a separate row. */}
-      <DisclosureTrigger>
-        <div
-          data-status={status}
-          className={cn(
-            'text-foreground/80 hover:text-foreground',
-            'flex w-full cursor-pointer items-center gap-3',
-            'text-left text-sm leading-[1.5] transition-colors',
-          )}
-        >
-          {/* EVERY row keeps its leading glyph, single-row bursts included —
+      {/* EVERY row keeps its leading glyph, single-row bursts included —
               the same rule, and the same reasoning, `ActivityStep` already
               carries. A bare row used to drop it on the geometric argument that
               the icon anchors the chain rail (`left-2`) and one row has no
@@ -334,7 +326,10 @@ function ActivityFileChipStepImpl({
               The failure mark still replaces the glyph while closed: on a bare
               row it is the only verdict left, since the burst's summary line and
               closing step are both gone. */}
-          {status === 'error' ? (
+      <ChainStepTrigger
+        status={status}
+        icon={
+          status === 'error' ? (
             <>
               {/* Closed: failure mark replaces the family glyph. Open: the
                   failed rows carry their own verdicts, so the trigger falls
@@ -351,22 +346,18 @@ function ActivityFileChipStepImpl({
             </>
           ) : (
             <Icon className="text-muted-foreground size-4 flex-none" />
-          )}
-          {status === 'running' ? (
+          )
+        }
+        label={
+          status === 'running' ? (
             <TextShimmer className="min-w-0 truncate leading-[1.5] font-medium">
               {label}
             </TextShimmer>
           ) : (
             <span className="min-w-0 truncate font-medium">{label}</span>
-          )}
-          <CaretRightIcon
-            className={cn(
-              'text-muted-foreground/40 size-3.5 flex-none',
-              'transition-transform group-data-[state=open]/step:rotate-90',
-            )}
-          />
-        </div>
-      </DisclosureTrigger>
+          )
+        }
+      />
       <DisclosureContent>
         {/* `pl-7` puts the files under the LABEL (size-4 icon + gap-3), clear of
 				    the chain rail at `left-2` — the indent is what says they belong to
