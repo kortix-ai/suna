@@ -36,7 +36,7 @@ export interface TeamsManifest {
  * existing app only when this differs from what the catalog holds, and a Teams
  * admin has to re-consent to new resource-specific permissions on the team.
  */
-export const TEAMS_MANIFEST_VERSION = '1.4.0';
+export const TEAMS_MANIFEST_VERSION = '1.5.0';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
@@ -60,7 +60,8 @@ export const TEAMS_RSC_PERMISSIONS = [
 
 const BOT_COMMANDS = [
   { title: '/help', description: 'Show what Kortix can do' },
-  { title: '/status', description: 'Show the effective project, agent and model' },
+  { title: '/status', description: 'Show and change the project, agent and model' },
+  { title: '/sessions', description: 'Your recent sessions started from Teams' },
   { title: '/login', description: 'Connect your Kortix account' },
   { title: '/models', description: 'Pick the model for this conversation' },
   { title: '/agents', description: 'Pick the agent for this conversation' },

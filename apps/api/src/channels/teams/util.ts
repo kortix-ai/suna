@@ -78,6 +78,7 @@ const COMMAND_VERBS = new Set([
   'status',
   'config',
   'settings',
+  'sessions',
   'models',
   'model',
   'agents',

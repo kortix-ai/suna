@@ -453,6 +453,21 @@ describe('relayTurnEnd', () => {
     expect(ok).toBe(true);
     expect(apiCalls.map((c) => c.fn)).toEqual(['updateCard']);
   });
+
+  // A stopped run read "Task complete" with its last step ticked: the aborted
+  // path finalized with no title. Slack says "Run stopped".
+  test('a stopped run reads "Run stopped", and its unfinished step is not ticked', async () => {
+    dbResults = [
+      [streamRow({ messageTs: 'act-1', steps: [{ type: 'task_update', id: 'step-0', title: 'Reading logs', status: 'in_progress' }] })],
+      [{ sessionId: 'sess-1' }],
+      [],
+    ];
+    expect(await relayTurnEnd('sess-1', 'error', { name: 'MessageAbortedError', message: 'The operation was aborted.' })).toBe(true);
+    const card = JSON.stringify(apiCalls.find((c) => c.fn === 'updateCard')?.args[2]);
+    expect(card).toContain('Run stopped');
+    expect(card).not.toContain('Task complete');
+    expect(card).not.toContain('✓ Reading logs');
+  });
 });
 
 // A session this conversation waited on can die during async provisioning.
