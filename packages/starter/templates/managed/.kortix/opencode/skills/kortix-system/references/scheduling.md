@@ -156,6 +156,13 @@ A session turn either completes or it doesn't — you can't suspend an
 in-flight turn for hours. A **session reminder** is the resume half: it
 re-prompts THIS session later, with its whole conversation and workspace.
 
+Reminders are a **per-project feature flag** (`reminders`, off by default).
+`kortix projects features` shows whether it is on. If `kortix remind` answers
+"Reminders is not enabled for this project", tell the user and name the switch
+(`kortix projects features enable reminders`, or Settings → Feature flags) —
+enabling it is their decision, not yours — and fall back to a one-off `run_at`
+trigger (`session_mode: reuse`) until they do.
+
 When you'd reach for a mid-task wait (rate-limit cooldown, waiting on an
 approval or an email reply, a slow external job):
 
