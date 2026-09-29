@@ -23,9 +23,6 @@ if [ "$OPENCODE_HOME" = auto ]; then
 fi
 RELAUNCH='__RELAUNCH__'
 HEALTH_WAIT_S=__HEALTH_WAIT_S__
-# 1 = a dead-daemon repair: the control plane concluded "dead" from OUTSIDE the
-# box, through the provider ingress. Only this box's loopback can confirm it.
-ONLY_IF_DEAD='__ONLY_IF_DEAD__'
 # Entrypoint supplied by the control plane, for an API whose manifest predates the
 # `entrypoint` asset. Empty when the box's API serves it (preferred: same digest chain).
 EMBEDDED_EP_B64='__ENTRYPOINT_B64__'
@@ -70,14 +67,6 @@ readenv() {
   fi
   printf '%s' "$v"
 }
-# An ingress that times out reads exactly like a corpse (prod 2026-09-29: ~18
-# min of edge timeouts to a healthy daemon). A daemon that answers here is not
-# dead, so there is nothing to relaunch, stage or rotate.
-if [ "$ONLY_IF_DEAD" = 1 ] && curl -fsS --max-time 3 -o /dev/null http://127.0.0.1:8000/kortix/health 2>/dev/null; then
-  log "daemon answers on loopback; the ingress, not the daemon, was silent. Nothing to repair."
-  emit '{"ok":true,"stage":"alive","token_rotated":false}'
-  exit 0
-fi
 [ "$(id -u)" = 0 ] || fail preflight "must run as root"
 for b in curl sha256sum setsid pgrep; do
   command -v "$b" >/dev/null 2>&1 || fail preflight "missing $b"

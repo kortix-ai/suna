@@ -305,6 +305,9 @@ export function classifyDaemonHealth(
 
 /** Gap between the two health reads that must BOTH be silent before a relaunch. */
 export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+/** The daemon as the box itself sees it — no provider ingress in the path. */
+const LOOPBACK_HEALTH_URL = 'http://127.0.0.1:8000/kortix/health';
+const LOOPBACK_PROBE_TIMEOUT_MS = 15_000;
 
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
@@ -378,8 +381,6 @@ export interface RenderScriptOptions {
    * back to the box's own token, which a wrong row can have already killed.
    */
   repairToken?: string;
-  /** A dead-daemon repair: exit untouched when the daemon answers on the box's loopback. */
-  onlyIfDead?: boolean;
 }
 
 /**
@@ -400,14 +401,13 @@ export function renderLegacyBootstrapScript(opts: RenderScriptOptions): string {
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(kortixToken)) throw new Error('unsafe kortixToken');
   const repairToken = opts.repairToken ?? '';
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(repairToken)) throw new Error('unsafe repairToken');
-  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ONLY_IF_DEAD__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
+  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
     if (!template.includes(placeholder)) throw new Error(`bootstrap script template lacks ${placeholder}`);
   }
   return template
     .replace('__OPENCODE_HOME__', opencodeHome)
     .replace('__RELAUNCH__', opts.relaunch)
     .replace('__HEALTH_WAIT_S__', String(healthWaitS))
-    .replace('__ONLY_IF_DEAD__', opts.onlyIfDead ? '1' : '0')
     .replace('__ENTRYPOINT_B64__', embedded)
     .replace('__PNPM_VERSION__', pnpmVersion)
     .replace('__KORTIX_TOKEN__', kortixToken)
@@ -747,6 +747,20 @@ export async function bootstrapLegacyRuntime(
     await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
     const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
+      }
       deadDaemonOnRunningBox = true;
       deps.log('daemon gone on a running box; relaunching the runtime chain', {
         sandboxId: input.sandboxId,
@@ -946,7 +960,6 @@ export async function bootstrapLegacyRuntime(
           pnpmVersion: deps.pnpmVersion?.() ?? undefined,
           kortixToken,
           repairToken: repair?.secret,
-          onlyIfDead: deadDaemonOnRunningBox,
         }),
       ),
       LEGACY_BOOTSTRAP_EXEC_TIMEOUT_MS,
@@ -984,13 +997,6 @@ export async function bootstrapLegacyRuntime(
     await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
     deps.log('legacy runtime bootstrap deferred: a turn started during the repair', { sandboxId: input.sandboxId });
     return { outcome: 'skipped-busy', detail: 'a turn started during the repair; relaunch deferred', classification };
-  }
-  if (report.stage === 'alive') {
-    // The box's own loopback answered: the daemon was never dead, the ingress
-    // was silent. Nothing ran, so this was not an attempt.
-    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
-    deps.log('dead-daemon repair skipped: the daemon answers on loopback', { sandboxId: input.sandboxId });
-    return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
   }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {

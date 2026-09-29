@@ -1708,19 +1708,21 @@ async function runOpenSession(args: {
     ensured.bootPhase ?? null,
   );
   // A miss through the ingress on a box whose daemon already answered this
-  // boot is the hop, not the box: keep serving (readiness-clocks.ts
-  // `servesThroughProbeMiss`). Only lifecycle facts leave `ready`.
-  if (ensured.pin && servesThroughProbeMiss(sandboxMetadata(row), ensured)) {
-    return {
-      stage: 'ready',
-      agent_name: visible.row.agentName ?? 'default',
-      retriable: false,
-      sandbox: serializeSandboxRow(row),
-      opencode_session_id: ensured.pin,
-      runtime_url: sessionRuntimeUrlPath(runningExternalId),
-      reason: ensured.reason,
-    };
-  }
+  // boot is the hop, not the box (readiness-clocks.ts `servesThroughProbeMiss`).
+  // It keeps serving: the answer stays `ready` and the box is never parked.
+  // The unreachable spell below still runs, so a daemon that really died is
+  // relaunched once per spell, and the relaunch exits untouched when the
+  // box's own loopback answers (legacy-runtime-bootstrap.sh ONLY_IF_DEAD).
+  const serving = !!ensured.pin && servesThroughProbeMiss(sandboxMetadata(row), ensured);
+  const servingAnswer: SessionStartResult = {
+    stage: 'ready',
+    agent_name: visible.row.agentName ?? 'default',
+    retriable: false,
+    sandbox: serializeSandboxRow(row),
+    opencode_session_id: ensured.pin,
+    runtime_url: sessionRuntimeUrlPath(runningExternalId),
+    reason: ensured.reason,
+  };
   if (ensured.reason === 'unreachable') {
     // `unreachable` is five different failures wearing one word (see
     // `opencode-mapping.ts`'s `UnreachableCause`). A session that cycles on it
@@ -1888,6 +1890,7 @@ async function runOpenSession(args: {
         }
       }
       if (repairing) {
+        if (serving) return servingAnswer;
         return {
           stage: 'starting',
           agent_name: visible.row.agentName ?? 'default',
@@ -1899,7 +1902,7 @@ async function runOpenSession(args: {
         };
       }
     }
-    if (staleBoot) {
+    if (staleBoot && !serving) {
       log.did('reconciled');
       log.did('reconciled');
     return preserveEstablishedRuntimeOnOpen(
@@ -2131,6 +2134,7 @@ async function runOpenSession(args: {
     }
   }
 
+  if (serving) return servingAnswer;
   return {
     stage: booting ? 'starting' : 'ready',
     agent_name: visible.row.agentName ?? 'default',

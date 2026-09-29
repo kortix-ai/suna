@@ -247,15 +247,6 @@ describe('decideDeadDaemonOnOpen', () => {
 });
 
 describe('renderLegacyBootstrapScript', () => {
-  test('a dead-daemon repair asks the box first: a daemon answering on loopback ends the script before anything is touched', () => {
-    expect(renderLegacyBootstrapScript({ relaunch: 'pt-app' })).toContain("ONLY_IF_DEAD='0'");
-    const s = renderLegacyBootstrapScript({ relaunch: 'pt-app', onlyIfDead: true });
-    expect(s).toContain("ONLY_IF_DEAD='1'");
-    const guard = s.indexOf('"stage":"alive"');
-    expect(guard).toBeGreaterThan(0);
-    expect(guard).toBeLessThan(s.indexOf('/v1/runtime-assets/manifest'));
-    expect(guard).toBeLessThan(s.indexOf('if [ -n "$NEW_KORTIX_TOKEN" ]'));
-  });
   test('carries no secret, verifies every download, keeps the baked binary, restores on failure', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
     expect(s).not.toMatch(/kortix_(sb|pat)_[A-Za-z0-9]{8,}|Bearer [A-Za-z0-9]/);
@@ -564,38 +555,57 @@ describe('bootstrapLegacyRuntime', () => {
 });
 
 describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {
-  const decodeScript = (cmd: string[]) =>
-    Buffer.from(/printf '%s' '([A-Za-z0-9+/=]+)'/.exec(cmd[2]!)![1]!, 'base64').toString('utf8');
+  const LOOPBACK = 'http://127.0.0.1:8000/kortix/health';
 
-  test('the relaunch is conditional on the daemon being dead IN the box', async () => {
+  test('a daemon alive on the box loopback ends the pass before any record, token or script', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
-    await bootstrapLegacyRuntime(
-      input(),
-      makeDeps({ health: [null, null, CURRENT_HEALTH], providerRunning: async () => true }, calls),
-    );
-    expect(calls.execs).toHaveLength(1);
-    expect(decodeScript(calls.execs[0]!)).toContain("ONLY_IF_DEAD='1'");
-  });
-
-  test('a daemon alive on loopback (the ingress was the silent part) spends no attempt and fails nothing', async () => {
-    const calls: Calls = { patches: [], audits: [], execs: [] };
-    const prior = { state: 'converged', attempts: 1, manifestBuild: 1, lastAttemptAt: '2026-09-29T00:00:00.000Z' };
+    let minted = 0;
     const r = await bootstrapLegacyRuntime(
-      input({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior }),
+      input(),
       makeDeps(
         {
           health: [null, null],
           providerRunning: async () => true,
+          rotateKortixToken: async () => {
+            minted++;
+            return 'kortix_pat_x';
+          },
           exec: async (cmd) => {
             calls.execs.push(cmd);
-            return { exitCode: 0, stdout: '{"ok":true,"stage":"alive","token_rotated":false}\n', stderr: '' };
+            return { exitCode: 0, stdout: '', stderr: '' };
           },
         },
         calls,
       ),
     );
     expect(r.outcome).toBe('not-legacy');
+    expect(calls.execs).toHaveLength(1);
+    expect(calls.execs[0]!.join(' ')).toContain(LOOPBACK);
+    expect(calls.patches).toHaveLength(0);
     expect(calls.audits).toHaveLength(0);
-    expect(calls.patches.at(-1)![LEGACY_BOOTSTRAP_METADATA_KEY]).toEqual(prior);
+    expect(minted).toBe(0);
+  });
+
+  test('a daemon silent on the loopback too is relaunched', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null, CURRENT_HEALTH],
+          providerRunning: async () => true,
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return cmd.join(' ').includes(LOOPBACK)
+              ? { exitCode: 7, stdout: '', stderr: 'connection refused' }
+              : { exitCode: 0, stdout: '{"ok":true,"stage":"relaunched","agent_sha256":"a","entrypoint_sha256":"e"}\n', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(calls.execs).toHaveLength(2);
+    expect(calls.execs[1]![0]).toBe('bash');
+    expect(calls.execs[1]!.join(' ')).not.toContain(LOOPBACK);
   });
 });
