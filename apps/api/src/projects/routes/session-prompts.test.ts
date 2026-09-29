@@ -170,7 +170,14 @@ function jsonbPatch(
  *  the route bound into them and re-applies them as a predicate. */
 function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const rendered = render(predicate);
-  const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)].map((m) => m[1]);
+  // `ne(command_id, id)`: an id bound after `<>` EXCLUDES that row (the "send
+  // now" check for OTHER held rows) rather than scoping to it.
+  const excludedIds = new Set(
+    [...rendered.matchAll(/<>\s*\$"([0-9a-f-]{36})"/g)].map((m) => m[1]),
+  );
+  const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)]
+    .map((m) => m[1])
+    .filter((id) => !excludedIds.has(id));
   const statuses = [...rendered.matchAll(/"(queued|running|succeeded|failed|dead_lettered)"/g)].map(
     (m) => m[1],
   );
@@ -181,6 +188,7 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const wantsStopPaused = rendered.includes("->>'stop_paused', '') = 'true'");
   const wantsHeld = rendered.includes("->>'held', '') = 'true'");
   return (r) => {
+    if (excludedIds.has(r.commandId)) return false;
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;

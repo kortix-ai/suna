@@ -18,9 +18,9 @@ import {
   deleteInboxPrompt,
   drainSessionLifecycleQueue,
   enqueueContinueSessionCommand,
+  enqueueReleasingHold,
   holdInboxPrompts,
   listInboxPrompts,
-  releaseInboxHold,
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
@@ -271,7 +271,13 @@ projectsApp.openapi(
     // clientMessageId = same row" contract — enforced by the database, not by a
     // cache that a second pod would not share.
     const idempotencyKey = `prompt:${sessionId}:${clientMessageId}`;
-    const enqueued = await enqueueContinueSessionCommand({
+    // Sending anything NEW lifts a hold the stop button left on this session's
+    // queue — the same rule the browser-local queue always had, and the reason
+    // stop cannot wedge a session: everything typed afterwards would otherwise
+    // land behind rows that are, by construction, never due. The send joins
+    // the released batch; `enqueueReleasingHold` enqueues it held and releases
+    // them together, so no drain can claim it alone in between (KRTX-683).
+    const send: Parameters<typeof enqueueContinueSessionCommand>[0] = {
       source: 'ui',
       projectId,
       accountId: loaded.row.accountId,
@@ -305,7 +311,10 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
-    });
+    };
+    const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
+      enqueueContinueSessionCommand({ ...send, ...hold }),
+    );
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
     const response = {
@@ -325,12 +334,6 @@ projectsApp.openapi(
       observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
-
-    // Sending anything NEW lifts a hold the stop button left on this session's
-    // queue — the same rule the browser-local queue always had, and the reason
-    // stop cannot wedge a session: everything typed afterwards would otherwise
-    // land behind rows that are, by construction, never due.
-    await releaseInboxHold(sessionId).catch(() => undefined);
 
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
@@ -531,9 +534,10 @@ projectsApp.openapi(
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
     // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
-    // the ordering gate, releases the session's hold, and keeps the wire
-    // `message_id` unchanged so the proxy still absorbs a retry of a delivery
-    // that actually landed.
+    // the ordering gate and releases the session's hold, and the drain re-mints
+    // its wire id. When the release frees OTHER held rows, "send now" is a
+    // Stop release: the row joins that batch, is NOT promoted, and the batch is
+    // answered in one turn in queue order (KRTX-683).
     const requeued = await retryInboxPrompt(sessionId, promptId);
     if (!requeued) return c.json({ error: 'Not found' }, 404);
 

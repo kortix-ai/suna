@@ -40,7 +40,7 @@
  *  - REMOVED — the user deleted the row.
  *
  * A hold is lifted by an ACTION, never by a timer: sending anything new
- * (`POST .../prompts` → `releaseInboxHold`), "send now" on one row
+ * (`POST .../prompts` → `enqueueReleasingHold`), "send now" on one row
  * (`retryInboxPrompt`), or Resume (`POST .../prompts/hold {held:false}`).
  * `INBOX_HOLD_MS` (24 h) is a horizon, not a scheduler — it exists so a browser
  * that never comes back cannot hold a prompt for ever.
