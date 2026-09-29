@@ -89,6 +89,7 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
+import { ComposerDictation } from './composer-dictation';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
@@ -1961,7 +1962,9 @@ function ComposerImpl({
             />
             <ComposerToolbar
               leading={
-                inlineUnderbar ? (
+                <>
+                  <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
+                  {inlineUnderbar ? (
                   <ComposerUnderbar
                     variant="inline"
                     onAttachClick={handleAttachClick}
@@ -1975,7 +1978,8 @@ function ComposerImpl({
                     selectedModel={availableSelectedModel}
                     onContextClick={onContextClick}
                   />
-                ) : null
+                  ) : null}
+                </>
               }
               modelsLoading={modelsLoading}
               models={models}
