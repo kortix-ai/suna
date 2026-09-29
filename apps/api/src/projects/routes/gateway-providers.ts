@@ -5,7 +5,7 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
-import { assertGatewayBudget } from '../../llm-gateway/hooks';
+import { assertGatewayBudget, GatewayBudgetExceededError } from '../../llm-gateway/hooks';
 
 // GAP C1 — "Connected" (a secret row exists) is not the same claim as "the
 // key works". This makes ONE cheap, single-attempt completion through the
@@ -54,6 +54,7 @@ projectsApp.openapi(
     try {
       await assertGatewayBudget(principal);
     } catch (err) {
+      if (!(err instanceof GatewayBudgetExceededError)) throw err;
       return c.json({
         status: 'unknown',
         message: err instanceof Error ? err.message : 'Project budget exceeded — try again later.',

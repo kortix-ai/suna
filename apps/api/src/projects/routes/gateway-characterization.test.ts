@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayRequestLogs } from '@kortix/db';
+import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -30,12 +30,15 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 let logRows: Array<Record<string, unknown>> = [];
 let aggRow: Record<string, unknown> | null = null;
+let exhaustedBudget = false;
 const limitCalls: Array<{ limit: number; offset: number }> = [];
 
 const databaseMock = {
   select: (cols: Record<string, unknown> | undefined) => ({
     from: (table: unknown) => ({
       where: (_w: unknown) => {
+        if (table === gatewayBudgets) return Promise.resolve(exhaustedBudget ? [{ scope: 'project', action: 'block', period: 'month', limitUsd: '1' }] : []);
+        if (table === gatewayRequestLogs && cols && 'cost' in cols) return Promise.resolve([{ cost: 1 }]);
         // `GET /gateway/overview`'s aggregate select ends at `.where()`.
         if (cols && 'totalCost' in cols) return Promise.resolve(aggRow ? [aggRow] : []);
         return {
@@ -124,7 +127,19 @@ function logRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   logRows = [];
   aggRow = null;
+  exhaustedBudget = false;
   limitCalls.length = 0;
+});
+
+test('playground returns a typed 402 before dispatch when the project budget is exhausted', async () => {
+  exhaustedBudget = true;
+  const res = await buildApp().request(`/v1/projects/${PROJECT_ID}/gateway/playground`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt: 'hello', models: ['synthetic-model'] }),
+  });
+  expect(res.status).toBe(402);
+  expect(await res.json()).toMatchObject({ code: 'budget_exceeded' });
 });
 
 describe('GET /gateway/logs pagination (characterization)', () => {
