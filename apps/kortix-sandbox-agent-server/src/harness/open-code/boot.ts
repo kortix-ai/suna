@@ -84,7 +84,7 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
-import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
+import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
 import type { InitialTurnClaim } from '@/types/control-plane'
 
@@ -2649,6 +2649,13 @@ export async function relayTurnBeginToApi(
       opencode_session_id: opencodeSessionId,
       turn_message_id: newestUserId,
     })
+    // A credential the API has refused, repeatedly and without contradiction,
+    // cannot accept this relay: both attempts carry the same dead token, and
+    // every `busy`/`retry` frame would re-issue them — the `POST .../turn-stream
+    // -> 401` warn spike in KRTX-446. Skip while the shared breaker reports the
+    // credential dead; it clears on the next answer that is not the dead-token
+    // 401, so this resumes by itself and never stops the daemon.
+    if (sessionTokenPresumedDead()) return
     // Two attempts only: `busy`/`retry` frames recur for a live turn, so a
     // transient failure retries itself on the next frame.
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -2774,6 +2781,15 @@ export async function relayTurnEndToApi(
   // Root: past the turn-end dedup, so a duplicate observation of one real
   // reply never reads as a repeat.
   runawayCheck()
+
+  // A credential the API has refused, repeatedly and without contradiction,
+  // cannot finalize a turn: all four attempts carry the same dead token. Skip
+  // the API relay (the local runaway guard above has already run) so a box that
+  // outlives its session stops adding `POST .../turn-stream -> 401` warn lines
+  // (KRTX-446). The dedup signature is recorded only on a confirmed relay, so a
+  // later observation still relays once the credential works again — the breaker
+  // clears on the next non-dead answer, and the daemon keeps serving.
+  if (sessionTokenPresumedDead()) return
 
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`

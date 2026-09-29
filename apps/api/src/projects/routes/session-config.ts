@@ -136,6 +136,9 @@ projectsApp.openapi(
         sessionAgent: visible.row.agentName ?? null,
         repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
         ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+        // The etag compile above already fetched this mirror in THIS request;
+        // a second invalidate paid a second `git fetch` per read (KRTX-629).
+        refreshProjectMirror: false,
       }).catch(() => null);
       const release = toSessionConfigRelease(
         running.release,

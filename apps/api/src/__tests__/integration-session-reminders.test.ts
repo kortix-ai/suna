@@ -70,6 +70,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'reminders',
     repoUrl: 'https://example.com/reminders.git',
+    metadata: { experimental: { reminders: true } },
   });
   await insertIntoView(db, accountMembers, { accountId: ACCOUNT, userId: OWNER, accountRole: 'owner' });
 });
@@ -118,6 +119,25 @@ describe('session reminders on the trigger tables', () => {
     const row = await getSessionReminder(PROJECT, sessionId, spec.slug);
     expect(row?.nextFireAt?.getTime()).toBe(now.getTime() + 3600_000);
     expect(row?.lastScheduledFor?.toISOString()).toBe(due.toISOString());
+  });
+
+  test('flag off: the claim leaves a due reminder unclaimed; flag on claims the missed slot once', async () => {
+    const sessionId = await seedSession();
+    const { spec } = await seedReminder(sessionId, { prompt: 'check', every: '1h' }, new Date());
+    const due = new Date(Date.now() - 60_000);
+    await db.update(projectTriggerRuntime).set({ nextFireAt: due }).where(eq(projectTriggerRuntime.slug, spec.slug));
+    const setFlag = (on: boolean) =>
+      db.update(projects).set({ metadata: { experimental: { reminders: on } } }).where(eq(projects.projectId, PROJECT));
+
+    await setFlag(false);
+    const off = (await claimDueScheduleSlots({ now: new Date(), limit: 250 })).filter((c) => c.execution.slug === spec.slug);
+    expect(off).toHaveLength(0);
+    expect((await getSessionReminder(PROJECT, sessionId, spec.slug))?.nextFireAt?.toISOString()).toBe(due.toISOString());
+
+    await setFlag(true);
+    const on = (await claimDueScheduleSlots({ now: new Date(), limit: 250 })).filter((c) => c.execution.slug === spec.slug);
+    expect(on).toHaveLength(1);
+    expect(on[0]!.execution.scheduledFor.toISOString()).toBe(due.toISOString());
   });
 
   test('a fire queues the reminder prompt into its own session as trigger:reminder', async () => {
