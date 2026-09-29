@@ -496,13 +496,17 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(relayEndArgs).toEqual([]);
   });
 
-  test('a coordinator-spawned child session skips reconcile, mirror and promotion', async () => {
+  test('a coordinator-spawned session skips reconcile and promotion, and still saves its transcript', async () => {
+    // A session another session's agent created runs in its own sandbox with
+    // its own OpenCode root. Nobody may ever open it, so this turn end is the
+    // only moment its history is saved: skipping it served `available: false`
+    // and a loading bar to the first person who looked.
     sessionRow = session({ spawned_by_session: 'parent-1' });
     pushType = 'completion';
     const response = await post({ session_id: SESSION_ID, kind: 'end' });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ queue_promoted: false });
-    expect(order).toEqual(['complete', 'notify', 'relayEnd']);
+    expect(order).toEqual(['complete', 'mirror', 'notify', 'relayEnd']);
   });
 
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {
