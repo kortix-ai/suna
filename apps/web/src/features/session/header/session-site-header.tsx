@@ -27,6 +27,7 @@ import {
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
+import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
@@ -52,7 +53,6 @@ import {
   FileArrowDownIcon as FileDown,
   FolderSimpleIcon,
   GlobeSimpleIcon,
-  HouseIcon,
   StackIcon as Layers,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -350,9 +350,9 @@ export function SessionSiteHeader({
                   type="button"
                   variant="ghost"
                   onClick={parent.onOpen}
-                  className="text-muted-foreground hover:text-foreground h-7 shrink-0 gap-1.5 rounded-md px-2 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
+                  className="text-foreground h-7 shrink-0 gap-1.5 rounded-md px-2 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
                 >
-                  <HouseIcon className="size-3.5 shrink-0" />
+                  <Home className="size-3.5 shrink-0" />
                   {tI18nHardcoded.raw('i18nComplete.text3a78695388b3')}
                 </Button>
                 <span aria-hidden className="text-muted-foreground shrink-0 text-sm select-none">

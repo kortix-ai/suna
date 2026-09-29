@@ -40,7 +40,8 @@ describe('SessionSiteHeader sidebar toggle', () => {
  */
 describe('SessionSiteHeader session title', () => {
   test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
-    const homeButtonIndex = source.indexOf('<HouseIcon');
+    const homeButtonIndex = source.indexOf('<Home ');
+    expect(homeButtonIndex).toBeGreaterThan(-1);
     const titleIndex = source.indexOf('>{headerTitle}</span>');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
@@ -134,7 +135,9 @@ describe('SessionSiteHeader subsession breadcrumb', () => {
     expect(crumbAt).toBeGreaterThan(source.indexOf('<SidebarToggle />'));
     expect(crumbAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
     const crumb = source.slice(crumbAt, source.indexOf('</Button>', crumbAt));
-    expect(crumb).toContain('<HouseIcon');
+    // The custom filled house mark, not the Phosphor outline.
+    expect(crumb).toContain('<Home ');
+    expect(source).toContain("import { Home } from '@/features/icon/icons/home';");
     // Reads "Home", never the parent session's title.
     expect(crumb).toContain("'i18nComplete.text3a78695388b3'");
     expect(source).not.toContain('parent.title');
