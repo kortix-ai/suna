@@ -1,5 +1,5 @@
 /**
- * Pure logic behind `components/session/tool/generic-tool.tsx` and the DCP rows.
+ * Pure logic behind `components/session/tool/generic-tool.tsx`.
  *
  * `parseToolName` is apps/web `tool/generic-tool.tsx`'s export: the display
  * half is the one shared humanizer (`narrationToolName` from `@kortix/sdk`,
@@ -43,9 +43,4 @@ export function genericArgs(input: Record<string, unknown>): string[] {
 
 export function genericTriggerArgs(server: string | null, args: string[]): string[] | undefined {
   return server ? [server, ...args] : args.length > 0 ? args : undefined;
-}
-
-/** DCP distill / prune: `N tools` beside the title. */
-export function dcpIdsLabel(ids: unknown): string | null {
-  return Array.isArray(ids) && ids.length > 0 ? `${ids.length} tools` : null;
 }

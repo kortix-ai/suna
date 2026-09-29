@@ -5,7 +5,7 @@ import { logger } from '@/lib/log/logger'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
 import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
-import type { HarnessActionResult, HarnessQueryService, HarnessReadResult } from '@/harness/contract/queries'
+import type { HarnessQueryService } from '@/harness/contract/queries'
 
 /** Existing transcript page-size contract. */
 export const DEFAULT_MESSAGE_PAGE = 20
@@ -110,23 +110,6 @@ export function createRuntimeRouter(
     })
   })
 
-  // Existing compatibility reads preserve their native response payloads.
-  const read = async (c: Context, operation: () => Promise<HarnessReadResult>): Promise<Response> => {
-    const auth = authorize(cfg, c)
-    if (!auth.ok) return auth.response
-    const result = await operation()
-    if (!result.ok) return Response.json(result.body, { status: 502 })
-    return new Response(result.text, {
-      status: result.upstreamStatus,
-      headers: { 'content-type': result.contentType },
-    })
-  }
-  app.get('/vcs-diff', (c) => read(c, () => queries.readVcsDiff(c.req.query('mode'))))
-  app.get('/project-current', (c) => read(c, () => queries.readCurrentProject()))
-  app.get('/config', (c) => read(c, () => queries.readConfiguration()))
-  app.get('/session/:sessionId', (c) => read(c, () => queries.readSession(c.req.param('sessionId'))))
-  app.get('/todo/:sessionId', (c) => read(c, () => queries.readTodo(c.req.param('sessionId'))))
-
   app.get('/events', (c) => {
     const auth = authorize(cfg, c)
     if (!auth.ok) return auth.response
@@ -230,116 +213,5 @@ export function createRuntimeRouter(
     })
   })
 
-  app.post('/act', async (c) => {
-    const auth = authorize(cfg, c)
-    if (!auth.ok) return auth.response
-    const t0 = performance.now()
-    let body: Record<string, unknown>
-    try {
-      body = (await c.req.json()) as Record<string, unknown>
-    } catch {
-      return timedJson(
-        { ok: false, error: 'invalid json body' },
-        { status: 400, totalMs: performance.now() - t0 },
-      )
-    }
-    const kind = typeof body.kind === 'string' ? body.kind : null
-    const pinned = queries.pinnedSessionId()
-    const sessionId = typeof body.session_id === 'string' && body.session_id ? body.session_id : pinned
-    const execute = async (operation: Promise<HarnessActionResult>): Promise<Response> => {
-      const result = await operation
-      const status = result.ok
-        ? 200
-        : result.reason === 'no-session'
-          ? 409
-          : result.reason === 'not-found'
-            ? 404
-            : 502
-      return timedJson(result.body, { status, totalMs: performance.now() - t0 })
-    }
-
-    switch (kind) {
-      case 'permission': {
-        const id = typeof body.id === 'string' ? body.id : null
-        const reply = typeof body.reply === 'string' ? body.reply : null
-        if (!id || !reply || !['once', 'always', 'reject'].includes(reply)) {
-          return timedJson(
-            { ok: false, error: 'permission act needs { id, reply: once|always|reject }' },
-            { status: 400, totalMs: performance.now() - t0 },
-          )
-        }
-        return execute(
-          queries.replyPermission({
-            id,
-            reply: reply as 'once' | 'always' | 'reject',
-            sessionId,
-            ...(typeof body.message === 'string' ? { message: body.message } : {}),
-          }),
-        )
-      }
-      case 'question': {
-        const id = typeof body.id === 'string' ? body.id : null
-        if (!id) {
-          return timedJson(
-            { ok: false, error: 'question act needs { id }' },
-            { status: 400, totalMs: performance.now() - t0 },
-          )
-        }
-        if (body.reject === true) return execute(queries.rejectQuestion({ id, sessionId }))
-        if (!Array.isArray(body.answers)) {
-          return timedJson(
-            { ok: false, error: 'question act needs { id, answers: string[][] } or { id, reject: true }' },
-            { status: 400, totalMs: performance.now() - t0 },
-          )
-        }
-        return execute(queries.replyQuestion({ id, sessionId, answers: body.answers }))
-      }
-      case 'stop': {
-        return execute(queries.stopSession(sessionId))
-      }
-      case 'revert': {
-        // Missing native session takes precedence over revert-body validation.
-        if (!sessionId || body.undo === true) return execute(queries.unrevertSession(sessionId))
-        const messageID = typeof body.message_id === 'string' ? body.message_id : null
-        if (!messageID) {
-          return timedJson(
-            { ok: false, error: 'revert act needs { message_id } or { undo: true }' },
-            { status: 400, totalMs: performance.now() - t0 },
-          )
-        }
-        return execute(
-          queries.revertSession({
-            sessionId,
-            messageId: messageID,
-            ...(typeof body.part_id === 'string' ? { partId: body.part_id } : {}),
-          }),
-        )
-      }
-      default:
-        return timedJson(
-          {
-            ok: false,
-            error: `unsupported act kind: ${kind ?? '<missing>'}`,
-            supported: ['permission', 'question', 'stop', 'revert'],
-          },
-          { status: 400, totalMs: performance.now() - t0 },
-        )
-    }
-  })
-
-  app.get('/turn/:messageId', async (c) => {
-    const auth = authorize(cfg, c)
-    if (!auth.ok) return auth.response
-    const t0 = performance.now()
-    const result = await queries.observeTurn({
-      messageId: c.req.param('messageId'),
-      sessionId: c.req.query('session_id')?.trim(),
-    })
-    return timedJson(result.body, {
-      readMs: result.readMs,
-      totalMs: performance.now() - t0,
-      acceptEncoding: c.req.header('accept-encoding'),
-    })
-  })
   return app
 }

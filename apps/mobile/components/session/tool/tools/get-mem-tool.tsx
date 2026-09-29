@@ -240,10 +240,7 @@ export function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
     </BasicTool>
   );
 }
-ToolRegistry.register('get_mem', GetMemTool);
 ToolRegistry.register('get-mem', GetMemTool);
-ToolRegistry.register('oc-get_mem', GetMemTool);
-ToolRegistry.register('oc-get-mem', GetMemTool);
 
 // ─── Legacy body (tool-part-renderer.tsx generic path) ───────────────────────
 

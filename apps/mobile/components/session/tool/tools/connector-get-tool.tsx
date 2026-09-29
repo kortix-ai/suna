@@ -91,7 +91,4 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('connector_get', ConnectorGetTool);
 ToolRegistry.register('connector-get', ConnectorGetTool);
-ToolRegistry.register('oc-connector_get', ConnectorGetTool);
-ToolRegistry.register('oc-connector-get', ConnectorGetTool);

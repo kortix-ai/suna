@@ -10,6 +10,8 @@
  *     wire, `If-None-Match` honoured.
  *   • {@link openRuntimeEventStream} — `GET /kortix/opencode/events?since=&epoch=`,
  *     an SSE body handed back UNREAD so the caller can pump it.
+ *   • {@link fetchRuntimeMessages} — `GET /kortix/opencode/messages/:sessionId`,
+ *     one transcript page. Every harness serves it.
  *
  * ─── THE STREAM IS NEVER BUFFERED ──────────────────────────────────────────
  * WS-Z1's requirement, and the reason it is stated so plainly: a buffered
@@ -43,8 +45,9 @@ export const RUNTIME_STREAM_CONNECT_TIMEOUT_MS = 10_000;
 
 export interface DaemonCallTarget {
   externalId: string;
-  /** The user the call is made on behalf of; signs the `X-Kortix-User-Context`. */
-  userId: string;
+  /** The user the call is made on behalf of; signs the `X-Kortix-User-Context`.
+   *  Omitted for an anonymous read: the sandbox service key alone authorizes it. */
+  userId?: string;
 }
 
 async function daemonEndpoint(
@@ -58,7 +61,7 @@ async function daemonEndpoint(
   });
   const headers = await buildSandboxUpstreamHeaders({
     sandboxId: target.externalId,
-    userId: target.userId,
+    userId: target.userId ?? '',
     serviceKey,
     providerHeaders: ingress.headers,
   });
@@ -111,6 +114,46 @@ export async function fetchRuntimeState(
     }
     const doc = (await response.json()) as Record<string, unknown>;
     return { ok: true, status: 200, doc, etag };
+  } catch (error) {
+    return { ok: false, reason: reasonOf(error), status: null };
+  }
+}
+
+export type RuntimeMessagesFetch =
+  | { ok: true; messages: unknown[] }
+  | { ok: false; reason: string; status: number | null };
+
+/**
+ * Read the newest `limit` messages of one conversation, oldest first, as the
+ * daemon projects them (`{ info, parts }` envelopes). Gzipped on the wire like
+ * `/state`. A failure carries a machine reason, never the daemon's body.
+ */
+export async function fetchRuntimeMessages(
+  target: DaemonCallTarget,
+  sessionId: string,
+  options: { limit: number; signal?: AbortSignal },
+): Promise<RuntimeMessagesFetch> {
+  let endpoint: { url: string; headers: Record<string, string> } | null;
+  try {
+    endpoint = await daemonEndpoint(target);
+  } catch (error) {
+    return { ok: false, reason: reasonOf(error), status: null };
+  }
+  if (!endpoint) return { ok: false, reason: 'no_service_key', status: null };
+
+  const url = new URL(`${endpoint.url}/kortix/opencode/messages/${encodeURIComponent(sessionId)}`);
+  url.searchParams.set('limit', String(options.limit));
+  try {
+    const response = await fetch(url, {
+      headers: { ...endpoint.headers, Accept: 'application/json', 'Accept-Encoding': 'gzip' },
+      signal: options.signal ?? AbortSignal.timeout(RUNTIME_STATE_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, reason: `daemon_${response.status}`, status: response.status };
+    }
+    const body = (await response.json()) as { messages?: unknown };
+    return { ok: true, messages: Array.isArray(body.messages) ? body.messages : [] };
   } catch (error) {
     return { ok: false, reason: reasonOf(error), status: null };
   }

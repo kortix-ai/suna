@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { dcpIdsLabel, genericArgs, genericSubtitle, genericTriggerArgs, parseToolName } from './projects-generic';
+import { genericArgs, genericSubtitle, genericTriggerArgs, parseToolName } from './projects-generic';
 
 // apps/web `tool/generic-tool.tsx`: the fallback row for any tool without its
 // own renderer.
@@ -40,13 +40,5 @@ describe('genericArgs / genericTriggerArgs', () => {
     expect(genericTriggerArgs('linear', ['a=1'])).toEqual(['linear', 'a=1']);
     expect(genericTriggerArgs(null, ['a=1'])).toEqual(['a=1']);
     expect(genericTriggerArgs(null, [])).toBeUndefined();
-  });
-});
-
-describe('dcpIdsLabel', () => {
-  test('"N tools" when ids exist, else nothing', () => {
-    expect(dcpIdsLabel(['a', 'b'])).toBe('2 tools');
-    expect(dcpIdsLabel([])).toBeNull();
-    expect(dcpIdsLabel(undefined)).toBeNull();
   });
 });
