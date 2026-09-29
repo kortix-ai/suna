@@ -102,10 +102,12 @@ describe('the six factories render one shared toast shape', () => {
     expect(shapes.size).toBe(1);
   });
 
-  test.each(FACTORIES)('$name keeps its distinct icon', ({ invoke, iconSignature }) => {
-    const { markup } = capture(invoke);
-    expect(markup).toContain(iconSignature);
-  });
+  for (const { name, invoke, iconSignature } of FACTORIES) {
+    test(`${name} keeps its distinct icon`, () => {
+      const { markup } = capture(invoke);
+      expect(markup).toContain(iconSignature);
+    });
+  }
 });
 
 describe('duration semantics differ per factory and must not drift', () => {
