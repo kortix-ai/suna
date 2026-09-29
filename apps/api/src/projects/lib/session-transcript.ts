@@ -35,8 +35,21 @@ const WORKSPACE_DIRECTORY = '/workspace';
  * resolution runs two provider calls of up to 20 s each — 2026-09-29: a
  * cold/wedged provider stacked that into 25 s deadline 503s and 20–25 s
  * reads on GET /v1/projects/:id/sessions/:id/transcript.
+ * # ponytail: 8 s ceiling converts a slow-but-live read into a possibly-stale
+ * mirror answer; raise it if callers ever need longer live waits.
  */
 const TRANSCRIPT_ENDPOINT_BUDGET_MS = 8_000;
+
+/**
+ * A degraded live attempt is expected backpressure — a wedged box during a
+ * burst degrades every read it is asked for. One line per degrade was the
+ * 2026-09-28 `[audit] Write contended` spike class (KRTX-614, learnings:
+ * "Rate-limit the warning for expected backpressure"): report the FIRST
+ * occurrence, then at most one line per interval. Every degrade still
+ * degrades; the per-request `reason` field still says why.
+ */
+const DEGRADE_LOG_INTERVAL_MS = 60_000;
+let lastDegradeLogAt = 0;
 
 export type { CompactMessage, CompactToolCall };
 
@@ -141,14 +154,15 @@ export async function buildSessionTranscriptDigest(
   ): Promise<SessionTranscriptDigest> => {
     // A degraded live attempt is otherwise invisible: `Request completed`
     // carries no why, so a p95 spike on this route had to be reconstructed
-    // from durations alone. One INFO line per degraded live attempt makes
-    // the reason queryable. A stopped session degrades by design on every
-    // read — it stays silent.
-    if (session.status === 'running') {
+    // from durations alone. Rate-limited (see DEGRADE_LOG_INTERVAL_MS).
+    // A stopped session degrades by design on every read — it stays silent.
+    const now = Date.now();
+    if (session.status === 'running' && now - lastDegradeLogAt >= DEGRADE_LOG_INTERVAL_MS) {
+      lastDegradeLogAt = now;
       appLogger.info('[transcript] live read degraded to the mirror', {
         sessionId: session.sessionId,
         reason,
-        elapsed_ms: Date.now() - startedAt,
+        elapsed_ms: now - startedAt,
       });
     }
     const mirror = await readMirror(session.sessionId, limit);

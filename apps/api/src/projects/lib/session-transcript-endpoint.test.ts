@@ -39,6 +39,8 @@ mock.module('../../shared/preview-ownership', () => ({
   resolvePreviewUserContext: async () => null,
 }));
 
+const realLogger = await import('../../lib/logger');
+
 const { buildSessionTranscriptDigest } = await import('./session-transcript');
 
 const runningSession = {
@@ -127,5 +129,37 @@ describe('a hung sandbox endpoint resolution degrades at the budget', () => {
     expect(result.reason).toContain('could not reach sandbox');
     expect(result.reason).toContain('timed out');
     expect(resolveServiceKeyCalls).toBe(1);
+  });
+
+  test('the degrade line is rate-limited: first occurrence reported, the rest suppressed for the interval', async () => {
+    // KRTX-614 class: a wedged box during a burst degrades every read. One
+    // line per degrade would read as a new log-pattern spike; the line
+    // reports the first occurrence and at most one per interval.
+    const lines: unknown[] = [];
+    const logSpy = spyOn(realLogger.logger, 'info').mockImplementation(((message: string) => {
+      if (message.startsWith('[transcript] live read degraded')) {
+        lines.push(message);
+      }
+    }) as unknown as typeof realLogger.logger.info);
+    // The throttle's clock is the same Date.now the previous tests used, so
+    // this one starts its window far in the future of anything they logged.
+    let clock = Date.now() + 10_000_000;
+    const dateSpy = spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      // Two degrades inside one interval: the first is reported.
+      resolveServiceKeyHang = true;
+      await digest({ endpointBudgetMs: 50 }, mirrorSnapshot());
+      clock += 1_000;
+      await digest({ endpointBudgetMs: 50 }, mirrorSnapshot());
+      expect(lines).toHaveLength(1);
+
+      // Past the interval, the next degrade is reported again.
+      clock += 61_000;
+      await digest({ endpointBudgetMs: 50 }, mirrorSnapshot());
+      expect(lines).toHaveLength(2);
+    } finally {
+      logSpy.mockRestore();
+      dateSpy.mockRestore();
+    }
   });
 });
