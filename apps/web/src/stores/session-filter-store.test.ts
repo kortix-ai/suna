@@ -115,6 +115,16 @@ describe('the page inherits the sidebar until it chooses for itself', () => {
     expect(read(selectStatusFilters(P, 'page'))).toEqual([]);
     expect(read(selectStatusFilters(P, 'sidebar'))).toEqual(['failed']);
   });
+
+  test('the source menu can clear its default and Reset shows all sessions', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleSourceFilter(P, 'mine');
+    expect(read(selectSourceFilters(P))).toEqual([]);
+    s.toggleSourceFilter(P, 'mine');
+    expect(read(selectSourceFilters(P))).toEqual(['mine']);
+    s.resetFilters(P);
+    expect(read(selectSourceFilters(P))).toEqual([]);
+  });
 });
 
 describe('the page never writes into the sidebar', () => {
