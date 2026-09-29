@@ -44,6 +44,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
