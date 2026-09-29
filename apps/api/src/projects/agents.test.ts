@@ -35,6 +35,7 @@ mock.module('./git', () => ({
 const { loadProjectAgents } = await import('./agents');
 const {
   DEFAULT_AGENT_SENTINEL,
+  grantFromLoadedAgents,
   manifestHashForAgent,
   resolveGovernedAgentGrant,
   requiredConnectorsForAgent,
@@ -260,5 +261,71 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
     expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(true);
+  });
+});
+
+// Characterization + the ONE intended behavior change of the module split.
+// The two "unchanged" tests pin the grant the read path yields today; they pass
+// before and after. The canonicalization test pins what the shared
+// `grantFromSpec` constructor changes: the governed branch reused a raw
+// construction that skipped canonicalization, so a retired `project.cr.open`
+// survived to the gate (which denies it). The shared constructor rewrites it to
+// `project.gitops.push`.
+describe('grant resolution — characterization and governed canonicalization', () => {
+  const writeManifest = (permissions: string) => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: [
+        'kortix_version: 2',
+        'default_agent: support',
+        'agents:',
+        '  support:',
+        '    connectors: [github]',
+        `    kortix_permissions: [${permissions}]`,
+        '',
+      ].join('\n'),
+    };
+  };
+
+  test('a concrete declared agent keeps its declared, canonical grant', async () => {
+    writeManifest('project.gitops.push');
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(grantFromLoadedAgents('support', loaded)).toEqual({
+      agent: 'support',
+      connectors: ['github'],
+      permissions: ['project.gitops.push'],
+      env: [],
+    });
+  });
+
+  test('the `default` sentinel keeps resolving the manifest default_agent grant', async () => {
+    writeManifest('project.gitops.push');
+    const loaded = await loadProjectAgents(fakeProject());
+
+    expect(grantFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toEqual({
+      agent: 'support',
+      connectors: ['github'],
+      permissions: ['project.gitops.push'],
+      env: [],
+    });
+  });
+
+  test('a governed grant is canonicalized: retired cr.* resolves to the gitops leaf', async () => {
+    writeManifest('project.cr.open');
+    const loaded = await loadProjectAgents(fakeProject());
+
+    const governed = resolveGovernedAgentGrant('support', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+    expect(governed.ok).toBe(true);
+    if (!governed.ok) return;
+    expect(governed.grant).toEqual({
+      agent: 'support',
+      connectors: ['github'],
+      permissions: ['project.gitops.push'],
+      env: [],
+    });
   });
 });

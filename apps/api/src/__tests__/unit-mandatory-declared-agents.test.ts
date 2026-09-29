@@ -109,9 +109,11 @@ enabled = false
       subject: true,
       projectDefaultAgent: 'support',
     });
+    // The governed branch canonicalizes through the shared grant constructor,
+    // so the retired `project.cr.open` spelling becomes `project.gitops.push`.
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], permissions: ['project.cr.open'], env: 'all' },
+      grant: { agent: 'support', connectors: ['github'], permissions: ['project.gitops.push'], env: 'all' },
     });
   });
 
@@ -209,9 +211,12 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
       subject: true,
       projectDefaultAgent: null,
     });
+    // The governed branch builds its grant through the same canonicalizing
+    // constructor the ungoverned branch uses, so the retired `project.cr.open`
+    // spelling is rewritten to its live `project.gitops.push` leaf here too.
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], permissions: ['project.cr.open'], env: [] },
+      grant: { agent: 'support', connectors: ['github'], permissions: ['project.gitops.push'], env: [] },
     });
   });
 
