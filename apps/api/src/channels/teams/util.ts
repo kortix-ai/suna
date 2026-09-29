@@ -79,6 +79,8 @@ const COMMAND_VERBS = new Set([
   'config',
   'settings',
   'sessions',
+  'home',
+  'unbind',
   'models',
   'model',
   'agents',

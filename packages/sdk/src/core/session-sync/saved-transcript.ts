@@ -32,8 +32,7 @@ export interface SavedTranscriptInput {
   hasMessages: boolean;
   /**
    * The saved-history read (`GET …/transcript?history=true`), which paints
-   * the copy when the project's `session_transcript_history` flag is on.
-   * `off` when the flag is off.
+   * the copy. `off` when the host does not run it.
    */
   history: 'off' | 'loading' | 'present' | 'absent';
   /**

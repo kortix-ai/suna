@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildAccessRequestNoticeCard,
   buildAgentPickerCard,
   buildAnswerCard,
+  buildConnectedCard,
+  buildConnectSentPrivatelyCard,
+  buildHomeCard,
+  buildModelPickerCard,
+  buildOpenSessionCard,
+  buildProjectsCard,
   buildConnectAccountCard,
   buildPanelCard,
   buildSessionsCard,
@@ -262,5 +269,75 @@ describe('Slack parity cards', () => {
     expect((withPlan.body as Array<Record<string, unknown>>).find((e) => e.text === 'Custom body')).toMatchObject({ separator: true });
     // No live card, no steps: the custom card is used as sent.
     expect(texts(buildAnswerCard('', undefined, custom))).toEqual(['Custom body']);
+  });
+});
+
+// Slack parity, part 2: home, projects with previews, grouped models, and the
+// 1:1 notices (connected, access requested, sign-in sent privately).
+describe('Slack parity cards, part 2', () => {
+  const project = (n: number, extra: Record<string, unknown> = {}) => ({
+    projectId: `p${n}`, name: `Project ${n}`, repo: `acme/repo-${n}`,
+    imageUrl: `https://opengraph.githubassets.com/1/acme/repo-${n}`, url: `https://app/p${n}`, ...extra,
+  });
+  const images = (c: Record<string, unknown>) => (JSON.stringify(c).match(/"type":"Image"/g) ?? []).length;
+
+  test('/projects rows show the repo, its preview, Open, and Use (✓ on the current one)', () => {
+    const c = buildProjectsCard([project(1, { current: true }), project(2)]);
+    const json = JSON.stringify(c);
+    expect(json).toContain('acme/repo-1');
+    expect(images(c)).toBe(2);
+    const acts = allExecuteActions(c);
+    expect(acts.map((a) => [a.title, a.data?.projectId])).toEqual([['✓ In use', 'p1'], ['Use', 'p2']]);
+    expect(json.match(/"title":"Open"/g)).toHaveLength(2);
+  });
+
+  test('a preview is shown only from an https URL', () => {
+    expect(images(buildProjectsCard([project(1, { imageUrl: 'http://example.test/x.png' }), project(2, { imageUrl: null })]))).toBe(0);
+  });
+
+  test('the home card lists projects with Open only, then what to try', () => {
+    const c = buildHomeCard({ projects: [project(1)] });
+    expect(allExecuteActions(c)).toEqual([]);
+    const json = JSON.stringify(c);
+    expect(json).toContain('Projects in this organization');
+    expect(json).toContain('put together a one-pager on our Q2 numbers');
+    expect(json).toContain('/login');
+    expect(JSON.stringify(buildHomeCard({ projects: [] }))).not.toContain('Projects in this organization');
+  });
+
+  test('/sessions rows carry the repo preview', () => {
+    expect(images(buildSessionsCard([{ title: 'T', projectName: 'P', when: 'now', url: 'https://app/s', imageUrl: 'https://opengraph.githubassets.com/1/a/b' }]))).toBe(1);
+  });
+
+  test('models are grouped by how they are paid for, in Slack\'s order', () => {
+    const models = [
+      { id: 'kortix/glm', label: 'GLM', via: 'kortix' as const, providerLabel: 'Kortix' },
+      { id: 'anthropic/claude', label: 'Claude', via: 'key' as const, providerLabel: 'Anthropic' },
+      { id: 'codex/gpt', label: 'GPT', via: 'chatgpt' as const, providerLabel: 'OpenAI' },
+    ];
+    const json = JSON.stringify(buildModelPickerCard({ models, current: null, currentLabel: null, defaultLabel: null, scopeNote: 'note' }));
+    const order = ['ChatGPT subscriptions', 'GPT', 'API keys', 'Claude', 'Kortix models', 'GLM'].map((t) => json.indexOf(`"text":"${t}"`));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+
+    const many = Array.from({ length: 9 }, (_, i) => ({ id: `kortix/m${i}`, label: `M${i}`, via: 'kortix' as const, providerLabel: 'Kortix' }));
+    const dropdown = (buildModelPickerCard({ models: [...many, models[2]!], current: null, currentLabel: null, defaultLabel: null, scopeNote: 'n' }).body as Array<Record<string, unknown>>)
+      .find((e) => e.type === 'Input.ChoiceSet')!;
+    expect((dropdown.choices as Array<{ value: string }>).map((c) => c.value).slice(0, 2)).toEqual(['', 'codex/gpt']);
+  });
+
+  test('the connected note: resumed, idle, and linked without access (with Request access)', () => {
+    expect(texts(buildConnectedCard({ email: 'alex@example.test', resumed: true, hasAccess: true, projectId: 'p1' })).join(' ')).toContain('Picking up your message now.');
+    expect(texts(buildConnectedCard({ email: null, resumed: false, hasAccess: true, projectId: 'p1' })).join(' ')).toContain('Mention me with a task');
+    const noAccess = buildConnectedCard({ email: 'alex@example.test', resumed: false, hasAccess: false, projectId: 'p1' });
+    expect(texts(noAccess).join(' ')).toContain("can't run this project yet");
+    expect(actions(noAccess)).toEqual([expect.objectContaining({ verb: 'teams_request_access', data: expect.objectContaining({ projectId: 'p1' }) })]);
+  });
+
+  test('the admin notice links to Members, and the other 1:1 notices say where the link went', () => {
+    const notice = buildAccessRequestNoticeCard({ requester: '**alex@example.test**', reviewUrl: 'https://app/projects/p1/customize/members' });
+    expect(actions(notice)).toEqual([expect.objectContaining({ type: 'Action.OpenUrl', url: 'https://app/projects/p1/customize/members' })]);
+    expect(texts(buildConnectSentPrivatelyCard({ botName: 'Kortix', resumes: true })).join(' ')).toContain('private chat with Kortix');
+    expect(actions(buildOpenSessionCard('https://app/s/1'))).toEqual([expect.objectContaining({ type: 'Action.OpenUrl', url: 'https://app/s/1' })]);
   });
 });

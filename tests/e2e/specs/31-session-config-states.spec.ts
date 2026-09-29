@@ -212,13 +212,9 @@ test('31 — session header renders every config release state from GET /config'
       userId: user.id,
     });
 
-    // The session header mounts with the chat. With saved transcript history
-    // the chat paints before the sandbox is ready, as in journey 30.
+    // The session header mounts with the chat. Saved transcript history
+    // paints the chat before the sandbox is ready, as in journey 30.
     await seedSessionTranscript(env, { projectId, accountId, sessionId });
-    await api(auth.access_token, 'PATCH', `/projects/${projectId}/features`, {
-      feature: 'session_transcript_history',
-      enabled: true,
-    });
 
     await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
     await selectAccountForUi(page, accountId);

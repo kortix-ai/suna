@@ -359,10 +359,9 @@ persisted session default.
 
 ### Saved session attachments
 
-With `session_transcript_history` enabled, `session.attachments.upload(file)` stores up to
-50 MiB in private object storage. It returns `{ attachment_id, filename, mime, size, url }`.
-Use `url` in a file part sent to the prompt inbox. The API copies those bytes into the
-sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
+`session.attachments.upload(file)` stores up to 50 MiB in private object storage. It
+returns `{ attachment_id, filename, mime, size, url }`. Use `url` in a file part sent to
+the prompt inbox. The API copies those bytes into the sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
 sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
 reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
 
@@ -372,10 +371,10 @@ reuse the successful upload; an explicit `attachmentId` supports caller-managed 
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
-`session_transcript_history` is on by default; a project can turn it off in Settings →
-Feature flags. `useSession` reads saved messages from the platform database while `/start`
-continues. It uses the server-validated OpenCode root and lets the live read reconcile the
-saved messages by ID. Missing or rejected history falls back to the existing runtime path.
+Every session saves its transcript at the end of each turn. `useSession` reads saved
+messages from the platform database while `/start` continues. It uses the
+server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
+Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in

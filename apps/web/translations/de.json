@@ -1146,10 +1146,6 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
-        "session_transcript_history": {
-          "name": "Chatverlauf der Sitzung",
-          "description": "Speichere den Chatverlauf nach jedem Durchlauf und zeige ihn an, während der Sitzungscomputer startet."
-        },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."
@@ -1723,7 +1719,8 @@
       "unavailableTitle": "Zugriff auf Geheimnisse nicht verfügbar",
       "unavailableDescription": "Die aktuelle Auswahl der Geheimnisse bleibt unverändert.",
       "useProjectDefault": "Projektstandard verwenden",
-      "empty": "Für diesen Agenten sind keine Geheimnisse verfügbar."
+      "empty": "Für diesen Agenten sind keine Geheimnisse verfügbar.",
+      "loading": "Geheimnisse werden geladen…"
     },
     "connectors": {
       "unavailableTitle": "Zugriff auf Konnektoren nicht verfügbar",
@@ -18679,6 +18676,7 @@
       "text7ca079c260d4": "Guthaben für Agent-Ausführung abgebucht",
       "text2fa5960eb241": "Kortix App gelöscht",
       "text8a18f907f571": "LLM-Gateway-Budget gelöscht",
+      "text3fb4073453fc": "Nachricht in Microsoft Teams gelöscht",
       "texta5022956d571": "Computer-Tunnel gelöscht",
       "text5be61028cb32": "Connector gelöscht",
       "textc3ab70838004": "Gateway-Routing-Richtlinie gelöscht",
@@ -18704,6 +18702,7 @@
       "text46bf87f15165": "Fast-Boot-Git-Bundle heruntergeladen",
       "text3f83682cacbc": "Sitzungsanhang heruntergeladen",
       "text21d6e0d7c87a": "Sandbox-Einstiegspunkt heruntergeladen",
+      "textda0af072ec8c": "Nachricht in Microsoft Teams bearbeitet",
       "textf2b760a63dfe": "Zweiten Faktor registriert",
       "text32c94e9eb5f4": "Rolle ablaufen lassen",
       "text7bc76ea5ba38": "Computer-Tunnel-Berechtigung ablaufen lassen",
@@ -18857,6 +18856,7 @@
       "textd7e9422246ca": "Agent-Laufzeitereignis erfasst",
       "text24bd93cb9282": "Sandbox-Boot-Zeitachse erfasst",
       "text8124518133b5": "Sitzungserstellung erfasst",
+      "text6882f8a71aff": "Abgelehnte ChatGPT-Anmeldung erneuert",
       "text5b075f5d4491": "Anmeldesitzung erneuert",
       "text7e2c4b63962f": "Secret-Anmeldedaten erneuert",
       "textaa64846a875f": "Secret-Handle abgewiesen",

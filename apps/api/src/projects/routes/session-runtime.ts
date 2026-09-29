@@ -134,16 +134,14 @@ projectsApp.openapi(
     stl.mark(`open-session:${result.start.stage}`);
     // THE RUNTIME IS UP — mirror what is already in it, once.
     //
-    // Capture otherwise runs only at turn end, so enabling
-    // `session_transcript_history` did nothing for a project's EXISTING
-    // sessions: each one stayed blank on open until somebody sent it another
-    // message. Opening the session is exactly when the user waits and the
-    // feature is supposed to pay off, so that is where the backfill belongs.
+    // Capture otherwise runs only at turn end, so a session nobody prompted
+    // since saved history shipped stayed blank on open until somebody sent it
+    // another message. Opening the session is exactly when the user waits and
+    // the feature is supposed to pay off, so that is where the backfill belongs.
     //
     // Fire-and-forget and self-limiting: at most one attempt per session per
-    // process, skipped entirely when the flag is off or the mirror already
-    // proves it holds the session's first message. It cannot fail or delay
-    // this response.
+    // process, skipped entirely when the mirror already proves it holds the
+    // session's first message. It cannot fail or delay this response.
     if (result.start.stage === 'ready') void backfillSessionTranscriptMirrorOnWake(sessionId);
     stl.log({
       waitMs,

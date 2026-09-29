@@ -19,6 +19,7 @@ mock.module('../config', () => ({
 
 let dbResults: unknown[][] = [];
 const inserts: unknown[] = [];
+let deletes = 0;
 function chain(): any {
   const c: any = {};
   for (const m of ['from', 'where', 'limit']) c[m] = () => c;
@@ -28,6 +29,12 @@ function chain(): any {
 mock.module('../shared/db', () => ({
   db: {
     select: () => chain(),
+    delete: () => ({
+      where: async () => {
+        deletes += 1;
+        return [];
+      },
+    }),
     insert: () => ({
       values: (v: unknown) => {
         inserts.push(v);
@@ -162,6 +169,7 @@ const press = async (verb: string, data: Record<string, unknown>) =>
 
 beforeEach(() => {
   dbResults = [];
+  deletes = 0;
   inserts.length = 0;
   writes.length = 0;
   posted.length = 0;
@@ -278,5 +286,44 @@ describe('/status and /sessions', () => {
     recentSessions = [];
     await run('/sessions');
     expect(posted[1]).toContain('No recent sessions');
+  });
+});
+
+// Slack parity, part 2: `/unbind`, `/home`, and `/projects` with previews.
+describe('/unbind, /home and /projects', () => {
+  test('a project manager unbinds the conversation; the next message picks a project again', async () => {
+    await run('/unbind');
+    expect(deletes).toBe(1);
+    expect(posted[0]).toContain('Unbound');
+    expect(actorChecks).toEqual([{ projectId: PROJECT, action: 'project.connector.write' }]);
+  });
+
+  test('a member without the capability cannot unbind; nothing is removed', async () => {
+    settingsActor = { reason: 'not_member' };
+    await run('/unbind');
+    expect(deletes).toBe(0);
+    expect(posted[0]).toContain('Only a project manager');
+  });
+
+  test('a per-project bot has nothing to unbind', async () => {
+    await handleTeamsCommand({ command: parseTeamsCommand('/unbind')!, activity: message('/unbind') as never, tenantId: TENANT, projectId: PROJECT, projectScoped: true });
+    expect(deletes).toBe(0);
+    expect(posted[0]).toContain('nothing to unbind');
+  });
+
+  test('/projects lists each project with Open and Use, the current one marked', async () => {
+    await run('/projects');
+    const card = posted[0]!;
+    expect(card).toContain('Connected projects');
+    expect(card).toContain('"title":"✓ In use"');
+    expect(card).toContain(`"projectId":"${OTHER}"`);
+    expect(card).toContain('https://dev.kortix.com/projects/proj-2');
+  });
+
+  test('/home lists the organization\'s projects and what to try', async () => {
+    await run('/home');
+    expect(posted[0]).toContain('Projects in this organization');
+    expect(posted[0]).toContain('First');
+    expect(posted[0]).toContain('Second');
   });
 });

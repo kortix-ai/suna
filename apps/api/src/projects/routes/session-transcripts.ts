@@ -2,7 +2,6 @@
  * Session transcript reads.
  */
 
-import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -91,11 +90,9 @@ projectsApp.openapi(
     );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
+    // The saved-history read: it serves the mirror only for the session's
+    // current OpenCode root.
     const history = c.req.query('history') === 'true';
-    if (history) {
-      const gate = requireFeatureFlag(c, loaded.row.metadata, 'session_transcript_history');
-      if (gate) return gate;
-    }
 
     if (c.req.query('shape') === 'sync') {
       // `before` walks older windows of the SAME mirror. A cursor naming no

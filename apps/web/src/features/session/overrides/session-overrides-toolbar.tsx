@@ -169,6 +169,7 @@ function sandboxRow(
 function secretsRow(
   draft: SessionScopeDraft,
   catalog: SessionScopeSelectionCatalog,
+  loading: string | null,
   disabled: boolean,
   onChange: (draft: SessionScopeDraft) => void,
   t: ReturnType<typeof useTranslations<'hardcodedUi.i18nComplete'>>,
@@ -176,10 +177,10 @@ function secretsRow(
   return {
     id: 'secrets', name: 'Secrets', icon: KeyRound,
     hint: t.raw('textb9967f948f93'),
-    summary: catalog.secrets.status === 'ready' ? sessionSecretsSummary(draft) : 'Unavailable',
+    summary: loading ?? (catalog.secrets.status === 'ready' ? sessionSecretsSummary(draft) : 'Unavailable'),
     overridden: sessionSecretsAreOverridden(draft),
     description: t.raw('text71c0873a1cc2'), resetLabel: 'Reset to agent default',
-    editor: <SessionSecretsEditor draft={draft} catalog={catalog} disabled={disabled} onChange={onChange} />,
+    editor: <SessionSecretsEditor draft={draft} catalog={catalog} loading={loading !== null} disabled={disabled} onChange={onChange} />,
     onReset: () => onChange(resetSessionSecrets(draft)),
   };
 }
@@ -240,6 +241,7 @@ export function SessionOverridesToolbar({
 }: SessionOverridesToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tPooled = useTranslations('pooledSecrets');
+  const tScope = useTranslations('sessionScope');
   const pooledSecretsEnabled = useFeatureFlag(projectId, 'pooled_provider_secrets').enabled;
   const llmGatewayEnabled = useFeatureFlag(projectId, 'llm_gateway').enabled;
   const providerPools = useSessionProviderSecretPools(
@@ -251,7 +253,7 @@ export function SessionOverridesToolbar({
   // a failed catalog read for someone who IS allowed keeps its row.
   const secretRead = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
   const secretsDenied = !secretRead.isLoading && !secretRead.allowed;
-  const { scope, catalog, saveScope, isLoading, isScopeLoading } = useSessionScope({
+  const { scope, catalog, catalogError, saveScope, isLoading, isScopeLoading } = useSessionScope({
     projectId,
     sessionId,
     agentName,
@@ -300,14 +302,17 @@ export function SessionOverridesToolbar({
 
   const activeCatalog = catalog ?? unavailableCatalog;
   const initialized = draftState.key === initializationKey && initializationKey !== null;
-  const saveDisabled =
-    !initialized ||
-    !hasAvailableScopeAxis(activeCatalog) ||
-    (Boolean(sessionId) && (!scope || isScopeLoading)) ||
-    (hasProviderChanges && (providerPools.isError || providerPools.isLoading || !providerPools.data?.can_edit));
+  // The secrets draft exists once the catalog (and, for a session, its scope)
+  // has answered. Until then the Secrets row cannot be edited, so Save commits
+  // what is ready: provider keys. A new session applies its keys live, so its
+  // Save never waits.
+  const scopeReady = initialized && (!sessionId || (Boolean(scope) && !isScopeLoading));
+  const saveDisabled = Boolean(sessionId) && (hasProviderChanges
+    ? providerPools.isError || providerPools.isLoading || !providerPools.data?.can_edit
+    : !(scopeReady && hasAvailableScopeAxis(activeCatalog)));
 
   const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!catalog || !initialized || savingRef.current) return false;
+    if (savingRef.current) return false;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
@@ -321,21 +326,21 @@ export function SessionOverridesToolbar({
           return next;
         });
       }
-      const result = await commitSessionScopeDraft({
-        sessionId,
-        draft: draftState.draft,
-        catalog,
-        previousScope: scope,
-        replaceScope: saveScope.mutateAsync,
-        onCommittedDraft: committedDraftRef.current,
-      });
-      if (sessionId && result) {
-        setRetroactive(result.retroactive);
-        setDraftState({ key: initializationKey, draft: createSessionScopeDraft(result, catalog) });
-        successToast(tI18nComplete.raw('textdf7987d6fd91'));
-      } else if (!sessionId) {
-        successToast(tI18nComplete.raw('text2467c93661b7'));
+      if (catalog && scopeReady) {
+        const result = await commitSessionScopeDraft({
+          sessionId,
+          draft: draftState.draft,
+          catalog,
+          previousScope: scope,
+          replaceScope: saveScope.mutateAsync,
+          onCommittedDraft: committedDraftRef.current,
+        });
+        if (sessionId && result) {
+          setRetroactive(result.retroactive);
+          setDraftState({ key: initializationKey, draft: createSessionScopeDraft(result, catalog) });
+        }
       }
+      successToast(tI18nComplete.raw(sessionId ? 'textdf7987d6fd91' : 'text2467c93661b7'));
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : tI18nComplete.raw('textb9dc64b38ee1');
@@ -355,7 +360,7 @@ export function SessionOverridesToolbar({
     savingRef,
     draftState.draft,
     initializationKey,
-    initialized,
+    scopeReady,
     saveScope.mutateAsync,
     scope,
     sessionId,
@@ -368,9 +373,14 @@ export function SessionOverridesToolbar({
     [],
   );
   const controlsDisabled = saving || isLoading || (Boolean(sessionId) && !scope);
+  // Not answered yet, as opposed to answered "unavailable": a failed catalog
+  // read carries an error, and an existing session also waits for its scope.
+  const secretsLoading = (!catalog && !catalogError) || (Boolean(sessionId) && isScopeLoading)
+    ? tScope('secrets.loading')
+    : null;
   const rows = useMemo(() => {
     const list: SessionOverrideRow[] = [];
-    if (!secretsDenied) list.push(secretsRow(draft, activeCatalog,
+    if (!secretsDenied) list.push(secretsRow(draft, activeCatalog, secretsLoading,
       controlsDisabled || saveScope.isPending, onChange, tI18nComplete));
     // NO Connectors axis. A session used to pin one connection per connector
     // here, and check a connector that had nothing connected — which recorded a
@@ -386,6 +396,7 @@ export function SessionOverridesToolbar({
   }, [
     secretsDenied,
     activeCatalog,
+    secretsLoading,
     controlsDisabled,
     draft,
     onChange,
@@ -415,7 +426,9 @@ export function SessionOverridesToolbar({
   return (
     <SessionOverridesControl
       rows={rows}
-      disabled={controlsDisabled}
+      // Only a save locks the whole panel. A row that is still loading
+      // disables its own editor (see `controlsDisabled` above).
+      disabled={saving}
       saving={saving}
       pendingNote={hasProviderChanges ? tPooled('unsavedChanges') : undefined}
       error={saveError}

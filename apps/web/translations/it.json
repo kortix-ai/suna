@@ -1146,10 +1146,6 @@
           "name": "Segreti protetti dalla rete",
           "description": "Controlla quali strumenti e destinazioni possono ricevere i segreti del progetto."
         },
-        "session_transcript_history": {
-          "name": "Cronologia della sessione",
-          "description": "Salva la cronologia della chat dopo ogni turno e mostrala durante l’avvio del computer della sessione."
-        },
         "pooled_provider_secrets": {
           "name": "Segreti del provider condivisi",
           "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."
@@ -1723,7 +1719,8 @@
       "unavailableTitle": "Accesso ai segreti non disponibile",
       "unavailableDescription": "La selezione attuale dei segreti rimane invariata.",
       "useProjectDefault": "Usa il predefinito del progetto",
-      "empty": "Nessun segreto disponibile per questo agente."
+      "empty": "Nessun segreto disponibile per questo agente.",
+      "loading": "Caricamento dei segreti…"
     },
     "connectors": {
       "unavailableTitle": "Accesso ai connettori non disponibile",
@@ -18679,6 +18676,7 @@
       "text7ca079c260d4": "Crediti detratti per l'esecuzione dell'agente",
       "text2fa5960eb241": "Kortix App eliminata",
       "text8a18f907f571": "Budget del gateway LLM eliminato",
+      "text3fb4073453fc": "Messaggio Microsoft Teams eliminato",
       "texta5022956d571": "Tunnel del computer eliminato",
       "text5be61028cb32": "Connettore eliminato",
       "textc3ab70838004": "Policy di routing del gateway eliminata",
@@ -18704,6 +18702,7 @@
       "text46bf87f15165": "Bundle Git per l'avvio rapido scaricato",
       "text3f83682cacbc": "Allegato della sessione scaricato",
       "text21d6e0d7c87a": "Punto di ingresso della sandbox scaricato",
+      "textda0af072ec8c": "Messaggio Microsoft Teams modificato",
       "textf2b760a63dfe": "Secondo fattore registrato",
       "text32c94e9eb5f4": "Ruolo scaduto",
       "text7bc76ea5ba38": "Autorizzazione del tunnel del computer scaduta",
@@ -18857,6 +18856,7 @@
       "textd7e9422246ca": "Evento di runtime dell'agente registrato",
       "text24bd93cb9282": "Sequenza temporale di avvio della sandbox registrata",
       "text8124518133b5": "Creazione della sessione registrata",
+      "text6882f8a71aff": "Accesso ChatGPT rinnovato dopo un rifiuto",
       "text5b075f5d4491": "Sessione di accesso rinnovata",
       "text7e2c4b63962f": "Credenziale del segreto rinnovata",
       "textaa64846a875f": "Handle del segreto rifiutato",
