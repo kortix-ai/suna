@@ -448,6 +448,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-7` `GET /projects/:id/commits?ref=&path=` · `GET …/commits/:sha` · `GET …/commits/:sha/diff`.
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to the daemon's `/file` API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
+`FILE-11` Read-after-push at a branch ref. After a push creates a new branch, `GET /projects/:id/files/content?path=&ref=<branch>` and `GET /projects/:id/files?ref=<branch>` answer at once with the pushed file, although the server mirror fetched inside the last refresh interval. A pushed update of an existing file (default branch reads) keeps the interval; an unknown branch → 404 `ref not found`. Local target only (the push goes straight to the bare repository).
 
 ---
 
