@@ -166,6 +166,35 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     expect(scheduled).toBe(0);
   });
 
+  // The incident shape: a fresh box that staged the manifest agent and
+  // deferred its own swap (`too-young`). Opening a session must not relaunch
+  // it; the daemon swaps itself at its next `session.idle`.
+  test('the manifest agent staged on a self-swapping daemon: proceed, no relaunch scheduled', async () => {
+    let scheduled = 0;
+    const staged = {
+      ...CURRENT_HEALTH,
+      runtime: {
+        ...CURRENT_HEALTH.runtime,
+        components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' },
+        agentSwapPending: true,
+        running: { ...CURRENT_HEALTH.runtime.running, agent_sha256: 'old', staged_agent_sha256: 'z' },
+      },
+    };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      row('sb-swap-pending'),
+      fakeDeps({
+        health: staged,
+        expectedRunningAssets: async () => ({ cli_sha256: 'x', managed_skills_hash: 'y', agent_sha256: 'z' }),
+      }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('proceed');
+    expect(scheduled).toBe(0);
+  });
+
   test('a pinned box: blocked, never scheduled, regardless of turn state', async () => {
     let scheduled = 0;
     const outcome = await guaranteeCurrentRuntimeOnOpen(

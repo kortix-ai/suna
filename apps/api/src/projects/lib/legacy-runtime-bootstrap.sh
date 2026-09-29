@@ -188,6 +188,31 @@ if id kortix >/dev/null 2>&1; then
   # it needs to own that file (the image only chowns /opt/kortix).
   [ -f /usr/local/bin/kortix ] && chown kortix:kortix /usr/local/bin/kortix 2>/dev/null || true
 fi
+# Is any OpenCode session busy (a subagent counts)? "Cannot tell" = busy.
+# The API probed idle before this run, but the downloads above take ~20 s and
+# a prompt can start inside them. Ask each running `opencode serve` directly,
+# the way the daemon's instance guard does: `{}` is the only idle answer.
+runtime_busy() {
+  local list rc line port body
+  list=$(pgrep -af 'opencode serve'); rc=$?
+  [ "$rc" -le 1 ] || return 0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    port=$(printf '%s' "$line" | sed -n 's/.*--port[= ]\([0-9][0-9]*\).*/\1/p')
+    [ -n "$port" ] || return 0
+    body=$(curl -fsS --max-time 5 "http://127.0.0.1:$port/session/status" 2>/dev/null) || return 0
+    [ "$(printf '%s' "$body" | tr -d ' \n\r\t')" = '{}' ] || return 0
+  done <<< "$list"
+  return 1
+}
+# Checked last before anything the running chain cannot undo: the token
+# rotation below and the kill in step 6. A busy box keeps what is staged and
+# the control plane retries without spending an attempt.
+if [ "$RELAUNCH" = pt-app ] && runtime_busy; then
+  log "an OpenCode session is busy; relaunch deferred"
+  emit "{\"ok\":false,\"stage\":\"busy\",\"error\":\"an OpenCode session is busy\",\"token_rotated\":$TOKEN_ROTATED}"
+  exit 0
+fi
 # 5. Token model. Current boxes carry one session PAT as KORTIX_TOKEN. Rewrite
 #    the persisted value (pt-init re-exports /etc/environment on a cold boot)
 #    and hand it to the relaunched chain; the daemon's inbound auth compares

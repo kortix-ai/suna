@@ -126,11 +126,11 @@ export const LEGACY_OPENCODE_HOME = 'auto';
  * A daemon that does not report `running` AT ALL predates that field — proof
  * by itself that the running bytes are old, independent of anything else it
  * says. A daemon that reports `agentSwapPending: true` has a verified update
- * staged and NOT running: on Platinum the supervisor only promotes it on a
- * relaunch the box cannot give itself (`pt-init` runs the image entrypoint
- * once, never again — see `relaunchStrategyFor`), so a RUNNING box observed
- * with the flag set has nothing that will ever land it without an external
- * relaunch — there is no "pending success" to wait out. `pinned: true` is a
+ * staged and NOT running. A daemon without `running` has no trigger that will
+ * ever install it (`pt-init` runs the image entrypoint once, never again — see
+ * `relaunchStrategyFor`), so only an external relaunch lands it. A daemon WITH
+ * `running` swaps itself at its next `session.idle`; when the bytes it staged
+ * are the manifest agent, that pending swap is not stale. `pinned: true` is a
  * different animal: the supervisor itself rolled an update back and latched
  * updates off. That box needs a human, not another attempt — see `blocked`
  * below, and never loop repair on it.
@@ -240,6 +240,17 @@ export function classifyDaemonHealth(
 
   const runningRaw = r.running;
   const runningPresent = isRecord(runningRaw);
+  // SELF-SWAP COVERS IT. Every daemon that reports `running` (#7786) also
+  // installs its staged agent at its own next `session.idle`
+  // (`applyStagedAssetsIfIdle`, #7703, merged before #7786). When the staged
+  // bytes ARE the manifest agent, the old agent sha and `agentSwapPending`
+  // describe that one pending swap. An API relaunch only duplicates it, and
+  // it killed a live turn that started after the idle probe.
+  const stagedSha = runningPresent ? shaField(runningRaw, 'staged_agent_sha256') : null;
+  const selfSwapPending =
+    r.agentSwapPending === true &&
+    stagedSha !== null &&
+    (!expectedRunningAssets?.agent_sha256 || stagedSha === expectedRunningAssets.agent_sha256);
   if (!runningPresent) {
     staleReasons.push('running_assets_unreported');
     detail.push('runtime.running is not reported — the daemon predates running-asset truth and cannot prove which bytes it runs');
@@ -254,6 +265,7 @@ export function classifyDaemonHealth(
       ] as const
     ).forEach(([key, wanted]) => {
       if (!wanted) return; // this deploy states nothing to converge this field on
+      if (key === 'agent_sha256' && selfSwapPending) return;
       const have = shaField(running, key);
       if (!have) return; // the box states nothing comparable for this field
       if (have !== wanted) mismatches.push(key);
@@ -277,7 +289,7 @@ export function classifyDaemonHealth(
     detail.push(`missing required capabilit${missingCapabilities.length === 1 ? 'y' : 'ies'}: ${missingCapabilities.join(', ')}`);
   }
 
-  if (r.agentSwapPending === true) {
+  if (r.agentSwapPending === true && !selfSwapPending) {
     staleReasons.push('agent_swap_pending');
     const uptimeS = typeof h.uptime_s === 'number' ? h.uptime_s : null;
     detail.push(
@@ -802,6 +814,9 @@ export async function bootstrapLegacyRuntime(
   // the ledger can hold a zombie turn on exactly the boxes this exists for.
   // OpenCode is proxied BY the daemon, so a dead daemon is also why OpenCode
   // says nothing. That is one fact, not two, and it cannot gate its own repair.
+  // This probe is a cheap early exit, not the guarantee: the downloads take
+  // ~20 s, so the script asks OpenCode again at the moment of the kill
+  // (`runtime_busy` in legacy-runtime-bootstrap.sh, report stage `busy`).
   const status = deadDaemonOnRunningBox ? {} : await deps.fetchOpencodeStatus();
   if (!opencodeIdle(status)) {
     return { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification };
@@ -931,6 +946,18 @@ export async function bootstrapLegacyRuntime(
       'failed',
       'script produced no report',
     );
+  }
+  if (report.stage === 'busy') {
+    // The script re-checked OpenCode at the moment of the kill and a turn had
+    // started since the probe above. Not a failure of the box: put the record
+    // back as it was, so this attempt spends no budget and no cooldown, and
+    // the next reaper pass or session open tries again.
+    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
+    deps.log('legacy runtime bootstrap deferred: a turn started before the relaunch', {
+      sandboxId: input.sandboxId,
+      externalId: input.externalId,
+    });
+    return { outcome: 'skipped-busy', detail: 'opencode busy at relaunch', classification };
   }
   if (!report.ok) {
     return finish(

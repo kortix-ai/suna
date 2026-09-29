@@ -171,11 +171,42 @@ describe('classifyDaemonHealth', () => {
     expect(opencode.staleReasons).toEqual(['missing_capability']);
   });
 
-  test('agentSwapPending: true is stale immediately — no grace window; a running box has no natural self-promotion path', () => {
+  test('agentSwapPending: true without the staged sha reported is stale immediately — no grace window', () => {
     const health = { ...CURRENT_HEALTH, runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true } };
     const c = classifyDaemonHealth(health, MANIFEST);
     expect(c.klass).toBe('stale');
     expect(c.staleReasons).toEqual(['agent_swap_pending']);
+  });
+
+  // A daemon that reports `runtime.running` also swaps itself at its next
+  // `session.idle` (`applyStagedAssetsIfIdle`). When the bytes it staged ARE
+  // the manifest's agent, an API relaunch only duplicates that swap — and a
+  // relaunch fired on a box with this shape killed a live turn.
+  test('the manifest agent already staged on a self-swapping daemon is not stale: the daemon installs it at its next idle boundary', () => {
+    const health = {
+      ...CURRENT_HEALTH,
+      runtime: {
+        ...CURRENT_HEALTH.runtime,
+        components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' },
+        agentSwapPending: true,
+        running: { ...CURRENT_HEALTH.runtime.running, agent_sha256: 'old-agent', staged_agent_sha256: MANIFEST.agent_sha256 },
+      },
+    };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.staleReasons).toEqual([]);
+    expect(c.klass).toBe('current');
+  });
+
+  test('a staged agent that is NOT the manifest agent stays stale', () => {
+    const health = {
+      ...CURRENT_HEALTH,
+      runtime: {
+        ...CURRENT_HEALTH.runtime,
+        agentSwapPending: true,
+        running: { ...CURRENT_HEALTH.runtime.running, agent_sha256: 'old-agent', staged_agent_sha256: 'other-agent' },
+      },
+    };
+    expect(classifyDaemonHealth(health, MANIFEST).staleReasons).toEqual(['running_assets_stale', 'agent_swap_pending']);
   });
 
   test('ANY failed component makes the box stale, opencode included — the classifier no longer allowlists which components count', () => {
@@ -234,6 +265,41 @@ describe('renderLegacyBootstrapScript', () => {
     expect(s).toContain(`EMBEDDED_EP_B64='${Buffer.from('#!/bin/bash\necho supervisor\n').toString('base64')}'`);
     expect(s).toContain('EP_SOURCE=embedded');
     expect(renderLegacyBootstrapScript({ relaunch: 'pt-app' })).toContain("EMBEDDED_EP_B64=''");
+  });
+  // The API probes idle once, then downloads for ~20 s before the kill. The
+  // script re-asks OpenCode itself at the moment of the kill.
+  test('runtime_busy: any busy session or any unreadable answer is busy; only every OpenCode answering {} is idle', () => {
+    const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
+    const fn = /^runtime_busy\(\) \{[\s\S]*?^\}$/m.exec(s)?.[0];
+    expect(fn).toBeDefined();
+    const busy = (pgrepOut: string, pgrepRc: number, bodies: Record<string, string>): boolean => {
+      const stubs = [
+        `pgrep() { printf '%s' "$PGREP_OUT"; return ${pgrepRc}; }`,
+        // curl answers with CURL_<port>, or fails like a closed port.
+        'curl() { local u="${*: -1}"; local p="${u#http://127.0.0.1:}"; p="${p%%/*}"; local v="CURL_$p"; [ -n "${!v+x}" ] || return 7; printf \'%s\' "${!v}"; }',
+      ].join('\n');
+      const env: Record<string, string> = { PATH: process.env.PATH ?? '', PGREP_OUT: pgrepOut };
+      for (const [port, body] of Object.entries(bodies)) env[`CURL_${port}`] = body;
+      const r = Bun.spawnSync(['bash', '-c', `${stubs}\n${fn}\nruntime_busy`], { env });
+      return r.exitCode === 0;
+    };
+    const oc = (port: number) => `${port} opencode serve --port ${port} --hostname 127.0.0.1\n`;
+    expect(busy('', 1, {})).toBe(false); // no OpenCode running: nothing to kill
+    expect(busy(oc(4096), 0, { 4096: '{}' })).toBe(false);
+    expect(busy(oc(4096), 0, { 4096: ' { }\n' })).toBe(false);
+    expect(busy(oc(4096), 0, { 4096: '{"ses_child":{"type":"busy"}}' })).toBe(true); // a subagent counts
+    expect(busy(oc(4096), 0, { 4096: '{"ses_1":{"type":"retry"}}' })).toBe(true);
+    expect(busy(oc(4096), 0, {})).toBe(true); // no answer = cannot tell = busy
+    expect(busy(oc(4096) + oc(4097), 0, { 4096: '{}', 4097: '{"ses_1":{"type":"busy"}}' })).toBe(true);
+    expect(busy('77 opencode serve\n', 0, {})).toBe(true); // no port to ask
+    expect(busy('', 2, {})).toBe(true); // pgrep itself failed
+  });
+  test('the busy re-check runs before the token rotation and the kill, and only on the in-place relaunch', () => {
+    const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
+    const guard = s.indexOf('if [ "$RELAUNCH" = pt-app ] && runtime_busy; then');
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(s.indexOf('if [ -n "$NEW_KORTIX_TOKEN" ]; then'));
+    expect(guard).toBeLessThan(s.indexOf('\nstop_runtime_chain\n'));
   });
   test('rejects an unsafe opencode home', () => {
     expect(() => renderLegacyBootstrapScript({ relaunch: 'pt-app', opencodeHome: '/x; rm -rf /' })).toThrow();
@@ -352,6 +418,34 @@ describe('bootstrapLegacyRuntime', () => {
     expect(calls.execs).toHaveLength(0);
     const unreachable = await bootstrapLegacyRuntime(input(), makeDeps({ status: null }, calls));
     expect(unreachable.outcome).toBe('skipped-busy');
+  });
+
+  test('a turn that starts after the idle probe: the script refuses the relaunch, the attempt is not spent, the record is put back', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const prior = { state: 'failed', attempts: 1, manifestBuild: 1788044234, lastAttemptAt: new Date(1_000_000 - LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS * 2).toISOString(), error: 'x' };
+    const committed: Array<boolean | null> = [];
+    const deps = makeDeps(
+      {
+        exec: async (cmd) => {
+          calls.execs.push(cmd);
+          return { exitCode: 0, stdout: '{"ok":false,"stage":"busy","error":"an OpenCode session is busy","token_rotated":false}\n', stderr: '' };
+        },
+        rotateKortixToken: async () => 'kortix_pat_new',
+        commitKortixToken: async (_s, rotated) => {
+          committed.push(rotated);
+        },
+      },
+      calls,
+    );
+    const r = await bootstrapLegacyRuntime(input({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior }), deps);
+    expect(r.outcome).toBe('skipped-busy');
+    expect(calls.patches.at(-1)![LEGACY_BOOTSTRAP_METADATA_KEY]).toEqual(prior);
+    expect(calls.audits.some((a) => (a as { outcome: string }).outcome === 'failure')).toBe(false);
+    expect(committed).toEqual([false]);
+    // No prior record: the running stamp is cleared, so the next pass retries.
+    const fresh: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(input(), makeDeps({ exec: deps.exec }, fresh));
+    expect(fresh.patches.at(-1)![LEGACY_BOOTSTRAP_METADATA_KEY]).toBeNull();
   });
 
   test('failed attempt: cooldown, then budget exhausted on the same build, fresh budget on a new build', async () => {
