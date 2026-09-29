@@ -112,6 +112,15 @@ beforeEach(() => {
   delete process.env.KORTIX_PLATINUM_CREATE_DEDUP;
 });
 
+describe('only Kortix wakes a session box', () => {
+  test('a session box is created with auto_resume=false, so a stale edge request cannot wake it', async () => {
+    const p = new PlatinumProvider();
+    await p.create({ ...baseOpts, createAttempt: 1 });
+
+    expect(createCalls()[0].body?.auto_resume).toBe(false);
+  });
+});
+
 describe('S1 deterministic name + Idempotency-Key derivation', () => {
   test('both derive from the FULL sandboxId, never opts.name / an 8-char truncation', async () => {
     const p = new PlatinumProvider();

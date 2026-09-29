@@ -9,29 +9,17 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
-import { log } from '@/lib/logger';
 import { mapConcurrent } from './map-concurrent';
 import {
   listProjectsForAccount,
   listProjectSessions as listProjectSessionsSdk,
-  startProjectSession,
-  createProjectSession,
-  restartProjectSession,
-  deleteProjectSession,
 } from '@/lib/projects/projects-client';
-// `stopProjectSession` was never re-exported by mobile's projects-client.ts
-// (mobile didn't have a "pause in place" caller before this file); pull it
-// straight from the SDK's public `projects-client` subpath instead of adding
-// an export mobile itself doesn't otherwise need.
 import {
-  getProviders as sdkGetProviders,
   getServiceLogs as sdkGetServiceLogs,
   listServices as sdkListServices,
-  type ProvidersInfo,
   reconcileServices as sdkReconcileServices,
   type SandboxProviderName,
   serviceAction as sdkServiceAction,
-  stopProjectSession,
 } from '@kortix/sdk';
 // The SDK's kortix-master service wrappers are public via the
 // canonical `@kortix/sdk` root entry (client.ts re-exports the module).
@@ -182,23 +170,6 @@ async function listProjectSessions(projectId: string): Promise<ProjectSessionSum
   return listProjectSessionsSdk(projectId) as unknown as Promise<ProjectSessionSummary[]>;
 }
 
-async function getProjectSessionSandbox(
-  projectId: string,
-  sessionId: string
-): Promise<ProjectSessionSandbox | null> {
-  // Unified session-open endpoint: provisions/resumes + resolves the pin
-  // server-side, returning the sandbox row in its payload. `startProjectSession`
-  // (mobile-native — see projects-client.ts for why) already swallows non-
-  // billing failures into `null`; billing-gate errors propagate, matching this
-  // function's own prior try/catch-everything behavior from the caller's POV.
-  try {
-    const result = await startProjectSession(projectId, sessionId);
-    return (result?.sandbox as ProjectSessionSandbox | null) ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function listProjectSessionSandboxes(): Promise<
   Array<{
     project: ProjectSummary;
@@ -265,37 +236,6 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 /**
- * Ensure the user has a sandbox provisioned. Creates one if needed.
- * POST /platform/init
- */
-export async function ensureSandbox(opts?: {
-  provider?: SandboxProviderName;
-  projectId?: string;
-}): Promise<{ sandbox: SandboxInfo; created: boolean }> {
-  log.log('📦 [Platform] Ensuring sandbox...');
-
-  const existing = await getActiveSandbox();
-  if (existing) return { sandbox: existing, created: false };
-
-  const projects = await listProjects();
-  const project = opts?.projectId
-    ? projects.find((item) => item.project_id === opts.projectId)
-    : projects[0];
-  if (!project) {
-    throw new Error('Create a project before starting a sandbox');
-  }
-
-  const session = (await createProjectSession(project.project_id, {
-    ...(opts?.provider ? { provider: opts.provider } : {}),
-  })) as unknown as ProjectSessionSummary;
-  const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
-  const sandbox = toSandboxInfo(project, session, runtime);
-
-  log.log('✅ [Platform] Project session sandbox ensured:', sandbox.external_id);
-  return { sandbox, created: true };
-}
-
-/**
  * Get user's active sandbox.
  * GET /platform/sandbox
  */
@@ -323,44 +263,6 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
   } catch {
     return [];
   }
-}
-
-/**
- * Restart the active sandbox.
- * POST /platform/sandbox/restart
- */
-export async function restartSandbox(sandboxId?: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('No project session sandbox found');
-  await restartProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Stop the active sandbox in place (disk kept, resumable via restart/start).
- * POST /projects/:projectId/sessions/:sessionId/stop
- */
-export async function stopSandbox(sandboxId?: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('No project session sandbox found');
-  await stopProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Delete/archive a sandbox by ID.
- * DELETE /platform/sandbox/:sandboxId
- */
-export async function deleteSandbox(sandboxId: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  await deleteProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Get available sandbox providers.
- * GET /setup/sandbox-providers
- */
-export async function getProviders(): Promise<ProvidersInfo> {
-  return sdkGetProviders();
 }
 
 /**

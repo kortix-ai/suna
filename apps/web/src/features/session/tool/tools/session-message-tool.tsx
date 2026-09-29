@@ -43,7 +43,4 @@ export function SessionMessageTool({ part, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('session_message', SessionMessageTool);
 ToolRegistry.register('session-message', SessionMessageTool);
-ToolRegistry.register('oc-session_message', SessionMessageTool);
-ToolRegistry.register('oc-session-message', SessionMessageTool);
