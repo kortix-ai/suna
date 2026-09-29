@@ -19017,7 +19017,9 @@
       "text2edf70730233": "Message to the agent (optional)",
       "texte88286ad9739": "Listed project reminders",
       "text711edad21902": "Added computer to project",
-      "texta3ecfa724d04": "Computer unpaired itself"
+      "texta3ecfa724d04": "Computer unpaired itself",
+      "text734315a9e07d": "Read MCP resource metadata",
+      "text872227a135cd": "Read OpenID configuration"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
