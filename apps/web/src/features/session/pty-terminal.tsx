@@ -99,7 +99,7 @@ function safeFit(fitAddon: FitAddon | null, container: HTMLDivElement | null) {
   }
 }
 
-function sanitizeTerminalChunk(chunk: string): string {
+export function sanitizeTerminalChunk(chunk: string): string {
   return (
     chunk
       // Cursor shell integration sometimes emits OSC 697 payloads.
@@ -125,7 +125,7 @@ function sanitizeTerminalChunk(chunk: string): string {
 // queries embedded in it make xterm emit these — and at an idle shell prompt the
 // shell echoes them straight back as visible garbage. We drop them during the
 // brief post-connect replay window (real keystrokes are never reports).
-function isTerminalReport(data: string): boolean {
+export function isTerminalReport(data: string): boolean {
   return /^(?:\x1b\[\d+;\d+R|\x1b\[\??[0-9;]*\$y|\x1b\[\?[0-9;]*c|\x1b\][0-9;]+(?:;rgb:[0-9a-fA-F/]+)?(?:\x07|\x1b\\))+$/.test(
     data,
   );
