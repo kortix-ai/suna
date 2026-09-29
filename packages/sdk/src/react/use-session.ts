@@ -491,7 +491,7 @@ interface StartPollQuery {
  * {@link SESSION_START_POLL_BACKOFF_STEPS}; any change resets it at once, and
  * a terminal answer stops polling and forgets the pace.
  */
-export function sessionStartRefetchIntervalMs(
+function sessionStartRefetchIntervalMs(
   query: StartPollQuery,
   now: number,
 ): number | false {

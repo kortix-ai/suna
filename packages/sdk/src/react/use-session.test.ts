@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 // Mock the lowest network boundary the reply/send paths go through — the
 // OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
@@ -74,7 +74,6 @@ import {
   rejectQuestion,
   resolveSendOptions,
   resolveSessionRuntimeUrl,
-  sessionStartRefetchIntervalMs,
   sendReceiptId,
   sendStateOnError,
   sendStateOnStart,
@@ -684,6 +683,14 @@ describe('SESSION_START_POLL_OPTIONS', () => {
 // (KRTX-385): the interval must grow while nothing changes, reset the moment
 // the answer changes, and stop with the poll on a terminal answer.
 describe('sessionStartRefetchIntervalMs', () => {
+  const interval = (query: Parameters<typeof SESSION_START_POLL_OPTIONS.refetchInterval>[0], now: number) => {
+    setSystemTime(now);
+    try {
+      return SESSION_START_POLL_OPTIONS.refetchInterval(query);
+    } finally {
+      setSystemTime();
+    }
+  };
   const startingQuery = () => ({
     state: {
       error: null,
@@ -693,29 +700,29 @@ describe('sessionStartRefetchIntervalMs', () => {
 
   test('an unchanged non-terminal answer stretches the poll — a wedged box stops hammering', () => {
     const query = startingQuery();
-    expect(sessionStartRefetchIntervalMs(query, 0)).toBe(SESSION_START_POLL_MS);
-    expect(sessionStartRefetchIntervalMs(query, 45_000)).toBe(5_000);
-    expect(sessionStartRefetchIntervalMs(query, 250_000)).toBe(30_000);
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    expect(interval(query, 250_000)).toBe(30_000);
     // Still inside the pace TTL: the cap holds.
-    expect(sessionStartRefetchIntervalMs(query, 290_000)).toBe(30_000);
+    expect(interval(query, 290_000)).toBe(30_000);
   });
 
   test('a pace left unpollied longer than its TTL starts fresh, not at the cap', () => {
     // A query nobody polled for minutes (unmounted, tab closed) must not
     // inherit a stretched interval on its next answer.
     const query = startingQuery();
-    expect(sessionStartRefetchIntervalMs(query, 0)).toBe(SESSION_START_POLL_MS);
-    expect(sessionStartRefetchIntervalMs(query, 45_000)).toBe(5_000);
-    expect(sessionStartRefetchIntervalMs(query, 400_000)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    expect(interval(query, 400_000)).toBe(SESSION_START_POLL_MS);
   });
 
   test('a changed answer resets the stretch back to the normal cadence', () => {
     const query = startingQuery();
-    expect(sessionStartRefetchIntervalMs(query, 0)).toBe(SESSION_START_POLL_MS);
-    expect(sessionStartRefetchIntervalMs(query, 45_000)).toBe(5_000);
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
     // The provider now reports progress (a different reason): back to fast.
     expect(
-      sessionStartRefetchIntervalMs(
+      interval(
         { state: { error: null, data: { stage: 'starting', retriable: true, reason: 'runtime_waking' } as never } },
         45_001,
       ),
@@ -724,15 +731,15 @@ describe('sessionStartRefetchIntervalMs', () => {
 
   test('a terminal answer forgets the pace state and stops the interval', () => {
     const query = startingQuery();
-    expect(sessionStartRefetchIntervalMs(query, 0)).toBe(SESSION_START_POLL_MS);
-    expect(sessionStartRefetchIntervalMs(query, 45_000)).toBe(5_000);
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
     const stopped = {
       state: { error: null, data: { stage: 'stopped', retriable: false } as never },
     };
-    expect(sessionStartRefetchIntervalMs(stopped, 45_001)).toBe(false);
+    expect(interval(stopped, 45_001)).toBe(false);
     // A brand-new query object after the stop starts at the normal cadence —
     // the pace never leaks across a fresh query's first answer.
-    expect(sessionStartRefetchIntervalMs(startingQuery(), 45_002)).toBe(SESSION_START_POLL_MS);
+    expect(interval(startingQuery(), 45_002)).toBe(SESSION_START_POLL_MS);
   });
 
   test('the retry cooldown and the no-progress stretch take the larger pause', () => {
@@ -762,10 +769,10 @@ describe('sessionStartRefetchIntervalMs', () => {
       },
     };
     // 65s out clamps to the 60s cap at t=0.
-    expect(sessionStartRefetchIntervalMs(query, nowMs)).toBe(60_000);
+    expect(interval(query, nowMs)).toBe(60_000);
     // At 45s the stretch alone would say 5s; the server's own cooldown says
     // "not before 65s" — the cooldown wins.
-    expect(sessionStartRefetchIntervalMs(query, nowMs + 45_000)).toBe(65_000 - 45_000 + 1_000);
+    expect(interval(query, nowMs + 45_000)).toBe(65_000 - 45_000 + 1_000);
   });
 });
 
