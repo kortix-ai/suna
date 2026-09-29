@@ -99,10 +99,10 @@ describe('shared channel versus one-to-one conversation', () => {
     expect(actions).toEqual(['project.connector.write']);
   });
 
-  test('a DM or personal chat with the bot needs project.write, the bar for sending a message', async () => {
+  test('a DM or personal chat with the bot needs project.session.start, the bar for sending a message', async () => {
     expect(await settings.authorizeChannelChange(user, { ...channel, oneToOne: true })).toMatchObject({ ok: true });
     await settings.changeChannelAgent(user, { ...channel, oneToOne: true }, 'reviewer');
-    expect(actions).toEqual(['project.write', 'project.write']);
+    expect(actions).toEqual(['project.session.start', 'project.session.start']);
     expect(writes).toEqual([['agent', 'reviewer']]);
   });
 });

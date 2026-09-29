@@ -1,3 +1,4 @@
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { changeChannelAgent, switchChannelProject } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
@@ -381,7 +382,7 @@ async function handleReview(
   //
   // The item is loaded FIRST because the authorization is scoped to its own
   // account, not to whatever account the presser happens to belong to.
-  const actor = await resolveChatActor(chatUser('teams', convo.tenantId, uid ?? ''), { projectId, accountId: item.accountId });
+  const actor = await resolveChatActor(chatUser('teams', convo.tenantId, uid ?? ''), { projectId, accountId: item.accountId }, PROJECT_ACTIONS.PROJECT_REVIEW_ACT);
   if ('reason' in actor) {
     return cardResponse(
       buildNoticeCard(

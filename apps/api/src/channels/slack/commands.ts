@@ -1,3 +1,4 @@
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -275,7 +276,8 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
   // Anyone who can @-mention the agent and have it act can delegate exactly that
   // and nothing more. Reusing it also means the two can never disagree: if this
   // passes, the bot's mentions will resolve; if it fails, they would not have.
-  const actor = await resolveProjectChatActor(slackUserOf(ctx), selection.projectId);
+  // Manager tier on purpose: the bot then acts as this person across the workspace.
+  const actor = await resolveProjectChatActor(slackUserOf(ctx), selection.projectId, PROJECT_ACTIONS.PROJECT_WRITE);
   if ('reason' in actor) {
     return {
       response_type: 'ephemeral',

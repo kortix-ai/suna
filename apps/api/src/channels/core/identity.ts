@@ -110,13 +110,19 @@ export async function isAccountMember(userId: string, accountId: string): Promis
 /**
  * The Kortix user `user` acts as in `project`, when the link is live, the
  * user is a member of the project's account, and IAM allows `action` on the
- * project. `action` defaults to starting work (`project.write`); channel
- * settings ask for `project.connector.write` (see core/settings.ts).
+ * project. `action` defaults to running a session, `project.session.start`:
+ * the bar the web holds starting a session and prompting one to, and one a
+ * plain project `member` holds. Until 2026-09-29 it was `project.write`,
+ * which only managers hold, so a member who used Kortix on the web got
+ * "Request access" in Slack and Teams, and an approved request (which grants
+ * `member`) did not change that. Channel settings ask for
+ * `project.connector.write` (core/settings.ts); review decisions ask for
+ * `project.review.act`.
  */
 export async function resolveChatActor(
   user: ChatUser,
   project: { projectId: string; accountId: string },
-  action: string = PROJECT_ACTIONS.PROJECT_WRITE,
+  action: string = PROJECT_ACTIONS.PROJECT_SESSION_START,
 ): Promise<ChatActor> {
   if (!user.workspaceId || !user.platformUserId) return { reason: 'unlinked' };
   const link = await lookupChatIdentity(user);
@@ -135,7 +141,7 @@ export async function resolveChatActor(
 export async function resolveProjectChatActor(
   user: ChatUser,
   projectId: string,
-  action: string = PROJECT_ACTIONS.PROJECT_WRITE,
+  action: string = PROJECT_ACTIONS.PROJECT_SESSION_START,
 ): Promise<ChatActor> {
   const [project] = await db
     .select({ accountId: projects.accountId })
@@ -173,11 +179,11 @@ export async function createChatAccessRequest(user: ChatUser, projectId: string)
 
   const base = { requesterUserId: identity.userId, accountId: project.accountId };
   if (await isAccountMember(identity.userId, project.accountId)) {
-    // A member without project.write for this project still goes through the
-    // review queue instead of silently failing.
+    // The same bar the message path holds (resolveChatActor): someone who can
+    // already run a session here needs no request.
     const verdict = await authorize(
       actorForUser(identity.userId, project.accountId),
-      PROJECT_ACTIONS.PROJECT_WRITE,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
       { type: 'project', id: projectId },
     );
     if (verdict.allowed) return { status: 'already-member', ...base };

@@ -1,3 +1,4 @@
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import { TURN_INSTRUCTIONS } from './session';
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
@@ -265,7 +266,7 @@ async function handleReviewAction(
   // The actor must be a linked Kortix user with write access to this project.
   // Self-approve is allowed (launcher or any manager) — there's no separation-of-
   // duties gate. No live mapping → nudge to connect / request access.
-  const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId: thread.projectId, accountId: item.accountId });
+  const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId: thread.projectId, accountId: item.accountId }, PROJECT_ACTIONS.PROJECT_REVIEW_ACT);
   if ('reason' in actor) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
@@ -739,7 +740,7 @@ export async function handleViewSubmission(
     return;
   }
 
-  const actor = await resolveChatActor(chatUser('slack', meta.teamId, slackUserId), { projectId: meta.projectId, accountId: item.accountId });
+  const actor = await resolveChatActor(chatUser('slack', meta.teamId, slackUserId), { projectId: meta.projectId, accountId: item.accountId }, PROJECT_ACTIONS.PROJECT_REVIEW_ACT);
   if ('reason' in actor) {
     await notify(
       actor.reason === 'unlinked'
