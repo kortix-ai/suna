@@ -57,5 +57,4 @@ export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('task_done', TaskDoneTool);
 ToolRegistry.register('task-done', TaskDoneTool);

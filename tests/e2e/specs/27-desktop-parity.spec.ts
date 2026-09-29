@@ -1693,7 +1693,7 @@ for (const runtime of runtimes) {
         await dismissOnboarding(page);
 
         // The reported soft lock: the switcher opens /new, and /new has no
-        // navigation of its own — only an account picker and Log out.
+        // navigation of its own — only an account menu.
         await page
           .getByRole("button", { name: "Switch project", exact: true })
           .click();
@@ -1722,15 +1722,16 @@ for (const runtime of runtimes) {
           backBox.y + backBox.height,
           "Back must sit inside the title-bar band",
         ).toBeLessThanOrEqual(43);
-        // The page's own top row (account picker, Log out) drops below the band.
-        const logOut = page.getByRole("button", {
-          name: "Log out",
+        // The page's own top row drops below the band. Log out lives in the
+        // account menu (AccountTopBar, #8286); its trigger is the row's control.
+        const accountMenu = page.getByRole("button", {
+          name: `Logged in as ${email}`,
           exact: true,
         });
-        await expect(logOut).toBeVisible();
+        await expect(accountMenu).toBeVisible();
         expect(
-          (await logOut.boundingBox())!.y,
-          "Log out must sit below the title-bar band",
+          (await accountMenu.boundingBox())!.y,
+          "the account menu must sit below the title-bar band",
         ).toBeGreaterThanOrEqual(backBox.y + backBox.height);
 
         // `/new` has no titlebar owner, so the root strip is its only drag

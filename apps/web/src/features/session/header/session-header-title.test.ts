@@ -42,7 +42,11 @@ describe('the header renders the sidebar name', () => {
   test('the delete confirmation names it the same way', () => {
     // "Delete Greeting?" for a session the user knows as something else is the
     // same bug with worse consequences.
-    expect(code()).toContain('sessionLabel={headerTitle}');
+    // #8207 split the header title (a subsession shows its own, parent-aware
+    // title) from the project session's title; delete acts on the project
+    // session, so it names that. Both come from getSessionDisplayTitle.
+    expect(code()).toContain('const projectTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;');
+    expect(code()).toContain('sessionLabel={projectTitle}');
   });
 
   test('still falls back to the prop without a project session', () => {

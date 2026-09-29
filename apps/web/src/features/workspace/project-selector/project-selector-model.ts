@@ -203,3 +203,39 @@ export function decideDoor(input: {
   }
   return { kind: 'select' };
 }
+
+/** Mirrors the rename route's own ceiling (`PATCH /v1/accounts/:accountId`). */
+export const ACCOUNT_NAME_MAX_LENGTH = 255;
+
+/**
+ * The account a brand-new user is asked to name, or `null` (KRTX-638).
+ *
+ * Naming the account is the FIRST onboarding step: it happens once, on this
+ * page, before the first project — not on `/new`, which every user reaches
+ * again and again. "New" means all of:
+ *
+ * - never named it here (`namedAt`, stored on the auth user's metadata);
+ * - no project in any account, and no invite waiting — someone joining a
+ *   team is not setting one up;
+ * - every project list answered — a failed read is not an empty one;
+ * - a personal account they may create in.
+ *
+ * Until they answer, the account carries the API's suggested name (never the
+ * email), and the step pre-fills it.
+ */
+export function accountNameStepAccount({
+  sections,
+  inviteCount,
+  userId,
+  namedAt,
+}: {
+  sections: AccountSection[];
+  inviteCount: number;
+  userId: string | null;
+  namedAt: string | null;
+}): AccountSection | null {
+  if (namedAt || !userId || inviteCount > 0) return null;
+  if (countProjects(sections) > 0) return null;
+  if (sections.some((section) => section.state === 'failed')) return null;
+  return sections.find((section) => section.accountId === userId && section.canCreate) ?? null;
+}

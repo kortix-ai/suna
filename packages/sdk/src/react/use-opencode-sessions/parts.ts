@@ -13,6 +13,8 @@ import { unwrap } from './shared';
  * Update a message part (e.g. edit text content).
  * Uses `client.part.update()` — available in SDK v2.
  * SSE `message.part.updated` events handle cache updates automatically.
+ *
+ * @deprecated Wraps an OpenCode-only runtime route. Removed in the next major.
  */
 export function useUpdatePart() {
   return useMutation({
@@ -45,6 +47,8 @@ export function useUpdatePart() {
  * Delete a message part.
  * Uses `client.part.delete()` — available in SDK v2.
  * SSE `message.part.removed` events handle cache updates automatically.
+ *
+ * @deprecated Wraps an OpenCode-only runtime route. Removed in the next major.
  */
 export function useDeletePart() {
   return useMutation({

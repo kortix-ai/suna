@@ -3,7 +3,9 @@
 
 const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|.well-known|oauth-authorization-server",
+  "GET|.well-known|oauth-protected-resource",
   "GET|.well-known|oauth-protected-resource|v1|mcp",
+  "GET|.well-known|openid-configuration",
   "GET|health",
   "GET|health|live",
   "GET|health|ready",

@@ -141,14 +141,9 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
     </BasicTool>
   );
 }
-ToolRegistry.register('ltm_search', MemorySearchTool);
 ToolRegistry.register('ltm-search', MemorySearchTool);
-ToolRegistry.register('mem_search', MemorySearchTool);
 ToolRegistry.register('mem-search', MemorySearchTool);
-ToolRegistry.register('memory_search', MemorySearchTool);
 ToolRegistry.register('memory-search', MemorySearchTool);
-ToolRegistry.register('oc-mem_search', MemorySearchTool);
-ToolRegistry.register('oc-mem-search', MemorySearchTool);
 
 // ─── Legacy body (tool-part-renderer.tsx generic path) ───────────────────────
 

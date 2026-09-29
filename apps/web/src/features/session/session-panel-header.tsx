@@ -42,24 +42,24 @@ export function PanelHeaderSwitcher({
         <TabsList
           animate="none"
           size="sm"
-          className="h-7 border-b-0 p-0"
+          className="h-7"
           aria-label={tHardcodedUi.raw(
             'componentsSessionSessionLayout.line348JsxAttrAriaLabelSidePanelView',
           )}
         >
-          <TabsTrigger size="xs" value="actions" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="actions" className="w-fit">
             {tHardcodedUi.raw('i18nComplete.textff8059dc6752')}
           </TabsTrigger>
-          <TabsTrigger size="xs" value="browser" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="browser" className="w-fit">
             {tHardcodedUi.raw('i18nComplete.textd31de1a5c5c8')}
           </TabsTrigger>
-          <TabsTrigger size="xs" value="explorer" className="hit-area-2 h-7 w-fit">
+          <TabsTrigger size="xs" value="explorer" className="hit-area-2 w-fit">
             {tHardcodedUi.raw('i18nComplete.textabc7e9892806')}
           </TabsTrigger>
-          <TabsTrigger size="xs" value="terminal" className="hit-area-2 h-7 w-fit">
+          <TabsTrigger size="xs" value="terminal" className="hit-area-2 w-fit">
             {tHardcodedUi.raw('i18nComplete.texte0926fdac700')}
           </TabsTrigger>
-          <TabsTrigger size="xs" value="audit" className="hit-area-2 h-7 w-fit gap-1.5">
+          <TabsTrigger size="xs" value="audit" className="hit-area-2 w-fit gap-1.5">
             {tHardcodedUi.raw('i18nComplete.textbb6aea287396')}
             {auditBadge > 0 ? (
               <Badge variant="secondary" size="xs" className="tabular-nums">
