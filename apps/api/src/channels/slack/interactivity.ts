@@ -317,7 +317,7 @@ async function handleReviewAction(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event, turnScope(inbound));
+  await spawnAgentTurn(thread.projectId, envelope, event, { ...turnScope(inbound), authorizedResume: true });
 }
 
 async function handleSwitchProject(
@@ -776,7 +776,7 @@ export async function handleViewSubmission(
     team: meta.teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: meta.teamId, event };
-  await spawnAgentTurn(meta.projectId, envelope, event, turnScope(inbound));
+  await spawnAgentTurn(meta.projectId, envelope, event, { ...turnScope(inbound), authorizedResume: true });
 }
 
 export async function handleBlockAction(

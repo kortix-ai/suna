@@ -454,6 +454,23 @@ describe('join policy on a follow-up', () => {
     expect(created).toHaveLength(0);
   });
 
+  test('an authorized decision (approval, review) resumes the agent without the join gate', async () => {
+    // A manager who is not a participant approved from the card: the
+    // decision was authorized, so the owner-only policy must not strand the
+    // agent waiting for it.
+    participantVerdict = { allowed: false, notice: 'This Kortix session is owner-only.' };
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity,
+      authorizedResume: true,
+    });
+    expect(gateCalls).toEqual([]);
+    expect(notices).toEqual([]);
+    expect(continued).toHaveLength(1);
+  });
+
   test('a new session remembers its owner as the first approved participant and freezes the policy', async () => {
     existingThread = [];
     await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity });

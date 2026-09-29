@@ -277,6 +277,8 @@ async function deliverFollowUp(input: {
   handle: TeamsLiveTurn | null;
   activity: TeamsActivity;
   userId: string;
+  /** The message reports an already-authorized decision: see createOrJoinTeamsConversationSession. */
+  authorizedResume?: boolean;
 }): Promise<'done' | 'revive'> {
   const { projectId, tenantId, conversationId, sessionId, activity, userId } = input;
   let handle = input.handle;
@@ -285,7 +287,7 @@ async function deliverFollowUp(input: {
   // verdict's notice replaces the requester's own live card; nothing reaches
   // the session until they are allowed in.
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
-  if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl) {
+  if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl && !input.authorizedResume) {
     const verdict = await ensureTeamsThreadParticipant({
       projectId,
       tenantId,
@@ -426,6 +428,13 @@ export async function createOrJoinTeamsConversationSession(input: {
    * own project, so a conversation another project's session owns is refused.
    */
   ownThreadsOnly?: boolean;
+  /**
+   * The decision this message reports (a review verdict, an approval) was
+   * already authorized for this project. The join policy governs who may TALK
+   * in a conversation; it must not strand the agent after a manager who is not
+   * a participant decided. The sender is still resolved as a linked member.
+   */
+  authorizedResume?: boolean;
 }): Promise<void> {
   const { tenantId, conversationId, activity } = input;
   let projectId = input.projectId;
@@ -448,6 +457,9 @@ export async function createOrJoinTeamsConversationSession(input: {
     console.warn('[teams-webhook] conversation session belongs to another project — ignoring', { projectId });
     return;
   }
+  // The decision was authorized for `input.projectId`; a session in another
+  // project gets the ordinary join-policy check.
+  const authorizedResume = Boolean(input.authorizedResume) && route.kind === 'here';
   if (route.kind === 'thread_project') {
     if (!(await projectFeatureFlagEnabled(route.projectId, 'teams'))) return;
     projectId = route.projectId;
@@ -490,6 +502,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         handle,
         activity,
         userId,
+        authorizedResume,
       });
       if (next === 'done') return;
       revived = true;
@@ -524,6 +537,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         handle,
         activity,
         userId,
+        authorizedResume,
       });
     } else {
       console.warn('[teams-webhook] lost thread-create claim but winner never published a session', {

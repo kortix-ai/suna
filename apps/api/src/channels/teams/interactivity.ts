@@ -446,6 +446,7 @@ async function handleReview(
     conversationId: convo.conversationId,
     activity: synthetic,
     ownThreadsOnly: inbound.kind === 'project',
+    authorizedResume: true,
   }).catch((err) => console.error('[teams-webhook] review resume failed', err));
 
   const ack =
@@ -495,6 +496,7 @@ async function handleApproval(
     conversationId: convo.conversationId,
     activity: synthetic,
     ownThreadsOnly: inbound.kind === 'project',
+    authorizedResume: true,
   }).catch((err) => console.error('[teams-webhook] approval resume failed', err));
 
   return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note, decidedBy: activity.from?.name || undefined }));
