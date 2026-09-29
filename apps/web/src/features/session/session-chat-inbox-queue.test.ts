@@ -159,10 +159,10 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     // refusal leaves the draft there, mention chips included. A send with uploads is
     // never taken back, so it paints and mounts the chat at once.
     const flat = (source: string) => source.replace(/\s+/g, ' ');
-    expect(send).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
+    expect(shellSend).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
     const inline = 'await deliverInOrder(sessionId, () => post([]));';
-    const textOnly = send.slice(send.indexOf(inline));
-    expect(send.indexOf(inline)).toBeGreaterThan(-1);
+    const textOnly = between(shellSend, 'async function deliverInChain(', 'interface FirstPromptSourcesProps');
+    expect(textOnly.indexOf(inline)).toBeGreaterThan(-1);
     const refused = between(textOnly, '} catch (error) {', 'throw error;');
     expect(refused).not.toContain('setSubmission(');
     expect(refused).not.toContain('setPrefill(');
@@ -183,12 +183,12 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     );
     // Send time, not POST time: a message sent while the uploads run is
     // ordered after this one.
-    const stamp = send.indexOf('const sentAtMs = Date.now();');
+    const stamp = shellSend.indexOf('const sentAtMs = Date.now();');
     expect(stamp).toBeGreaterThan(-1);
     expect(send.indexOf('paintSend(send, env);')).toBeLessThan(send.indexOf('deliverDetached(send, env, post);'));
     expect(send.indexOf('const send = planSend({')).toBeLessThan(send.indexOf('paintSend(send, env);'));
     expect(
-      between(send, 'const post = async', 'function deliverDetached('),
+      between(send, 'function buildPost(', 'function deliverDetached('),
     ).toContain('clientSentAtMs: sentAtMs,');
     // The failed status lives in the first-prompt preview, which SessionChat
     // also draws, so it survives the crossfade that unmounts this shell.
