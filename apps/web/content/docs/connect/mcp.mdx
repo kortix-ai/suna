@@ -145,7 +145,7 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 
 ## Tools
 
-`tools/list` returns 13 tools. Parameters marked * are required.
+`tools/list` returns 22 tools. Parameters marked * are required.
 
 | Tool | Parameters | What it does |
 | --- | --- | --- |
@@ -159,6 +159,15 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 | `write_file` | `session_id`*, `path`*, `content`*, `encoding` | Writes a file in a session's sandbox and creates its parent directories. `encoding` is `utf8` (default) or `base64`. |
 | `list_files` | `path`, `session_id`, `project_id`, `ref`, `offset` | Lists one directory of a session's sandbox, or every file of a project's repository under a path. |
 | `read_skill` | `name`, `file` | Lists the Kortix platform guides, or returns one guide (`name`) or one of its reference files (`file`). |
+| `list_connectors` | `project_id`*, `connector` | Lists a project's connectors: slug, provider, whether each is `connected` (usable by you now), action count and accounts. With `connector`, lists that connector's accounts in full. |
+| `search_connector_actions` | `project_id`*, `query`, `connector`, `limit` | Finds connector actions by intent. Returns `tool` (`<connector>.<action>`), `risk` and a one-line description. Never returns schemas. |
+| `describe_connector_action` | `project_id`*, `tool`* | Returns one action's input JSON Schema, risk and description. |
+| `call_connector` | `project_id`*, `tool`*, `args`, `account`, `reason` | Runs an action as you. Returns the data and the `account` that ran it, a `pending_approval` result with the approval link, or a denial with its reason. |
+| `upload_connector_attachment` | `project_id`*, `connector`*, `filename`*, `content_base64` or `session_id` + `path` | Stages a file and returns the `{"$kortix_attachment": "<id>"}` ref to put in `args`. |
+| `connect_connector` | `project_id`*, `connector`*, `owner`, `label` | Returns the link a person opens to connect the connector's account. |
+| `search_connector_apps` | `project_id`*, `query`*, `limit`, `cursor` | Searches the catalogue of managed apps a connector can be added from. |
+| `add_connector` | `project_id`*, `app` or `provider` + `slug`, `name`, `url`, `transport`, `endpoint`, `spec`, `base_url` | Adds a connector to the project now (committed to `kortix.yaml` on `main`, then synced). |
+| `remove_connector` | `project_id`*, `connector`* | Removes a connector from the project. |
 | `search_api` | `query`*, `limit` | Searches the Kortix API routes by keyword. |
 | `describe_api` | `method`*, `path`* | Returns one route's parameters, request body and response schema. |
 | `call_api` | `method`*, `path`*, `project_id`, `query`, `body` | Calls any `/v1/` route as you. `project_id` fills `{projectId}` in the path. |
@@ -169,6 +178,32 @@ refuses `/v1/oauth/*` and any path that reaches an MCP endpoint. Fill every
 other `{placeholder}` in the path yourself. Each call passes the same
 authorization and audit as a request from the web app. The audit records each
 call with `client_reported_source: "mcp"`.
+
+### Use your connectors
+
+The connector tools are the [`kortix connectors`](/docs/connect/connectors) CLI as MCP
+tools. They call the same API routes as the CLI and the SDK, so a connector
+policy, an approval and the audit behave the same on every surface.
+
+1. `list_connectors` shows what is connected. A connector with
+   `connected: false` cannot run actions: call `connect_connector`, open the
+   returned link, then list again.
+2. `search_connector_actions` finds an action by intent, for example
+   `send an email`. `describe_connector_action` returns its arguments.
+3. `call_connector` runs it. The result names the `account` that ran the call.
+   A connector with several accounts and no default needs `account`.
+4. Pass `reason` on a write whose arguments are only ids (`send_draft`,
+   delete by id). The approver sees it next to the real arguments.
+
+A policy can hold a call for approval. `call_connector` then returns
+`status: "pending_approval"` with an `approval_url`. A person opens it and
+approves. Call again with the same tool, arguments and account within 15
+minutes: the approved call runs once. A `policy_block` denial is final.
+
+A result over about 40,000 characters comes back as a marked preview
+(`data_truncated`). Narrow the arguments and call again. To attach a file,
+stage it with `upload_connector_attachment` and put the returned ref in
+`args`. Composio connectors do not accept attachment refs.
 
 ### Result size and paging
 

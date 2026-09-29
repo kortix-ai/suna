@@ -265,6 +265,15 @@ Settings → Personal access keys → Connected apps. A connected app cannot min
 personal access tokens, gateway keys, SCIM tokens, OAuth clients or service
 accounts. Client-by-client steps: `https://kortix.com/docs/connect/mcp`.
 `https://kortix.com/mcp` is a different server: public documentation only.
+
+The server also exposes a project's connectors, the `kortix connectors` CLI as
+MCP tools: `list_connectors` → `search_connector_actions` →
+`describe_connector_action` → `call_connector` (pass `reason` on a write whose
+args are only ids; a `pending_approval` result carries a link the person
+opens, then call again with the same args). `connect_connector` returns the
+link that connects an account. `upload_connector_attachment` stages a file.
+`search_connector_apps`, `add_connector` and `remove_connector` change which
+connectors the project has.
 </mcp-client>
 
 <apps>
