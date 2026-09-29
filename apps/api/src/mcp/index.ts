@@ -33,6 +33,7 @@ import {
   renderJob,
   type JobState,
 } from './jobs';
+import { KORTIX_TOOL, parseArgs, runCli } from './cli';
 import { CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type Host } from './connectors';
 import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from './shape';
 
@@ -565,12 +566,13 @@ const TOOLS = [
     name: 'read_skill',
     title: 'Read Kortix guides',
     description:
-      "Read the Kortix platform guides (skills): how projects, sessions, agents, kortix.yaml, triggers, connectors, secrets, Apps, change requests and the CLI work. No name lists them; a name returns the guide and its reference file paths; file reads one reference. The project's own skills are repository files under .kortix/ — read them with read_file.",
+      "Read the Kortix platform guides (skills): how projects, sessions, agents, kortix.yaml, triggers, connectors, secrets, Apps, change requests and the CLI work. No name lists them; a name returns the guide and its reference file paths; file reads one reference. With project_id, the project's own skills come with them: no name lists both; a name returns that project skill's SKILL.md and its reference file paths (a project skill wins over a guide of the same name); file reads one of its references.",
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name, e.g. kortix-system.' },
         file: { type: 'string', description: 'A reference file the guide names, e.g. references/cli.md.' },
+        project_id: { ...PROJECT_ID, description: "Optional: include this project's own skills (from its skills/ directory)." },
       },
       additionalProperties: false,
     },
@@ -683,6 +685,17 @@ export function listSessionRow(s: any) {
     created_at: s.created_at,
     updated_at: s.updated_at,
   };
+}
+
+/** The project's own skills (`skills/<slug>/SKILL.md`, or the legacy dir) from the same /detail route the web app reads; it honors the caller's per-skill grants. */
+async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slug: string; name: string; description: string | null; path: string; files: string[] }[] | Error> {
+  const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/detail`);
+  if (r.status >= 400) return new ToolInputError(`HTTP ${r.status} reading project ${projectId}: ${r.body.slice(0, 200)}`);
+  const detail = JSON.parse(r.body) as { config?: { skills?: { name: string; path: string; description: string | null }[] }; files?: { path: string }[] };
+  return (detail.config?.skills ?? []).map((s) => {
+    const dir = s.path.slice(0, s.path.lastIndexOf('/') + 1);
+    return { ...s, slug: dir.split('/').at(-2) ?? s.name, files: (detail.files ?? []).map((f) => f.path).filter((p) => p.startsWith(dir)) };
+  });
 }
 
 async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
@@ -902,13 +915,33 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
     }
     case 'read_skill': {
       const name = optionalArg(input, 'name');
+      const file = optionalArg(input, 'file');
+      const projectId = optionalArg(input, 'project_id');
+      const own = projectId ? await projectSkills(ctx, projectArg(input)) : [];
+      if (own instanceof Error) throw own;
+      const mine = name ? own.find((s) => s.slug === name || s.name === name) : undefined;
+      if (mine) {
+        const dir = mine.path.slice(0, mine.path.lastIndexOf('/') + 1);
+        if (file) {
+          if (file.split('/').includes('..')) throw new ToolInputError('file must stay inside the skill directory');
+          const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: `${dir}${file.replace(/^\/+/, '')}` } });
+          return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
+        }
+        const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: mine.path } });
+        if (r.status >= 400) return apiResult(r);
+        const refs = mine.files.filter((f) => f !== mine.path).map((f) => `- ${f.slice(dir.length)}`);
+        const body = JSON.parse(r.body).content as string;
+        return text(refs.length ? `${body}\n\nReference files (read_skill with project_id, name and file):\n${refs.join('\n')}` : body);
+      }
       if (!name) {
         const r = await callApi(ctx, 'GET', '/v1/skills');
         if (r.status >= 400) return apiResult(r);
         const skills = JSON.parse(r.body).skills as { name: string; description: string }[];
-        return text(skills.map((s) => `${s.name} — ${s.description}`).join('\n\n'));
+        const guides = skills.map((s) => `${s.name} — ${s.description}`).join('\n\n');
+        if (!projectId) return text(guides);
+        const project = own.map((s) => `${s.slug} — ${s.description ?? '(no description)'}`).join('\n\n');
+        return text(`Project skills (read_skill with project_id and name):\n\n${project || '(none: the project has no skills/ directory)'}\n\nPlatform guides:\n\n${guides}`);
       }
-      const file = optionalArg(input, 'file');
       if (file) {
         const r = await callApi(ctx, 'GET', `/v1/skills/${encodeURIComponent(name)}/file`, { query: { path: file } });
         return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
@@ -920,6 +953,25 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       const skill = JSON.parse(r.body) as { body: string; references?: { path: string }[] };
       const refs = (skill.references ?? []).map((f) => `- ${f.path}`);
       return text(refs.length ? `${skill.body}\n\nReference files (read_skill with file):\n${refs.join('\n')}` : skill.body);
+    }
+    case 'kortix': {
+      const args = parseArgs(input.args);
+      if (typeof args === 'string') throw new ToolInputError(args);
+      const projectId = optionalArg(input, 'project_id');
+      const sessionId = optionalArg(input, 'session_id');
+      if ((projectId && !isUuid(projectId)) || (sessionId && !isUuid(sessionId))) throw new ToolInputError('project_id and session_id must be UUIDs (list_projects, list_sessions)');
+      const timeoutMs = Math.min(45_000, ctx.deadline - Date.now() - 4_000);
+      if (timeoutMs < 2_000) throw new ToolInputError('Not enough time left in this MCP request for a command. Call again.');
+      const run = await runCli({
+        args,
+        // The caller's own credential, as sent: the CLI then acts as exactly this user through this API.
+        token: ctx.authorization.replace(/^Bearer\s+/i, ''),
+        apiUrl: `http://127.0.0.1:${Number(process.env.PORT) || 8008}/v1`,
+        projectId,
+        sessionId,
+        timeoutMs,
+      });
+      return run.ok ? text(run.json, run.exitCode !== 0) : text(run.error, true);
     }
     case 'search_api': {
       const { ops } = await loadCatalog(ctx);
@@ -1007,6 +1059,7 @@ function instructions(): string {
     "Sandboxes: run_command runs bash in a session's sandbox, and read_file / write_file / list_files reach its live /workspace. With a project_id instead of a session_id, read_file and list_files read the project's git repository.",
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
     'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps and add_connector add one to the project.',
+    'The kortix CLI itself: the `kortix` tool runs any CLI command as you, e.g. args ["secrets","ls","--json"] (discover with ["--help"] and ["<group>","--help"]; project_id and session_id set the context). Login, hosts, ship, tui and other machine-local commands are refused with the alternative. read_skill with project_id also lists the project\'s own skills.',
     'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {projectId}).',
   ].join('\n');
 }
@@ -1027,7 +1080,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: [...TOOLS, ...CONNECTOR_TOOLS] };
+      return { tools: [...TOOLS, ...CONNECTOR_TOOLS, KORTIX_TOOL] };
     case 'tools/call': {
       if (typeof params.name !== 'string') throw Object.assign(new Error('Invalid params: name must be a tool name'), { rpcCode: -32602 });
       try {
