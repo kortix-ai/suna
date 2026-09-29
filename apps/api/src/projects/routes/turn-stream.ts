@@ -151,6 +151,7 @@ projectsApp.openapi(
         accountId: projectSessions.accountId,
         createdBy: projectSessions.createdBy,
         metadata: projectSessions.metadata,
+        opencodeSessionId: projectSessions.opencodeSessionId,
       })
       .from(projectSessions)
       .where(
@@ -172,6 +173,7 @@ projectsApp.openapi(
           authenticatedSandboxId,
           authenticatedSandboxMetadata,
           turnStreamMetadata,
+          turnStreamSession.opencodeSessionId ?? null,
         );
       case 'turn_abandoned':
         return abandonTurn(c, body, authenticatedSandboxId);
