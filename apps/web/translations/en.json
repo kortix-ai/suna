@@ -1717,7 +1717,8 @@
       "unavailableTitle": "Secret access is unavailable",
       "unavailableDescription": "The current secret selection stays unchanged.",
       "useProjectDefault": "Use the project default",
-      "empty": "No secrets are available for this agent."
+      "empty": "No secrets are available for this agent.",
+      "loading": "Loading secrets…"
     },
     "connectors": {
       "unavailableTitle": "Connector access is unavailable",

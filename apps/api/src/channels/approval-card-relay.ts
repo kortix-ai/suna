@@ -161,7 +161,7 @@ export async function markApprovalCardDecided(input: {
       await updateCard(
         ref,
         card.activity_id,
-        buildTeamsApprovalOutcomeCard({ actionPath: input.actionPath, decision: input.decision, note: input.note }),
+        buildTeamsApprovalOutcomeCard({ actionPath: input.actionPath, decision: input.decision, note: input.note, decidedBy: 'a teammate in Kortix' }),
       );
     }
     return;

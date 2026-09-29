@@ -1717,7 +1717,8 @@
       "unavailableTitle": "O acesso aos segredos está indisponível",
       "unavailableDescription": "A seleção atual de segredos permanece inalterada.",
       "useProjectDefault": "Usar o padrão do projeto",
-      "empty": "Nenhum segredo está disponível para este agente."
+      "empty": "Nenhum segredo está disponível para este agente.",
+      "loading": "A carregar segredos…"
     },
     "connectors": {
       "unavailableTitle": "O acesso aos conectores está indisponível",

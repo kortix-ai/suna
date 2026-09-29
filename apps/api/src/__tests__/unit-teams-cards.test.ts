@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildAgentPickerCard,
   buildAnswerCard,
   buildConnectAccountCard,
+  buildPanelCard,
+  buildSessionsCard,
+  buildTeamsApprovalOutcomeCard,
+  buildWelcomeCard,
+  openPanelAction,
   buildFinalCard,
   buildPlanCard,
   buildQuestionCard,
@@ -181,3 +187,80 @@ describe('step citations + answer card', () => {
     expect(flat).toContain('https://app/s');
   });
 })
+
+// Slack parity (2026-09-29 audit): the Teams cards that showed less than their
+// Slack counterparts, or dropped choices outright.
+describe('Slack parity cards', () => {
+  const agents = (n: number) => Array.from({ length: n }, (_, i) => ({ name: `agent-${i + 1}`, description: `Agent ${i + 1}` }));
+  const executes = (c: Record<string, unknown>) => allExecuteActions(c);
+
+  test('an agent picker lists every agent: buttons up to 8 choices, then one searchable dropdown', () => {
+    const small = buildAgentPickerCard({ agents: agents(7), current: null });
+    expect(executes(small).map((a) => a.data?.agent)).toEqual(['', ...agents(7).map((a) => a.name)]);
+
+    const large = buildAgentPickerCard({ agents: agents(12), current: 'agent-9' });
+    const dropdown = (large.body as Array<Record<string, unknown>>).find((e) => e.type === 'Input.ChoiceSet')!;
+    expect(dropdown).toMatchObject({ id: 'agent', style: 'filtered', value: 'agent-9' });
+    expect((dropdown.choices as Array<{ value: string }>).map((c) => c.value)).toEqual(['', ...agents(12).map((a) => a.name)]);
+    expect(actions(large)).toEqual([expect.objectContaining({ type: 'Action.Execute', verb: 'teams_set_agent' })]);
+  });
+
+  test('the /status panel carries its change buttons before "Open in Kortix"', () => {
+    const c = buildPanelCard({
+      title: 'This conversation',
+      rows: [{ label: 'Model', value: 'default' }],
+      url: 'https://app/p',
+      actions: [openPanelAction('Change model', 'models'), openPanelAction('Change agent', 'agents')],
+    });
+    expect(actions(c).map((a) => [a.type, (a as { title?: string }).title, a.data?.panel])).toEqual([
+      ['Action.Execute', 'Change model', 'models'],
+      ['Action.Execute', 'Change agent', 'agents'],
+      ['Action.OpenUrl', 'Open in Kortix', undefined],
+    ]);
+    expect(actions(c)[0]).toMatchObject({ verb: 'teams_open_panel' });
+  });
+
+  test('/sessions rows open their session, by tapping the row or its button', () => {
+    const c = buildSessionsCard([
+      { title: 'Fix the flaky test', projectName: 'Demo', status: 'done', when: '5m ago', url: 'https://app/s/1' },
+      { title: 'Untitled session', projectName: 'Demo', when: '1h ago', url: 'https://app/s/2' },
+    ]);
+    const json = JSON.stringify(c);
+    expect(json).toContain('Fix the flaky test');
+    expect(json).toContain('Demo · done · 5m ago');
+    expect(json).toContain('Demo · 1h ago');
+    const opens = json.match(/"url":"https:\/\/app\/s\/1"/g) ?? [];
+    expect(opens).toHaveLength(2);
+  });
+
+  test('a review card words its buttons by kind, as Slack does', () => {
+    const labels = (kind?: string) =>
+      actions(buildReviewCard({ reviewItemId: 'r1', title: 'T', summary: 'S', risk: 'none', kind })).map((a) => (a as { title?: string }).title);
+    expect(labels('change')).toEqual(['Ship it', 'Request changes', 'Reject']);
+    expect(labels('decision')).toEqual(['Answer', 'Request changes']);
+    expect(labels('approval')).toEqual(['Approve', 'Request changes', 'Deny']);
+    expect(labels(undefined)).toEqual(['Approve', 'Request changes', 'Deny']);
+  });
+
+  test('the welcome card suggests three tasks to try', () => {
+    const json = JSON.stringify(buildWelcomeCard({}));
+    expect(json).toContain('summarize this thread and draft a reply to the customer');
+    expect(json).toContain('put together a one-pager on our Q2 numbers');
+  });
+
+  test('an approval outcome names who decided', () => {
+    expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'approve', note: '', decidedBy: 'Alex Example' }))).toContain('by Alex Example');
+    expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'deny', note: '' }))).not.toContain('by ');
+  });
+
+  test('an agent-built card keeps the run\'s steps above it', () => {
+    const custom = { type: 'AdaptiveCard', version: '1.5', body: [{ type: 'TextBlock', text: 'Custom body' }] };
+    const withPlan = buildAnswerCard('', 'https://app/s', custom, { title: 'Task complete', steps: [step({ status: 'complete', title: 'Read the logs' })] });
+    const lines = texts(withPlan);
+    expect(lines[0]).toBe('Task complete');
+    expect(lines.findIndex((t) => t.includes('Read the logs'))).toBeLessThan(lines.indexOf('Custom body'));
+    expect((withPlan.body as Array<Record<string, unknown>>).find((e) => e.text === 'Custom body')).toMatchObject({ separator: true });
+    // No live card, no steps: the custom card is used as sent.
+    expect(texts(buildAnswerCard('', undefined, custom))).toEqual(['Custom body']);
+  });
+});

@@ -1717,7 +1717,8 @@
       "unavailableTitle": "El acceso a secretos no está disponible",
       "unavailableDescription": "La selección actual de secretos no cambiará.",
       "useProjectDefault": "Usar el secreto predeterminado del proyecto",
-      "empty": "No hay secretos disponibles para este agente."
+      "empty": "No hay secretos disponibles para este agente.",
+      "loading": "Cargando secretos…"
     },
     "connectors": {
       "unavailableTitle": "El acceso a conectores no está disponible",
