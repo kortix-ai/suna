@@ -571,6 +571,10 @@ export async function composioCatalogPage(input: {
     // (`packages/sdk/src/core/rest/projects-client/connectors.ts`
     // `listConnectToolkits`) already treats `items` as the canonical page
     // and `toolkits` as a legacy shape kept only for rolling deploys.
+    // `totalPages` is a PAGE count (same convention as
+    // `apps/api/src/tunnel/routes/audit.ts`: `Math.ceil(total / limit)`),
+    // never an item count — `searched.total` (the snapshot's match count) is
+    // the item count and must be converted, not passed through.
     const limit = Math.min(Math.max(input.limit ?? 48, 1), 100);
     return {
       items: searched.toolkits,
