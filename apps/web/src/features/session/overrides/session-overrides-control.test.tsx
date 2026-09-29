@@ -113,6 +113,19 @@ describe('SessionOverridesControlContent', () => {
     expect(html).toContain('type="button"');
   });
 
+  // The gear used to stay disabled until the whole scope catalog (secrets,
+  // connectors, connections) answered, so provider keys and the sandbox, which
+  // read none of it, could not be changed before the first prompt.
+  test('the trigger stays clickable while an axis loads; only a save locks it', () => {
+    const trigger = (props: Partial<React.ComponentProps<typeof SessionOverridesControl>>) =>
+      renderToStaticMarkup(
+        withMessages(<SessionOverridesControl rows={rows()} onSave={() => true} {...props} />),
+      );
+
+    expect(trigger({ disabled: true })).not.toContain('disabled=""');
+    expect(trigger({ saving: true })).toContain('disabled=""');
+  });
+
   test('the trigger is an icon and nothing else, overrides or not', () => {
     // The composer bar says nothing about the axes — muted icon only, even
     // while overrides are in force. The panel is where overrides live.

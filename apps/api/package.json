@@ -11,6 +11,7 @@
     "dev:prod-env": "dotenvx run --overload -f .env.prod -- bun run --hot src/index.ts",
     "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
     "start": "dotenvx run -- bun run src/index.ts",
+    "e2e:cli-agent-token": "dotenvx run --ignore=MISSING_ENV_FILE -f .env -- bun scripts/e2e-cli-agent-token.ts",
     "typecheck": "tsc --noEmit",
     "test": "bash scripts/test.sh",
     "test:coverage": "COVERAGE=1 bash scripts/test.sh",

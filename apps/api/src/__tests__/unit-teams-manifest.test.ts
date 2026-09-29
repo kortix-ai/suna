@@ -40,6 +40,15 @@ describe('buildTeamsManifest', () => {
     const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
     // 1.3.0 is the manifest without /new.
     expect(m.version).not.toBe('1.3.0');
+    // 1.4.0 is the manifest without /sessions.
+    expect(m.version).not.toBe('1.4.0');
+  });
+
+  test('the command menu offers /sessions, within Teams\' 10-command limit', () => {
+    const m = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    const commands = m.bots[0]!.commandLists![0]!.commands;
+    expect(commands.map((c) => c.title)).toContain('/sessions');
+    expect(commands.length).toBeLessThanOrEqual(10);
   });
 });
 

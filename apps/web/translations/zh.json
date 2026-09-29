@@ -1721,7 +1721,8 @@
       "unavailableTitle": "无法访问密钥",
       "unavailableDescription": "当前密钥选择保持不变。",
       "useProjectDefault": "使用项目默认设置",
-      "empty": "此智能体没有可用的密钥。"
+      "empty": "此智能体没有可用的密钥。",
+      "loading": "正在加载密钥…"
     },
     "connectors": {
       "unavailableTitle": "无法访问连接器",

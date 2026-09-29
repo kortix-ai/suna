@@ -31,67 +31,46 @@
  * said — mirroring the upstream status would make a bare 403 ambiguous between
  * "policy denied" and "Stripe said 403", which is a distinction the agent needs.
  */
-import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  decodeRelayMeta,
-  encodeRelayStatus,
-  RELAY_EOS_BYTES,
   RELAY_ERROR_HEADER,
   RELAY_META_HEADER,
   RELAY_PROBE_HEADER,
-  RELAY_STATUS_HEADER,
   RELAY_VERSION,
   RELAY_VERSION_HEADER,
   RelayCodecError,
   type SecretRelayMeta,
+  decodeRelayMeta,
 } from '@kortix/api-contract/secret-relay';
 import { config } from '../../config';
 import { getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors } from '../../openapi';
+import { requestEgressIp, verifySandboxEgressIp } from '../../platform/services/sandbox-egress-pin';
+import { classifyPresentedHandles, requestSurfaceText } from '../../secrets/handle-substitution';
 import {
+  type PreparedRelayHead,
+  SecretBrokerError,
   assertPolicyAdmitsPath,
   bodyEncoding,
-  MAX_REDIRECTS,
   prepareRelayHead,
-  SecretBrokerError,
   substituteBuffer,
-  type PreparedRelayHead,
 } from '../../secrets/http-broker';
-import {
-  classifyPresentedHandles,
-  requestSurfaceText,
-  summarizeHandleRefusals,
-} from '../../secrets/handle-substitution';
 import { authorizeSecretRelay } from '../../secrets/relay-authorize';
-import { openUpstream } from '../../secrets/relay-transport';
 import { StreamSubstituter } from '../../secrets/stream-substitute';
+import { recordAuditEvent } from '../../shared/audit';
+import { loadProjectForUser } from '../lib/access';
+import { projectsApp } from '../lib/app';
+import { auditBrokerFailure, auditRefusals, refuse, runRelayHops } from '../secrets/relay-hop';
 import {
   RELAY_CLASSIFY_PREFIX_MAX,
   RELAY_EXACT_LENGTH_MAX,
-  readAtMost,
-  tapPrefix,
-  requestPairs,
-  responsePairs,
-  substituteStream,
-  safeResponseHeaders,
   createRelayDisposables,
+  readAtMost,
+  requestPairs,
+  substituteStream,
+  tapPrefix,
 } from '../secrets/relay-stream';
-import { recordAuditEvent } from '../../shared/audit';
-import { loadProjectForUser } from '../lib/access';
-import {
-  requestEgressIp,
-  verifySandboxEgressIp,
-} from '../../platform/services/sandbox-egress-pin';
-import { projectsApp } from '../lib/app';
-
-/** A refusal that happened BEFORE the upstream response headers arrived. */
-function refuse(c: any, code: string, message: string, status: number) {
-  c.header(RELAY_ERROR_HEADER, code);
-  c.header(RELAY_VERSION_HEADER, String(RELAY_VERSION));
-  return c.json({ error: message, code }, status);
-}
 
 projectsApp.openapi(
   createRoute({
@@ -269,13 +248,7 @@ projectsApp.openapi(
         error instanceof SecretBrokerError
           ? error
           : new SecretBrokerError('invalid_request', 'relay request is invalid', 400);
-      await recordAuditEvent({
-        ...auditBase,
-        action: 'secret.broker.failed',
-        outcome: brokerError.status === 403 ? 'denied' : 'failure',
-        httpStatus: brokerError.status,
-        after: { reason: brokerError.code },
-      });
+      await auditBrokerFailure(auditBase, brokerError);
       return refuse(c, brokerError.code, brokerError.message, brokerError.status);
     }
 
@@ -284,15 +257,10 @@ projectsApp.openapi(
     // cap this route exists to remove — so it is refused, by name, rather than
     // half-served. Substitution-only rows (the default since §6 of the exposure
     // model) never carry a slot.
-    if (head.bodyInject) {
-      return refuse(
-        c,
-        'invalid_request',
-        'this secret uses a JSON body injection slot, which the streaming relay cannot serve; ' +
-          'the buffered broker route still can',
-        400,
-      );
-    }
+    const bodyInjectMessage =
+      'this secret uses a JSON body injection slot, which the streaming relay cannot serve; ' +
+      'the buffered broker route still can';
+    if (head.bodyInject) return refuse(c, 'invalid_request', bodyInjectMessage, 400);
 
     await recordAuditEvent({ ...auditBase, action: 'secret.broker.requested', outcome: 'pending' });
 
@@ -304,11 +272,12 @@ projectsApp.openapi(
     }
 
     const primaryEncoding = bodyEncoding(head.headers['content-type']);
-    const requestSubstituter = new StreamSubstituter(
-      requestPairs(head.admitted, primaryEncoding),
-    );
+    const requestSubstituter = new StreamSubstituter(requestPairs(head.admitted, primaryEncoding));
 
-    const { disposables, disposeAll } = createRelayDisposables(requestSubstituter, c.req.raw.signal);
+    const { disposables, disposeAll } = createRelayDisposables(
+      requestSubstituter,
+      c.req.raw.signal,
+    );
 
     /**
      * Classify a streamed body's prefix for presented-but-refused handles.
@@ -320,22 +289,10 @@ projectsApp.openapi(
      */
     const classifyBodyPrefix = (prefix: Buffer) => {
       if (prefix.byteLength === 0) return;
-      const found = classifyPresentedHandles(
-        requestSurfaceText({ url: '', headers: {}, body: prefix }),
-        authz.facts,
-        config.API_KEY_SECRET,
-      );
+      const surface = requestSurfaceText({ url: '', headers: {}, body: prefix });
+      const found = classifyPresentedHandles(surface, authz.facts, config.API_KEY_SECRET);
       if (found.length === 0) return;
-      void recordAuditEvent({
-        ...auditBase,
-        action: 'secret.handle.refused',
-        outcome: 'denied',
-        after: {
-          surface: 'request_body',
-          refusals: summarizeHandleRefusals(found),
-          detail: found,
-        },
-      });
+      void auditRefusals(auditBase, found, 'request_body');
     };
 
     let upstreamBody: Readable | Buffer | null = null;
@@ -407,13 +364,7 @@ projectsApp.openapi(
         error instanceof SecretBrokerError
           ? error
           : new SecretBrokerError('invalid_request', 'relay request is invalid', 400);
-      await recordAuditEvent({
-        ...auditBase,
-        action: 'secret.broker.failed',
-        outcome: brokerError.status === 403 ? 'denied' : 'failure',
-        httpStatus: brokerError.status,
-        after: { reason: brokerError.code },
-      });
+      await auditBrokerFailure(auditBase, brokerError);
       return refuse(c, brokerError.code, brokerError.message, brokerError.status);
     }
 
@@ -421,325 +372,27 @@ projectsApp.openapi(
     // classifier sees the url and the headers but not the body — a refused
     // handle past the buffered threshold is still NOT substituted (fail-closed
     // is intact) but loses its forensic line. Bounded, documented degradation.
-    const refusals = classifyPresentedHandles(
-      requestSurfaceText({
-        url: meta.url,
-        headers: Object.fromEntries(meta.headers),
-        body: bufferedBody,
-      }),
-      authz.facts,
-      config.API_KEY_SECRET,
-    );
-    if (refusals.length > 0) {
-      await recordAuditEvent({
-        ...auditBase,
-        action: 'secret.handle.refused',
-        outcome: 'denied',
-        after: { refusals: summarizeHandleRefusals(refusals), detail: refusals },
-      });
-    }
+    const surface = requestSurfaceText({
+      url: meta.url,
+      headers: Object.fromEntries(meta.headers),
+      body: bufferedBody,
+    });
+    const refusals = classifyPresentedHandles(surface, authz.facts, config.API_KEY_SECRET);
+    if (refusals.length > 0) await auditRefusals(auditBase, refusals);
 
-    // Every value that could be echoed back: the route's own secret plus every
-    // handle admitted on this hop.
-    let redactable = [authz.secret, ...head.admitted.map((entry) => entry.value)];
-
-    try {
-      // ── The hop loop ────────────────────────────────────────────────────
-      //
-      // Same shape as `executeSecretBrokerRequest`'s: a redirect re-enters
-      // `prepareRelayHead` against the NEW destination, so the policy, the
-      // per-handle admission, the port pin and the unsafe-target check are all
-      // re-run for the host we are actually about to talk to. A secret whose
-      // policy admits the first host must never ride along to wherever that
-      // host points next.
-      let hop = head;
-      let hopUrl = meta.url;
-      let hopMethod: typeof meta.method = meta.method;
-      let hopBody = upstreamBody;
-
-      for (let redirects = 0; ; redirects += 1) {
-        const upstream = await openUpstream(
-          { url: hop.url, method: hop.method, headers: hop.headers },
-          hopBody,
-          { signal: c.req.raw.signal },
-        );
-
-        if (![301, 302, 303, 307, 308].includes(upstream.status)) {
-          // ── FAIL CLOSED on a compressed body ────────────────────────────
-          //
-          // `prepareRelayHead` forces `accept-encoding: identity` upstream so
-          // the echo scan sees plaintext. Nothing until now verified the
-          // upstream OBEYED, and `content-encoding` is not in
-          // SAFE_RESPONSE_HEADERS — so a gzip body would have been piped
-          // through the redactor (which cannot match compressed bytes) and
-          // handed to the guest as undeclared compressed data carrying the
-          // real credential. Refuse instead of relaying it.
-          const contentEncoding = upstream.rawHeaders
-            .find(([name]) => name === 'content-encoding')?.[1]
-            ?.trim()
-            .toLowerCase();
-          if (contentEncoding && contentEncoding !== 'identity') {
-            upstream.destroy();
-            throw new SecretBrokerError(
-              'upstream_encoding_unsupported',
-              `upstream answered with content-encoding: ${contentEncoding} despite accept-encoding: identity, ` +
-                'so the response cannot be scanned for an echoed secret',
-              502,
-            );
-          }
-
-          const responseSubstituter = new StreamSubstituter(responsePairs(redactable));
-          disposables.add(responseSubstituter);
-          // `flush()` covers the clean end and is the ONLY site allowed to run
-          // on it — disposing there too would zero the needles while the final
-          // tail is still being substituted. The abnormal ends are what leak,
-          // so hook exactly those: an upstream that dies mid-body (idle
-          // timeout, byte budget, socket reset) and a guest that goes away.
-          upstream.body.once('error', disposeAll);
-
-          // The end-of-stream SENTINEL. See RELAY_EOS_BYTES: a missing chunked
-          // terminator is NOT an error signal on bun 1.3.14 (measured — Bun
-          // writes `0\r\n\r\n` even when the source stream is destroyed with an
-          // error, and the client's fetch resolves cleanly), so truncation is
-          // signalled POSITIVELY: these bytes are appended only on a clean
-          // flush, and the shim treats their absence as a failed relay. Minted
-          // per response and unguessable, so no truncation point can forge it.
-          // Only for clients that asked — an older daemon would hand them to
-          // the guest as trailing garbage.
-          const eos = meta.eos === true ? randomBytes(RELAY_EOS_BYTES) : undefined;
-
-          const statusHeader = encodeRelayStatus({
-            v: RELAY_VERSION,
-            status: upstream.status,
-            headers: safeResponseHeaders(upstream.rawHeaders, redactable),
-            ...(eos ? { eos: eos.toString('hex') } : {}),
-          });
-
-          // What was substituted is NOT final yet on a streamed request body —
-          // the substituter is still consuming it. Record the honest superset
-          // and mark it as such, so an operator never reads an EMPTY
-          // `substituted` for a hop that did spend a credential. The exact set
-          // lands in the terminal `secret.broker.streamed` row below.
-          const streamingRequest = bodyWasStreamed && !requestSubstituter.isPassThrough;
-          const substitutedSoFar = new Set([...hop.applied, ...requestSubstituter.applied]);
-          await recordAuditEvent({
-            ...auditBase,
-            action: 'secret.broker.completed',
-            outcome: upstream.status >= 400 ? 'failure' : 'success',
-            after: {
-              upstream_status: upstream.status,
-              ...(substitutedSoFar.size > 0
-                ? { substituted: [...substitutedSoFar].sort() }
-                : {}),
-              ...(streamingRequest
-                ? {
-                    substitution: 'streamed_superset',
-                    substitution_candidates: hop.admitted
-                      .map((entry) => entry.identifier)
-                      .sort(),
-                  }
-                : {}),
-              ...(refusals.length > 0
-                ? { handle_refusals: summarizeHandleRefusals(refusals) }
-                : {}),
-            },
-          });
-
-          // 200 ALWAYS on success. See the status header's own docs for why the
-          // upstream status is not mirrored here.
-          let responseBytes = 0;
-          return new Response(
-            (Readable.toWeb(upstream.body) as unknown as ReadableStream<Uint8Array>)
-              .pipeThrough(
-                new TransformStream<Uint8Array, Uint8Array>({
-                  transform(chunk, controller) {
-                    responseBytes += chunk.byteLength;
-                    controller.enqueue(chunk);
-                  },
-                }),
-              )
-              .pipeThrough(
-                substituteStream(responseSubstituter, eos, () => {
-                  // The relay COMPLETED. Written here and not at header time,
-                  // because at header time neither the request substituter's
-                  // final set nor the fact of completion is known yet.
-                  void recordAuditEvent({
-                    ...auditBase,
-                    action: 'secret.broker.streamed',
-                    outcome: 'success',
-                    after: {
-                      upstream_status: upstream.status,
-                      response_bytes: responseBytes,
-                      complete: true,
-                      ...(requestSubstituter.applied.length > 0 || hop.applied.size > 0
-                        ? {
-                            substituted: [
-                              ...new Set([...hop.applied, ...requestSubstituter.applied]),
-                            ].sort(),
-                          }
-                        : {}),
-                    },
-                  });
-                }),
-              ),
-            {
-              status: 200,
-              headers: {
-                [RELAY_VERSION_HEADER]: String(RELAY_VERSION),
-                [RELAY_STATUS_HEADER]: statusHeader,
-                'content-type': 'application/octet-stream',
-                'cache-control': 'no-store',
-              },
-            },
-          );
-        }
-
-        // ── It redirected ─────────────────────────────────────────────────
-        upstream.destroy();
-
-        // A redirect only matters BEFORE any real credential is on the wire.
-        // Once this hop carried one, the value is already delivered and
-        // following `Location` would carry it — or bytes the upstream reflected
-        // into `Location` — to a host re-gated only by the ROUTE secret's
-        // policy, never by the substituted secret's own. Fail closed, exactly
-        // as the buffered path does.
-        // `requestSubstituter.applied` is what makes this truthful on the
-        // STREAMED path: `hop.applied` only ever fills on the buffered branch,
-        // so without it a secret that rode out inside a streamed body left this
-        // gate reading `size === 0`. It was saved by the separate
-        // `bodyWasStreamed` check below — i.e. by ordering, not by the check
-        // that is meant to enforce the invariant.
-        if (
-          hop.carriesSecret ||
-          hop.applied.size > 0 ||
-          requestSubstituter.applied.length > 0
-        ) {
-          await recordAuditEvent({
-            ...auditBase,
-            action: 'secret.broker.failed',
-            outcome: 'failure',
-            httpStatus: 502,
-            after: { reason: 'upstream_failed' },
-          });
-          return refuse(
-            c,
-            'upstream_failed',
-            'redirect after secret substitution is not followed',
-            502,
-          );
-        }
-
-        // No secret rode out — but the BODY may already be gone. A streamed
-        // request body cannot be replayed onto the next hop, and buffering it
-        // for replay would reintroduce exactly the cap this route removes. The
-        // bounded ≤64 KiB path keeps its bytes, so ordinary redirects still
-        // work; only a genuinely streamed body loses this.
-        if (bodyWasStreamed) {
-          await recordAuditEvent({
-            ...auditBase,
-            action: 'secret.broker.failed',
-            outcome: 'failure',
-            httpStatus: 502,
-            after: { reason: 'redirect_not_replayable' },
-          });
-          return refuse(
-            c,
-            'redirect_not_replayable',
-            'the upstream redirected a streamed request body, which cannot be replayed',
-            502,
-          );
-        }
-
-        const location = upstream.rawHeaders.find(([name]) => name === 'location')?.[1];
-        if (!location) {
-          return refuse(c, 'upstream_failed', 'upstream redirect has no location', 502);
-        }
-        if (redirects >= MAX_REDIRECTS) {
-          return refuse(c, 'upstream_failed', 'upstream redirect limit exceeded', 502);
-        }
-
-        // Same method/body rewrite rule as the buffered path.
-        const nextUrl = new URL(location, hopUrl).href;
-        if (
-          upstream.status === 303 ||
-          ((upstream.status === 301 || upstream.status === 302) && hopMethod === 'POST')
-        ) {
-          hopMethod = 'GET';
-          bufferedBody = null;
-        }
-        hopUrl = nextUrl;
-
-        try {
-          hop = prepareRelayHead(
-            authz.policy,
-            authz.secret,
-            { url: hopUrl, method: hopMethod, headers: meta.headers },
-            authz.substitutions,
-          );
-        } catch (error) {
-          const brokerError =
-            error instanceof SecretBrokerError
-              ? error
-              : new SecretBrokerError('policy_denied', 'redirect target is not admitted', 403);
-          await recordAuditEvent({
-            ...auditBase,
-            action: 'secret.broker.failed',
-            outcome: brokerError.status === 403 ? 'denied' : 'failure',
-            httpStatus: brokerError.status,
-            after: { reason: brokerError.code },
-          });
-          return refuse(c, brokerError.code, brokerError.message, brokerError.status);
-        }
-        if (hop.bodyInject) {
-          return refuse(
-            c,
-            'invalid_request',
-            'this secret uses a JSON body injection slot, which the streaming relay cannot serve',
-            400,
-          );
-        }
-
-        // Re-substitute the ORIGINAL body against THIS hop's admitted set. The
-        // new host can admit a handle the previous one did not, and the buffer
-        // we still hold is pre-substitution precisely because nothing fired on
-        // the hop before.
-        if (bufferedBody === null) {
-          hopBody = null;
-          delete hop.headers['content-length'];
-        } else {
-          const applied = new Set<string>();
-          const substituted =
-            hop.admitted.length > 0
-              ? substituteBuffer(
-                  bufferedBody,
-                  hop.admitted,
-                  bodyEncoding(hop.headers['content-type']),
-                  applied,
-                )
-              : bufferedBody;
-          for (const id of applied) hop.applied.add(id);
-          hopBody = substituted;
-          hop.headers['content-length'] = String(substituted.byteLength);
-        }
-        if (hop.admitted.length > 0) assertPolicyAdmitsPath(authz.policy, hop.url, hop.method);
-        redactable = [authz.secret, ...hop.admitted.map((entry) => entry.value)];
-      }
-    } catch (error) {
-      // Anything that threw between building a substituter and handing it off
-      // leaves decrypted bytes in it. Zero them here rather than waiting for GC.
-      disposeAll();
-      const brokerError =
-        error instanceof SecretBrokerError
-          ? error
-          : new SecretBrokerError('upstream_failed', 'Secret relay request failed', 502);
-      await recordAuditEvent({
-        ...auditBase,
-        action: 'secret.broker.failed',
-        outcome: brokerError.status === 403 ? 'denied' : 'failure',
-        httpStatus: brokerError.status,
-        after: { reason: brokerError.code },
-      });
-      return refuse(c, brokerError.code, brokerError.message, brokerError.status);
-    }
+    return runRelayHops({
+      c,
+      meta,
+      authz,
+      head,
+      upstreamBody,
+      bufferedBody,
+      bodyWasStreamed,
+      requestSubstituter,
+      disposables,
+      disposeAll,
+      auditBase,
+      refusals,
+    });
   },
 );

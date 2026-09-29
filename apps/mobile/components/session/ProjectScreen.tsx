@@ -116,7 +116,8 @@ import {
 import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
-import { countReviewItemsBySegment, getProjectSession, sessionConnectionLabel } from '@kortix/sdk';
+import { countReviewItemsBySegment, getProjectSession, SESSION_NOTICE, sessionConnectionLabel } from '@kortix/sdk';
+import { queuePromptWhileWaking } from '@/lib/session/connecting-send';
 import { loadSavedCopy } from '@/lib/session/saved-copy';
 import * as Crypto from 'expo-crypto';
 import {
@@ -1281,23 +1282,63 @@ export function ProjectScreen() {
   // copy (lib/session/saved-copy.ts): the one this device kept, then the
   // server's, painted into the sync store under the session's OpenCode root.
   // `SessionPage` then opens on the same messages and its first runtime read
-  // settles them. Only while the connecting view is on screen.
+  // settles them. Only while the connecting view is on screen. A sub-agent's
+  // thread reads its own saved window (`child`).
   const showingConnecting = !activePageId && ((!!activeSessionId && !threadReady) || !!connectingProjectSessionId);
   const savedCopyTarget = !showingConnecting
     ? null
     : connectingProjectSessionId
-      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null }
+      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null, child: false }
       : activeProjectSession && activeSessionId
-        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId }
+        ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId, child: !!activeSubsession }
         : null;
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
+  const savedCopyChild = savedCopyTarget?.child ?? false;
+  // The root a saved copy proved empty (`SavedCopyOutcome.empty`): the view
+  // opens on its composer instead of a loader.
+  const [emptyProvenFor, setEmptyProvenFor] = useState<string | null>(null);
   useEffect(() => {
     if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-    void loadSavedCopy({ projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId });
-  }, [projectId, savedCopySessionId, savedCopyRootId]);
+    let current = true;
+    void loadSavedCopy({
+      projectId,
+      sessionId: savedCopySessionId,
+      rootId: savedCopyRootId,
+      child: savedCopyChild,
+    }).then((outcome) => {
+      if (current && outcome.empty) setEmptyProvenFor(savedCopyRootId);
+    });
+    return () => {
+      current = false;
+    };
+  }, [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]);
   const savedCopyMessages = useSyncStore((state) =>
     savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  );
+  const connectingEmpty = !!savedCopyRootId && emptyProvenFor === savedCopyRootId && !connectingFirstPrompt;
+  // A message typed while the computer wakes queues through the prompt inbox
+  // (lib/session/connecting-send.ts), as the web does: never to a sub-agent,
+  // never over a failure, and only where the thread is on screen.
+  const canQueueWhileWaking =
+    !!projectId &&
+    !!savedCopySessionId &&
+    !!savedCopyRootId &&
+    !savedCopyChild &&
+    !connectError &&
+    (connectingEmpty || (savedCopyMessages?.length ?? 0) > 0);
+  const handleWakingSend = useCallback(
+    (text: string) => {
+      if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
+      void queuePromptWhileWaking({
+        projectId,
+        projectSessionId: savedCopySessionId,
+        rootId: savedCopyRootId,
+        text,
+        randomUUID: Crypto.randomUUID,
+      });
+    },
+    [projectId, savedCopySessionId, savedCopyRootId]
   );
 
   // The open page, thread, or connecting session: the view route's content.
@@ -1391,8 +1432,12 @@ export function ProjectScreen() {
               restarting={restartingSession}
               showLoader={!drawerOpen}
               messages={savedCopyMessages}
-              statusLabel={sessionConnectionLabel('waking')?.label ?? null}
+              statusLabel={
+                canQueueWhileWaking ? SESSION_NOTICE.waking : (sessionConnectionLabel('waking')?.label ?? null)
+              }
               sessionId={savedCopyRootId ?? undefined}
+              empty={connectingEmpty}
+              onSend={canQueueWhileWaking ? handleWakingSend : undefined}
             />
           </View>
         ) : null}

@@ -12,12 +12,13 @@ import {
   runWithContext,
   setContextField,
 } from './lib/request-context';
-import { requestLogLevel } from './lib/request-log-level';
+import { requestLogLevel, shouldSuppressRequestLog } from './lib/request-log-level';
 import { installFetchTiming } from './lib/server-timing';
 import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
+import { PROXY_HOP_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
 import { auditApiRequest } from './shared/audit';
 import { isUuid } from './shared/validate';
@@ -184,40 +185,28 @@ app.use('*', async (c, next) => {
     'http',
   );
 
-  // Expected sandbox proxy noise we intentionally suppress:
-  // - long-poll/SSE event stream timing out after ~30s (504)
-  // - sandbox startup probes returning 502/503 before services are ready
-  const isSandboxProxyPath = path.includes('/v1/p/');
-  const isProxyLongPoll =
-    isSandboxProxyPath &&
-    (path.includes('/global/event') ||
-      path.includes('/session/status') ||
-      /\/session\/[^/]+\/message(?:$|\?)/.test(path));
-  const isProxyStartupProbe =
-    isSandboxProxyPath &&
-    (path.includes('/global/health') ||
-      path.includes('/kortix/health') ||
-      /\/sessions(?:\/|$)/.test(path));
-  const isExpectedProxyNoise =
-    method === 'GET' &&
-    ((isProxyLongPoll &&
-      ((status === 200 && duration > 5000) ||
-        status === 504 ||
-        status === 502 ||
-        status === 503)) ||
-      (isProxyStartupProbe && (status === 502 || status === 503 || status === 504)));
-
   // Health/liveness probes fire every few seconds from the ALB + kubelet across
   // every pod — by far the highest-volume request. A healthy probe carries no
   // signal, and shipping one log line per probe is what feeds the Better Stack
-  // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
-  // logs, so a failing/degraded probe stays fully visible).
+  // queue toward overflow.
   const isHealthProbe =
     path === '/health' ||
     path === '/v1/health' ||
     path.endsWith('/health/live') ||
     path.endsWith('/health/ready');
-  const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
+  const suppressLog =
+    // Expected sandbox proxy noise we intentionally suppress: the designed
+    // answers of the parked/booting window — see shouldSuppressRequestLog.
+    shouldSuppressRequestLog({
+      method,
+      path,
+      status,
+      durationMs: duration,
+      proxyHop: c.res.headers.get(PROXY_HOP_HEADER)?.toLowerCase() ?? null,
+    }) ||
+    // Suppress only SUCCESSFUL probes (a non-2xx still logs, so a
+    // failing/degraded probe stays fully visible).
+    (isHealthProbe && status < 400);
 
   if (!suppressLog) {
     // WARN only for a real failure. A slow-but-successful request stays INFO —

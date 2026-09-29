@@ -191,6 +191,30 @@ export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, '
     .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
 }
 
+/** A stored ChatGPT login, read again when the provider refused its token. */
+export interface CodexAccountLogin {
+  value: string | null;
+  updatedAt: Date;
+  needsReauthAt: Date | null;
+}
+
+export async function loadCodexAccountLogin(accountId: string, secretId: string): Promise<CodexAccountLogin | null> {
+  const [row] = await db.select({
+    valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
+    needsReauthAt: accountSecretResources.needsReauthAt,
+  }).from(accountSecretResources).where(and(
+    eq(accountSecretResources.accountId, accountId),
+    eq(accountSecretResources.secretId, secretId),
+    eq(accountSecretResources.providerId, 'codex'),
+    eq(accountSecretResources.name, 'CODEX_AUTH_JSON'),
+    eq(accountSecretResources.active, true),
+  )).limit(1);
+  return row
+    ? { value: readAccountSecret(accountId, secretId, row.valueEnc), updatedAt: row.updatedAt, needsReauthAt: row.needsReauthAt }
+    : null;
+}
+
 /**
  * An unconfigured session uses the caller's newest personal ChatGPT
  * connection, preferring one whose login still works: a connection marked for

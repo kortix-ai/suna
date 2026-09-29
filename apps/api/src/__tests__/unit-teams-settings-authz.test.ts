@@ -83,7 +83,7 @@ mock.module('../llm-gateway/models/picker', () => ({
 const realDefaultModel = await import('../llm-gateway/resolution/default-model');
 mock.module('../llm-gateway/resolution/default-model', () => ({ ...realDefaultModel, isModelServableForAccount: async () => true }));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map() }));
-mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({}) }));
+mock.module('../channels/teams/agent-picker', () => ({ buildAgentsPicker: async () => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: 'AGENTS-PICKER' }] }) }));
 mock.module('../channels/teams/stop', () => ({ stopTeamsTurn: async () => ({ stopped: false, notice: '' }) }));
 mock.module('../channels/teams/login', () => ({ buildTeamsLoginUrl: () => 'https://login' }));
 mock.module('../channels/teams/fresh-start', () => ({
@@ -108,6 +108,21 @@ mock.module('../channels/teams/binding', () => ({
   teamsChannelCtx: (tenantId: string, conversationId: string) => ({ platform: 'teams', teamId: tenantId, channelId: conversationId }),
 }));
 mock.module('../projects/review-items', () => ({ getReviewItemById: async () => null, applyVerdict: async () => {} }));
+
+const realModelChoice = await import('../channels/teams/model-choice');
+mock.module('../channels/teams/model-choice', () => ({
+  ...realModelChoice,
+  buildTeamsModelsCard: async () => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: 'MODELS-PICKER' }] }),
+}));
+
+let recentSessions: unknown[] | null = [];
+const sessionQueries: unknown[] = [];
+mock.module('../channels/core/sessions', () => ({
+  listVisibleChatSessions: async (user: unknown, opts: unknown) => {
+    sessionQueries.push({ user, opts });
+    return recentSessions;
+  },
+}));
 
 const posted: string[] = [];
 mock.module('../channels/teams-api', () => ({
@@ -210,5 +225,58 @@ describe('Teams setting cards need a linked project manager', () => {
   test('a project manager applies a model pick', async () => {
     expect(await press('teams_set_model', { model: 'kortix/glm-5.3-flash' })).toContain('Model set to');
     expect(writes).toEqual([{ kind: 'model', value: 'kortix/glm-5.3-flash' }]);
+  });
+});
+
+// Slack's settings panel changes what it shows; Teams' `/status` only showed
+// it (2026-09-29 parity audit). Its buttons open the same pickers the
+// commands post, and go through the same settings gate when a pick is made.
+describe('/status and /sessions', () => {
+  test('/status shows the policy and who you are, with buttons that open each picker', async () => {
+    await run('/status');
+    const card = JSON.parse(posted[0]!);
+    const facts = JSON.stringify(card.body);
+    expect(facts).toContain('Policy');
+    expect(facts).toContain('not connected — run /login');
+    expect(card.actions.map((a: { title: string; data?: { panel?: string } }) => [a.title, a.data?.panel ?? null])).toEqual([
+      ['Change model', 'models'],
+      ['Change agent', 'agents'],
+      ['Switch project', 'projects'],
+      ['Open in Kortix', null],
+    ]);
+  });
+
+  test('a /status button returns its picker to the presser', async () => {
+    expect(await press('teams_open_panel', { panel: 'projects' })).toContain('Connected projects');
+    expect(await press('teams_open_panel', { panel: 'models' })).toContain('MODELS-PICKER');
+    expect(await press('teams_open_panel', { panel: 'agents' })).toContain('AGENTS-PICKER');
+    expect(await press('teams_open_panel', { panel: 'nope' })).toContain("isn't available anymore");
+    // Opening a picker changes nothing.
+    expect(writes).toEqual([]);
+    expect(inserts).toEqual([]);
+  });
+
+  test('/sessions lists the recent sessions this person may open, each linking to Kortix', async () => {
+    sessionQueries.length = 0;
+    recentSessions = [
+      { projectId: PROJECT, projectName: 'First', repoUrl: '', sessionId: 'sess-1', lastMessageAt: new Date(), title: 'Fix the flaky test', status: 'completed' },
+      { projectId: PROJECT, projectName: 'First', repoUrl: '', sessionId: 'sess-2', lastMessageAt: new Date(), title: null, status: 'running' },
+    ];
+    await run('/sessions');
+    expect(posted[0]).toContain('Recent sessions');
+    expect(posted[0]).toContain('Fix the flaky test');
+    expect(posted[0]).toContain('First · done');
+    expect(posted[0]).toContain('Untitled session');
+    expect(posted[0]).toContain('https://dev.kortix.com/projects/proj-1/sessions/sess-1');
+    expect(sessionQueries).toEqual([{ user: expect.objectContaining({ platform: 'teams', workspaceId: TENANT }), opts: { limit: 5, projectId: undefined } }]);
+  });
+
+  test('/sessions asks an unlinked person to connect, and says so when there is nothing yet', async () => {
+    recentSessions = null;
+    await run('/sessions');
+    expect(posted[0]).toContain('/login');
+    recentSessions = [];
+    await run('/sessions');
+    expect(posted[1]).toContain('No recent sessions');
   });
 });

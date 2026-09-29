@@ -72,7 +72,11 @@ export function isPlausibleServiceKey(value: string): boolean {
 }
 
 export interface ServiceKeyReconcileDeps {
-  exec: (externalId: string, command: string[]) => Promise<{ stdout?: string; exitCode?: number }>;
+  exec: (externalId: string, command: string[]) => Promise<{
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number;
+  }>;
   readRow: (sandboxId: string) => Promise<{ externalId: string | null; serviceKey: string | null; provider: string } | null>;
   writeKey: (sandboxId: string, key: string) => Promise<void>;
 }
@@ -149,15 +153,36 @@ export async function reconcileServiceKeyFromBox(
     // the file the rotation wrote and the provider then overrode, so reading it
     // would report the value the box is NOT using — the same mistake in the
     // other direction. `pgrep`+`/proc/<pid>/environ` is the running truth.
+    //
+    // Two daemon layouts exist. A converged box runs `/usr/local/bin/
+    // kortix-agent` (comm `kortix-agent`); a box the legacy repair supervised
+    // runs `/opt/kortix/agent.{current,prev,next}` — a comm name `pgrep -x`
+    // never matches. The 2026-09-29 prod spike was exactly this: every
+    // bad_signature reconcile on such a box returned a silent `unreadable`,
+    // so the row was never corrected and the session looped on the 401.
+    // Match the full cmdline like the bootstrap's own stop path does, with
+    // every literal bracket-escaped so the pattern cannot match the `sh -lc`
+    // wrapper that carries it.
     const result = await deps.exec(row.externalId, [
       'sh',
       '-lc',
       "pid=$(pgrep -x kortix-agent | head -1); " +
+        '[ -n "$pid" ] || pid=$(pgrep -f \'/usr/local/bin/kortix-age[n]t|' +
+        "/opt/kortix/agent[.](current|prev|next)' | head -1); " +
         '[ -n "$pid" ] || exit 3; ' +
         "tr '\\0' '\\n' < /proc/$pid/environ | sed -n 's/^KORTIX_TOKEN=//p' | head -1",
     ]);
     const boxKey = (result.stdout ?? '').trim();
-    if (!boxKey) return 'unreadable';
+    if (!boxKey) {
+      // A silent `unreadable` is what made the 2026-09-29 spike undiagnosable
+      // for two hours: the start warn said which outcome, never why.
+      logger.warn('[service-key] box did not report a KORTIX_TOKEN', {
+        sandbox_id: sandboxId,
+        exit_code: result.exitCode,
+        stderr: (result.stderr ?? '').slice(0, 120),
+      });
+      return 'unreadable';
+    }
     if (!isPlausibleServiceKey(boxKey)) {
       logger.warn('[service-key] box reported an implausible KORTIX_TOKEN; not written', {
         sandbox_id: sandboxId,

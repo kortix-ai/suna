@@ -13,12 +13,16 @@ import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { sendCard } from '../teams-api';
 import {
+  type TeamsPanel,
   buildHelpCard,
   buildNoticeCard,
   buildPanelCard,
   buildSelectCard,
+  buildSessionsCard,
+  openPanelAction,
   type SelectOption,
 } from './cards';
+import { listVisibleChatSessions } from '../core/sessions';
 import {
   conversationSession,
   type TeamsConversationSession,
@@ -160,7 +164,10 @@ export async function handleTeamsCommand(input: {
       case 'status':
       case 'config':
       case 'settings':
-        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId, sessionProjectId));
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId, userId, sessionProjectId));
+        return true;
+      case 'sessions':
+        await post(await buildRecentSessionsCard(actor, sessionProjectId));
         return true;
       case 'models':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -222,7 +229,8 @@ function helpCard() {
     { cmd: '/login', desc: 'connect your Kortix account' },
     { cmd: '/logout', desc: 'disconnect your account' },
     { cmd: '/whoami', desc: 'show who you are linked as' },
-    { cmd: '/status', desc: 'show the effective project, agent and model' },
+    { cmd: '/status', desc: 'show and change the project, agent and model' },
+    { cmd: '/sessions', desc: 'your recent sessions started from Teams' },
     { cmd: '/models', desc: 'pick the model for this conversation' },
     { cmd: '/agents', desc: 'pick the agent for this conversation' },
     { cmd: '/projects', desc: 'list connected projects' },
@@ -238,14 +246,19 @@ async function buildStatusCard(
   tenantId: string,
   conversationId: string,
   projectId: string,
+  userId: string | null,
   sessionProjectId?: string,
 ) {
-  const [selection, projects, session, gatewayOn] = await Promise.all([
+  const [selection, projects, session, gatewayOn, identity] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
     conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
     projectLlmGatewayEnabledById(projectId).catch(() => true),
+    userId ? lookupChatIdentity(chatUser('teams', tenantId, userId)).catch(() => null) : Promise.resolve(null),
   ]);
+  const email = identity
+    ? (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId)
+    : null;
   const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
     emoji: '⚙️',
@@ -254,11 +267,19 @@ async function buildStatusCard(
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
       { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session, gatewayOn) },
+      { label: 'Policy', value: conversationPolicyLabel(normalizeConversationPolicy(selection?.conversationPolicy ?? null)) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except
       // that — so a run that had quietly stopped looked identical to one still
       // working.
       { label: 'Session', value: describeConversationSession(session) },
+      { label: 'You', value: identity ? `connected as ${email || 'your Kortix account'}` : 'not connected — run /login' },
+    ],
+    // Slack's settings panel changes what it shows; this one only showed it.
+    actions: [
+      openPanelAction('Change model', 'models'),
+      openPanelAction('Change agent', 'agents'),
+      ...(projects.length > 1 ? [openPanelAction('Switch project', 'projects')] : []),
     ],
     // Deep-link to the run when there is one: the project page is a detour
     // from the thing the card is about.
@@ -266,6 +287,43 @@ async function buildStatusCard(
       ? sessionWebUrl(config.FRONTEND_URL, projectId, session.sessionId)
       : `${dashboardBase()}/projects/${projectId}`,
   });
+}
+
+/**
+ * The picker a `/status` button opens: the card `/models`, `/agents` or
+ * `/projects` posts, shown to the person who pressed it.
+ */
+export async function buildTeamsPanel(input: {
+  panel: TeamsPanel;
+  activity: TeamsActivity;
+  tenantId: string;
+  conversationId: string;
+  projectId: string;
+}): Promise<Record<string, unknown>> {
+  const { panel, activity, tenantId, conversationId, projectId } = input;
+  if (panel === 'models') return buildTeamsModelsCard(activity, tenantId, conversationId);
+  if (panel === 'agents') {
+    return buildAgentsPicker(teamsChannelCtx(tenantId, conversationId), projectId, undefined, teamsUserId(activity));
+  }
+  return buildProjectsCard(tenantId, projectId);
+}
+
+/** How many sessions `/sessions` lists. */
+const RECENT_SESSIONS = 5;
+
+async function buildRecentSessionsCard(actor: ChatUser, projectId?: string) {
+  // Only sessions the linked Kortix account may open, as on the web; a
+  // per-project bot lists its own project's only.
+  const rows = await listVisibleChatSessions(actor, { limit: RECENT_SESSIONS, projectId });
+  if (rows === null) return buildNoticeCard('Connect your Kortix account to see your recent sessions: run `/login`.', '🔑');
+  if (rows.length === 0) return buildNoticeCard('No recent sessions from this Teams tenant yet. @-mention me with a task to start one.', '🗂️');
+  return buildSessionsCard(rows.map((r) => ({
+    title: r.title || 'Untitled session',
+    projectName: r.projectName,
+    status: SESSION_STATUS[r.status]?.label,
+    when: formatRelativeTime(r.lastMessageAt),
+    url: sessionWebUrl(config.FRONTEND_URL, r.projectId, r.sessionId),
+  })));
 }
 
 /**
