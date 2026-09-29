@@ -17,7 +17,7 @@
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules",
-    "test": "bun test --isolate"
+    "test": "bun test"
   },
   "dependencies": {
     "@bacons/apple-targets": "^3.0.5",
