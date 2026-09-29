@@ -341,6 +341,14 @@ export const qk = {
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
 
+    /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
+     *  of every `sessionReminders` key, so invalidating it refreshes the
+     *  project page and every session's reminder chip together. */
+    reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
+    sessionReminders: (id: string, sessionId: string) =>
+      [...qk.project.reminders(id), 'session', sessionId] as const,
+
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the
      * Customize config-entity viewer. Unrelated to the much larger Git file

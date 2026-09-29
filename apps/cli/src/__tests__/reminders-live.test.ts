@@ -39,6 +39,12 @@ function startServer(): string {
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname, body, auth: req.headers.get('authorization') });
       if (url.pathname === BASE && req.method === 'POST') {
+        if ((body as { prompt?: string }).prompt === 'FLAG_OFF') {
+          return Response.json(
+            { error: 'Reminders is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'reminders' },
+            { status: 403 },
+          );
+        }
         if ((body as { every?: string }).every === '1m') {
           return Response.json({ error: 'every must be at least 5m' }, { status: 400 });
         }
@@ -151,6 +157,13 @@ describe('kortix reminders — inside a session', () => {
     const r = await runCli(['remind', 'x', '--every', '1m']);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('every must be at least 5m');
+  }, 60_000);
+
+  test('flag off: the server message plus the command that turns reminders on, exit 1', async () => {
+    const r = await runCli(['remind', 'FLAG_OFF', '--in', '1h']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Reminders is not enabled for this project');
+    expect(r.stderr).toContain('kortix projects features enable reminders');
   }, 60_000);
 
   test('no session anywhere and no prompt are usage errors (exit 2), with no request', async () => {

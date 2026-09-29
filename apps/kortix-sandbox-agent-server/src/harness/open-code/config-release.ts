@@ -354,8 +354,9 @@ export function convergeConfigRelease(deps: ConvergeDeps): Promise<ConvergeRespo
   // `401 Session token is not active`, and no retry can change that. Without
   // this gate the 60 s runtime-truth tick re-issued the request forever, one
   // warn line per minute per box (KRTX-613). The shared breaker clears the
-  // moment a control-plane call succeeds again — the runtime-assets pass on the
-  // same tick reports its answer — so this resumes by itself after a rotation.
+  // moment a control-plane call succeeds again — it lets one call through as a
+  // probe every SESSION_TOKEN_DEAD_PROBE_MS — so this resumes by itself after a
+  // rotation.
   // Nothing is lost: with a dead credential the fetch below would fail anyway.
   if (sessionTokenPresumedDead()) {
     return Promise.resolve(

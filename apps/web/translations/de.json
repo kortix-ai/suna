@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "MCP-Server",
           "description": "Verbinde Claude, ChatGPT, Cursor, Codex oder einen anderen MCP-Client per OAuth mit diesem Projekt. Der Client meldet sich als du an und ruft Kortix mit deinen Berechtigungen auf. Die URL findest du unter „MCP verbinden“ im Workspace-Menü."
+        },
+        "reminders": {
+          "name": "Erinnerungen",
+          "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Wird geladen …",
-    "loadMoreSessions": "Weitere Sitzungen laden"
+    "loadMoreSessions": "Weitere Sitzungen laden",
+    "reminders": "Erinnerungen"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19238,7 +19243,8 @@
       "textb7ece0360b75": "Sitzungserinnerung gelöscht",
       "text9dcde51d9ff2": "Beschreibung des Agenten",
       "textfa0db737cb09": "Vom Agenten verfasst und nicht geprüft. Der Connector erhält die Parameter unten.",
-      "text2edf70730233": "Nachricht an den Agenten (optional)"
+      "text2edf70730233": "Nachricht an den Agenten (optional)",
+      "texte88286ad9739": "Projekterinnerungen aufgelistet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20321,5 +20327,46 @@
     "unverifiedTitle": "Nicht verifizierte App",
     "unverifiedBody": "{client} hat sich selbst bei Kortix registriert. Kortix hat nicht geprüft, wer sie betreibt. Erlaube den Zugriff nur, wenn du sie gerade selbst verbindest.",
     "redirectsTo": "Leitet dich zurück zu"
+  },
+  "reminders": {
+    "title": "Erinnerungen",
+    "description": "Geplante Rückfragen, die eine Sitzung erneut ansprechen. Agenten setzen sie während der Arbeit; jede wird ausgelöst, bis sie entfernt wird.",
+    "docs": "So funktionieren Erinnerungen",
+    "tabActive": "Aktiv",
+    "tabPaused": "Pausiert",
+    "tabDone": "Erledigt",
+    "emptyTitle": "Keine Erinnerungen",
+    "emptyDescription": "Wenn ein Agent oder eine Person eine Erinnerung für eine Sitzung setzt, erscheint sie hier.",
+    "emptyTabDescription": "Diese Liste ist leer.",
+    "loadFailed": "Erinnerungen konnten nicht geladen werden",
+    "retry": "Erneut versuchen",
+    "sessionFilter": "Sitzung: {name}",
+    "clearFilter": "Alle Sitzungen anzeigen",
+    "untitledSession": "Unbenannte Sitzung",
+    "once": "Einmalig",
+    "every": "Alle {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Nächste {time}",
+    "firedAt": "Ausgelöst {time}",
+    "pausedLabel": "Pausiert",
+    "doneLabel": "Erledigt",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "remove": "Entfernen",
+    "openSession": "Sitzung öffnen",
+    "removeTitle": "Diese Erinnerung entfernen?",
+    "removeDescription": "Sie wird nicht mehr ausgelöst und gelöscht. Der Verlauf der Sitzung bleibt erhalten.",
+    "paused": "Erinnerung pausiert",
+    "resumed": "Erinnerung fortgesetzt",
+    "removed": "Erinnerung entfernt",
+    "updateFailed": "Die Erinnerung konnte nicht aktualisiert werden",
+    "chipLabel": "{count, plural, one {# aktive Erinnerung} other {# aktive Erinnerungen}}",
+    "chipTitle": "Erinnerungen dieser Sitzung",
+    "manage": "Erinnerungen verwalten",
+    "cardLabel": "Erinnerung",
+    "cardOneTime": "Einmalig",
+    "cardRecurring": "Wiederkehrend",
+    "cardManage": "Verwalten",
+    "gateDescription": "Aktiviere Erinnerungen, damit Agenten und Personen geplante Rückfragen für eine Sitzung festlegen können."
   }
 }
