@@ -174,6 +174,15 @@ describe('classifyDaemonHealth', () => {
     expect(opencode.staleReasons).toEqual(['missing_capability']);
   });
 
+  test('a W3 daemon names its harness in the closed block; the classifier reads id and state from it', () => {
+    const block = (id: string) => ({ id, version: null, state: 'ok', ready: true, error: null, session: { id: null, required: false }, turn: null, details: {} });
+    const pi = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: block('pi'), opencode: undefined, capabilities: ['file.import'] }, MANIFEST);
+    expect(pi.klass).toBe('current');
+    expect(pi.opencode).toBe('ok');
+    const opencode = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: block('opencode'), capabilities: [] }, MANIFEST);
+    expect(opencode.staleReasons).toEqual(['missing_capability']);
+  });
+
   test('agentSwapPending: true is stale immediately — no grace window; a running box has no natural self-promotion path', () => {
     const health = { ...CURRENT_HEALTH, runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true } };
     const c = classifyDaemonHealth(health, MANIFEST);

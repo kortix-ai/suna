@@ -140,6 +140,7 @@ const SOURCES = [
   { label: 'Human', value: 'human' },
   { label: 'API key', value: 'api_key' },
   { label: 'Agent', value: 'agent' },
+  { label: 'Agent runtime', value: 'runtime' },
   { label: 'OpenCode', value: 'opencode' },
   { label: 'LLM gateway', value: 'llm_gateway' },
   { label: 'Provider', value: 'provider' },

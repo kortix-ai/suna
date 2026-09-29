@@ -170,3 +170,20 @@ export function healthHarnessId(health: { harness?: unknown } | null | undefined
   }
   return null;
 }
+
+/** The runtime process state a health body reports: the W3 `harness` block, or the pre-W3 `opencode` field. */
+export function healthRuntimeState(health: Record<string, unknown> | null | undefined): string | null {
+  const harness = health?.harness;
+  if (harness && typeof harness === 'object' && typeof (harness as { state?: unknown }).state === 'string') {
+    return (harness as { state: string }).state;
+  }
+  return typeof health?.opencode === 'string' ? health.opencode : null;
+}
+
+/** The port the runtime listens on (OpenCode's alternates on a verified reload): `harness.details.port`, or the pre-W3 `opencode_port`. */
+export function healthRuntimePort(health: Record<string, unknown> | null | undefined): number | null {
+  const harness = health?.harness;
+  const details = harness && typeof harness === 'object' ? (harness as { details?: unknown }).details : null;
+  const port = details && typeof details === 'object' ? (details as { port?: unknown }).port : health?.opencode_port;
+  return typeof port === 'number' && Number.isInteger(port) && port > 0 ? port : null;
+}

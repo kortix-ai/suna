@@ -40,6 +40,7 @@
  * and in the audit ledger, never silent. The script restores the legacy
  * entrypoint and relaunches the old chain if the new daemon does not answer.
  */
+import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
@@ -208,7 +209,7 @@ export function classifyDaemonHealth(
     return { klass: 'unreachable', ...empty };
   }
   const h = body as Record<string, unknown>;
-  const opencode = typeof h.opencode === 'string' ? h.opencode : null;
+  const opencode = healthRuntimeState(h);
   if (h.daemon !== 'ok') {
     return { klass: 'not-ok', ...empty, opencode };
   }
@@ -270,7 +271,7 @@ export function classifyDaemonHealth(
   // Config releases are an OpenCode-runtime capability. pi has none yet
   // (decoupling plan B6), and a pi box that answers is as current as its
   // daemon build: requiring it relaunched every idle pi box on session open.
-  const required = h.harness === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
+  const required = healthHarnessId(h) === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
   const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {
     staleReasons.push('missing_capability');
