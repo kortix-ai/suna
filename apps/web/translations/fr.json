@@ -1721,7 +1721,8 @@
       "unavailableTitle": "Accès aux secrets indisponible",
       "unavailableDescription": "La sélection actuelle des secrets reste inchangée.",
       "useProjectDefault": "Utiliser le secret par défaut du projet",
-      "empty": "Aucun secret n’est disponible pour cet agent."
+      "empty": "Aucun secret n’est disponible pour cet agent.",
+      "loading": "Chargement des secrets…"
     },
     "connectors": {
       "unavailableTitle": "Accès aux connecteurs indisponible",
