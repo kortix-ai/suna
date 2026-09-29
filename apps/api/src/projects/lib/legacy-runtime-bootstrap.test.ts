@@ -247,6 +247,15 @@ describe('decideDeadDaemonOnOpen', () => {
 });
 
 describe('renderLegacyBootstrapScript', () => {
+  test('a dead-daemon repair asks the box first: a daemon answering on loopback ends the script before anything is touched', () => {
+    expect(renderLegacyBootstrapScript({ relaunch: 'pt-app' })).toContain("ONLY_IF_DEAD='0'");
+    const s = renderLegacyBootstrapScript({ relaunch: 'pt-app', onlyIfDead: true });
+    expect(s).toContain("ONLY_IF_DEAD='1'");
+    const guard = s.indexOf('"stage":"alive"');
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(s.indexOf('/v1/runtime-assets/manifest'));
+    expect(guard).toBeLessThan(s.indexOf('if [ -n "$NEW_KORTIX_TOKEN" ]'));
+  });
   test('carries no secret, verifies every download, keeps the baked binary, restores on failure', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
     expect(s).not.toMatch(/kortix_(sb|pat)_[A-Za-z0-9]{8,}|Bearer [A-Za-z0-9]/);
@@ -551,5 +560,42 @@ describe('bootstrapLegacyRuntime', () => {
     const forced = await bootstrapLegacyRuntime({ ...input(), force: true }, makeDeps({ health: [pinned] }, calls));
     expect(forced.outcome).toBe('skipped-blocked');
     expect(calls.execs).toHaveLength(0);
+  });
+});
+
+describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {
+  const decodeScript = (cmd: string[]) =>
+    Buffer.from(/printf '%s' '([A-Za-z0-9+/=]+)'/.exec(cmd[2]!)![1]!, 'base64').toString('utf8');
+
+  test('the relaunch is conditional on the daemon being dead IN the box', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(
+      input(),
+      makeDeps({ health: [null, null, CURRENT_HEALTH], providerRunning: async () => true }, calls),
+    );
+    expect(calls.execs).toHaveLength(1);
+    expect(decodeScript(calls.execs[0]!)).toContain("ONLY_IF_DEAD='1'");
+  });
+
+  test('a daemon alive on loopback (the ingress was the silent part) spends no attempt and fails nothing', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const prior = { state: 'converged', attempts: 1, manifestBuild: 1, lastAttemptAt: '2026-09-29T00:00:00.000Z' };
+    const r = await bootstrapLegacyRuntime(
+      input({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior }),
+      makeDeps(
+        {
+          health: [null, null],
+          providerRunning: async () => true,
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return { exitCode: 0, stdout: '{"ok":true,"stage":"alive","token_rotated":false}\n', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(r.outcome).toBe('not-legacy');
+    expect(calls.audits).toHaveLength(0);
+    expect(calls.patches.at(-1)![LEGACY_BOOTSTRAP_METADATA_KEY]).toEqual(prior);
   });
 });

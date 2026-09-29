@@ -378,6 +378,8 @@ export interface RenderScriptOptions {
    * back to the box's own token, which a wrong row can have already killed.
    */
   repairToken?: string;
+  /** A dead-daemon repair: exit untouched when the daemon answers on the box's loopback. */
+  onlyIfDead?: boolean;
 }
 
 /**
@@ -398,13 +400,14 @@ export function renderLegacyBootstrapScript(opts: RenderScriptOptions): string {
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(kortixToken)) throw new Error('unsafe kortixToken');
   const repairToken = opts.repairToken ?? '';
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(repairToken)) throw new Error('unsafe repairToken');
-  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
+  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ONLY_IF_DEAD__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
     if (!template.includes(placeholder)) throw new Error(`bootstrap script template lacks ${placeholder}`);
   }
   return template
     .replace('__OPENCODE_HOME__', opencodeHome)
     .replace('__RELAUNCH__', opts.relaunch)
     .replace('__HEALTH_WAIT_S__', String(healthWaitS))
+    .replace('__ONLY_IF_DEAD__', opts.onlyIfDead ? '1' : '0')
     .replace('__ENTRYPOINT_B64__', embedded)
     .replace('__PNPM_VERSION__', pnpmVersion)
     .replace('__KORTIX_TOKEN__', kortixToken)
@@ -943,6 +946,7 @@ export async function bootstrapLegacyRuntime(
           pnpmVersion: deps.pnpmVersion?.() ?? undefined,
           kortixToken,
           repairToken: repair?.secret,
+          onlyIfDead: deadDaemonOnRunningBox,
         }),
       ),
       LEGACY_BOOTSTRAP_EXEC_TIMEOUT_MS,
@@ -980,6 +984,13 @@ export async function bootstrapLegacyRuntime(
     await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
     deps.log('legacy runtime bootstrap deferred: a turn started during the repair', { sandboxId: input.sandboxId });
     return { outcome: 'skipped-busy', detail: 'a turn started during the repair; relaunch deferred', classification };
+  }
+  if (report.stage === 'alive') {
+    // The box's own loopback answered: the daemon was never dead, the ingress
+    // was silent. Nothing ran, so this was not an attempt.
+    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
+    deps.log('dead-daemon repair skipped: the daemon answers on loopback', { sandboxId: input.sandboxId });
+    return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
   }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {

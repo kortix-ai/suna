@@ -58,11 +58,14 @@ import { metadataDelta, stripMetadataKeys } from '../session-lifecycle/sandbox-m
 import { transitionRuntime, transitionSession } from '../session-lifecycle/status-transitions';
 import { pinnedRuntimeMayServe } from '../lib/pinned-runtime';
 import {
+  RUNTIME_PROVEN_AT_KEY,
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
   opencodeReadyWaitPatch,
   repairInFlight,
+  runtimeProvenThisBoot,
+  servesThroughProbeMiss,
   staleOpencodeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import {
@@ -704,11 +707,13 @@ export async function markOpencodeReadyWaitStarted(
   }
 }
 
-async function clearRuntimeReadinessClocks(
+/** The daemon answered ready: drop the boot clocks and prove this boot, in one write when either is due. */
+async function markRuntimeAnswered(
   row: typeof sessionSandboxes.$inferSelect,
 ): Promise<void> {
   const metadata = sandboxMetadata(row);
-  if (!hasRuntimeReadinessClock(metadata)) return;
+  const proven = runtimeProvenThisBoot(metadata);
+  if (!hasRuntimeReadinessClock(metadata) && proven) return;
   try {
     await db
       .update(sessionSandboxes)
@@ -717,12 +722,16 @@ async function clearRuntimeReadinessClocks(
         // `opencodeBootPhase` and `opencodeBootWaitFirstSeenAt` on a row whose
         // daemon had just reported READY — so the next boot wait on that row
         // inherited a spent hard cap.
-        metadata: stripMetadataKeys(RUNTIME_READINESS_CLOCK_KEYS),
+        metadata: proven
+          ? stripMetadataKeys(RUNTIME_READINESS_CLOCK_KEYS)
+          : sql`${stripMetadataKeys(RUNTIME_READINESS_CLOCK_KEYS)} || ${JSON.stringify({
+              [RUNTIME_PROVEN_AT_KEY]: new Date().toISOString(),
+            })}::jsonb`,
         updatedAt: new Date(),
       })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
-    console.warn(`[start] failed to clear readiness clocks for ${row.sandboxId}:`, err);
+    console.warn(`[start] failed to record the runtime answer for ${row.sandboxId}:`, err);
   }
 }
 
@@ -1698,6 +1707,20 @@ async function runOpenSession(args: {
     ensured.reason === 'unreachable' ? 'unreachable' : booting ? 'booting' : 'ready',
     ensured.bootPhase ?? null,
   );
+  // A miss through the ingress on a box whose daemon already answered this
+  // boot is the hop, not the box: keep serving (readiness-clocks.ts
+  // `servesThroughProbeMiss`). Only lifecycle facts leave `ready`.
+  if (ensured.pin && servesThroughProbeMiss(sandboxMetadata(row), ensured)) {
+    return {
+      stage: 'ready',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: ensured.pin,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: ensured.reason,
+    };
+  }
   if (ensured.reason === 'unreachable') {
     // `unreachable` is five different failures wearing one word (see
     // `opencode-mapping.ts`'s `UnreachableCause`). A session that cycles on it
@@ -1895,7 +1918,7 @@ async function runOpenSession(args: {
       ensured.bootPhase,
     );
   } else {
-    await clearRuntimeReadinessClocks(row);
+    await markRuntimeAnswered(row);
   }
 
   // ── Session-open runtime guarantee ──────────────────────────────────────

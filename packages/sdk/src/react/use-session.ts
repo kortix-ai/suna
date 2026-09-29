@@ -54,6 +54,7 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
+import { holdLiveStart } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useSessionTranscriptHistory } from './use-session-transcript-history';
@@ -1032,7 +1033,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const startEnabled = enabled && !!projectId && !!sessionId;
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
+    // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
+    queryFn: async () =>
+      holdLiveStart(
+        queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId)),
+        await startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
+      ),
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
