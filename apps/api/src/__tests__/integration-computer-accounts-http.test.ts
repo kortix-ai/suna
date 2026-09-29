@@ -820,22 +820,23 @@ describe('v2: access mode on the machine', () => {
   });
 
   test('the stored access shows on the connection view and in `status`', async () => {
+    const grantedUntil = new Date(Date.now() + 60_000).toISOString();
     const [laptop] = await db
       .select({ tunnelId: tunnelConnections.tunnelId })
       .from(tunnelConnections)
       .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Laptop')));
     await db
       .update(tunnelConnections)
-      .set({ machineInfo: { access: { mode: 'ask', grantedUntil: '2026-09-29T14:32:00.000Z' } } })
+      .set({ machineInfo: { access: { mode: 'ask', grantedUntil } } })
       .where(eq(tunnelConnections.tunnelId, laptop!.tunnelId));
     const listed = await listedConnections(ALICE);
     expect(listed.find((row) => row.tunnel_id === laptop!.tunnelId)?.machine).toMatchObject({
-      access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' },
+      access: { mode: 'ask', granted_until: grantedUntil },
     });
     const status = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Laptop' }), 'status');
     expect(status).toMatchObject({
       status: 'ok',
-      data: { access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' } },
+      data: { access: { mode: 'ask', granted_until: grantedUntil } },
     });
   });
 
