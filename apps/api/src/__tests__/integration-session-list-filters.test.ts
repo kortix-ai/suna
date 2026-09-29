@@ -10,7 +10,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { loadProjectSessionInventory, type SessionListFilter } from '../projects/lib/session-list';
 import { db } from '../shared/db';
@@ -33,6 +33,7 @@ async function seed(input: {
   createdBy?: string;
   visibility?: 'project' | 'private';
   deleted?: boolean;
+  agentName?: string;
 }) {
   const at = new Date(Date.now() - input.minutesAgo * 60_000);
   await db.insert(projectSessions).values({
@@ -45,6 +46,7 @@ async function seed(input: {
     parentSessionId: input.parent ? sid(input.parent) : null,
     initiatorType: input.initiator?.type ?? null,
     initiatorId: input.initiator?.id ?? null,
+    ...(input.agentName ? { agentName: input.agentName } : {}),
     metadata: {
       ...(input.name ? { name: input.name } : {}),
       ...(input.parent ? { spawned_by_session: sid(input.parent) } : {}),
@@ -94,7 +96,11 @@ beforeAll(async () => {
   }
   await seed({ id: 'my-chat', minutesAgo: 1440, initiator: me, name: 'Apartment rent research' });
   await seed({ id: 'my-helper', minutesAgo: 1441, parent: 'my-chat', initiator: me, name: 'Helper' });
-  await seed({ id: 'teammate-chat', minutesAgo: 1500, initiator: teammate, createdBy: TEAMMATE, name: 'Teammate plan' });
+  await db.execute(
+    sql`insert into auth.users (id, email, instance_id, aud, role, raw_user_meta_data)
+        values (${TEAMMATE}, ${`dana-${tag}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', ${JSON.stringify({ full_name: `Dana ${tag}` })}::jsonb)`,
+  );
+  await seed({ id: 'teammate-chat', minutesAgo: 1500, initiator: teammate, createdBy: TEAMMATE, name: 'Teammate plan', agentName: `pentester-${tag}` });
   await seed({ id: 'legacy-mine', minutesAgo: 1600, initiator: null, name: 'Old unclassified chat' });
   await seed({ id: 'odd%name', minutesAgo: 1700, initiator: me, name: '100% done_list' });
   await seed({
@@ -108,6 +114,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.execute(sql`delete from auth.users where id = ${TEAMMATE}`);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT)); // cascades sessions
 });
@@ -159,6 +166,13 @@ describe('session list filters', () => {
   test('q matches the trigger slug and a session-id prefix', async () => {
     expect(ids((await list({ parent: 'root', q: 'software-fact' })).items)).toEqual(['factory']);
     expect(ids((await list({ q: 'teammate-chat' })).items)).toEqual(['teammate-chat']);
+  });
+
+  test('q matches the owner’s email and name, and the agent', async () => {
+    // The teammate also owns 'private-other'; the viewer may not see it, so it never matches.
+    expect(ids((await list({ q: `dana-${tag}@` })).items)).toEqual(['teammate-chat']);
+    expect(ids((await list({ q: `Dana ${tag}` })).items)).toEqual(['teammate-chat']);
+    expect(ids((await list({ q: `pentester-${tag}` })).items)).toEqual(['teammate-chat']);
   });
 
   test('q treats % and _ literally', async () => {

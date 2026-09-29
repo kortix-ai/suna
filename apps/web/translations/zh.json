@@ -1436,9 +1436,9 @@
       "actions": "会话操作",
       "actionsFor": "{title} 的操作",
       "reviewCount": "等待你审阅：{count}",
-      "expandChildren": "Show {count} spawned sessions",
-      "collapseChildren": "Hide spawned sessions",
-      "showMore": "Show more",
+      "expandChildren": "显示 {count} 个已启动的会话",
+      "collapseChildren": "隐藏已启动的会话",
+      "showMore": "显示更多",
       "brief": {
         "status": "状态",
         "created": "创建时间",
@@ -1549,13 +1549,13 @@
     },
     "loadingMore": "加载中…",
     "loadMoreSessions": "加载更多会话",
-    "startedByLabel": "Started by {name}",
+    "startedByLabel": "由 {name} 启动",
     "startedBy": {
-      "label": "Started by",
-      "all": "All",
-      "mine": "Mine",
-      "others": "Shared",
-      "automated": "Automated"
+      "label": "启动者",
+      "all": "全部",
+      "me": "我的",
+      "others": "共享",
+      "automated": "自动"
     },
     "reminders": "提醒"
   },

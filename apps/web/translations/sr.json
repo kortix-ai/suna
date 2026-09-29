@@ -1436,9 +1436,9 @@
       "actions": "Радње сесије",
       "actionsFor": "Радње за {title}",
       "reviewCount": "Чека преглед: {count}",
-      "expandChildren": "Show {count} spawned sessions",
-      "collapseChildren": "Hide spawned sessions",
-      "showMore": "Show more",
+      "expandChildren": "Prikaži {count} pokrenutih sesija",
+      "collapseChildren": "Sakrij pokrenute sesije",
+      "showMore": "Prikaži više",
       "brief": {
         "status": "Статус",
         "created": "Креирано",
@@ -1549,13 +1549,13 @@
     },
     "loadingMore": "Учитавање…",
     "loadMoreSessions": "Учитајте још сесија",
-    "startedByLabel": "Started by {name}",
+    "startedByLabel": "Pokrenuo {name}",
     "startedBy": {
-      "label": "Started by",
-      "all": "All",
-      "mine": "Mine",
-      "others": "Shared",
-      "automated": "Automated"
+      "label": "Pokrenuo",
+      "all": "Sve",
+      "me": "Moje",
+      "others": "Deljene",
+      "automated": "Automatizovane"
     },
     "reminders": "Подсетници"
   },

@@ -1553,7 +1553,7 @@
     "startedBy": {
       "label": "Started by",
       "all": "All",
-      "mine": "Mine",
+      "me": "Mine",
       "others": "Shared",
       "automated": "Automated"
     },

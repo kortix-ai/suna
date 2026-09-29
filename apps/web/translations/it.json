@@ -1436,9 +1436,9 @@
       "actions": "Azioni della sessione",
       "actionsFor": "Azioni per {title}",
       "reviewCount": "Da rivedere: {count}",
-      "expandChildren": "Show {count} spawned sessions",
-      "collapseChildren": "Hide spawned sessions",
-      "showMore": "Show more",
+      "expandChildren": "Mostra {count} sessioni avviate",
+      "collapseChildren": "Nascondi sessioni avviate",
+      "showMore": "Mostra altro",
       "brief": {
         "status": "Stato",
         "created": "Creata",
@@ -1549,13 +1549,13 @@
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni",
-    "startedByLabel": "Started by {name}",
+    "startedByLabel": "Avviata da {name}",
     "startedBy": {
-      "label": "Started by",
-      "all": "All",
-      "mine": "Mine",
-      "others": "Shared",
-      "automated": "Automated"
+      "label": "Avviata da",
+      "all": "Tutte",
+      "me": "Mie",
+      "others": "Condivise",
+      "automated": "Automatizzate"
     },
     "reminders": "Promemoria"
   },

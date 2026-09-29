@@ -86,15 +86,26 @@ function likePattern(q: string): string {
   return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 }
 
-/** Title, trigger slug / channel (initiator_id), or session-id prefix. The
+/** Title, trigger slug / channel (initiator_id), agent, source, the owner's
+ *  email or name, or a session-id prefix (the branch is the session id). The
  *  title is what `serializeSession` resolves: custom_name, the auto name, or a
- *  runtime conversation title in the opencode_sessions snapshot. */
+ *  runtime conversation title in the opencode_sessions snapshot. The owner is
+ *  already on every row the viewer may see (`owner_email`/`owner_name`). */
 function searchMatchSql(t: SessionTable, q: string): SQL {
   const pattern = likePattern(q);
   return sql`(
     ${t.metadata}->>'custom_name' ilike ${pattern}
     or ${t.metadata}->>'name' ilike ${pattern}
     or ${t.initiatorId} ilike ${pattern}
+    or ${t.agentName} ilike ${pattern}
+    or ${t.metadata}->>'source' ilike ${pattern}
+    or exists (
+      select 1 from auth.users as owner_users
+       where owner_users.id = ${t.createdBy}
+         and (owner_users.email ilike ${pattern}
+              or owner_users.raw_user_meta_data->>'full_name' ilike ${pattern}
+              or owner_users.raw_user_meta_data->>'name' ilike ${pattern})
+    )
     or ${t.sessionId} ilike ${`${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`}
     or exists (
       select 1 from jsonb_array_elements(
@@ -142,12 +153,14 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   return conditions.length ? and(...conditions) : undefined;
 }
 
-/** JS twin of `searchMatchSql`'s title arm, for `search_match: self | child`. */
-export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string): boolean {
+/** JS twin of `searchMatchSql`, for `search_match: self | child`. `ownerText`
+ *  is the owner's resolved email and name. */
+export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, ownerText: string[] = []): boolean {
   const needle = q.toLowerCase();
   const hit = (value: unknown) => typeof value === 'string' && value.toLowerCase().includes(needle);
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId)) return true;
+  if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
+  if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
   const snapshot = Array.isArray(meta.opencode_sessions) ? meta.opencode_sessions : [];
   return snapshot.some((entry) => hit((entry as Record<string, unknown> | null)?.title));

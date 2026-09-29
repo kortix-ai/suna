@@ -1436,9 +1436,9 @@
       "actions": "セッション操作",
       "actionsFor": "{title} の操作",
       "reviewCount": "確認待ち：{count}",
-      "expandChildren": "Show {count} spawned sessions",
-      "collapseChildren": "Hide spawned sessions",
-      "showMore": "Show more",
+      "expandChildren": "起動したセッションを{count}件表示",
+      "collapseChildren": "起動したセッションを非表示",
+      "showMore": "さらに表示",
       "brief": {
         "status": "状態",
         "created": "作成日時",
@@ -1549,13 +1549,13 @@
     },
     "loadingMore": "読み込み中…",
     "loadMoreSessions": "セッションをさらに読み込む",
-    "startedByLabel": "Started by {name}",
+    "startedByLabel": "{name}が開始",
     "startedBy": {
-      "label": "Started by",
-      "all": "All",
-      "mine": "Mine",
-      "others": "Shared",
-      "automated": "Automated"
+      "label": "開始者",
+      "all": "すべて",
+      "me": "自分",
+      "others": "共有",
+      "automated": "自動"
     },
     "reminders": "リマインダー"
   },

@@ -41,13 +41,16 @@ export function SessionStarterMark({
   avatarClassName?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { user } = useAuth();
   if (starter.type === 'member') {
+    // The viewer's own row draws the viewer's avatar, never the "You" label's initial.
+    const metadataName = user?.user_metadata?.full_name ?? user?.user_metadata?.name;
     return (
       <UserAvatar
         size="sm"
         className={avatarClassName}
-        name={starter.isViewer ? undefined : starter.label}
-        email={starter.isViewer ? '' : (session.owner_email ?? '')}
+        name={starter.isViewer ? (typeof metadataName === 'string' ? metadataName : undefined) : starter.label}
+        email={starter.isViewer ? (user?.email ?? '') : (session.owner_email ?? '')}
       />
     );
   }

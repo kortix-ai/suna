@@ -330,7 +330,7 @@ projectsApp.openapi(
     return {
       ...serialized,
       child_count: inventory.childCounts.get(row.sessionId) ?? 0,
-      ...(query.q ? { search_match: sessionRowMatchesSearch(row, query.q) ? 'self' : 'child' } : {}),
+      ...(query.q ? { search_match: sessionRowMatchesSearch(row, query.q, [owner?.email, owner?.name].filter((v): v is string => Boolean(v))) ? 'self' : 'child' } : {}),
     };
   });
 

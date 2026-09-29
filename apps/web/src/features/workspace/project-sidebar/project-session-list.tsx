@@ -861,8 +861,8 @@ function SessionSectionMenu({
 
 /** Chevron + count of the sessions a row spawned. A `span`, not a button: it
  *  lives inside the row's link, so it stops the click before it navigates.
- *  Without an indicator strip beside it, it slides left on hover to stay
- *  clear of the row's `⋯`. */
+ *  Without an indicator strip beside it, it keeps the `⋯` slot free at rest,
+ *  so hovering the row never moves it. */
 function SpawnedToggle({
   count,
   open,
@@ -894,7 +894,9 @@ function SpawnedToggle({
       className={cn(
         'text-muted-foreground hover:text-sidebar-foreground flex shrink-0 items-center gap-0.5 rounded-sm text-xs tabular-nums',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
-        clearOfMenu && 'group-hover/session-list:-translate-x-6',
+        // Reserve the `⋯` slot at rest. A toggle that slid out of the way on
+        // hover moved away from the pointer and put the menu under the click.
+        clearOfMenu && 'mr-6',
       )}
     >
       <CaretRightIcon aria-hidden className={cn('size-3 transition-transform', open && 'rotate-90')} />
