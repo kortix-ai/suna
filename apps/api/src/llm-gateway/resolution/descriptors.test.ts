@@ -322,7 +322,7 @@ describe('managed OpenRouter pool', () => {
   });
 });
 
-describe('managed OpenCode Zen overflow', () => {
+describe('managed OpenCode Zen route', () => {
   const glm = MANAGED_MODELS.find((model) => model.id === 'glm-5.3-flash')!;
   beforeEach(() => {
     config.OPENCODE_ZEN_MANAGED_MODELS = ['glm-5.3-flash'];
@@ -335,15 +335,15 @@ describe('managed OpenCode Zen overflow', () => {
     config.OPENCODE_ZEN_API_URL = undefined;
   });
 
-  test('a listed model fails over from the OpenRouter pool to Zen, billed at the managed price', () => {
+  test('a listed model tries Zen first, billed at the managed price, then the OpenRouter pool', () => {
     const candidates = managedCandidates(glm);
-    expect(candidates.map((candidate) => candidate.provider)).toEqual(['openrouter', 'opencode']);
-    expect(candidates[1]).toMatchObject({
+    expect(candidates.map((candidate) => candidate.provider)).toEqual(['opencode', 'openrouter']);
+    expect(candidates[0]).toMatchObject({
       kind: 'openai-compat', baseUrl: 'https://opencode.ai/zen/v1', apiKey: 'zen-test-key',
       resolvedModel: 'glm-5.3-flash', billingMode: 'credits', markup: 2, pricing: glm.pricing,
       failover: true, publicProvider: 'kortix',
     });
-    expect(candidates[0].failover).toBe(true);
+    expect(candidates[1].failover).toBe(true);
   });
 
   test('an unlisted model or a missing key adds no Zen candidate', () => {
