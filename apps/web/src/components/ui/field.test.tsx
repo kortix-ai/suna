@@ -1,11 +1,11 @@
 /**
  * Characterization test for the Field primitives that stay in field.tsx.
  *
- * KRTX-660 deletes four dead subcomponents (FieldSet, FieldLegend,
- * FieldSeparator, FieldError — nothing imports them and no CSS selector
- * targets their data-slots). This file pins the surviving exports' markup so
- * that deletion is provably behavior-preserving: every assertion here passed
- * before and after the change.
+ * KRTX-660 deletes field.tsx's four dead subcomponents — nothing imports
+ * them and no CSS selector targets their data-slots. This file pins the
+ * surviving exports' markup so that deletion is provably
+ * behavior-preserving: every assertion here passed before and after the
+ * change.
  *
  * `apps/web` has no browser harness, so the render-time contract is asserted
  * through SSR markup (`renderToStaticMarkup`).
