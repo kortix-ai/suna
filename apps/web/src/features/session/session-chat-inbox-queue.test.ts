@@ -157,11 +157,10 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     const chainSend = between(shellSend, 'async function deliverInChain(', 'interface FirstPromptSourcesProps');
     const post = between(shellSend, 'function buildPost(', 'function deliverDetached(');
     const send = between(shellSend, 'const handleSend = useCallback(', 'return { submitted, effectiveSubmission, extraSends, handleSend };');
-    const held = detachedSend.indexOf('void postWhenUploaded(');
     expect(paint).toContain('setSubmission({ text, files: files ?? [] });');
     expect(send).toContain('paintSend(send, env);');
     expect(send).toContain('deliverDetached(send, env, post);');
-    expect(held).toBeGreaterThan(-1);
+    expect(detachedSend).toContain('void postWhenUploaded(');
     // A first send that is not detached paints and mounts the real chat only once its
     // POST is accepted. Until then the hero composer that sent it stays mounted, so a
     // refusal leaves the draft there, mention chips included. A send with uploads is
