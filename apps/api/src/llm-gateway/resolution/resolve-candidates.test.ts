@@ -592,7 +592,7 @@ describe('resolveCandidates — codex + unknown provider', () => {
     expect(await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5')).toEqual([{
       provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test',
       apiKey: 'oauth-token', billingMode: 'none', markup: 0, resolvedModel: 'codex/gpt-5.5',
-      credentialRef: 'selected', poolSecretId: 'selected',
+      credentialRef: 'selected', poolSecretId: 'selected', refreshableCredential: true,
     }]);
   });
 

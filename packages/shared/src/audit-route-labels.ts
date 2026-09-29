@@ -37,6 +37,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /internal/gateway/budget-check': { action: 'gateway.internal.budget.check', title: 'Checked LLM gateway budget' },
   'POST /internal/gateway/models': { action: 'gateway.internal.model.list', title: 'Resolved LLM gateway model catalog' },
   'POST /internal/gateway/pool-rate-limit': { action: 'gateway.internal.pool_key.cool_down', title: 'Cooled down pooled provider key' },
+  'POST /internal/gateway/refresh-credential': { action: 'gateway.internal.login.refresh', title: 'Refreshed a refused ChatGPT login' },
   'POST /internal/gateway/resolve-route': { action: 'gateway.internal.route.resolve', title: 'Resolved LLM model routing' },
   'POST /internal/gateway/resolve-upstream': { action: 'gateway.internal.upstream.resolve', title: 'Resolved LLM upstream provider' },
   'POST /internal/gateway/trace': { action: 'gateway.internal.trace.record', title: 'Recorded LLM gateway trace' },

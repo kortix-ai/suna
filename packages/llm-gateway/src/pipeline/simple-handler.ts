@@ -551,6 +551,9 @@ export async function handleChatCompletions(
       notePoolRateLimit: hooks.notePoolRateLimit
         ? (secretId, seconds) => hooks.notePoolRateLimit!(principal, secretId, seconds)
         : undefined,
+      refreshCredential: hooks.refreshCredential
+        ? (descriptor) => hooks.refreshCredential!(principal, descriptor)
+        : undefined,
       admitCharge: chargeAdmitted,
     },
   );

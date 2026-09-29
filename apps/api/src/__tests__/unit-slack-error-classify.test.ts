@@ -143,6 +143,21 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('api key');
   });
 
+  // A Teams turn on dev (2026-09-29) failed with ChatGPT's own 401. The generic
+  // copy sent the user to "a workspace admin" about "its API key": neither
+  // exists for a ChatGPT login. Only whoever connected the login can fix it.
+  test('a refused ChatGPT login says who reconnects it, not "check the API key"', () => {
+    const body = JSON.stringify({ error: { message: 'Could not parse your authentication token. Please try signing in again.', code: 'unauthorized_unknown' }, status: 401 });
+    for (const message of [body, 'Could not parse your authentication token. Please try signing in again.']) {
+      const r = classifyTurnError({ name: 'APIError', statusCode: 401, providerID: 'kortix', message });
+      expect(r.title).toBe('ChatGPT login needs reconnection');
+      expect(r.text).toContain('ChatGPT accounts');
+      expect(r.text.toLowerCase()).not.toContain('api key');
+    }
+    // Any other 401 keeps the provider-config copy.
+    expect(classifyTurnError({ name: 'APIError', statusCode: 401, message: 'Unauthorized' }).title).toBe('Provider rejected the request');
+  });
+
   test('ProviderAuthError names the provider when providerID is present', () => {
     const r = classifyTurnError({ name: 'ProviderAuthError', providerID: 'anthropic', message: 'bad key' });
     expect(r.title).toBe('Provider rejected the request');

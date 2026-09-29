@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 690,
+  "count": 691,
   "routes": [
     {
       "method": "GET",
@@ -45,6 +45,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/refresh-credential"
     },
     {
       "method": "POST",

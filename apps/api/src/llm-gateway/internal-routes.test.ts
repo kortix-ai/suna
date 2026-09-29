@@ -68,6 +68,17 @@ mock.module('./resolution/resolve-candidates', () => ({
   resolveCandidates: resolveCandidatesMock,
 }));
 
+const refreshCalls: unknown[] = [];
+let refreshResult: { access: string; accountId?: string } | null = null;
+const actualCodex = await import('./credentials/codex');
+mock.module('./credentials/codex', () => ({
+  ...actualCodex,
+  refreshRefusedCodexAccountLogin: async (input: unknown) => {
+    refreshCalls.push(input);
+    return refreshResult;
+  },
+}));
+
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
 
@@ -290,5 +301,50 @@ describe('POST /usage', () => {
     );
     expect(settled.status).toBe(200);
     expect(usageEvents).toHaveLength(1);
+  });
+});
+
+describe('POST /refresh-credential', () => {
+  const ACCOUNT = '22222222-2222-4222-8222-222222222222';
+  const PROJECT = '11111111-1111-4111-8111-111111111111';
+  const USER = '33333333-3333-4333-8333-333333333333';
+  const SECRET = '44444444-4444-4444-8444-444444444444';
+  const body = {
+    principal: { accountId: ACCOUNT, projectId: PROJECT, userId: USER, sessionId: 'session-1' },
+    secretId: SECRET,
+    failedKeySha256: 'a'.repeat(64),
+  };
+  const post = (payload: unknown, authorization = `Bearer ${TOKEN}`) =>
+    app().request('http://test/refresh-credential', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization },
+      body: JSON.stringify(payload),
+    });
+
+  test('returns only the new token and its ChatGPT headers', async () => {
+    refreshCalls.length = 0;
+    refreshResult = { access: 'fresh-access', accountId: 'chatgpt-acct' };
+    const res = await post(body);
+    expect(res.status).toBe(200);
+    const { descriptor } = (await res.json()) as { descriptor: Record<string, unknown> };
+    expect(Object.keys(descriptor).sort()).toEqual(['apiKey', 'headers']);
+    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct' } });
+    expect(refreshCalls).toEqual([{
+      projectId: PROJECT, accountId: ACCOUNT, userId: USER, sessionId: 'session-1', secretId: SECRET, failedKeySha256: 'a'.repeat(64),
+    }]);
+  });
+
+  test('a login that cannot be refreshed answers null', async () => {
+    refreshResult = null;
+    const res = await post(body);
+    expect(await res.json()).toEqual({ descriptor: null });
+  });
+
+  test('refuses a malformed request and a caller without the internal token', async () => {
+    refreshCalls.length = 0;
+    expect((await post({ ...body, failedKeySha256: 'not-a-digest' })).status).toBe(400);
+    expect((await post({ ...body, principal: { accountId: ACCOUNT, userId: USER } })).status).toBe(400);
+    expect((await post(body, 'Bearer wrong')).status).toBe(401);
+    expect(refreshCalls).toEqual([]);
   });
 });
