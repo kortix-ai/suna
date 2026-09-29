@@ -178,6 +178,11 @@ Rules:
   anything else opens in the system browser. Closing that window cancels the
   pairing only when no approval arrives within 10 s: the agent learns of an
   approval on its next 2 s poll.
+- The approval window is a dialog, not a second app window. On macOS it is a
+  sheet with no close button. **Esc** and the page's **Back** close it; so
+  does any navigation to an app page outside `/tunnel/*` and `/auth*`
+  (`isApprovalDialogPath` in `src/nav-rules.js`). Each counts as closing the
+  window, with the same 10 s grace. The app never loads inside the dialog.
 - A packaged macOS app must run from `/Applications`; a translocated copy would
   leave the service pointing at a path that disappears.
 - **Isolation, one identity per backend.** A packaged **stable** build on
