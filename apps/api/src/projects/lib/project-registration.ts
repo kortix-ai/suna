@@ -10,6 +10,11 @@ import { grantProjectRole } from './access';
 import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
 import { encryptProjectSecret } from '../secrets';
+import {
+  type ProjectGitWriteAuth,
+  buildProjectGitConnectionValues,
+  buildProjectGitMetadata,
+} from './project-git-write';
 import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
@@ -34,33 +39,20 @@ type RegistrationInput = {
 
 async function registerLinkedProject(input: RegistrationInput): Promise<ProjectRow> {
   const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
-  const owner = input.repo.full_name.split('/')[0] ?? null;
   const now = new Date();
   const githubApp = input.auth.kind === 'github_app' ? input.auth.installation : null;
-  const authMethod = githubApp ? 'github_app' : 'project_credential';
-  const metadata = {
-    ...input.projectMetadata,
-    git: {
-      url: input.repo.clone_url,
-      default_branch: input.defaultBranch,
-      provider: 'github',
-      owner,
-      name: input.repo.name,
-      external_repo_id: String(input.repo.id),
-      managed: input.managed ?? false,
-      auth: githubApp
-        ? { method: authMethod, installation_id: githubApp.installationId }
-        : { method: authMethod },
-    },
-    github: {
-      repo_id: String(input.repo.id),
-      full_name: input.repo.full_name,
-      html_url: input.repo.html_url,
-      private: input.repo.private,
-      auth_source: githubApp ? 'app_installation' : 'pat',
-      ...(githubApp ? { installation_id: githubApp.installationId } : {}),
-    },
-  };
+  const auth: ProjectGitWriteAuth = githubApp
+    ? {
+        kind: 'github_app',
+        installationId: githubApp.installationId,
+        permissions: githubApp.permissions,
+      }
+    : { kind: 'project_credential' };
+  const metadata = buildProjectGitMetadata(input.repo, auth, input.projectMetadata, {
+    defaultBranch: input.defaultBranch,
+    managed: input.managed ?? false,
+    githubInstallationId: true,
+  });
 
   const row = await db.transaction(async (tx) => {
     const [project] = await tx
@@ -105,40 +97,22 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       credentialRef = credential.credentialId;
     }
 
-    const connection = {
-      provider: 'github',
-      repoUrl: input.repo.clone_url,
-      repoOwner: owner,
-      repoName: input.repo.name,
-      externalRepoId: String(input.repo.id),
-      managed: input.managed ?? false,
+    const connectionValues = buildProjectGitConnectionValues(input.repo, auth, {
       defaultBranch: input.defaultBranch,
-      authMethod,
-      installationId: githubApp?.installationId ?? null,
       credentialRef,
-      permissions: githubApp?.permissions ?? {},
-      visibility: input.repo.private ? 'private' : 'public',
-      status: 'connected',
-      lastValidatedAt: now,
-      lastErrorCode: null,
-      lastErrorMessage: null,
-      metadata: {
-        full_name: input.repo.full_name,
-        html_url: input.repo.html_url,
-        ssh_url: input.repo.ssh_url,
-      },
-      updatedAt: now,
-    };
+      now,
+      managed: input.managed ?? false,
+    });
     await tx
       .insert(projectGitConnections)
       .values({
         accountId: input.accountId,
         projectId: project.projectId,
-        ...connection,
+        ...connectionValues,
       })
       .onConflictDoUpdate({
         target: projectGitConnections.projectId,
-        set: connection,
+        set: connectionValues,
       })
       .returning();
 

@@ -1,0 +1,44 @@
+-- Migration: drop_orphaned_execution_status_enum
+--
+-- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
+set lock_timeout = '2s';
+set statement_timeout = '30s';
+--
+-- kortix.execution_status was created by the baseline
+-- (20260621094136410_baseline.sql) solely for kortix.executions.status.
+-- kortix.executions was dropped as a discontinued, prod-absent table by
+-- 20260622073727110_drop-discontinued-tables.sql, whose comment claimed
+-- execution_status "is shared with a kept table, so it stays" -- verified
+-- false: no migration, no drizzle snapshot and no kortix.ts declaration ever
+-- gave any other column this type (grep across packages/db/migrations,
+-- packages/db/drizzle/meta and packages/db/src/schema/kortix.ts on
+-- origin/main finds zero other users), and `grep -rn execution_status
+-- apps/ packages/ --include='*.ts'` (excluding migrations) on origin/main
+-- returns nothing -- no deployed or in-flight code reads or writes it.
+--
+-- prod's baseline was faked (packages/db/MIGRATIONS.md "The baseline"), so
+-- the baseline's CREATE TYPE never ran there: read-only prod query confirms
+-- `SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+-- WHERE t.typname = 'execution_status' AND n.nspname = 'kortix'` returns no
+-- row -- the type does not exist on prod at all. dev and staging (unfaked)
+-- still carry it as harmless orphaned debris: all 6 labels present, zero
+-- columns of this type on either (`SELECT count(*) FROM pg_attribute a JOIN
+-- pg_type t ON t.oid = a.atttypid ... WHERE t.typname = 'execution_status'`
+-- = 0 on dev; kortix.executions is also absent on dev and staging, matching
+-- prod).
+--
+-- Fix: drop the type everywhere instead of building it on prod. Building an
+-- enum type nothing will ever reference just to satisfy a presence check
+-- resurrects dead schema; dropping it removes the object from what the
+-- migrations define, so DB Drift Sentinel's prod-presence job (which has no
+-- waiver mechanism for enum values -- only for indexes/constraints, see
+-- verify-live-schema-waivers.ts) has nothing left to report missing.
+--
+-- mixed-version-safe: no deployed or in-flight API version reads or writes
+-- kortix.execution_status or kortix.executions -- the table was already
+-- retired from every environment (including prod) on 2026-06-22, over three
+-- months before this migration, and the type has never had any other
+-- consumer. There is no rollback/mixed-version window where old code still
+-- depends on it.
+
+DROP TYPE IF EXISTS kortix.execution_status;
