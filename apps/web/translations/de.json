@@ -19106,6 +19106,7 @@
     "copyProjectId": "Projekt-ID",
     "copySessionId": "Sitzungs-ID",
     "copySessionLink": "Sitzungslink",
+    "copySessionTitle": "Sitzungstitel",
     "copyAction": "{label} kopieren",
     "copied": "{label} kopiert",
     "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"

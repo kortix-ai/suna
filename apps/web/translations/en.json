@@ -19119,6 +19119,7 @@
     "copyProjectId": "project ID",
     "copySessionId": "session ID",
     "copySessionLink": "session link",
+    "copySessionTitle": "session title",
     "copyAction": "Copy {label}",
     "copied": "Copied {label}",
     "copyFailed": "Could not copy to the clipboard"

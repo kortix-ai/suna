@@ -19106,6 +19106,7 @@
     "copyProjectId": "ID progetto",
     "copySessionId": "ID sessione",
     "copySessionLink": "link della sessione",
+    "copySessionTitle": "titolo della sessione",
     "copyAction": "Copia {label}",
     "copied": "Copiato: {label}",
     "copyFailed": "Impossibile copiare negli appunti"

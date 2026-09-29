@@ -19106,6 +19106,7 @@
     "copyProjectId": "ID de proyecto",
     "copySessionId": "ID de sesión",
     "copySessionLink": "enlace de la sesión",
+    "copySessionTitle": "título de la sesión",
     "copyAction": "Copiar {label}",
     "copied": "Copiado: {label}",
     "copyFailed": "No se pudo copiar al portapapeles"

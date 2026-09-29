@@ -19106,6 +19106,7 @@
     "copyProjectId": "项目 ID",
     "copySessionId": "会话 ID",
     "copySessionLink": "会话链接",
+    "copySessionTitle": "会话标题",
     "copyAction": "复制{label}",
     "copied": "已复制{label}",
     "copyFailed": "无法复制到剪贴板"

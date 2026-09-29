@@ -19106,6 +19106,7 @@
     "copyProjectId": "ИД пројекта",
     "copySessionId": "ИД сесије",
     "copySessionLink": "везу сесије",
+    "copySessionTitle": "наслов сесије",
     "copyAction": "Копирај {label}",
     "copied": "Копирано: {label}",
     "copyFailed": "Копирање у оставу није успело"

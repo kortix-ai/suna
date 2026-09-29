@@ -19106,6 +19106,7 @@
     "copyProjectId": "プロジェクト ID",
     "copySessionId": "セッション ID",
     "copySessionLink": "セッションのリンク",
+    "copySessionTitle": "セッションのタイトル",
     "copyAction": "{label}をコピー",
     "copied": "{label}をコピーしました",
     "copyFailed": "クリップボードにコピーできませんでした"
