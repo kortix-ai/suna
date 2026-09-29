@@ -6,12 +6,16 @@ updates:
   # JS/TS dependencies (pnpm uses the npm ecosystem).
   - package-ecosystem: "npm"
     directory: "/"
-    # main is the dev trunk; PRs target it so they get CI-gated before merge.
+    # main is the dev trunk. A pull request into main runs no CI.
     target-branch: "main"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 20
+    # Before merging, check out the branch and run
+    # `pnpm install --frozen-lockfile --lockfile-only --ignore-scripts`, then
+    # `pnpm test`. #7518 merged a package.json bump whose root pnpm-lock.yaml
+    # was stale: every Tests lane on main then failed at install.
     labels: ["dependencies"]
     groups:
       # Batch low-risk minor/patch bumps into one PR to cut review noise.

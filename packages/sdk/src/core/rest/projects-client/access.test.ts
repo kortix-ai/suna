@@ -24,6 +24,7 @@ import {
   updateProjectAccess,
   updateProjectGroupGrant,
   type ProjectAccessMember,
+  type ProjectResourceGrant,
 } from './access';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -285,6 +286,26 @@ test('listProjectResourceGrants GETs the resource-grants list', async () => {
   expect(result.grants).toEqual([]);
 });
 
+test('listProjectResourceGrants carries a grant to everyone in the project', async () => {
+  const everyone: ProjectResourceGrant = {
+    grant_id: 'gr-everyone',
+    resource_type: 'agent',
+    resource_id: 'support-bot',
+    principal_type: 'project',
+    principal_id: 'P1',
+    principal_label: 'Acme',
+    granted_by: null,
+    created_at: '2026-09-25T00:00:00.000Z',
+    expires_at: null,
+  };
+  nextResponse = {
+    status: 200,
+    body: { resources: { agents: [], skills: [] }, grants: [everyone] },
+  };
+  const result = await listProjectResourceGrants('P1');
+  expect(result.grants[0]?.principal_type).toBe('project');
+});
+
 test('createProjectResourceGrant POSTs snake_case fields, omitting expires_at when not given', async () => {
   nextResponse = { status: 200, body: { grant_id: 'gr1' } };
   await createProjectResourceGrant('P1', {
@@ -372,6 +393,14 @@ test('resolveApproval POSTs only the decision', async () => {
 // A decision covers exactly the call that asked for it. The 'session' /
 // 'session_all' scopes were removed because one click pre-authorised every later
 // call of the tool, whatever its arguments — the gate's whole purpose.
+test('resolveApproval sends the approver note to the agent when given', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await resolveApproval('P1', 'ex1', 'deny', { note: '  Reword the second paragraph  ' });
+  expect(last().body).toEqual({ decision: 'deny', note: 'Reword the second paragraph' });
+  await resolveApproval('P1', 'ex1', 'deny', { note: '   ' });
+  expect(last().body).toEqual({ decision: 'deny' });
+});
+
 test('resolveApproval sends no scope, so nothing can widen a decision', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await resolveApproval('P1', 'ex1', 'deny');

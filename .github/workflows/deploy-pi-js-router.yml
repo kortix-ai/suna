@@ -43,23 +43,36 @@ jobs:
   deploy:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
-    # The secrets live in the `pi-js` ENVIRONMENT, not on the repo: repo-level
-    # secret writes on this repository answer HTTP 400 even for a repo admin
-    # (2026-09-05), environment-scoped ones do not.
+    # The `pi-js` environment stays as the deploy gate. The credentials live
+    # in the AWS Secrets Manager blob kortix-ci-env (.github/actions/aws-env).
     environment: pi-js
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
       TARGET_ORIGIN: ${{ inputs.target_origin }}
       OPEN_ACCESS: ${{ inputs.open_access && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
+      # PI_JS_ACCESS_TOKEN is optional: open_access=true deploys without it.
+      - name: Check out the aws-env action
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      - name: Read credentials from AWS Secrets Manager
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
+            PT_PREVIEW_TOKEN=kortix-ci-env:PI_JS_PREVIEW_TOKEN
+            ACCESS_TOKEN=kortix-ci-env:PI_JS_ACCESS_TOKEN?
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: The target must be a Platinum DEV cell origin and must answer /health; the name must have an access policy
-        env:
-          PT_PREVIEW_TOKEN: ${{ secrets.PI_JS_PREVIEW_TOKEN }}
-          ACCESS_TOKEN: ${{ secrets.PI_JS_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           case "$TARGET_ORIGIN" in
@@ -84,9 +97,6 @@ jobs:
         run: npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${TARGET_ORIGIN%/}" --var "OPEN_ACCESS:${OPEN_ACCESS}"
       - name: Store the Worker's secrets
         working-directory: infra/cloudflare/workers/pi-js-router
-        env:
-          PT_PREVIEW_TOKEN: ${{ secrets.PI_JS_PREVIEW_TOKEN }}
-          ACCESS_TOKEN: ${{ secrets.PI_JS_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           printf '%s' "$PT_PREVIEW_TOKEN" | npx --yes wrangler@4 secret put PT_PREVIEW_TOKEN

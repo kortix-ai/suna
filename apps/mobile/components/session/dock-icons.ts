@@ -5,11 +5,18 @@
  * Typed as a total Record, so adding a DockIconKey without an icon fails
  * typecheck rather than rendering nothing.
  */
-import { ClockIcon as Clock, KeyIcon as Key, UsersIcon as Users, type AppIcon } from '@/lib/icons';
+import {
+  ClockIcon as Clock,
+  ConnectorsIcon,
+  KeyIcon as Key,
+  UsersIcon as Users,
+  type AppIcon,
+} from '@/lib/icons';
 import type { DockIconKey } from '@/lib/session/dock-menu';
 
 export const DOCK_ICONS: Record<DockIconKey, AppIcon> = {
   schedules: Clock,
   secrets: Key,
   members: Users,
+  connectors: ConnectorsIcon,
 };

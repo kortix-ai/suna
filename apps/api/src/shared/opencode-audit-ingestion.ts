@@ -7,7 +7,10 @@ const PHASE_RE = /^[a-z0-9_.:-]{1,32}$/i;
 const ERROR_CODE_RE = /^[a-z0-9_.:-]{1,256}$/i;
 const OUTCOMES = new Set(['success', 'failure', 'denied', 'pending']);
 const INITIATOR_TYPES = new Set(['human', 'agent', 'service_account', 'system']);
-const MAX_BATCH_SIZE = 200;
+/** One relay batch may carry up to this many events. Exported so the ingest
+ *  route's statement chunking can default to the same number and the two ends
+ *  of the boundary cannot drift apart. */
+export const MAX_BATCH_SIZE = 200;
 const MAX_SUMMARY_BYTES = 16_384;
 const SECRET_VALUE_RE =
   /(?:bearer\s+[a-z0-9._~+/=-]+|sk-[a-z0-9_-]{12,}|gh[opusr]_[a-z0-9_]{12,}|kortix_(?:pat|sbx)_[a-z0-9_-]+|(?:token|secret|password|api[_-]?key)=\S+)/i;

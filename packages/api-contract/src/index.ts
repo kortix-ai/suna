@@ -50,7 +50,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * below are deprecated aliases kept for published-SDK compatibility.
  */
 export const FeatureFlagMapSchema = z.object({
-  agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
@@ -59,10 +58,10 @@ export const FeatureFlagMapSchema = z.object({
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),
+  reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),
-  session_transcript_history: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
@@ -480,6 +479,43 @@ export const ConnectionMetadataSchema = z
       });
     }
   });
+/**
+ * One grant that names who may use a shared account. `project` = everyone with
+ * access to the project (`principal_id` is the project id).
+ */
+export const ConnectionShareSchema = z.object({
+  /** The `role_assignments` id; revoke it to take this audience away. */
+  grant_id: z.string().uuid(),
+  principal_type: z.enum(['member', 'group', 'project']),
+  principal_id: z.string(),
+  /** A member's email, a group's name, or the project's name. */
+  label: z.string(),
+  expires_at: z.string().nullable(),
+});
+export type ConnectionShare = z.infer<typeof ConnectionShareSchema>;
+
+/** Live status of the machine behind a computer account. */
+export const ComputerMachineStatusSchema = z.object({
+  online: z.boolean(),
+  last_heartbeat_at: z.string().nullable(),
+  hostname: z.string().optional(),
+  platform: z.string().optional(),
+  /**
+   * The access mode the machine last reported (`tunnel.access.state`):
+   * `ask` needs its owner to allow each grant on the computer, `always` runs,
+   * `off` refuses every call. `granted_until` is the end of the current `ask`
+   * grant. `null` or absent: the agent never reported one (treat as `always`).
+   */
+  access: z
+    .object({
+      mode: z.enum(['ask', 'always', 'off']),
+      granted_until: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+export type ComputerMachineStatus = z.infer<typeof ComputerMachineStatusSchema>;
+
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
@@ -495,6 +531,28 @@ export const ConnectionSchema = z.object({
    * provider exposes none or the connection holds no authorized account.
    */
   connected_as: z.string().nullable().optional(),
+  /**
+   * Who may use a shared (`owner_type: project`) account. Empty, or holding a
+   * `project` grant, means everyone in the project; otherwise only the named
+   * members and groups, in private sessions. Absent on every other owner type.
+   */
+  shared_with: z.array(ConnectionShareSchema).optional(),
+  /**
+   * `false` = the caller is outside this shared account's audience and sees it
+   * only because they manage the project's connections. It cannot be bound to
+   * a session. Absent on older servers: treat as `true`.
+   */
+  usable: z.boolean().optional(),
+  /**
+   * Computer accounts only: the paired machine this account reaches. `null`
+   * when the machine was unpaired. Absent on every other connector.
+   */
+  tunnel_id: z.string().uuid().nullable().optional(),
+  /**
+   * Computer accounts only: live status of the paired machine, or `null` when
+   * it was unpaired. Absent on every other connector.
+   */
+  machine: ComputerMachineStatusSchema.nullable().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 
@@ -1094,9 +1152,8 @@ export const SessionStartFailureSchema = z
     category: z.enum([
       'provider-capacity',
       'git-auth',
-      // LEGACY, never produced since one mechanism started serving every provider
-      // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). Kept on the wire
-      // because sandbox rows written before that change still carry it.
+      // LEGACY, never produced since one mechanism started serving every provider.
+      // Kept on the wire because sandbox rows written before that change still carry it.
       'unsupported-secret-delivery',
       // The PROJECT's own boundary policy is unusable — two secrets claiming the same
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
@@ -1371,8 +1428,7 @@ export const SecretEgressPolicySchema = z.object({
   /**
    * Where the credential is attached, for LEGACY injection rows.
    *
-   * Optional since the exposure/usage model (docs/specs/
-   * 2026-08-19-secrets-exposure-usage-model.md §6): an egress-enforced secret
+   * Optional since the exposure/usage model: an egress-enforced secret
    * is served by HANDLE SUBSTITUTION, so the policy is a host list and there is
    * no slot to name. A row that still carries `inject` keeps injecting exactly
    * as before.

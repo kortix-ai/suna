@@ -749,6 +749,7 @@ const TURN_INSTRUCTIONS = [
   '- Need to ask the user something with DISCRETE choices? Use the built-in `question` tool. It renders a real Adaptive Card — one tap per option for a single question, a form with a picker per question for several, a multi-select when you pass `multiple`, and a text box when you pass no options. It returns at once: END your turn, and the answer arrives as a NEW turn with full context.',
   '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
+  '- Put a link the user should open (connect an app, open a PR, review a draft) alone on its own line as `[Short action](url)` — Teams renders it as a button.',
 ].join('\n');
 
 const NO_VISION_NOTE = [

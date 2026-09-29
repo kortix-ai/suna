@@ -2,7 +2,6 @@
  * Session transcript reads.
  */
 
-import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -18,14 +17,14 @@ import {
 import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/transcript
-// Compact server-side transcript read for project automation. Unlike the raw
-// /v1/p sandbox proxy, this endpoint is callable with project-scoped session
-// tokens and strips tool inputs/outputs before returning messages.
+// Server-side transcript read for project automation. Unlike the raw /v1/p
+// sandbox proxy, this endpoint is callable with project-scoped session tokens.
 //
 // Two shapes, one route. `shape=compact` (the default, unchanged for every
-// existing caller) returns the digest rows. `shape=sync` returns OpenCode
-// message envelopes verbatim — the shape the SDK sync store hydrates from —
-// and is served from the durable mirror only.
+// existing caller) returns the digest rows, without tool inputs/outputs.
+// `shape=sync` returns OpenCode message envelopes with every part 1:1 except
+// attachment bytes — the shape the SDK sync store hydrates from — and is
+// served from the durable mirror only, in windows bounded by count and size.
 //
 // BOTH shapes carry `source` ('live' | 'mirror' | 'none') and `complete`. A
 // non-running session no longer answers `unavailable` when a mirror exists: it
@@ -33,7 +32,8 @@ import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 // merged.
 //
 // `shape=sync` pages BACKWARDS with `before=<message id>`, taken from the
-// previous window's `next_cursor`, and reports `total`. Without them a reader
+// previous window's `next_cursor`, and reports `total`. `child=<ses_…>` reads
+// a sub-agent's own saved transcript instead of the root conversation. Without them a reader
 // could only ever see the newest `limit` messages of a history the mirror
 // retains in full — the startup view asks for 40, and 25 of 375 mirrored dev
 // sessions already hold more than that.
@@ -53,6 +53,8 @@ projectsApp.openapi(
         shape: z.enum(['compact', 'sync']).optional(),
         history: z.enum(['true', 'false']).optional(),
         before: z.string().optional(),
+        child: z.string().optional(),
+        detail: z.enum(['compact', 'full']).optional(),
       }),
     },
     responses: {
@@ -88,11 +90,9 @@ projectsApp.openapi(
     );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
+    // The saved-history read: it serves the mirror only for the session's
+    // current OpenCode root.
     const history = c.req.query('history') === 'true';
-    if (history) {
-      const gate = requireFeatureFlag(c, loaded.row.metadata, 'session_transcript_history');
-      if (gate) return gate;
-    }
 
     if (c.req.query('shape') === 'sync') {
       // `before` walks older windows of the SAME mirror. A cursor naming no
@@ -102,6 +102,13 @@ projectsApp.openapi(
       if (before !== undefined && (before.length === 0 || before.length > 128)) {
         return c.json({ error: 'Invalid cursor' }, 400);
       }
+      // A sub-agent's own saved transcript, by its OpenCode session id. Only
+      // rows stored under THIS session can answer, so an id from anywhere
+      // else reads as nothing saved.
+      const child = c.req.query('child');
+      if (child !== undefined && !/^ses_[A-Za-z0-9]{1,124}$/.test(child)) {
+        return c.json({ error: 'Invalid child session' }, 400);
+      }
       try {
         return c.json(
           await buildSessionTranscriptSyncEnvelope({
@@ -109,6 +116,7 @@ projectsApp.openapi(
             limit: limit.value,
             requireCurrentRoot: history,
             before: before ?? null,
+            child: child ?? null,
           }),
         );
       } catch (err) {
@@ -126,6 +134,7 @@ projectsApp.openapi(
       userId: loaded.userId,
       limit: limit.value,
       maxChars: maxChars.value,
+      full: c.req.query('detail') === 'full',
     });
     return c.json(transcript);
   },

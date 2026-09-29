@@ -1,0 +1,6 @@
+{
+  "$comment": "Which Terraform root under infra/terraform/environments/ is CURRENTLY the declared-authoritative one for each environment's API/gateway. infra/terraform/scripts/test_region_colocation.py reads this file (no AWS credentials) to know which roots to check for aws_region == database_region. A root not listed here (e.g. dev/, staging/ while they remain live-but-unmigrated) is not gated by the enforcer, but stays documented as known-divergent in its own variables.tf until the apply runbook in PR #7844's decommission step retires it and this file is updated to point at it — or the entry here is simply removed once the legacy root is deleted.",
+  "dev": "dev-us-east-2",
+  "staging": "staging-eu-west-2",
+  "prod": "prod"
+}

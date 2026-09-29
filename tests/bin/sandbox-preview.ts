@@ -3,6 +3,9 @@ import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
+  PREVIEW_SUITE_REFUSED,
+  PREVIEW_SUITE_SUPERSEDED,
+  previewSuiteSuperseded,
   type SandboxPreviewProvider,
   branchEnvSandboxName,
   runSandboxPreview,
@@ -11,6 +14,7 @@ import {
   type SandboxPreviewDeploymentInput,
   deployPlatinumPreview,
   reconcileDaytonaPreviews,
+  runPlatinumPreviewSuite,
   reconcilePlatinumPreviews,
   teardownDaytonaPreview,
   teardownPlatinumPreview,
@@ -46,6 +50,25 @@ async function writeOutput(name: string, outputValue: string): Promise<void> {
   const output = process.env.GITHUB_OUTPUT;
   if (output) await appendFile(output, `${name}=${outputValue}\n`);
   console.log(`[sandbox-preview] ${name}=${outputValue}`);
+}
+
+/** False when GitHub cannot answer: only a positive answer stops a suite. */
+async function pullRequestSuperseded(
+  repository: string,
+  prNumber: number,
+  sha: string,
+  token: string,
+): Promise<boolean> {
+  const response = await fetch(`https://api.github.com/repos/${repository}/pulls/${prNumber}`, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) return false;
+  return previewSuiteSuperseded(await response.json(), sha);
 }
 
 async function activePreviewPullRequests(
@@ -133,10 +156,10 @@ if (action === 'deploy') {
   // environment: the sandbox is reused instead of replaced, so the URL is
   // stable across pushes (see branchEnvSandboxName).
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
-  // A PR preview is a gate, so it runs the suite. A branch environment is a
-  // place to work: the suite is ~10 of the ~14 minutes a deploy takes and
-  // proves nothing the stack health check has not, so it is off by default
-  // there. PREVIEW_RUN_TESTS=1 forces it back on for a deliberate full run.
+  // A branch environment is a place to work: the suite is 40-80 min and proves
+  // nothing the stack health check has not, so it is off by default there.
+  // PREVIEW_RUN_TESTS=1 (the workflow's dispatch) forces a deliberate full run. The deploy never runs it: it is the
+  // separate `suite` action, so the workflow publishes the origin first.
   const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
   // PREVIEW_PUBLIC_ORIGIN is the stable name a proxy serves the environment at.
   // The stack is configured with it; the provider's own hostname stays the
@@ -147,7 +170,6 @@ if (action === 'deploy') {
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
-    runTests,
     repository,
     ref: value('PREVIEW_REF', sha),
     sha,
@@ -175,23 +197,43 @@ if (action === 'deploy') {
   await writeOutput('provider', result.provider);
   await writeOutput('sandbox_id', result.sandboxId ?? '');
   await writeOutput('preview_url', result.previewUrl ?? '');
-  // WHETHER THE SUITE RAN, from the one place that decided it. The workflow's
-  // status line and its sticky comment both used to assume it always did, and
-  // said `pnpm test -- --target-full` passed over every redeploy that skipped
-  // it — the reassuring half of the sentence on a deploy that proved nothing.
+  // WHETHER THE SUITE WILL RUN, from the one place that decided it. The
+  // workflow gates its `suite` step on this, and its status line and sticky
+  // comment read the suite step's own outcome — never "tested" from a deploy.
   // Emitted rather than re-derived from PREVIEW_RUN_TESTS in YAML: the rule is
   // `PREVIEW_RUN_TESTS === '1' || !branchEnv`, and a second copy of it in the
   // workflow is a second copy that can drift.
-  await writeOutput('tests_ran', runTests ? '1' : '0');
-  // A branch environment is PERSISTENT, so `/_tests/` keeps whatever the last
-  // run that did test left there. Linking it from a deploy that skipped the
-  // suite presents an older run's report — or an empty directory — as this
-  // deploy's result.
-  await writeOutput(
-    'report_url',
-    runTests && result.previewUrl ? `${result.previewUrl}/_tests/` : '',
-  );
+  await writeOutput('suite', runTests ? '1' : '0');
   process.exitCode = result.exitCode;
+} else if (action === 'suite') {
+  // `pnpm test -- --target-full` against the sandbox this run's deploy step
+  // returned. Only a run that tests links `/_tests/`: a persistent sandbox
+  // keeps whatever an earlier run left there.
+  const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
+  const sha = required('PREVIEW_SHA');
+  // A push (or removing the label) makes this run's commit stale. Stop the
+  // suite then, so the newer commit's redeploy is not queued behind it.
+  const token = process.env.GH_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim();
+  const superseded = token ? () => pullRequestSuperseded(repository, prNumber, sha, token) : undefined;
+  const exitCode = await runPlatinumPreviewSuite({
+    repository,
+    sha,
+    ...(superseded ? { superseded } : {}),
+    prNumber,
+    runId: value('GITHUB_RUN_ID', `local-${Date.now()}`),
+    runAttempt: value('GITHUB_RUN_ATTEMPT', '1'),
+    root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
+    sandboxId: required('PREVIEW_SANDBOX_ID'),
+    platinum,
+    ...(process.env.PREVIEW_BRANCH_ENV?.trim() ? { branchEnv: process.env.PREVIEW_BRANCH_ENV.trim() } : {}),
+  });
+  // A refused or superseded suite wrote no report; `/_tests/` still holds an older run's.
+  const previewUrl = value('PREVIEW_URL');
+  const wroteReport = exitCode !== PREVIEW_SUITE_REFUSED && exitCode !== PREVIEW_SUITE_SUPERSEDED;
+  await writeOutput('report_url', previewUrl && wroteReport ? `${previewUrl.replace(/\/$/, '')}/_tests/` : '');
+  // Superseded is not a failure of this commit: the step succeeds and says why.
+  await writeOutput('superseded', exitCode === PREVIEW_SUITE_SUPERSEDED ? '1' : '0');
+  process.exitCode = exitCode === PREVIEW_SUITE_SUPERSEDED ? 0 : exitCode;
 } else if (action === 'teardown') {
   // A persistent environment's sandbox is named after the BRANCH, so teardown
   // has to be told which branch or it deletes nothing and the box runs forever.

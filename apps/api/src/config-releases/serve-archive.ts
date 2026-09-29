@@ -1,5 +1,5 @@
 /**
- * Serve one config archive (docs/specs/config-releases.md, "Download path").
+ * Serve one config archive.
  *
  * 1. The tree ID must name a tree object in the project's mirror; a warm miss
  *    gets one forced fetch.
@@ -152,8 +152,7 @@ async function tryServeFromStore(
  * `forcedMirror()` fetches first. A tree the warm mirror lacks gets one forced
  * fetch: another API replica may have built the descriptor from a newer tip.
  *
- * A repository replacement (CFG-7, `docs/specs/config-releases.md` §"Download
- * path") can make the tree genuinely UNREACHABLE from the mirror forever: the
+ * A repository replacement can make the tree genuinely UNREACHABLE from the mirror forever: the
  * project's origin now serves a second repository with unrelated history, so
  * no fetch of that origin ever re-creates the old tree object. The mirror
  * check alone would 404 a legitimate former archive whenever the request

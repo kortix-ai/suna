@@ -42,6 +42,31 @@ describe('ApprovalRequest', () => {
     expect(html).not.toContain('Always allow');
   });
 
+  test("shows the agent's description as unverified, next to the parameters", () => {
+    const html = renderToStaticMarkup(
+      <ApprovalRequest
+        request={{
+          ...request,
+          argsPreview: { draft_id: 'r-1' },
+          approvalContext: 'Sends draft r-1 to a@example.test, subject "Q3"',
+        }}
+        onDecision={() => undefined}
+      />,
+    );
+    expect(html).toContain('Agent&#x27;s description');
+    expect(html).toContain('not verified');
+    expect(html).toContain('Sends draft r-1 to a@example.test');
+    expect(html).toContain('r-1');
+  });
+
+  test('offers a message to the agent with the decision', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalRequest request={request} onDecision={() => undefined} />,
+    );
+    expect(html).toContain('Message to the agent (optional)');
+    expect(html).not.toContain('Agent&#x27;s description');
+  });
+
   test('a SHORTENED value still leaves the call approvable', () => {
     // The shape the gateway writes for a mail carrying an attachment: every
     // field is legible, the blob is described, `reviewComplete` is false. This

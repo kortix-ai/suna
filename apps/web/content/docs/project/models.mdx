@@ -97,8 +97,8 @@ control. `Auto` clears the variant.
 - The sandbox learns the project's servable model set from the API at every
   boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
   picker), so a model the picker offers always resolves in the runtime.
-- A project default per model lives in Customize → Gateway → Routing →
-  **Generation defaults** (`model_generation_config`). It fills only a field
+- A project default per model lives in Customize → Models → Routing →
+  Advanced → **Generation defaults** (`model_generation_config`). It fills only a field
   the request left unset, so a session's variant always wins.
 
 ## How auto picks a model
@@ -124,9 +124,13 @@ Two costs are easy to miss on a paid cloud account:
 
 - **Platform fee.** Kortix adds a 10% fee, billed as credits, on top of what
   your own provider charges. Free-tier and self-hosted accounts are exempt.
-- **Silent failover.** If your BYOK key hits a rate limit or billing error
-  mid-turn, Kortix retries on a managed model and bills your credits instead
-  of failing the session.
+- **Fallback chains.** If your BYOK key or ChatGPT plan fails, for example on
+  its usage limit, Kortix runs the fallback chain you set in **Customize →
+  Models → Routing**. The chain also runs when every key or ChatGPT account the
+  request may use is paused after a rate limit. With **Retry on: Any error**, it
+  also runs when they need reconnection. A Kortix model in that chain bills your
+  credits, and runs only when your account can pay for it. The platform's own
+  fallback never moves a BYOK or ChatGPT request onto credits.
 
 If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.
@@ -191,14 +195,24 @@ shared with the project never uses a key granted to one member, so the list
 leaves those keys out and saving one is refused. Changing a shared session to a
 model that only such keys reach is refused too, instead of failing every turn.
 
+Sharing a private session, with the whole project or with chosen people, is
+checked the same way. When its model ran only on keys that work in your
+private sessions, such as your own ChatGPT connection, the session switches to
+every key shared with the whole project for that provider. When no such key
+runs the model, the share is refused with `409 SHARED_SESSION_NEEDS_PROJECT_KEY`
+and the session stays private. Share a key with the whole project, or switch
+the session to another model, then share it.
+
 ### Sessions that name only a model
 
 The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
 runs only on pooled keys, the session gets every key its creator may use for
 that provider, up to ten, so they rotate. The agent must be allowed the key's
-name in its `secrets`. Changing a running session to such a model does the
-same when the session has no selection for that provider. A selection made on
-purpose, an empty one included, is left alone.
+name in its `secrets`. Otherwise the turn fails with `agent_grant_excludes`:
+add the name, for example `CODEX_AUTH_JSON` for ChatGPT, to the agent's
+`secrets`, or choose another agent. Changing a running session to such a model
+does the same when the session has no selection for that provider. A selection
+made on purpose, an empty one included, is left alone.
 
 Your own keys and ChatGPT connections count only in a session that is private
 to you and acts on your behalf. In a shared session only keys shared with the
@@ -233,15 +247,41 @@ again. Reconnecting keeps the account's name, access, and session selections.
 Only the member who connected an account can reconnect it. Account owners and
 admins can delete any account.
 
+When an account's login stops working, the account shows **Needs
+reconnection**. This happens when ChatGPT rejects the renewal of the login, or
+when the stored login cannot be read. ChatGPT can also refuse a login before
+it expires. Kortix then renews the login once and retries the request. If the
+renewal is refused too, the account needs reconnection, and the request moves
+to the next selected account when there is one. A brief outage at ChatGPT does
+not mark an account. The member who connected the account sees **Reconnect** beside it.
+**Session overrides → Provider keys** shows the same mark. A turn that fails
+names the accounts that need reconnection. The account stays selected, and
+reconnecting it or a successful renewal clears the mark.
+
+A turn that fails for this reason also shows the fix beside its error:
+
+- `provider_reauth_required` shows **Reconnect ChatGPT**. It appears in your
+  own private session, and in a shared session that selects ChatGPT accounts.
+- `provider_not_connected` shows **Connect ChatGPT**. It appears only in your
+  own private session without a ChatGPT selection. A session with a selection
+  is fixed in **Session overrides → Provider keys** instead.
+
+Both open your ChatGPT accounts. After you connect or reconnect, send your
+message again. In Slack and Microsoft Teams the same failure reads **ChatGPT
+login needs reconnection**.
+
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is
-the default in their own private session. A session shared with the project
+the default in their own private session. A connection marked **Needs
+reconnection** is the default only when all of the member's connections are
+marked. A session shared with the project
 never uses a member's own connection: select a connection shared with the whole
 project for it. Scheduled sessions cannot use an **Only you** account either.
 Another member's shared connection requires an explicit selection. The legacy
 project login remains available when the member has no usable connection of
-their own. A shared gateway key cannot borrow its creator's private ChatGPT
-connection.
+their own. A project gateway key uses the connections shared with
+**Everyone in this project**. It never uses its creator's private connection or
+a connection restricted to specific members.
 
 A project manager can turn off **ChatGPT subscription** for the whole project
 in **Models → Providers**. The picker then hides the connect entry.
@@ -260,3 +300,42 @@ without losing these drafts. Reloading the page discards unsaved changes.
 If a save fails, the panel stays open and shows the error. Correct the selection
 or retry. Providers already saved remain saved; unfinished changes stay in the
 panel.
+
+## Use the gateway from Claude Code
+
+The gateway serves the Anthropic Messages API at `POST /v1/messages`. Claude
+Code and Anthropic SDKs can call any gateway model through it.
+
+1. Create a key in **Customize → Gateway**, tab **Gateway**.
+2. Start Claude Code with the gateway as its API endpoint:
+
+```bash
+ANTHROPIC_BASE_URL=https://gateway.kortix.com \
+ANTHROPIC_AUTH_TOKEN=kortix_gw_... \
+claude --model kimi-k3
+```
+
+The gateway reads the key from `Authorization: Bearer` or from `x-api-key`, so
+`ANTHROPIC_API_KEY` also works.
+
+The gateway translates these Claude Code fields for every provider:
+
+- `thinking: {type: "adaptive"}` with `output_config.effort` becomes
+  `reasoning_effort`. See [Thinking effort](#thinking-effort).
+- Usage on the final `message_delta` carries `input_tokens`,
+  `cache_read_input_tokens`, and `cache_creation_input_tokens`. Claude Code
+  uses them for `/context` and auto-compaction.
+- Images that a tool returns, such as a `Read` of a screenshot, reach the model
+  in a user message after the tool result.
+- A provider stream that ends before completion returns an `api_error` event,
+  so Claude Code retries the turn.
+
+Limits:
+
+- `/v1/messages/count_tokens` returns `404`. Claude Code then estimates
+  counts from characters.
+- Reasoning text is not returned as `thinking` blocks.
+- ChatGPT models (`codex/*`) need a ChatGPT connection shared with
+  **Everyone in this project**. A gateway key cannot use a private connection.
+- Claude Code cannot set a context window per model. Set
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the smallest window you use.

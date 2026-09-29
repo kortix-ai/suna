@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ensureOpencodeConfigDeps } from '../harness/open-code/opencode-config-deps'
+import { ensureOpencodeConfigDeps } from '@/harness/open-code/opencode-config-deps'
 
 const STARTER_GITIGNORE = join(import.meta.dir, '../../../../packages/starter/templates/base/.gitignore')
 

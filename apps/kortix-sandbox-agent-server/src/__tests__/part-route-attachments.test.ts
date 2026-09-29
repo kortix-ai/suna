@@ -7,10 +7,15 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { OFFLOAD_PLACEHOLDER_URL } from '../harness/open-code/attachment-offload'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { createPartRouter } from '../routes/part'
-import { createOpenCodeAttachmentService } from '../harness/open-code/queries'
+import { OFFLOAD_PLACEHOLDER_URL } from '@/harness/open-code/attachment-offload'
+import type { Config } from '@/lib/config/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { createPartRouter } from '@/routes/kortix/part'
+import { createOpenCodeAttachmentService } from '@/harness/open-code/queries'
+
+const TOKEN = 'test-sandbox-token'
+const AUTH = { headers: { Authorization: `Bearer ${TOKEN}` } }
+const cfg = { sandboxToken: TOKEN } as Config
 
 let root: string
 let server: ReturnType<typeof Bun.serve> | null = null
@@ -67,21 +72,21 @@ describe('GET /kortix/part/:s/:m/:p', () => {
       ],
     }
     server = Bun.serve({ port: 0, fetch: () => Response.json(message) })
-    const app = createPartRouter(createOpenCodeAttachmentService(fakeOpencode(server.port as number)))
+    const app = createPartRouter(cfg, createOpenCodeAttachmentService(fakeOpencode(server.port as number)))
 
-    const inline = await app.request('http://d/ses/msg_1/prt_inline')
+    const inline = await app.request('http://d/ses/msg_1/prt_inline', AUTH)
     expect(inline.status).toBe(200)
     expect(Buffer.from(await inline.arrayBuffer()).toString()).toBe('inline-bytes')
 
-    const off = await app.request('http://d/ses/msg_1/prt_off')
+    const off = await app.request('http://d/ses/msg_1/prt_off', AUTH)
     expect(off.status).toBe(200)
     expect(off.headers.get('content-type')).toBe('image/png')
     expect(Buffer.from(await off.arrayBuffer()).equals(PNG)).toBe(true)
 
-    const gone = await app.request('http://d/ses/msg_1/prt_gone')
+    const gone = await app.request('http://d/ses/msg_1/prt_gone', AUTH)
     expect(gone.status).toBe(410)
 
-    const nope = await app.request('http://d/ses/msg_1/prt_nope')
+    const nope = await app.request('http://d/ses/msg_1/prt_nope', AUTH)
     expect(nope.status).toBe(404)
   })
 })
@@ -109,13 +114,13 @@ describe('offloaded attachment read through OpenCode (marker stripped by its sch
       ],
     }
     server = Bun.serve({ port: 0, fetch: () => Response.json(message) })
-    const app = createPartRouter(createOpenCodeAttachmentService(fakeOpencode(server.port as number), { sidecarDir }))
+    const app = createPartRouter(cfg, createOpenCodeAttachmentService(fakeOpencode(server.port as number), { sidecarDir }))
 
-    const byId = await app.request('http://d/ses/msg_1/prt_byid')
+    const byId = await app.request('http://d/ses/msg_1/prt_byid', AUTH)
     expect(byId.status).toBe(200)
     expect(Buffer.from(await byId.arrayBuffer()).equals(PNG)).toBe(true)
 
-    const fallback = await app.request('http://d/ses/msg_1/prt_nosidecar')
+    const fallback = await app.request('http://d/ses/msg_1/prt_nosidecar', AUTH)
     expect(fallback.status).toBe(200)
     expect(Buffer.from(await fallback.arrayBuffer()).byteLength).toBe(68) // the 1×1 placeholder itself
   })

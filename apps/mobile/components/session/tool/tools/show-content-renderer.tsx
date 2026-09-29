@@ -36,6 +36,7 @@ import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
 import { buildStaticFileLocalUrl, wsFavicon } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
@@ -56,7 +57,6 @@ import {
 } from '@/lib/icons';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { isLocalSandboxFilePath, languageFromPath, parseFrontmatter } from '@/lib/session/tool-part-accessors';
-import { safeHttpUrl } from '@/lib/session/tools/web-fetch';
 import { isShowBinaryPath, parseShowAspectRatio, showContentBranch, showDomain } from '@/lib/session/tools/web-show';
 import { webSpace } from '@/lib/session/user-message';
 import { decidePreviewNavigation } from '@/lib/utils/html-embed';
@@ -72,6 +72,11 @@ export const SHOW_MEDIA_HEIGHT = 420;
 const SHOW_HTML_HEIGHT = 540;
 /** Web `px-5` / `py-5`. */
 const TEXT_PAD = webSpace(5);
+/**
+ * Extra space under the last line of a text, markdown, or code file (Jay,
+ * 2026-09-27): the end of a file must not sit on the frame's bottom edge.
+ */
+const TEXT_END_SPACE = 20;
 /** Pressed feedback on a tappable image or link (same value as the image-search grid). */
 const PRESSED_OPACITY = 0.8;
 
@@ -209,7 +214,7 @@ function TextScroll({ fill, children }: { fill: boolean; children: ReactNode }) 
     <ToolScroll
       maxHeight={fill ? undefined : TURN_SPACE.outputMaxHeight}
       style={fill ? { flex: 1 } : undefined}
-      contentContainerStyle={{ padding: TEXT_PAD }}
+      contentContainerStyle={{ padding: TEXT_PAD, paddingBottom: TEXT_PAD + TEXT_END_SPACE }}
     >
       {children}
     </ToolScroll>
@@ -552,7 +557,10 @@ export function ShowContentRenderer({
           <ToolScroll
             maxHeight={fill ? undefined : SHOW_MEDIA_HEIGHT}
             style={fill ? { flex: 1 } : undefined}
-            contentContainerStyle={{ padding: TURN_SPACE.cardPad }}
+            contentContainerStyle={{
+              padding: TURN_SPACE.cardPad,
+              paddingBottom: TURN_SPACE.cardPad + TEXT_END_SPACE,
+            }}
           >
             {isMarkdownFile ? (
               <MarkdownBody content={textFile.data} />

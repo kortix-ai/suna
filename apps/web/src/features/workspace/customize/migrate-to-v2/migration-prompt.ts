@@ -6,8 +6,7 @@
  * human to review. Nothing here merges anything — that's the whole point of
  * routing config changes through the same CR path as any other edit.
  *
- * Simplified by the 2026-07-05 redirect (spec docs/specs/2026-07-05-agent-
- * first-config-unification.md, "one home per concern"): v1's `.md` frontmatter
+ * Simplified by the 2026-07-05 redirect ("one home per concern"): v1's `.md` frontmatter
  * IS already valid v2 OpenCode behavior — a stock OpenCode agent file, no
  * Kortix-specific split. The manifest side therefore touches ONLY governance
  * (kortix.toml's `[[agents]]` → kortix.yaml's `agents:` map). The same change

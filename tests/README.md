@@ -2,6 +2,14 @@
 
 `pnpm test` is the only repository-level test command.
 
+The API package's direct `scripts/test.sh` command selects one to four Bun
+workers from available memory. It reserves 2 GiB for the agent and OS and
+budgets 4 GiB per worker. It restarts workers every 80 test files because a
+single long-lived Bun worker retained 8.9 GiB during a full suite. Set
+`KORTIX_API_TEST_WORKERS` only on a dedicated
+runner with measured headroom. A detached suite continues after an agent turn
+ends; check and stop that process before retrying a memory-guarded turn.
+
 The default run executes six lanes concurrently:
 
 1. Black-box REST and CLI flows against local Supabase, API, and gateway.
@@ -61,17 +69,20 @@ Desktop UI parity is part of the browser lane in `27-desktop-parity.spec.ts`.
 Run the same journey in native Electron with `E2E_DESKTOP_NATIVE=1` and
 `E2E_GREP='27 — desktop parity'`.
 
+The pre-merge gate is the developer's machine: run `pnpm test` (and `--full` for
+browser-visible changes) before you merge into `main`. A pull request into
+`main` runs no GitHub Actions job unless a person adds the `test` label (six
+lanes, once) or the `preview` label (below).
+
 GitHub Actions uses `.github/workflows/tests.yml` for every local-profile run.
-It runs on every push to `main`, on a pull request into `staging`, on a pull
-request labelled `test` or `preview`, and on manual dispatch. The label
-re-triggers an open pull request without a push. A plain pull request into
-`main` does not run it; its check shows as skipped. The push-to-`main`
-run blocks nothing — `main` and `staging` require no status check — and a red
-run comments on the offending commit with the failing lane names. A cancelled
-run means a newer commit superseded it. Deployed-target runs are separate:
-`deploy-preview.yml` (`--target-full` against a preview origin) and
-`tests-release.yml` (`--target-*-full` against deployed staging, whose
-`full suite + quality gates` job is the only required check in the repository).
+It runs on every push to `main`, on a pull request into `staging`, once when a
+person adds the `test` label to a pull request, and on manual dispatch. The push-to-`main` run is a post-merge safety net: it blocks nothing,
+and a red run comments on the offending commit with the failing lane names. A
+cancelled run means a newer commit superseded it. Deployed-target runs are
+separate: `deploy-preview.yml` (`--target-full` against a preview origin, on
+dispatch only; the `preview` label deploys without it) and `tests-release.yml` (`--target-*-full` against deployed
+staging, whose `full suite + quality gates` job is the only required check in
+the repository).
 
 The run is six lanes in parallel, each natively on one Blacksmith runner
 (`CI_RUNNER_L`, 8 vCPU / 32 GB). Core and
@@ -112,7 +123,7 @@ Add the `preview` label to a same-repository pull request into `main`.
    when Platinum infrastructure fails.
 5. The sandbox generates the standard `kortix self-host` Compose distribution.
 6. One overlay adds Caddy, Mailpit, the report mount, and loopback PostgreSQL.
-7. The sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
+7. On a dispatch only, the sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
 8. The workflow posts the preview URL and `/_tests/` report URL to the pull
    request. It also creates a GitHub Deployment for `preview/pr-<number>`.
 
@@ -131,8 +142,8 @@ exclusions and all other browser journey exclusions fail the preview test.
 Use **Run workflow** to select `platinum` or `daytona` explicitly for one
 provider proof. A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
-A push to a labelled branch redeploys its environment in place, and the label
-stays. Removing the label or deleting the branch deletes the sandbox; closing
+A push to a labelled branch starts nothing; re-add the label to deploy the new
+head. The label never runs the suite (step 7); a dispatch does. Removing the label or deleting the branch deletes the sandbox; closing
 the pull request does not. A scheduled reconciler deletes environments whose
 branch no longer exists.
 
@@ -340,6 +351,24 @@ await ctx.step("owner invites a new email -> 201 pending invite", async () => {
 A flow must cover the complete observable sequence. Include authentication,
 setup, action, read-back proof, failure paths, and cleanup when those steps are
 part of the product contract.
+
+### One flow body, every harness
+
+A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
+instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1`, which boots
+OpenCode, and `RUN-1-pi`, which runs the same body on pi. The pi variant uses a
+shared seeded project with the `pi_harness` flag on, maps to spec `RUN-1`
+through `meta.specId`, and carries the `harness-pi` tag
+(`bun bin/ke2e.ts run --tag harness-pi` runs only pi).
+
+Drive these flows through `src/fixtures/session-run.ts`, which speaks only the
+Kortix session routes: `bootSession` (boot, prove the harness from
+`/kortix/health`, wait for the boot prompt's turn to end), `sendPrompt`
+(`POST /prompts`), `waitForTurn` (`GET /turn`), `readTranscript` and
+`waitForAssistantText` (`GET /transcript`), and `watchSessionEvents`
+(`GET /events`). Never call a harness's own REST API from a flow. The one
+exception is `abortTurn`, the Stop the web sends, until a Kortix abort route
+exists.
 
 The local profile uses real local services. It creates confirmed Supabase users,
 PostgreSQL rows, HTTP requests, and temporary bare Git repositories. It disables

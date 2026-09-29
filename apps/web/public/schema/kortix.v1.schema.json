@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kortix.com/schema/kortix.v1.schema.json",
   "title": "Kortix manifest (kortix_version 1)",
-  "description": "kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance OVERLAY (connectors/kortix_permissions/env grants); absence means an unrestricted default agent (adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at runtime — see docs/specs/2026-07-05-agent-first-config-unification.md §1.5).",
+  "description": "kortix.toml / kortix.yaml, schema version 1 — `[[agents]]` is a per-agent governance OVERLAY (connectors/kortix_permissions/env grants); absence means an unrestricted default agent (adopt-to-govern back-compat). `[[channels]]` is accepted (validated, though dead at runtime).",
   "type": "object",
   "required": [
     "kortix_version"
@@ -119,6 +119,9 @@
               "disk": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "container_runtime": {
+                "type": "boolean"
               }
             },
             "oneOf": [

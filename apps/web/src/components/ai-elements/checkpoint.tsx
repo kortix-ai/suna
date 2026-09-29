@@ -28,6 +28,7 @@ export const CheckpointIcon = ({ className, children, ...props }: CheckpointIcon
 export type CheckpointLabelProps = HTMLAttributes<HTMLSpanElement>;
 
 export const CheckpointLabel = ({ className, children, ...props }: CheckpointLabelProps) => (
+  // Non-clickable status text: Label bakes cursor-pointer, keep the default.
   <Label className={cn('min-w-0 cursor-default truncate px-1 font-medium', className)} {...props}>
     {children}
   </Label>

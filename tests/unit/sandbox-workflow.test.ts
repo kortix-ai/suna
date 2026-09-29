@@ -194,38 +194,42 @@ describe('native test-lane workflow', () => {
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
     // Staging sits behind Vercel SSO: every authenticated page 302s to
     // vercel.com/sso-api without this bypass secret, which playwright.config
-    // turns into `x-vercel-protection-bypass`. Restored in #6415.
-    expect(release).toContain(
-      'VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}',
-    );
+    // turns into `x-vercel-protection-bypass`. Restored in #6415. The
+    // credentials come from AWS Secrets Manager (.github/actions/aws-env), so
+    // every staging-facing job must read them itself.
+    for (const job of ['  sweep-before:', '  api:', '  browser:', '  sweep-after:']) {
+      const start = release.indexOf(`\n${job}\n`);
+      expect(start, `${job.trim()} job`).toBeGreaterThan(-1);
+      const next = release.slice(start + job.length + 2).search(/\n {2}[a-z0-9-]+:\n/);
+      const block = release.slice(start, next === -1 ? undefined : start + job.length + 2 + next);
+      expect(block).toContain('uses: ./.aws-env/.github/actions/aws-env');
+      expect(block).toContain('id-token: write');
+      expect(block).toMatch(/^ {12}VERCEL_AUTOMATION_BYPASS_SECRET$/m);
+      expect(block).toContain('WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD');
+    }
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
   });
 
-  test('gates the local suite on promotes and on an opt-in label, never on every main PR', () => {
-    // 2026-09-18. Every PR into `main` used to wait ~11 min (68 min worst
-    // case) for a suite that gated nothing: `main` and `staging` have NO
-    // required status checks. Keep this test and the workflow header in sync.
+  test('runs the local suite after a merge, on a release pull request, or when a person adds `test`', () => {
+    // 2026-09-28. Labels ran the suite on nearly every pull request into
+    // `main`: every agent PR carried `preview`, and each push re-ran six lanes.
+    // Into `main`, only the act of adding `test` runs it, once; a push does not.
     expect(testWorkflow).toContain('branches: [main, staging]');
-    expect(testWorkflow).not.toContain('branches: [main, staging, prod]');
-
-    // Adding the label to an already-open PR must re-trigger the workflow, or
-    // the opt-in silently needs a push to take effect.
-    expect(testWorkflow).toContain(
-      'types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]',
-    );
-
-    // The four clauses of the gate, asserted inside the `lane` job block so
-    // moving the `if:` onto another job fails here. `contains(<array>, 'test')`
-    // compares whole elements, so `no-tests-needed` cannot match.
+    expect(testWorkflow).toContain('types: [opened, reopened, synchronize, ready_for_review, labeled]');
+    expect(testWorkflow).not.toContain('labels.*.name');
+    expect(testWorkflow).not.toContain("'preview'");
     const laneJob = testWorkflow.slice(
       testWorkflow.indexOf('\n  lane:'),
       testWorkflow.indexOf('\n  trunk-report:'),
     );
     expect(laneJob).toContain("github.event_name != 'pull_request'");
-    expect(laneJob).toContain("|| github.base_ref == 'staging'");
-    expect(laneJob).toContain("|| contains(github.event.pull_request.labels.*.name, 'test')");
-    expect(laneJob).toContain("|| contains(github.event.pull_request.labels.*.name, 'preview')");
+    expect(laneJob).toContain("|| (github.base_ref == 'staging' && github.event.action != 'labeled')");
+    expect(laneJob).toContain("|| (github.event.action == 'labeled' && github.event.label.name == 'test')");
+    // A later push must not cancel the run a person asked for.
+    expect(testWorkflow).toContain(
+      "group: tests-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}",
+    );
     expect(laneJob).toContain('fail-fast: false');
     // `trunk-report` finds failed lanes by `endswith("lane")` on this name.
     expect(laneJob).toContain('name: ${{ matrix.lane }} lane');
@@ -235,6 +239,35 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toContain('workflow_call');
     expect(testWorkflow).not.toContain('inputs.mode');
     expect(testWorkflow).not.toMatch(/^  decide:/m);
+  });
+
+  test('no workflow runs a job on a pull request into main by itself', () => {
+    // A pull request into `main` is mergeable the moment it opens. CI runs on
+    // pull requests into `staging` and `prod`, and after the merge on `main`.
+    // Two workflows listen to pull requests into `main`, and each runs a job
+    // only when a person adds its label: tests.yml (`test`) and
+    // deploy-preview.yml (`preview`). Both gates are pinned above.
+    const labelGated = new Set(['tests.yml', 'deploy-preview.yml']);
+    const dir = resolve(root, '.github/workflows');
+    const offenders = readdirSync(dir)
+      .filter((file) => /\.ya?ml$/.test(file) && !labelGated.has(file))
+      .filter((file) => {
+        // Walk the top-level `on:` block line by line: a pull request trigger
+        // is an offender unless its `branches:` list exists and omits `main`.
+        const lines = readFileSync(resolve(dir, file), 'utf8').split('\n');
+        const on = lines.indexOf('on:');
+        if (on < 0) return false;
+        const end = lines.findIndex((line, i) => i > on && /^\S/.test(line));
+        const block = lines.slice(on + 1, end < 0 ? undefined : end);
+        return block.some((line, i) => {
+          if (!/^  pull_request(_target)?:/.test(line)) return false;
+          const next = block.slice(i + 1).findIndex((l) => /^  \S/.test(l));
+          const body = block.slice(i + 1, next < 0 ? undefined : i + 1 + next);
+          const branches = body.find((l) => /^    branches:/.test(l));
+          return !branches || /\bmain\b/.test(branches);
+        });
+      });
+    expect(offenders).toEqual([]);
   });
 
   test('the dev trunk tests its own latest commit, and cannot block anything', () => {
@@ -248,12 +281,14 @@ describe('native test-lane workflow', () => {
 
     // Per-ref group: a PR run (refs/pull/N/merge) can never cancel the trunk.
     expect(testWorkflow).toContain('group: tests-${{ github.ref }}');
-    expect(testWorkflow).toContain('cancel-in-progress: true');
+    // A PR cancels its superseded run; a push to main queues, so a burst of
+    // merges still ends with a verdict instead of all-cancelled.
+    expect(testWorkflow).toContain("cancel-in-progress: ${{ github.event_name != 'push' }}");
 
     const report = testWorkflow.slice(testWorkflow.indexOf('\n  trunk-report:'));
     expect(report).toContain('needs: lane');
     // A lane that hits `timeout-minutes` concludes `cancelled`, not `failure`,
-    // so `failure()` would miss it. `cancelled()` covers the superseded run.
+    // so `failure()` would miss it. `cancelled()` covers a replaced pending run.
     expect(report).toContain(
       "if: github.event_name == 'push' && !cancelled() && needs.lane.result != 'success'",
     );
@@ -327,36 +362,96 @@ describe('the preview status tells the truth about the suite', () => {
   );
   const deployScript = readFileSync(resolve(root, 'tests/bin/sandbox-preview.ts'), 'utf8');
 
-  test('the deploy reports whether it tested, from the value it decided with', () => {
+  test('the deploy reports whether this run tests, from the value it decided with', () => {
     // One authority. Re-deriving `PREVIEW_RUN_TESTS === '1'` in YAML would be a
     // second copy of a rule that is really `... || !branchEnv`.
     expect(deployScript).toContain("const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;");
-    expect(deployScript).toContain("await writeOutput('tests_ran', runTests ? '1' : '0');");
-  });
-
-  test('a skipped suite links no report — the persistent box still holds the last one', () => {
-    // Asserted on the CONDITION, not the whole call: the formatter wraps this
-    // line and a byte-exact expectation would fail on its wrapping rather than
-    // on the rule.
-    const report = deployScript.slice(deployScript.indexOf("await writeOutput(\n    'report_url'"));
-    expect(report.slice(0, 200)).toContain(
-      "runTests && result.previewUrl ? `${result.previewUrl}/_tests/` : ''",
-    );
-  });
-
-  test('both surfaces read it, and neither says "tested" without it', () => {
-    for (const surface of ['TESTS_RAN: ${{ steps.preview.outputs.tests_ran }}']) {
-      // Once for the deployment status, once for the sticky comment.
-      expect(previewWorkflow.split(surface).length - 1).toBe(2);
-    }
+    expect(deployScript).toContain("await writeOutput('suite', runTests ? '1' : '0');");
     expect(previewWorkflow).toContain(
-      'if [ "$PREVIEW_OUTCOME" = success ] && [ "$TESTS_RAN" = 1 ]; then',
+      "if: steps.preview.outcome == 'success' && steps.preview.outputs.suite == '1'",
     );
-    expect(previewWorkflow).toContain("title='## Preview environment - live; NOT tested'");
-    expect(previewWorkflow).toContain("description='Full self-host preview deployed; target-full did not run'");
-    // The old collapse: success alone meant tested.
-    expect(previewWorkflow).not.toContain(
-      "if [ \"$PREVIEW_OUTCOME\" = success ]; then\n            title='## Preview environment - live and tested'",
+  });
+
+  test('only the suite links a report — the persistent box still holds the last one', () => {
+    const suiteAction = deployScript.slice(deployScript.indexOf("} else if (action === 'suite') {"));
+    expect(suiteAction.slice(0, 1800)).toMatch(/await writeOutput\(\s*'report_url'/);
+    // A refused suite (it no longer serves the commit) links no report.
+    expect(suiteAction.slice(0, 1800)).toContain('exitCode !== PREVIEW_SUITE_REFUSED');
+    const deployAction = deployScript.slice(0, deployScript.indexOf("} else if (action === 'suite') {"));
+    expect(deployAction).not.toContain('report_url');
+  });
+
+  test('the origin is published before the suite starts, and "tested" comes only from the suite step', () => {
+    const at = (needle: string) => {
+      const index = previewWorkflow.indexOf(needle);
+      expect(index, needle).toBeGreaterThan(-1);
+      return index;
+    };
+    const deploy = at('- name: Deploy the preview stack');
+    const status = at('- name: Publish GitHub deployment result');
+    const early = at('- name: Publish the preview on the pull request');
+    const suite = at('- name: Run pnpm test -- --target-full against the preview');
+    const final = at('- name: Update the preview comment with the suite result');
+    expect(deploy).toBeLessThan(status);
+    expect(status).toBeLessThan(suite);
+    expect(early).toBeLessThan(suite);
+    expect(suite).toBeLessThan(final);
+    // The early comment never carries a suite outcome; the final one reads the
+    // suite step's own outcome.
+    expect(previewWorkflow.slice(early, suite)).toContain('SUITE_OUTCOME: ""');
+    // A suite a newer commit superseded reports that, not a failure.
+    expect(previewWorkflow.slice(final)).toContain(
+      "SUITE_OUTCOME: ${{ steps.suite.outputs.superseded == '1' && 'superseded' || steps.suite.outcome || 'cancelled' }}",
     );
+    expect(previewWorkflow.match(/bash scripts\/ci\/preview-sticky-comment\.sh/g)).toHaveLength(2);
+    // The deployment status describes the deploy, never the suite.
+    expect(previewWorkflow.slice(status, early)).not.toMatch(/target-full|tested/i);
+    // A failed suite still fails the job.
+    expect(previewWorkflow).toContain(
+      "if: steps.preview.outcome != 'success' || steps.suite.outcome == 'failure'",
+    );
+  });
+});
+
+/**
+ * The `preview` label is one explicit request for a deploy (~7 min). It never
+ * starts the 40-80 min deployed suite; only a dispatch does.
+ *
+ * 2026-09-28: every PR carried the label and every label ran `--target-full`.
+ * Five ran at once, shared one preview GitHub App, hit its secondary rate
+ * limit, and each ran ~80 min to red. A push never starts a run either.
+ */
+describe('the preview label is one fast deploy, and a superseded run never deploys', () => {
+  const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
+  const revalidate = previewWorkflow.slice(
+    previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
+    previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
+  );
+
+  test('only an explicit act starts a run, and only a dispatch runs the suite', () => {
+    expect(previewWorkflow).toContain(
+      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
+    );
+    expect(previewWorkflow).toContain('types: [labeled, unlabeled]');
+    expect(previewWorkflow).not.toContain('synchronize');
+  });
+
+  test('a moved head, a removed label, or a deleted branch cancels the run instead of deploying', () => {
+    expect(revalidate).toContain('supersede "approved ${COMMIT}; head is now ${current}."');
+    expect(revalidate).toContain('supersede "the preview label was removed."');
+    expect(revalidate).toContain('git/ref/heads/${BRANCH}');
+    expect(revalidate).toContain('gh run cancel "$GITHUB_RUN_ID"');
+    // Superseded is not a failure of this commit: no red check. (A lost write
+    // permission still is.)
+    expect(revalidate).not.toContain('is stale');
+    expect(revalidate).not.toContain('label was removed before deployment');
+    expect(previewWorkflow).toContain('BRANCH: ${{ needs.authorize.outputs.head_branch }}');
+    expect(previewWorkflow).toMatch(/deployments: write\n\s+# A superseded run cancels itself[^\n]*\n\s+actions: write/);
+  });
+
+  test('a cancelled run neither comments nor re-points a stable hostname', () => {
+    const comment = previewWorkflow.slice(previewWorkflow.indexOf('- name: Publish the preview on the pull request'));
+    expect(comment.split('\n')[1]).toContain('if: ${{ !cancelled() }}');
+    expect(previewWorkflow).not.toContain("if: always() && needs.authorize.outputs.public_worker != ''");
   });
 });

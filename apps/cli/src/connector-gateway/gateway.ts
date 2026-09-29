@@ -78,17 +78,18 @@ export async function callWithApprovalHandoff<T = unknown>(
   connector: string,
   action: string,
   args: Record<string, unknown>,
-  options: { account?: string | null } = {},
+  options: { account?: string | null; approvalContext?: string | null } = {},
 ): Promise<ConnectorCallResult<T>> {
   // Only forward a real name. `parseExecArgs` turns a bare `--account` into the
   // string 'true', which is a flag typo, not an account — sending it would deny
   // the call with a confusing "no account named true".
   const account = options.account?.trim();
-  return client.call<T>(
-    `${connector}.${action}`,
-    args,
-    account && account !== 'true' ? { account } : {},
-  );
+  // Same flag-typo guard: a bare `--reason` is 'true', not a description.
+  const approvalContext = options.approvalContext?.trim();
+  return client.call<T>(`${connector}.${action}`, args, {
+    ...(account && account !== 'true' ? { account } : {}),
+    ...(approvalContext && approvalContext !== 'true' ? { approvalContext } : {}),
+  });
 }
 
 export interface ConnectLinkResult {
@@ -155,6 +156,12 @@ export async function mintConnectLink(opts: {
    * would 400 every connect against an API that predates the field.
    */
   owner?: 'me' | 'project';
+  /**
+   * The name to suggest for the NEW account ("Dad's Gmail"). The human sees it
+   * prefilled in the connect dialog and may change it. Sent only when named,
+   * for the same old-API reason as `owner`.
+   */
+  label?: string;
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
@@ -165,6 +172,7 @@ export async function mintConnectLink(opts: {
         slug: opts.slug,
         ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
         ...(opts.owner ? { owner: opts.owner } : {}),
+        ...(opts.label ? { label: opts.label } : {}),
       },
     );
     if (link?.url) {
@@ -259,6 +267,31 @@ export async function mintSecretLink(opts: {
       ? { descriptions: opts.descriptions }
       : {}),
   });
+}
+
+/**
+ * Store secret value(s) the caller already HAS — e.g. a key the human pasted in
+ * chat. Same route as `kortix secrets set`; the API applies the caller's
+ * secret-write permission. `connector` keeps the value server-side.
+ */
+export async function setSecrets(opts: {
+  values: Record<string, string>;
+  scope?: 'runtime' | 'connector';
+  projectOverride?: string;
+}): Promise<string[]> {
+  const entries = Object.entries(opts.values);
+  if (entries.length === 0) throw new CliError('at least one NAME: value pair is required', 'USAGE');
+  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  const saved: string[] = [];
+  for (const [name, value] of entries) {
+    await client.post(`/projects/${projectId}/secrets`, {
+      name,
+      value,
+      ...(opts.scope === 'connector' ? { strategy: 'broker', consumer: 'connector' } : {}),
+    });
+    saved.push(name.toUpperCase());
+  }
+  return saved;
 }
 
 export type BrokerMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';

@@ -160,7 +160,8 @@ describe('web ECS migration', () => {
     expect(buildJobs.match(/push: false/g)).toHaveLength(3);
     expect(buildJobs.match(/platforms: linux\/amd64/g)).toHaveLength(3);
     expect(workflow).toContain("github.event.action == 'labeled'");
-    expect(workflow).toContain("github.event.action == 'synchronize'");
+    // A push never deploys: adding the label is the one explicit trigger.
+    expect(workflow).not.toContain('synchronize');
     // The label used to be STRIPPED on every push; a labelled preview now stays
     // online until the label is removed or the pull request closes, so nothing
     // in this workflow may delete it any more.
@@ -180,7 +181,7 @@ describe('web ECS migration', () => {
     expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(4);
     expect(workflow).toContain('pnpm test -- --target-full');
     expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
-    expect(workflow).toContain('Test report:');
+    expect(read('scripts/ci/preview-sticky-comment.sh')).toContain('Test report:');
     expect(workflow).toContain('deployments: write');
     expect(workflow).toContain('type: choice');
     expect(workflow).toContain('- platinum');
@@ -190,7 +191,8 @@ describe('web ECS migration', () => {
     expect(workflow).not.toContain('configure-aws-credentials');
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
-    expect(workflow).toContain('**Preview:**');
+    expect(read('scripts/ci/preview-sticky-comment.sh')).toContain('**Preview:**');
+    expect(workflow).toContain('bun tests/bin/sandbox-preview.ts suite');
   });
 
   /**
@@ -239,7 +241,7 @@ describe('web ECS migration', () => {
     };
 
     // `closed` reaches neither the trigger nor any job condition.
-    expect(workflow).toContain('types: [labeled, unlabeled, synchronize]');
+    expect(workflow).toContain('types: [labeled, unlabeled]');
     expect(workflow).not.toContain("github.event.action == 'closed'");
 
     // Removing the label is still the explicit off switch.

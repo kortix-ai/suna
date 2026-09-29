@@ -16,11 +16,15 @@
     "build": "bash scripts/build.sh",
     "start": "./dist/kortixd",
     "typecheck": "bun tsc --noEmit",
+    "lint": "eslint src",
+    "test:architecture": "node --test scripts/check-architecture.mjs",
     "test": "bun test"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",
     "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "hono": "^4.12.25",
     "node-forge": "^1.4.0",
     "tar": "^7.5.22",
@@ -29,9 +33,13 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@types/node": "20.19.43",
     "@types/node-forge": "^1.3.11",
     "@types/ws": "8.18.1",
+    "eslint": "9.39.5",
+    "eslint-plugin-project-structure": "3.14.4",
     "typescript": "^5.6.0",
+    "typescript-eslint": "8.70.0",
     "ws": "8.21.3"
   }
 }

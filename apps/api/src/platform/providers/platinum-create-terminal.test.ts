@@ -5,6 +5,7 @@
 // session c6fef0b5: Platinum state=failed-start while comp status=active).
 // Env is set before importing anything that reads config at module load.
 import { test, expect, mock, beforeEach } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum';
 process.env.PLATINUM_API_KEY = 'pt_test_key';

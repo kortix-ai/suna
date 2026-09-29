@@ -12,20 +12,38 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pointBootLink, quarantineRelease, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '../boot-config'
-import type { ConfigReleaseApi } from '../config-release/api-client'
-import type { OpenCodeConfig } from '../harness/open-code/config'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '../config-release/notice'
+import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
+import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { releaseSourcePaths } from '@/harness/open-code/project-layout'
+import {
+  __setDaemonShuttingDownForTests,
+  isDaemonShuttingDown,
+  resetDaemonShutdownStateForTests,
+} from '@/lib/shutdown-state'
 import {
   ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
+  isConvergenceInFlight,
   resetConfigReleaseStateForTests,
   runningSourceCommit,
   setRunningConfig,
-} from '../harness/open-code/config-release'
-import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '../harness/open-code/lifecycle'
-import { provenCheck, toolNamesFromFiles } from '../harness/open-code/proven-check'
+} from '@/harness/open-code/config-release'
+import {
+  registerAgentSwapBlocker,
+  requestAgentSwapIfIdle,
+  resetAgentSwapBlockersForTests,
+} from '@/services/runtime-assets/runtime-assets'
+import type { Opencode, VerifiedReloadOptions, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
+import { provenCheck, toolNamesFromFiles } from '@/harness/open-code/proven-check'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
 import {
   buildRelease,
   commitAll,
@@ -164,7 +182,7 @@ function fakeOpencode(opts: { startFails?: boolean; notStarted?: boolean; pid?: 
         return { outcome: 'kept-old', reason: proof.reason, candidateFailed: true }
       }
       state.pid = (state.pid ?? 0) + 1
-      return { outcome: 'swapped', port: 4097, pid: state.pid, turnEnded: false }
+      return { outcome: 'swapped', port: 4097, pid: state.pid, turnEnded: false, orphanedMessageId: null }
     },
   }
   return { opencode, state }
@@ -184,13 +202,22 @@ function client(): ConfigReleaseApi {
 }
 
 const prepared: string[] = []
-function converge(oc: FakeOpencode, over: { api?: ConfigReleaseApi | null } = {}) {
+function converge(
+  oc: FakeOpencode,
+  over: {
+    api?: ConfigReleaseApi | null
+    turnInFlight?: () => Promise<boolean | null>
+    delayBeforeSwapMs?: number
+  } = {},
+) {
   return convergeConfigRelease({
     cfg: cfg(),
     opencode: oc.opencode,
     root: store,
     managedSkillsDir: overlay,
     api: over.api === undefined ? client() : over.api,
+    turnInFlight: over.turnInFlight,
+    delayBeforeSwapMs: over.delayBeforeSwapMs,
     proofBudgetMs: 1_500,
     prepare: async (dir) => {
       prepared.push(dir)
@@ -205,6 +232,7 @@ function baseRelease(governance: string | null = GOV_V1): BuiltRelease {
 
 beforeEach(() => {
   resetConfigReleaseStateForTests()
+  resetSessionTokenHealthForTests()
   prepared.length = 0
   served.droppedTools = new Set()
   served.toolRoute = true
@@ -245,6 +273,12 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  // One bun process runs every daemon test file and bun's file order is not stable,
+  // so a file that leaves `running.release_id` set poisons whichever file runs next.
+  resetConfigReleaseStateForTests()
+  resetDaemonShutdownStateForTests()
+  resetAgentSwapBlockersForTests()
+  resetSessionTokenHealthForTests()
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
@@ -271,7 +305,7 @@ describe('convergeConfigRelease — follow-base', () => {
         fallback_reason: null,
         failed_release_id: null,
       },
-      reload: { how: 'restarted', turn_ended: false },
+      reload: { how: 'restarted', turn_ended: false, orphaned_message_id: null },
       reason: null,
     })
     expect(await servingDir()).toBe(releaseDir(store, id))
@@ -433,6 +467,122 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     expect((await converge(healthy)).outcome).toBe('applied')
   })
 
+  // ── DEF-A 2026-09-26 — our own shutdown must not read as a release failure ─
+  //
+  // Real daemon log, one box, verbatim: a config candidate spawned on port
+  // 4097, `runtime-assets` staged an agent update and exited 75 for the
+  // supervisor 767 ms later, `harness.stop()` SIGTERMed the candidate along
+  // with everything else, and the candidate's own probe reported `cause:
+  // null` — indistinguishable, from inside `reloadVerified`, from a release
+  // that never starts. The release was then quarantined ON THAT BOX, and
+  // every later prompt fell back to `image-default` for good: the daemon
+  // never gets another chance to prove a release nothing was ever wrong with.
+  describe('a candidate killed by the daemon\'s own shutdown', () => {
+    test('is not quarantined, and is not reported as a failure', async () => {
+      const bad = baseRelease()
+      serveRelease(api, bad)
+      const failing = fakeOpencode({ startFails: true })
+
+      __setDaemonShuttingDownForTests(true)
+      const response = await converge(failing)
+
+      expect(response.outcome).toBe('failed')
+      expect(response.ok).toBe(false)
+      // The box-local quarantine (config-release.ts) never saw a failure.
+      expect(await readQuarantine(store)).toEqual({})
+      // Nor did the running-config report the API's health/config read
+      // forwards through `recordDaemonConfigReport` — a report with no
+      // `failed_release_id` records nothing on that side either.
+      expect(configReleaseReport().failed_release_id).toBeNull()
+      expect(configReleaseReport().fallback_reason).toBeNull()
+    })
+
+    test('control: the SAME candidate failure, daemon NOT shutting down, is quarantined as before', async () => {
+      const bad = baseRelease()
+      serveRelease(api, bad)
+      const failing = fakeOpencode({ startFails: true })
+
+      expect(isDaemonShuttingDown()).toBe(false)
+      const response = await converge(failing)
+
+      expect(response.outcome).toBe('declined')
+      expect(Object.keys(await readQuarantine(store))).toEqual([bad.descriptor.release_id!])
+    })
+
+    test('the next pass — after the daemon comes back up — retries the same release', async () => {
+      const bad = baseRelease()
+      serveRelease(api, bad)
+      const failing = fakeOpencode({ startFails: true })
+      __setDaemonShuttingDownForTests(true)
+      expect((await converge(failing)).outcome).toBe('failed')
+
+      // The supervisor restarted the daemon: a fresh process starts clean.
+      __setDaemonShuttingDownForTests(false)
+      const healthy = fakeOpencode()
+      const retried = await converge(healthy)
+      expect(retried.outcome).toBe('applied')
+    })
+  })
+
+  // ── DEF-B 2026-09-26 — the agent swap must not fire mid-verify ────────────
+  //
+  // The seam that actually raced: `runtime-assets.ts`'s `requestAgentSwapIfIdle`
+  // decides to exit while `config-release.ts`'s `convergeConfigRelease` is
+  // between spawning a candidate and promoting or declining it.
+  // `delayBeforeSwapMs` stands in for the seconds a real box spends
+  // downloading and extracting (the fault-injection seam
+  // `config-release-converge.test.ts` already uses for DEF-DEV-1), so the
+  // window is a schedule, not a race the test has to win by luck.
+  describe('the agent swap is blocked while a config convergence is in flight', () => {
+    function stagedAgentDir() {
+      const dir = mkdtempSync(join(tmpdir(), 'agent-swap-vs-convergence-'))
+      writeFileSync(join(dir, 'agent.next'), 'candidate bytes')
+      writeFileSync(join(dir, 'agent.next.sha256'), `${createHash('sha256').update('candidate bytes').digest('hex')}\n`)
+      return dir
+    }
+
+    test('a swap requested mid-convergence is deferred, not exited', async () => {
+      registerAgentSwapBlocker('config-convergence', isConvergenceInFlight)
+      const agentStateDir = stagedAgentDir()
+
+      const release = baseRelease()
+      serveRelease(api, release)
+      const oc = fakeOpencode()
+
+      expect(isConvergenceInFlight()).toBe(false)
+      const converging = converge(oc, { delayBeforeSwapMs: 300 })
+      // Give `applyDesiredRelease` time to reach the fault-injection hold —
+      // it is deep inside `inFlight` by the time this runs.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(isConvergenceInFlight()).toBe(true)
+
+      const exits: number[] = []
+      const midConvergence = await requestAgentSwapIfIdle({
+        agentStateDir,
+        uptimeMs: 10 * 60_000,
+        turnInFlight: async () => false,
+        exit: (code) => exits.push(code),
+      })
+      expect(midConvergence).toBe('attached')
+      expect(exits).toEqual([])
+
+      const response = await converging
+      expect(response.outcome).toBe('applied')
+      expect(isConvergenceInFlight()).toBe(false)
+
+      const afterConvergence = await requestAgentSwapIfIdle({
+        agentStateDir,
+        uptimeMs: 10 * 60_000,
+        turnInFlight: async () => false,
+        exit: (code) => exits.push(code),
+      })
+      expect(afterConvergence).toBe('exited')
+      expect(exits).toEqual([75])
+
+      rmSync(agentStateDir, { recursive: true, force: true })
+    })
+  })
+
   // ── DEF-FLAGON-2 — a healed session must not keep claiming a failure ──────
   test('the base branch is fixed: the next convergence clears the fallback, with no new release', async () => {
     // Measured on a real Platinum box, 2026-09-25 (config-converge e2e, session
@@ -528,6 +678,34 @@ describe('convergeConfigRelease — failures keep the running config', () => {
     const response = await converge(fakeOpencode())
     expect(response.outcome).toBe('failed')
     expect(response.reason).toMatch(/404/)
+  })
+
+  test('a dead session credential pauses convergence: no API call, then resumes when it clears', async () => {
+    // KRTX-613: the runtime-truth tick called config-release every 60 s forever
+    // against a credential the API can never accept, so the API logged one
+    // `401 Session token is not active` warn per minute per box. The shared
+    // breaker is the signal built for exactly this; convergence must obey it.
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(401, 'Session token is not active')
+    }
+    expect(sessionTokenPresumedDead()).toBe(true)
+
+    const before = api.descriptorRequests.length
+    const oc = fakeOpencode()
+    const paused = await converge(oc)
+    expect(paused).toMatchObject({ ok: false, outcome: 'failed' })
+    expect(paused.reason).toMatch(/credential is not active/)
+    // The hopeless request is never re-issued: this is the fix for the spike.
+    expect(api.descriptorRequests.length).toBe(before)
+    expect(oc.state.reloads).toBe(0)
+
+    // A rotated credential answers again; the next tick converges.
+    noteControlPlaneResponse(200, null)
+    expect(sessionTokenPresumedDead()).toBe(false)
+    serveRelease(api, baseRelease())
+    const resumed = await converge(oc)
+    expect(resumed.outcome).toBe('applied')
+    expect(api.descriptorRequests.length).toBe(before + 1)
   })
 
   test('single flight: a second convergence while one runs is refused', async () => {
@@ -857,7 +1035,7 @@ describe('the session is told which commit it runs', () => {
   const readNotice = () => (existsSync(noticePath) ? readFileSync(noticePath, 'utf8') : null)
   const noteFor = (descriptor: { source_commit: string | null; config_dir: string | null }) =>
     writeConfigReleaseNotice(
-      { sourceCommit: descriptor.source_commit, configDir: descriptor.config_dir, sessionId: 'ses-1' },
+      { sourceCommit: descriptor.source_commit, sourcePaths: releaseSourcePaths(descriptor.config_dir), sessionId: 'ses-1' },
       noticePath,
     )
 
@@ -910,8 +1088,81 @@ describe('the session is told which commit it runs', () => {
     // every spawn, so the note survives the restart the convergence performs.
     const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '../../config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-release/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
+  })
+})
+
+/**
+ * DEF-DEV-1 — the turn-in-flight gate used to be a TOCTOU.
+ *
+ * `requireRunning()` ran ONCE, before the archive download and the extract.
+ * Dev measured 2 413-4 041 ms for `config-release-fetched` and 3 530-6 071 ms
+ * for `config-release-extracted`, so a prompt that arrived inside that window
+ * found the gate already passed: OpenCode accepted the turn, the swap retired
+ * the process writing it, and the client got `HTTP 503` over an assistant row
+ * that stayed open with `completed = null`.
+ *
+ * The check is re-run immediately before the swap commits, so a turn that
+ * started during the build keeps its process and the release waits for the
+ * next trigger.
+ */
+describe('a turn that starts while the release is being built keeps its process', () => {
+  test('the late turn is caught before the swap, and reloadVerified is never called', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    let asked = 0
+    // False on the first call (the gate before the build), true afterwards:
+    // exactly the prompt that lands during the download/extract.
+    const turnInFlight = async () => {
+      asked += 1
+      return asked > 1
+    }
+
+    const response = await converge(oc, { turnInFlight })
+
+    expect(asked).toBeGreaterThan(1)
+    expect(response.outcome).not.toBe('applied')
+    expect(response.reason).toContain('turn')
+    expect(oc.state.reloads).toBe(0)
+  })
+})
+
+/**
+ * The fault-injection delay stands in for the seconds a real box spends
+ * downloading and extracting a release. It must widen the window and change no
+ * decision: the gate still runs before it, and the promotion check still runs
+ * after it.
+ */
+describe('delayBeforeSwapMs — the window, made observable', () => {
+  test('a delay holds the convergence and still applies the release', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    const started = Date.now()
+
+    const response = await converge(oc, { delayBeforeSwapMs: 400 })
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(380)
+    expect(response.outcome).toBe('applied')
+    expect(oc.state.reloads).toBe(1)
+  })
+
+  test('a turn that starts DURING the delay still stops the swap', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const oc = fakeOpencode()
+    let asked = 0
+    const turnInFlight = async () => {
+      asked += 1
+      return asked > 1
+    }
+
+    const response = await converge(oc, { delayBeforeSwapMs: 200, turnInFlight })
+
+    expect(response.outcome).not.toBe('applied')
+    expect(oc.state.reloads).toBe(0)
   })
 })

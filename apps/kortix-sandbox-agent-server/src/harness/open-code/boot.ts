@@ -2,8 +2,8 @@ import { publishOpenCodeEvent } from './event-bus'
 import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-guard'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../../agent-env-file'
-import { runSandboxOnBoot } from '../../on-boot'
+import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
+import { runSandboxOnBoot } from '../shared/on-boot'
 import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import {
   configureGitCredentialHelper,
@@ -13,8 +13,8 @@ import {
   materializeScaffoldSeed,
   materializeProjectSeed,
   scheduleHistoryBackfill,
-} from '../../git'
-import { logger } from '../../logger'
+} from '@/lib/git/git'
+import { logger } from '@/lib/log/logger'
 import {
   catalogIsDegraded,
   hasKortixLlmGateway,
@@ -27,28 +27,38 @@ import {
   waitForOpencodeReady,
   type Opencode,
 } from './lifecycle'
-import { relayBootTimelineToApi } from '../../boot-timeline-relay'
-import { materializeProject } from '../../config-provider/config-provider'
+import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
+import { materializeProject } from '@/services/config-provider/config-provider'
 import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { ConvergeBusyError, convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
-import { ensureInjectedManagedSkills } from '../../managed-skills'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
 // sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
 // which is also the warm-fork adoption path, since `adopt()` ends in
 // `startSessionRuntime` — so every way a session comes up reconciles once.
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
-import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '../../runtime-assets'
+import {
+  configureRuntimeConvergence,
+  convergeRuntimeAssetsAtTurnEnd,
+  scheduleRuntimeAssetsReconcile,
+} from '@/services/runtime-assets/runtime-assets'
+import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
-import { flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './events'
+import {
+  flattenOpencodeError,
+  type PermissionRequest,
+  type QuestionRequest,
+  type OpencodeTurnError,
+} from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
-import { kortixEventBus } from '../../kortix-event-bus'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
+import { relayPermissionToApi } from './permission-relay'
 import { relayQuestionToApi } from './question-relay'
-import { readControlPlaneEnv, sandboxRelayContext } from '../../relay-context'
+import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
 import {
   openCodeSeedBakedPinPath,
@@ -58,9 +68,8 @@ import {
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
 } from './runtime-state'
-import { createProjectEnvStore } from '../../project-env'
-import { startEgressShim } from '../../egress-shim'
-import { startProxy } from '../../proxy'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { startEgressShim } from '@/services/egress-shim'
 import {
   startLlmProxy,
   setLlmProxyToken,
@@ -70,13 +79,14 @@ import {
   setConnectorProxyToken,
   connectorProxyReady,
   connectorProxyBaseUrl,
-} from '../../llm-proxy'
+} from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
-import { installShutdownHandlers } from '../../shutdown'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
-import type { startStaticWebServer } from '../../static-web'
-import { observeOpencodeDelivery, opencodeTurnInFlight } from './opencode-turn-state'
+import type { DaemonServer } from '../contract/server'
+import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
+import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
+import type { InitialTurnClaim } from '@/types/control-plane'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -84,12 +94,6 @@ const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'nemotron-3-ultra-free',
   'north-mini-code-free',
 ])
-
-interface InitialTurnClaim {
-  prompt: string
-  turnToken: string
-  messageId: string
-}
 
 let claimedInitialTurn: InitialTurnClaim | null = null
 
@@ -101,7 +105,7 @@ export function resetClaimedInitialTurnForTests(): void {
 
 /** Run the existing OpenCode cold/session boot behind the harness boundary. */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
-  const { cfg, bootTime, bootState, bootMark, staticWeb } = context
+  const { cfg, bootState, bootMark, serve } = context
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
@@ -136,7 +140,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // proxy + CA variables reach the agent's shells — and before opencode spawns,
   // because the shim's port has to be listening by the time anything can make a
   // request. Returns null for the ordinary session that holds no boundary
-  // secret; see src/egress-shim/index.ts.
+  // secret; see src/services/egress-shim/index.ts.
   await startEgressShim()
   if (!writeAgentEnvFile(projectEnv)) {
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
@@ -194,10 +198,20 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
         return finalized
       })
     },
+    // Read on the OUTGOING opencode, an instant before a verified reload kills
+    // it. Nothing else can answer for the turn it was writing afterwards: the
+    // replacement was never handed that turn's stream, so its own finalize
+    // finds nothing to close. The id travels up in the converge response and
+    // the API settles the row and redelivers the prompt.
+    readOpenTurn: (baseUrl) =>
+      openAssistantMessageIdOnRoot(
+        baseUrl,
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        readOpenCodeSessionPin(),
+      ),
   })
   const opencode = harness.native
-  const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
-  const shutdown = installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  const { server, shutdown } = serve(harness, projectEnv)
   // Hand the convergence machinery this session's live runtime, once.
   //
   // Two things need it. opencode convergence restarts opencode, so it goes
@@ -242,7 +256,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
 
   // Fresh-boot acquisition goes through the config-provider coordinator
-  // (git | prefer-s3 | require-s3, see src/config-provider). In `git` mode this
+  // (git | prefer-s3 | require-s3, see src/services/config-provider). In `git` mode this
   // is materializeRepo's exact behaviour, split across the coordinator's warm
   // check and the Git transport.
   const repoMaterializePromise: Promise<string | null> = cfg.autoClone
@@ -371,7 +385,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   if (bootState.repoMaterializationError) return
 
   // Project-declared boot command (`sandbox.on_boot`), backgrounded now that the
-  // repo is materialized and the proxy is up. Host-owned: see src/on-boot.ts.
+  // repo is materialized and the proxy is up. Host-owned: see src/harness/shared/on-boot.ts.
   runSandboxOnBoot(cfg)
 
   // Warm-SEED builder boot (autoClone but NO session): this VM is booted by
@@ -439,7 +453,7 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
 // never contains it — platinum-seed.ts strips it from captureEnv).
 function armSeedAdoption(
   harness: OpenCodeHarnessService,
-  server: ReturnType<typeof startProxy>,
+  server: DaemonServer,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): void {
@@ -605,9 +619,8 @@ export async function reconcileManagedModels(
 }
 
 /**
- * One convergence once OpenCode is ready (docs/specs/config-releases.md,
- * "Boot" step 3). It proves a release spawned at boot and moves the box onto
- * the desired release. Detached: it never delays readiness. A swap waits while
+ * One convergence once OpenCode is ready. It proves a release spawned at
+ * boot and moves the box onto the desired release. Detached: it never delays readiness. A swap waits while
  * a turn runs; the API converges again at turn end. The seed-adoption path
  * reaches this through `startSessionRuntime`, so it converges once after
  * adoption.
@@ -653,6 +666,13 @@ function runtimeReadyTail(
   scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
   scheduleConvergenceAfterReady(opencode, cfg, bootMark)
+  // the runtime-convergence contract (PR #7785), Rule 3: convergence must keep running
+  // for as long as this box is alive, not only once at boot. Both readiness
+  // exits call `runtimeReadyTail` (this function's own doc, above), including
+  // warm-fork adoption, so this always wires the CURRENT opencode/cfg;
+  // `wireRuntimeTruth`'s ticker is idempotent (a second call here — a second
+  // adoption on the same process — does not stack a second interval).
+  wireRuntimeTruth(cfg, opencode)
 }
 
 async function startSessionRuntime(
@@ -689,6 +709,7 @@ async function startSessionRuntime(
       )
       if (!response.ok) {
         const body = await response.text().catch(() => '')
+        noteControlPlaneResponse(response.status, body)
         const error = new Error(
           `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
         ) as Error & { retryAfterMs?: number }
@@ -764,6 +785,13 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
+  // Report only: apps/api pushes "needs your approval". The permission itself
+  // stays open for the user (permission-relay.ts).
+  const onPermissionAsked = (req: PermissionRequest) => {
+    void relayPermissionToApi(req).catch((err) =>
+      logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
+    )
+  }
   const onSessionIdle = (opencodeSessionId: string) => {
     void (async () => {
       // An aborted turn is checked first: it may have been healed and resumed,
@@ -776,6 +804,13 @@ async function startSessionRuntime(
         opencodeSessionId,
       )
       await relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg, unrequestedAbortCause(verdict))
+      // THE SAFE BOUNDARY. A turn has just finished, so this is the one moment
+      // the box knows nothing is running — the only moment a daemon swap costs a
+      // reconnect instead of a lost turn. Converge and apply here, not on a
+      // timer: a timer near a readiness decision is what the config-releases AST
+      // tripwires forbid. `applyStagedAssetsIfIdle` re-asks the turn oracle
+      // anyway, so a CHILD session going idle under a live root turn is refused.
+      convergeRuntimeAssetsAtTurnEnd(cfg)
     })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -889,6 +924,7 @@ async function startSessionRuntime(
   const eventHandlers = {
     onEvent,
     onQuestionAsked,
+    onPermissionAsked,
     onSessionIdle,
     onSessionError,
     onSessionStatus,
@@ -1021,10 +1057,9 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
 
 async function runWarmSeedMode(
   cfg: Config,
-  bootTime: number,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
-  staticWeb: ReturnType<typeof startStaticWebServer>,
+  serve: HarnessBootContext['serve'],
 ): Promise<void> {
   const projectEnv = createProjectEnvStore()
   writeAgentEnvFile(projectEnv)
@@ -1107,6 +1142,17 @@ async function runWarmSeedMode(
         return finalized
       })
     },
+    // Read on the OUTGOING opencode, an instant before a verified reload kills
+    // it. Nothing else can answer for the turn it was writing afterwards: the
+    // replacement was never handed that turn's stream, so its own finalize
+    // finds nothing to close. The id travels up in the converge response and
+    // the API settles the row and redelivers the prompt.
+    readOpenTurn: (baseUrl) =>
+      openAssistantMessageIdOnRoot(
+        baseUrl,
+        process.env.KORTIX_WORKSPACE || '/workspace',
+        readOpenCodeSessionPin(),
+      ),
   })
   const opencode = harness.native
   // The warm-seed BUILDER has no session and no API to ask, so the one boot
@@ -1135,8 +1181,7 @@ async function runWarmSeedMode(
       bootState.workspaceReady = true
     },
   })
-  const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(harness.lifecycle, server, staticWeb)
+  const { server } = serve(harness, projectEnv)
   bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
@@ -2604,6 +2649,13 @@ export async function relayTurnBeginToApi(
       opencode_session_id: opencodeSessionId,
       turn_message_id: newestUserId,
     })
+    // A credential the API has refused, repeatedly and without contradiction,
+    // cannot accept this relay: both attempts carry the same dead token, and
+    // every `busy`/`retry` frame would re-issue them — the `POST .../turn-stream
+    // -> 401` warn spike in KRTX-446. Skip while the shared breaker reports the
+    // credential dead; it clears on the next answer that is not the dead-token
+    // 401, so this resumes by itself and never stops the daemon.
+    if (sessionTokenPresumedDead()) return
     // Two attempts only: `busy`/`retry` frames recur for a live turn, so a
     // transient failure retries itself on the next frame.
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -2627,7 +2679,13 @@ export async function relayTurnBeginToApi(
           }
           return
         }
-        logger.warn('[opencode-events] turn-begin relay non-ok', { status: res.status, attempt })
+        const bodyText = await res.text().catch(() => '')
+        noteControlPlaneResponse(res.status, bodyText)
+        logger.warn('[opencode-events] turn-begin relay non-ok', {
+          status: res.status,
+          attempt,
+          body: bodyText.slice(0, 200),
+        })
       } catch (err) {
         logger.warn('[opencode-events] turn-begin relay fetch failed', {
           err: (err as Error).message,
@@ -2724,6 +2782,15 @@ export async function relayTurnEndToApi(
   // reply never reads as a repeat.
   runawayCheck()
 
+  // A credential the API has refused, repeatedly and without contradiction,
+  // cannot finalize a turn: all four attempts carry the same dead token. Skip
+  // the API relay (the local runaway guard above has already run) so a box that
+  // outlives its session stops adding `POST .../turn-stream -> 401` warn lines
+  // (KRTX-446). The dedup signature is recorded only on a confirmed relay, so a
+  // later observation still relays once the credential works again — the breaker
+  // clears on the next non-dead answer, and the daemon keeps serving.
+  if (sessionTokenPresumedDead()) return
+
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
   // This is the ONLY signal that finalizes a turn the agent ended without
@@ -2795,7 +2862,13 @@ export async function relayTurnEndToApi(
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
       }
-      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
+      const bodyText = await res.text().catch(() => '')
+      noteControlPlaneResponse(res.status, bodyText)
+      logger.warn('[opencode-events] turn-end relay non-ok', {
+        status: res.status,
+        attempt,
+        body: bodyText.slice(0, 200),
+      })
     } catch (err) {
       logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }
@@ -3013,7 +3086,7 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
 /** Claim warm-seed boot before the host considers monitor or session mode. */
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
-  const { cfg, bootTime, bootState, bootMark, staticWeb } = context
-  await runWarmSeedMode(cfg, bootTime, bootState, bootMark, staticWeb)
+  const { cfg, bootState, bootMark, serve } = context
+  await runWarmSeedMode(cfg, bootState, bootMark, serve)
   return true
 }

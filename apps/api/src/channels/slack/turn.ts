@@ -73,7 +73,10 @@ export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
     .from(chatTurnStreams)
     .where(eq(chatTurnStreams.sessionId, sessionId))
     .limit(1);
-  if (!row) return null;
+  // A row with a `channel_ref` belongs to another platform (Teams). Taken for a
+  // Slack turn, the Slack post failed and the caller deleted the Teams row,
+  // leaving its card spinning (session-failure-notifier.ts).
+  if (!row || row.channelRef) return null;
   const token = await loadSlackTokenForProject(row.projectId);
   if (!token) return null;
   return rowToHandle(row, token);
@@ -860,8 +863,9 @@ export async function relayTurnEnd(
 // capacity, git-auth, generic). The agent never ran, so no step/answer/`end`
 // ever arrives — without this the ⏳ sits until the 30-min GC closes it with the
 // wrong reason. The platform already classified a friendly message, so post it
-// AS-IS (don't re-run classifyTurnError on it). Registered as the global session-
-// failure notifier; a no-op for non-Slack sessions (no turn row to load).
+// AS-IS (don't re-run classifyTurnError on it). One of the session-failure
+// notifiers; a no-op for a non-Slack session, because loadTurn never returns
+// another platform's row (Teams has its own relay, teams/turn.ts).
 export async function relayProvisioningFailure(sessionId: string, message: string): Promise<boolean> {
   const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) return false;

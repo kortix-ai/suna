@@ -4,7 +4,6 @@ import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
-import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
 // From its own module, not '../shared/jwt-verify': five test files replace that
@@ -13,136 +12,50 @@ import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verif
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { createHash } from 'node:crypto';
-import { extractSsoProviderId, syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
 import { requestClientKey } from '../shared/client-ip';
-import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
+import { isOAuthAccessToken } from '../oauth/access-token';
 import { applyImpersonation } from './impersonation';
-import { buildActor } from '../iam/actor';
+import { withActor } from './auth-actor';
 import { beginStage } from '../lib/server-timing';
 import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-budget';
 
-const PREVIEW_SESSION_COOKIE = '__preview_session';
+import { serviceAccountPrincipal, patPrincipal, jwtPrincipal } from './auth-principal';
+import { applyOAuthAccessTokenPrincipal } from './auth-oauth';
+import { enforceTokenProjectScope } from './auth-scope';
+export { clearSsoSyncMemo } from './auth-sso';
+export { combinedAuth } from './auth-combined';
 
 /**
- * Build the canonical `Actor` from whatever the auth branch just resolved, and
- * hand it to the handler as `c.get('actor')`.
- *
- * Wrapped around `next()` — like `applyImpersonation` above it — rather than
- * called from each success branch, and for the same stated reason: every branch
- * below (JWT local, JWT network, PAT, service account, sandbox token) is then
- * covered BY CONSTRUCTION instead of by nine call sites a new branch could
- * silently miss. Missing the credential is exactly the failure mode `Actor`
- * exists to make unrepresentable.
- *
- * ADDITIVE in this release: `userId`, `accountId`, `authType`, `iamTokenId`,
- * `sessionId`, `agentGrant` and `mfaAal` all stay set. The ~490 gate call sites
- * still read them; P3 moves them onto the actor.
+ * Stable error code the PAT auth gate returns (HTTP 401) when the credential
+ * itself can never come back: missing, revoked, expired, or its sandbox lease
+ * closed. The body keeps the global `{error, message, status}` shape and adds
+ * this `code`, so a retrying client can branch on it and stop instead of
+ * hammering the gate forever — prod 2026-09-26/27: one fleet of boxes that
+ * outlived their session credential produced ~10k 401s/h across
+ * `/v1/platform/runtime-projection`, `/turn-stream` and `/audit/events`, every
+ * one a plain untyped 401 no client could tell apart from a transient one.
+ * Mirrors the typed-error pattern of `buildDenialError` (`code:'account_mfa_required'`)
+ * and `impersonation.ts` (`code:'impersonation_invalid'`): an HTTPException
+ * built with an explicit `res` is returned verbatim by the global error
+ * handler (apps/api/src/index.ts), so the body arrives untyped nowhere.
+ * Consumers: apps/kortix-sandbox-agent-server's `session-token-health.ts`
+ * breaker classifies the body; the SDK's ApiError lifts `code` from error
+ * bodies. Keep the string in sync with that breaker.
  */
-async function withActor(c: Context, next: Next) {
-  try {
-    const actor = await buildActor(c);
-    if (actor) c.set('actor', actor);
-  } catch (err) {
-    // A failure here must not 500 an authenticated request: every gate can
-    // still rebuild the actor itself (`actorFor`). Log loudly.
-    console.warn('[auth] failed to build IAM actor', err);
-  }
-  await next();
+export const SESSION_TOKEN_REVOKED_CODE = 'session_token_revoked';
+
+export function deadCredential401(message: string): HTTPException {
+  return new HTTPException(401, {
+    message,
+    res: new Response(
+      JSON.stringify({ error: true, message, status: 401, code: SESSION_TOKEN_REVOKED_CODE }),
+      { status: 401, headers: { 'content-type': 'application/json' } },
+    ),
+  });
 }
 
-/**
- * Run SAML JIT provisioning for a Supabase-authenticated request. Cheap no-op
- * when the JWT isn't from a SAML provider (returns before any DB work).
- *
- * MUST be called on EVERY Supabase-JWT success path — local AND network
- * verification, in BOTH supabaseAuth and combinedAuth. A token that fails local
- * (JWKS) verification falls back to the network `getUser()` path, and the
- * dashboard also hits combinedAuth routes; if the sync lives on only one of
- * those paths, SSO users whose requests take a different path are never
- * provisioned into their org. Never fails the request — the user already
- * authenticated; sync errors are logged for ops review.
- *
- * A successful sync is remembered per (user, IdP, login session, claims) for
- * `SSO_SYNC_MEMO_TTL_MS`. The claims only change when the IdP issues a new
- * login, so re-running the sync on every request (one transaction, one
- * account-wide advisory lock, several email lookups) changed nothing but
- * serialized every SSO user of an account behind one lock. Membership that SCIM
- * or an admin changes does not depend on this sync; a new group mapping reaches
- * a signed-in user within one TTL.
- */
-const SSO_SYNC_MEMO_TTL_MS = 5 * 60_000;
-const SSO_SYNC_MEMO_MAX_ENTRIES = 10_000;
-const ssoSyncMemo = new Map<string, number>();
 
-function ssoSyncMemoKey(
-  userId: string,
-  email: string,
-  jwtPayload: Record<string, unknown> | undefined,
-): string | null {
-  const providerId = extractSsoProviderId(jwtPayload);
-  if (!providerId) return null;
-  const loginSession = jwtPayload?.session_id ?? jwtPayload?.iat;
-  if (typeof loginSession !== 'string' && typeof loginSession !== 'number') return null;
-  const claims = createHash('sha256')
-    .update(JSON.stringify([jwtPayload?.app_metadata ?? null, jwtPayload?.user_metadata ?? null]))
-    .digest('base64url');
-  return `${userId}|${providerId}|${loginSession}|${email.trim().toLowerCase()}|${claims}`;
-}
-
-/** Test hook: forget every remembered SSO sync. */
-export function clearSsoSyncMemo(): void {
-  ssoSyncMemo.clear();
-}
-
-async function jitSyncSso(
-  userId: string,
-  email: string,
-  jwtPayload: Record<string, unknown> | undefined,
-): Promise<void> {
-  const key = ssoSyncMemoKey(userId, email, jwtPayload);
-  const now = Date.now();
-  if (key) {
-    const expiresAt = ssoSyncMemo.get(key);
-    if (expiresAt !== undefined && expiresAt > now) return;
-    ssoSyncMemo.delete(key);
-  }
-  try {
-    await syncSsoMembership({ userId, email, jwtPayload });
-    if (key) {
-      if (ssoSyncMemo.size >= SSO_SYNC_MEMO_MAX_ENTRIES) {
-        const oldest = ssoSyncMemo.keys().next().value;
-        if (oldest !== undefined) ssoSyncMemo.delete(oldest);
-      }
-      ssoSyncMemo.set(key, now + SSO_SYNC_MEMO_TTL_MS);
-    }
-  } catch (err) {
-    console.warn('[auth] SAML JIT sync failed', err);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Auth Middleware (3 middlewares — one per auth strategy)
-//
-//   1. apiKeyAuth      — Kortix API keys only (header)
-//   2. supabaseAuth    — Supabase JWT only (header)
-//   3. combinedAuth    — Kortix OR Supabase (header + cookie fallback)
-//
-// Token is read from query parameters ONLY as a last resort for preview proxy
-// routes (/v1/p/*) — browser WebSocket API can't set custom headers, so PTY
-// terminals pass the token as ?token=<jwt>. SSE clients use fetch() with
-// Authorization headers; preview iframes use cookies set via POST /v1/p/auth.
-//
-// IMPERSONATION: `supabaseAuth` and `combinedAuth` are thin wrappers that run
-// `applyImpersonation` (middleware/impersonation.ts) between "the real user is
-// resolved" and "the handler runs". It lives HERE, inside the wrapper, and not
-// as a global `app.use('*')`, because auth is mounted per sub-router — a global
-// middleware runs BEFORE those and would see no identity to validate a grant
-// against. Wrapping also means every success branch below (JWT local, JWT
-// network, PAT, service account, sandbox token) is covered by construction,
-// instead of six call sites that a new branch could silently miss.
-// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * API key auth for search, LLM, and router routes.
@@ -220,45 +133,6 @@ async function resolveApiKeyAuth(c: Context, next: Next) {
 }
 
 /**
- * Sign in with Kortix: resolve a `kortix_oat_` OAuth access token to the user
- * who granted it. Shared by supabaseAuth and combinedAuth so both middlewares
- * hand a route the same principal (see unit-oauth-access-token-auth.test.ts).
- * Throws on any failure; sets the context and returns on success.
- */
-async function applyOAuthAccessTokenPrincipal(c: Context, token: string): Promise<void> {
-  const result = await validateOAuthAccessToken(token);
-  if (!result.isValid || !result.userId) {
-    auditLoginFail({ c, reason: result.error ?? 'invalid_oauth_token', authType: 'oauth' });
-    throw new HTTPException(401, { message: result.error || 'Invalid OAuth access token' });
-  }
-  const scopes = result.scopes ?? [];
-  if (!oauthScopeAllowsPath(scopes, c.req.path)) {
-    auditLoginFail({ c, reason: 'insufficient_scope', authType: 'oauth', accountId: result.accountId ?? null });
-    throw new HTTPException(403, {
-      message: `insufficient_scope: this OAuth token was not granted the "kortix" scope, so it cannot reach ${c.req.path}`,
-    });
-  }
-  c.set('userId', result.userId);
-  c.set('userEmail', '');
-  c.set('authType', 'oauth');
-  if (result.accountId) c.set('accountId', result.accountId);
-  c.set('oauthClientId', result.clientId);
-  c.set('oauthScopes', scopes);
-  // No iamTokenId: the token acts AS the user (role-only), like an unscoped PAT.
-  c.set('agentGrant', null);
-  setSentryUser({ id: result.userId, accountId: result.accountId });
-  setContextField('userId', result.userId);
-  if (result.accountId) setContextField('accountId', result.accountId);
-  auditLoginSuccess({
-    c,
-    userId: result.userId,
-    accountId: result.accountId ?? null,
-    authType: 'oauth',
-    metadata: { oauth_client_id: result.clientId, scopes },
-  });
-}
-
-/**
  * Supabase JWT auth (for billing, platform, admin routes).
  * Header-only — sets userId and userEmail in context on success.
  *
@@ -300,12 +174,23 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     throw new HTTPException(401, { message: 'Missing token' });
   }
 
+  if (isServiceAccountToken(token)) return resolveServiceAccount(c, next, token);
+  if (isAccountToken(token)) return resolvePat(c, next, token);
+  if (isOAuthAccessToken(token)) {
+    await applyOAuthAccessTokenPrincipal(c, token);
+    return next();
+  }
+  if (isKortixToken(token) && sandboxTokenPathAllowed(c.req.path)) return resolveSandboxToken(c, next, token);
+  return resolveJwt(c, next, token);
+}
+
+async function resolveServiceAccount(c: Context, next: Next, token: string) {
   // Service-account bearer (non-human IAM principal). Treat as a
   // token-style principal: userId is set to the SA id (synthetic) so
   // downstream code has a stable identifier, and iamTokenId points
   // at the same id so the IAM engine evaluates only the SA's policies
   // (existing token-as-principal short-circuit).
-  if (isServiceAccountToken(token)) {
+  {
     const sa = await validateServiceAccountToken(token);
     if (!sa.isValid || !sa.serviceAccountId || !sa.accountId) {
       auditLoginFail({
@@ -315,29 +200,24 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
       });
       throw new HTTPException(401, { message: sa.error || 'Invalid service account' });
     }
-    c.set('userId', sa.serviceAccountId);
-    c.set('userEmail', '');
-    c.set('authType', 'service_account');
-    c.set('accountId', sa.accountId);
-    c.set('iamTokenId', sa.serviceAccountId);
-    setSentryUser({ id: sa.serviceAccountId, accountId: sa.accountId });
-    setContextField('userId', sa.serviceAccountId);
-    setContextField('accountId', sa.accountId);
-    auditLoginSuccess({
-      c,
-      userId: sa.serviceAccountId,
-      accountId: sa.accountId,
-      authType: 'service_account',
-    });
+    serviceAccountPrincipal(c, sa.serviceAccountId, sa.accountId);
     await next();
     return;
   }
 
+}
+
+async function resolvePat(c: Context, next: Next, token: string) {
   // CLI Personal Access Token — same identity as the user who minted it.
-  if (isAccountToken(token)) {
+  {
     const result = await validateAccountToken(token);
     if (!result.isValid || !result.userId) {
       auditLoginFail({ c, reason: result.error ?? 'invalid_pat', authType: 'pat' });
+      // A credential that can never come back gets the typed 401 so the
+      // caller's retry loop can stop; every other refusal keeps the plain 401.
+      if (result.credentialDead) {
+        throw deadCredential401(result.error || 'Credential is no longer valid');
+      }
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
     if (result.projectId) {
@@ -345,54 +225,20 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
         sessionBound: Boolean(result.sessionId),
       });
     }
-    c.set('userId', result.userId);
-    c.set('userEmail', '');
-    c.set('authType', 'pat');
-    if (result.accountId) c.set('accountId', result.accountId);
-    if (result.projectId) c.set('tokenProjectId', result.projectId);
-    if (result.sessionId) {
-      c.set('sessionId', result.sessionId);
-      // A session-scoped token is also the identity of its sandbox. Keep the
-      // route context explicit so daemon-only endpoints can accept the unified
-      // credential without treating an ordinary project PAT as a sandbox.
-      c.set('sandboxId', result.sessionId);
-    }
-    if (result.tokenId) c.set('iamTokenId', result.tokenId);
-    // Per-agent authorization grant (non-null only for agent-session tokens).
-    // Read by requireScope() to gate Kortix CLI/API actions on top of the
-    // user's own role — net effect = userRole ∩ agentGrant.
-    c.set('agentGrant', result.agentGrant ?? null);
-    // The human this agent session acts on behalf of (null = unattended, or
-    // cleared by another human's prompt). Personal resources only — see
-    // iam/actor.ts `credentialOnBehalfOf` and projects/lib/on-behalf-of.ts.
-    c.set('onBehalfOfUserId', result.onBehalfOfUserId ?? null);
-    setSentryUser({ id: result.userId, accountId: result.accountId });
-    setContextField('userId', result.userId);
-    if (result.accountId) setContextField('accountId', result.accountId);
-    auditLoginSuccess({
-      c,
-      userId: result.userId,
-      accountId: result.accountId ?? null,
-      authType: 'pat',
-      metadata: result.projectId ? { project_id: result.projectId } : undefined,
-    });
+    patPrincipal(c, result);
     await next();
     return;
   }
 
-  // OAuth access token (Sign in with Kortix) — acts as the granting user.
-  // MUST precede every `kortix_`-prefix branch: the generic key validator
-  // would otherwise reject it against the api_keys table.
-  if (isOAuthAccessToken(token)) {
-    await applyOAuthAccessTokenPrincipal(c, token);
-    await next();
-    return;
-  }
+}
 
-  const path = c.req.path;
-  const sandboxTokenPathAllowed =
+function sandboxTokenPathAllowed(path: string) {
+  return (
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
+    // The daemon relays OpenCode `permission.asked` so apps/api can push the
+    // session creator. The handler re-checks sandbox, project, and session.
+    /^\/v1\/projects\/[^/]+\/turn-permission$/.test(path) ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
     // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
     // full picker. Catalog is the non-secret model list — safe for a sandbox token.
@@ -421,8 +267,11 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     // prompt attachment. The route handler re-checks sandbox, session,
     // account, project, command, reference, and part index. Keep this exact
     // shape: a broader attachment prefix would expose user upload routes.
-    /^\/v1\/projects\/[^/]+\/runtime\/prompt-attachments\/[^/]+$/.test(path);
-  if (isKortixToken(token) && sandboxTokenPathAllowed) {
+    /^\/v1\/projects\/[^/]+\/runtime\/prompt-attachments\/[^/]+$/.test(path));
+}
+
+async function resolveSandboxToken(c: Context, next: Next, token: string) {
+  {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
       throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
@@ -443,44 +292,13 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     return;
   }
 
+}
+
+async function resolveJwt(c: Context, next: Next, token: string) {
   // Fast path: verify JWT locally (no network roundtrip)
   const local = await verifySupabaseJwt(token);
   if (local.ok) {
-    c.set('userId', local.userId);
-    c.set('userEmail', local.email);
-    c.set('authType', 'supabase');
-    // Authenticator Assurance Level — 'aal1' = password-only,
-    // 'aal2' = MFA-verified. Surfaced for IAM policy conditions that
-    // require MFA on sensitive actions.
-    if (local.payload.aal) c.set('mfaAal', local.payload.aal);
-    // Session identity surfaced for the per-account session gate
-    // (idle/lifetime/force-logout). `iat` is the seconds-epoch the
-    // current access token was issued — Supabase keeps it constant
-    // across refreshes for the same root session.
-    if (local.payload.session_id) c.set('sessionId', local.payload.session_id);
-    if (typeof (local.payload as { iat?: number }).iat === 'number') {
-      c.set('sessionIat', (local.payload as { iat: number }).iat);
-    }
-    // SAML JIT — provision the SSO user into their org before the request
-    // proceeds (see jitSyncSso). Awaited so the org membership is committed
-    // before any handler bootstraps a personal account for a member-less user.
-    await jitSyncSso(
-      local.userId,
-      local.email,
-      local.payload as unknown as Record<string, unknown>,
-    );
-    setSentryUser({ id: local.userId, email: local.email });
-    setContextField('userId', local.userId);
-    setContextField('userEmail', local.email);
-    auditLoginSuccess({
-      c,
-      userId: local.userId,
-      authType: 'supabase',
-      metadata: {
-        aal: local.payload.aal ?? null,
-        verify_path: 'local',
-      },
-    });
+    await jwtPrincipal(c, local.userId, local.email, local.payload as Record<string, unknown>, 'local');
     await next();
     return;
   }
@@ -509,33 +327,8 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
-    c.set('userId', user.id);
-    c.set('userEmail', user.email || '');
-    c.set('authType', 'supabase');
     const payload = decodeSupabaseJwtPayload(token);
-    if (payload?.aal) c.set('mfaAal', payload.aal);
-    if (payload?.session_id) c.set('sessionId', payload.session_id);
-    if (typeof payload?.iat === 'number') {
-      c.set('sessionIat', payload.iat);
-    }
-    setSentryUser({ id: user.id, email: user.email || undefined });
-    setContextField('userId', user.id);
-    setContextField('userEmail', user.email || '');
-    auditLoginSuccess({
-      c,
-      userId: user.id,
-      authType: 'supabase',
-      metadata: { verify_path: 'network' },
-    });
-    // SAML JIT on the network-verify path too (a token whose kid isn't in the
-    // cached JWKS lands here, NOT the local path) — `user.app_metadata` is the
-    // authoritative record straight from Supabase.
-    await jitSyncSso(
-      user.id,
-      user.email || '',
-      (payload as unknown as Record<string, unknown> | null) ??
-        (user as unknown as Record<string, unknown>),
-    );
+    await jwtPrincipal(c, user.id, user.email || '', (payload as Record<string, unknown> | null) ?? (user as unknown as Record<string, unknown>), 'network', undefined, user.email || undefined);
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;
@@ -543,537 +336,4 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     auditLoginFail({ c, reason: 'auth_internal_error', authType: 'jwt' });
     throw new HTTPException(401, { message: 'Authentication failed' });
   }
-}
-
-/**
- * Combined auth — accepts Kortix tokens OR Supabase JWTs.
- *
- * Token resolution order:
- *   1. Authorization: Bearer <token> header
- *   2. __preview_session cookie (set via POST /v1/p/auth)
- *
- * Used for:
- *   - Preview proxy routes (/v1/p/{sandboxId}/{port}/*)
- *   - Cron, secrets, providers, servers, and tunnel routes
- *   - SSE stream endpoints (clients use fetch() with Authorization header)
- *
- * Sets userId and userEmail in context regardless of token type.
- * For preview proxy routes, also sets/refreshes the session cookie.
- */
-export async function combinedAuth(c: Context, next: Next) {
-  const endAuth = beginStage('auth');
-  try {
-    return await withTokenAttemptBudget(c, presentedKortixToken(c, PREVIEW_SESSION_COOKIE), () =>
-      resolveCombinedAuth(c, () =>
-        applyImpersonation(c, () => withActor(c, () => (endAuth(), next()))),
-      ),
-    );
-  } finally {
-    endAuth();
-  }
-}
-
-async function resolveCombinedAuth(c: Context, next: Next) {
-  // Skip auth for CORS preflight — OPTIONS never carries auth tokens.
-  if (c.req.method === 'OPTIONS') {
-    await next();
-    return;
-  }
-
-  const previewSandboxId = extractPreviewSandboxId(c.req.path);
-
-  // Extract token: header → X-Kortix-Token (preview only) → cookie → query param
-  const authHeader = c.req.header('Authorization');
-  const kortixTokenHeader = previewSandboxId ? c.req.header('X-Kortix-Token') : undefined;
-  let token: string | undefined;
-
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
-
-  if (!token && kortixTokenHeader && isKortixToken(kortixTokenHeader)) {
-    token = kortixTokenHeader;
-  }
-
-  if (!token) {
-    // Check for session cookie (set via POST /v1/p/auth or by prior requests)
-    const cookieHeader = c.req.header('Cookie') || '';
-    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${PREVIEW_SESSION_COOKIE}=([^;]+)`));
-    if (match) {
-      token = decodeURIComponent(match[1]);
-    }
-  }
-
-  if (!token) {
-    // Last resort: query tokens are allowed only for legacy EventSource
-    // provision-stream. Browser WebSocket preview auth is handled by the Bun
-    // upgrade path (ws-proxy.ts), not this HTTP middleware. Do not accept
-    // ?token= on ordinary preview HTTP routes: it leaks bearer material into
-    // URLs, logs, history, and Referer headers.
-    const url = new URL(c.req.url);
-    const queryToken = url.searchParams.get('token');
-    if (queryToken && c.req.path.includes('/provision-stream')) {
-      token = queryToken;
-    }
-  }
-
-  if (!token) {
-    auditLoginFail({ c, reason: 'missing_token' });
-    throw new HTTPException(401, { message: 'Missing authentication token' });
-  }
-
-  // Determine if this is a preview proxy route (for cookie management)
-  const isPreviewRoute = c.req.path.startsWith('/v1/p/') || c.req.path === '/v1/p';
-
-  // 0. Service-account bearer (non-human IAM principal) — mirrors the
-  // supabaseAuth branch. MUST run before the generic Kortix-token branch:
-  // `kortix_sa_` also matches the `kortix_` prefix, so without this check the
-  // token falls into validateSecretKey and every combinedAuth-mounted route
-  // (preview proxy, cron, secrets, providers, SSE) rejects service accounts
-  // that supabaseAuth-mounted routes accept.
-  if (isServiceAccountToken(token)) {
-    const sa = await validateServiceAccountToken(token);
-    if (!sa.isValid || !sa.serviceAccountId || !sa.accountId) {
-      auditLoginFail({
-        c,
-        reason: sa.error ?? 'invalid_service_account',
-        authType: 'service_account',
-      });
-      throw new HTTPException(401, { message: sa.error || 'Invalid service account' });
-    }
-    if (
-      previewSandboxId &&
-      !(await canAccessPreviewSandbox({ previewSandboxId, accountId: sa.accountId }))
-    ) {
-      auditLoginFail({
-        c,
-        reason: 'preview_sandbox_not_authorized',
-        authType: 'service_account',
-        accountId: sa.accountId,
-      });
-      throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
-    }
-    c.set('userId', sa.serviceAccountId);
-    c.set('userEmail', '');
-    c.set('authType', 'service_account');
-    c.set('accountId', sa.accountId);
-    c.set('iamTokenId', sa.serviceAccountId);
-    setSentryUser({ id: sa.serviceAccountId, accountId: sa.accountId });
-    setContextField('userId', sa.serviceAccountId);
-    setContextField('accountId', sa.accountId);
-    if (isPreviewRoute) setPreviewSessionCookie(c, token);
-    auditLoginSuccess({
-      c,
-      userId: sa.serviceAccountId,
-      accountId: sa.accountId,
-      authType: 'service_account',
-    });
-    await next();
-    return;
-  }
-
-  // 1. CLI Personal Access Token — carries a real user_id.
-  if (isAccountToken(token)) {
-    const patResult = await validateAccountToken(token);
-    if (!patResult.isValid || !patResult.userId) {
-      auditLoginFail({ c, reason: patResult.error ?? 'invalid_pat', authType: 'pat' });
-      throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
-    }
-    if (patResult.projectId) {
-      await enforceTokenProjectScope(c, patResult.projectId, {
-        sessionBound: Boolean(patResult.sessionId),
-      });
-    }
-    c.set('userId', patResult.userId);
-    c.set('userEmail', '');
-    c.set('authType', 'pat');
-    if (patResult.accountId) c.set('accountId', patResult.accountId);
-    if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
-    // Set the acting token id so engine gates on combinedAuth-mounted routes can
-    // thread it and the agent-grant fold fires (mirrors supabaseAuth). Without
-    // this, a capability check on a combinedAuth route silently no-ops the fold —
-    // a scoped agent PAT would pass gates it should not (e.g. connector-admin).
-    c.set('iamTokenId', patResult.tokenId);
-    if (patResult.sessionId) {
-      c.set('sessionId', patResult.sessionId);
-      // A session-scoped token is also the identity of its sandbox — mirror
-      // supabaseAuth's PAT branch, so isSessionSandboxCredential() answers the
-      // same on combinedAuth-mounted routes as on supabaseAuth-mounted ones.
-      c.set('sandboxId', patResult.sessionId);
-    }
-    c.set('agentGrant', patResult.agentGrant ?? null);
-    // Same as supabaseAuth's PAT branch: the fresh on_behalf_of for personal
-    // resources (projects/lib/personal-resources.ts). combinedAuth fronts the
-    // connector gateway, where a foreign prompt's clear must apply at once.
-    c.set('onBehalfOfUserId', patResult.onBehalfOfUserId ?? null);
-    setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
-    setContextField('userId', patResult.userId);
-    if (patResult.accountId) setContextField('accountId', patResult.accountId);
-    if (isPreviewRoute) setPreviewSessionCookie(c, token);
-    auditLoginSuccess({
-      c,
-      userId: patResult.userId,
-      accountId: patResult.accountId ?? null,
-      authType: 'pat',
-    });
-    await next();
-    return;
-  }
-
-  // 1b. OAuth access token (Sign in with Kortix) — acts as the granting user.
-  // Precedes the generic `kortix_` branch for the same reason kortix_sa_ does.
-  if (isOAuthAccessToken(token)) {
-    await applyOAuthAccessTokenPrincipal(c, token);
-    if (isPreviewRoute) setPreviewSessionCookie(c, token);
-    await next();
-    return;
-  }
-
-  // 2. Try Kortix token (kortix_ or kortix_sb_) — used by agents inside the sandbox
-  if (isKortixToken(token)) {
-    const result = await validateSecretKey(token);
-    if (!result.isValid) {
-      auditLoginFail({
-        c,
-        reason: result.error ?? 'invalid_kortix_token',
-        authType: 'apiKey',
-      });
-      throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
-    }
-    if (
-      previewSandboxId &&
-      !(await canAccessPreviewSandbox({
-        previewSandboxId,
-        accountId: result.accountId,
-      }))
-    ) {
-      auditLoginFail({
-        c,
-        reason: 'preview_sandbox_not_authorized',
-        authType: 'apiKey',
-        accountId: result.accountId ?? null,
-      });
-      throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
-    }
-    // Map accountId → userId so route handlers work unchanged
-    c.set('userId', result.accountId);
-    c.set('userEmail', '');
-    c.set('authType', 'apiKey');
-    c.set('apiKeyType', result.type);
-    if (result.accountId) c.set('accountId', result.accountId);
-    if (result.keyId) c.set('keyId', result.keyId);
-    if (result.sandboxId) c.set('sandboxId', result.sandboxId);
-    setSentryUser({ id: result.accountId || 'unknown', accountId: result.accountId });
-    setContextField('accountId', result.accountId || 'unknown');
-    if (isPreviewRoute) setPreviewSessionCookie(c, token);
-    auditLoginSuccess({
-      c,
-      userId: result.accountId ?? 'unknown',
-      accountId: result.accountId ?? null,
-      authType: 'apiKey',
-      metadata: { api_key_type: result.type },
-    });
-    await next();
-    return;
-  }
-
-  // 3. Try Supabase JWT — fast path: local verification (no network roundtrip)
-  const local = await verifySupabaseJwt(token);
-  if (local.ok) {
-    if (
-      previewSandboxId &&
-      !(await canAccessPreviewSandbox({
-        previewSandboxId,
-        userId: local.userId,
-      }))
-    ) {
-      auditLoginFail({
-        c,
-        reason: 'preview_sandbox_not_authorized',
-        authType: 'jwt',
-        userId: local.userId,
-      });
-      throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
-    }
-    c.set('userId', local.userId);
-    c.set('userEmail', local.email);
-    c.set('authType', 'supabase');
-    setSentryUser({ id: local.userId, email: local.email });
-    setContextField('userId', local.userId);
-    setContextField('userEmail', local.email);
-    if (isPreviewRoute) setPreviewSessionCookie(c, token);
-    auditLoginSuccess({
-      c,
-      userId: local.userId,
-      authType: 'supabase',
-      metadata: { verify_path: 'local' },
-    });
-    // SAML JIT — combinedAuth guards user-facing routes too, so SSO users must
-    // provision here as well, not only in supabaseAuth.
-    await jitSyncSso(
-      local.userId,
-      local.email,
-      local.payload as unknown as Record<string, unknown>,
-    );
-    await next();
-    return;
-  }
-
-  // Token is definitively bad (bad sig, expired, malformed) — reject immediately.
-  // An inconclusive result falls through to the network path below instead.
-  if (!isInconclusiveVerifyFailure(local.reason)) {
-    auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
-    throw new HTTPException(401, { message: 'Invalid or expired token' });
-  }
-
-  // JWKS not yet loaded — fall back to network getUser() call
-  try {
-    const supabase = getSupabase();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (error || !user) {
-      auditLoginFail({
-        c,
-        reason: error?.message ?? 'jwt_network_invalid',
-        authType: 'jwt',
-      });
-      throw new HTTPException(401, { message: 'Invalid or expired token' });
-    }
-
-    if (
-      previewSandboxId &&
-      !(await canAccessPreviewSandbox({
-        previewSandboxId,
-        userId: user.id,
-      }))
-    ) {
-      auditLoginFail({
-        c,
-        reason: 'preview_sandbox_not_authorized',
-        authType: 'jwt',
-        userId: user.id,
-      });
-      throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
-    }
-
-    c.set('userId', user.id);
-    c.set('userEmail', user.email || '');
-    c.set('authType', 'supabase');
-    const payload = decodeSupabaseJwtPayload(token);
-    if (payload?.aal) c.set('mfaAal', payload.aal);
-    if (payload?.session_id) c.set('sessionId', payload.session_id);
-    if (typeof payload?.iat === 'number') {
-      c.set('sessionIat', payload.iat);
-    }
-    setSentryUser({ id: user.id, email: user.email || undefined });
-    setContextField('userId', user.id);
-    setContextField('userEmail', user.email || '');
-    if (isPreviewRoute) setPreviewSessionCookie(c, token);
-    auditLoginSuccess({
-      c,
-      userId: user.id,
-      authType: 'supabase',
-      metadata: { verify_path: 'network' },
-    });
-    // SAML JIT — combinedAuth network-verify path.
-    await jitSyncSso(
-      user.id,
-      user.email || '',
-      (payload as unknown as Record<string, unknown> | null) ??
-        (user as unknown as Record<string, unknown>),
-    );
-    await next();
-  } catch (err) {
-    if (err instanceof HTTPException) throw err;
-    console.error('[AUTH] Error:', err);
-    auditLoginFail({ c, reason: 'auth_internal_error', authType: 'jwt' });
-    throw new HTTPException(401, { message: 'Authentication failed' });
-  }
-}
-
-// ─── Internal helpers ────────────────────────────────────────────────────────
-
-/**
- * Set (or refresh) the preview session cookie.
- * Scoped to /v1/p/ so it only applies to preview proxy routes.
- * SameSite=Lax allows the cookie on same-site navigations and sub-resource loads.
- * Max-Age=3600 (1 hour) — the frontend refreshes the token periodically.
- */
-function setPreviewSessionCookie(c: Context, token: string) {
-  const encoded = encodeURIComponent(token);
-  c.header(
-    'Set-Cookie',
-    `${PREVIEW_SESSION_COOKIE}=${encoded}; Path=/v1/p/; HttpOnly; Secure; SameSite=Lax; Max-Age=3600`,
-    { append: true },
-  );
-}
-
-function extractPreviewSandboxId(path: string): string | null {
-  const match = path.match(/^\/v1\/p\/([^/]+)(?:\/|$)/);
-  if (!match) return null;
-  const segment = match[1];
-  return segment === 'auth' || segment === 'share' ? null : segment;
-}
-
-/**
- * Write-only platform sinks whose ONLY caller is the in-guest sandbox daemon
- * reporting on its OWN session. Every one of them is reached with the
- * session-scoped `KORTIX_TOKEN`, which is an `isAccountToken` PAT — so it lands
- * in the PAT branch of `resolveSupabaseAuth` and is judged by
- * `enforceTokenProjectScope`, NOT by the legacy `sandboxTokenPathAllowed`
- * allowlist above (that one only covers `kortix_`/`kortix_sb_` API keys, which
- * nothing has minted for a sandbox since the unified-credential cutover).
- *
- * A sink that is missing here is not "secure" — it is UNREACHABLE, answering
- * 403 to a fire-and-forget push that nobody sees fail. That is exactly what
- * happened twice:
- *   - `/v1/platform/runtime-projection`, observed live 2026-08-27.
- *   - `/v1/platform/boot-timeline`, observed live in prod for the 7 days to
- *     2026-09-09: 2,338 x `POST /v1/platform/boot-timeline -> 403
- *     [HTTPException]`, 1,414 of them in the last two days against just 47
- *     successes (97% denied). Prod minted 583 session-scoped PATs and ZERO
- *     sandbox API keys in that window, so effectively every boot was denied and
- *     no in-guest boot timeline was recorded.
- *
- * ADD A SINK HERE when you add a route whose caller is the daemon holding
- * `KORTIX_TOKEN`. `__tests__/unit-boot-timeline-auth-mount.test.ts` pins the
- * membership of this set for the same reason it pins the middleware mount.
- */
-const SESSION_BOUND_PLATFORM_SINKS = new Set([
-  '/v1/platform/runtime-projection',
-  '/v1/platform/boot-timeline',
-]);
-
-/**
- * A project-scoped CLI PAT can only act on its bound project. Reject
- * the request if:
- *   - the URL targets a `:projectId` parameter that doesn't match, OR
- *   - the URL is an account-level route (`/v1/accounts/*` other than
- *     `/v1/accounts/me`, which we allow as a self-identity probe), OR
- *   - the URL is a webhook / preview / system route the token has no
- *     business hitting — UNLESS it is the sandbox-proxy path
- *     (`/v1/p/{sandboxId}/{port}/...`) AND the sandbox belongs to the
- *     token's own project (see below).
- *
- * Throws HTTPException(403) so the calling middleware aborts the chain.
- */
-async function enforceTokenProjectScope(
-  c: Context,
-  tokenProjectId: string,
-  opts: { sessionBound?: boolean } = {},
-): Promise<void> {
-  const path = c.req.path;
-
-  // Daemon-only platform sinks (SESSION_BOUND_PLATFORM_SINKS). A session
-  // sandbox holds exactly ONE credential — a project+SESSION-scoped PAT ("One
-  // sandbox, one session-scoped Kortix credential",
-  // platform/services/session-sandbox.ts) — so without this branch the daemon's
-  // push can never reach the sink on any environment. Allowed ONLY for a
-  // session-BOUND token; an ordinary project PAT stays denied. Each handler
-  // re-verifies the binding against `session_sandboxes` (sandbox id ∧ session ∧
-  // account ∧ live) via isSessionSandboxCredential, so this gate is
-  // authentication, not the authorization boundary.
-  if (opts.sessionBound && SESSION_BOUND_PLATFORM_SINKS.has(path)) return;
-
-  // Whitelist a couple of self-identity probes the CLI hits even for
-  // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
-  // "what project/session/agent am I bound to?".
-  if (path === '/v1/accounts/me') return;
-
-  // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
-  // This function is default-deny, and the in-sandbox `KORTIX_TOKEN` is
-  // exactly a project+session-scoped PAT, so without this branch the ONE caller
-  // these routes exist for gets a 403: every baked sandbox seeds a kortix-system
-  // skill telling the agent to run `kortix skills get <name>`.
-  // Safe to allow — the content is static template text that is byte-identical
-  // for every caller, carries no account or project data, and is served from the
-  // shipped @kortix/starter package rather than any per-tenant store. There is
-  // no scope to enforce here; the token gate is authentication, not
-  // authorization.
-  if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
-
-  // `/v1/runtime-assets` — the `kortix-agent` daemon binary, the CLI binary, and
-  // the managed-skill overlay this deploy bakes into sandboxes. The prefix test
-  // covers every payload route including `/agent`, which is deliberate: the
-  // daemon converging ITSELF is the same caller with the same token as the
-  // daemon converging its CLI. Same reasoning as `/v1/skills`
-  // above, and for the same single caller: the in-sandbox daemon reconciles
-  // against these on every session start/restart/resume holding exactly a
-  // project+session-scoped `KORTIX_TOKEN`. A 403 here means a sandbox can
-  // never repair a stale CLI, which is the whole bug these routes exist to fix.
-  // Safe to allow — the payloads are the deploy's own build artifacts, identical
-  // for every caller, with no account or project data in them. Authentication,
-  // not authorization.
-  if (path.startsWith('/v1/runtime-assets/')) return;
-
-  const deny = (check: string, reason: string): never => {
-    // NAME the principal and the check in the message. The global `app.onError`
-    // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a
-    // bare reason string made every one of these denials indistinguishable in
-    // Better Stack — 2,338 identical `POST /v1/platform/boot-timeline -> 403
-    // [HTTPException]` lines over 7 days named neither the credential that was
-    // rejected nor the branch that rejected it, which is why the boot-timeline
-    // gate defect above went unnoticed for weeks.
-    throw new HTTPException(403, {
-      message:
-        `${reason} ` +
-        `[check=token-project-scope:${check} ` +
-        `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
-        `project=${tokenProjectId} path=${path}]`,
-    });
-  };
-
-  // Reject other account-level routes outright.
-  if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
-    deny('account-level-route', 'Project-scoped token cannot call account-level routes');
-  }
-
-  // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
-  // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. The connector branch intentionally includes both gateway and
-  // connector-management routes: the unified Connector MCP exposes add/remove
-  // connector tools from inside the sandbox, while individual routes still gate
-  // mutations via project.write in resolveAdmin.
-  const m =
-    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
-  if (m) {
-    const urlProjectId = m[1];
-    if (urlProjectId !== tokenProjectId) {
-      deny('cross-project', 'Project-scoped token cannot access a different project');
-    }
-    return;
-  }
-
-  // Bare `/v1/projects` (list) is also account-scoped: a project-bound
-  // token shouldn't enumerate other projects.
-  if (path === '/v1/projects') {
-    deny('project-list', 'Project-scoped token cannot list projects');
-  }
-
-  // Sandbox-proxy path — this is what session.send()/stream() and other
-  // runtime.* SDK calls actually hit (NOT /v1/projects/:id/*). Without this
-  // branch a project PAT could authenticate REST calls but never drive an
-  // agent turn. Allow it through ONLY for a sandbox that resolves back to
-  // THIS token's own project — resolved via `session_sandboxes` (one indexed
-  // lookup, sandbox_id is the PK). A lookup miss or a mismatched project both
-  // deny, same as every other surface a project PAT has no business on; this
-  // never widens access to another project's or another account's sandbox.
-  const previewSandboxId = extractPreviewSandboxId(path);
-  if (previewSandboxId) {
-    const sandboxProjectId = await resolveSandboxProjectId(previewSandboxId);
-    if (sandboxProjectId && sandboxProjectId === tokenProjectId) {
-      return;
-    }
-    deny(
-      'foreign-sandbox',
-      'Project-scoped token cannot access a sandbox outside its project',
-    );
-  }
-
-  // All other surfaces (router, billing, channels, etc.) are
-  // account-level — refuse.
-  deny('default-deny', 'Project-scoped token cannot call this surface');
 }

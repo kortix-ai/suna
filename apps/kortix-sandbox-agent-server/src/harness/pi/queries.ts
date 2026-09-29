@@ -3,15 +3,15 @@
  * the sequenced event stream, actions and attachment bytes. Same shapes as the
  * OpenCode adapter serves — the web client is not namespace-parameterized.
  */
-import { kortixEventBus } from '../../kortix-event-bus'
-import { stripInlineAttachmentBytes } from '../../inline-attachments'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type {
   HarnessActionResult,
   HarnessAttachmentService,
   HarnessQueryFactory,
   HarnessQueryService,
   HarnessReadResult,
-} from '../queries'
+} from '../contract/queries'
 import type { PiRuntime } from './runtime'
 import type { PiSurface } from './surface'
 
@@ -63,12 +63,12 @@ export function createPiQueryService(runtime: () => PiRuntime | null, surface: P
           const rt = runtime()
           const t0 = performance.now()
           if (!rt) return { ok: false, body: { error: 'pi runtime is not started' } }
-          const page =
-            sessionId === rt.rootId
-              ? after
-                ? { messages: rt.transcript.all().filter((m) => (m.info.id as string) > after).slice(0, limit), hasMore: false }
-                : rt.transcript.page({ limit, before })
-              : { messages: [], hasMore: false }
+          const transcript = sessionId === rt.rootId ? rt.transcript : rt.childSession(sessionId)?.transcript
+          const page = transcript
+            ? after
+              ? { messages: transcript.all().filter((m) => (m.info.id as string) > after).slice(0, limit), hasMore: false }
+              : transcript.page({ limit, before })
+            : { messages: [], hasMore: false }
           let truncated = 0
           const projected = page.messages.map((message) => ({
             info: message.info,

@@ -20,7 +20,9 @@ describe('public share header chrome', () => {
     expect(page).toContain('KortixLogo');
     // The title comes from the file name, never the workspace path.
     expect(page).toContain('fileNameFromPath');
-    expect(page).toContain('const title = isFileShare ? fileName : meta.share.label');
+    expect(page).toContain('const title = isFileShare\n    ? fileName');
+    // A transcript share is titled by the session name, not the generic label.
+    expect(page).toContain('(sessionTitle ?? meta.share.label)');
   });
 
   test('header controls carry no ad-hoc sizing or press effects', () => {
@@ -71,6 +73,28 @@ describe('public share content pane', () => {
     // And the corner notch needs a different tone behind it to be seen at all.
     expect(section).toContain('bg-background');
     expect(root).toContain('bg-card');
+  });
+});
+
+describe('public transcript share', () => {
+  test('renders the transcript view and never the offline panel or an iframe', () => {
+    expect(page).toContain('<PublicTranscriptShareView token={token} />');
+    // The branch comes before `offline`, and `offline` is false for it: a
+    // transcript is served from the saved copy while the sandbox is stopped.
+    expect(page.indexOf('isTranscriptShare ? (')).toBeLessThan(page.indexOf(') : offline ? ('));
+    expect(page).toContain("const offline = !isTranscriptShare && meta.share.sandbox_status !== 'active'");
+    // `public_url` of a transcript share is this page itself.
+    expect(page).toContain('!isFileShare && !isTranscriptShare && (');
+  });
+
+  test('renders messages through the untrusted markdown policy', () => {
+    const transcriptView = readFileSync(
+      resolve(import.meta.dir, 'public-transcript-share-view.tsx'),
+      'utf8',
+    );
+    expect(transcriptView).toContain('export function PublicTranscriptShareView');
+    expect(transcriptView).toContain('trust="untrusted"');
+    expect(transcriptView).not.toContain('trust="agent"');
   });
 });
 

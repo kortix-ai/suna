@@ -86,7 +86,7 @@ function defaultDependencies(): HostingDependencies {
  */
 export function appControlToken(runtimeId: string, secret: string): string {
   if (!runtimeId) throw new Error('runtimeId is required');
-  if (secret.length < 16) throw new Error('App control secret must contain at least 16 characters');
+  if (!secret) throw new Error('App control secret is required');
   return createHmac('sha256', secret)
     .update('kortix-appd-control:v1\0')
     .update(runtimeId)

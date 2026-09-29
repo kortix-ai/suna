@@ -20,7 +20,6 @@ export type ProjectTriggerType = 'cron' | 'webhook' | 'monitor';
  *
  * Both shapes emit events as stdout lines, so nothing downstream (filter →
  * prompt template → session_mode) can tell them apart.
- * See docs/specs/2026-08-12-monitors.md.
  */
 export type ProjectMonitorMode = 'poll' | 'stream';
 

@@ -11,7 +11,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * design). Connector approvals (`call:`) open the shared full-parameter review
  * component. That component resolves one exact call through `resolveApproval`.
  * The presentational inbox (review-center.tsx) is shared with the mock
- * prototype. See docs/REVIEW_CENTER_DESIGN.md.
+ * prototype.
  */
 
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,11 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { type ReviewVerdict, listProjectSessions, PROJECT_SESSION_NAME_LOOKUP_LIMIT } from '@kortix/sdk';
+import {
+  type ReviewVerdict,
+  listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+} from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -152,7 +156,7 @@ export function ReviewCenterConnected({
     const executionId = connectorCallId(id);
     if (executionId) {
       resolve.mutate(
-        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny' },
+        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny', note: feedback },
         {
           onSuccess: () =>
             verdict === 'approve'

@@ -100,6 +100,7 @@ export function ComposerChatInput({
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
     options?: SessionPromptOverrides | null;
+    submit?: boolean;
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
   inputSlot?: ReactNode;

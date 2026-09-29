@@ -1,6 +1,5 @@
 /**
- * The one read of the `config_releases` feature flag
- * (docs/specs/config-releases.md, "Feature flag").
+ * The one read of the `config_releases` feature flag.
  *
  * The whole feature is behind this flag: the descriptor and archive routes,
  * the release builder, the store, the quarantine ledger, every convergence
@@ -8,13 +7,10 @@
  * OpenCode reads the session's workspace config dir, as it did before config
  * releases existed.
  *
- * Two gates, both from the shared registry:
- *   • operator — `config.CONFIG_RELEASES_ENABLED` (the registry's `available`).
- *     False ⇒ the flag is off for every project, whatever a project chose, and
- *     the Settings row disappears.
- *   • project  — `projects.metadata.experimental.config_releases`, defaulting
- *     to OFF (`registry.ts`, `platformDefault: () => false`) until the rollout
- *     is done. A project opts in, or out again, without a code change.
+ * One gate: `projects.metadata.experimental.config_releases`, defaulting to
+ * OFF (`registry.ts`, `platformDefault: () => false`) until the rollout is
+ * done. A project opts in, or out again, from Settings without a code change
+ * or a redeploy. The flag is available on every deployment.
  *
  * Never inline `resolveFeatureFlag(metadata, 'config_releases')` elsewhere:
  * the chokepoints named in the spec call one of these two functions, so the

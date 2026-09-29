@@ -13,13 +13,15 @@ import {
   PlugIcon as Plug,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
+  ShareNetworkIcon,
   UsersIcon as Users,
+  UsersThreeIcon as UsersThree,
   XIcon as X,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
@@ -78,8 +80,8 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
-import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
+import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
+import { useAddComputerToProject, useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -99,6 +101,7 @@ import {
   ensureProjectConnectorConnection,
   getConnectorConfig,
   getConnectStatus,
+  getProjectDetail,
   listAllConnections,
   listConnections,
   renameConnection,
@@ -117,7 +120,16 @@ import {
   startConnectionOAuth2DeviceAuthorization,
   updateConnectionCredential,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { useAuth } from '@/features/providers/auth-provider';
+import {
+  ComputerConnectModal,
+  ComputerGlyph,
+  ComputerStateDot,
+  computerDisplayName,
+} from '@/features/tunnel/computer-connect';
+import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
+import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
@@ -152,7 +164,15 @@ import {
 } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { DiscoverCatalogue } from './discover-catalogue';
-import { connectorConnectionRows } from './view/connector-connections';
+import { AddAccountFields } from './add-account-fields';
+import {
+  accountVisibility,
+  connectorConnectionRows,
+  newAccountGrantees,
+  newAccountLabelTaken,
+  newAccountReady,
+  type NewAccountDraft,
+} from './view/connector-connections';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
@@ -225,6 +245,7 @@ function CodeSnippet({
 /** One row in the connections list — a single connected account. */
 function ConnectionRow({
   connection,
+  viewerId,
   isMine,
   canManage,
   onSetDefault,
@@ -232,10 +253,13 @@ function ConnectionRow({
   onRename,
   onStartSession,
   onSetCredential,
+  onShare,
   pending,
   disabled = false,
 }: {
   connection: Connection;
+  /** The signed-in user, so an account narrowed to them alone reads "Only you". */
+  viewerId: string | null;
   isMine: boolean;
   canManage: boolean;
   onSetDefault: () => void;
@@ -248,45 +272,108 @@ function ConnectionRow({
    *  account instead of a connector-wide one; managed (Composio/Pipedream)
    *  providers re-authorize through OAuth instead, so this is omitted there. */
   onSetCredential?: () => void;
+  /** Open the share dialog: who may use this SHARED account. */
+  onShare?: () => void;
   pending: boolean;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   const isProjectAuthorization = connection.owner_type === 'project';
+  const isComputer = Boolean(connection.tunnel_id);
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
   const mayMutate = isProjectAuthorization ? canManage : isMine;
+  const visibility = accountVisibility(connection, viewerId);
+  const everyoneWithAccess = (connection.shared_with ?? []).map((share) => share.label);
 
   const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
-      <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-sm',
-          isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
-        )}
-      >
-        {isProjectAuthorization ? (
-          <Users className="text-kortix-blue size-5" />
-        ) : (
-          <Lock className="text-kortix-purple size-5" />
-        )}
-      </span>
+      {isComputer ? (
+        <ComputerGlyph />
+      ) : (
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-sm',
+            isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
+          )}
+        >
+          {isProjectAuthorization ? (
+            <Users className="text-kortix-blue size-5" />
+          ) : (
+            <Lock className="text-kortix-purple size-5" />
+          )}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{connection.label}</span>
+          <span className="truncate text-sm font-medium">
+            {isComputer
+              ? computerDisplayName(connection.label, { hostname: connection.machine?.hostname }) ||
+                connection.label
+              : connection.label}
+          </span>
+          {/* A computer account: is the machine it points at online right now? */}
+          {isComputer ? (
+            <Hint
+              label={connection.machine?.online ? tComputers('online') : tComputers('offline')}
+            >
+              <span className="inline-flex p-1">
+                <ComputerStateDot state={connection.machine?.online ? 'online' : 'offline'} />
+              </span>
+            </Hint>
+          ) : null}
           {connection.is_default && (
             <Badge variant="outline" size="xs">
               {tI18nComplete.raw('text21b111cbfe6e')}
             </Badge>
           )}
+          {/* Who may use this account, on every card: the list has one group.
+              A computer row says it in its meta line instead. */}
+          {isComputer ? null : (
+            <Hint
+              label={
+                visibility.kind === 'named'
+                  ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
+                  : visibility.kind === 'everyone'
+                    ? tSharing('everyoneMeta')
+                    : tSharing('onlyYouDescription')
+              }
+            >
+              <Badge variant="outline" size="xs" data-testid="account-visibility">
+                {visibility.kind === 'you' ? (
+                  <Lock />
+                ) : visibility.kind === 'everyone' ? (
+                  <UsersThree />
+                ) : (
+                  <Users />
+                )}
+                {visibility.kind === 'you'
+                  ? tSharing('onlyYou')
+                  : visibility.kind === 'everyone'
+                    ? tSharing('visibilityEveryone')
+                    : visibility.more > 0
+                      ? tSharing('visibilityNamedMore', {
+                          names: visibility.names.join(', '),
+                          count: visibility.more,
+                        })
+                      : visibility.names.join(', ')}
+              </Badge>
+            </Hint>
+          )}
         </div>
         <InlineMeta>
-          {isProjectAuthorization
-            ? tI18nComplete.raw('text1c22fac2a9fd')
-            : tI18nComplete.raw('text1e1353702c42')}
+          {isComputer
+            ? isProjectAuthorization
+              ? tComputers('sharedWithThisProject')
+              : tComputers('yoursEveryProject')
+            : null}
+          {/* Listed only because the caller manages the project's connections. */}
+          {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
           {/* WHO the account was authorized as. Hidden when the label already
               says it (finalize names a default-labelled account after it). */}
@@ -301,6 +388,39 @@ function ConnectionRow({
           </Hint>
         </InlineMeta>
       </div>
+      {onShare && mayMutate ? (
+        // Your own private account is shared by turning it into a shared one,
+        // which needs the same right as creating a shared account.
+        isProjectAuthorization || canManage ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={onShare}
+            disabled={pending || disabled}
+            aria-label={tSharing('shareTitle', { label: connection.label })}
+          >
+            <ShareNetworkIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('text29887a5ff984')}
+          </Button>
+        ) : (
+          <Hint label={tSharing('shareRequiresManage')}>
+            {/* A span, so the hint still opens over a disabled button. */}
+            <span className="inline-flex shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                disabled
+                aria-label={tSharing('shareTitle', { label: connection.label })}
+              >
+                <ShareNetworkIcon className="size-3.5 shrink-0" />
+                {tI18nComplete.raw('text29887a5ff984')}
+              </Button>
+            </span>
+          </Hint>
+        )
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -353,102 +473,27 @@ function ConnectionRow({
   );
 }
 
-/** Which owner a group of accounts belongs to. */
-type ConnectionOwner = 'project' | 'me';
+const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
+  label: '',
+  audience: 'private',
+  picked: { memberIds: [], groupIds: [] },
+};
 
 /**
- * One owner group: heading, its add control, and its rows.
+ * Every account this connector can run as, in one list. Each card states who
+ * may use it (`accountVisibility`); one "Add account" asks the name and who may
+ * use the new account.
  *
- * Both groups render the same `ConnectionRow`, so a shared and a private
- * account read identically apart from the tile and the "Shared with the
- * project" / "Private — only you" line the row already prints.
- */
-function ConnectionOwnerGroup({
-  title,
-  action,
-  loading,
-  rows,
-  emptyTitle,
-  emptyDescription,
-  canManageConnections,
-  disabled,
-  pendingConnectionId,
-  onSetDefault,
-  onDisconnect,
-  onRename,
-  onStartSession,
-  onSetCredential,
-}: {
-  title: string;
-  action: React.ReactNode;
-  loading: boolean;
-  rows: readonly Connection[];
-  emptyTitle: string;
-  emptyDescription: string;
-  canManageConnections: boolean;
-  disabled: boolean;
-  pendingConnectionId: string | null;
-  onSetDefault: (connection: Connection) => void;
-  onDisconnect: (connection: Connection) => void;
-  onRename: (connection: Connection) => void;
-  onStartSession?: (connection: Connection) => void;
-  onSetCredential?: (connection: Connection) => void;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <Label>{title}</Label>
-        <div className="flex items-center gap-2">{action}</div>
-      </div>
-      {loading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-14 rounded-md" />
-          <Skeleton className="h-14 rounded-md" />
-        </div>
-      ) : rows.length === 0 ? (
-        <EmptyState size="sm" icon={Plug} title={emptyTitle} description={emptyDescription} />
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((connection) => (
-            <ConnectionRow
-              key={connection.connection_id}
-              connection={connection}
-              isMine={connection.owner_type === 'member'}
-              canManage={canManageConnections}
-              pending={pendingConnectionId === connection.connection_id}
-              disabled={disabled}
-              onSetDefault={() => onSetDefault(connection)}
-              onDisconnect={() => onDisconnect(connection)}
-              onRename={() => onRename(connection)}
-              onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
-              onSetCredential={onSetCredential ? () => onSetCredential(connection) : undefined}
-            />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/**
- * Every account this connector can run as, in two groups: the project's shared
- * accounts and the caller's own.
- *
- * The two are NOT alternatives. A connector is a declared capability with no
- * identity; an account is an authorized identity on it, owned by the project or
- * by one member, and a call resolves the caller's own default first and the
- * project's default second. `connectors.authorization_strategy` used to make
- * the two owner types mutually exclusive, which is what left a `user`-mode
- * connector with no connect flow anywhere — the incident this list is the fix
- * for. Connecting a SHARED account is manager-gated
+ * An account is an authorized identity on the connector, owned by the project
+ * (shared) or by one member (only you), and both can coexist on the same
+ * connector. Sharing an account is manager-gated
  * (`PROJECT_CONNECTOR_CONNECTIONS_MANAGE`, the same right the API checks);
- * connecting your own never is.
+ * adding your own never is.
  *
- * The API already scopes the list to the caller, so "Only you" can only ever
- * hold the caller's own rows — another member's private account is not visible
+ * The API already scopes the list to the caller, so a member-owned row is
+ * always the caller's own. Another member's private account is not visible
  * here and is not meant to be.
  */
-
 export function ConnectionsList({
   projectId,
   connector,
@@ -456,6 +501,7 @@ export function ConnectionsList({
   canManageConnections,
   onChanged,
   onStartSession,
+  addRequest = 0,
   disabled = false,
 }: {
   projectId: string;
@@ -465,25 +511,47 @@ export function ConnectionsList({
   onChanged: () => void;
   /** Start a session bound to this exact account. Omitted where that is not offered. */
   onStartSession?: (connection: Connection) => void;
+  /** Bumped by a caller outside the list (the connector header's Connect) to
+   *  open the same Add account dialog. */
+  addRequest?: number;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // A direct provider (openapi/http/mcp/graphql/…) has no hosted OAuth: "Add"
-  // creates (or selects) the account and this then opens `SetCredentialModal`
-  // for it — the same create-then-credential sequence `connector-modal.tsx`
-  // runs from its header button, run here per ACCOUNT instead of per
-  // connector. A managed provider (Composio/Pipedream) keeps running hosted
-  // OAuth through `usePipedreamConnectProject`/`usePipedreamConnectMember`.
-  const isDirectProvider = !isManagedConnectorProvider(connector.provider);
-  const [addOwner, setAddOwner] = useState<ConnectionOwner | null>(null);
-  const [labelDraft, setLabelDraft] = useState('');
+  const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
+  // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
+  // creates the account and this then opens `SetCredentialModal` for it. A
+  // managed provider (Composio/Pipedream) runs hosted OAuth through
+  // `useAddManagedAccount`.
+  // A computer account is a paired machine: "Add" pairs one (desktop one-click,
+  // or download + npx) instead of asking for a credential.
+  const isComputer = connector.provider === 'computer';
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  const [computerOpen, setComputerOpen] = useState(false);
+  const { user } = useAuth();
+  const viewerId = user?.id ?? null;
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [credentialTarget, setCredentialTarget] = useState<{
     connectionId: string;
-    owner: ConnectionOwner;
+    owner: 'project' | 'me';
   } | null>(null);
+  // The shared account whose audience the share dialog edits.
+  const [shareTarget, setShareTarget] = useState<Connection | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const accountId = useProjectAccountId(projectId);
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const projectName = projectDetailQuery.data?.project?.name ?? '';
+  const everyoneLabel = projectName
+    ? tSharing('everyone', { project: projectName })
+    : tSharing('visibilityEveryone');
 
   const connectionsQuery = useQuery({
     queryKey: ['connections', projectId],
@@ -496,42 +564,66 @@ export function ConnectionsList({
   };
 
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
-  const sharedRows = rows.filter((connection) => connection.owner_type === 'project');
-  const myRows = rows.filter((connection) => connection.owner_type === 'member');
 
-  const closeAdd = () => {
-    setAddOwner(null);
-    setLabelDraft('');
+  const openAdd = () => {
+    if (isComputer) {
+      setComputerOpen(true);
+      return;
+    }
+    setDraft(EMPTY_NEW_ACCOUNT);
+    setAddOpen(true);
   };
-  const addProject = usePipedreamConnectProject(projectId, connector.slug, () => {
+  const closeAdd = () => setAddOpen(false);
+  // Adjusted during render, not in an effect: each new request opens the dialog once.
+  const [seenAddRequest, setSeenAddRequest] = useState(addRequest);
+  if (addRequest !== seenAddRequest) {
+    setSeenAddRequest(addRequest);
+    if (addRequest > 0) openAdd();
+  }
+
+  const addManaged = useAddManagedAccount(projectId, connector.slug, accountId, () => {
     closeAdd();
     refresh();
   });
-  const addMine = usePipedreamConnectMember(projectId, connector.slug, () => {
-    closeAdd();
-    refresh();
-  });
-  const createSharedAccount = useMutation({
-    mutationFn: (label: string) =>
-      reconcileConnection(projectId, {
+  // Direct providers: create the account, narrow it before it holds a
+  // credential (so it is never open to everyone), then collect the credential.
+  const createAccount = useMutation({
+    mutationFn: async (label: string) => {
+      if (draft.audience === 'private') {
+        return reconcileMemberConnection(projectId, { connector_alias: connector.slug, label });
+      }
+      const connection = await reconcileConnection(projectId, {
         connector_alias: connector.slug,
         owner_type: 'project',
         label,
-      }),
+      });
+      if (draft.audience === 'members') {
+        await grantConnectionAccess(
+          accountId ?? '',
+          projectId,
+          connection.connection_id,
+          newAccountGrantees(draft.picked),
+        );
+      }
+      return connection;
+    },
     onSuccess: (connection) => {
       closeAdd();
-      setCredentialTarget({ connectionId: connection.connection_id, owner: 'project' });
+      // A connector with no auth has no credential to enter: the account is ready.
+      if (!connector.authSecret) {
+        refresh();
+        return;
+      }
+      setCredentialTarget({
+        connectionId: connection.connection_id,
+        owner: draft.audience === 'private' ? 'me' : 'project',
+      });
     },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
-  });
-  const createOwnAccount = useMutation({
-    mutationFn: (label: string) =>
-      reconcileMemberConnection(projectId, { connector_alias: connector.slug, label }),
-    onSuccess: (connection) => {
-      closeAdd();
-      setCredentialTarget({ connectionId: connection.connection_id, owner: 'me' });
+    onError: (e: Error) => {
+      // A partly written account (created, then a grant refused) is listed now.
+      refresh();
+      errorToast(e.message || tI18nComplete.raw('texta2cf78785484'));
     },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
   const setDefault = useMutation({
     mutationFn: (connectionId: string) => setDefaultConnection(projectId, connectionId),
@@ -541,6 +633,12 @@ export function ConnectionsList({
     },
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
+  // A computer is shared by sharing the MACHINE with the project: a shared
+  // account appears beside the owner's own, which keeps following them.
+  const shareComputer = useAddComputerToProject();
+  // Your own computer row follows you into every project, so its Disconnect
+  // removes the machine from Kortix (every project), not one account.
+  const unpairComputer = useDeleteTunnelConnection();
   const disconnect = useMutation({
     mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
     onSuccess: () => {
@@ -577,19 +675,15 @@ export function ConnectionsList({
     rename.mutate({ connectionId: renameTarget.connection_id, label });
   };
 
-  const adding = isDirectProvider
-    ? createSharedAccount.isPending || createOwnAccount.isPending
-    : addProject.isPending || addMine.isPending;
+  const adding = createAccount.isPending || addManaged.isPending;
+  const labelTaken = newAccountLabelTaken(draft, rows);
+  const canSubmitAdd =
+    !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
   const submitAdd = () => {
-    if (disabled || !addOwner || !labelDraft.trim()) return;
-    if (isDirectProvider) {
-      if (addOwner === 'project') createSharedAccount.mutate(labelDraft.trim());
-      else createOwnAccount.mutate(labelDraft.trim());
-    } else if (addOwner === 'project') {
-      addProject.mutate({ label: labelDraft });
-    } else {
-      addMine.mutate({ label: labelDraft });
-    }
+    if (!canSubmitAdd) return;
+    if (isDirectProvider) createAccount.mutate(draft.label.trim());
+    // The hooks toast their own errors.
+    else void addManaged.add(draft).catch(() => undefined);
   };
   const pendingConnectionId =
     setDefault.isPending && typeof setDefault.variables === 'string'
@@ -601,7 +695,7 @@ export function ConnectionsList({
           : null;
   // Re-open the credential entry for an existing direct-provider account —
   // wired from the row menu ("Set credential") and reused right after
-  // `createSharedAccount`/`createOwnAccount` creates a brand new one.
+  // `createAccount` creates a brand new one.
   const setCredential = isDirectProvider
     ? (connection: Connection) =>
         setCredentialTarget({
@@ -610,83 +704,130 @@ export function ConnectionsList({
         })
     : undefined;
 
+  // A member's computer account follows them into every project, so it is
+  // never removed from one project: Disconnect unpairs the machine.
+  const ownComputer = (connection: Connection) => isComputer && connection.owner_type === 'member';
+  const sharedMachine = (connection: Connection) =>
+    rows.some(
+      (row) =>
+        row.owner_type === 'project' &&
+        row.status === 'active' &&
+        row.tunnel_id === connection.tunnel_id,
+    );
+  const shareMachine = (connection: Connection) => {
+    if (!connection.tunnel_id) return;
+    shareComputer.mutate(
+      { projectId, tunnelId: connection.tunnel_id, share: 'project' },
+      {
+        onSuccess: () => {
+          successToast(tComputers('sharedWithProject'));
+          refresh();
+        },
+        onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
+      },
+    );
+  };
+  const renderRow = (connection: Connection) => {
+    const mine = ownComputer(connection);
+    return (
+      <ConnectionRow
+        key={connection.connection_id}
+        connection={connection}
+        viewerId={viewerId}
+        isMine={connection.owner_type === 'member'}
+        canManage={canManageConnections}
+        pending={
+          pendingConnectionId === connection.connection_id ||
+          (shareComputer.isPending && shareComputer.variables?.tunnelId === connection.tunnel_id)
+        }
+        disabled={disabled}
+        onSetDefault={() => setDefault.mutate(connection.connection_id)}
+        onDisconnect={() => setConfirmDisconnect(connection)}
+        onRename={() => openRename(connection)}
+        onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
+        onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+        onShare={
+          mine
+            ? !connection.tunnel_id || sharedMachine(connection)
+              ? undefined
+              : () => shareMachine(connection)
+            : accountId
+              ? () => {
+                  setShareTarget(connection);
+                  setShareOpen(true);
+                }
+              : undefined
+        }
+      />
+    );
+  };
+
   return (
     <div className="space-y-6">
-      <ConnectionOwnerGroup
-        title={tI18nComplete.raw('text1c22fac2a9fd')}
-        action={
-          canManageConnections ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => setAddOwner('project')}
-              disabled={disabled}
-            >
-              <Plus className="size-4" />
-              {tI18nComplete.raw('textc6309c452031')}
-            </Button>
-          ) : null
-        }
-        loading={connectionsQuery.isLoading}
-        rows={sharedRows}
-        emptyTitle={tI18nComplete.raw('textded4b88e52f7')}
-        // A reader cannot connect a shared account, so telling them to is a
-        // dead end. Name who can instead.
-        emptyDescription={
-          canManageConnections
-            ? tI18nComplete.raw('texte6e0b4594c95')
-            : tI18nComplete.raw('textea5d0ffa0962')
-        }
-        canManageConnections={canManageConnections}
-        disabled={disabled}
-        pendingConnectionId={pendingConnectionId}
-        onSetCredential={setCredential}
-        onSetDefault={(connection) => setDefault.mutate(connection.connection_id)}
-        onDisconnect={setConfirmDisconnect}
-        onRename={openRename}
-        onStartSession={onStartSession}
-      />
-
-      <ConnectionOwnerGroup
-        title={tI18nComplete.raw('textc080649df657')}
-        action={
-          <Button size="sm" variant="outline" onClick={() => setAddOwner('me')} disabled={disabled}>
-            <Lock className="size-3.5 shrink-0" />
-            {tI18nComplete.raw('textcbf6389cf9df')}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <Label>{tSharing('accountsTitle')}</Label>
+          <Button size="sm" variant="secondary" onClick={openAdd} disabled={disabled}>
+            <Plus className="size-4" />
+            {tSharing('addAccount')}
           </Button>
-        }
-        loading={connectionsQuery.isLoading}
-        rows={myRows}
-        emptyTitle={tI18nComplete.raw('textc3bafa5156b4')}
-        emptyDescription={tI18nComplete.raw('text6533f1aa30ab')}
-        canManageConnections={canManageConnections}
-        disabled={disabled}
-        pendingConnectionId={pendingConnectionId}
-        onSetCredential={setCredential}
-        onSetDefault={(connection) => setDefault.mutate(connection.connection_id)}
-        onDisconnect={setConfirmDisconnect}
-        onRename={openRename}
-        onStartSession={onStartSession}
-      />
+        </div>
+        {connectionsQuery.isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-14 rounded-md" />
+            <Skeleton className="h-14 rounded-md" />
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            size="sm"
+            icon={Plug}
+            title={tSharing('noAccountsTitle')}
+            description={tSharing('noAccountsDescription', { connector: displayName })}
+          />
+        ) : isComputer ? (
+          <ComputerAccountGroups rows={rows} renderRow={renderRow} />
+        ) : (
+          <ul className="space-y-2">{rows.map(renderRow)}</ul>
+        )}
+      </section>
+
+      {accountId && shareTarget ? (
+        <AccessDialog
+          key={shareTarget.connection_id}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          accountId={accountId}
+          scope={{ kind: 'project', projectId, projectName }}
+          mode={{
+            kind: 'share',
+            object: {
+              type: 'connection',
+              id: shareTarget.connection_id,
+              label: shareTarget.label,
+              // Your own private account: sharing makes it a shared one.
+              ...(shareTarget.owner_type === 'member' && viewerId
+                ? { privateOwner: { userId: viewerId, label: user?.email ?? tSharing('onlyYou') } }
+                : {}),
+            },
+            current:
+              connectionsQuery.data?.connections.find(
+                (connection) => connection.connection_id === shareTarget.connection_id,
+              )?.shared_with ?? [],
+          }}
+          onDone={refresh}
+        />
+      ) : null}
 
       <Modal
-        open={addOwner !== null}
+        open={addOpen}
         onOpenChange={(open) => {
           if (!open && !adding) closeAdd();
         }}
       >
         <ModalContent className="lg:max-w-md">
           <ModalHeader>
-            <ModalTitle>
-              {addOwner === 'project'
-                ? tI18nComplete('textca04bb211a4b', { value0: displayName })
-                : tI18nComplete('text9819d9aeec29', { value0: displayName })}
-            </ModalTitle>
-            <ModalDescription>
-              {addOwner === 'project'
-                ? tI18nComplete.raw('textcfc47949d9f8')
-                : tI18nComplete.raw('textf43ce58ed44c')}
-            </ModalDescription>
+            <ModalTitle>{tSharing('addAccountTitle', { connector: displayName })}</ModalTitle>
+            <ModalDescription>{tSharing('addAccountDescription')}</ModalDescription>
           </ModalHeader>
           <form
             onSubmit={(e) => {
@@ -694,30 +835,25 @@ export function ConnectionsList({
               submitAdd();
             }}
           >
-            <ModalBody>
-              <Field>
-                <FieldLabel htmlFor="connection-label">
-                  {tI18nComplete.raw('textdcd1d5223f73')}
-                </FieldLabel>
-                <Input
-                  id="connection-label"
-                  value={labelDraft}
-                  onChange={(e) => setLabelDraft(e.target.value)}
-                  placeholder={
-                    addOwner === 'project' ? tI18nComplete.raw('text945ce03ec79f') : 'Work'
-                  }
-                  maxLength={255}
-                  autoFocus
-                  disabled={adding || disabled}
-                />
-                <FieldDescription>{tI18nComplete.raw('text99953938d987')}</FieldDescription>
-              </Field>
+            <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+              <AddAccountFields
+                projectId={projectId}
+                value={draft}
+                onChange={setDraft}
+                labelTaken={labelTaken}
+                canManageConnections={canManageConnections}
+                accountId={accountId}
+                everyoneLabel={everyoneLabel}
+                hint={tI18nComplete.raw('text99953938d987')}
+                disabled={adding || disabled}
+                autoFocus
+              />
             </ModalBody>
             <ModalFooter className="sm:justify-between">
               <Button type="button" variant="outline-ghost" onClick={closeAdd} disabled={adding}>
                 {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
-              <Button type="submit" disabled={adding || disabled || !labelDraft.trim()}>
+              <Button type="submit" disabled={!canSubmitAdd}>
                 {adding ? <Loading className="size-4 shrink-0" /> : null}
                 {tI18nComplete.raw('text31fbef162594')}
               </Button>
@@ -788,15 +924,40 @@ export function ConnectionsList({
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
         title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
-          confirmDisconnect?.owner_type === 'project'
-            ? tI18nComplete.raw('texte2cbafcec553')
-            : tI18nComplete.raw('text64db32d83da9')
+          confirmDisconnect && ownComputer(confirmDisconnect)
+            ? tComputers('unpairDescription')
+            : confirmDisconnect?.owner_type === 'project'
+              ? tI18nComplete.raw('texte2cbafcec553')
+              : tI18nComplete.raw('text64db32d83da9')
         }
         confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
-        isPending={disconnect.isPending}
-        onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
+        isPending={disconnect.isPending || unpairComputer.isPending}
+        onConfirm={() => {
+          if (!confirmDisconnect) return;
+          if (ownComputer(confirmDisconnect) && confirmDisconnect.tunnel_id) {
+            unpairComputer.mutate(confirmDisconnect.tunnel_id, {
+              onSuccess: () => {
+                successToast(tComputers('disconnected'));
+                setConfirmDisconnect(null);
+                refresh();
+              },
+              onError: (e: Error) => errorToast(e.message || tComputers('disconnectFailed')),
+            });
+            return;
+          }
+          disconnect.mutate(confirmDisconnect.connection_id);
+        }}
       />
+
+      {isComputer ? (
+        <ComputerConnectModal
+          projectId={projectId}
+          open={computerOpen}
+          onOpenChange={setComputerOpen}
+          onConnected={refresh}
+        />
+      ) : null}
 
       {isDirectProvider ? (
         <SetCredentialModal
@@ -816,6 +977,23 @@ export function ConnectionsList({
       ) : null}
     </div>
   );
+}
+
+/**
+ * A computer's accounts: the caller's own machines first (they follow them
+ * into every project), then the machines shared with this project. Each row
+ * says which it is.
+ */
+function ComputerAccountGroups({
+  rows,
+  renderRow,
+}: {
+  rows: readonly Connection[];
+  renderRow: (connection: Connection) => ReactNode;
+}) {
+  const mine = rows.filter((row) => row.owner_type === 'member');
+  const shared = rows.filter((row) => row.owner_type !== 'member');
+  return <ul className="space-y-2">{[...mine, ...shared].map(renderRow)}</ul>;
 }
 
 function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {

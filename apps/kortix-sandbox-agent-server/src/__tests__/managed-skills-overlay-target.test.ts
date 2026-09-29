@@ -14,9 +14,9 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Config } from '../config'
-import { createOpenCodeAssetsService } from '../harness/open-code/assets'
-import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import type { Config } from '@/lib/config/config'
+import { createOpenCodeAssetsService } from '@/harness/open-code/assets'
+import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 
 const roots: string[] = []
@@ -84,7 +84,7 @@ describe('managed-skill overlay target on the root layout', () => {
     const configDir = join(workspace, 'harnesses', 'opencode')
     await mkdir(configDir, { recursive: true })
     await mkdir(join(workspace, 'skills', 'kortix-cli'), { recursive: true })
-    const { managedOverlayRoot } = await import('../project-layout')
+    const { managedOverlayRoot } = await import('@/harness/open-code/project-layout')
     expect(managedOverlayRoot(configDir, workspace)).toBe(workspace)
     // The legacy dir keeps its own skills/.
     const legacy = join(workspace, '.kortix', 'opencode')

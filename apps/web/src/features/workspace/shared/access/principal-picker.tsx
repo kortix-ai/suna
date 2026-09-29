@@ -37,6 +37,7 @@ import {
   RobotIcon,
   UserPlusIcon,
   UsersIcon,
+  UsersThreeIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
@@ -60,6 +61,10 @@ export interface PrincipalSelection {
    *  ceiling (spec 2026-09-22 agents as principals). Optional so existing
    *  literals stay valid. */
   agentIds?: string[];
+  /** Everyone with access to the project — the `project` principal. Only
+   *  fills when `allowEveryone` (project scope). It holds object grants only,
+   *  never a role. */
+  everyone?: boolean;
 }
 
 export const EMPTY_PRINCIPAL_SELECTION: PrincipalSelection = {
@@ -67,6 +72,7 @@ export const EMPTY_PRINCIPAL_SELECTION: PrincipalSelection = {
   groupIds: [],
   inviteEmails: [],
   agentIds: [],
+  everyone: false,
 };
 
 export function principalSelectionCount(value: PrincipalSelection): number {
@@ -74,7 +80,8 @@ export function principalSelectionCount(value: PrincipalSelection): number {
     value.memberIds.length +
     value.groupIds.length +
     value.inviteEmails.length +
-    (value.agentIds?.length ?? 0)
+    (value.agentIds?.length ?? 0) +
+    (value.everyone ? 1 : 0)
   );
 }
 
@@ -92,7 +99,9 @@ export type PrincipalTarget =
   | { kind: 'member'; id: string }
   | { kind: 'group'; id: string }
   | { kind: 'invite'; id: string }
-  | { kind: 'agent'; id: string };
+  | { kind: 'agent'; id: string }
+  /** `id` is the project id. */
+  | { kind: 'everyone'; id: string };
 
 /**
  * The whole selection model, as one pure reducer.
@@ -113,9 +122,11 @@ export function togglePrincipal(
       groupIds: target.kind === 'group' ? [target.id] : [],
       inviteEmails: target.kind === 'invite' ? [target.id] : [],
       agentIds: target.kind === 'agent' ? [target.id] : [],
+      everyone: target.kind === 'everyone',
     };
   }
-  const bucket: keyof PrincipalSelection =
+  if (target.kind === 'everyone') return { ...value, everyone: !value.everyone };
+  const bucket: 'memberIds' | 'groupIds' | 'agentIds' | 'inviteEmails' =
     target.kind === 'member'
       ? 'memberIds'
       : target.kind === 'group'
@@ -141,6 +152,12 @@ export function singlePrincipal(value: PrincipalSelection): PrincipalTarget | nu
   return null;
 }
 
+/** Does the picker's "Everyone in …" row match the search text? */
+export function everyoneMatchesQuery(label: string, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return q === '' || label.toLowerCase().includes(q);
+}
+
 export interface PrincipalPickerProps {
   scope: PrincipalPickerScope;
   /** Radio semantics + collapsed selected row, or a multi-select checklist. */
@@ -149,6 +166,12 @@ export interface PrincipalPickerProps {
   kinds?: PrincipalKind[];
   /** Surfaces an "Invite {email}" row for a typed, non-matching address. */
   allowInvite?: boolean;
+  /**
+   * Project scope: the first row is "Everyone in {project}", the `project`
+   * principal. Its label is the caller's — the picker does not load the
+   * project name.
+   */
+  everyone?: { label: string };
   /** User ids hidden on top of normal filtering (e.g. existing group members). */
   excludeUserIds?: string[] | Set<string>;
   value: PrincipalSelection;
@@ -173,6 +196,7 @@ export function PrincipalPicker({
   selection = 'multi',
   kinds = ['member', 'group'],
   allowInvite = false,
+  everyone,
   excludeUserIds,
   value,
   onChange,
@@ -290,6 +314,13 @@ export function PrincipalPicker({
     });
   }, [agents, q, agentSet]);
 
+  // Multi-select only: the collapsed single-selection row has no Everyone state.
+  const showEveryone =
+    !!everyone &&
+    selection === 'multi' &&
+    scope.kind === 'project' &&
+    everyoneMatchesQuery(everyone.label, query);
+
   const inviteCandidate = useMemo(() => {
     if (!allowInvite || !INVITE_EMAIL_RE.test(q)) return null;
     const alreadyAMember = rosterMembers.some((m) => (m.email ?? '').toLowerCase() === q);
@@ -362,13 +393,18 @@ export function PrincipalPicker({
   // project/account) vs. the roster has people but every one was filtered
   // out by `excludeUserIds`. They read differently to the person here.
   const nothing =
-    rosterMembers.length === 0 && groups.length === 0 && agents.length === 0 && !inviteCandidate;
+    rosterMembers.length === 0 &&
+    groups.length === 0 &&
+    agents.length === 0 &&
+    !inviteCandidate &&
+    !everyone;
   const allExcluded =
     !nothing &&
     members.length === 0 &&
     groups.length === 0 &&
     agents.length === 0 &&
-    !inviteCandidate;
+    !inviteCandidate &&
+    !everyone;
 
   const placeholder =
     searchPlaceholder ??
@@ -436,12 +472,26 @@ export function PrincipalPicker({
         ) : filteredGroups.length === 0 &&
           filteredMembers.length === 0 &&
           filteredAgents.length === 0 &&
-          !inviteCandidate ? (
+          !inviteCandidate &&
+          !showEveryone ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
             {tI18nComplete.raw('texte8dd87902b91')}
           </p>
         ) : (
           <>
+            {showEveryone && everyone ? (
+              <PickerRow
+                selected={value.everyone === true}
+                selection={selection}
+                disabled={disabled}
+                onSelect={() =>
+                  pick({ kind: 'everyone', id: scope.kind === 'project' ? scope.projectId : '' })
+                }
+                leading={<EntityAvatar icon={UsersThreeIcon} label={everyone.label} size="sm" />}
+                label={everyone.label}
+              />
+            ) : null}
+
             {inviteCandidate ? (
               <PickerRow
                 selected={inviteSet.has(inviteCandidate)}

@@ -14,7 +14,7 @@
  *
  * Built against an injected `ConnectorRouterDeps` so the e2e drives the real HTTP
  * layer + real gateway logic with in-memory fakes (db + upstream) at the
- * boundary; production wires DB-backed deps (db-deps.ts). See docs/specs/connector.md.
+ * boundary; production wires DB-backed deps (db-deps.ts).
  */
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import {
@@ -134,7 +134,7 @@ const CallResponseSchema = z
     reason: z.any().optional(),
     // Which connection ran the call, so the transcript can always answer
     // "whose account sent that". Absent when the connector resolved no
-    // connection (public/no-auth connector, or a Computers tunnel profile).
+    // connection (a public/no-auth connector).
     account: z
       .object({
         connection_id: z.string(),
@@ -200,8 +200,7 @@ export interface ConnectorPrincipal {
   requestedConnectorAccount?: string | null;
   /**
    * Present when the caller is an agent session under the agent-principal
-   * model (flag `agent_principal` ON, governed grant — spec
-   * docs/specs/2026-09-22-agents-as-principals.md §2.3). Personal resources
+   * model (flag `agent_principal` ON, governed grant). Personal resources
    * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
@@ -302,6 +301,19 @@ export interface ProjectPoliciesViewResponse {
   errors: Array<{ path: string; error: string }>;
 }
 
+export interface ListCatalogOptions {
+  /** Restrict to one connector (by slug, canonicalized). */
+  slug?: string;
+  /**
+   * Include the full per-action JSON Schema. Default false — the dominant
+   * contributor to this route's payload (measured on prod: 439KB body,
+   * n=97 db queries for a bulk listing) and no bulk-listing caller reads it.
+   * `describeConnectorTool` (the one caller that needs a schema) passes
+   * `slug` + `true` together instead of fetching the whole catalog.
+   */
+  includeSchemas?: boolean;
+}
+
 export interface ConnectorRouterDeps {
   /** Gateway auth: resolve the connector token → principal, or null for 401. */
   resolvePrincipal(c: Context): Promise<ConnectorPrincipal | null>;
@@ -314,7 +326,7 @@ export interface ConnectorRouterDeps {
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ConnectorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (agent-grant filtered, blocked hidden). */
-  listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]>;
+  listCatalog(p: ConnectorPrincipal, options?: ListCatalogOptions): Promise<CatalogConnector[]>;
   /** Private raw-byte staging used by the MCP attachment transport. */
   attachmentStore?: ConnectorAttachmentStore;
   /**
@@ -348,7 +360,11 @@ export interface ConnectorRouterDeps {
    * — reachability is per-row, not per-connector). Omit only when there is no
    * human caller to ask.
    */
-  listConnectors(projectId: string, actingUserId?: string | null): Promise<AdminConnectorView[]>;
+  listConnectors(
+    projectId: string,
+    actingUserId?: string | null,
+    options?: { includeSchemas?: boolean },
+  ): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
   createConnector?(
@@ -436,7 +452,6 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
-    tunnelIds?: string[];
     auth: {
       type:
         | 'none'
@@ -809,6 +824,32 @@ const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialRea
   'account_required',
 ]);
 
+// GET .../catalog query params, shared by all three catalog-listing routes
+// below (token-scoped, legacy /connectors, and project-explicit).
+const CatalogQuerySchema = z.object({
+  /** Restrict the catalog to one connector by slug. */
+  slug: z.string().optional(),
+  /** `false` omits the full per-action JSON Schema. Absent means INCLUDE:
+   *  sandboxes run a baked CLI that reads schemas from these routes, so the
+   *  default must match what those clients were built against. */
+  include_schemas: z.enum(['true', 'false']).optional(),
+});
+
+const COMPUTER_REFUSALS = ['computer_access_pending', 'computer_access_denied', 'computer_access_off', 'computer_capability_not_approved'];
+const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
+
+/**
+ * HTTP status for a gateway `error`. Computer states the owner controls are
+ * expected outcomes, not server faults: a 5xx invites a retry, and each retry
+ * re-prompts the owner. 500, not 502, for the rest (Cloudflare eats 502 bodies).
+ */
+export function connectorErrorHttpStatus(reason: string): 403 | 409 | 500 {
+  const kind = reason.split(':', 1)[0];
+  if (COMPUTER_REFUSALS.includes(kind)) return 403;
+  if (COMPUTER_STATES.includes(kind)) return 409;
+  return 500;
+}
+
 function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
   return CONNECTOR_DENIAL_REASONS.has(reason);
 }
@@ -820,7 +861,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   // from a scoped session token) and the project-EXPLICIT routes
   // (project from the path, any valid principal). One implementation, two faces.
   const catalogResponse = async (c: any, p: ConnectorPrincipal) => {
-    const connectors = await deps.listCatalog(p);
+    const query = c.req.valid('query') as { slug?: string; include_schemas?: 'true' | 'false' };
+    const slug = query.slug?.trim() || undefined;
+    const connectors = await deps.listCatalog(p, {
+      slug,
+      includeSchemas: query.include_schemas !== 'false',
+    });
     return c.json({ connectors });
   };
   const callResponse = async (c: any, p: ConnectorPrincipal) => {
@@ -909,6 +955,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       actionPath,
       args,
       approvalExecutionId,
+      approvalContext: typeof body?.approval_context === 'string' ? body.approval_context : null,
     });
     switch (result.status) {
       case 'ok':
@@ -983,8 +1030,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         );
       }
       default:
-        // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
-        return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
+        return c.json({ ok: false, status: 'error', reason: result.reason }, connectorErrorHttpStatus(result.reason));
     }
   };
 
@@ -1060,6 +1106,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'List the connectors the connector principal can use',
       ...auth,
+      request: { query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
@@ -1082,6 +1129,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       summary: 'List usable connectors through the legacy route',
       deprecated: true,
       ...auth,
+      request: { query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(401),
@@ -1299,6 +1347,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 /** Which account to run as — a connection label or id. Omit for
                  *  the default. See GET .../connectors/{slug}/accounts. */
                 account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -1340,7 +1392,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'List the connectors usable in a project (any valid principal)',
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: ProjectParam, query: CatalogQuerySchema },
       responses: {
         200: json(ConnectorsResponseSchema, 'Connector catalog for this principal'),
         ...errors(403),
@@ -1374,6 +1426,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 /** Which account to run as — a connection label or id. Omit for
                  *  the default. See GET .../connectors/{slug}/accounts. */
                 account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -1460,7 +1516,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: "List a project's connectors with status (dashboard)",
       ...auth,
-      request: { params: ProjectParam },
+      request: { params: ProjectParam, query: CatalogQuerySchema.pick({ include_schemas: true }) },
       responses: {
         200: json(AdminConnectorsResponseSchema, 'Connectors with admin status'),
         ...errors(403),
@@ -1478,9 +1534,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const canReadSecretIdentifiers = deps.resolveSecretReader
         ? Boolean(await deps.resolveSecretReader(c, projectId))
         : false;
+      const query = c.req.valid('query') as { include_schemas?: 'true' | 'false' };
       // Whose own credentialed accounts count as "connected" for a connector
       // with no project-wide shared credential — see listConnectors' doc.
-      const connectors = await deps.listConnectors(projectId, reader.userId);
+      const connectors = await deps.listConnectors(projectId, reader.userId, {
+        includeSchemas: query.include_schemas !== 'false',
+      });
       return c.json({
         connectors: canReadSecretIdentifiers
           ? connectors
@@ -1977,9 +2036,8 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
   );
 
   // ── Admin: connector credential mode — restricted to a `shared`-only no-op.
-  // `per_user` (each member brings their own) was removed 2026-07-05
-  // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5). The route
-  // stays for back-compat callers but only ever accepts `shared` now.
+  // `per_user` (each member brings their own) was removed 2026-07-05.
+  // The route stays for back-compat callers but only ever accepts `shared` now.
   app.openapi(
     createRoute({
       method: 'put',

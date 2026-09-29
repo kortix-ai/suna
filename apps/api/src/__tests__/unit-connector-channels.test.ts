@@ -50,8 +50,8 @@ describe('channelCatalog(slack)', () => {
   const action = (path: string) => expectDefined(byPath.get(path));
 
   test('exposes the full native Slack surface as http bindings', () => {
-    // 14 native Web API methods (relay/typing/download/manifest/file-upload are CLI-side).
-    expect(actions.length).toBe(14);
+    // 15 native Web API methods (relay/typing/download/manifest/file-upload are CLI-side).
+    expect(actions.length).toBe(15);
     for (const a of actions) {
       expect(a.binding.kind).toBe('http');
       if (a.binding.kind === 'http') expect(a.binding.path.startsWith('/')).toBe(true);
@@ -76,6 +76,13 @@ describe('channelCatalog(slack)', () => {
     const react = action('add_reaction');
     const props = Object.keys(objectSchema(react.inputSchema).properties);
     expect(props).toEqual(['channel', 'timestamp', 'name']); // not ts/emoji — Slack's own names
+  });
+
+  test('remove_reaction → POST /reactions.remove with the same params as add_reaction', () => {
+    const a = action('remove_reaction');
+    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/reactions.remove' });
+    expect(a.risk).toBe('write');
+    expect(objectSchema(a.inputSchema).required).toEqual(['channel', 'timestamp', 'name']);
   });
 
   test('auth_test has no inputs; unknown platform → empty', () => {
@@ -429,6 +436,72 @@ describe('handleCall — channel (slack)', () => {
     const [call] = fetchCalls;
     expect(call?.url).toBe('https://slack.com/api/conversations.replies?channel=C123&ts=111.222');
     expect(call?.headers.Authorization).toBe('Bearer xoxb-install-token');
+  });
+});
+
+describe('handleCall — slack thread auto-bind', () => {
+  const SLACK_WITH_PLATFORM: GatewayConnector = { ...SLACK, platform: 'slack' };
+
+  function bindingDeps(body: string, bind?: GatewayDeps['bindSlackThread']) {
+    const { deps } = makeDeps(body);
+    const binds: Array<Parameters<NonNullable<GatewayDeps['bindSlackThread']>>[0]> = [];
+    deps.loadConnectorBySlug = async () => SLACK_WITH_PLATFORM;
+    deps.bindSlackThread = async (i) => {
+      binds.push(i);
+      return bind ? bind(i) : { bound: true, thread_ts: i.threadTs, session_id: i.sessionId };
+    };
+    return { deps, binds };
+  }
+
+  test('a top-level post binds the new message ts to the calling session, on the resolved DM channel', async () => {
+    const { deps, binds } = bindingDeps('{"ok":true,"ts":"1700000000.000100","channel":"D0DM"}');
+    const res = await handleCall(deps, { ...input, args: { channel: 'U0USER', text: 'hi' } });
+    expect(binds).toEqual([{ projectId: 'proj-1', sessionId: 'sess-1', channel: 'D0DM', threadTs: '1700000000.000100' }]);
+    expect(res).toMatchObject({
+      status: 'ok',
+      data: { ts: '1700000000.000100', thread_binding: { bound: true, thread_ts: '1700000000.000100', session_id: 'sess-1' } },
+    });
+  });
+
+  test('a threaded reply binds the thread root, not the reply ts', async () => {
+    const { deps, binds } = bindingDeps('{"ok":true,"ts":"200.2","channel":"C123"}');
+    await handleCall(deps, { ...input, args: { channel: 'C123', text: 'hi', thread_ts: '100.1' } });
+    expect(binds[0]?.threadTs).toBe('100.1');
+  });
+
+  test('a thread owned by another session is reported, not stolen', async () => {
+    const { deps } = bindingDeps('{"ok":true,"ts":"200.2","channel":"C123"}', async (i) => ({
+      bound: false,
+      thread_ts: i.threadTs,
+      reason: 'thread_bound_to_another_session',
+    }));
+    const res = await handleCall(deps, { ...input, args: { channel: 'C123', text: 'hi', thread_ts: '100.1' } });
+    expect(res).toMatchObject({
+      status: 'ok',
+      data: { thread_binding: { bound: false, reason: 'thread_bound_to_another_session' } },
+    });
+  });
+
+  test('a bind error keeps the delivered post ok and reports bind_failed', async () => {
+    const { deps } = bindingDeps('{"ok":true,"ts":"300.3","channel":"C123"}', async () => {
+      throw new Error('db down');
+    });
+    const res = await handleCall(deps, input);
+    expect(res).toMatchObject({ status: 'ok', data: { ts: '300.3', thread_binding: { bound: false, reason: 'bind_failed' } } });
+  });
+
+  test('no session on the token → no bind', async () => {
+    const { deps, binds } = bindingDeps('{"ok":true,"ts":"300.3","channel":"C123"}');
+    const res = await handleCall(deps, { ...input, sessionId: null });
+    expect(binds).toHaveLength(0);
+    expect((res as { data?: Record<string, unknown> }).data?.thread_binding).toBeUndefined();
+  });
+
+  test('a failed post → no bind', async () => {
+    const { deps, binds } = bindingDeps('{"ok":false,"error":"channel_not_found"}');
+    const res = await handleCall(deps, input);
+    expect(res.status).toBe('error');
+    expect(binds).toHaveLength(0);
   });
 });
 

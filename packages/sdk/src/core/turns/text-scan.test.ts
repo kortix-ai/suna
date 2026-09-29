@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  foldForTest,
   jsonTail,
   hasPhrasePair,
   labelledValue,
   removeTagBlocks,
   stripEdgeSlashes,
   stripErrorPrefixes,
+  stripMarkdownImages,
   stripTrailingSlashes,
   tagAttributes,
   tagBody,
@@ -14,6 +16,8 @@ import {
   taskRow,
   textBetween,
   textItems,
+  unwrapMarkdownLinks,
+  urlError,
 } from './text-scan';
 
 /**
@@ -236,5 +240,63 @@ describe('hasPhrasePair (content of … with line numbers)', () => {
   });
   test('linear on many repetitions of the first phrase', () => {
     fast(() => hasPhrasePair('content of '.repeat(N), 'content of ', ' with line numbers'));
+  });
+});
+
+// The tool-output audit of 2026-09-24 found three more regexes that run on
+// tool output: the markdown image and link strippers in `cleanResultSnippet`,
+// and the per-URL error reader in `buildScrapeFailureResults`. These blocks
+// hold them to the same two proofs, with a 100 ms budget at 240k characters.
+describe('stripMarkdownImages / unwrapMarkdownLinks', () => {
+  const inputs = strings(['![', '[', ']', '(', ')', 'a', ' ', '\n', '![a](b)', '[t](u)', '](', 'x'], 3000, 10, 31);
+  test('match their regexes', () => {
+    let replaced = 0;
+    for (const s of inputs) {
+      const images = s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+      const links = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+      expect(stripMarkdownImages(s)).toBe(images);
+      expect(unwrapMarkdownLinks(s)).toBe(links);
+      if (images !== s || links !== s) replaced++;
+    }
+    expect(replaced).toBeGreaterThan(600);
+  });
+  test('linear on openers that never close', () => {
+    fast(() => stripMarkdownImages('![a]('.repeat(48_000)), 100);
+    fast(() => unwrapMarkdownLinks('[a]('.repeat(60_000)), 100);
+    fast(() => unwrapMarkdownLinks('['.repeat(240_000)), 100);
+  });
+});
+
+describe('urlError', () => {
+  const url = 'https://Ex.com/\u00e9';
+  const inputs = strings(
+    ['https://ex.com/\u00e9:', 'HTTPS://EX.COM/\u00c9', 'https://ex.com/e', ':', ' ', '\n', 'timeout', ' https://b.io', 'Http://', 'x', '  :  ', 'https://ex.com/\u017f'],
+    3000,
+    8,
+    32,
+  );
+  test('matches its regex, case-folded as a non-unicode /i regex folds', () => {
+    let found = 0;
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`${escaped}\\s*:\\s*([^]*?)(?=\\s+https?:\\/\\/|$)`, 'i');
+    for (const s of inputs) {
+      const expected = s.match(re)?.[1] ?? null;
+      expect(urlError(s, url)).toBe(expected);
+      if (expected !== null) found++;
+    }
+    expect(found).toBeGreaterThan(600);
+  });
+  test('linear on a long whitespace run in the error', () => {
+    fast(() => urlError(`https://a.io: x${' '.repeat(240_000)}y`, 'https://a.io'), 100);
+  });
+});
+
+describe('fold', () => {
+  test('folds a character to an ASCII letter only when a non-unicode /i regex does', () => {
+    for (let code = 0; code < 0x10000; code++) {
+      const ch = String.fromCharCode(code);
+      const folded = foldForTest(ch);
+      expect(folded.length === 1 && /[A-Z]/.test(folded)).toBe(/^[a-z]$/i.test(ch));
+    }
   });
 });

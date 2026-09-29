@@ -29,6 +29,7 @@ class TunnelRateLimiter {
     deviceAuthInfo: { limit: 30, windowMs: 60_000 },
     deviceAuthApprove: { limit: 10, windowMs: 60_000 },
     deviceAuthDeny: { limit: 10, windowMs: 60_000 },
+    selfUnpair: { limit: 10, windowMs: 60_000 },
   };
 
   check(endpoint: string, key: string): { allowed: boolean; retryAfterMs?: number } {

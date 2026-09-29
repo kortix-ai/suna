@@ -46,6 +46,7 @@ import { useRecoverPendingPick } from './useRecoverPendingPick';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
+import { useToolFilePreviewStore } from './tool/shared/navigation';
 
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
@@ -64,8 +65,9 @@ import { Composer, COMPOSER_CONTROL_HIT_SLOP } from '@/components/kortix/compose
 import { sessionFileMentionLabel, type SessionFile } from '@/lib/session/session-files';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ModelPickerSheet } from './ModelPickerSheet';
-import { composerPillLabel, type PickerOption } from '@/lib/session/composer-config';
-import { modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
+import { composerChip, type PickerOption } from '@/lib/session/composer-config';
+import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import { modelOptionKey, modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -205,9 +207,20 @@ interface SessionChatInputProps {
   onCreateAgent?: () => void;
   model?: FlatModel | null;
   models?: FlatModel[];
-  /** The model list is not known yet: the pill hides instead of reading "Connect model". */
+  /** The model list is not known yet: the composer chip hides instead of flashing a label. */
   modelsLoading?: boolean;
-  /** "Connect provider" in the model sheet's empty state. */
+  /**
+   * The sandbox has not listed its agents yet (a new thread): the chip reads
+   * the agent project home sent with, never the model name (`composerChip`).
+   */
+  agentsLoading?: boolean;
+  /**
+   * The project's catalog loaded with no model (`isModelUnavailable`): the
+   * chip reads "Connect model", and Send calls `onConnectModel` instead of
+   * sending, and the draft stays (KRTX-251). One flag for both, so they agree.
+   */
+  modelUnavailable?: boolean;
+  /** "Connect provider" in the model sheet's empty state, and Send while `modelUnavailable`. */
   onConnectModel?: () => void;
   modelKey?: { providerID: string; modelID: string } | null;
   variant?: string | null;
@@ -262,6 +275,8 @@ function SessionChatInputImpl({
   model,
   models = EMPTY_MODELS,
   modelsLoading = false,
+  agentsLoading = false,
+  modelUnavailable = false,
   onConnectModel,
   modelKey,
   variant,
@@ -291,6 +306,8 @@ function SessionChatInputImpl({
 
   const modelSheetRef = useRef<SheetRef>(null);
   // The model sheet's Agent tab: the thread's agents, the active one checked.
+  // The agent project home last sent with (`ProjectHome` → `setAgent`).
+  const pendingAgentName = useLocalConfigStore((s) => s.selectedAgent);
   const agentChoice = useMemo(
     () =>
       onAgentChange
@@ -455,15 +472,6 @@ function SessionChatInputImpl({
       return;
     }
 
-    // Staged command — execute it with args
-    if (stagedCommand) {
-      const args = text.trim();
-      onCommand?.(stagedCommand, args || undefined);
-      setText('');
-      setStagedCommand(null);
-      return;
-    }
-
     const trimmedRaw = text.trim();
     const fileCount = attachments.files.length;
     const plan = planComposerSend({
@@ -473,8 +481,25 @@ function SessionChatInputImpl({
       isBusy,
       canQueue: Boolean(onEnqueue),
       canAttach,
+      modelUnavailable,
+      allowEmpty: Boolean(stagedCommand),
     });
     if (plan === 'noop') return;
+    // No model: connect one first. Nothing is sent or queued; the draft,
+    // the staged command, and the files stay.
+    if (plan === 'connect-model') {
+      Keyboard.dismiss();
+      onConnectModel?.();
+      return;
+    }
+
+    // Staged command — execute it with args
+    if (stagedCommand) {
+      onCommand?.(stagedCommand, trimmedRaw || undefined);
+      setText('');
+      setStagedCommand(null);
+      return;
+    }
     // Both refusals keep the text and the files in the composer.
     if (plan === 'refuse-busy-files') {
       toast.error('Wait for the reply to finish, then send your files.');
@@ -566,7 +591,7 @@ function SessionChatInputImpl({
     skill.reset();
     attachments.clearAfterSend();
     onSend(trimmed, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
-  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachments]);
+  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachments]);
 
   // One submission at a time: two taps inside one frame both read the same
   // draft (the cleared text has not rendered yet), so the second would send
@@ -584,19 +609,18 @@ function SessionChatInputImpl({
     }
   }, [submitNow]);
 
-  // Web's groups and order (`lib/session/model-picker.ts`): the real upstream
-  // provider, never the raw provider name (always "Kortix" under the gateway).
+  // Web's groups, order, and empty-search view (`lib/session/model-picker.ts`):
+  // the real upstream provider, never the raw provider name (always "Kortix"
+  // under the gateway).
   const modelOptions = useMemo<PickerOption[]>(
-    () => modelPickerOptions(models, (m) => `${m.providerID}/${m.modelID}`),
-    [models],
+    () => modelPickerOptions(models, modelKey ?? null),
+    [models, modelKey],
   );
-  // Web's "No model connected": the models have loaded and the project offers none.
-  const noModelConnected = !modelsLoading && models.length === 0;
 
   const handleModelSelect = useCallback(
     (key: string) => {
       // A model id can contain "/", so the key is looked up, not split.
-      const picked = models.find((m) => `${m.providerID}/${m.modelID}` === key);
+      const picked = models.find((m) => modelOptionKey(m) === key);
       if (picked) onModelChange?.(picked.providerID, picked.modelID);
     },
     [models, onModelChange],
@@ -634,6 +658,17 @@ function SessionChatInputImpl({
     },
     [mention, text],
   );
+
+  // "Add to chat" in the transcript's file preview (attachments, mentions, tool
+  // rows): the same mention Recent files writes. Held in a ref so the
+  // registration does not churn on every keystroke.
+  const addFileMentionRef = useRef((path: string) => handleSelectSessionFile({ path } as SessionFile));
+  addFileMentionRef.current = (path: string) => handleSelectSessionFile({ path } as SessionFile);
+  useEffect(() => {
+    const { setAddToChat } = useToolFilePreviewStore.getState();
+    setAddToChat((path) => addFileMentionRef.current(path));
+    return () => setAddToChat(null);
+  }, []);
 
   const cardHeader =
     inputSlot || stagedCommand ? (
@@ -718,14 +753,18 @@ function SessionChatInputImpl({
             onAttach={handleAddPress}
             attachLabel="Add"
             onRemoveAttachment={attachments.remove}
-            modelLabel={
+            chip={
               modelsLoading
                 ? null
-                : noModelConnected
-                  ? 'Connect model'
-                  : composerPillLabel(model ? pickerModelName(model) : undefined, variant)
+                : composerChip({
+                    connectModel: modelUnavailable,
+                    agentName: agent?.name,
+                    pendingAgentName,
+                    agentsLoading,
+                    modelName: model ? pickerModelName(model) : undefined,
+                  })
             }
-            onModelPress={openModelSheet}
+            onChipPress={openModelSheet}
             accessory={
               autocontinueMode && currentAutoAlgorithm ? (
                 <Button
@@ -766,7 +805,7 @@ function SessionChatInputImpl({
       <ModelPickerSheet
         ref={modelSheetRef}
         options={modelOptions}
-        activeKey={model ? `${model.providerID}/${model.modelID}` : null}
+        activeKey={model ? modelOptionKey(model) : null}
         onSelect={handleModelSelect}
         thinking={thinking}
         onConnect={onConnectModel}

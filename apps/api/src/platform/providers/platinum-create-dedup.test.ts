@@ -13,6 +13,7 @@
 // counter threaded in via opts.createAttempt (see restorePlatinumCreateAttempt
 // in session-sandbox.ts for the persistence/restore side of that counter).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -259,7 +260,7 @@ describe('S1 kill switch', () => {
     expect(create.headers['Idempotency-Key']).toBeUndefined();
     // The ownership markers the orphan-box reaper filters on are NOT part of
     // S1 and must survive the kill-switch; only `kortix.sandbox_id` is S1's.
-    expect((create.body?.metadata as Record<string, unknown>)['kortix.managed']).toBe('true');
+    expect((create.body?.metadata as Record<string, unknown>)['kortix.managed']).toBe('v2-owner-a');
   });
 
   test('omitting sandboxId also falls back to the legacy body (no crash, no dedup)', async () => {

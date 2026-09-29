@@ -109,7 +109,7 @@ import {
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
-  featureFlags,
+  type ProjectSessionPage,
   getProject,
   getProjectDetail,
   listProjectSessions,
@@ -122,6 +122,7 @@ import {
 import {
   agentScopedModelSelectionKey,
   contract,
+  flattenProjectSessionPages,
   invalidateProject,
   modelProviderMode,
   qk,
@@ -129,8 +130,8 @@ import {
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
-  useRuntimeAgents,
   useRuntimeProviders,
+  useVisibleAgents,
 } from '@kortix/sdk/react';
 import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
 import {
@@ -822,7 +823,10 @@ export function CommandPalette() {
   );
   const billingEnabled = isBillingEnabled();
 
-  const { data: agents } = useRuntimeAgents();
+  // The project's own agents from the Kortix project config, filtered by the
+  // SDK's one selectable-agent rule: the same list the composer offers. Never
+  // the sandbox runtime's list, which adds its built-ins (`build`, `plan`, …).
+  const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
@@ -866,12 +870,25 @@ export function CommandPalette() {
   const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
   const workspacesLoading =
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
-  const { data: projectSessionsList } = useQuery({
+  const { data: paletteSessions, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
     enabled: open && !!projectId,
     ...contract('inventory'),
   });
+  // The sidebar's pages are usually cached already. Their rows stand in until
+  // this lookup-sized list answers, and when it fails, so recent sessions show
+  // the moment the palette opens instead of "No sessions yet". Not
+  // `placeholderData`: TanStack drops a placeholder when the fetch errors.
+  const sidebarPages = queryClient.getQueryData<{
+    pages: ProjectSessionPage[];
+    pageParams: unknown[];
+  }>(qk.project.sessionsPaged(projectId ?? ''));
+  const sidebarSessions = useMemo(
+    () => (sidebarPages ? flattenProjectSessionPages(sidebarPages) : undefined),
+    [sidebarPages],
+  );
+  const projectSessionsList = paletteSessions ?? sidebarSessions;
   // Same query key every other project surface fetches (page.tsx,
   // project-shell.tsx) — dedupes against that cache entry. Resolves the
   // account the "Invite members" command lands on, via the same fallback
@@ -911,9 +928,9 @@ export function CommandPalette() {
   // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
   // panel rendered nothing unless it was ENABLED — a palette entry that opened
   // a blank pane. It now follows enablement like every other flag.
-  // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
-  // above is the DEPLOYMENT flag set (`featureFlags` from `@kortix/sdk`, build-time
-  // capabilities like `enableProjects`), a different concept from the
+  // `projectFlags`, not `featureFlags` — the SDK's `featureFlags` is the
+  // DEPLOYMENT flag set (build-time capabilities like `enableProjects`), a
+  // different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
@@ -929,7 +946,7 @@ export function CommandPalette() {
   }, [currentSessionId, modelStore]);
 
   const currentAgent = useMemo(() => {
-    if (!currentAgentName || !agents) return agents?.[0];
+    if (!currentAgentName) return agents[0];
     return agents.find((a) => a.name === currentAgentName) ?? agents[0];
   }, [currentAgentName, agents]);
 
@@ -1143,31 +1160,13 @@ export function CommandPalette() {
     [filteredSettingsGroups],
   );
 
-  const visibleAgents = useMemo(() => {
-    if (!agents) return [];
-    const projectOnlyAgents = new Set(['project-manager']);
-    return agents.filter(
-      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
-    );
-  }, [agents]);
-
   const filteredAgents = useMemo(() => {
-    if (!visibleAgents.length) return [];
     const q = query.trim().toLowerCase();
-    return visibleAgents.filter(
+    return agents.filter(
       (a) =>
         (a.name || '').toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
     );
-  }, [visibleAgents, query]);
-
-  const primaryAgents = useMemo(
-    () => filteredAgents.filter((a) => a.mode !== 'subagent'),
-    [filteredAgents],
-  );
-  const subAgents = useMemo(
-    () => filteredAgents.filter((a) => a.mode === 'subagent'),
-    [filteredAgents],
-  );
+  }, [agents, query]);
 
   const visibleModels = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -2695,9 +2694,9 @@ export function CommandPalette() {
 
             {page === 'agents' && (
               <>
-                {primaryAgents.length > 0 && (
+                {filteredAgents.length > 0 && (
                   <CommandGroup heading="Agents" forceMount>
-                    {primaryAgents.map((agent) => {
+                    {filteredAgents.map((agent) => {
                       const isActive = currentAgent?.name === agent.name;
                       const chalk = chalkColors(agent.name);
                       return (
@@ -2722,49 +2721,6 @@ export function CommandPalette() {
                             <span className="truncate text-sm font-medium">
                               {capitalizeWords(agent.name)}
                             </span>
-                            {agent.description && (
-                              <span className="text-muted-foreground/50 truncate text-xs">
-                                {agent.description}
-                              </span>
-                            )}
-                          </div>
-                          {isActive && <Check className="text-primary h-3.5 w-3.5 shrink-0" />}
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                )}
-
-                {subAgents.length > 0 && (
-                  <CommandGroup heading="Sub-agents" forceMount>
-                    {subAgents.map((agent) => {
-                      const isActive = currentAgent?.name === agent.name;
-                      const isKortixAgent = agent.name.toLowerCase().includes('kortix');
-                      const chalk = chalkColors(agent.name);
-                      return (
-                        <CommandItem
-                          key={agent.name}
-                          value={sanitizeCmdkValue(
-                            `subagent ${agent.name} ${agent.description || ''}`,
-                          )}
-                          onSelect={() => handleSelectAgent(agent.name)}
-                        >
-                          <div
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold"
-                            style={{
-                              backgroundColor: chalk.background,
-                              color: chalk.foreground,
-                              borderColor: chalk.border,
-                            }}
-                          >
-                            {isKortixAgent ? (
-                              <Bot className="size-5 shrink-0" />
-                            ) : (
-                              <span>{agent.name.charAt(0).toUpperCase()}</span>
-                            )}
-                          </div>
-                          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm">{capitalizeWords(agent.name)}</span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}
@@ -3000,6 +2956,12 @@ export function CommandPalette() {
                     </CommandItem>
                   ))}
                 </CommandGroup>
+              ) : projectSessionsPending ? (
+                // No list and no sidebar pages to stand in: loading, not
+                // "No sessions yet". Same frame as the workspaces page.
+                <div className="flex justify-center py-8">
+                  <Loading className="text-muted-foreground size-4" />
+                </div>
               ) : (
                 <PaletteEmpty>
                   {query

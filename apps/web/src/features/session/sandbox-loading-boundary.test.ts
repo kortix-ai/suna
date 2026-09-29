@@ -42,9 +42,13 @@ describe('session navigation loading boundaries', () => {
     // The mirror of the `return null` rule above: a runtime-not-ready RETRY
     // must stay invisible, but the very FIRST project fetch owns the whole
     // viewport, so it has to show something rather than a blank screen.
-    expect(projectAccessSource).toContain('if (!authReady || query.isPending)');
-    expect(projectAccessSource).toContain('<ProjectPendingScreen />');
-    expect(projectAccessSource).not.toMatch(/query\.isPending\)\s*return null/);
+    expect(projectAccessSource).toContain(
+      "if (!input.authReady || input.isPending) return 'pending';",
+    );
+    expect(projectAccessSource).toContain(
+      "if (view === 'pending') return <ProjectPendingScreen />;",
+    );
+    expect(projectAccessSource).not.toMatch(/view === 'pending'\)\s*return null/);
   });
 
   test('the first-fetch loader is the brand mark, not the auth spinner', () => {

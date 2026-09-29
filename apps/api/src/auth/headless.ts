@@ -8,6 +8,9 @@
  * GoTrue's session and user, with errors passed through as
  * `{error, error_description}` and the upstream status.
  *
+ * `GET /client-config` hands a client the public values it needs to sign in
+ * when it only knows the API URL (the mobile app's self-hosted sheet).
+ *
  * Bearer-carrying routes (`GET /user`, `POST /password/update`,
  * `POST /sign-out`) live on the authenticated router in ./index.ts.
  */
@@ -20,6 +23,7 @@ import { auditLoginFail } from '../shared/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { requestClientIp, requestClientKey } from '../shared/client-ip';
+import { config } from '../config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -96,6 +100,52 @@ function sessionResponse(c: Context, body: Record<string, unknown>, status: 200 
   return c.json({ session, user: (body.user as GoTrueUser | undefined) ?? null }, status);
 }
 
+// ─── GET /client-config ──────────────────────────────────────────────────────
+
+/** A comma list from config; null when the setting is unset. */
+function listOrNull(value: string | undefined): string[] | null {
+  if (value === undefined) return null;
+  return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/client-config',
+    tags: ['auth'],
+    summary: 'Public sign-in configuration for a client that knows only the API URL',
+    responses: {
+      200: json(
+        z
+          .object({
+            supabase_url: z.string(),
+            supabase_anon_key: z.string().nullable(),
+            frontend_url: z.string().nullable(),
+            auth_methods: z.array(z.string()).nullable(),
+            auth_providers: z.array(z.string()).nullable(),
+          })
+          .openapi('AuthClientConfig'),
+        'Public values only: the anon key is public by design. Null = not configured on this API.',
+      ),
+      ...errors(429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    return c.json(
+      {
+        supabase_url: config.SUPABASE_PUBLIC_URL || config.SUPABASE_URL,
+        supabase_anon_key: config.SUPABASE_ANON_KEY || null,
+        frontend_url: config.FRONTEND_URL || null,
+        auth_methods: listOrNull(config.KORTIX_PUBLIC_AUTH_METHODS),
+        auth_providers: listOrNull(config.KORTIX_PUBLIC_AUTH_PROVIDERS),
+      },
+      200,
+    );
+  },
+);
+
 // ─── POST /signup ───────────────────────────────────────────────────────────
 
 headlessAuthRouter.openapi(
@@ -106,6 +156,7 @@ headlessAuthRouter.openapi(
     summary: 'Create an account with email + password (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({
@@ -154,7 +205,7 @@ headlessAuthRouter.openapi(
     path: '/sign-in/password',
     tags: ['auth'],
     summary: 'Sign in with email + password (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
     responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -186,6 +237,7 @@ headlessAuthRouter.openapi(
     summary: 'Email a magic link / one-time code (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({
@@ -226,6 +278,7 @@ headlessAuthRouter.openapi(
     summary: 'Exchange an emailed code for a session (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ email: Email, token: z.string().min(4).max(64), type: z.enum(OTP_TYPES) }),
@@ -270,6 +323,7 @@ headlessAuthRouter.openapi(
     summary: 'Start a social sign-in (PKCE): returns the provider URL and the code verifier to keep',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ provider: z.enum(PROVIDERS), redirect_to: z.string(), scopes: z.string().optional() }),
@@ -312,7 +366,7 @@ headlessAuthRouter.openapi(
     path: '/oauth/exchange',
     tags: ['auth'],
     summary: 'Exchange the social sign-in code (+ PKCE verifier) for a session',
-    request: { body: { content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
     responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -340,7 +394,7 @@ headlessAuthRouter.openapi(
     path: '/refresh',
     tags: ['auth'],
     summary: 'Rotate a session with its refresh token (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
     responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -369,6 +423,7 @@ headlessAuthRouter.openapi(
       "Asks whether an email domain has an enterprise IdP and returns the redirect URL to send the browser to. Unauthenticated by design: the caller is signing IN, so there is no bearer yet, and the answer is not a secret — it is what the IdP's own discovery endpoint publishes.",
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ domain: z.string().min(1).max(253), redirect_to: z.string().optional() }),
@@ -404,7 +459,7 @@ headlessAuthRouter.openapi(
     path: '/password/reset',
     tags: ['auth'],
     summary: 'Email a password-recovery link / code (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
     responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent (also when the address is unknown)'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {

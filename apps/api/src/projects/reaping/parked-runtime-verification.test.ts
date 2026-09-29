@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { decideParkedRuntime } from './parked-runtime-verification';
+import { decideParkedRuntime, decideRemovedParkedOutcome } from './parked-runtime-verification';
 
 /**
  * Incident 2026-08-12 (Platinum deleted a parked sandbox while it held a
@@ -22,8 +22,11 @@ describe('decideParkedRuntime', () => {
     stopPending: false,
   };
 
-  test('a definitive `removed` on a healthy-looking parked row preserves the identity', () => {
-    expect(decideParkedRuntime({ ...base, providerStatus: 'removed' })).toBe('preserve-lost');
+  test('a `removed` parked row is not condemned until the recovery gate answers', () => {
+    // `getStatus` collapses `failed-start`, `deleted`, `lost` and a 404 into
+    // `removed`. Only `recoverInPlace` can tell a restorable box from a gone one,
+    // so the sweep must ask it before it writes a permanent loss.
+    expect(decideParkedRuntime({ ...base, providerStatus: 'removed' })).toBe('attempt-recovery');
   });
 
   test('an already-recorded loss is not re-reported on every rotation', () => {
@@ -62,9 +65,9 @@ describe('decideParkedRuntime', () => {
   });
 
   test('an in-flight wake is left entirely to the wake fence', () => {
-    expect(
-      decideParkedRuntime({ ...base, providerStatus: 'removed', wakeInProgress: true }),
-    ).toBe('skip');
+    expect(decideParkedRuntime({ ...base, providerStatus: 'removed', wakeInProgress: true })).toBe(
+      'skip',
+    );
     expect(
       decideParkedRuntime({
         ...base,
@@ -114,9 +117,106 @@ describe('decideParkedRuntime', () => {
   // fail, and healing early would un-flag a session that is about to stay dead.
   test('a mid-restore state is not yet proof the runtime is back', () => {
     for (const providerStatus of ['restoring', 'starting', 'provisioning']) {
-      expect(
-        decideParkedRuntime({ ...base, providerStatus, identityState: 'unavailable' }),
-      ).toBe('skip');
+      expect(decideParkedRuntime({ ...base, providerStatus, identityState: 'unavailable' })).toBe(
+        'skip',
+      );
     }
+  });
+});
+
+/**
+ * The `parked_runtime_removed` pattern (Better Stack `24ac0e9a`): the parked
+ * sweep saw `getStatus() === 'removed'` and wrote a permanent loss without ever
+ * asking the provider whether the runtime could be recovered in place. Every
+ * occurrence was a distinct box, one report each — not a repeat flood — but a
+ * `failed-start` box that had booted before, or a tombstoned box with a
+ * completed backup, was condemned before any user opened it while the `/start`
+ * open path would have recovered it.
+ */
+describe('decideRemovedParkedOutcome', () => {
+  const never = async () => {
+    throw new Error('must not be called');
+  };
+
+  test('a recovering provider is never reported lost and is marked recovered', async () => {
+    const marked: string[] = [];
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: async () => 'recovering',
+      claim: async () => true,
+      markRecovered: async (recovery) => {
+        marked.push(recovery);
+        return true;
+      },
+    });
+    expect(outcome).toBe('recovered');
+    expect(marked).toEqual(['recovering']);
+  });
+
+  test('a running provider is recorded as an in-place recovery', async () => {
+    const marked: string[] = [];
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: async () => 'running',
+      claim: async () => true,
+      markRecovered: async (recovery) => {
+        marked.push(recovery);
+        return true;
+      },
+    });
+    expect(outcome).toBe('recovered');
+    expect(marked).toEqual(['running']);
+  });
+
+  test('an explicit unavailable authorizes the loss', async () => {
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: async () => 'unavailable',
+      claim: async () => true,
+      markRecovered: never,
+    });
+    expect(outcome).toBe('preserve-lost');
+  });
+
+  test('a provider that cannot recover in place keeps the historical preserve', async () => {
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: undefined,
+      claim: never,
+      markRecovered: never,
+    });
+    expect(outcome).toBe('preserve-lost');
+  });
+
+  test('a recovery already owned by another caller is left alone', async () => {
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: never,
+      claim: async () => false,
+      markRecovered: never,
+    });
+    expect(outcome).toBe('recovery-in-flight');
+  });
+
+  test('a losing mark write does not report a loss', async () => {
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: async () => 'recovering',
+      claim: async () => true,
+      markRecovered: async () => false,
+    });
+    expect(outcome).toBe('recovery-in-flight');
+  });
+
+  test('a provider throw is read as unavailable, not as a recovery', async () => {
+    const outcome = await decideRemovedParkedOutcome({
+      externalId: 'sbx_test',
+      recoverInPlace: async () => {
+        throw new Error('provider down');
+      },
+      claim: async () => true,
+      markRecovered: never,
+    });
+    expect(outcome).toBe('preserve-lost');
   });
 });

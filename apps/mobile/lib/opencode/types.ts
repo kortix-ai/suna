@@ -56,6 +56,8 @@ export interface Message {
   sessionID: string;
   parentID?: string;
   error?: string;
+  /** The agent the message ran on (OpenCode's wire field). */
+  agent?: string;
   time: {
     created: number;
     completed?: number;
@@ -284,6 +286,8 @@ export interface MessageWithParts {
 export interface Turn {
   userMessage: MessageWithParts;
   assistantMessages: MessageWithParts[];
+  /** The prompt is not loaded; `userMessage` is a stand-in (see the SDK's `TurnLike.partial`). */
+  partial?: true;
 }
 
 export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';

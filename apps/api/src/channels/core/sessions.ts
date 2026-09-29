@@ -13,6 +13,9 @@ export interface ChatSessionListing {
   repoUrl: string;
   sessionId: string;
   lastMessageAt: Date;
+  /** The session's title (`metadata.name`), when one was generated. */
+  title: string | null;
+  status: string;
 }
 
 /** How many recent threads are read to find `limit` the caller may open. */
@@ -39,6 +42,8 @@ export async function listVisibleChatSessions(
       accountId: projects.accountId,
       projectName: projects.name,
       repoUrl: projects.repoUrl,
+      title: sql<string | null>`${projectSessions.metadata}->>'name'`,
+      status: projectSessions.status,
     })
     .from(chatThreads)
     .innerJoin(projects, eq(projects.projectId, chatThreads.projectId))
@@ -88,11 +93,13 @@ export async function listVisibleChatSessions(
   return rows
     .filter((_, i) => visible[i])
     .slice(0, opts.limit)
-    .map(({ projectId, projectName, repoUrl, sessionId, lastMessageAt }) => ({
+    .map(({ projectId, projectName, repoUrl, sessionId, lastMessageAt, title, status }) => ({
       projectId,
       projectName,
       repoUrl,
       sessionId,
       lastMessageAt,
+      title: title?.trim() || null,
+      status,
     }));
 }

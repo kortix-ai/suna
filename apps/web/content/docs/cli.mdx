@@ -104,7 +104,8 @@ composer, a shell in the sandbox, and the Files, Review, Apps, Customize and
 Account screens — run the experimental terminal client:
 
 ```sh
-kortix tui
+kortix tui        # or: kortix t, or kortixt
+kortixt --project <id> --new --terminal   # new session + sandbox shell, one command
 ```
 
 It signs in with the host you are already on. See [the TUI page](/docs/tui).
@@ -228,6 +229,8 @@ keys need `token.create` / `token.revoke` (owner and admin).
 | `kortix tokens ls [--mine] [--json]` | List the account's personal API keys. `--mine` narrows to the ones you minted. |
 | `kortix tokens new <name> [--expires <when>] [--project <id>]` | Mint a key. The secret prints once. `--project` binds it to one project, which it can never leave. |
 | `kortix tokens rm <token-id> [-y\|--yes]` | Revoke a key immediately. |
+| `kortix tokens apps ls [--json]` | List your connected apps: the apps and MCP clients you approved with Sign in with Kortix, across every account. |
+| `kortix tokens apps rm <client-id> [-y\|--yes] [--json]` | Revoke a connected app: its tokens stop working at once, and it must ask you again. |
 | `kortix tokens service-accounts ls [--json]` | List service accounts. |
 | `kortix tokens service-accounts new <name> [--description <t>] [--expires <when>]` | Create one. The bearer prints once. |
 | `kortix tokens service-accounts disable <id>` | Disable a service account. Reversible only by deleting and re-creating. |
@@ -362,10 +365,11 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--connect] [--json]` | Start a session. `--connect` attaches the OpenCode TUI once it is ready (implies `--wait`); on an interactive terminal without it, the CLI asks whether to connect after creation. `--model <id>` overrides the project's default model; a model that runs on an API key or a ChatGPT subscription uses every key you may use for it, and they rotate. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--queue] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. `--queue` is one-shot only: it stores the prompt in the session's durable inbox and returns as soon as it is stored, instead of handing it to the runtime. |
 | `kortix sessions connect [<id>] [-- <opencode args>]` | Attach the OpenCode TUI to the session's OpenCode server. Also available top-level: `kortix connect` / `kortix attach`. With no id, opens a session picker (running, stopped-with-restart, or new). The CLI auto-downloads the version-matched `opencode` binary (cache: `~/.kortix/opencode/<version>/`; override: `KORTIX_OPENCODE_BIN`). |
-| `kortix tui [--host <name>] [--project <id>] [--session <id>] [--install] [--uninstall]` | **Experimental.** Open the Kortix terminal client: sessions, transcript, composer, sandbox shell, Files, Review, Apps, Customize and Account. The TUI is a separate ~80 MB binary; the first run asks, then installs the version-matched `kortix-tui` into `~/.kortix/tui/<version>/`. `--install` does it without a prompt, `--uninstall` removes it. Uses the active host unless `--host` names another; with no host logged in it opens its own login screen. `?` prints every binding. See [/docs/tui](/docs/tui). |
+| `kortix tui [--host <name>] [--project <id>] [--session <id>] [--new] [--agent <name>] [--terminal] [--no-sidebar] [--mouse] [--install] [--uninstall]` | **Experimental.** Open the Kortix terminal client: sessions, transcript, composer, sandbox shell, Files, Review, Apps, Customize and Account. Aliases `kortix t` and `kortixt`. `--new` creates a session in the project at boot (`--agent` picks the agent), `--terminal` opens the sandbox shell focused, `--no-sidebar` starts without the sidebar (`Alt+B` toggles it), `--mouse` hands the mouse to the app (off by default so your terminal's selection, copy and link clicks keep working). The TUI is a separate ~80 MB binary; the first run asks, then installs the version-matched `kortix-tui` into `~/.kortix/tui/<version>/`; later CLI updates refresh it without asking and reuse an unchanged binary. `--install` does it without a prompt, `--uninstall` removes it. Uses the active host unless `--host` names another; with no host logged in it opens its own login screen. `?` prints every binding. See [/docs/tui](/docs/tui). |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Reattaches to the session's existing terminal; `--new` always starts a fresh one. Aliases: `terminal`, `ssh`. |
 | `kortix sessions shell <id> ls [--json]` | List the session's terminals: id, status, command. Needs no TTY. |
 | `kortix sessions shell <id> kill <pty-id>` | Kill one terminal. The ambient shell respawns on the next attach; anything running inside it does not. |
+| `kortix sessions forward <id> --port <sandbox>[:<local>]` | Forward a sandbox port to your machine, VS Code-style, so `http://localhost:3000` an agent printed works in your own browser. `--port` is repeatable; with no local port the same number is used if free, else the next free one; `:0` requests an OS-assigned ephemeral port. HTTP and WebSocket both forward (dev-server hot reload works). Prints one `⇄ localhost:N → sandbox:M` line per forward and stays in the foreground until Ctrl+C. Does not start a stopped session — it prints the `kortix sessions restart` remedy instead. Alias: `ports`. |
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print recent messages, read-only. A running session is read live; a stopped one is read from the transcript saved at the end of every turn, so it is never woken just to be read. The source is noted on stderr, so `--json` output is unchanged. Aliases: `messages`, `history`. |
 | `kortix sessions attachments <id> [--download <attachment-id>\|--all] [--out <dir>] [--json]` | List a session's stored files — what users attached, and copies of the files the agent showed — and download them. Works while the session is stopped: neither the list nor the bytes need its sandbox. Downloads never overwrite; a name already taken becomes `name (1).ext`. |
 | `kortix sessions pending <id> [--json]` | List open tool-permission or question prompts. Alias: `prompts`. |
@@ -405,10 +409,8 @@ sandbox restart. It needs `project.members.manage`, or being the human who
 launched the session. An agent may never resolve its own approval.
 
 `sessions attachments` reads the session's private file store, not its
-workspace. Files land there when the project has **Session Transcript History**
-enabled (Settings → Feature flags): uploads at send time, and every file the
-agent showed at the end of the turn. Files stored while the flag was on stay
-downloadable after it is turned off.
+workspace. Files land there at send time, and every file the agent showed lands
+there at the end of the turn.
 
 `sessions files` reads the working tree the agent is editing right now, before
 anything is committed; `kortix files` reads the committed repo instead. Paths
@@ -419,7 +421,10 @@ resolve under `/workspace` unless they start with `/workspace`, `/tmp`,
 (`find` filename cap), and `-y` to skip the `rm` confirmation.
 
 `sessions share` is owner-governed: the API refuses a project manager who
-cannot already read the session.
+cannot already read the session. A shared session runs only on provider keys
+shared with the whole project: a model that ran on your own keys switches to
+the project's keys for that provider, and with none that runs it, the share is
+refused (`409 SHARED_SESSION_NEEDS_PROJECT_KEY`).
 
 `sessions links create` options: `--port <n>` (default `3000`; `22`, `8000`,
 and the opencode ports are refused), `--path <p>` (default `/`),
@@ -502,8 +507,8 @@ Encrypted values stored on the project. By default a secret injects as a plain e
 | Command | Effect |
 | --- | --- |
 | `kortix secrets ls` | List secrets by identifier and manifest `env` spec. Marks required-but-missing values. |
-| `kortix secrets set NAME=VALUE ... [--identifier <id>]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. |
-| `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value directly — you never see the raw value. |
+| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. |
+| `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value you do not have. |
 | `kortix secrets unset NAME ...` | Remove secrets. |
 | `kortix secrets grant IDENTIFIER --agent <name>` | Let one agent receive this secret: merge the identifier into that agent's `secrets` list in `kortix.yaml`, adding the agent entry when the manifest omits it. |
 
@@ -616,14 +621,14 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
-| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, status, and default. |
+| `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
+| `kortix connectors connections share <id> [--group <id>]… [--user <email\|id>]… [--everyone]` | Share your own private account: it becomes a shared account only they may use (`--everyone`: the whole project). Needs the right to manage the project's connections. |
 | `kortix connectors apps [<query>] [--category <c>] [--cursor <c>] [--limit <n>] [--json]` | Search the Composio toolkit catalog — the slugs `add --provider composio --app <slug>` accepts. Alias: `kortix connectors toolkits`. Add `--pipedream` for the legacy Pipedream catalog. |
 | `kortix connectors catalog [<query>] [--cursor <c>] [--json]` | Browse the direct-connector catalogue. Needs the `connectors_api_discover` flag. |
 | `kortix connectors catalog show <id> [--json]` | Show one catalogue record's surfaces. |
 | `kortix connectors sensitive <slug> on\|off` | Gate this connector's reads too — every call then needs approval. Applies now. |
 | `kortix connectors owner <slug> project\|user` | Who authorizes: one project connection, or each member's own. Applies now. |
-| `kortix connectors machines <slug> [--show] [--add <id>] [--rm <id>]` | Which paired computers a `computer` connector may target. Applies now. |
 | `kortix connectors authorize <slug> [--status] [--scope "<a b>"] [--client-id <id>] [--client-secret <s>] [--success-redirect <url>] [--error-redirect <url>] [--json]` | OAuth 2.1 a connector end to end: discover the server's authorization metadata, register Kortix as a client (RFC 7591) where the server supports it, and print the URL to approve. `--status` reports the result instead. |
 | `kortix connectors authorize <slug> --device` | Same, using the OAuth 2.0 device flow (RFC 8628): print a code and a URL, then poll until it is approved, denied, or expired. |
 | `kortix connectors policy ls [--json]` | Show project-wide execution policy. Alias: `show`. |
@@ -707,7 +712,9 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
 | `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. Pass large args as `@file.json` or `-` (stdin). |
+| `kortix connectors call <connector>.<action> '<json-args>' --reason "<text>"` | Describe what the call does for the human approver when a policy holds it. The approval card shows it as the agent's description next to the arguments. |
 | `kortix connectors call <connector>.<action> @args.json --attach <file>` | Stage a file and append its reference to the action's attachments array. The gateway writes the bytes into the provider's attachment item. `--attach` repeats; `--attach-path <a.b.c>` names the array. See [Attach files](/docs/connect/connectors#attach-files). |
+| `kortix connectors call <connector>.<action> '<json-args>' --out <file>` | Write the full JSON result to `<file>` and print only a summary: `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). See [Large results](/docs/connect/connectors#large-results). |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
@@ -759,6 +766,20 @@ Live-only options — valid on `add --apply`, and on every `set`: `--model <prov
 
 `set` takes every live-only option plus `--name`, `--prompt`, `--cron`, `--run-at`, `--timezone`, `--secret-env`, `--agent`, and `--enabled true|false`. `--cron` and `--run-at` are exclusive: setting one clears the other. Monitor fields are add-only.
 
+### Reminders
+
+A reminder re-prompts one session later, once or on repeat. It is stored in the database, not `kortix.yaml`. Inside a session, `--session` defaults to `$KORTIX_SESSION_ID`. See [Reminders](/docs/connect/reminders).
+
+| Command | Effect |
+| --- | --- |
+| `kortix remind "<text>" [schedule]` | Create a reminder. Same as `kortix reminders add`. |
+| `kortix reminders add "<text>" [schedule]` | Create a reminder. Prints its id and next fire. |
+| `kortix reminders ls [--json]` | List the session's reminders. |
+| `kortix reminders pause <id>` / `resume <id>` | Turn one reminder off or on. `resume` re-arms from now. |
+| `kortix reminders rm <id>` | Delete a reminder. Aliases: `stop`, `delete`. |
+
+Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire once), `--every <duration>` (repeat, min `5m`), `--cron "<expr>"` with `--timezone <tz>`. Other options: `--name <label>`, `--session <id>` (a unique prefix works), `--project <id>`, `--host <name>`, `--json`.
+
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 
 ### Access
@@ -776,9 +797,14 @@ roles: `owner`, `admin`, `member`. Project roles: `manager`, `member`.
 
 Grant options: `--project <id>` (default: the linked project), `--account` (the
 whole account), `--agent <name>` (narrow the grant to one agent — an object
-assignment), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
-a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`, or
-`pending:<email>`; a bare id is read as a user. An agent's identity is a
+assignment), `--connection <id>` (narrow the use of one shared connector
+account; the first grant limits the account to its grantees, and revoking the
+last opens it to the whole project again), `--everyone` (grant to everyone with
+access to the project; it holds an `--agent` or a `--connection`, never a
+role), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
+a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`,
+`project:<id>`, or `pending:<email>`; a bare id is read as a user. A grant to
+everyone lists as `everyone`. An agent's identity is a
 `service_account`, so `--service-account <id>` is how you assign a role to an
 agent. `--user` accepts an email and resolves it against the account member
 directory.
@@ -788,6 +814,8 @@ kortix access grant --user alice@corp.com --role manager
 kortix access grant --user alice@corp.com --role admin --account
 kortix access grant --group 8f3c… --role member --project 1a2b…
 kortix access grant --user alice@corp.com --agent support-bot
+kortix access grant --everyone --agent support-bot
+kortix access grant --group 8f3c… --connection 2b7e…
 kortix access revoke 4d5e…
 ```
 

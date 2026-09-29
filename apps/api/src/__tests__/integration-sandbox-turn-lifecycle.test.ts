@@ -21,6 +21,7 @@ import {
   clearSandboxTurn,
   clearTurnStopRequest,
   completeSandboxTurn,
+  isProtectedEndError,
   markTurnStopRequested,
   recordUnidentifiedTurnCause,
   reconcileSandboxTurnDelivery,
@@ -1397,6 +1398,35 @@ describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn
     expect((await readTurn(stopped))?.end_error).toEqual({ name: 'UserStop', message: null });
     expect((await readTurn(other))?.end_error).toEqual({ name: 'APIError', message: 'upstream 500' });
   });
+
+  // A stop can be stamped on the OPEN turn before the guard's cause arrives:
+  // the hold settle stamps UserStop, and the pre-guard daemon's cause frame
+  // lands while the turn is still open. The cause must not claim a stop the
+  // user asked for.
+  test('a requested stop on the open turn is never rewritten by an unidentified cause', async () => {
+    const token = await openTurn(t('u-stop-open'), 'msg_u9');
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { messageId: 'msg_u9' });
+
+    expect(await cause()).toBe('none');
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+
+    // The abort the stop caused keeps it, exactly like the ended-turn path.
+    await end('msg_u9', ABORT);
+    expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
+  });
+
+  // The predicate the recorder and the ledger CASE both read. An abort is the
+  // EFFECT of a stop, so it is replaceable; a requested stop and every other
+  // named cause are protected.
+  test('isProtectedEndError protects a requested stop and any named cause, not a bare abort', () => {
+    expect(isProtectedEndError('UserStop')).toBe(true);
+    expect(isProtectedEndError('QueueInterrupt')).toBe(true);
+    expect(isProtectedEndError('SandboxMemoryGuard')).toBe(true);
+    expect(isProtectedEndError('MessageAbortedError')).toBe(false);
+    expect(isProtectedEndError('AbortError')).toBe(false);
+    expect(isProtectedEndError(null)).toBe(false);
+    expect(isProtectedEndError(undefined)).toBe(false);
+  });
 });
 
 
@@ -1475,7 +1505,9 @@ describe('the pending stop marker', () => {
     // trips. A marker stamped with it is backdated, and a later read from a
     // fresh-clock observer confirms a park inside one provider transition.
     const before = Date.now();
-    await markPendingStopObservation(SANDBOX_ID);
+    // The armed report is what the warn sites key on: one warn line per stop
+    // episode, not one per reaper pass.
+    expect(await markPendingStopObservation(SANDBOX_ID)).toBe(true);
     const after = Date.now();
 
     const { metadata } = await readRow();
@@ -1491,7 +1523,7 @@ describe('the pending stop marker', () => {
     // on every pass would mean the box never parks.
     await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 1234 });
 
-    await markPendingStopObservation(SANDBOX_ID);
+    expect(await markPendingStopObservation(SANDBOX_ID)).toBe(false);
 
     expect((await readRow()).metadata.pendingStopObservedAtMs).toBe(1234);
   });
@@ -1499,7 +1531,7 @@ describe('the pending stop marker', () => {
   test('re-records a marker nothing can read', async () => {
     await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 'soon' });
 
-    await markPendingStopObservation(SANDBOX_ID);
+    expect(await markPendingStopObservation(SANDBOX_ID)).toBe(true);
 
     expect(typeof (await readRow()).metadata.pendingStopObservedAtMs).toBe('number');
   });

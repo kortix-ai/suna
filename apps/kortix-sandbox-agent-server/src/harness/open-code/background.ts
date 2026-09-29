@@ -1,8 +1,8 @@
 import type { OpenCodeConfig as Config } from './config'
-import { kortixEventBus } from '../../kortix-event-bus'
-import { logger } from '../../logger'
-import { sandboxRelayContext } from '../../relay-context'
-import { startResourceMonitor, type ResourceMonitor } from '../../resources'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { logger } from '@/lib/log/logger'
+import { relayMemoryGuardTurnEnd } from '../shared/memory-guard-relay'
+import { startResourceMonitor, type ResourceMonitor } from '@/services/resources/resources'
 import type { Opencode } from './lifecycle'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { OPENCODE_HOME } from './paths'
@@ -144,7 +144,11 @@ export function startOpenCodeBackground(
         const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(10_000) })
         return res.ok
       },
-      onGuard: async ({ reason, snapshot, aborted }) => {
+      onGuard: async ({ reason, snapshot, aborted, shed }) => {
+        // A shed that kept the turn running is not a turn end — nothing to
+        // relay; the local `[resources] memory guard shed a runaway process`
+        // log already names the cause. See `resources.ts` `pickShedCandidate`.
+        if (shed.length > 0) return
         // Tell the control plane why the turn ended. Sent after the abort, so
         // OpenCode's own "Aborted" end frame races this one. Either order ends
         // the same: apps/api lets a named cause replace the abort that beat it.
@@ -171,59 +175,6 @@ export function startOpenCodeBackground(
       clearInterval(offloadTimer)
       monitor.stop()
     },
-  }
-}
-
-/**
- * Report a memory-guard abort to apps/api as the turn's end, in the shape
- * the turn-stream already accepts (`kind: 'end'`, `status: 'error'`), so the
- * ledger records `failed` with a reason that names memory and the UI shows
- * it. apps/api closes a turn only when the frame names it (`turn_message_id`);
- * an unnamed frame settles as `identity_mismatch` and the reason is lost.
- */
-export async function relayMemoryGuardTurnEnd(input: {
-  reason: string
-  aborted: boolean
-  opencodeRssMb: number | null
-  opencodeSessionId: string | null
-  /** The turn that was running when the guard fired, read before the abort. */
-  turnMessageId: string | null
-}): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) return false
-  const { projectId, sessionId, token, apiRoot } = ctx
-  // Name the turn only when the abort landed: a named end closes the turn,
-  // and a failed abort leaves it running.
-  const turnMessageId = input.aborted ? input.turnMessageId : null
-  try {
-    const res = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        session_id: sessionId,
-        kind: 'end',
-        status: 'error',
-        opencode_session_id: input.opencodeSessionId ?? undefined,
-        turn_message_id: turnMessageId ?? undefined,
-        error_name: 'SandboxMemoryGuard',
-        error_message: input.reason,
-        // An aborted turn is over. apps/api reads `true` as "a retry, still
-        // running" and drops the frame as `non_terminal`; that is only the
-        // truth when the abort did not land.
-        error_retryable: !input.aborted,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    })
-    logger.warn('[resources] memory guard relayed to the control plane', {
-      status: res.status,
-      turnMessageId,
-      aborted: input.aborted,
-      opencodeRssMb: input.opencodeRssMb,
-    })
-    return res.ok
-  } catch (err) {
-    logger.warn('[resources] memory guard relay failed', { err: (err as Error).message })
-    return false
   }
 }
 

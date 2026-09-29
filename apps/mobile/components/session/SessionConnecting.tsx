@@ -13,21 +13,43 @@
  * the centre shows the failure with the detail, Restart, and a way back to
  * project home — web parity with the dashboard's "OpenCode runtime is not
  * ready" screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
+ *
+ * With a SAVED COPY (`messages`: the copy this device kept, then the server's;
+ * `lib/session/saved-copy.ts`) the view is the thread itself: its turns,
+ * read-only, and a status bar above the composer saying what the computer is
+ * doing. The loader is gone — the conversation is the content. A failure then
+ * takes the composer's slot instead of replacing the thread, the rule the web
+ * follows: a readable conversation is never replaced by a card.
+ *
+ * A conversation the saved copy proves EMPTY (`empty`) has nothing to wait
+ * for: no loader, the status bar and the composer. With `onSend` the composer
+ * takes messages while the computer wakes: they queue through the prompt inbox
+ * (`lib/session/connecting-send.ts`), and the typed text is the thread's own
+ * draft, so it carries into the thread when the computer is ready.
  */
 
 import React from 'react';
-import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { groupMessagesIntoTurns } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Composer } from '@/components/kortix/composer';
+import { draftKey } from '@/lib/session/composer-draft';
+import { useComposerDraft } from '@/lib/session/use-composer-draft';
+import { flushComposerDrafts } from '@/stores/composer-draft-store';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
 import { AttachmentTile } from '@/components/session/attachment-tile';
 import { UserMessageBubble } from '@/components/session/turn/user-message';
-import { THEME } from '@/lib/utils/theme';
+import { SessionTurn } from '@/components/session/SessionTurn';
+import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
+import type { MessageWithParts, Turn } from '@/lib/opencode/types';
+import { turnTopGap } from '@/lib/session/auto-scroll';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
@@ -50,6 +72,12 @@ export function SessionConnecting({
   onCancel,
   onRestart,
   restarting,
+  showLoader = true,
+  messages,
+  statusLabel,
+  sessionId,
+  empty = false,
+  onSend,
 }: {
   /** The user's just-sent first message (a fresh send from project home), shown as the thread shows it. */
   firstMessage?: string;
@@ -61,12 +89,60 @@ export function SessionConnecting({
   onCancel: () => void;
   onRestart?: () => void;
   restarting?: boolean;
+  /**
+   * Draw the centre loader. False while the project drawer covers this view:
+   * the drawer owns the one loader then (KRTX-244).
+   */
+  showLoader?: boolean;
+  /** The session's saved copy, shown as the thread while the computer wakes. */
+  messages?: MessageWithParts[];
+  /** What the computer is doing, for the status bar over the thread (`sessionConnectionLabel`). */
+  statusLabel?: string | null;
+  /** The OpenCode session the saved copy belongs to; tool rows read it. */
+  sessionId?: string;
+  /** The saved copy proves the conversation empty: nothing to wait for. */
+  empty?: boolean;
+  /** Queues a message while the computer wakes. Absent: the composer is disabled. */
+  onSend?: (text: string) => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const files = firstFiles ?? [];
   const hasFiles = files.length > 0;
+  const turns = React.useMemo(
+    () => (messages && messages.length > 0 ? (groupMessagesIntoTurns(messages) as unknown as Turn[]) : []),
+    [messages],
+  );
+
+  if (turns.length > 0) {
+    return (
+      <SavedThread
+        turns={turns}
+        sessionId={sessionId}
+        statusLabel={statusLabel ?? null}
+        error={error}
+        onCancel={onCancel}
+        onRestart={onRestart}
+        restarting={restarting}
+        onSend={onSend}
+      />
+    );
+  }
+
+  if (empty && !error && !hasFiles && !firstMessage) {
+    return (
+      <View style={{ flex: 1 }} className="bg-background">
+        <View style={{ flex: 1 }} />
+        <View style={{ paddingBottom: insets.bottom }}>
+          <WakingStatus label={statusLabel ?? null} />
+          <View className="px-4 pb-3 pt-1">
+            <WakingComposer onSend={onSend} draftSessionId={sessionId} />
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }} className="bg-background">
@@ -105,9 +181,9 @@ export function SessionConnecting({
         <View style={{ flex: 1 }} className="items-center justify-center">
           {error ? (
             <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} />
-          ) : (
+          ) : showLoader ? (
             <KortixLoader size="medium" />
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -120,6 +196,142 @@ export function SessionConnecting({
       </View>
     </View>
   );
+}
+
+/**
+ * The composer while the computer wakes. With `onSend` it takes a message (see
+ * the file comment); the draft is flushed on unmount so the thread's own
+ * composer restores it in the same commit. Without it, disabled: there is no
+ * runtime to send to yet.
+ */
+function WakingComposer({ onSend, draftSessionId }: { onSend?: (text: string) => void; draftSessionId?: string }) {
+  const [text, setText] = React.useState('');
+  useComposerDraft(
+    onSend && draftSessionId ? draftKey({ kind: 'session', sessionId: draftSessionId }) : null,
+    text,
+    setText,
+  );
+  React.useEffect(() => () => flushComposerDrafts(), []);
+  if (!onSend) return <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />;
+  return (
+    <Composer
+      value={text}
+      onChangeText={setText}
+      onSubmit={() => {
+        const sent = text;
+        setText('');
+        onSend(sent);
+      }}
+    />
+  );
+}
+
+/**
+ * What the computer is doing: `SandboxHealthPill`'s bar, the composer card with
+ * the dot on the text inset. Two lines, not one: the queue notice
+ * (`SESSION_NOTICE.waking`) does not fit one line on a phone.
+ */
+function WakingStatus({ label }: { label: string | null }) {
+  if (!label) return null;
+  return (
+    <View className="px-4 pb-2" accessibilityLiveRegion="polite">
+      <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
+        <View className="flex-1 flex-row items-center gap-2 px-2">
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
+          <Text variant="muted" className="shrink" numberOfLines={2}>
+            {label}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The thread as its saved copy shows it: the turns, read-only, opened at the
+ * newest message like the live thread; then the status bar and the composer.
+ * A failure takes the composer's slot and the thread stays readable.
+ */
+function SavedThread({
+  turns,
+  sessionId,
+  statusLabel,
+  error,
+  onCancel,
+  onRestart,
+  restarting,
+  onSend,
+}: {
+  turns: Turn[];
+  sessionId?: string;
+  statusLabel: string | null;
+  error?: SessionConnectError | null;
+  onCancel: () => void;
+  onRestart?: () => void;
+  restarting?: boolean;
+  onSend?: (text: string) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const scrollRef = React.useRef<ScrollView>(null);
+  const { colorScheme } = useColorScheme();
+  const background = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
+  // turn pads itself, `px-4` in `SessionTurn`), web's `mt-12` between turns
+  // (`turnTopGap`), and attachment tiles / file mentions opening the Recent
+  // files sheet (`ToolFilePreviewHost`).
+  return (
+    <View style={{ flex: 1 }} className="bg-background">
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: 12 }}
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
+        {turns.map((turn, index) => {
+          const gap = turnTopGap({ index, working: false, pending: false, previousPending: false });
+          return (
+            <View key={turn.userMessage.info.id} style={gap > 0 ? { marginTop: gap } : undefined}>
+              <SessionTurn
+                turn={turn}
+                isWorkingTurn={false}
+                isBusy={false}
+                sessionId={sessionId}
+                onFileMention={openFilePreview}
+                rewindDisabled
+              />
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* The thread's fade above the input (`SessionPage`). */}
+      <LinearGradient
+        colors={[withAlpha(background, 0), withAlpha(background, 1)]}
+        style={{ height: 24, marginTop: -24, zIndex: 1 }}
+        pointerEvents="none"
+      />
+
+      <View style={{ paddingBottom: insets.bottom }}>
+        {error ? (
+          <View className="items-center px-4 pb-3 pt-1">
+            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} />
+          </View>
+        ) : (
+          <>
+            <WakingStatus label={statusLabel} />
+            <View className="px-4 pb-3 pt-1">
+              <WakingComposer onSend={onSend} draftSessionId={sessionId} />
+            </View>
+          </>
+        )}
+      </View>
+
+      <ToolFilePreviewHost />
+    </View>
+  );
+}
+
+function openFilePreview(path: string) {
+  useToolFilePreviewStore.getState().openPreview(path);
 }
 
 function ConnectErrorState({
@@ -147,11 +359,8 @@ function ConnectErrorState({
       ) : null}
       {onRestart ? (
         <Button variant="outline" onPress={onRestart} disabled={restarting} className="mt-1 rounded-full">
-          {restarting ? (
-            <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-          ) : (
-            <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-          )}
+          {/* Restarting is an inline disabled state, not a second loader. */}
+          <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
           <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
         </Button>
       ) : null}

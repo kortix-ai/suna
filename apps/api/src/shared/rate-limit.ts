@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
-import { isUuid } from './validate';
+import { shareIdFromPublicRef } from './public-share-ref';
 import { recordAuditEvent } from './audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from './rate-limit-audit';
 
@@ -133,6 +134,22 @@ async function auditRateLimitHit(c: Context, context: AuditContext, result: Rate
   });
 }
 
+async function rateLimitExceededResponse(
+  c: Context,
+  result: RateLimitResult,
+  auditContext: AuditContext,
+): Promise<Response> {
+  await auditRateLimitHit(c, auditContext, result);
+  return c.json(
+    {
+      error: 'rate_limit_exceeded',
+      message: 'Rate limit exceeded. Please retry shortly.',
+      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+    },
+    429,
+  );
+}
+
 export async function enforceRateLimit(
   c: Context,
   limiter: TokenBucketRateLimiter,
@@ -145,15 +162,7 @@ export async function enforceRateLimit(
 
   if (result.allowed) return null;
 
-  await auditRateLimitHit(c, auditContext, result);
-  return c.json(
-    {
-      error: 'rate_limit_exceeded',
-      message: 'Rate limit exceeded. Please retry shortly.',
-      retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
-    },
-    429,
-  );
+  return rateLimitExceededResponse(c, result, auditContext);
 }
 
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
@@ -167,6 +176,7 @@ const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
 );
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
+const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 /**
@@ -287,14 +297,15 @@ export function createSandboxProxyRateLimitMiddleware() {
  */
 export function createPublicSessionShareRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    // Key on the share id when it's a well-formed uuid (every visitor to one
+    // Key on the share id when the ref names one (every visitor to one
     // shared link shares that bucket); otherwise fall back to client IP. This
     // MUST run before the raw param can key the bucket Map — an attacker
     // looping unique garbage ids would otherwise allocate an unbounded number
     // of buckets (the id is never a real share, so it never reaches the
     // handler's own validation) and OOM the process.
-    const rawShareId = c.req.param('shareId');
-    const shareId = isUuid(rawShareId) ? rawShareId : `ip:${requestClientKey(c)}`;
+    // A `kps_` token and its share id name the same share, so both key the
+    // same bucket.
+    const shareId = shareIdFromPublicRef(c.req.param('shareId') ?? '') ?? `ip:${requestClientKey(c)}`;
     const denied = await enforceRateLimit(
       c,
       publicSessionShareLimiter,
@@ -413,6 +424,49 @@ export function consumeProjectWebhookManifestRefreshBudget(projectId: string): b
   }).allowed;
 }
 
+/**
+ * Per-principal budget on the LLM gateway mount (`/v1/llm/*` and its
+ * `/v1/llm-gateway/*` alias), the reverse proxy to the standalone gateway.
+ * The standalone gateway meters spend and sheds on memory pressure, but
+ * nothing throttles a principal at this boundary. This is defence-in-depth,
+ * not a quota: in-limit traffic keeps its exact behavior plus the standard
+ * `X-RateLimit-*` headers.
+ *
+ * Key: the presented credential, hashed so no raw secret is retained in the
+ * bucket Map. One gateway key or PAT belongs to exactly one account/project,
+ * so the credential is the principal — and this avoids a per-request identity
+ * database read on the inference hot path. A request without a bearer falls
+ * back to the client address, so omitting the header cannot escape the limit.
+ *
+ * The proxy answers with a raw `Response` that replaces Hono's prepared one,
+ * so headers set before `next()` would be dropped. They are applied again
+ * after `next()`, when `c` points at the final response.
+ */
+export function createLlmGatewayRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const bearer = /^Bearer\s+(\S+)$/i.exec((c.req.header('authorization') ?? '').trim());
+    const token = bearer?.[1];
+    const key = token
+      ? `tok:${createHash('sha256').update(token).digest('hex')}`
+      : `ip:${requestClientKey(c)}`;
+    const result = llmGatewayLimiter.check(key, {
+      limit: positiveInt((config as any).KORTIX_LLM_GATEWAY_REQS_PER_MIN, 600),
+      windowMs: 60_000,
+    });
+    if (!result.allowed) {
+      setHeaders(c, result);
+      return rateLimitExceededResponse(c, result, {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'llm_gateway',
+        resourceId: null,
+        metadata: { limiter: 'llm_gateway' },
+      });
+    }
+    await next();
+    setHeaders(c, result);
+  };
+}
+
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
@@ -423,5 +477,6 @@ export function resetRateLimiters() {
   projectWebhookManifestRefreshLimiter.reset();
   projectSecretWriteLimiter.reset();
   projectSessionCreateLimiter.reset();
+  llmGatewayLimiter.reset();
   sessionLlmLimiter.reset();
 }

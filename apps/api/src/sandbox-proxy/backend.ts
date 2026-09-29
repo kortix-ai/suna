@@ -23,6 +23,7 @@
 import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
+import { timeUpstream } from '../middleware/upstream-timing';
 import {
   getProvider,
   type ProviderName,
@@ -267,7 +268,10 @@ export async function resolveSandboxIngress(
   const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
   if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
   const provider = getProvider(record.provider as ProviderName);
-  const ingress = await provider.resolveIngress(record.externalId, request);
+  // A provider API call is upstream time by the middleware's own contract; a
+  // stale link makes every proxied request pay this inline (KRTX-471: ~5 s
+  // give-ups whose `upstream_ms` held only the failed dials).
+  const ingress = await timeUpstream(() => provider.resolveIngress(record.externalId, request));
 
   const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
   if (cacheTtlMs > 0) {
@@ -410,8 +414,20 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
     // deadline BY CONSTRUCTION so the heal is refused for exactly the same
     // rows, and additionally a box stopped by a transient provider blip while
     // its deadline is still live IS healed — which the flag got wrong.
+    //
+    // The SESSION status follows the BOX, never the request. A stopped or
+    // errored box that the heal just revived is active, so its session is
+    // running; a REFUSED heal (the box is parked and its deadline has passed)
+    // must leave the session exactly as the stop left it. The session write
+    // used to be unconditional, so one passive request to a parked box —
+    // an open preview tab or a share link — flipped the session back to
+    // `running` while the box stayed stopped. That session then reported
+    // running for hours after its last turn (KRTX-378) and the DB-only
+    // stuck-session reconcile could not catch it while the traffic kept
+    // bumping `updated_at`.
+    let boxIsRunning = !['error', 'stopped'].includes(row.status);
     if (['error', 'stopped'].includes(row.status)) {
-      await db
+      const healed = await db
         .update(sessionSandboxes)
         .set({ status: 'active', lastUsedAt: now, updatedAt: now })
         .where(
@@ -419,13 +435,17 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
             eq(sessionSandboxes.sandboxId, row.sandboxId),
             gt(sessionSandboxes.deadlineAt, now),
           ),
-        );
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId });
+      boxIsRunning = healed.length > 0;
     }
 
-    await db
-      .update(projectSessions)
-      .set({ status: 'running', updatedAt: now })
-      .where(eq(projectSessions.sessionId, row.sessionId));
+    if (boxIsRunning) {
+      await db
+        .update(projectSessions)
+        .set({ status: 'running', updatedAt: now })
+        .where(eq(projectSessions.sessionId, row.sessionId));
+    }
   } catch (err) {
     sandboxTouchCache.delete(sandboxId);
     console.warn('[PREVIEW] Failed to mark sandbox used:', err);

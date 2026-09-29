@@ -1,6 +1,5 @@
 /**
- * `on_behalf_of` — the human an agent session acts for (spec
- * docs/specs/2026-09-22-agents-as-principals.md §2.3).
+ * `on_behalf_of` — the human an agent session acts for.
  *
  * Stored on the session token (`kortix.account_tokens.on_behalf_of_user_id`).
  * It decides ONLY that human's personal resources (member-owned connector
@@ -94,6 +93,10 @@ export function channelPrompterForOnBehalfOf(input: {
   teamsRequiresUserIdentity: boolean;
 }): string | null | undefined {
   if (typeof input.source !== 'string') return undefined;
+  // A reminder prompt is text its creator wrote earlier. The reminder create route
+  // already cleared `on_behalf_of` when that creator was another human, so a
+  // fire is like `system:connector-connected`: the session's own human caused it.
+  if (input.source === 'trigger:reminder') return undefined;
   if (input.source.startsWith('trigger:')) return null;
   if (input.source === 'email' || input.source === 'telegram') return null;
   if (input.source === 'slack') return input.slackRequiresUserIdentity ? input.userId : null;

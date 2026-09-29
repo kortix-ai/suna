@@ -18,6 +18,7 @@ import {
   llmActivityGrantMs,
 } from '../projects/sandbox-deadline';
 import { validateAccountToken } from '../repositories/account-tokens';
+import { tokenRefusalReason } from '../shared/session-lease-refusal';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
@@ -40,16 +41,19 @@ import { resolveGatewayRoute } from './routing';
  * Returns null for an unknown/expired/revoked token.
  */
 export async function authenticatePrincipal(token: string): Promise<AuthedPrincipal | null> {
-  const principal = await resolvePrincipal(token);
+  const { principal } = await resolvePrincipalWithReason(token);
   return principal ? withResolvedTier(principal) : null;
 }
 
-async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> {
+
+async function resolvePrincipalWithReason(
+  token: string,
+): Promise<{ principal: AuthedPrincipal | null; reason: string | null }> {
   if (isGatewayKey(token)) {
-    return validateGatewayKey(token);
+    return { principal: await validateGatewayKey(token), reason: null };
   }
   const yolo = await attributeYoloToken(token);
-  if (yolo) return yolo;
+  if (yolo) return { principal: yolo, reason: null };
   const account = await validateAccountToken(token);
   if (account.isValid && account.userId && account.accountId) {
     // projectId/sessionId attribute usage to the calling session (the sandbox
@@ -68,15 +72,18 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
           })
         : account.userId;
     return {
-      userId: account.userId,
-      accountId: account.accountId,
-      projectId: account.projectId ?? undefined,
-      sessionId: account.sessionId ?? undefined,
-      agentGrant: account.agentGrant ?? null,
-      ...(personalUserId !== account.userId ? { personalUserId } : {}),
+      principal: {
+        userId: account.userId,
+        accountId: account.accountId,
+        projectId: account.projectId ?? undefined,
+        sessionId: account.sessionId ?? undefined,
+        agentGrant: account.agentGrant ?? null,
+        ...(personalUserId !== account.userId ? { personalUserId } : {}),
+      },
+      reason: null,
     };
   }
-  return null;
+  return { principal: null, reason: tokenRefusalReason(account.error) };
 }
 
 /**
@@ -135,10 +142,12 @@ function logGatewayBudgetWarnings(
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
+export class GatewayBudgetExceededError extends Error {}
+
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
   const { exceeded, message, warnings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
-  if (exceeded) throw new Error(message ?? 'Budget exceeded');
+  if (exceeded) throw new GatewayBudgetExceededError(message ?? 'Budget exceeded');
 }
 
 /**
@@ -149,9 +158,18 @@ export async function authorizeRequest(
   token: string,
   options: { deferBilling?: boolean } = {},
 ): Promise<AuthorizeResult> {
-  let principal = await authenticatePrincipal(token);
+  const resolved = await resolvePrincipalWithReason(token);
+  let principal = resolved.principal ? await withResolvedTier(resolved.principal) : null;
   if (!principal) {
-    return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
+    // Name the SANDBOX refusal when that is what happened. "Invalid token" for
+    // a valid, unexpired token whose session was parked is a wrong answer, and
+    // it costs whoever reads it a search through the wrong system.
+    return {
+      ok: false,
+      status: 401,
+      errorCode: resolved.reason ? 'session_not_running' : 'invalid_token',
+      message: resolved.reason ?? 'Invalid token',
+    };
   }
   // Old gateway processes omit deferBilling and still expect this RPC to take
   // the managed admission hold. New gateways defer it until model resolution.
@@ -356,6 +374,7 @@ async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: 
  * or block — trace persistence or billing.
  */
 export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
+  const timing = trace.metadata?.timing as Record<string, unknown> | undefined;
   if (!isOtelTraceExporterConfigured()) return;
   try {
     const attemptFailures = trace.attemptFailures ?? [];
@@ -398,6 +417,13 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         // false on every span.
         'kortix.fallback_recovered': trace.ok && attemptFailures.length > 0,
         ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
+        // Latency split (packages/llm-gateway pipeline/trace.ts): prep_ms and
+        // its admit/route/resolve/billing segments, then upstream_response_ms.
+        ...Object.fromEntries(
+          Object.entries(timing ?? {})
+            .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+            .map(([key, value]) => [`kortix.${key}`, value]),
+        ),
       },
     }).catch((error) => {
       console.warn(

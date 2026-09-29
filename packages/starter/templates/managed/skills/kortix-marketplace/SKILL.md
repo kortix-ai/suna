@@ -53,8 +53,9 @@ adding an item is the import flow below.
 4. **Adapt it to this project.** If a skill carries a "TODO: make this yours"
    placeholder or generic copy, tailor it to what this project actually does.
 5. **Wire up its needs.** If the item requires a connector/secret, don't hardcode
-   anything — mint a setup link (`kortix secrets request …` /
-   `kortix connectors connect …`) and surface it to the user.
+   anything. A value the user already gave you goes in with
+   `kortix secrets set NAME=-`; otherwise mint a setup link
+   (`kortix secrets request …` / `kortix connectors connect …`) and surface it.
 6. **Commit + open a CR.** `git add`/`commit`, `git push origin HEAD`, then
    `kortix cr open --title "Import <item>"`. The user reviews the diff and merges
    — that's how it becomes permanent (see `kortix-system` for the CR mandate).

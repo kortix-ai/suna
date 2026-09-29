@@ -364,6 +364,7 @@ export class SessionSyncController {
   private knownUserMessageIds = new Set<string>();
   private olderHistoryStarted = false;
   private tailRequest: Promise<void> | undefined;
+  private turnEndPending = false;
   private olderRequest: Promise<void> | undefined;
   private livenessTimer: unknown;
   private livenessBusy = false;
@@ -470,10 +471,10 @@ export class SessionSyncController {
       // One bounded read for a session that was actually busy. A watched idle
       // session continues at the verification cadence below.
       this.stopLivenessTimer();
-      if (turnEnded && !this.destroyed) void this.reconcile('turn-end');
+      if (turnEnded && !this.destroyed) this.reconcileTurnEnd();
       return;
     }
-    if (turnEnded && !this.destroyed) void this.reconcile('turn-end');
+    if (turnEnded && !this.destroyed) this.reconcileTurnEnd();
     if (this.livenessTimer !== undefined) return;
     this.lastActivityAt = this.scheduler.now();
     this.livenessTimer = this.scheduler.setInterval(
@@ -496,6 +497,21 @@ export class SessionSyncController {
     // controller that is being torn down.
     this.abortController.abort();
     this.listeners.clear();
+  }
+
+  private reconcileTurnEnd(): void {
+    if (!this.tailRequest) {
+      void this.reconcile('turn-end');
+      return;
+    }
+    // An already-issued poll may have read the transcript before the turn ended.
+    // Wait for it to release the single-flight slot, then verify the final tail.
+    if (this.turnEndPending) return;
+    this.turnEndPending = true;
+    void this.tailRequest.finally(() => {
+      this.turnEndPending = false;
+      if (!this.destroyed) void this.reconcile('turn-end');
+    });
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
@@ -660,7 +676,21 @@ export class SessionSyncController {
         controller.abort(error);
       }, this.readTimeoutMs);
     });
-    return Promise.race([read(controller.signal), deadline]).finally(() => {
+    // A loader can throw SYNCHRONOUSLY — the registry's page loader evaluates
+    // `resolveClient(key)`, which throws `RuntimeNotReadyError` while the
+    // runtime is not bound. That throw must not unwind before `Promise.race`
+    // subscribes to `deadline`: the read-timeout timer is already armed, and an
+    // unobserved rejection 120 s later reaches the browser's
+    // `onunhandledrejection` as a `SessionSyncReadTimeoutError`. Bind a
+    // synchronous throw into a rejected promise so the race always observes it
+    // and `.finally` cancels the timer.
+    let readPromise: Promise<T>;
+    try {
+      readPromise = read(controller.signal);
+    } catch (error) {
+      readPromise = Promise.reject(error);
+    }
+    return Promise.race([readPromise, deadline]).finally(() => {
       this.cancelTimer(timer);
       lifetime.removeEventListener('abort', onLifetimeAbort);
     });

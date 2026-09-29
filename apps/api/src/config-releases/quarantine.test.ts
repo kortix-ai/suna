@@ -63,6 +63,7 @@ const deps = (): DesiredReleaseDeps => ({
   },
   resolveBase: async () => tip,
   loadRoster: async () => ({ enabled: [], defaultAgent: null, readable: true, governed: false }),
+  invalidate: () => {},
 });
 
 const desired = (recordAssignment = true) =>
@@ -189,6 +190,34 @@ describe('recordDaemonConfigReport', () => {
         projectId: 'not-a-uuid',
         sessionId: S1,
         report: { release_id: idAt(C1), desired_release_id: null, source: 'release', mode: null, proven: true, fallback_reason: null, failed_release_id: idAt(C2) },
+      },
+      ledger,
+    );
+    expect(ledger.failures).toEqual([]);
+  });
+
+  // DEF-A 2026-09-26: a candidate the daemon's own shutdown killed must not
+  // reach the project-wide quarantine table as a failure. The daemon fix
+  // (apps/kortix-sandbox-agent-server config-release.ts) never sets
+  // `failed_release_id` for a self-inflicted decline, so this pins the
+  // contract on the API side too: no valid `failed_release_id` means no
+  // recorded failure, however the rest of the report reads. A report is
+  // never trusted to say "this is a real failure" through `fallback_reason`
+  // alone — that field is free text for a human, not a signal this reads.
+  test('a report with no failed_release_id records no failure, even with a fallback_reason set', async () => {
+    await recordDaemonConfigReport(
+      {
+        projectId: PROJECT,
+        sessionId: S1,
+        report: {
+          release_id: idAt(C1),
+          desired_release_id: idAt(C2),
+          source: 'release',
+          mode: 'follow-base',
+          proven: true,
+          fallback_reason: 'the new opencode did not start; the previous one is still running',
+          failed_release_id: null,
+        },
       },
       ledger,
     );

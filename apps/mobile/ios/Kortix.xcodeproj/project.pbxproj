@@ -14,6 +14,9 @@
 		AF643ED377BAE3AE61C5F647 /* Pods_Kortix.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2A2B99CD5CE8B5A42526837 /* Pods_Kortix.framework */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		4C85B586E4EE4FF59CC29270 /* kortix_complete.wav in Resources */ = {isa = PBXBuildFile; fileRef = D974D8875D06474BAEB741C7 /* kortix_complete.wav */; };
+		D24B54E56DC747BA8FCD2369 /* kortix_attention.wav in Resources */ = {isa = PBXBuildFile; fileRef = 3004F0CC0A7242E7BFD10F51 /* kortix_attention.wav */; };
+		203A39158FCF45D08E929F13 /* kortix_error.wav in Resources */ = {isa = PBXBuildFile; fileRef = EE0DADF67A4E4695B90F1262 /* kortix_error.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +33,9 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
+		D974D8875D06474BAEB741C7 /* kortix_complete.wav */ = {isa = PBXFileReference; name = "kortix_complete.wav"; path = "Kortix/kortix_complete.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		3004F0CC0A7242E7BFD10F51 /* kortix_attention.wav */ = {isa = PBXFileReference; name = "kortix_attention.wav"; path = "Kortix/kortix_attention.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		EE0DADF67A4E4695B90F1262 /* kortix_error.wav */ = {isa = PBXFileReference; name = "kortix_error.wav"; path = "Kortix/kortix_error.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +60,9 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				BC9374D55908288642233682 /* PrivacyInfo.xcprivacy */,
+				D974D8875D06474BAEB741C7 /* kortix_complete.wav */,
+				3004F0CC0A7242E7BFD10F51 /* kortix_attention.wav */,
+				EE0DADF67A4E4695B90F1262 /* kortix_error.wav */,
 			);
 			name = Kortix;
 			sourceTree = "<group>";
@@ -198,6 +207,9 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				0159D307D2D3CCA8EDAA78D7 /* PrivacyInfo.xcprivacy in Resources */,
+				4C85B586E4EE4FF59CC29270 /* kortix_complete.wav in Resources */,
+				D24B54E56DC747BA8FCD2369 /* kortix_attention.wav in Resources */,
+				203A39158FCF45D08E929F13 /* kortix_error.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -415,7 +427,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.kortix.app;
-				PRODUCT_NAME = Kortix;
+				PRODUCT_NAME = "Kortix";
 				SWIFT_OBJC_BRIDGING_HEADER = "Kortix/Kortix-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -448,7 +460,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.kortix.app;
-				PRODUCT_NAME = Kortix;
+				PRODUCT_NAME = "Kortix";
 				SWIFT_OBJC_BRIDGING_HEADER = "Kortix/Kortix-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

@@ -45,6 +45,16 @@ export const STOP_REASONS = [
   /** The sandbox row reached a state /start cannot use while the session row
    *  still claimed to be live. A control-plane desync, not a provider event. */
   'unusable_runtime_state',
+  /** Rule 4 admission control (the runtime-convergence contract (PR #7785)): the box
+   *  came up but failed to PROVE its runtime identity — missing
+   *  `config.release.v1`, below the daemon-build floor, or a stale catalog
+   *  fingerprint. NEVER WRITTEN — see STOP_REASONS_NOT_YET_EMITTED: a refused
+   *  box is retired (row DELETED) and replaced on the session
+   *  (`retireRefusedRuntime` / `replaceRefusedRuntimeOnOpen`,
+   *  routes/shared.ts), not parked, so no row ever carries this stamp. Kept in
+   *  the closed vocabulary for the historical/defensive park branches that
+   *  reference it (`STAMPED_RUNTIME_FAILURE_STOP_REASONS`). */
+  'runtime_admission_refused',
   /** A human stopped or deleted it. */
   'manual',
   /** An ops sweep parked a wedged box outside the normal reaper. Not a user
@@ -76,8 +86,20 @@ export type StopReason = (typeof STOP_REASONS)[number];
  * deadline is written, then passing it into `stopExpiredBox`. That is a change
  * to the deadline writers, not to the stop path, and it is deliberately not in
  * this change.
+ *
+ * `runtime_admission_refused` joins them for a different reason: it is not
+ * pending future work, it is structurally unreachable. An admission-refused
+ * box is retired and replaced on the session (`retireRefusedRuntime` /
+ * `replaceRefusedRuntimeOnOpen`, routes/shared.ts) — the row is DELETED, never
+ * parked with a stopReason. It stays in the closed vocabulary only because
+ * `STAMPED_RUNTIME_FAILURE_STOP_REASONS` (runtime-wake-fence.ts) still lists
+ * it defensively.
  */
-export const STOP_REASONS_NOT_YET_EMITTED = ['idle_grace', 'boot_floor_expired'] as const satisfies
+export const STOP_REASONS_NOT_YET_EMITTED = [
+  'idle_grace',
+  'boot_floor_expired',
+  'runtime_admission_refused',
+] as const satisfies
   readonly StopReason[];
 
 export function isStopReason(value: unknown): value is StopReason {

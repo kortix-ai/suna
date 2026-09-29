@@ -27,12 +27,21 @@ const tipOf = (messages: PlacementTipMessage[]): PlacementTipMessage[] =>
   messages.map((m) => ({ created: at(m.id), ...m }));
 
 const T = 1_800_000_000_000;
-const turn = (messageId: string, state: 'delivering' | 'active' = 'active'): StoredSandboxTurn => ({
+// The ledger's delivery instant is WALL-CLOCK time, unlike the id clocks
+// (fixture-relative). The orphan repair requires the turn to be at least
+// ORPHANED_PROMPT_MIN_AGE_MS old (see the guard it shares with the reaper),
+// so the fixture default is a minute ago — old enough to repair — and the
+// boundary-race tests below override it with a fresh delivery.
+const turn = (
+  messageId: string,
+  state: 'delivering' | 'active' = 'active',
+  startedAtMs: number | null = Date.now() - 60_000,
+): StoredSandboxTurn => ({
   token: `tok-${messageId}`,
   state,
   messageId,
   opencodeSessionId: 'ses_root',
-  startedAtMs: T,
+  startedAtMs,
 });
 
 function fakeDeps(over: Partial<StrandReconcileDeps> & { open: StoredSandboxTurn[]; tip: any[] | null }) {
@@ -121,6 +130,17 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     expect(out.candidates).toBe(0);
   });
 
+  test('across the 48-bit wrap: a pre-wrap forwarded turn is OLDER than a post-wrap ended one', async () => {
+    const WRAP_MS = 1_786_706_395_136;
+    const pre = id(WRAP_MS - 1_000, 'PREWRAPPREWRAP');
+    const ended = id(WRAP_MS + 1_000, 'ENDEDENDEDENDE');
+    const { deps, calls } = fakeDeps({ open: [turn(pre), turn(ended)], tip: [] });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: ended }, deps);
+    expect(out.closedOlder).toBe(1);
+    expect(calls.closeOlder.map((c) => c[2])).toEqual([pre]);
+    expect(out.candidates).toBe(0);
+  });
+
   test('a stranded newer prompt is removed, re-queued, its turn closed, and the drain kicked', async () => {
     const tip = tipOf([
       { id: M, role: 'user' },
@@ -166,6 +186,31 @@ describe('reconcileForwardedTurnsAtEnd', () => {
     expect(calls.remove).toEqual([['s', u5]]);
     expect(calls.requeue).toEqual([['s', u5]]);
     expect(calls.closeStranded).toEqual([['s', u5]]);
+  });
+
+  // PROD 2026-09-28: a ~20 h spike of orphan deletions where every deleted
+  // prompt was ≤3 s old — a delivery racing the end relay at the turn
+  // boundary. "Accepted, unanswered, tip idle" also describes the seconds
+  // between the box accepting a fresh prompt and starting its step, so the
+  // orphan verdict carries the same age floor the reaper's own redelivery
+  // defers on (ORPHANED_PROMPT_MIN_AGE_MS): below it the row stays open.
+  test('a JUST-DELIVERED tip prompt is left alone — the box is about to run it', async () => {
+    const tip = tipOf([{ id: M, role: 'user' }, { id: aM, role: 'assistant', parentID: M, completed: T + 3_500 }, { id: u5, role: 'user' }]);
+    const { deps, calls } = fakeDeps({ open: [turn(u5, 'active', Date.now() - 1_000)], tip });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', endedMessageId: M }, deps);
+    expect(out.orphaned).toBe(0);
+    expect(out.requeued).toBe(0);
+    expect(calls.remove).toHaveLength(0);
+    expect(calls.requeue).toHaveLength(0);
+    expect(calls.closeStranded).toHaveLength(0);
+  });
+
+  test('a tip prompt with no recorded start instant never qualifies as orphaned — no age, no verdict', async () => {
+    const tip = tipOf([{ id: M, role: 'user' }, { id: aM, role: 'assistant', parentID: M, completed: T + 3_500 }, { id: u5, role: 'user' }]);
+    const { deps, calls } = fakeDeps({ open: [turn(u5, 'active', null)], tip });
+    const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', endedMessageId: M }, deps);
+    expect(out.orphaned).toBe(0);
+    expect(calls.remove).toHaveLength(0);
   });
 
   test('a tip prompt is left alone while the tip is MID-STEP — the open step will read it', async () => {

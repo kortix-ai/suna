@@ -48,8 +48,7 @@ export interface AuditEventInput {
   agentName?: string | null;
   initiatorActorType?: string | null;
   initiatorActorId?: string | null;
-  /** The human an agent session acted on behalf of (spec
-   *  docs/specs/2026-09-22-agents-as-principals.md §2). Null otherwise. */
+  /** The human an agent session acted on behalf of. Null otherwise. */
   onBehalfOfUserId?: string | null;
   parentEventId?: string | null;
   delegationDepth?: number;
@@ -532,11 +531,49 @@ async function settlePendingInboundEmissions(): Promise<void> {
   await Promise.allSettled([...pendingInboundEmissions]);
 }
 
-/** Drain buffered audit events. Called on shutdown and by tests. */
-export async function flushAuditEvents(): Promise<void> {
-  await settlePendingInboundEmissions();
-  if (auditWritesAreSynchronous()) return;
-  await getAuditQueue(auditDb()).flush();
+/**
+ * How long a READ route's flush barrier may wait.
+ *
+ * A read route awaits `flushAuditEvents()` for read-your-writes. The queue's
+ * per-session serialize waits without a timeout (see audit-session-serial.ts)
+ * and each snapshot chains onto the in-flight one, so under the per-session
+ * write convoy the barrier can wait far past the request deadline: prod,
+ * 2026-09-28 — `GET /v1/accounts/:id/audit` answered 16× 503 "25s deadline" +
+ * 3× 57014 statement timeouts in one minute while its workspace's audit ingest
+ * was contended (KRTX-631). Read routes therefore pass this bound: a healthy
+ * flush completes well inside the queue's 250 ms cadence, and when the convoy
+ * is backing up the read proceeds while the queue keeps retrying in the
+ * background — audit completeness is already best-effort by design.
+ */
+export const AUDIT_READ_FLUSH_BARRIER_MS = 2_000;
+
+/**
+ * Drain buffered audit events.
+ *
+ * Called on shutdown and by tests without `waitMs` — the drain waits for the
+ * queue to finish. Read routes pass `waitMs` (see
+ * {@link AUDIT_READ_FLUSH_BARRIER_MS}): losing that race leaves the flush
+ * running, and the queue's write never rejects, so the abandoned barrier only
+ * keeps working in the background.
+ */
+export async function flushAuditEvents(options?: { waitMs?: number }): Promise<void> {
+  const waitMs = options?.waitMs;
+  const barrier = async (): Promise<void> => {
+    await settlePendingInboundEmissions();
+    if (auditWritesAreSynchronous()) return;
+    await getAuditQueue(auditDb()).flush();
+  };
+  if (!waitMs) {
+    await barrier();
+    return;
+  }
+  await Promise.race([
+    barrier(),
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, waitMs);
+      timer.unref?.();
+    }),
+  ]);
 }
 
 /** Flush and stop the flush timer. Shutdown path only. */

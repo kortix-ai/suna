@@ -189,6 +189,41 @@ describe('SessionSyncController', () => {
     }
   });
 
+  // A loader may throw SYNCHRONOUSLY. The registry's page loader calls
+  // `resolveClient(key)` as an argument, and that throws `RuntimeNotReadyError`
+  // while the runtime is not bound — a normal state during a sandbox boot or a
+  // runtime switch. The throw must not escape `boundedRead` before
+  // `Promise.race` subscribes to the deadline: the already-armed read-timeout
+  // timer then rejects an unobserved promise, and the browser reports it as an
+  // unhandled `SessionSyncReadTimeoutError` 120 s after the read already failed.
+  test('a synchronous loader failure never leaves the read timeout unobserved', async () => {
+    const clock = createScheduler();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      readTimeoutMs: 15_000,
+      loadPage: () => {
+        throw new Error('RuntimeNotReadyError: session synchronization controller not bound');
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+    try {
+      await controller.reconcile('initial');
+      expect(controller.getSnapshot().freshness).toBe('error');
+      // Run every timer the retry and the (must-be-cancelled) deadline armed.
+      clock.advance(60_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      controller.destroy();
+    }
+  });
+
   for (const status of [404, 410]) {
     test(`does not automatically retry a missing conversation (${status}) but permits explicit recovery`, async () => {
       const clock = createScheduler();
@@ -917,6 +952,37 @@ describe('SessionSyncController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(reasons).toEqual(['turn-end']);
+  });
+
+  test('turn-end re-reads after an in-flight partial poll instead of sharing its stale result', async () => {
+    const clock = createScheduler();
+    let finishPoll!: (page: SessionSyncPage) => void;
+    const poll = new Promise<SessionSyncPage>((resolve) => { finishPoll = resolve; });
+    const hydrated: string[][] = [];
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      loadPage: () => {
+        calls++;
+        return calls === 2 ? poll : Promise.resolve(page([calls === 1 ? 'initial' : 'finished']));
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+    try {
+      await controller.start();
+      controller.setBusy(true);
+      const pending = controller.reconcile('poll');
+      controller.setBusy(false);
+      finishPoll(page(['partial']));
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hydrated).toEqual([['initial'], ['partial'], ['finished']]);
+      expect(calls).toBe(3);
+    } finally {
+      controller.destroy();
+    }
   });
 
   test('a session that was never busy does not read a tail when it stays idle', async () => {

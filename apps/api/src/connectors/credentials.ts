@@ -8,7 +8,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * credential, the only mode written today (`per_user` — a set user, each
  * member's own — was removed 2026-07-05; every caller here passes
  * `userId: null`). Values are encrypted with the project key and resolved
- * server-side only. See docs/specs/connector.md §5–6.
+ * server-side only.
  */
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
@@ -546,6 +546,11 @@ export async function ensureDefaultConnection(input: {
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
+  // A computer account is one paired machine. A machine-less shared row would
+  // win unattended resolution and answer every call with computer_unpaired.
+  if (connector.providerType === 'computer') {
+    throw new Error('Computer accounts are added by pairing a computer, not by a credential');
+  }
 
   // Its own row: labelled `connector.name` on create, or marked as its slot
   // once finalize relabelled it to the authorized identity or someone renamed it.

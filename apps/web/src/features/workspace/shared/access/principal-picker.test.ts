@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   EMPTY_PRINCIPAL_SELECTION,
+  everyoneMatchesQuery,
   isInviteEmail,
   isPrincipalSelectionEmpty,
   principalSelectionCount,
@@ -41,6 +42,24 @@ describe('togglePrincipal — multi (checklist semantics)', () => {
     const before = selection({ memberIds: ['u_1'] });
     togglePrincipal(before, { kind: 'member', id: 'u_2' }, 'multi');
     expect(before.memberIds).toEqual(['u_1']);
+  });
+});
+
+describe('everyone in the project', () => {
+  test('toggles alongside the other buckets and counts as one principal', () => {
+    let value = togglePrincipal(selection({ groupIds: ['g_1'] }), { kind: 'everyone', id: 'p_1' });
+    expect(value.everyone).toBe(true);
+    expect(value.groupIds).toEqual(['g_1']);
+    expect(principalSelectionCount(value)).toBe(2);
+    value = togglePrincipal(value, { kind: 'everyone', id: 'p_1' });
+    expect(value.everyone).toBe(false);
+    expect(principalSelectionCount(value)).toBe(1);
+  });
+
+  test('the row matches an empty search and its own label only', () => {
+    expect(everyoneMatchesQuery('Everyone in Acme', '')).toBe(true);
+    expect(everyoneMatchesQuery('Everyone in Acme', 'acme')).toBe(true);
+    expect(everyoneMatchesQuery('Everyone in Acme', 'sales')).toBe(false);
   });
 });
 

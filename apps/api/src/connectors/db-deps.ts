@@ -1,3 +1,4 @@
+import { mapLimit } from '@kortix/registry';
 import {
   connectorConnections,
   connectorActions,
@@ -10,7 +11,6 @@ import {
   projectSessionConnectorBindings,
   projectSessions,
   projects,
-  tunnelConnections,
 } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { sanitizeConnectorHeaders, SLUG_RE } from '@kortix/manifest-schema';
@@ -19,11 +19,12 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
  * Production wiring for the connector router — DB-backed ConnectorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
- * is the glue to Postgres + the credential store + Pipedream. See docs/specs/connector.md.
+ * is the glue to Postgres + the credential store + Pipedream.
  */
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
+import { bindSlackThreadToSession } from '../channels/slack/binding';
 import {
   loadAgentMailApiKeyForInbox,
   loadAgentMailApiKeyForProject,
@@ -54,6 +55,7 @@ import { getProjectSecretValueForConsumer } from '../projects/secrets';
 import {
   canonicalConnectorAlias,
   listEntitledConnectorConnections,
+  listEntitledConnectorConnectionsBatch,
   publicConnectorAlias,
   resolveSessionConnectorConnection,
   resolveSessionConnectorConnectionOutcome,
@@ -62,14 +64,8 @@ import { validateAccountToken } from '../repositories/account-tokens';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
-import {
-  filterPersonalTunnelOwners,
-  personalResourceOwner,
-  tokenAgentPrincipalScope,
-} from '../projects/lib/personal-resources';
+import { tokenAgentPrincipalScope } from '../projects/lib/personal-resources';
 import { connectorAttachmentStore } from './attachments';
-import { computerProfileSpec } from './computer-materialize';
-import { COMPUTER_SLUG, computerLabel } from './computers';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import { notifyConnectorSession } from './notify-session';
@@ -140,7 +136,9 @@ import type {
   CatalogConnector,
   ConnectorPrincipal,
   ConnectorRouterDeps,
+  ListCatalogOptions,
 } from './router';
+import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { resolveShareSubject } from './share';
 import {
   connectorCatalogSections,
@@ -149,7 +147,8 @@ import {
 } from './connector-catalog';
 import {
   discoverDraftConnectorAuth,
-  materializeComputerConnectorProfile,
+  ensureComputerConnector,
+  ensureProjectComputer,
   setMaterializedComputerConnectorPolicies,
   syncProjectConnectors,
 } from './sync';
@@ -168,67 +167,6 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 function isUuid(value: string): boolean {
   return UUID_REGEX.test(value);
-}
-
-function computerTunnelIds(configValue: unknown, slug: string): string[] | null {
-  const config = (configValue ?? {}) as Record<string, unknown>;
-  if (Array.isArray(config.tunnel_ids)) {
-    return [
-      ...new Set(config.tunnel_ids.filter((value): value is string => typeof value === 'string')),
-    ];
-  }
-  if (typeof config.tunnel_id === 'string') return [config.tunnel_id];
-  // Compatibility for durable sessions bound to the original aggregate row.
-  return slug === COMPUTER_SLUG ? null : [];
-}
-
-function computerTunnelAccountIds(
-  configValue: unknown,
-  projectAccountId: string,
-  slug: string,
-): string[] | null {
-  const config = (configValue ?? {}) as Record<string, unknown>;
-  if (Array.isArray(config.tunnel_account_ids)) {
-    return [
-      ...new Set(
-        config.tunnel_account_ids.filter(
-          (value): value is string => typeof value === 'string' && value.length > 0,
-        ),
-      ),
-    ];
-  }
-  return slug === COMPUTER_SLUG && !Array.isArray(config.tunnel_ids) ? null : [projectAccountId];
-}
-
-function isLegacyComputerAggregate(row: {
-  providerType: string;
-  slug: string;
-  config: unknown;
-}): boolean {
-  if (row.providerType !== 'computer' || row.slug !== COMPUTER_SLUG) return false;
-  const config = (row.config ?? {}) as Record<string, unknown>;
-  return !Array.isArray(config.tunnel_ids) && typeof config.tunnel_id !== 'string';
-}
-
-async function principalHasLegacyComputerBinding(
-  principal: ConnectorPrincipal,
-  connectorId: string,
-): Promise<boolean> {
-  if (!principal.sessionId) return false;
-  const [binding] = await db
-    .select({ connectorId: projectSessionConnectorBindings.connectorId })
-    .from(projectSessionConnectorBindings)
-    .where(
-      and(
-        eq(projectSessionConnectorBindings.accountId, principal.accountId),
-        eq(projectSessionConnectorBindings.projectId, principal.projectId),
-        eq(projectSessionConnectorBindings.sessionId, principal.sessionId),
-        eq(projectSessionConnectorBindings.connectorAlias, COMPUTER_SLUG),
-        eq(projectSessionConnectorBindings.connectorId, connectorId),
-      ),
-    )
-    .limit(1);
-  return binding !== undefined;
 }
 
 /** How long an unconsumed human approve stays claimable by a fresh call. Long
@@ -576,12 +514,6 @@ function toGatewayConnector(
     slug: row.slug,
     provider: row.providerType,
     platform: channelPlatform(row.config),
-    tunnelIds:
-      row.providerType === 'computer' ? computerTunnelIds(row.config, row.slug) : undefined,
-    tunnelAccountIds:
-      row.providerType === 'computer'
-        ? computerTunnelAccountIds(row.config, row.accountId, row.slug)
-        : undefined,
     baseUrl: baseUrlOf(row),
     auth,
     headers: headersOf(row),
@@ -614,51 +546,82 @@ async function resolveActiveConnectorConnection(principal: ConnectorPrincipal, r
   return connection?.status === 'active' ? connection : null;
 }
 
-/** Spec §2.3 "own computer": see `filterPersonalTunnelOwners`. */
-async function personalTunnelOwnersFor(
-  principal: ConnectorPrincipal,
-  accountId: string,
-  owners: string[] | null,
-): Promise<string[] | null> {
-  if (!principal.agentPrincipal) return owners;
-  const visibility = principal.sessionId ? await sessionVisibility(principal.sessionId) : null;
-  const personalOwner = personalResourceOwner({
-    agentPrincipal: true,
-    legacyUserId: principal.userId,
-    onBehalfOfUserId: principal.agentPrincipal.onBehalfOfUserId,
-    visibility,
-  });
-  const filtered = filterPersonalTunnelOwners({ accountId, owners, personalOwner });
-  // `listAccountComputers` reads an EMPTY owner list as "the team account",
-  // which is exactly the team-owned subset this filter keeps.
-  return filtered;
-}
-
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
   return {
     attachmentStore: connectorAttachmentStore,
     // Spec 2026-09-22 §2.5: an agent session calling a same-project Kortix App.
     appAuthorizationFor: (input) => appAuthorizationForConnectorCall(input),
     loadConnectorBySlug: async (projectId, slug) => {
+      if (canonicalConnectorAlias(slug) === COMPUTER_SLUG) {
+        await ensureProjectComputer(projectId, principal.userId);
+      }
       const [row] = await db
         .select()
         .from(connectors)
         .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      if (
-        isLegacyComputerAggregate(row) &&
-        !(await principalHasLegacyComputerBinding(principal, row.connectorId))
-      ) {
-        return null;
-      }
       const connection = await resolveActiveConnectorConnection(principal, row);
       if (!connection) return null;
-      return toGatewayConnector(row, connection);
+      const connector = toGatewayConnector(row, connection);
+      if (row.providerType === 'computer') {
+        const [machine] = await db
+          .select({ tunnelId: connectorConnections.tunnelId })
+          .from(connectorConnections)
+          .where(eq(connectorConnections.connectionId, connection.connectionId))
+          .limit(1);
+        connector.connectionTunnelId = machine?.tunnelId ?? null;
+      }
+      return connector;
+    },
+    selectComputerAccount: async (projectId, slug, selector) => {
+      const [row] = await db
+        .select({ connectorId: connectors.connectorId, providerType: connectors.providerType })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .limit(1);
+      if (row?.providerType !== 'computer') return 'not_computer';
+      const name = typeof selector === 'string' ? selector.trim() : '';
+      if (!name) return null;
+      // A tunnel id names the machine; its account ids go first. The name
+      // itself is tried last as an account label or connection id.
+      const byMachine = isUuid(name)
+        ? await db
+            .select({ connectionId: connectorConnections.connectionId })
+            .from(connectorConnections)
+            .where(
+              and(
+                eq(connectorConnections.connectorId, row.connectorId),
+                eq(connectorConnections.tunnelId, name),
+                eq(connectorConnections.status, 'active'),
+              ),
+            )
+        : [];
+      const named = principal.requestedConnectorAccount
+        ? await makeDbGatewayDeps(principal).loadConnectorBySlug(projectId, slug)
+        : null;
+      for (const account of [...byMachine.map((match) => match.connectionId), name]) {
+        const selected = await makeDbGatewayDeps({
+          ...principal,
+          requestedConnectorAccount: account,
+        }).loadConnectorBySlug(projectId, slug);
+        if (!selected) continue;
+        // --account and the legacy argument must agree.
+        if (principal.requestedConnectorAccount && named?.connectionId !== selected.connectionId) {
+          return null;
+        }
+        return selected;
+      }
+      return null;
     },
     explainMissingConnector: async (projectId, slug) => {
       const [row] = await db
-        .select({ enabled: connectors.enabled, status: connectors.status })
+        .select({
+          connectorId: connectors.connectorId,
+          enabled: connectors.enabled,
+          status: connectors.status,
+          providerType: connectors.providerType,
+        })
         .from(connectors)
         .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
         .limit(1);
@@ -678,16 +641,49 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         account: principal.requestedConnectorAccount ?? null,
         agentPrincipal: principal.agentPrincipal ?? null,
       });
-      return outcome.kind === 'ambiguous' ? 'account_required' : 'connector_not_connected';
+      if (outcome.kind === 'ambiguous') return 'account_required';
+      // Unpairing revokes the machine's accounts and nulls their tunnel_id
+      // (DELETE /tunnel/connections/:id). The caller's own such account, or the
+      // one they named, says why: the computer is gone, not unconnected.
+      if (row.providerType === 'computer') {
+        const named = principal.requestedConnectorAccount?.trim();
+        const [unpaired] = await db
+          .select({ connectionId: connectorConnections.connectionId })
+          .from(connectorConnections)
+          .where(
+            and(
+              eq(connectorConnections.connectorId, row.connectorId),
+              eq(connectorConnections.status, 'revoked'),
+              isNull(connectorConnections.tunnelId),
+              eq(connectorConnections.ownerType, 'member'),
+              eq(connectorConnections.ownerId, principal.userId),
+              named ? eq(connectorConnections.label, named) : undefined,
+            ),
+          )
+          .limit(1);
+        if (unpaired) return 'computer_unpaired';
+      }
+      return 'connector_not_connected';
     },
     loadAction: async (connectorId, relPath) => {
-      const [a] = await db
-        .select()
-        .from(connectorActions)
-        .where(
-          and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
-        )
-        .limit(1);
+      const [[stored], [owner]] = await Promise.all([
+        db
+          .select()
+          .from(connectorActions)
+          .where(
+            and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
+          )
+          .limit(1),
+        db
+          .select({ providerType: connectors.providerType })
+          .from(connectors)
+          .where(eq(connectors.connectorId, connectorId))
+          .limit(1),
+      ]);
+      const a =
+        owner?.providerType === 'computer'
+          ? withComputerCatalog(connectorId, 'computer', []).find((row) => row.path === relPath)
+          : stored;
       if (!a) return null;
       return {
         path: a.path,
@@ -748,6 +744,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Session metadata is user-writable, so it is not a trusted routing source
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
+    bindSlackThread: (input) => bindSlackThreadToSession(input),
     loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
       const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
@@ -760,6 +757,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadDefaultMode: loadDefaultModeFor,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // Lazy: channels import connectors, so a static import here would cycle.
+    postApprovalCard: async (input) =>
+      (await import('../channels/approval-card-relay')).postApprovalCard(input),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(connectorCalls)
@@ -791,32 +791,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
       runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
-    // Computers connectors relay through the shared tunnel RPC core (profile
-    // allowlist → account ownership → permission check → relay → audit).
-    executeComputerCall: ({
-      accountId,
-      projectId,
-      sessionId,
-      actorUserId,
-      allowedTunnelIds,
-      allowedTunnelAccountIds,
-      selector,
-      method,
-      args,
-    }) =>
-      personalTunnelOwnersFor(principal, accountId, allowedTunnelAccountIds).then((owners) =>
-        executeComputerCall({
-          accountId,
-          projectId,
-          sessionId,
-          actorUserId,
-          allowedTunnelIds,
-          allowedTunnelAccountIds: owners,
-          selector,
-          method,
-          args,
-        }),
-      ),
+    // Computer connectors relay to the resolved account's machine through the
+    // shared tunnel RPC core (wire permission → relay → audit).
+    executeComputerCall,
     // Every connector request resolves and checks its target, on each
     // redirect hop too. See egress.ts.
     fetchImpl: connectorEgressFetch,
@@ -836,6 +813,31 @@ async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> 
     // Conditions are re-validated on READ, never trusted from storage.
     ...parseStoredConditions(r.conditions),
   }));
+}
+
+/** `loadConnectorPoliciesFor`, batched over many connectors in one query
+ *  instead of one `eq(connectorId, ...)` select per connector. */
+async function loadConnectorPoliciesForMany(
+  connectorIds: readonly string[],
+): Promise<Map<string, Policy[]>> {
+  const map = new Map<string, Policy[]>();
+  if (connectorIds.length === 0) return map;
+  const rows = await db
+    .select()
+    .from(connectorPolicies)
+    .where(inArray(connectorPolicies.connectorId, connectorIds));
+  for (const r of rows) {
+    const policy: Policy = {
+      match: r.match,
+      action: r.action,
+      position: r.position,
+      ...parseStoredConditions(r.conditions),
+    };
+    const list = map.get(r.connectorId);
+    if (list) list.push(policy);
+    else map.set(r.connectorId, [policy]);
+  }
+  return map;
 }
 
 async function loadProjectPoliciesFor(projectId: string): Promise<Policy[]> {
@@ -1241,38 +1243,69 @@ async function catalogAccountsFor(
 }
 
 /** The catalog a principal can actually use (agent grant + credential present + not blocked). */
-async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
-  const conns = hideSupersededSlack(
+async function listCatalog(
+  p: ConnectorPrincipal,
+  options: ListCatalogOptions = {},
+): Promise<CatalogConnector[]> {
+  const wantedSlug = options.slug ? canonicalConnectorAlias(options.slug) : null;
+  if (!wantedSlug || wantedSlug === COMPUTER_SLUG) await ensureProjectComputer(p.projectId, p.userId);
+  const allConns = hideSupersededSlack(
     await db
       .select()
       .from(connectors)
       .where(and(eq(connectors.projectId, p.projectId), eq(connectors.enabled, true))),
   );
+  const conns = wantedSlug
+    ? allConns.filter((row) => canonicalConnectorAlias(row.slug) === wantedSlug)
+    : allConns;
+  if (conns.length === 0) return [];
 
   // Project-scoped layer is the same for every connector in this list — load once.
-  const [projectPolicies, defaultMode, accountVisibility] = await Promise.all([
-    loadProjectPoliciesFor(p.projectId),
-    loadDefaultModeFor(p.projectId),
-    // Same rule `listConnectorAccounts` uses: a private session can also see
-    // the caller's own member-owned accounts, anything else stays project-only.
-    // An agent-principal credential with no session is never `private`.
-    p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
-  ]);
+  const connectorIds = conns.map((row) => row.connectorId);
+  const [projectPolicies, defaultMode, accountVisibility, actionsByConnector, policiesByConnector] =
+    await Promise.all([
+      loadProjectPoliciesFor(p.projectId),
+      loadDefaultModeFor(p.projectId),
+      // Same rule `listConnectorAccounts` uses: a private session can also see
+      // the caller's own member-owned accounts, anything else stays project-only.
+      // An agent-principal credential with no session is never `private`.
+      p.agentPrincipal && !p.sessionId ? Promise.resolve('project' as const) : sessionVisibility(p.sessionId),
+      // Batched: was one `connectorActions` select PER connector inside the
+      // loop below. One `inArray` query for the whole catalog instead.
+      db
+        .select()
+        .from(connectorActions)
+        .where(inArray(connectorActions.connectorId, connectorIds))
+        .then((rows) => {
+          const map = new Map<string, typeof rows>();
+          for (const row of rows) {
+            const list = map.get(row.connectorId);
+            if (list) list.push(row);
+            else map.set(row.connectorId, [row]);
+          }
+          for (const conn of conns) {
+            if (conn.providerType !== 'computer') continue;
+            map.set(conn.connectorId, withComputerCatalog(conn.connectorId, 'computer', []));
+          }
+          return map;
+        }),
+      loadConnectorPoliciesForMany(connectorIds),
+    ]);
 
-  const out: CatalogConnector[] = [];
-  for (const row of conns) {
-    if (
-      isLegacyComputerAggregate(row) &&
-      !(await principalHasLegacyComputerBinding(p, row.connectorId))
-    ) {
-      continue;
-    }
+  // Each connector's resolution reads only: its session outcome, its accounts
+  // and its credential. They are independent (the session row is request-
+  // memoized), so they run concurrently instead of one connector at a time.
+  // Measured on dev-api 2026-09-27 with 8 connectors: 8.0-16.9 s, db n=71-80
+  // serial; prod showed db n=113 on this route. Bounded, because a project can
+  // hold dozens of connectors. `mapLimit` keeps the connector order.
+  const CATALOG_RESOLVE_CONCURRENCY = 8;
+  const resolved = await mapLimit(conns, CATALOG_RESOLVE_CONCURRENCY, async (row): Promise<CatalogConnector | null> => {
     // Per-agent assignment: an agent only sees connectors its grant lists —
     // consistent with the call gate, so it never lists a tool it can't invoke.
     // This is the ONLY access gate — connectors are project-wide visible to
     // every human with project access (no per-connector member scoping).
     // Canonical on both sides — the grant is canonicalized at construction.
-    if (!principalMayUseConnector(p, canonicalConnectorAlias(row.slug))) continue;
+    if (!principalMayUseConnector(p, canonicalConnectorAlias(row.slug))) return null;
     // The accounts come first, and they decide whether the connector is listed.
     // `resolveActiveConnectorConnection` answers "what would an UNNAMED call run
     // as" — and under the account_required rule that is null when several
@@ -1294,22 +1327,19 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
       account: null,
       agentPrincipal: p.agentPrincipal ?? null,
     });
-    if (outcome.kind === 'none') continue;
+    if (outcome.kind === 'none') return null;
     const connection =
       outcome.kind === 'ok' && outcome.connection.status === 'active' ? outcome.connection : null;
-    if (outcome.kind === 'ok' && !connection) continue;
+    if (outcome.kind === 'ok' && !connection) return null;
     const accounts = await catalogAccountsFor(p, row.slug, accountVisibility);
     const { hasAuth } = authOf(row);
     if (connection && hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
-      if (!(await connectorConnected(row, null, connection))) continue;
+      if (!(await connectorConnected(row, null, connection))) return null;
     }
-    const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
-    const actions = await db
-      .select()
-      .from(connectorActions)
-      .where(eq(connectorActions.connectorId, row.connectorId));
-    out.push({
+    const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
+    const actions = actionsByConnector.get(row.connectorId) ?? [];
+    return {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
@@ -1332,7 +1362,7 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
           name: a.name,
           description: a.description ?? '',
           risk: a.risk,
-          inputSchema: a.inputSchema ?? null,
+          inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
         })),
       accounts,
       // What an UNNAMED call runs as: the one pinned account, or the only
@@ -1341,9 +1371,9 @@ async function listCatalog(p: ConnectorPrincipal): Promise<CatalogConnector[]> {
       default_account:
         accounts.find((account) => account.is_default)?.label ??
         (accounts.length === 1 ? accounts[0].label : null),
-    });
-  }
-  return out;
+    };
+  });
+  return resolved.filter((entry): entry is CatalogConnector => entry !== null);
 }
 
 async function resolveProjectUserWith(
@@ -1445,13 +1475,51 @@ async function resolveSecretReader(
  * nobody whose own account could make the difference); the project-wide
  * checks below still apply either way.
  */
+/**
+ * The built-in computer connector (the one `ensureProjectComputer` picks) is
+ * always shown. Any other computer connector (a legacy per-machine profile)
+ * that holds no machine is hidden: it has nothing to manage.
+ */
+async function hideMachinelessComputers<
+  T extends { connectorId: string; providerType: string; slug: string; createdAt: Date },
+>(
+  rows: T[],
+): Promise<T[]> {
+  const computers = rows.filter((row) => row.providerType === 'computer');
+  if (computers.length === 0) return rows;
+  const builtIn =
+    computers.find((row) => row.slug === COMPUTER_SLUG) ??
+    [...computers].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0]!;
+  const computerIds = computers.map((row) => row.connectorId);
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(connectorConnections.connectorId, computerIds),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
+  );
+  return rows.filter(
+    (row) => row.providerType !== 'computer' || row === builtIn || withMachine.has(row.connectorId),
+  );
+}
+
 async function listConnectors(
   projectId: string,
   actingUserId?: string | null,
+  options: { includeSchemas?: boolean } = {},
 ): Promise<AdminConnectorView[]> {
-  const conns = hideSupersededSlack(
-    await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
-  ).filter((row) => !isLegacyComputerAggregate(row));
+  await ensureProjectComputer(projectId, actingUserId ?? null);
+  const conns = await hideMachinelessComputers(
+    hideSupersededSlack(
+      await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
+    ),
+  );
   if (conns.length === 0) return [];
 
   const credentialRows = conns.filter((row) => {
@@ -1477,25 +1545,46 @@ async function listConnectors(
         .filter((identifier): identifier is string => Boolean(identifier)),
     ),
   ];
+  const computerConnectorIds = new Set(
+    conns.filter((row) => row.providerType === 'computer').map((row) => row.connectorId),
+  );
   const [
     actions,
     credentialConnectorIds,
     memberCredentialedConnectorIds,
     connectedChannelSlugs,
-    authorizedComposioSlugs,
+    entitledByConnector,
     validBoundSecrets,
-    accountsByConnectorEntries,
   ] =
     await Promise.all([
       db
-        .select()
+        .select({
+          connectorId: connectorActions.connectorId,
+          path: connectorActions.path,
+          name: connectorActions.name,
+          description: connectorActions.description,
+          risk: connectorActions.risk,
+          // The full per-action JSON Schema is the bulk of this route's
+          // payload (1.6 MB on prod). A caller that opts out
+          // (`?include_schemas=false` — the dashboard and `kortix connectors
+          // ls`) must not make Postgres detoast and ship every schema just for
+          // the response to null it below.
+          inputSchema:
+            options.includeSchemas === false
+              ? sql<Record<string, unknown> | null>`null`
+              : connectorActions.inputSchema,
+        })
         .from(connectorActions)
         .where(
           inArray(
             connectorActions.connectorId,
             conns.map((row) => row.connectorId),
           ),
-        ),
+        )
+        .then((stored) => [
+          ...stored.filter((action) => !computerConnectorIds.has(action.connectorId)),
+          ...[...computerConnectorIds].flatMap((id) => withComputerCatalog(id, 'computer', [])),
+        ]),
       connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
       actingUserId
         ? connectorIdsWithReachableMemberCredential(
@@ -1508,38 +1597,29 @@ async function listConnectors(
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
-      // The SAME predicate the gateway applies at call time: resolve a
-      // connection FOR THIS CALLER (which checks `connected_account_id`) and
-      // treat "resolves" as authorized. `connectorConnected(row, null)` with no
-      // connection argument answered `false` for every Composio row, so a
-      // fully connected app was listed as `needs_auth` while its calls
-      // succeeded (INC-2026-09-08-CONNECTOR-GATEWAY, E6).
+      // The accounts THIS caller may run each connector as, default first —
+      // same computation as `listConnectorAccounts` (the `.../accounts` route
+      // and the MCP `accounts` tool read it), reused here so `kortix connectors
+      // ls`/`show` carry it without a client round trip per connector, AND —
+      // for Composio below — the SAME predicate the gateway applies at call
+      // time to decide "is it connected at all" (resolves an entitled account
+      // for THIS caller; `connectorConnected(row, null)` with no connection
+      // argument always answered `false` for Composio, INC-2026-09-08-
+      // CONNECTOR-GATEWAY E6). Dashboard-wide, not session-scoped, so
+      // visibility is always `private`.
       //
-      // Resolved as the acting user, in a private-session view: Composio
-      // accounts are authorized per connection row (no credential row is ever
-      // written), so a connector whose only accounts are the caller's own
-      // member-owned ones read `needs_auth` to the very person whose calls
-      // through them succeed — two connected Gmail accounts, "Needs setup".
-      //
-      // Deliberately `listEntitledConnectorConnections` (ANY usable account),
-      // not the call-time resolver: this is a dashboard "is it connected at
-      // all" summary, not an authorization decision. Two connected-but-unpinned
-      // accounts are genuinely connected even though an unnamed CALL would now
-      // be denied `account_required` — this row must not read "needs setup".
-      Promise.all(
-        composioRows.map(async (row) => {
-          const entitled = await listEntitledConnectorConnections({
-            accountId: row.accountId,
-            projectId: row.projectId,
-            alias: row.slug,
-            actingUserId: actingUserId ?? undefined,
-            visibility: 'private',
-          }).catch(() => []);
-          return [row.slug, entitled.length > 0] as const;
-        }),
-      ).then(
-        (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
-      ),
+      // ONE batched call for every connector in the project instead of one
+      // `listEntitledConnectorConnections` call PER connector (was n=64 on a
+      // ~20-connector project — see `listEntitledConnectorConnectionsBatch`'s
+      // doc comment). Composio's authorization check below reads from this
+      // SAME map instead of re-running the identical lookup a second time.
+      listEntitledConnectorConnectionsBatch({
+        accountId: conns[0]!.accountId,
+        projectId,
+        connectors: conns,
+        actingUserId: actingUserId ?? undefined,
+        visibility: 'private',
+      }),
       boundSecretIdentifiers.length === 0
         ? Promise.resolve([])
         : db
@@ -1555,32 +1635,23 @@ async function listConnectors(
                 eq(projectSecrets.consumer, 'connector'),
               ),
             ),
-      // The accounts THIS caller may run each connector as, default first —
-      // same computation as `listConnectorAccounts` (the `.../accounts` route
-      // and the MCP `accounts` tool read it), reused here so `kortix connectors
-      // ls`/`show` carry it without a client round trip per connector.
-      // Dashboard-wide, not session-scoped, so visibility is always `private` —
-      // the same rule an admin listing has always applied to "connected for me".
-      Promise.all(
-        conns.map(async (row) => {
-          const entitled = await listEntitledConnectorConnections({
-            accountId: row.accountId,
-            projectId: row.projectId,
-            alias: canonicalConnectorAlias(row.slug),
-            actingUserId: actingUserId ?? undefined,
-            visibility: 'private',
-          }).catch(() => []);
-          const accounts: CatalogAccount[] = entitled.map((connection) => ({
-            connection_id: connection.connectionId,
-            label: connection.label,
-            owner_type: connection.ownerType,
-            is_default: connection.isDefault,
-          }));
-          return [row.connectorId, accounts] as const;
-        }),
-      ),
     ]);
-  const accountsByConnector = new Map(accountsByConnectorEntries);
+  const accountsByConnector = new Map<string, CatalogAccount[]>(
+    conns.map((row) => [
+      row.connectorId,
+      (entitledByConnector.get(row.connectorId) ?? []).map((connection) => ({
+        connection_id: connection.connectionId,
+        label: connection.label,
+        owner_type: connection.ownerType,
+        is_default: connection.isDefault,
+      })),
+    ]),
+  );
+  const authorizedComposioSlugs = new Set(
+    composioRows
+      .filter((row) => (entitledByConnector.get(row.connectorId) ?? []).length > 0)
+      .map((row) => row.slug),
+  );
   // `authorization_strategy` is a DERIVED SUMMARY now, not a setting. The
   // column is retired (see migration 20260917160000000) and the PUT route is an
   // inert no-op, but the field stays on the wire so an older client keeps
@@ -1684,7 +1755,11 @@ async function listConnectors(
         name: a.name,
         description: a.description ?? '',
         risk: a.risk,
-        inputSchema: a.inputSchema ?? null,
+        // The full per-action JSON Schema is the bulk of this route's payload
+        // (1.6 MB on prod). It is included unless the caller passes
+        // `includeSchemas: false` (`?include_schemas=false`): baked sandbox
+        // CLIs read it and cannot be updated in place.
+        inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
       })),
       requestAuthType: auth.type,
       requiresAuth: hasAuth,
@@ -1784,6 +1859,7 @@ async function getConnectorPolicies(
       .select({
         connectorId: connectors.connectorId,
         config: connectors.config,
+        providerType: connectors.providerType,
       })
       .from(connectors)
       .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
@@ -1814,7 +1890,11 @@ async function getConnectorPolicies(
   const [projectPolicies, defaultMode, actions] = await Promise.all([
     loadProjectPoliciesFor(projectId),
     loadDefaultModeFor(projectId),
-    db.select().from(connectorActions).where(eq(connectorActions.connectorId, row.connectorId)),
+    db
+      .select()
+      .from(connectorActions)
+      .where(eq(connectorActions.connectorId, row.connectorId))
+      .then((stored) => withComputerCatalog(row.connectorId, row.providerType, stored)),
   ]);
   const sensitive = (row.config as { sensitive?: unknown } | null)?.sensitive === true;
   const connectorPolicies: Policy[] = policies.map((p) => ({
@@ -1878,8 +1958,6 @@ async function getConnectorConfig(
     endpoint: cfg.endpoint ?? null,
     baseUrl: baseUrlOf(row),
     spec: cfg.spec ?? null,
-    tunnelIds:
-      row.providerType === 'computer' ? (computerTunnelIds(row.config, row.slug) ?? []) : undefined,
     auth: {
       type: auth.type,
       in: auth.in,
@@ -1974,106 +2052,32 @@ async function setComputerConnectorSensitive(
   return { ok: true };
 }
 
-const MAX_COMPUTERS_PER_PROFILE = 100;
-
-async function upsertComputerConnectorProfile(
+/**
+ * `provider: computer` on connector create makes (or renames) the project's
+ * computer connector. Its accounts are paired machines, added by pairing or by
+ * `POST /projects/:id/computers`, never by this draft.
+ */
+async function createComputerConnector(
   projectId: string,
   accountId: string,
   draft: Record<string, unknown>,
-  actorUserId?: string,
 ): Promise<ConnectorCrudResult | null> {
   if (draft.provider !== 'computer') return null;
   const slug = typeof draft.slug === 'string' ? draft.slug.trim() : '';
   if (!SLUG_RE.test(slug)) {
     return { ok: false, error: 'invalid connector slug', status: 400 };
   }
-  const rawTunnelIds = draft.tunnel_ids;
-  if (!Array.isArray(rawTunnelIds)) {
-    return { ok: false, error: 'tunnel_ids must be an array', status: 400 };
-  }
-  const tunnelIds = [
-    ...new Set(rawTunnelIds.filter((value): value is string => typeof value === 'string')),
-  ];
-  if (tunnelIds.length === 0) {
-    return { ok: false, error: 'select at least one computer', status: 400 };
-  }
-  if (tunnelIds.length !== rawTunnelIds.length || tunnelIds.some((value) => !isUuid(value))) {
-    return {
-      ok: false,
-      error: 'tunnel_ids must contain unique UUIDs',
-      status: 400,
-    };
-  }
-  if (tunnelIds.length > MAX_COMPUTERS_PER_PROFILE) {
-    return {
-      ok: false,
-      error: `a Computers profile can contain at most ${MAX_COMPUTERS_PER_PROFILE} machines`,
-      status: 400,
-    };
-  }
-  const eligibleAccountIds = [...new Set([accountId, actorUserId].filter(Boolean) as string[])];
-  const owned = await db
-    .select({
-      tunnelId: tunnelConnections.tunnelId,
-      accountId: tunnelConnections.accountId,
-    })
-    .from(tunnelConnections)
-    .where(
-      and(
-        inArray(tunnelConnections.accountId, eligibleAccountIds),
-        inArray(tunnelConnections.tunnelId, tunnelIds),
-        isNotNull(tunnelConnections.lastHeartbeatAt),
-      ),
-    );
-  if (owned.length !== tunnelIds.length) {
-    return {
-      ok: false,
-      error:
-        'One or more selected computers are no longer available. Refresh the list or pair the computer again.',
-      status: 400,
-    };
-  }
-  const tunnelAccountIds = [...new Set(owned.map((row) => row.accountId))];
-
+  const name = typeof draft.name === 'string' ? draft.name.trim() : '';
+  if (name.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
   const [existing] = await db
-    .select({
-      connectorId: connectors.connectorId,
-      providerType: connectors.providerType,
-      name: connectors.name,
-      config: connectors.config,
-    })
+    .select({ providerType: connectors.providerType })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
-  if (existing && existing.providerType !== 'computer') {
-    return {
-      ok: false,
-      error: `Connector slug "${slug}" already exists`,
-      status: 409,
-    };
+  if (existing && (existing.providerType !== 'computer' || draft.create_only === true)) {
+    return { ok: false, error: `Connector slug "${slug}" already exists`, status: 409 };
   }
-  if (existing && draft.create_only === true) {
-    return {
-      ok: false,
-      error: `Connector slug "${slug}" already exists`,
-      status: 409,
-    };
-  }
-  const requestedName = typeof draft.name === 'string' ? draft.name.trim() : '';
-  const name = requestedName || existing?.name || computerLabel();
-  if (name.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
-  await materializeComputerConnectorProfile({
-    projectId,
-    accountId,
-    existingId: existing?.connectorId ?? null,
-    spec: computerProfileSpec({
-      slug,
-      name,
-      tunnelIds,
-      tunnelAccountIds,
-      sensitive: (existing?.config as { sensitive?: unknown } | null)?.sensitive === true,
-    }),
-  });
+  await ensureComputerConnector(projectId, accountId, { slug, ...(name ? { name } : {}) });
   return { ok: true, sync: { synced: 1, errors: [] } };
 }
 
@@ -2090,6 +2094,27 @@ async function deleteComputerConnectorProfile(
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row || row.providerType !== 'computer') return null;
+  // F1: the built-in computer connector (the one ensureProjectComputer picks)
+  // is never removable. Deleting it cascades to every account on it, and the
+  // project-shared ones would never come back. A legacy extra profile goes
+  // only while no machine is attached to it.
+  const [builtIn] = await db
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')))
+    .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+    .limit(1);
+  if (builtIn?.connectorId === row.connectorId) {
+    return { ok: false, error: 'The built-in computer connector cannot be removed. Unpair or revoke a computer instead.', status: 409 };
+  }
+  const [attached] = await db
+    .select({ one: sql`1` })
+    .from(connectorConnections)
+    .where(and(eq(connectorConnections.connectorId, row.connectorId), isNotNull(connectorConnections.tunnelId)))
+    .limit(1);
+  if (attached) {
+    return { ok: false, error: 'This computer connector still has computers attached. Unpair or revoke them first.', status: 409 };
+  }
   await db.transaction(async (tx) => {
     await tx
       .delete(projectSessionConnectorBindings)
@@ -2137,8 +2162,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     invalidateProjectMirror(projectId);
     return syncProjectConnectors(projectId, accountId, { force: true });
   },
-  createConnector: async (projectId, accountId, draft, actorUserId) =>
-    (await upsertComputerConnectorProfile(projectId, accountId, draft, actorUserId)) ??
+  createConnector: async (projectId, accountId, draft) =>
+    (await createComputerConnector(projectId, accountId, draft)) ??
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: async (projectId, slug) =>
     (await deleteComputerConnectorProfile(projectId, slug)) ??
@@ -2242,6 +2267,8 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
               ownerId: connection.ownerId,
               actingUserId: connection.ownerId ?? '',
               actingPrincipalIsServiceAccount: false,
+              // Finishing this row's own authorization is not a use of it.
+              audience: 'open',
             })
           ) {
             // Propagate `connected` — a finalize that found no account is NOT

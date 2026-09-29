@@ -1,8 +1,7 @@
 /**
  * Integration test (real local DB): the `per_user` → `shared` credential-mode
  * removal migration (packages/db/migrations/20260705191549103_remove_per_user_
- * credential_mode.sql, docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.5). The migration itself already ran on every environment (immutable —
+ * credential_mode.sql). The migration itself already ran on every environment (immutable —
  * never re-applied), so this replays its exact DELETE+UPDATE statements against
  * freshly seeded fixture rows to prove the data-safety properties hold:
  *

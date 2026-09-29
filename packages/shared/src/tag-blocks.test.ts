@@ -286,3 +286,50 @@ describe('every scanner is linear on the inputs that made its regex slow', () =>
     referenceHeaders(`${'Referenced projects ('.repeat(11_000)})x`, 'projects'));
   within('indexOfIgnoreCase: 18k near-misses', () => indexOfIgnoreCase('<kortix_syste'.repeat(18_000), '<kortix_system'));
 });
+
+describe('tagBlocks: singleLine, as `.*?` read the body without the `s` flag', () => {
+  test('matches the legacy <file>(.*?)</file> regex on 3000 random strings', () => {
+    const legacy = (text: string) =>
+      [...text.matchAll(/<file>(.*?)<\/file>/g)].map((m) => ({
+        index: m.index!,
+        end: m.index! + m[0].length,
+        attrs: '',
+        body: m[1]!,
+      }));
+    fuzz(['<file>', '</file>', '<file>a.txt</file>', '\n', '\r', '\u2028', '\u2029', ' ', 'x', '<', '>', '/', '<file'], (text) => {
+      const expected = legacy(text);
+      expect(tagBlocks(text, 'file', { singleLine: true })).toEqual(expected);
+      return expected.length;
+    });
+  });
+
+  test('matches the legacy <at[^>]*>.*?</at> regex, ignoring case, on 3000 random strings', () => {
+    const legacy = (text: string) =>
+      [...text.matchAll(/<at([^>]*)>(.*?)<\/at>/gi)].map((m) => ({
+        index: m.index!,
+        end: m.index! + m[0].length,
+        attrs: m[1]!,
+        body: m[2]!,
+      }));
+    fuzz(['<at>', '<AT id="1">', '<at', '<attachment>', '</at>', '</AT>', '<at>bot</at>', '\n', '\r', '>', ' ', 'x'], (text) => {
+      const expected = legacy(text);
+      expect(tagBlocks(text, 'at', { attributes: 'any', ignoreCase: true, singleLine: true })).toEqual(expected);
+      return expected.length;
+    });
+  });
+
+  test('a closing tag on a later line does not close the block', () => {
+    expect(tagBlocks('<file>a\nb</file> <file>c</file>', 'file', { singleLine: true })).toEqual([
+      { index: 17, end: 31, attrs: '', body: 'c' },
+    ]);
+  });
+
+  // The regex re-read the rest of the line for every opener: 60k characters took ~120 ms,
+  // and each doubling quadrupled it.
+  within('singleLine: 40k openers on one line and no closer', () =>
+    tagBlocks('<file>'.repeat(40_000), 'file', { singleLine: true }));
+  within('singleLine: 30k openers each closed only on a later line', () =>
+    tagBlocks(`${'<file>x\n'.repeat(30_000)}</file>`, 'file', { singleLine: true }));
+  within('singleLine: 30k attribute openers whose > is far away', () =>
+    tagBlocks(`${'<at x\n'.repeat(30_000)}>y</at>`, 'at', { attributes: 'any', ignoreCase: true, singleLine: true }));
+});

@@ -1,6 +1,6 @@
 import { OPENCODE_HOME } from './paths'
 import type { OpenCodeConfig as Config } from './config'
-import type { ProjectEnvStore } from '../../project-env'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService } from '../harness'
 import { loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
 import { createOpenCodeAssetsService } from './assets'
@@ -83,6 +83,10 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
       getInternalUrl: () => lifecycle.getInternalUrl(),
       restart: () => lifecycle.restart(),
       workspace: () => cfg.workspace,
+      // The rollback path's only way to know the restart actually brought
+      // opencode back. Without it a failed install leaves the box down with no
+      // retained previous version — the one hole the agent half does not have.
+      getState: () => lifecycle.getState(),
     }),
     // Keep the method owner: restart/reload/reconfigure call sibling methods
     // through `this`. Copying unbound methods into separate objects breaks it.

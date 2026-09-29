@@ -29,6 +29,7 @@ import {
   type KebabItem,
 } from '@/features/workspace/shared/access';
 import {
+  agentRolesQueryKey,
   useAgentIdentities,
   useProjectAgentAssignments,
 } from '@/features/workspace/shared/access/agent-principals';
@@ -62,7 +63,7 @@ export function ProjectAgentAccessList({
   const identitiesQuery = useAgentIdentities(accountId);
   const assignmentsQuery = useProjectAgentAssignments(accountId, projectId);
   const rolesQuery = useQuery({
-    queryKey: ['iam-roles', accountId],
+    queryKey: agentRolesQueryKey(accountId),
     queryFn: () => listRoles(accountId),
     staleTime: 30_000,
     retry: false,

@@ -23,8 +23,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state'
-import * as realResources from '../resources'
+import { writeOpenCodeSessionPin } from '@/harness/open-code/runtime-state'
+import * as realResources from '@/services/resources/resources'
 
 const ROOT = 'ses_root'
 
@@ -35,7 +35,7 @@ let injectPressure = false
 // Copied BEFORE mock.module registers: the namespace object resolves to the mock
 // once it exists, so reading it inside the factory would recurse into itself.
 const real = { ...realResources }
-mock.module('../resources', () => ({
+mock.module('@/services/resources/resources', () => ({
   ...real,
   startResourceMonitor: (opts: Parameters<typeof real.startResourceMonitor>[0]) =>
     real.startResourceMonitor(
@@ -125,10 +125,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 4_000): Promise<voi
   while (!predicate() && Date.now() < deadline) await Bun.sleep(10)
 }
 
-let startOpenCodeBackground: typeof import('../harness/open-code/background').startOpenCodeBackground
+let startOpenCodeBackground: typeof import('@/harness/open-code/background').startOpenCodeBackground
 
 beforeAll(async () => {
-  ;({ startOpenCodeBackground } = await import('../harness/open-code/background'))
+  ;({ startOpenCodeBackground } = await import('@/harness/open-code/background'))
 })
 
 afterEach(() => {
@@ -200,12 +200,10 @@ describe('memory guard turn end', () => {
     expect(end.error_retryable).toBe(false)
   })
 
-  test('with no turn in flight the relay stays unnamed, so it can never close a later turn', async () => {
+  test('with no turn in flight the guard sends no end frame', async () => {
     await runGuardAtPressure({ turnRunning: false })
 
     expect(aborts).toEqual([])
-    expect(turnStreamBodies).toHaveLength(1)
-    expect(turnStreamBodies[0]).toMatchObject({ kind: 'end', status: 'error', error_name: 'SandboxMemoryGuard' })
-    expect(turnStreamBodies[0]).not.toHaveProperty('turn_message_id')
+    expect(turnStreamBodies).toHaveLength(0)
   })
 })

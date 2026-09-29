@@ -3,6 +3,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { ConnectionMetadataSchema, ReconcileConnectionInputSchema } from '@kortix/api-contract';
 import { connectorConnections, connectors, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
+import { ensureProjectComputer } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -15,16 +16,24 @@ import {
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import {
+  type ConnectionAudienceReach,
   type ConnectionOwnerType,
   type ConnectionReachabilityActor,
   connectionIsReachable,
   connectionRowIsReachable,
 } from '../lib/connection-access';
+import { audiencePersonId, loadConnectionAudience } from '../lib/connection-audience';
+import { loadConnectionSharing } from '../lib/connection-sharing';
 import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { requestAgentPrincipalReach } from '../lib/personal-resources';
 import { readJsonObject } from '../../shared/http-body';
 import { canonicalConnectorAlias } from '../lib/session-connector-bindings';
-import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
+import {
+  ConnectionViewSchema,
+  computerConnectionFields,
+  loadComputerMachines,
+  serializeConnection,
+} from '../lib/connection-view';
 
 /**
  * The owner/admin roster shape is narrower than Connection.
@@ -60,9 +69,11 @@ function mayReadConnection(
    *  carries the WRAPPER's user id, so without this every end-user's agent could
    *  enumerate every other end-user's connection and then bind it. */
   sessionBoundConnectionIds: ReadonlySet<string> | null,
+  /** A shared account's audience for the person this call acts for. */
+  audience: ConnectionAudienceReach,
 ): boolean {
   if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
-  return connectionRowIsReachable(connection, actor);
+  return connectionRowIsReachable(connection, actor, audience);
 }
 
 async function reconcileConnectionRow(input: {
@@ -155,6 +166,8 @@ projectsApp.openapi(
       isServiceAccount: c.get('authType') === 'service_account',
       agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
     };
+    // The caller's paired machines are their private accounts in every project.
+    await ensureProjectComputer(projectId, actor.isServiceAccount ? null : actor.userId);
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.
@@ -184,14 +197,70 @@ projectsApp.openapi(
         metadata: connectorConnections.metadata,
         providerType: connectors.providerType,
         connectorConfig: connectors.config,
+        tunnelId: connectorConnections.tunnelId,
       })
       .from(connectorConnections)
       .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
+    const audienceOf = await loadConnectionAudience({
+      projectId,
+      accountId: loaded.row.accountId,
+      userId: audiencePersonId({
+        actingUserId: actor.userId,
+        actingPrincipalIsServiceAccount: actor.isServiceAccount,
+        agentPrincipal: actor.agentPrincipal,
+      }),
+    });
+    const listed = rows.map((connection) => {
+      const audience = audienceOf(connection.connectionId);
+      return {
+        connection,
+        audience,
+        usable: mayReadConnection(connection, actor, sessionBoundConnectionIds, audience),
+      };
+    });
+    // A shared account narrowed to an audience the caller is outside of stays
+    // listed for a person who manages the project's connections, marked
+    // `usable: false`, so they can widen it again. A session-bound token (a
+    // sandbox) never sees it: it could not use it anyway.
+    const outsideAudience = listed.some(
+      (item) => !item.usable && item.connection.ownerType === 'project' && item.audience === 'out',
+    );
+    const mayManage =
+      outsideAudience &&
+      !callerSessionId &&
+      (await projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      ));
+    const [sharing, machines] = await Promise.all([
+      loadConnectionSharing({
+        projectId,
+        accountId: loaded.row.accountId,
+        projectName: loaded.row.name,
+      }),
+      loadComputerMachines(
+        listed.filter((item) => item.usable).map((item) => item.connection.tunnelId),
+      ),
+    ]);
     return c.json({
-      connections: rows
-        .filter((connection) => mayReadConnection(connection, actor, sessionBoundConnectionIds))
-        .map(serializeConnection),
+      connections: listed
+        .filter(
+          (item) =>
+            item.usable ||
+            (mayManage && item.connection.ownerType === 'project' && item.audience === 'out'),
+        )
+        .map((item) => ({
+          ...serializeConnection(item.connection),
+          ...computerConnectionFields(item.connection, machines),
+          ...(item.connection.ownerType === 'project'
+            ? { shared_with: sharing.get(item.connection.connectionId) ?? [] }
+            : {}),
+          usable: item.usable,
+        })),
     });
   },
 );
@@ -333,6 +402,12 @@ projectsApp.openapi(
         409,
       );
     }
+    if (connector.providerType === 'computer') {
+      return c.json(
+        { error: 'Computer accounts are added by pairing a computer (POST /projects/{projectId}/computers)' },
+        409,
+      );
+    }
     // No connector-level gate: every connector can hold both a shared project
     // account and each member's own private one. Refusing here is what left a
     // former `user`-strategy connector with no connect flow at all.
@@ -443,6 +518,12 @@ projectsApp.openapi(
         409,
       );
     }
+    if (connector.providerType === 'computer') {
+      return c.json(
+        { error: 'Computer accounts are added by pairing a computer (POST /projects/{projectId}/computers)' },
+        409,
+      );
+    }
     const normalizedOwnerId = ownerType === 'project' ? null : ownerId;
     if (
       !connectionIsReachable({
@@ -451,6 +532,9 @@ projectsApp.openapi(
         actingUserId: loaded.userId,
         actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
         agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
+        // Creating or reconciling an account manages it; a shared one already
+        // required the manage capability above.
+        audience: 'open',
       })
     ) {
       return c.json(

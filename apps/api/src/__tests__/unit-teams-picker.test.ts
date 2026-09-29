@@ -32,6 +32,7 @@ mock.module('../channels/teams-api', () => ({
   },
 }));
 mock.module('../channels/teams/binding', () => ({
+  listTenantProjects: async () => [],
   resolveConversationProjectDetailed: async () => resolution,
   resolveConversationProject: async () => 'p1',
 }));

@@ -19,18 +19,18 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
-import { createProjectEnvStore } from '../project-env'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { Hono } from 'hono'
-import { createEnvRouter } from '../routes/env'
-import { createOpenCodeControlService } from '../harness/open-code/control'
-import { createOpenCodeQuickQueueInterrupt } from '../harness/open-code/background'
-import { resetConfigReleaseStateForTests } from '../harness/open-code/config-release'
+import { createEnvRouter } from '@/routes/kortix/env'
+import { createOpenCodeControlService } from '@/harness/open-code/control'
+import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
+import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
 import {
   __resetRuntimeProjectionRelayForTests,
   __setRuntimeProjectionStateReaderForTests,
-} from '../harness/open-code/runtime-projection-relay'
+} from '@/harness/open-code/runtime-projection-relay'
 
 const TEST_TOKEN = 'respawn-test-kortix-token-32-chars'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-respawn-'))
@@ -42,14 +42,19 @@ afterAll(() => rmSync(TEST_ENV_DIR, { recursive: true, force: true }))
 // `bun test` process runs every file, so each row restores what it changed.
 let envSnapshot: NodeJS.ProcessEnv
 beforeEach(() => {
+  // `applyOpencodeRuntimeEnv` (control.ts) skips the release-owned names while
+  // `releaseGovernanceActive()` is true. That is module-level state another file
+  // may have set, so start every row here from the no-release baseline.
   resetConfigReleaseStateForTests()
   envSnapshot = { ...process.env }
   delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+  resetConfigReleaseStateForTests()
 })
 afterEach(() => {
   resetConfigReleaseStateForTests()
   for (const key of Object.keys(process.env)) if (!(key in envSnapshot)) delete process.env[key]
   Object.assign(process.env, envSnapshot)
+  resetConfigReleaseStateForTests()
 })
 
 function baseConfig(): Config {

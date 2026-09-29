@@ -4,6 +4,7 @@ import {
   DEFAULT_AUDIT_POOL_MAX,
   DEFAULT_DB_POOL_MAX,
   LEADER_ELECTION_POOL_MAX,
+  PG_BROADCAST_POOL_MAX,
   PROD_API_MAX_TASKS,
   PROD_DB_NON_API_RESERVE,
   PROD_DB_ROLLING_CONNECTION_CEILING,
@@ -14,9 +15,10 @@ import {
 
 describe('production database connection capacity', () => {
   test('pins every API-owned connection pool in the rollout budget', () => {
-    expect(DEFAULT_DB_POOL_MAX).toBe(6);
+    expect(DEFAULT_DB_POOL_MAX).toBe(5);
     expect(DEFAULT_AUDIT_POOL_MAX).toBe(2);
     expect(LEADER_ELECTION_POOL_MAX).toBe(1);
+    expect(PG_BROADCAST_POOL_MAX).toBe(1);
     expect(SCHEMA_CHECK_POOL_MAX).toBe(1);
   });
 
@@ -33,6 +35,20 @@ describe('production database connection capacity', () => {
       const writer = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
       expect(writer).toContain('auditDb()');
     }
+  });
+
+  test('keeps the base-move LISTEN/NOTIFY connection on the bounded broadcast pool', () => {
+    // apps/api/src/bootstrap.ts awaits startConfigBaseMoveBroadcast() on EVERY
+    // replica at boot (not leader-gated), and the listener is never released:
+    // this is a long-lived, per-task connection exactly like the leader-election
+    // one, and the rolling-deployment ceiling must count it the same way.
+    const pgBroadcast = readFileSync(new URL('./pg-broadcast.ts', import.meta.url), 'utf8');
+    expect(pgBroadcast).toContain("import { PG_BROADCAST_POOL_MAX } from './database-capacity'");
+    expect(pgBroadcast).toContain('max: PG_BROADCAST_POOL_MAX');
+
+    // The boot wiring moved into bootstrap.ts (KRTX-347 split).
+    const boot = readFileSync(new URL('../bootstrap.ts', import.meta.url), 'utf8');
+    expect(boot).toContain('startConfigBaseMoveBroadcast');
   });
 
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {

@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '../harness/open-code/boot'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { relayTurnEndToApi, __resetRelayedTurnSignatures } from '@/harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+} from '@/lib/kortix-api/session-token-health'
 
 // Exactly-once finalize for a completed turn. Proves the fast-boot event-loss
 // fix's dedup invariant: whether a turn's end is observed by the natural
@@ -78,6 +83,7 @@ function startMocks(
 let saved: Record<string, string | undefined> = {}
 beforeEach(() => {
   __resetRelayedTurnSignatures()
+  resetSessionTokenHealthForTests()
   saved = {
     SLACK_CHANNEL_ID: process.env.SLACK_CHANNEL_ID,
     SLACK_THREAD_TS: process.env.SLACK_THREAD_TS,
@@ -88,6 +94,7 @@ beforeEach(() => {
   }
 })
 afterEach(() => {
+  resetSessionTokenHealthForTests()
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k]
     else process.env[k] = v
@@ -400,4 +407,25 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
       m.stop()
     }
   }, 15_000)
+
+  // KRTX-446: the reconcile-on-subscribe backstop observes the same completed
+  // turn again and again on a box that outlives its session, and each pass
+  // re-issued `POST .../turn-stream -> 401` (up to four attempts). Once the
+  // shared breaker reports the credential dead, the relay must issue nothing.
+  // The local runaway guard still runs — only the API relay is skipped.
+  test('does not relay once the API has affirmed the session credential is dead', async () => {
+    const m = startMocks(() => 1000)
+    sessionEnv(m.baseUrl)
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(401, 'PAT not found or revoked')
+    }
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(0)
+    } finally {
+      m.stop()
+    }
+  })
 })

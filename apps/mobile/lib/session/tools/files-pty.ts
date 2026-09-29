@@ -2,10 +2,11 @@
  * Pure logic of the PTY tool rows — a port of apps/web
  * `tool/tools/pty-spawn-tool.tsx`, `pty-read-tool.tsx` (`splitTerminalBuffer`
  * and its parse), `pty-write-tool.tsx`, `pty-kill-tool.tsx`, and
- * `tool/tool-renderers-sanitization.ts` `stripMarkupForToolOutput`.
+ * `stripMarkupForToolOutput` (from `@kortix/shared`).
  */
 
 import { stripAnsi } from '@kortix/sdk';
+import { ptyOutputBlock, ptySpawnedBody } from '@kortix/shared/tool-output';
 
 /** apps/web en strings the four rows use. */
 export const PTY_TEXT = {
@@ -43,10 +44,10 @@ export interface PtySpawnView {
 }
 
 function parsePtySpawned(output: string): Record<string, string> | null {
-  const match = output.match(/<pty_spawned>([\s\S]*?)<\/pty_spawned>/);
-  if (!match) return null;
+  const body = ptySpawnedBody(output);
+  if (body === null) return null;
   const fields: Record<string, string> = {};
-  for (const line of match[1].trim().split('\n')) {
+  for (const line of body.trim().split('\n')) {
     const colonIdx = line.indexOf(':');
     if (colonIdx > 0) fields[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim();
   }
@@ -95,17 +96,17 @@ export interface PtyReadView {
 }
 
 export function parsePtyReadOutput(output: string): PtyReadView {
-  const match = output.match(/<pty_output\s+([^>]*)>([\s\S]*?)<\/pty_output>/);
-  if (!match) {
+  const block = ptyOutputBlock(output);
+  if (!block) {
     const content = stripAnsi(output);
     return { id: '', ptyStatus: '', content, bufferInfo: '', buffer: splitTerminalBuffer(content) };
   }
-  const attrs = match[1];
+  const attrs = block.attrs;
   const idMatch = attrs.match(/id="([^"]+)"/);
   const statusMatch = attrs.match(/status="([^"]+)"/);
   const contentLines: string[] = [];
   let bufferInfo = '';
-  for (const line of match[2].trim().split('\n')) {
+  for (const line of block.body.trim().split('\n')) {
     if (/^\(End of buffer/.test(line.trim())) {
       bufferInfo = line.trim();
       continue;
@@ -133,63 +134,4 @@ export function ptyWriteView(input: Record<string, unknown>): { ptyInput: string
 
 export function ptyKillId(input: Record<string, unknown>): string {
   return (input.id as string) || (input.pty_id as string) || '';
-}
-
-// ─── stripMarkupForToolOutput ────────────────────────────────────────────────
-
-function findTagCloseIndex(input: string, tagStart: number): number {
-  let quote: '"' | "'" | undefined;
-  for (let index = tagStart + 1; index < input.length; index += 1) {
-    const char = input[index];
-    if (quote) {
-      if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === '>') return index;
-  }
-  return -1;
-}
-
-function isWhitespace(char: string): boolean {
-  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f' || char === '\v';
-}
-
-/** Web `stripMarkupForToolOutput`: drop comments and tags (linear, quote-aware), collapse whitespace. */
-export function stripMarkupForToolOutput(output: string): string {
-  let text = '';
-  let index = 0;
-  while (index < output.length) {
-    if (output.startsWith('<!--', index)) {
-      const commentEnd = output.indexOf('-->', index + 4);
-      index = commentEnd === -1 ? output.length : commentEnd + 3;
-      continue;
-    }
-    if (output[index] !== '<') {
-      text += output[index];
-      index += 1;
-      continue;
-    }
-    const tagEnd = findTagCloseIndex(output, index);
-    if (tagEnd === -1) break;
-    index = tagEnd + 1;
-  }
-
-  let normalized = '';
-  let pendingSpace = false;
-  for (const char of text) {
-    if (isWhitespace(char)) {
-      pendingSpace = normalized.length > 0;
-      continue;
-    }
-    if (pendingSpace) {
-      normalized += ' ';
-      pendingSpace = false;
-    }
-    normalized += char;
-  }
-  return normalized.trim();
 }

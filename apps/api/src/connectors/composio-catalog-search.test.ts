@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, setSystemTime, test } from 'bun:test';
 import {
   composioCatalogSections,
   composioHiddenToolkits,
@@ -297,6 +297,33 @@ test('an expired load that fails cannot evict a newer successful catalogue', asy
   }
 });
 
+test('a search matches category names and ids, after name matches', async () => {
+  const catalogClient: ComposioCatalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: [
+            { slug: 'hubspot', name: 'HubSpot', meta: { categories: [{ id: 'crm', name: 'CRM' }] } },
+            { slug: 'crm_tool', name: 'CRM Tool', meta: {} },
+            {
+              slug: 'pipedrive',
+              name: 'Pipedrive',
+              meta: { categories: [{ id: 'sales-and-crm', name: 'Sales & CRM' }] },
+            },
+            { slug: 'gmail', name: 'Gmail', meta: { categories: [{ id: 'email', name: 'Email' }] } },
+          ],
+        };
+      },
+    },
+  };
+
+  const byName = await searchComposioCatalog({ q: 'crm', catalogClient });
+  expect(byName.toolkits.map((t) => t.slug)).toEqual(['crm_tool', 'hubspot', 'pipedrive']);
+
+  const byLabel = await searchComposioCatalog({ q: 'Email', catalogClient });
+  expect(byLabel.toolkits.map((t) => t.slug)).toEqual(['gmail']);
+});
+
 // Composio holds no OAuth app for these toolkits (X since 2026-02-12). Tool
 // Router refuses them with 400 code 4300 until the project has an auth config
 // carrying the operator's own app. Live check on 2026-09-26: 47 of 47 toolkits
@@ -384,7 +411,7 @@ test('the catalogue shows that toolkit once an enabled custom auth config exists
   ]);
   const search = await searchComposioCatalog({ q: 'tw', catalogClient });
   expect(search).toMatchObject({ total: 1, toolkits: [{ slug: 'twitter' }] });
-  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set());
+  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
 });
 
 test('the catalogue hides nothing when the auth config list is unavailable', async () => {
@@ -425,4 +452,106 @@ test('customAuthConfigIds keeps the newest enabled custom config per toolkit acr
     { toolkit_slug: 'twitter', is_composio_managed: false, show_disabled: false, limit: 100 },
     { toolkit_slug: 'twitter', is_composio_managed: false, show_disabled: false, limit: 100, cursor: 'page-2' },
   ]);
+});
+
+test('an expired auth config list is served at once and refreshed once in the background', async () => {
+  // Measured on dev-api 2026-09-27: the 60 s list made every Discover view
+  // after a minute of idle wait 450-600 ms on Composio.
+  let configs: AuthConfigRow[] = [];
+  let lists = 0;
+  let gate: Promise<void> = Promise.resolve();
+  let release: () => void = () => {};
+  const catalogClient: ComposioCatalogClient = {
+    toolkits: {
+      async list() {
+        return { items: AUTH_CATALOG };
+      },
+    },
+    authConfigs: {
+      async list() {
+        lists += 1;
+        const answer = configs;
+        await gate;
+        return { items: answer, next_cursor: null };
+      },
+    },
+  };
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+
+    configs = [{ id: 'ac_twitter', status: 'ENABLED', is_composio_managed: false, toolkit: { slug: 'twitter' } }];
+    gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    setSystemTime(new Date(start + 61_000));
+    // The refresh is held open: a read that waited for it would never return.
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(lists).toBe(2);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The operator's new auth config shows on the next read.
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
+    expect(lists).toBe(2);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test('a failed auth config refresh keeps the last list and is retried by the next read', async () => {
+  let fail = false;
+  let lists = 0;
+  const catalogClient: ComposioCatalogClient = {
+    toolkits: {
+      async list() {
+        return { items: AUTH_CATALOG };
+      },
+    },
+    authConfigs: {
+      async list() {
+        lists += 1;
+        if (fail) throw new Error('503 upstream');
+        return { items: [], next_cursor: null };
+      },
+    },
+  };
+  const start = Date.now();
+  try {
+    setSystemTime(new Date(start));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    fail = true;
+    setSystemTime(new Date(start + 61_000));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams', 'twitter']));
+    expect(lists).toBe(3);
+  } finally {
+    setSystemTime();
+  }
+});
+
+// Microsoft Teams is a native Kortix channel (Channels → the Kortix bot). The
+// Composio app listed beside it in the connectors catalogue was a second,
+// different "Microsoft Teams".
+test('Microsoft Teams is never listed: not in sections, not in search, always hidden', async () => {
+  const catalogClient = catalogOf([
+    toolkit('microsoft_teams', ['team-chat']),
+    toolkit('slack', ['team-chat']),
+    toolkit('outlook', ['email']),
+  ]);
+  const sections = await composioCatalogSections({ perCategory: 10, maxCategories: 10, catalogClient });
+  const listed = sections.sections.flatMap((section) => section.toolkits.map((item) => item.slug));
+  expect(listed).not.toContain('microsoft_teams');
+  expect(listed).toContain('slack');
+  expect(sections.categories.find((c) => c.key === 'team-chat')?.count).toBe(1);
+
+  const searched = await searchComposioCatalog({ q: 'teams', catalogClient });
+  expect(searched.toolkits.map((item) => item.slug)).not.toContain('microsoft_teams');
+
+  expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
+  const broken: ComposioCatalogClient = { toolkits: { async list() { throw new Error('down'); } } };
+  expect(await composioHiddenToolkits(broken)).toEqual(new Set(['microsoft_teams']));
 });

@@ -25,7 +25,11 @@ import {
   SessionConfigReloadConfirm,
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
+import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
+import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
+import { directSubsessions } from '@/components/projects/session-label';
+import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
@@ -81,6 +85,8 @@ interface SessionSiteHeaderProps {
   sessionTitle: string;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
+  /** A subsession's parent: rendered as a "Home" breadcrumb before the name. */
+  parent?: { onOpen: () => void };
 }
 
 export function SessionSiteHeader({
@@ -88,6 +94,7 @@ export function SessionSiteHeader({
   sessionTitle,
   isMobileView,
   leadingAction,
+  parent,
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -139,6 +146,11 @@ export function SessionSiteHeader({
   // who did not create the session.
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
+  // The Share button's accessible name. A member who cannot change access
+  // opens the same dialog read-only, so the name says what they get there.
+  const shareLabel = canManageSharing
+    ? tI18nHardcoded.raw('i18nComplete.text29887a5ff984')
+    : tI18nHardcoded.raw('i18nComplete.textadc01d813da0');
 
   /**
    * The name shown in the header, matched to the sidebar row.
@@ -156,12 +168,31 @@ export function SessionSiteHeader({
    * Falls back to the prop when there is no project session: the share viewer
    * and the instant shell render this header without one.
    */
-  const headerTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
+  const projectTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
+  // A subsession has no project session row of its own — `projectSession` is
+  // the parent's. It shows its own OpenCode title, minus the
+  // "(@general subagent)" suffix, and is not renamable from here.
+  const headerTitle = parent
+    ? subagentTitle(sessionTitle)
+    : projectTitle;
 
   const renameMutation = useRenameSession(projectId ?? '', projectSessionId ?? null);
+  const canRename = isProjectSession && !!projectSession && !parent;
+  const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];
   const startRename = () => {
-    if (isProjectSession && projectSession) setIsRenaming(true);
+    if (canRename) setIsRenaming(true);
   };
+
+  const titleButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={startRename}
+      className="text-foreground h-7 min-w-0 shrink justify-start rounded-md px-2.5 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
+    >
+      <span className="min-w-0 truncate">{headerTitle}</span>
+    </Button>
+  );
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
@@ -205,26 +236,23 @@ export function SessionSiteHeader({
     <>
       {isProjectSession && (
         <>
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onSelect={() => {
-              renameFromMenu.current = true;
-              startRename();
-            }}
-          >
-            <PencilSimpleIcon />
-            {tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53')}
-          </DropdownMenuItem>
-          {/* Shown to everyone in the session: the owner changes access here,
-              everyone else reads who has it. */}
-          <DropdownMenuItem className="cursor-pointer" onClick={() => setShareOpen(true)}>
-            <Share />
-            {canManageSharing
-              ? tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f')
-              : tI18nHardcoded.raw('i18nComplete.textadc01d813da0')}
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
+          {canRename && (
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => {
+                  renameFromMenu.current = true;
+                  startRename();
+                }}
+              >
+                <PencilSimpleIcon />
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53',
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
 
           <DropdownMenuItem
             className="cursor-pointer"
@@ -328,6 +356,25 @@ export function SessionSiteHeader({
           >
             <SidebarToggle />
 
+            {/* Subsession breadcrumb: "Home" (the parent session), a slash,
+                then this subsession's own title. */}
+            {parent && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={parent.onOpen}
+                  className="text-foreground h-7 shrink-0 gap-1.5 rounded-md px-2 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
+                >
+                  <Home className="size-3.5 shrink-0" />
+                  {tI18nHardcoded.raw('i18nComplete.text3a78695388b3')}
+                </Button>
+                <span aria-hidden className="text-muted-foreground shrink-0 text-sm select-none">
+                  /
+                </span>
+              </>
+            )}
+
             {/* Split control: the name renames in place, the caret opens the
                 session menu. Two buttons, not one trigger, so a click on the
                 name edits it instead of opening a menu. */}
@@ -350,7 +397,18 @@ export function SessionSiteHeader({
                 // No name yet: `SavedSessionSkeleton` renders this header
                 // before the session row has answered.
                 <Skeleton className="mx-2.5 h-3.5 w-24 py-0 motion-reduce:animate-none" />
-              ) : isProjectSession && projectSession ? (
+              ) : canRename && subsessions.length > 0 ? (
+                // A parent session: hovering its name lists the subagents it
+                // spawned. The card replaces the "Rename" hint — two floating
+                // surfaces on one hover is one too many; a click still renames.
+                <SubagentHoverCard
+                  projectId={projectId!}
+                  projectSessionId={projectSessionId!}
+                  subsessions={subsessions}
+                >
+                  {titleButton}
+                </SubagentHoverCard>
+              ) : canRename ? (
                 <Hint
                   side="bottom"
                   sideOffset={4}
@@ -359,14 +417,7 @@ export function SessionSiteHeader({
                     'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx265e123d',
                   )}
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={startRename}
-                    className="text-foreground h-7 min-w-0 shrink justify-start rounded-md px-2.5 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
-                  >
-                    <span className="min-w-0 truncate">{headerTitle}</span>
-                  </Button>
+                  {titleButton}
                 </Hint>
               ) : (
                 // Share viewer and instant shell: no project session row, so
@@ -416,6 +467,8 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {isProjectSession ? <SessionRemindersIndicator runtimeSessionId={sessionId} /> : null}
 
             {isProjectSession && (
               <SessionConfigIndicator
@@ -478,6 +531,35 @@ export function SessionSiteHeader({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* The one Share entry point (it left the session menu). Shown to
+                everyone in the session: the owner changes access and creates
+                the public link here, everyone else reads who has it. `xs` is
+                h-7, the row's 28px control size. Below `md` (the same 768px as
+                `isMobileViewport`) the label hides, the button goes square
+                like its size-7 siblings, and only then the Hint names it. */}
+            {isProjectSession && projectSession && (
+              <Hint
+                side="bottom"
+                sideOffset={4}
+                delayDuration={300}
+                label={shareLabel}
+                open={isMobileViewport ? undefined : false}
+              >
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label={shareLabel}
+                  onClick={() => setShareOpen(true)}
+                  className="cursor-pointer rounded-md active:scale-[0.96] max-md:w-7 max-md:has-[>svg]:px-0"
+                >
+                  <Share />
+                  <span className="hidden md:inline">
+                    {tI18nHardcoded.raw('i18nComplete.text29887a5ff984')}
+                  </span>
+                </Button>
+              </Hint>
+            )}
 
             {/* The DETAIL panel's toggle used to sit here and is gone on
                 purpose: that panel opens with content (a terminal, a browser, a
@@ -561,7 +643,7 @@ export function SessionSiteHeader({
           <SessionDeleteModal
             projectId={projectId!}
             sessionId={projectSessionId!}
-            sessionLabel={headerTitle}
+            sessionLabel={projectTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
             onDeleted={() => router.push(`/projects/${projectId}`)}

@@ -3,37 +3,198 @@ import type { SandboxExecResult } from '../../platform/providers';
 import {
   LEGACY_BOOTSTRAP_COOLDOWN_MS,
   LEGACY_BOOTSTRAP_MAX_ATTEMPTS,
+  LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
   LEGACY_BOOTSTRAP_METADATA_KEY,
   LEGACY_CHECK_METADATA_KEY,
   LEGACY_CHECK_TTL_MS,
+  REQUIRED_RUNTIME_CAPABILITIES,
   bootstrapExecCommand,
   bootstrapLegacyRuntime,
   classifyDaemonHealth,
+  describeLegacyBootstrapRetry,
+  legacyBootstrapCooldownMs,
   parseScriptReport,
   relaunchStrategyFor,
   renderLegacyBootstrapScript,
+  type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
+  type StaleReason,
 } from './legacy-runtime-bootstrap';
 
 const LEGACY_HEALTH = { daemon: 'ok', status: 'ok', opencode: 'ok', runtimeReady: true, uptime_s: 3514521 };
+const MANIFEST: ExpectedRunningAssets = {
+  cli_sha256: 'c'.repeat(64),
+  managed_skills_hash: 'm'.repeat(64),
+  agent_sha256: 'a'.repeat(64),
+};
+// A fully converged daemon: every required capability, `running` present and
+// matching the manifest sha-to-sha, no swap pending, nothing pinned, nothing
+// failed. The negative fixture — must classify 'current' and must never be
+// routed into a repair.
 const CURRENT_HEALTH = {
   daemon: 'ok',
   opencode: 'ok',
-  runtime: { build: 1788044234, components: { agent: 'current', opencode: 'current' } },
+  capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
+  uptime_s: 600,
+  runtime: {
+    build: 1788044234,
+    components: { agent: 'current', opencode: 'current', cli: 'current', skills: 'current' },
+    agentSwapPending: false,
+    pinned: false,
+    running: {
+      cli_sha256: MANIFEST.cli_sha256,
+      managed_skills_hash: MANIFEST.managed_skills_hash,
+      agent_sha256: MANIFEST.agent_sha256,
+    },
+  },
+};
+
+/**
+ * THE REAL BOX. Live `/kortix/health` through the provider ingress (not the
+ * DB-gated proxy — the box is alive; its `session_sandboxes` row status is a
+ * separate, orthogonal question this fixture does not speak to): `daemon:
+ * "ok"`, `opencode: "ok"`, `runtimeReady: true`, 31.8 days of uptime, a
+ * `runtime` block with a plain build number, `components: {cli: "failed",
+ * skills: "current", agent: "staged", opencode: "current"}`,
+ * `agentSwapPending: true`, `pinned: false`. NO `capabilities` key. NO
+ * `runtime.running` key at all — this daemon predates running-asset truth.
+ * Reproduced verbatim from the live report; no real sandbox/session id is
+ * embedded here, only the shape of what the box answered.
+ */
+const REAL_STALE_HEALTH = {
+  daemon: 'ok',
+  status: 'ok',
+  runtimeReady: true,
+  opencode: 'ok',
+  uptime_s: 2745710,
+  runtime: {
+    build: 1790538288,
+    at: '2026-09-27T20:11:13.916Z',
+    components: { cli: 'failed', skills: 'current', agent: 'staged', opencode: 'current' },
+    agentSwapPending: true,
+    pinned: false,
+  },
 };
 
 describe('classifyDaemonHealth', () => {
   test('no runtime block on an ok daemon = legacy', () => {
     expect(classifyDaemonHealth(LEGACY_HEALTH).klass).toBe('legacy');
   });
-  test('runtime block = current, with build and opencode component', () => {
-    const c = classifyDaemonHealth(CURRENT_HEALTH);
-    expect(c).toEqual({ klass: 'current', runtimeBuild: 1788044234, opencode: 'ok', opencodeComponent: 'current' });
+  test('runtime block, capability present, running matches the manifest sha-to-sha, no swap pending, nothing pinned = current', () => {
+    const c = classifyDaemonHealth(CURRENT_HEALTH, MANIFEST);
+    expect(c).toEqual({
+      klass: 'current',
+      runtimeBuild: 1788044234,
+      opencode: 'ok',
+      opencodeComponent: 'current',
+      staleReasons: [],
+      detail: [],
+    });
   });
   test('null / non-object = unreachable, daemon not ok = not-ok', () => {
     expect(classifyDaemonHealth(null).klass).toBe('unreachable');
     expect(classifyDaemonHealth('x').klass).toBe('unreachable');
     expect(classifyDaemonHealth({ daemon: 'starting' }).klass).toBe('not-ok');
+  });
+  test('a genuinely fresh daemon (running present but every field unconfirmed, build not yet settled) stays current, not stale — a first-pass-pending box, not a legacy one', () => {
+    const c = classifyDaemonHealth({
+      daemon: 'ok',
+      opencode: 'ok',
+      capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
+      runtime: { build: null, components: {}, agentSwapPending: false, pinned: false, running: { cli_sha256: null, managed_skills_hash: null, agent_sha256: null } },
+    });
+    expect(c.klass).toBe('current');
+    expect(c.staleReasons).toEqual([]);
+  });
+
+  test('THE REAL BOX: `runtime.running` unreported + missing capability + agentSwapPending + a failed component = stale — runtime.build is NEVER read as evidence of currency', () => {
+    const c = classifyDaemonHealth(REAL_STALE_HEALTH, MANIFEST);
+    expect(c.klass).toBe('stale');
+    expect(c.runtimeBuild).toBe(1790538288); // reported for visibility only — not an input to klass
+    const expected: StaleReason[] = ['running_assets_unreported', 'missing_capability', 'agent_swap_pending', 'component_failed'];
+    expect([...c.staleReasons].sort()).toEqual([...expected].sort());
+    expect(c.detail.some((d) => d.includes('running'))).toBe(true);
+    expect(c.detail.some((d) => d.includes('agentSwapPending'))).toBe(true);
+    expect(c.detail.some((d) => d.includes('cli'))).toBe(true);
+  });
+
+  test('a HUGE runtime.build number alone proves nothing — without running/capabilities it is still stale', () => {
+    // The real box's build (1790538288) is numerically LARGER than the
+    // CURRENT fixture's (1788044234). A build-floor heuristic would call it
+    // "newer" and therefore current. It is not.
+    expect(REAL_STALE_HEALTH.runtime.build).toBeGreaterThan(CURRENT_HEALTH.runtime.build);
+    expect(classifyDaemonHealth(REAL_STALE_HEALTH).klass).toBe('stale');
+  });
+
+  test('`runtime.running` absent alone is enough to classify stale, independent of every other field', () => {
+    const health = { ...CURRENT_HEALTH, runtime: { build: CURRENT_HEALTH.runtime.build, components: CURRENT_HEALTH.runtime.components, agentSwapPending: false, pinned: false } };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.klass).toBe('stale');
+    expect(c.staleReasons).toEqual(['running_assets_unreported']);
+  });
+
+  test('`runtime.running` present but sha-mismatched against the manifest = stale, sha-to-sha, never version-string', () => {
+    const health = {
+      ...CURRENT_HEALTH,
+      runtime: { ...CURRENT_HEALTH.runtime, running: { ...CURRENT_HEALTH.runtime.running, cli_sha256: 'stale-sha' } },
+    };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.klass).toBe('stale');
+    expect(c.staleReasons).toEqual(['running_assets_stale']);
+    expect(c.detail[0]).toContain('cli_sha256');
+  });
+
+  test('without an expected manifest passed in, the sha compare is skipped but `running` absence still catches it', () => {
+    // No second argument: the wiring layer always passes one in production;
+    // a caller without the manifest handy still gets the rule-1 signal.
+    const withRunningButNoExpected = classifyDaemonHealth(CURRENT_HEALTH);
+    expect(withRunningButNoExpected.klass).toBe('current');
+    const health = { ...CURRENT_HEALTH, runtime: { build: CURRENT_HEALTH.runtime.build, components: CURRENT_HEALTH.runtime.components, agentSwapPending: false, pinned: false } };
+    expect(classifyDaemonHealth(health).klass).toBe('stale');
+  });
+
+  test('missing the required capability alone is enough to classify stale', () => {
+    const health = { ...CURRENT_HEALTH, capabilities: [] };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.klass).toBe('stale');
+    expect(c.staleReasons).toEqual(['missing_capability']);
+  });
+
+  test('a pi box is not stale for lacking config.release.v1: pi has no config releases', () => {
+    // Only the OpenCode runtime advertises the capability. Requiring it of pi
+    // relaunched every idle pi box on each session open, and the relaunch could
+    // never converge, so /start answered `starting` until the retries ran out.
+    const pi = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: 'pi', capabilities: ['file.import', 'file.append'] }, MANIFEST);
+    expect(pi.klass).toBe('current');
+    expect(pi.staleReasons).toEqual([]);
+    const opencode = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: 'opencode', capabilities: [] }, MANIFEST);
+    expect(opencode.staleReasons).toEqual(['missing_capability']);
+  });
+
+  test('agentSwapPending: true is stale immediately — no grace window; a running box has no natural self-promotion path', () => {
+    const health = { ...CURRENT_HEALTH, runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true } };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.klass).toBe('stale');
+    expect(c.staleReasons).toEqual(['agent_swap_pending']);
+  });
+
+  test('ANY failed component makes the box stale, opencode included — the classifier no longer allowlists which components count', () => {
+    const health = { ...CURRENT_HEALTH, runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, opencode: 'failed' } } };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.klass).toBe('stale');
+    expect(c.staleReasons).toEqual(['component_failed']);
+    expect(c.detail[0]).toContain('opencode');
+  });
+
+  test('pinned: true = blocked, not stale — never repaired, regardless of how many other checks would also fail', () => {
+    const health = {
+      ...REAL_STALE_HEALTH,
+      runtime: { ...REAL_STALE_HEALTH.runtime, pinned: true },
+    };
+    const c = classifyDaemonHealth(health, MANIFEST);
+    expect(c.klass).toBe('blocked');
+    expect(c.staleReasons).toEqual([]);
+    expect(c.detail[0]).toContain('pinned');
   });
 });
 
@@ -152,7 +313,7 @@ describe('bootstrapLegacyRuntime', () => {
 
   test('an install during the boot pass (opencode=updated) triggers exactly one more relaunch', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
-    const updated = { daemon: 'ok', opencode: 'ok', runtime: { build: 1788044234, components: { agent: 'current', opencode: 'updated' } } };
+    const updated = { daemon: 'ok', opencode: 'ok', capabilities: [...REQUIRED_RUNTIME_CAPABILITIES], runtime: { build: 1788044234, components: { agent: 'current', opencode: 'updated' }, agentSwapPending: false, pinned: false, running: {} } };
     const r = await bootstrapLegacyRuntime(input(), makeDeps({ health: [LEGACY_HEALTH, updated, updated, updated] }, calls));
     expect(r.outcome).toBe('converged');
     expect(calls.execs).toHaveLength(2);
@@ -236,7 +397,7 @@ describe('bootstrapLegacyRuntime', () => {
 
   test('daemon relaunched but its OpenCode install failed = failed, not converged', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
-    const failedOc = { daemon: 'ok', opencode: 'ok', runtime: { build: 1788044234, components: { agent: 'current', opencode: 'failed' } } };
+    const failedOc = { daemon: 'ok', opencode: 'ok', capabilities: [...REQUIRED_RUNTIME_CAPABILITIES], runtime: { build: 1788044234, components: { agent: 'current', opencode: 'failed' }, agentSwapPending: false, pinned: false, running: {} } };
     const r = await bootstrapLegacyRuntime(input(), makeDeps({ health: [LEGACY_HEALTH, failedOc] }, calls));
     expect(r.outcome).toBe('failed');
     expect(r.detail).toBe('opencode convergence failed');
@@ -245,7 +406,7 @@ describe('bootstrapLegacyRuntime', () => {
 
   test('a daemon with a runtime block but no convergence pass yet is left alone', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
-    const pending = { daemon: 'ok', opencode: 'ok', runtime: { build: null, components: {} } };
+    const pending = { daemon: 'ok', opencode: 'ok', capabilities: [...REQUIRED_RUNTIME_CAPABILITIES], runtime: { build: null, components: {}, agentSwapPending: false, pinned: false, running: {} } };
     const r = await bootstrapLegacyRuntime(input(), makeDeps({ health: [pending] }, calls));
     expect(r.outcome).toBe('not-legacy');
     expect(calls.patches).toHaveLength(0);
@@ -293,5 +454,30 @@ describe('bootstrapLegacyRuntime', () => {
   test('unsupported provider is skipped before any probe', async () => {
     const calls: Calls = { patches: [], audits: [], execs: [] };
     expect((await bootstrapLegacyRuntime(input(null, 'local'), makeDeps({}, calls))).outcome).toBe('skipped-unsupported');
+  });
+
+  test('a pinned (blocked) daemon is NEVER repaired, never looped — surfaced and left alone, even with force', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const pinned = {
+      daemon: 'ok',
+      opencode: 'ok',
+      uptime_s: 2745710,
+      runtime: {
+        build: 1790538288,
+        components: { cli: 'failed', skills: 'current', agent: 'staged', opencode: 'current' },
+        agentSwapPending: true,
+        pinned: true,
+      },
+    };
+    const deps = makeDeps({ health: [pinned] }, calls);
+    const r = await bootstrapLegacyRuntime(input(), deps);
+    expect(r.outcome).toBe('skipped-blocked');
+    expect(r.classification?.klass).toBe('blocked');
+    expect(calls.execs).toHaveLength(0); // no relaunch was attempted
+    // Even an operator's --force must not loop a repair on a box the
+    // supervisor itself already rolled back and latched off.
+    const forced = await bootstrapLegacyRuntime({ ...input(), force: true }, makeDeps({ health: [pinned] }, calls));
+    expect(forced.outcome).toBe('skipped-blocked');
+    expect(calls.execs).toHaveLength(0);
   });
 });

@@ -4,11 +4,32 @@
 # complementing GitHub's secret-scanning push protection.)
 set -e
 
-if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
-elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+# Repo-pinned dotenvx first — see the same resolution in pre-commit.
+if [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+elif command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
+# git passes "<local ref> <local sha> <remote ref> <remote sha>" lines on stdin.
+# Read them once; both checks below need them.
+push_refs=$(cat)
+
+# No top-level docs/ tree. Refuse a push whose new commits add or edit a file
+# under docs/, including commits made with --no-verify or without the hooks.
+zero=0000000000000000000000000000000000000000
+docs_files=$(printf '%s\n' "$push_refs" | while read -r _ local_sha _ _; do
+  [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
+  git log --no-merges --diff-filter=ACMR --name-only --format= \
+    "$local_sha" --not --remotes -- docs/
+done | sort -u)
+if [ -n "$docs_files" ]; then
+  echo "pre-push: the repository has no docs/ tree. These commits add or edit:" >&2
+  printf '  %s\n' $docs_files >&2
+  echo "  Put runbooks and specs in a skill (.agents/skills/<name>/references/)," >&2
+  echo "  incident rules in .agents/skills/learnings/entries/, and detail in the PR body." >&2
+  exit 1
+fi
+
 # No customer data in the pushed commits, their messages, or the ref names.
-sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
+printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check-blocked-terms.sh" push
 
 exec $DX ext precommit

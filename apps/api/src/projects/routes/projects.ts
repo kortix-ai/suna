@@ -280,11 +280,9 @@ projectsApp.openapi(
 // must stay exactly one. Two copies diverge, and the copy that diverges is
 // the one that leaves an orphaned managed repo behind.
 //
-// Framing is a raw Response + ReadableStream — this codebase's one SSE
-// pattern (see tunnel/routes/permission-requests.ts's GET /stream), not
-// `hono/streaming`'s `streamSSE`, which nothing else in apps/api uses.
-// Unlike that tunnel stream, frames here carry NO `event:` line — see the
-// `write` comment below for why.
+// Framing is a raw Response + ReadableStream, not `hono/streaming`'s
+// `streamSSE`, which nothing else in apps/api uses. Frames carry NO `event:`
+// line — see the `write` comment below for why.
 projectsApp.openapi(
   createRoute({
     method: 'post',

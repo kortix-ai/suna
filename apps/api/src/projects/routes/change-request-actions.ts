@@ -13,6 +13,8 @@ import { agentGovernanceMergeRefusal } from '../change-request-governance';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
+import { kickPiPackageBundle } from '../../pi-packages/bundle';
+import { resolveManifestPiPackageLists } from '../lib/compile-agent-config';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 import {
   invalidateProjectMirror,
@@ -244,6 +246,14 @@ projectsApp.openapi(
     kickProjectTemplatePrebuilds(projectForGit, {
       accountId: loaded.row.accountId,
       source: 'cr-merge',
+    });
+
+    // A merged CR may have changed kortix.yaml `harnesses.pi` (top level or an
+    // agent's): build every distinct agent package list now, so the next pi
+    // session downloads its bundle instead of booting without its packages.
+    // Agents with the same list share one build. Best-effort, never blocks.
+    void resolveManifestPiPackageLists(projectForGit, cr.baseRef).then((lists) => {
+      for (const packages of lists) kickPiPackageBundle(packages, { projectId, source: 'cr-merge' });
     });
 
     // A merged CR may have edited kortix.yaml's `connectors:` list. The connector DB

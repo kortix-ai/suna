@@ -4,12 +4,6 @@ import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } from './constants';
 import type { ActiveTab } from './types';
 
-export function providerCredentialSummary(provider: LlmProviderEntry): string {
-  if (provider.id === 'codex') return 'ChatGPT subscription';
-  if (provider.id === 'openai') return 'OpenAI API key';
-  return provider.envVars.join(' · ');
-}
-
 export function providerDisconnectPlan(provider: Pick<LlmProviderEntry, 'id' | 'envVars'>): {
   oauthProvider: string | null;
   secretNames: string[];
@@ -96,26 +90,6 @@ export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
   if (defaultTab === 'models') return 'models';
   if (defaultTab === 'custom') return 'custom';
   return 'providers';
-}
-
-export function helpHostnameFromUrl(helpUrl: string | null): string | null {
-  if (!helpUrl) return null;
-  try {
-    return new URL(helpUrl).hostname.replace(/^www\./, '');
-  } catch {
-    return null;
-  }
-}
-
-/** Compact relative date — "3w", "5mo", "2y". Empty when unparseable. */
-export function releasedAgo(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
-  const days = Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
-  if (days < 7) return days === 0 ? 'today' : `${days}d`;
-  if (days < 30) return `${Math.floor(days / 7)}w`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  return `${Math.floor(days / 365)}y`;
 }
 
 export function buildCustomProviderSnippet(input: {
@@ -213,7 +187,7 @@ export function formatPricePerMillion(usd: number | null | undefined): string {
   if (usd === null || usd === undefined || Number.isNaN(usd)) return '';
   if (usd <= 0) return 'Free';
   if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
+  if (usd < 1) return `$${usd.toFixed(Number.isInteger(usd * 1_000) ? 3 : 4)}`;
   return `$${usd.toFixed(2)}`;
 }
 

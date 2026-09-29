@@ -24,12 +24,30 @@ printf '%s\n' "$ARGS" >>"$AWS_STUB_LOG"
 service_json() {
   local rollout reason
   case "$AWS_STUB_SCENARIO" in
+    rolledback|rolledback-gone)
+      # The circuit breaker marked the deployment of :500 FAILED and started a
+      # PRIMARY rollback deployment on :499, which completes. "gone": the
+      # failed deployment already left the list.
+      local failed=''
+      [ "$AWS_STUB_SCENARIO" = rolledback-gone ] || failed=',
+ {"status":"ACTIVE","rolloutState":"FAILED","rolloutStateReason":"ECS deployment circuit breaker: tasks failed to start.",
+  "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+  "desiredCount":0,"runningCount":0,"pendingCount":0}'
+      cat <<JSON
+{"services":[{"status":"ACTIVE","runningCount":1,"desiredCount":1,"pendingCount":0,
+"deployments":[
+ {"status":"PRIMARY","rolloutState":"COMPLETED","rolloutStateReason":"ECS deployment ecs-svc/2 completed.",
+  "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+  "desiredCount":1,"runningCount":1,"pendingCount":0}$failed],
+"events":[{"createdAt":"2026-09-28T19:30:00+00:00","message":"STUB_EVENT_ROLLBACK (service kortix-dev-web) rolling back to deployment ecs-svc/2."}]}]}
+JSON
+      return 0 ;;
     completed) rollout=COMPLETED; reason='ECS deployment ecs-svc/1 completed.' ;;
     failed)    rollout=FAILED;    reason='ECS deployment circuit breaker: task failed to start.' ;;
     *)         rollout=IN_PROGRESS; reason='ECS deployment ecs-svc/1 in progress.' ;;
   esac
   cat <<JSON
-{"services":[{"status":"ACTIVE","runningCount":$AWS_STUB_RUNNING,"desiredCount":1,"pendingCount":$AWS_STUB_PENDING,
+{"services":[{"status":"ACTIVE","runningCount":$AWS_STUB_SERVICE_RUNNING,"desiredCount":1,"pendingCount":$AWS_STUB_PENDING,
 "taskDefinition":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
 "deployments":[
  {"status":"PRIMARY","rolloutState":"$rollout","rolloutStateReason":"$reason",
@@ -73,6 +91,19 @@ case "$ARGS" in
     printf '{"service":{"status":"ACTIVE"}}' ;;
   *"list-tasks"*"--desired-status RUNNING"*)
     # Tasks ECS still WANTS running — PENDING ones are returned by this filter.
+    # An old task that ECS is draining has desired status STOPPED, so it is
+    # absent here; "mixed" is the moment before ECS decides to stop it.
+    case "$AWS_STUB_SCENARIO" in
+      rolledback|rolledback-gone)
+        printf '["arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new"]\n'
+        exit 0 ;;
+      draining)
+        printf '["arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new"]\n'
+        exit 0 ;;
+      mixed)
+        printf '["arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new","arn:aws:ecs:us-west-2:111:task/kortix-dev-web/ffff6666serving-old"]\n'
+        exit 0 ;;
+    esac
     cat <<'JSON'
 [
     "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/aaaa1111pending",
@@ -88,10 +119,30 @@ JSON
       cat <<'JSON'
 [
     "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/deadbeefcafe",
-    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef"
+    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef",
+    "arn:aws:ecs:us-west-2:111:task/kortix-dev-web/0ld0ld0ld"
 ]
 JSON
     fi
+    ;;
+  *"describe-tasks"*serving-old*)
+    cat <<'JSON'
+{"tasks":[
+{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new",
+"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+"lastStatus":"RUNNING","desiredStatus":"RUNNING","containers":[{"name":"web","lastStatus":"RUNNING"}]},
+{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/ffff6666serving-old",
+"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+"lastStatus":"RUNNING","desiredStatus":"RUNNING","containers":[{"name":"web","lastStatus":"RUNNING"}]}]}
+JSON
+    ;;
+  *"describe-tasks"*serving-new*)
+    cat <<'JSON'
+{"tasks":[
+{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/eeee5555serving-new",
+"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
+"lastStatus":"RUNNING","desiredStatus":"RUNNING","containers":[{"name":"web","lastStatus":"RUNNING"}]}]}
+JSON
     ;;
   *"describe-tasks"*pending*)
     # The PENDING wedge: nothing stopped, tasks blocked on an image pull.
@@ -110,13 +161,20 @@ JSON
     cat <<'JSON'
 {"tasks":[
 {"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/deadbeefcafe",
+"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
 "lastStatus":"STOPPED","stopCode":"EssentialContainerExited",
 "stoppedReason":"STUB_STOPPED_REASON Essential container in task exited",
 "containers":[{"name":"web","exitCode":1,"reason":"STUB_CONTAINER_REASON Cannot find module 'next'"}]},
 {"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/feedfacebeef",
+"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500",
 "lastStatus":"STOPPED","stopCode":"TaskFailedToStart",
 "stoppedReason":"STUB_SECOND_STOPPED_REASON CannotPullContainerError",
-"containers":[{"name":"web","exitCode":null,"reason":"STUB_NULL_EXIT_REASON image not found"}]}]}
+"containers":[{"name":"web","exitCode":null,"reason":"STUB_NULL_EXIT_REASON image not found"}]},
+{"taskArn":"arn:aws:ecs:us-west-2:111:task/kortix-dev-web/0ld0ld0ld",
+"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499",
+"lastStatus":"STOPPED","stopCode":"ServiceSchedulerInitiated",
+"stoppedReason":"STUB_OLD_REVISION_STOPPED_REASON Scaling activity initiated by deployment",
+"containers":[{"name":"web","exitCode":0}]}]}
 JSON
     ;;
   *"describe-services"*"services[0].status"*)
@@ -133,7 +191,9 @@ JSON
 esac
 `;
 
-type Scenario = 'completed' | 'failed' | 'stuck';
+// draining: the new task serves and the old one is draining (the service still
+// counts it RUNNING). mixed: ECS still wants an old-revision task running.
+type Scenario = 'completed' | 'failed' | 'stuck' | 'draining' | 'mixed' | 'rolledback' | 'rolledback-gone';
 
 interface RunResult {
   status: number | null;
@@ -147,6 +207,7 @@ function runDeploy(
   scenario: Scenario,
   env: Record<string, string> = {},
   scriptPath: string = script,
+  extraArgs: string[] = [],
 ): RunResult {
   const dir = mkdtempSync(join(tmpdir(), 'ecs-stabilize-'));
   const bin = join(dir, 'aws');
@@ -155,8 +216,9 @@ function runDeploy(
   chmodSync(bin, 0o755);
   writeFileSync(log, '', 'utf8');
 
+  const newDeploymentUp = scenario === 'completed' || scenario === 'draining' || scenario === 'mixed';
   const startedAt = Date.now();
-  const result = spawnSync('bash', [scriptPath, 'dev', 'kortix/kortix-web:dev-ec6cbdb7', '--service', 'web'], {
+  const result = spawnSync('bash', [scriptPath, 'dev', 'kortix/kortix-web:dev-ec6cbdb7', '--service', 'web', ...extraArgs], {
     cwd: root,
     encoding: 'utf8',
     env: {
@@ -168,8 +230,11 @@ function runDeploy(
       // every variable it reads must be set here.
       AWS_STUB_STOPPED: 'some',
       // A never-completing rollout reports one running task and one pending.
-      AWS_STUB_RUNNING: scenario === 'completed' ? '1' : '0',
-      AWS_STUB_PENDING: scenario === 'completed' ? '0' : '1',
+      // While old tasks drain, the NEW deployment is complete (1/1) and the
+      // service still counts the draining task (2 running, 1 desired).
+      AWS_STUB_RUNNING: newDeploymentUp ? '1' : '0',
+      AWS_STUB_SERVICE_RUNNING: scenario === 'completed' ? '1' : newDeploymentUp ? '2' : '0',
+      AWS_STUB_PENDING: newDeploymentUp ? '0' : '1',
       ...env,
     },
   });
@@ -249,7 +314,10 @@ describe('ECS rollout stabilization budget', () => {
     // Stopped-task exit reasons: evidence that a task died and why. Their
     // absence proves nothing — see the no-stopped-tasks case below.
     // Both tasks are reported, and only real task ARNs are counted.
-    expect(run.stderr).toContain('stopped tasks (newest 2)');
+    // Only tasks of the revision this roll registered: the stopped task of the
+    // previous revision is filtered out.
+    expect(run.stderr).toContain('stopped tasks of arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:500 (newest 2)');
+    expect(run.stderr).not.toContain('STUB_OLD_REVISION_STOPPED_REASON');
     expect(run.stderr).toContain('STUB_STOPPED_REASON');
     expect(run.stderr).toContain('exitCode=1');
     expect(run.stderr).toContain('STUB_CONTAINER_REASON');
@@ -269,14 +337,13 @@ describe('ECS rollout stabilization budget', () => {
     // A container with no reason contributes no line, keeping the output small.
     expect(run.stderr).not.toContain('bbbb2222pending lastStatus=PROVISIONING container=web reason=-');
 
-    // Both task lists are capped, never a full dump.
+    // Both task lists are capped, never a full dump. The stopped list scans
+    // up to 100 (one describe-tasks call) to find the new revision's tasks;
+    // the report above still prints at most 5.
     const listTasks = run.awsCalls.filter((call) => call.includes('list-tasks'));
     expect(listTasks).toHaveLength(2);
-    expect(listTasks.filter((call) => call.includes('--desired-status RUNNING'))).toHaveLength(1);
-    expect(listTasks.filter((call) => call.includes('--desired-status STOPPED'))).toHaveLength(1);
-    for (const call of listTasks) {
-      expect(call).toContain('--max-items 5');
-    }
+    expect(listTasks.filter((call) => call.includes('--desired-status RUNNING') && call.includes('--max-items 5'))).toHaveLength(1);
+    expect(listTasks.filter((call) => call.includes('--desired-status STOPPED') && call.includes('--max-items 100'))).toHaveLength(1);
   });
 
   it('reports no-stopped-tasks as an observation and never concludes the roll is merely slow', { timeout: 20_000 }, () => {
@@ -322,4 +389,108 @@ describe('ECS rollout stabilization budget', () => {
       .filter((line) => !line.trimStart().startsWith('#'));
     expect(codeLines.filter((line) => /\b900\b/.test(line))).toHaveLength(1);
   });
+});
+
+describe('ECS rollout --wait-for serving', () => {
+  const fast = { ECS_STABILIZE_TIMEOUT_SECONDS: '4', ECS_STABILIZE_POLL_SECONDS: '1' };
+
+  it('returns once every task ECS keeps running is on the new revision, before the old task drains', { timeout: 20_000 }, () => {
+    const run = runDeploy('draining', { ...fast, ECS_STABILIZE_TIMEOUT_SECONDS: '10' }, script, ['--wait-for', 'serving']);
+
+    expect(run.stderr).not.toContain('unhandled call');
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain('rollout SERVING');
+    expect(run.stdout).toContain('kortix-dev-web:500');
+    expect(run.stdout).not.toContain('rollout COMPLETED');
+  });
+
+  it('keeps waiting while ECS still wants a task of the old revision running', { timeout: 20_000 }, () => {
+    const run = runDeploy('mixed', fast, script, ['--wait-for', 'serving']);
+
+    expect(run.stderr).not.toContain('unhandled call');
+    expect(run.status).not.toBe(0);
+    expect(run.stdout).not.toContain('rollout SERVING');
+    expect(run.stderr).toContain('did not stabilize within 4s');
+  });
+
+  it('keeps the default wait unchanged: a draining old task still blocks it', { timeout: 20_000 }, () => {
+    const run = runDeploy('draining', fast);
+
+    expect(run.stderr).not.toContain('unhandled call');
+    expect(run.status).not.toBe(0);
+    expect(run.stdout).not.toContain('rollout SERVING');
+  });
+
+  it('still fails fast on a FAILED rollout', { timeout: 20_000 }, () => {
+    const run = runDeploy('failed', { ...fast, ECS_STABILIZE_TIMEOUT_SECONDS: '60' }, script, ['--wait-for', 'serving']);
+
+    expect(run.status).not.toBe(0);
+    expect(run.elapsedMs).toBeLessThan(30_000);
+    expect(run.stderr).toContain('rollout FAILED');
+  });
+
+  it('rejects an unknown --wait-for value before touching AWS', () => {
+    const run = runDeploy('completed', fast, script, ['--wait-for', 'healthy']);
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain('--wait-for must be serving or stable');
+    expect(run.awsCalls).toHaveLength(0);
+  });
+
+  it('is used by every Deploy Dev roll and by no staging or production roll', () => {
+    const workflow = (name: string) => readFileSync(resolve(root, '.github/workflows', name), 'utf8');
+    const devRolls = workflow('deploy-dev.yml')
+      .split('\n')
+      .filter((line) => line.includes('infra/scripts/ecs-deploy.sh') && !line.trim().startsWith('#') && !line.trim().startsWith('-'));
+
+    expect(devRolls).toHaveLength(3);
+    expect(workflow('deploy-dev.yml').match(/--wait-for serving/g)).toHaveLength(3);
+    for (const name of ['deploy-staging.yml', 'deploy-prod.yml', 'rollback-prod.yml']) {
+      expect(workflow(name)).not.toContain('--wait-for');
+    }
+  });
+});
+
+describe('ECS rollout: only the registered revision counts', () => {
+  // Dev API, 2026-09-28: the new tasks crashed, the circuit breaker rolled the
+  // service back to the previous revision, and four deploys still printed
+  // "rollout SERVING" on that previous revision and passed.
+  const fast = { ECS_STABILIZE_TIMEOUT_SECONDS: '60', ECS_STABILIZE_POLL_SECONDS: '1' };
+
+  for (const [mode, args] of [
+    ['serving', ['--wait-for', 'serving']],
+    ['stable', []],
+  ] as const) {
+    it(`${mode}: a circuit-breaker rollback fails fast with the new revision's stopped-task reasons`, { timeout: 20_000 }, () => {
+      const run = runDeploy('rolledback', fast, script, [...args]);
+
+      expect(run.stderr).not.toContain('unhandled call');
+      expect(run.status).toBe(1);
+      expect(run.elapsedMs).toBeLessThan(15_000);
+      expect(run.stdout).not.toMatch(/rollout (SERVING|COMPLETED)/);
+      expect(run.stdout).not.toContain('now on kortix/kortix-web:dev-ec6cbdb7');
+      expect(run.stderr).toContain(
+        'the PRIMARY deployment runs arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499',
+      );
+      expect(run.stderr).toContain('ECS deployment circuit breaker: tasks failed to start.');
+      expect(run.stderr).toContain('STUB_EVENT_ROLLBACK');
+      expect(run.stderr).toContain('STUB_STOPPED_REASON Essential container in task exited');
+      expect(run.stderr).toContain('exitCode=1');
+      expect(run.stderr).not.toContain('STUB_OLD_REVISION_STOPPED_REASON');
+    });
+
+    it(`${mode}: a rollback whose failed deployment already left the list still fails`, { timeout: 90_000 }, () => {
+      // Without the failed deployment, a PRIMARY on another revision could be
+      // a stale read right after update-service, so it fails after the 60 s
+      // grace, or at the budget when that comes first.
+      const run = runDeploy('rolledback-gone', { ...fast, ECS_STABILIZE_TIMEOUT_SECONDS: '3' }, script, [...args]);
+
+      expect(run.stderr).not.toContain('unhandled call');
+      expect(run.status).toBe(1);
+      expect(run.stdout).not.toMatch(/rollout (SERVING|COMPLETED)/);
+      expect(run.stderr).toContain(
+        'the PRIMARY deployment runs arn:aws:ecs:us-west-2:111:task-definition/kortix-dev-web:499',
+      );
+    });
+  }
 });

@@ -14,7 +14,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * A row is the model's name, its capability icons (reasoning / tool calling /
  * vision), its default tags, and the catalog's own figures — context window
- * and price per 1M tokens. Provider links open this same grouped list.
+ * and customer price per eligible route per 1M tokens. Provider links open this same grouped list.
  * The wire id keeps its use in configuration and
  * lives in a "Copy model ID" item in the row's own menu: one click for the
  * few who need it, no line for everyone who does not.
@@ -28,18 +28,18 @@ import { Tag } from '@/components/ui/tag';
 import { errorToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { cn } from '@/lib/utils';
-import { isManagedModelId } from '@kortix/llm-catalog';
+import { isManagedModelId, MANAGED_ENDPOINT_PROVIDERS } from '@kortix/llm-catalog';
 import {
   useModelAccess,
   useModelDefaults,
   useModelEnablement,
+  useProjectModelPickerCatalog,
   useProjectModels,
   wireToModelKey,
 } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
   FolderSimpleIcon as Folder,
-  GlobeHemisphereWestIcon as Globe,
   DotsThreeIcon as MoreHorizontal,
   ShieldCheckIcon as ShieldCheck,
   StarIcon as Star,
@@ -94,6 +94,7 @@ export function ModelsTab({
   // flag is resolved server-side and enforced by the gateway, so a switch here
   // is the one and only thing deciding whether it appears there.
   const models = useProjectModels(projectId);
+  const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const enablement = useModelEnablement(projectId);
   const access = useModelAccess(projectId);
   // Setting the project default from here is what makes the locked row
@@ -220,7 +221,12 @@ export function ModelsTab({
                 />
               </div>
               {group.providerID === 'kortix' &&
-                group.rows.every(({ model }) => isManagedModelId(model.modelID)) && (
+                group.rows.every(({ model }) => {
+                  const routes = pickerCatalog?.managedPricingRoutes?.[model.modelID];
+                  // Only a Morph route breaks the claim. A model whose price
+                  // feed is missing still serves from the verified US ZDR pool.
+                  return isManagedModelId(model.modelID) && !routes?.some((route) => route.route === 'morph');
+                }) && (
                   // One quiet line, not a green panel: both facts are
                   // reassurance, not a warning, and the detail lives one hover
                   // away. `tabIndex` keeps each hint reachable by keyboard.
@@ -233,7 +239,7 @@ export function ModelsTab({
                     </Hint>
                     <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
                       <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
-                        <Globe className="size-3.5" />
+                        <UsFlag />
                         {tAccess('usProvidersTitle')}
                       </span>
                     </Hint>
@@ -263,6 +269,7 @@ export function ModelsTab({
                   const ctx = formatTokenCount(model.contextWindow);
                   const priceIn = formatPricePerMillion(model.cost?.input);
                   const priceOut = formatPricePerMillion(model.cost?.output);
+                  const pricingRoutes = isManaged ? pickerCatalog?.managedPricingRoutes?.[wireId] : undefined;
                   return (
                     // A plain row, NOT a <label>: it holds three controls (copy
                     // id, set-as-default, the switch) and a label binds to the
@@ -317,7 +324,7 @@ export function ModelsTab({
                           )}
                         </div>
 
-                        {(isManaged || ctx || (priceIn && priceOut)) && (
+                        {(isManaged || ctx || (!isManaged && priceIn && priceOut)) && (
                           <InlineMeta>
                             {isManaged && (
                               <span>
@@ -331,12 +338,30 @@ export function ModelsTab({
                                 {ctx} {tI18nComplete.raw('text0230c6b1d833')}
                               </span>
                             )}
-                            {priceIn && priceOut && (
+                            {!isManaged && priceIn && priceOut && (
                               <span className="tabular-nums">
                                 {priceIn} / {priceOut} {tI18nComplete.raw('text38989e6be9c4')}
                               </span>
                             )}
                           </InlineMeta>
+                        )}
+                        {isManaged && pricingRoutes && pricingRoutes.length > 0 && (
+                          <div className="text-muted-foreground space-y-0.5 text-xs tabular-nums">
+                            <div>{tAccess('pricingEstimate')}</div>
+                            {pricingRoutes.map((price) => (
+                              <div key={price.route}>
+                                {tAccess('pricingRoute', {
+                                  route:
+                                    (MANAGED_ENDPOINT_PROVIDERS as Record<string, string>)[price.route] ??
+                                    price.route.split('/')[0],
+                                  input: formatPricePerMillion(price.input),
+                                  cacheRead: formatPricePerMillion(price.cacheRead),
+                                  output: formatPricePerMillion(price.output),
+                                })}
+                                {price.role === 'preferred' ? ` · ${tAccess('pricingPreferred')}` : ''}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                       {/*
@@ -470,5 +495,20 @@ export function ModelsTab({
         </div>
       )}
     </div>
+  );
+}
+
+/** US flag for the data-location hint. Phosphor has no flag; an emoji flag renders as "US" letters on Windows. */
+function UsFlag() {
+  return (
+    <svg viewBox="0 0 19 10" className="h-2.5 w-auto shrink-0" aria-hidden="true">
+      <rect width="19" height="10" fill="#B22234" />
+      <path
+        d="M0 1.15h19M0 2.7h19M0 4.23h19M0 5.77h19M0 7.3h19M0 8.85h19"
+        stroke="#FFFFFF"
+        strokeWidth="0.77"
+      />
+      <rect width="7.6" height="5.38" fill="#3C3B6E" />
+    </svg>
   );
 }

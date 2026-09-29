@@ -9,8 +9,8 @@
  * `injectSkills` is the hook it calls then, and pi answers by reloading its
  * skills, or the session never sees the managed `kortix-*` family.
  */
-import { logger } from '../../logger'
-import type { HarnessAssetsService } from '../assets'
+import { logger } from '@/lib/log/logger'
+import type { HarnessAssetsService } from '@/services/runtime-assets/port'
 
 /** Reloads the live runtime's skills; registered by `createPiHarnessService`. */
 let reloadLiveSkills: (() => Promise<unknown>) | null = null

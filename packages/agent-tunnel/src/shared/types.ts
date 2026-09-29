@@ -42,6 +42,12 @@ export const TunnelErrorCode = {
   EXPIRED: -32005,
   RATE_LIMITED: -32006,
   AUTH_FAILED: -32007,
+  /** The owner has not answered the access prompt on the machine (contract v2 X1). */
+  ACCESS_PENDING: -32010,
+  /** The owner denied access on the machine; fails fast until the denial lapses. */
+  ACCESS_DENIED: -32011,
+  /** The owner turned computer access off on the machine. */
+  ACCESS_OFF: -32012,
 } as const;
 
 export type TunnelErrorCodeValue = (typeof TunnelErrorCode)[keyof typeof TunnelErrorCode];
@@ -183,6 +189,12 @@ export interface TunnelAuthMessage {
   /** RPC capability handlers registered in this exact agent process. */
   capabilities?: TunnelCapability[];
   agentVersion?: string;
+  /**
+   * True from agents that report their access mode (`tunnel.access.state`).
+   * Lets the API drop a mode stored by an earlier agent when an older one
+   * that enforces nothing connects with the same credential.
+   */
+  reportsAccess?: boolean;
 }
 
 /** Result returned by onAuthenticate hook on success. */

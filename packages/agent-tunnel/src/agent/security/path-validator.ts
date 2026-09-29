@@ -56,7 +56,9 @@ function assertAllowedResolvedPath(
     });
 
     if (!withinAllowed) {
-      throw new Error(`Access denied: path "${originalPath}" is outside allowed directories`);
+      throw new Error(
+        `Access denied: path "${originalPath}" is outside allowed directories (${allowedPaths.join(', ')})`,
+      );
     }
   }
 }

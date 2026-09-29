@@ -1617,7 +1617,7 @@ for (const dispute of open.data?.disputes ?? []) {
         '**Agents and skills are files.** An agent is a markdown persona. A skill is a `SKILL.md` plus the scripts beside it. There is no console where the real definition secretly lives; the file *is* the definition, which is why an agent can propose an edit to its own configuration as a change request.',
         '**Work lands through review.** A session runs on its own isolated cloud computer on its own branch. It reaches `main` only through a change request someone approves.',
         '**You can self-host it.** Kortix is open source. Run it on your own infrastructure with your own keys and your own models. This is not an air-gapped story — `kortix self-host start` pulls images and reaches a sandbox provider over the network — but the data, the config and the model are yours.',
-        '**Any model.** Bring your own key, or the ChatGPT, Claude or Cursor subscription you already pay for.',
+        '**Any model.** Bring your own key, or the ChatGPT subscription you already pay for.',
       ],
     },
     {
@@ -1740,7 +1740,7 @@ for (const dispute of open.data?.disputes ?? []) {
  * ==========================================================================
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
  *    granted RUNTIME secret is a real env value readable by any command the
- *    agent runs (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). Only CONNECTOR
+ *    agent runs. Only CONNECTOR
  *    credentials never enter the machine.
  *  - EGRESS is not controlled at the network. Nothing implements it.
  *  - microVM is the Platinum provider only; containers are the default. Write

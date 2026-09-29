@@ -24,7 +24,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 
-import { publicSharesQueryKey } from './use-session-public-shares';
+import { publicSharesQueryKey, publicShareUrl } from './use-session-public-shares';
 
 export interface PublicShareLinkTarget {
   projectId?: string;
@@ -69,10 +69,10 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
         throw new Error('Nothing is selected to share');
       }
       const result = await createSessionPublicShare(projectId, sessionId, input);
-      if (!result.share.public_path) {
+      const publicUrl = publicShareUrl(result.share.public_path);
+      if (!publicUrl) {
         throw new Error('Share link was not returned');
       }
-      const publicUrl = `${window.location.origin}${result.share.public_path}`;
       await navigator.clipboard.writeText(publicUrl);
       return publicUrl;
     },

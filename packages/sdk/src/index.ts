@@ -139,11 +139,32 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
 
 /**
- * Mint the OpenCode wire `messageId` for `session.prompts.create()`. The id is
- * the prompt's position in the transcript; a hand-rolled encoding sorts wrong.
+ * The OpenCode wire message-id clock. `mintWireMessageId` mints the `messageId`
+ * for `session.prompts.create()`: the id is the prompt's position in the
+ * transcript, and a hand-rolled encoding sorts wrong. The rest decode, order,
+ * and place ids on the wrapping 48-bit clock. Also at `@kortix/sdk/wire-message-id`,
+ * which loads this one module alone.
  */
-export { mintWireMessageId } from './core/session/wire-message-id';
-export type { MintWireMessageIdOptions } from './core/session/wire-message-id';
+export {
+  WIRE_ID_BACKDATE_MS,
+  WIRE_ID_CLOCK_TOLERANCE,
+  WIRE_ID_TIME_MASK,
+  WIRE_ID_TIME_SCALE,
+  WIRE_MESSAGE_ID,
+  isWireIdAheadOf,
+  maxWireIdClock,
+  mintWireMessageId,
+  mintWireMessageIdAbove,
+  newestWireIdClock,
+  wireIdClock,
+  wireIdClockAt,
+  wireIdClockDelta,
+} from './core/session/wire-message-id';
+export type {
+  MintWireMessageIdAboveInput,
+  MintWireMessageIdOptions,
+  MintedWireMessageId,
+} from './core/session/wire-message-id';
 
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
@@ -481,6 +502,7 @@ export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
+export * from './core/cache/persisted-query-cache';
 export * from './core/attachments/limits';
 export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
@@ -491,6 +513,12 @@ export {
   loadHttpSessionHistory,
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
+export * from './core/session-sync/saved-copy-store';
+export {
+  type EmptyConversationInput,
+  isEmptyConversation,
+  savedCopyEmptyRoot,
+} from './core/session-sync/saved-transcript';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
@@ -520,3 +548,39 @@ export {
   type KortixAppViewerSession,
   type KortixAppViewerOptions,
 } from './core/auth/app-viewer';
+
+/**
+ * The session composer's agent and model lists — framework-free, so web
+ * (through the `./react` hooks) and mobile build the pickers and resolve what
+ * to send with the same functions.
+ *
+ * Agents: `projectConfigAgentsToOpenCodeAgents` (project detail → roster,
+ * default first) → `composerSelectableAgents` (picker list) →
+ * `resolveComposerAgent` (what runs, and whether send is allowed).
+ * Models: `pickerProviderList` (raw sources → provider list) →
+ * `flattenModels` → `createModelVisibility` + `modelInDefaultView` (default
+ * view) → `resolveModelDefault` + `resolveComposerModel` (what runs).
+ */
+export {
+  composerSelectableAgents,
+  projectConfigAgentsToOpenCodeAgents,
+  resolveComposerAgent,
+  type ComposerAgentReason,
+  type ComposerAgentResolution,
+} from './core/agents/composer-agents';
+export { flattenModels, isOfferedModel, type FlatModel } from './core/models/model-flatten';
+export type { ModelKey } from './core/models/model-key';
+export {
+  createModelVisibility,
+  modelInDefaultView,
+  type ModelVisibilityPin,
+} from './core/models/model-visibility';
+export {
+  pickerProviderList,
+  type PickerProviderListInput,
+} from './core/models/provider-selection';
+export {
+  resolveComposerModel,
+  resolveModelDefault,
+  type ComposerModelResolution,
+} from './core/models/composer-model';

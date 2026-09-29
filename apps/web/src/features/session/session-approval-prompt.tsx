@@ -34,6 +34,7 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import {
+  ApprovalAgentContext,
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
   ApprovalParameters,
@@ -98,12 +99,12 @@ export function SessionApprovalPrompt() {
 
   const rows = approvalNoticeRows(data?.actions ?? [], decided);
 
-  const decide = (executionId: string, decision: ApprovalDecisionValue) => {
+  const decide = (executionId: string, decision: ApprovalDecisionValue, note?: string) => {
     const row = rows.find((candidate) => candidate.action.execution_id === executionId);
     if (!row) return;
     setBusy((current) => ({ ...current, [executionId]: decision }));
     resolve.mutate(
-      { executionId, decision },
+      { executionId, decision, note },
       {
         onSuccess: () => {
           setDecided((current) => ({
@@ -159,7 +160,7 @@ interface SessionApprovalNoticeProps {
   expanded: string | null;
   busy: Record<string, ApprovalDecisionValue>;
   onToggle: (executionId: string) => void;
-  onDecide: (executionId: string, decision: ApprovalDecisionValue) => void;
+  onDecide: (executionId: string, decision: ApprovalDecisionValue, note?: string) => void;
 }
 
 /**
@@ -305,6 +306,7 @@ export function SessionApprovalNotice({
                 </DisclosureTrigger>
                 <DisclosureContent>
                   <div className="space-y-2 px-3 pb-3">
+                    <ApprovalAgentContext dense context={request.approvalContext} />
                     <ApprovalParameters
                       dense
                       argsPreview={request.argsPreview}
@@ -314,7 +316,7 @@ export function SessionApprovalNotice({
                     {decision === null ? (
                       <ApprovalDecisionActions
                         dense
-                        onDecision={(next) => onDecide(executionId, next)}
+                        onDecision={(next, note) => onDecide(executionId, next, note)}
                         busyDecision={busy[executionId] ?? null}
                         approvable={reviewable}
                       />

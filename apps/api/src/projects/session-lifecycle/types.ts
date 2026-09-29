@@ -1,5 +1,5 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
-import type { PromptOverridesWire, PromptPartWire } from './store';
+import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
 import type { SessionStartResult } from '../routes/shared';
 
@@ -15,10 +15,16 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
+  | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
+  /** Unattended-session recovery after a provider-originated `runtime_gone`
+   *  (see `unattended-runtime-recovery.ts`), when the turn that died was the
+   *  session's own initial prompt — there is no `continue_session` inbox row
+   *  to release, so a synthetic continue prompt is enqueued instead. */
+  | 'system:auto-recovery'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';

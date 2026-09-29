@@ -3,9 +3,22 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useMemo, useRef } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useRef } from 'react';
+import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
+import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
+import {
+  createdSessionListRow,
+  upsertIntoSessionCache,
+  writeSessionLists,
+} from '@/lib/session/session-cache-write';
 import {
   nextProjectSessionsPollWindow,
   projectSessionsPollInterval,
@@ -15,7 +28,6 @@ import {
   archiveProject,
   buildSandboxTemplate,
   closeChangeRequest,
-  createAccount,
   connectSlack,
   createProjectSession,
   createProjectTrigger,
@@ -39,17 +51,16 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getModelDefaults,
   getProjectLlmCatalog,
+  getProjectLlmCatalogProviders,
   getProjectModelPicker,
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
-  linkRepository,
   listAccounts,
   listChangeRequests,
   listConnectors,
-  listGitHubInstallations,
-  listGitHubRepositories,
   listPipedreamApps,
   listProjectAccess,
   listProjectBranches,
@@ -63,7 +74,6 @@ import {
   mergeChangeRequest,
   openChangeRequest,
   patchChangeRequest,
-  provisionProject,
   readProjectFile,
   reopenChangeRequest,
   setPersonalProjectSecret,
@@ -90,12 +100,11 @@ import {
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
-  type ProvisionProjectInput,
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
-import { invalidateAfterProjectCreation } from './project-mutation-cache';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
+import { useOpenCodeProviders } from '@/lib/opencode/hooks/use-opencode-data';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -106,6 +115,9 @@ export const projectKeys = {
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
   llmCatalog: (projectId: string | null | undefined) => ['project-llm-catalog', projectId] as const,
   modelPicker: (projectId: string | null | undefined) => ['project-model-picker', projectId] as const,
+  /** Native-mode picker sources: `/llm-catalog/providers` + secret names (`useComposerModels`). */
+  nativeModelCatalog: (projectId: string | null | undefined) => ['project-model-catalog-native', projectId] as const,
+  modelDefaults: (projectId: string | null | undefined) => ['model-defaults', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) =>
@@ -118,6 +130,9 @@ export const projectKeys = {
    */
   projectSessionsPaged: (projectId: string | null | undefined) =>
     ['project-sessions', projectId, 'paged'] as const,
+  /** A session's public shares (KRTX-248: the transcript link). */
+  sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
@@ -162,13 +177,32 @@ export const projectKeys = {
     ['pipedream-apps', projectId, q] as const,
   pipedreamAppMeta: (projectId: string | null | undefined, slug: string | null | undefined) =>
     ['pipedream-app-meta', projectId, slug] as const,
-  githubInstallations: (accountId: string | null | undefined) =>
-    ['github-installations', accountId] as const,
-  githubRepositories: (
-    accountId: string | null | undefined,
-    installationId: string | null | undefined
-  ) => ['github-repositories', accountId, installationId] as const,
 };
+
+/**
+ * Both cached shapes of a project's session list, for a write that must reach
+ * every reader (lib/session/session-cache-write): the flat first page (the
+ * thread's lookups) and the paged list (the drawer, the Sessions page).
+ */
+export function sessionListKeys(projectId: string) {
+  return [
+    projectKeys.projectSessions(projectId),
+    projectKeys.projectSessionsPaged(projectId),
+  ] as const;
+}
+
+/**
+ * A created session, in the cached lists now: the top of page one, or in
+ * place where a refetch already brought it. A 202 (create only queued) is not
+ * a row and waits for the refetch.
+ */
+export function listCreatedSession(queryClient: QueryClient, projectId: string, created: unknown) {
+  const row = createdSessionListRow(created, projectId);
+  if (!row) return;
+  writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+    upsertIntoSessionCache(cached, row)
+  );
+}
 
 export function useAccounts(enabled = true) {
   return useQuery({
@@ -176,16 +210,6 @@ export function useAccounts(enabled = true) {
     queryFn: listAccounts,
     enabled,
     staleTime: 60_000,
-  });
-}
-
-export function useCreateAccount() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) => createAccount(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    },
   });
 }
 
@@ -491,7 +515,10 @@ export function useCreateProjectSession(projectId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateProjectSessionInput) => createProjectSession(projectId!, input),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // The drawer and the Sessions page list it the moment the POST answers;
+      // the refetch below then replaces it with the list's own row.
+      if (projectId) listCreatedSession(queryClient, projectId, created);
       queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
     },
   });
@@ -504,50 +531,6 @@ export function useArchiveProject() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-  });
-}
-
-export function useProvisionProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    // Wrapped: TanStack v5 calls mutationFn(variables, context), and the
-    // context must not land in provisionProject's ApiClientOptions.
-    mutationFn: (input: ProvisionProjectInput) => provisionProject(input),
-    onSuccess: () => {
-      invalidateAfterProjectCreation(queryClient);
-    },
-  });
-}
-
-export function useLinkRepository() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: linkRepository,
-    onSuccess: () => {
-      invalidateAfterProjectCreation(queryClient);
-    },
-  });
-}
-
-export function useGitHubInstallations(accountId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.githubInstallations(accountId),
-    queryFn: () => listGitHubInstallations(accountId!),
-    enabled: enabled && !!accountId,
-    staleTime: 0,
-  });
-}
-
-export function useGitHubRepositories(
-  accountId: string | null,
-  installationId: string | null,
-  enabled: boolean
-) {
-  return useQuery({
-    queryKey: projectKeys.githubRepositories(accountId, installationId),
-    queryFn: () => listGitHubRepositories(accountId!, installationId),
-    enabled: enabled && !!accountId && !!installationId,
-    staleTime: 30_000,
   });
 }
 
@@ -731,32 +714,104 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
   return { models, isLoading: query.isLoading, gatewayDisabled };
 }
 
-/** The project home composer's model choices and the project default.
- *  Reads `/model-picker`, NOT `/llm-catalog`: the raw catalog is the full
- *  runtime projection (7134 models on 2026-09-16) with no `enabled` flags and
- *  no `defaultModel`, so the pill read "Default" and offered models the project
- *  does not serve. `/model-picker` is the bounded, connection-aware list (8–13
- *  models) with both fields. 404 `llm_gateway_disabled` leaves `catalog`
- *  undefined: the project runs on its sandbox's own providers. The thread
- *  reads the same catalog (`lib/session/model-picker.ts`), so home and thread
- *  list the same models as web. */
-export function useProjectModelCatalog(projectId: string | null) {
-  const query = useQuery({
+/** The native-mode picker sources that need no sandbox: the runtime catalog
+ *  and the project's secret NAMES. `project.secret.read` is manager-tier, so a
+ *  member's read 403s: that is "no keys visible" (web: `useOpenCodeProviders`). */
+async function fetchNativeModelCatalog(projectId: string) {
+  const [llmCatalogProviders, secrets] = await Promise.all([
+    getProjectLlmCatalogProviders(projectId),
+    listProjectSecrets(projectId).catch(() => ({ items: [] as Array<{ name: string }> })),
+  ]);
+  return { llmCatalogProviders, secretNames: secrets.items.map((secret) => secret.name) };
+}
+
+/**
+ * The composer's models (project home and thread), from the sources web's
+ * `useRuntimeProviders` and `useModelDefaults` read, built by `@kortix/sdk`
+ * (`pickerProviderList` → `flattenModels`):
+ * - LLM gateway on (`/detail` `experimental.llm_gateway`): `/model-picker`;
+ * - gateway off: `/llm-catalog/providers` and the project's secret names,
+ *   merged with the thread sandbox's `/provider` list once it answers.
+ * `modelDefaults` (`/model-defaults`) exists only with the gateway on; the
+ * route answers 404 `llm_gateway_disabled` otherwise.
+ * `isLoading`: the project mode, the list, or the default is not known yet.
+ * Consumers hide the chip instead of flashing a wrong list.
+ */
+export function useComposerModels(projectId: string | null, sandboxUrl?: string) {
+  const detail = useProjectDetail(projectId);
+  const modeKnown = !projectId || detail.isSuccess;
+  const gatewayEnabled = detail.data?.project?.experimental?.llm_gateway === true;
+  const gatewayQuery = !!projectId && modeKnown && gatewayEnabled;
+  const nativeQuery = !!projectId && modeKnown && !gatewayEnabled;
+
+  const picker = useQuery({
     queryKey: projectKeys.modelPicker(projectId),
     queryFn: () => getProjectModelPicker(projectId!),
-    enabled: !!projectId,
+    enabled: gatewayQuery,
     staleTime: 60_000,
     retry: false,
   });
+  const nativeCatalog = useQuery({
+    queryKey: projectKeys.nativeModelCatalog(projectId),
+    queryFn: () => fetchNativeModelCatalog(projectId!),
+    enabled: nativeQuery,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const runtime = useOpenCodeProviders(modeKnown && !gatewayEnabled ? sandboxUrl : undefined);
+  const defaults = useQuery({
+    queryKey: projectKeys.modelDefaults(projectId),
+    queryFn: () => getModelDefaults(projectId!),
+    enabled: gatewayQuery,
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const nativeData = nativeCatalog.data;
+  const sources = useMemo<PickerProviderListInput>(
+    () => ({
+      gatewayEnabled,
+      modelPicker: picker.data,
+      llmCatalogProviders: nativeData?.llmCatalogProviders,
+      secretNames: new Set(nativeData?.secretNames ?? []),
+      runtimeProviders: runtime.data,
+    }),
+    [gatewayEnabled, picker.data, nativeData, runtime.data],
+  );
+  const providers = useMemo(() => pickerProviderList(sources), [sources]);
+  const models = useMemo(() => composerModelList(sources), [sources]);
+
+  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
+  // "Provider connected" only once the list actually turns up a model.
+  const refetchModelCount = useCallback(async () => {
+    if (gatewayEnabled) {
+      const result = await picker.refetch();
+      return offeredModelCount(composerModelList({ ...sources, modelPicker: result.data }));
+    }
+    const result = await nativeCatalog.refetch();
+    return offeredModelCount(
+      composerModelList({
+        ...sources,
+        llmCatalogProviders: result.data?.llmCatalogProviders,
+        secretNames: new Set(result.data?.secretNames ?? []),
+      }),
+    );
+  }, [gatewayEnabled, picker, nativeCatalog, sources]);
+
+  const isLoading =
+    (!!projectId && detail.isPending) ||
+    (gatewayEnabled
+      ? picker.isLoading || defaults.isLoading
+      : !providers && (nativeCatalog.isLoading || runtime.isLoading));
+
   return {
-    /** The raw catalog. Undefined while loading, and for a project without the gateway. */
-    catalog: query.data?.models,
-    defaultModel: query.data?.defaultModel,
-    /** First load only: consumers hide the model pill instead of flashing "Connect model". */
-    isLoading: query.isLoading,
-    /** `ConnectProviderSheet` refetches after the in-app browser closes, to
-     *  toast once a provider connects. */
-    refetch: query.refetch,
+    gatewayEnabled,
+    providers,
+    /** Every model the picker can list (`enabled: false` rows included, as web). */
+    models,
+    modelDefaults: defaults.data,
+    isLoading,
+    refetchModelCount,
   };
 }
 

@@ -128,6 +128,16 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.scim.token.revoke': { title: 'Revoked SCIM token', kind: 'revoke' },
   'iam.service_account.create': { title: 'Created service account', kind: 'create' },
   'iam.service_account.disable': { title: 'Disabled service account', kind: 'update' },
+  // Computer tunnel routes retired with per-machine permissions (2026-09-29).
+  'tunnel.audit_log.list': { title: 'Viewed computer tunnel audit log', kind: 'read' },
+  'tunnel.connection.create': { title: 'Registered computer tunnel', kind: 'create' },
+  'tunnel.event.stream': { title: 'Streamed computer tunnel events', kind: 'read' },
+  'tunnel.permission.grant': { title: 'Granted computer tunnel permission', kind: 'grant' },
+  'tunnel.permission.list': { title: 'Listed computer tunnel permissions', kind: 'read' },
+  'tunnel.permission.revoke': { title: 'Revoked computer tunnel permission', kind: 'revoke' },
+  'tunnel.permission_request.approve': { title: 'Approved computer tunnel permission request', kind: 'grant' },
+  'tunnel.permission_request.deny': { title: 'Denied computer tunnel permission request', kind: 'revoke' },
+  'tunnel.permission_request.list': { title: 'Listed computer tunnel permission requests', kind: 'read' },
   'iam.service_account.delete': { title: 'Deleted service account', kind: 'delete' },
   'iam.audit.export': { title: 'Exported audit log', kind: 'export' },
   'iam.policy_template.apply': { title: 'Applied policy template', kind: 'grant' },
@@ -296,7 +306,7 @@ function httpPatterns(tI18nComplete: UiTranslator): HttpPatternHandler[] {
           return { title: tI18nComplete.raw('text183bd99db5b3'), kind: 'create' };
       }
       // Monitor event intake — the project monitor box appending to its event
-      // log (sandbox-token-only; see docs/specs/2026-08-12-monitors.md).
+      // log (sandbox-token-only).
       if (s[0] === 'projects' && s[2] === 'monitors' && s[3] === 'ingest' && m === 'POST') {
         return { title: tI18nComplete.raw('text6201f8d3134e'), kind: 'create' };
       }

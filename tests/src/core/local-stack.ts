@@ -607,6 +607,7 @@ export async function ensureLocalStack(
   const {
     DB_URL,
     API_URL,
+    ANON_KEY,
     SERVICE_ROLE_KEY,
     JWT_SECRET,
     S3_PROTOCOL_ACCESS_KEY_ID,
@@ -648,6 +649,8 @@ export async function ensureLocalStack(
           DATABASE_URL: DB_URL,
           SUPABASE_URL: API_URL,
           SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
+          // Public by design; served by GET /v1/auth/client-config (AUTH-3).
+          ...(ANON_KEY ? { SUPABASE_ANON_KEY: ANON_KEY } : {}),
           API_KEY_SECRET: "local-flow-runner-api-key-secret",
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
@@ -655,9 +658,7 @@ export async function ensureLocalStack(
           // Config archives go through the API's one object store, pointed at
           // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
           // means apps/api/.env is NOT read here, so the whole block has to be
-          // explicit — and it is required: billing is on in this profile, so a
-          // missing bucket is a startup error, not a warning.
-          CONFIG_RELEASES_ENABLED: "true",
+          // explicit.
           KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
           KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
           KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,

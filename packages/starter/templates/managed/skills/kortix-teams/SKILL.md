@@ -136,6 +136,17 @@ This finalizes the live card: the plan flips to **Task complete**, your answer r
 
 - **One `teams send` per turn.** It closes the card; a second call from the same run is dropped. If you have multiple things to say, fold them into one message.
 - **Send the answer LAST.** A `teams step` after it is dropped.
+- **A link the user should open goes on its own line** — it renders as a button:
+
+  ```sh
+  teams send "Gmail is not connected yet.
+
+  [Connect Gmail](https://…)
+
+  The link expires in 30 minutes. Reply **done** when you have connected it."
+  ```
+
+  Write the label as a short action (`Connect Gmail`, `Open the pull request`, `Review the draft`), at most 40 characters. Up to three link lines in one paragraph form a row of buttons; more stay a plain list. A connect link from `kortix connectors connect` is always a button, even inside a sentence. Every other link inside a sentence stays an ordinary link.
 </final-answer>
 
 <asking-the-user>
@@ -320,8 +331,20 @@ teams post --conversation "19:...@thread.tacv2" "Nightly build is green."
 teams post --conversation "19:..." --card-file /tmp/report.json
 ```
 
+`teams post` prints the posted message's `messageId`. Keep it to change the
+message later instead of posting a correction under it:
+
+```sh
+teams edit   --conversation "19:..." --message "<messageId>" "Nightly build is green (re-run)."
+teams edit   --conversation "19:..." --message "<messageId>" --card-file /tmp/report.json
+teams delete --conversation "19:..." --message "<messageId>"
+```
+
+Only a message the bot posted can be edited or deleted. Teams gives a bot no
+way to add a reaction.
+
 You can only post into a chat or channel the bot is **already in for this
-project**. Anything else returns 403 — list the targets first rather than
+project**. Anything else returns 404 — list the targets first rather than
 guessing an id.
 </posting-somewhere-else>
 
@@ -353,6 +376,7 @@ Reply like a colleague messaging on Teams:
 <gotchas>
 - **Standard Markdown, not Slack mrkdwn.** `**bold**` and `[label](url)` — never `*bold*` / `<url|label>`.
 - **Send the answer last.** A `teams step` after `teams send` is dropped.
+- **Action links on their own line.** `[Connect Gmail](url)` alone on a line is a button; the same link mid-sentence is small underlined text.
 - **One `teams send` per turn** finalizes the card; a second call from the same run is dropped. After a `question` card, do not `teams send` at all — the card is your reply.
 - **Asking → the `question` tool + end the turn.** It renders a real card and returns at once; the answer is your next turn. An older copy of this skill said the tool had no Teams renderer — that is no longer true.
 - **`teams send --file`: an image is shown inline in every scope.** Any other file in a personal chat is a consent card — the user must Accept, and it does NOT finalize the turn, so follow it with a `teams send "..."`. In a channel a document becomes a drive link. An image too large to show inline falls back the same way; in a group chat it comes back as an error asking for a smaller one. Limit ~4 MB.

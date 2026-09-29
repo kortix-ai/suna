@@ -16,6 +16,20 @@ import { SERVED_MANAGED_MODELS } from './served-managed-models';
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
+  // OpenCode (provider.ts) reads image support ONLY from `modalities.input`
+  // and replaces image parts with "ERROR: Cannot read image" when it is
+  // missing; the thinking control is built ONLY from effort values. DeepSeek
+  // V4.1 Flash and GLM 5.3 Flash have no models.dev record, so both fields
+  // must come from the curated lineup.
+  test('every served vision model advertises image input and a thinking control', () => {
+    for (const managed of SERVED_MANAGED_MODELS.filter((m) => m.vision)) {
+      const served = full[managed.id]!;
+      expect(served.modalities?.input, managed.id).toContain('image');
+      const effort = served.reasoning_options?.find((o) => o.type === 'effort');
+      expect(effort?.values?.length ?? 0, managed.id).toBeGreaterThan(0);
+    }
+  });
+
   test('serves managed DeepSeek V4.1 with vision, tools, and a context limit', () => {
     expect(full['deepseek-v4.1-flash']).toMatchObject({
       name: 'DeepSeek V4.1 Flash',
@@ -24,7 +38,7 @@ describe('gatewayModelCatalog — served catalog', () => {
       tool_call: true,
       temperature: true,
       limit: { context: 1_048_576, output: 16_384 },
-      cost: { input: 0.15, output: 0.6, cache_read: 0.0359375 },
+      cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
     });
   });
 

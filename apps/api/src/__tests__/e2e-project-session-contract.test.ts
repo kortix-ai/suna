@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { authUsersRows } from './helpers/auth-users-execute';
 import {
   accountMembers,
   projectGitConnections,
@@ -353,7 +354,14 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: (repoUrl: string) => ({
     owner: TEST_GITHUB_OWNER,
     repo:
@@ -416,7 +424,14 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
+// Spread the real module (see the comment on the next mock — the same rule
+// applies here): a bare stub deleted `mintSessionToken`, which the
+// session-open runtime guarantee's dynamic import
+// (legacy-runtime-bootstrap-wiring.ts) now reaches on every `/start`,
+// surfacing as an unrelated 500 attributed to no test.
+const realSessionSandbox = await import('../platform/services/session-sandbox');
 mock.module('../platform/services/session-sandbox', () => ({
+  ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
     sandboxProvisionCalls += 1;
     lastProvisionInput = input;
@@ -609,6 +624,39 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+/**
+ * Apply a project-session UPDATE to the fixture row. A `metadata` value is a
+ * `projectSessionMetadataMerge()` SQL expression (jsonb `||`), not a plain
+ * object, so evaluate it here exactly like `applySandboxUpdates`: start from
+ * the row's current metadata and assign each JSON parameter on top. This is
+ * what lets a test prove the merge does not drop keys the row already had.
+ */
+function applyProjectSessionUpdates(
+  row: typeof projectSessions.$inferSelect,
+  updates: Partial<typeof projectSessions.$inferSelect>,
+): typeof projectSessions.$inferSelect {
+  let metadata = updates.metadata;
+  if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
+    const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
+    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    for (const param of query.params) {
+      if (typeof param !== 'string' || !param.trimStart().startsWith('{')) continue;
+      try {
+        Object.assign(merged, JSON.parse(param) as Record<string, unknown>);
+      } catch {
+        // Non-JSON SQL parameters are unrelated to metadata merges.
+      }
+    }
+    metadata = merged as unknown as typeof updates.metadata;
+  }
+  return {
+    ...row,
+    ...updates,
+    metadata: metadata === undefined ? row.metadata : metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
+
 function applySandboxUpdates(
   row: SandboxRowFixture,
   updates: Partial<typeof sessionSandboxes.$inferSelect>,
@@ -642,7 +690,10 @@ mock.module('../shared/db', () => ({
     transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
       return fn(this);
     },
-    execute: async () => [],
+    // Owner identities come from auth.users; every id is the contract user,
+    // matching the auth admin mock above.
+    execute: async (query: unknown) =>
+      authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (predicate?: unknown) => ({
@@ -949,11 +1000,7 @@ mock.module('../shared/db', () => ({
                 !('metadata' in updates)
               )
                 return [];
-              sessionRow = {
-                ...sessionRow,
-                ...updates,
-                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-              };
+              sessionRow = applyProjectSessionUpdates(sessionRow, updates);
               return [sessionRow];
             }
             if (table === sessionSandboxes) {
@@ -987,11 +1034,7 @@ mock.module('../shared/db', () => ({
               const rows = await (async () => {
                 if (table === projectSessions) {
                   if (!sessionRow) return [];
-                  sessionRow = {
-                    ...sessionRow,
-                    ...updates,
-                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                  };
+                  sessionRow = applyProjectSessionUpdates(sessionRow, updates);
                   return [sessionRow];
                 }
                 if (table === sessionSandboxes) {
@@ -2749,7 +2792,7 @@ describe('project session API contract', () => {
   // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
   // provider lost the box — the provider just answered `stopped`, which proves
   // the box exists. The row parks retriable instead of being preserved as
-  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  // "computer was lost".
   test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
@@ -3899,6 +3942,34 @@ describe('project session API contract', () => {
       custom: 'ok',
       custom_name: 'Human name',
     });
+  });
+
+  // A name supplied at create is an EXPLICIT user name, so it must land in the
+  // same override key a rename uses (`metadata.custom_name`) — never the
+  // `metadata.name` auto-title slot, which the runtime title outranks on the
+  // display chain and the first prompt is allowed to fill.
+  test('a session created with a name stores it as the explicit override', async () => {
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'default',
+        name: 'My Explicit Session',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const metadata = lastSessionInsertValues?.metadata as Record<string, unknown>;
+    expect(metadata.custom_name).toBe('My Explicit Session');
+    expect(metadata).not.toHaveProperty('name');
+    // The display chain resolves the explicit name, and it is exposed as
+    // `custom_name` so a client can tell an override from an auto title.
+    expect(body.custom_name).toBe('My Explicit Session');
+    expect(body.name).toBe('My Explicit Session');
   });
 
   // The warm create runs `createProjectSession` with an empty body: no prompt,

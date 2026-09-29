@@ -10,7 +10,6 @@ import {
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
 import { isManagedConnectorProvider } from '../provider-label';
-import { ComputerConnectorAccount } from './computer-connector-account';
 
 export interface ConnectorAccountsProps {
   projectId: string;
@@ -22,6 +21,8 @@ export interface ConnectorAccountsProps {
   onRemoved: () => void;
   /** Start a session bound to this exact account. */
   onStartSession: (connection: Connection) => void;
+  /** Bumped to open the Add account dialog from outside the tab. */
+  addRequest?: number;
 }
 
 /**
@@ -30,16 +31,18 @@ export interface ConnectorAccountsProps {
  * A connector is a declared capability with no identity; an account
  * (`connector_connections` row) is an authorized identity on it, owned by the
  * project (shared) or by one member — and BOTH can coexist on the very same
- * connector, direct or managed alike. So every provider except Computer
- * Tunnel (`ComputerConnectorAccount`, its own machine-assignment UI) and
- * Channel (`ChannelConnectionSection`, its own per-platform connect flow)
- * gets the same two-group `ConnectionsList`:
+ * connector, direct or managed alike. So every provider except Channel
+ * (`ChannelConnectionSection`, its own per-platform connect flow) gets the
+ * same one-list `ConnectionsList`:
  *
  * - Managed (Composio/Pipedream) — "Add" runs the hosted Connect Link OAuth
  *   flow (`usePipedreamConnectProject` / `usePipedreamConnectMember`).
  * - Direct (openapi/http/mcp/graphql/postman/…) — "Add" creates the account
  *   then opens `SetCredentialModal` for it, wired inside `ConnectionsList`
  *   itself. Every row also gets a "Set credential" action to re-enter it.
+ * - Computer — each account is one paired machine. "Add" opens
+ *   `ComputerConnectModal` (desktop one-click, or download + npx) instead of
+ *   credential entry, and each row shows the machine's online dot.
  *
  * `ConnectionSection` (the transport config — slug/provider/spec/auth/
  * headers) is NOT mounted here any more. It moved to the Settings tab
@@ -55,24 +58,13 @@ export function ConnectorAccounts({
   onChanged,
   onRemoved,
   onStartSession,
+  addRequest,
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isChannel = connector.provider === 'channel';
-  const isComputer = connector.provider === 'computer';
   const showRoster =
     isManagedProvider && canManageConnections && connector.authorizationStrategy === 'user';
-
-  if (isComputer) {
-    return (
-      <ComputerConnectorAccount
-        projectId={projectId}
-        connector={connector}
-        canWrite={canWrite}
-        onChanged={onChanged}
-      />
-    );
-  }
 
   if (isChannel) {
     return (
@@ -95,6 +87,7 @@ export function ConnectorAccounts({
         canManageConnections={canManageConnections}
         onChanged={onChanged}
         onStartSession={onStartSession}
+        addRequest={addRequest}
       />
       {showRoster ? (
         <section className="space-y-2">

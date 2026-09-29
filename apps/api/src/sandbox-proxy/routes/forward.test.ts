@@ -68,6 +68,13 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // This suite is about delivery dedupe and wire-id placement, so the gate is
   // stubbed to its no-op answer.
   convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  // The runtime-asset lane beside the config gate. Void, never awaited — a
+  // stub is enough here, and its absence is a module LINK error, not a skip.
+  scheduleAssetConvergence: () => {},
+  // The model-catalog lane. AWAITED by the route, unlike the asset lane — a
+  // stub that resolves immediately keeps every case in this file off the
+  // network, same reasoning as `convergeBeforeTurnStart` above.
+  convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
@@ -471,5 +478,28 @@ describe('forwardToSandbox — POST /file/import', () => {
     expect(res.status).toBe(200);
     expect(timerDelays).toContain(PROXY_ATTEMPT_TIMEOUT_MS);
     expect(timerDelays).not.toContain(PROXY_IMPORT_ATTEMPT_TIMEOUT_MS);
+  });
+});
+
+// `/kortix/env-rpc` answers only when its operation finishes, and its `exec` is
+// not idempotent: a replay runs the shell command a second time.
+describe('forwardToSandbox — POST /kortix/env-rpc', () => {
+  test('on the daemon port: one attempt past the 15 s cap, a 502 is not replayed', async () => {
+    queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
+    recordTimerDelays();
+    const res = await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/kortix/env-rpc',
+      '',
+      new Headers({ 'content-type': 'application/json' }),
+      new TextEncoder().encode('{"op":"exec","args":{"command":"true"}}').buffer,
+      'http://app.local',
+    );
+    expect(fetchCalls).toBe(1);
+    expect(res.status).toBe(502);
+    expect(Math.max(...timerDelays)).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
   });
 });

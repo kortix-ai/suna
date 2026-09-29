@@ -534,11 +534,17 @@ for (const runtime of runtimes) {
         await expect(page).toHaveURL(/\/customize\/connectors/);
         // A fresh document must also load real data, independent of the agent
         // editor's cached connector query. Do not accept a Next.js page GET.
+        // Only a request the RELOADED document started counts: the page just
+        // mounted may still be revalidating its cached connectors (and the
+        // Customize prefetch warms that entry), and that response arrives after
+        // the reload with its body already discarded.
+        const reloadStartedAt = Date.now();
         const response = page.waitForResponse(
           (response) =>
             new URL(response.url()).pathname ===
               `/v1/connectors/projects/${project!.id}/connectors` &&
-            response.request().method() === "GET",
+            response.request().method() === "GET" &&
+            response.request().timing().startTime >= reloadStartedAt,
         );
         await page.reload();
         const connectorResponse = await response;
@@ -720,6 +726,20 @@ for (const runtime of runtimes) {
               enabled: true,
               accelerator: "CommandOrControl+W",
             });
+          // KRTX-48: a production build (the shipped channel) shows one
+          // "Change Kortix Instance…" entry and hides the developer presets.
+          const frontendMenu = await desktopApp.evaluate(({ Menu }) => {
+            const menu = Menu.getApplicationMenu();
+            return {
+              changeLabel:
+                menu?.getMenuItemById("kx-change-instance")?.label ?? null,
+              hasDevPresets: Boolean(menu?.getMenuItemById("kx-frontend-url")),
+            };
+          });
+          expect(frontendMenu).toEqual({
+            changeLabel: "Change Kortix Instance…",
+            hasDevPresets: false,
+          });
           await clickNativeMenu("kx-app-settings");
           await expect(page.getByRole("dialog")).toBeVisible();
           await page
@@ -2250,7 +2270,7 @@ nativeBrowserTest?.(
       await expect.poll(currentZoom).toBe(0.94);
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
 
-      for (const route of ["apps", "files"] as const) {
+      for (const route of ["apps", "files", "reminders"] as const) {
         await main.goto(`${baseURL}/projects/${project.id}/${route}`);
         const row = main
           .locator(".kx-titlebar-row[data-sidebar-collapsed='true']")

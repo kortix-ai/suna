@@ -30,6 +30,7 @@ import {
 } from './managed-repo-seed';
 import { normalizeStarterTemplateId } from './starter';
 import { GitHubApiError } from './github';
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 import {
   buildProjectSeedFiles,
   buildProjectSeedFilesFromItem,
@@ -119,6 +120,13 @@ export interface ProvisionResult {
  */
 export function createRepoFailureResult(error: unknown): ProvisionResult {
   const message = (error as Error)?.message || 'Failed to provision managed repo';
+  // The instance backend is an App installed on a personal account, which can
+  // never create a repository (`GitHubPersonalAccountCreateUnsupportedError`).
+  // Deterministic for that owner, so it is a 409 with the typed code — a 502
+  // reaches the browser as a 503 and reads as "managed git isn't set up".
+  if (error instanceof GitHubPersonalAccountCreateUnsupportedError) {
+    return { status: 409, body: { error: message, code: error.code } };
+  }
   if (error instanceof GitHubApiError && error.retryAfterSeconds !== undefined) {
     return {
       status: 503,
@@ -447,8 +455,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
           // skills, and session start 500s on refs/heads/main".
           seed: initialSeedState,
         },
-        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
-        // unification.md §2.1/§3 Phase 2): every project created through this
+        // MANDATORY DECLARED AGENTS (Phase 2): every project created through this
         // route is "new" in the spec's sense — subject to declared-agent
         // enforcement from birth, regardless of the platform-wide
         // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /

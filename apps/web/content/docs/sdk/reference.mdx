@@ -351,8 +351,16 @@ resolve per request.
 Each connection has an `owner_type`: `project` (shared — reachable by anyone
 the connector is granted to, human or service account) or `member` (private —
 reachable only by its own owner, and only in a private session; never by a
-service account). `p.connectors.accounts(slug)` lists every account this
-caller may reach, default first:
+service account). A shared account can be narrowed to groups and people:
+`connections.list()` returns its grants in `shared_with`, and
+`connectionSharedWithEveryone(connection)` answers whether everyone in the
+project may use it. A narrowed account follows the private rules for the
+people it names, and `usable: false` marks one the caller sees only to manage
+it. Grant or revoke with `createAssignment` / `revokeAssignment`
+(`object: { type: 'connection', id }`) — see
+[Choose who can use a shared account](/docs/connect/connectors#choose-who-can-use-a-shared-account).
+`p.connectors.accounts(slug)` lists every account this caller may reach,
+default first:
 
 ```ts
 const accounts = await kortix.project(projectId).connectors.accounts('stripe-read');
@@ -624,6 +632,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | API client | `backendApi`, the low-level typed HTTP client |
 | Turns | Message-to-turn grouping, cost, and status math — see [Turns](#turns) |
 | Transcripts | `formatTranscript`, a client-side Markdown export |
+| Composer lists | The session composer's agent and model lists: which to offer, which runs |
 
 #### Files
 
@@ -719,12 +728,105 @@ await backendApi.post('/some/endpoint', { name: 'x' });
 `backendApi` is the typed HTTP client every REST function builds on. Use it
 only for an endpoint that has no typed wrapper yet.
 
+#### Composer agent and model lists
+
+Build a session composer's agent picker and model picker with the same rules
+the Kortix web app uses. Every function is pure: fetch the inputs with the
+client, then pass them in.
+
+```ts
+import {
+  composerSelectableAgents,
+  createModelVisibility,
+  flattenModels,
+  modelInDefaultView,
+  pickerProviderList,
+  projectConfigAgentsToOpenCodeAgents,
+  resolveComposerAgent,
+  resolveComposerModel,
+  resolveModelDefault,
+} from '@kortix/sdk';
+
+// Agents: the roster, the picker list, and the agent the send carries.
+const roster = projectConfigAgentsToOpenCodeAgents(detail.config);
+const pickerAgents = composerSelectableAgents(roster, { enableProjects: false });
+const agent = resolveComposerAgent({
+  agents: roster,
+  boundAgent: session?.agent,
+  defaultAgent: detail.config.default_agent,
+  selectedAgent: pick,
+});
+if (agent.disabled) {
+  // no accessible agent: refuse the send
+}
+
+// Models: gateway projects read /model-picker, native projects merge the
+// catalog synthesis with the running sandbox's provider list.
+const gatewayEnabled = detail.project.experimental?.llm_gateway === true;
+const providers = pickerProviderList({
+  gatewayEnabled,
+  modelPicker,
+  runtimeProviders,
+  llmCatalogProviders,
+  secretNames,
+});
+const models = flattenModels(providers, { providerMode: gatewayEnabled ? 'gateway' : 'native' });
+const isVisible = createModelVisibility({ catalogModels: models });
+const defaultView = models.filter(
+  (m) => m.enabled !== false && modelInDefaultView(m, { search: '', isStoreVisible: isVisible, selected }),
+);
+const { model, explicit } = resolveComposerModel({
+  models,
+  picks: [sessionPick],
+  serverDefault: resolveModelDefault(modelDefaults, agent.selected ?? undefined),
+  providers,
+});
+```
+
+`resolveComposerModel` returns `explicit: undefined` when the composer is on
+its default. `model` is the key to display and send.
+
 ### Supported subpaths
 
 | Subpath | What it does |
 | --- | --- |
 | `@kortix/sdk/react` | React hooks — see [React hooks](/docs/sdk/react) |
 | `@kortix/sdk/server` | Request-scoped config for multi-tenant backends |
+| `@kortix/sdk/wire-message-id` | The OpenCode wire message-id clock alone (one module, no imports). The root exports the same names |
+
+#### Wire message ids
+
+A prompt's `messageId` is its position in the transcript. OpenCode orders
+messages by `msg_` + a 48-bit clock (`Date.now() * 0x1000`, low 48 bits) +
+14 base62 characters, and the clock wraps every 2^36 ms (about 2.2 years).
+Never encode it by hand.
+
+```ts
+import { mintWireMessageId } from '@kortix/sdk';
+
+// `after`: the ids already in this session's transcript.
+const messageId = mintWireMessageId({ after: transcriptIds });
+```
+
+The mint is dated two minutes back, then lifted one tick above the newest id
+in `after` that is at most one hour ahead. A caller that holds the newest
+position as a clock instead of ids uses `mintWireMessageIdAbove({ nowMs,
+newestKnownTime })`, which returns `{ id, time }`. `newestWireIdClock(ids)`
+finds that clock. Every comparison is on the ring, so ids on both sides of a
+wrap keep their true order.
+
+The 48-bit clock wraps every ~2.2 years, so never compare two clocks with `>`
+or `<=`: an id minted just after a wrap is numerically smaller than one minted
+just before it. Use `wireIdClockDelta(clock, reference)`, the signed distance
+on the ring (positive when `clock` is ahead), and `maxWireIdClock(clocks)` for
+the newest of several:
+
+```ts
+import { maxWireIdClock, wireIdClockDelta } from '@kortix/sdk/wire-message-id';
+
+const floor = maxWireIdClock([transcriptNewest, deliveredNewest]);
+const stale = floor !== null && wireIdClockDelta(clientClock, floor) <= 0n;
+```
 
 #### Server-side isolation
 

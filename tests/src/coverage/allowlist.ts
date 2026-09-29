@@ -118,11 +118,6 @@ export const uncoveredAllow: AllowEntry[] = [
   },
   {
     method: "POST",
-    path: "/v1/projects/:*/channels/teams/file/upload",
-    reason: "server-side consent-card upload, exercised via the in-sandbox teams CLI, not end-user clients",
-  },
-  {
-    method: "POST",
     path: "/v1/webhooks/teams/:*/messages",
     reason: "Bot Framework BYO-bot inbound webhook — JWT-authed by Microsoft, same shape as the flow-covered managed /v1/webhooks/teams/messages",
   },

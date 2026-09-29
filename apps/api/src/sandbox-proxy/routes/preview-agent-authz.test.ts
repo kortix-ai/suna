@@ -87,6 +87,12 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // driver's connect timeout — 5 s per prompt, which times these cases out.
   // This suite is about agent AUTHORIZATION, so the gate is stubbed to its no-op answer.
   convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  // The runtime-asset lane beside the config gate. Void, never awaited — a
+  // stub is enough here, and its absence is a module LINK error, not a skip.
+  scheduleAssetConvergence: () => {},
+  // The model-catalog lane. AWAITED by the route — a stub that resolves
+  // immediately keeps every case in this file off the network.
+  convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},

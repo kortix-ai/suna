@@ -227,13 +227,14 @@ no build step required:
 ## Entry points
 
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.
-Three others exist, each for a reason that fits in one sentence:
+Four others exist, each for a reason that fits in one sentence:
 
-| Entry                    | Why it can't live at root   |
-| ------------------------ | --------------------------- |
-| `@kortix/sdk/react`      | React is a peer dependency  |
-| `@kortix/sdk/server`     | imports `node:async_hooks`  |
-| `@kortix/sdk/internal/*` | unsupported, outside semver |
+| Entry                         | Why it is separate                                         |
+| ----------------------------- | ---------------------------------------------------------- |
+| `@kortix/sdk/react`           | React is a peer dependency                                 |
+| `@kortix/sdk/server`          | imports `node:async_hooks`                                 |
+| `@kortix/sdk/wire-message-id` | the wire-id clock alone, one file with no imports (also at root) |
+| `@kortix/sdk/internal/*`      | unsupported, outside semver                                |
 
 Install the optional peers before you use the React entry:
 
@@ -243,7 +244,7 @@ npm install @kortix/sdk react @tanstack/react-query
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 `@deprecated`. Import from the root instead — see **Entry points** below for
-the three that are real, and **API-MAP.md**'s Stability table for the full
+the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
@@ -358,10 +359,9 @@ persisted session default.
 
 ### Saved session attachments
 
-With `session_transcript_history` enabled, `session.attachments.upload(file)` stores up to
-50 MiB in private object storage. It returns `{ attachment_id, filename, mime, size, url }`.
-Use `url` in a file part sent to the prompt inbox. The API copies those bytes into the
-sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
+`session.attachments.upload(file)` stores up to 50 MiB in private object storage. It
+returns `{ attachment_id, filename, mime, size, url }`. Use `url` in a file part sent to
+the prompt inbox. The API copies those bytes into the sandbox after startup. Uploads and `session.attachments.read(attachment_id)` do not start a
 sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
 reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
 
@@ -371,17 +371,25 @@ reuse the successful upload; an explicit `attachmentId` supports caller-managed 
 `POST /start`. The hook owns messages, rewind and restore, cancellation,
 commands, permissions, and questions. Hosts do not construct runtime routes.
 
-Projects can opt into `session_transcript_history` in Settings → Feature flags. `useSession`
-then reads saved messages from the platform database while `/start` continues. It uses the
+Every session saves its transcript at the end of each turn. `useSession` reads saved
+messages from the platform database while `/start` continues. It uses the
 server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
-The flag is off by default. Missing or rejected history falls back to the existing runtime path.
-See [the testing runbook](../../docs/runbooks/session-transcript-history.md) for capture limits
-and local verification.
+Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
 `messages`, and `none` when nothing can show until the runtime answers. A host renders
 placeholder rows on `loading` and its boot screen only on `none`.
+`useSession().conversationEmpty` is true when the saved copy proves the conversation empty
+(a complete read of the runtime found no messages), no turn ended since, and nothing is open
+or queued. A host renders the composer then, not a boot screen.
+
+A host that registers a saved-copy store (`setSavedCopyStore(createSavedCopyStore({ storage,
+userId }))`) gets the kept copy painted before the first frame; the server's copy reconciles
+into it by message ID. `createPersistedQueryCache` does the same for accounts, projects and
+the paged session list. Both are per user and bounded; clear both on sign-out. Session
+states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
+`sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
 A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
@@ -640,6 +648,30 @@ for a no-React plain-text version of the same classification see
 `openEventStream` down to the curated `KortixChatEvent` union (~14 members) a
 chat UI actually dispatches on.
 
+## Composer agent and model lists (no React)
+
+The session composer's pickers are built from pure functions on the root
+entry, so every host — the web app through its hooks, React Native through
+the root import — offers the same agents and models and sends the same pick.
+`@kortix/sdk/react`'s `useRuntimeAgents`, `useRuntimeProviders`,
+`useRuntimeLocal`, and `useModelStore` call these.
+
+| Function | Input → output |
+|---|---|
+| `projectConfigAgentsToOpenCodeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
+| `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
+| `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
+| `flattenModels(providers, { providerMode })` | provider list → `FlatModel[]` |
+| `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
+| `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
+| `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
+| `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
+
+The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
+never includes the ~7.6 MB models.dev snapshot, so a bundler that does not
+tree-shake (Metro) stays small.
+
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
@@ -703,8 +735,9 @@ provider, resolved model, HTTP status, code, and bounded message.
 
 ## Entry points
 
-**There are three, plus one internal.** Everything framework-free lives at the
-root; the other two exist because each carries a dependency the root cannot.
+**There are four, plus one internal.** Everything framework-free lives at the
+root. `react` and `server` exist because each carries a dependency the root
+cannot; `wire-message-id` exists so a server can load one module, not the barrel.
 That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
@@ -712,6 +745,7 @@ That is the whole map — learn it once.
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
 
 The root really is canonical, and that is a test rather than a promise:

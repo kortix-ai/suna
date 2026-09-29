@@ -86,7 +86,10 @@ import {
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
-import { Composer as SessionChatInput } from '@/features/session/composer/composer';
+import {
+  COMPOSER_SHELL_CLASS,
+  Composer as SessionChatInput,
+} from '@/features/session/composer/composer';
 import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
 import {
   acknowledgeQuoteRequests,
@@ -269,7 +272,6 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-  useFeatureFlag,
   useProjectConfig,
   useRuntimeAgents,
   useRuntimeBootStalled,
@@ -314,7 +316,7 @@ import { useReadinessSettling } from './use-readiness-settling';
 // Sub-Session Breadcrumb
 // ============================================================================
 
-// SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
+// SubSessionBar removed — subsessions show their parent as the header breadcrumb
 
 // ============================================================================
 // Optimistic answers cache
@@ -630,8 +632,8 @@ export function deriveTurnErrorPresentation(input: {
           notice.usedPct === null ? '' : ` (${notice.usedPct}% used)`
         }.`,
         suggestion:
-          'The last command used almost all of the sandbox memory. Ask the agent to continue with a ' +
-          'lighter command, for example fewer parallel workers.' +
+          'A running process or RAM-backed file may still be using memory. Stop or reduce heavy background work, ' +
+          'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
     case 'cause':
@@ -1306,6 +1308,9 @@ function SessionTurnImpl({
   const hasVisibleUserContent = useMemo(() => {
     // Session reports render as their own card — don't show as user bubble
     if (sessionReport) return false;
+    // The prompt is not loaded (a long run's tail): its stand-in has no parts
+    // and must not render as the empty bubble a loading prompt would.
+    if (turn.partial) return false;
     const parts = turn.userMessage.parts;
     // Parts not loaded yet (bridging / transient state) — assume visible
     // to prevent a flash where the bubble disappears momentarily.
@@ -1324,7 +1329,7 @@ function SessionTurnImpl({
     // Has any agent part?
     if (parts.some(isAgentPart)) return true;
     return false;
-  }, [turn.userMessage.parts, sessionReport]);
+  }, [turn.partial, turn.userMessage.parts, sessionReport]);
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {
@@ -2115,8 +2120,20 @@ interface SessionChatProps {
   hideHeader?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
+  /**
+   * Drawn in the composer's slot, in flow, when `readOnly`: a terminal
+   * session state (stopped with no computer, lost computer, failed start)
+   * that says why nothing can be sent and offers the one action.
+   */
+  inputReplacement?: React.ReactNode;
   /** Start scrolled to the top instead of the bottom (e.g. sub-session modal viewer) */
   initialScrollTop?: boolean;
+  /**
+   * The Kortix session (`<projectId>/<sessionId>`) a read-only sub-agent
+   * session runs inside. With it, the sub-agent's saved transcript paints while
+   * the computer is off; without it, only the running computer can answer.
+   */
+  savedHistoryScope?: string;
   /**
    * Fired once this component is painting a real surface — the conversation or
    * the not-found card — rather than its own "starting" loader.
@@ -2168,7 +2185,9 @@ export function SessionChat({
   headerLeadingAction,
   hideHeader,
   readOnly,
+  inputReplacement,
   initialScrollTop,
+  savedHistoryScope,
   onContentReady,
   deferComposerFocus,
 }: SessionChatProps) {
@@ -2324,8 +2343,7 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
-  const transcriptHistory = useFeatureFlag(projectId, 'session_transcript_history');
-  const allowSendBeforeReady = transcriptHistory.enabled && !!projectSessionId && !runtimeReady;
+  const allowSendBeforeReady = !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.
@@ -2334,7 +2352,10 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const localSync = useSessionSync(sessionState ? '' : sessionId);
+  const localSync = useSessionSync(
+    sessionState ? '' : sessionId,
+    savedHistoryScope ? { kortixSessionScope: savedHistoryScope, savedChild: true } : undefined,
+  );
   // The page's `useSession` runs with `subscribeMessages: false`, so its
   // `messages` is a render-time snapshot and the page does not re-render per
   // streamed delta. The live rows are read HERE, where they are drawn.
@@ -5147,7 +5168,7 @@ export function SessionChat({
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
 
-  // The "Sub-session of <parent>" back destination, resolved the moment the
+  // The parent crumb's destination, resolved the moment the
   // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
   // is warmed below instead of being fetched cold on the click.
   const backToParentHref = useMemo(() => {
@@ -5164,15 +5185,15 @@ export function SessionChat({
     if (backToParentHref) router.prefetch(backToParentHref);
   }, [backToParentHref, router]);
 
-  const threadContext = useMemo(() => {
+  // The header breadcrumb's "Home" crumb: the parent session, for a subsession.
+  const parentCrumb = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     return {
-      parentTitle: parentSessionData.title || 'Parent session',
-      onBackToParent: () => {
+      onOpen: () => {
         if (backToParentHref) {
-          // nav-contract: prefetch-only — the composer's threadContext contract
-          // carries an opaque `onBackToParent: () => void`, so this control
-          // cannot render an anchor until that contract carries the href.
+          // nav-contract: prefetch-only — the header crumb's contract carries
+          // an opaque `onOpen: () => void`, so it cannot render an anchor
+          // until that contract carries the href.
           router.push(backToParentHref);
           return;
         }
@@ -5509,6 +5530,13 @@ export function SessionChat({
     serverTurnLive: serverHoldsOpenTurn(working),
     unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
     stalled: runtimeStalled,
+    // The route's `/start` is bringing the computer up (or has not answered):
+    // the same fact the boot pill above the thread shows.
+    starting:
+      !!sessionState &&
+      (sessionState.stage == null ||
+        sessionState.stage === 'provisioning' ||
+        sessionState.stage === 'starting'),
   });
   // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
   // instrumented the deleted prompt-observation stall machinery to warn about
@@ -5716,6 +5744,7 @@ export function SessionChat({
             sessionId={sessionId}
             sessionTitle={session?.title || 'Untitled'}
             leadingAction={headerLeadingAction}
+            parent={parentCrumb}
           />
         )}
 
@@ -6186,6 +6215,10 @@ export function SessionChat({
             </div>
           )}
 
+          {readOnly && inputReplacement ? (
+            <div className={cn(COMPOSER_SHELL_CLASS, 'pb-4')}>{inputReplacement}</div>
+          ) : null}
+
           {/* Input — hidden in read-only mode (sub-session modal) */}
           {!readOnly && (
             <>
@@ -6246,7 +6279,6 @@ export function SessionChat({
                 providers={providers}
                 modelRequired={!allowSendBeforeReady}
                 modelsLoading={providersLoading}
-                threadContext={threadContext}
                 onContextClick={handleContextClick}
                 onCompactClick={handleCompactClick}
                 quoteRequests={quoteRequests}

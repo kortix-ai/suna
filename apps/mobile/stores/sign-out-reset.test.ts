@@ -1,22 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// The tab store is not imported here. Bun shares one module registry across
-// test files, and the persist middleware keeps the storage object it was
-// created with, so importing it under this mock breaks tab-store.test.ts.
-
-// In-memory AsyncStorage: the persisted stores write through it.
-const storage = new Map<string, string>();
-mock.module('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => storage.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      storage.set(key, value);
-    },
-    removeItem: async (key: string) => {
-      storage.delete(key);
-    },
-  },
-}));
+import { storage } from './in-memory-async-storage';
 
 let uuid = 0;
 mock.module('expo-crypto', () => ({ randomUUID: () => `uuid-${++uuid}` }));
@@ -55,6 +39,14 @@ describe('sign-out resets the in-memory account stores', () => {
     useLastProjectStore.getState().remember('user_a', 'project_a');
     useLastProjectStore.getState().reset();
     expect(useLastProjectStore.getState().byUser).toEqual({});
+  });
+
+  test('last project: a gone project is forgotten for its user only (app/index.tsx)', () => {
+    useLastProjectStore.getState().remember('user_a', 'project_a');
+    useLastProjectStore.getState().remember('user_b', 'project_b');
+    useLastProjectStore.getState().forget('user_a');
+    expect(useLastProjectStore.getState().byUser).toEqual({ user_b: 'project_b' });
+    useLastProjectStore.getState().reset();
   });
 
   test('selected project: the project choice is cleared', () => {

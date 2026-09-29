@@ -1,5 +1,8 @@
 import { isSandboxNotReadyError } from '@kortix/sdk';
 
+/** The terminal's connection status, reported to the panel through `onStatusChange`. */
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
 export type PtyCloseAction = 'ended' | 'reconnect' | 'replace';
 
 /**
@@ -48,6 +51,9 @@ export const PTY_MAX_ATTACH_FAILURES = 5;
 const PTY_RECONNECT_BACKOFF_CAP_MS = 8_000;
 
 export type PtyAttachPause = 'asleep' | 'failed';
+
+/** What the attach overlay shows. `null` means the shell is live. */
+export type AttachPhase = 'connecting' | 'waking' | 'reconnecting' | PtyAttachPause | null;
 
 export type PtyAttachStep =
   | { kind: 'retry'; delayMs: number; phase: 'waking' | 'reconnecting' }

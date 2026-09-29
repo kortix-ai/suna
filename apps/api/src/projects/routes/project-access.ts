@@ -96,9 +96,12 @@ projectsApp.openapi(
         .where(eq(accountGroups.accountId, loaded.row.accountId)),
     ]);
 
-  // Excludes 'secret' — secrets aren't a member/group-scoped resource surfaced
-  // on the access screen (see resource-grants.ts module doc).
-  const resourceGrantRows = objectGrants.filter((r) => r.resourceType !== 'secret');
+  // Agents and skills only — secrets aren't a member/group-scoped resource
+  // surfaced on the access screen (see resource-grants.ts module doc), and a
+  // connection grant is a shared account's audience, listed on the connection.
+  const resourceGrantRows = objectGrants.filter(
+    (r) => r.resourceType === 'agent' || r.resourceType === 'skill',
+  );
   const groupNameById = new Map(accountGroupRows.map((g) => [g.groupId, g.name] as const));
   // Inner-join semantics, kept: a grant whose group was deleted is not a source.
   const projectGroupRows = groupGrantRows
@@ -184,12 +187,15 @@ projectsApp.openapi(
     grant_id: string;
     resource_type: 'agent' | 'skill';
     resource_id: string;
-    source: 'direct' | 'group';
+    /** `project` = the grant names everyone with access to the project. */
+    source: 'direct' | 'group' | 'project';
     group_id: string | null;
     group_name: string | null;
     expires_at: string | null;
   };
   const resourceGrantsByUser = new Map<string, ResourceGrantEntry[]>();
+  // Grants to everyone in the project reach every member row below.
+  const everyoneResourceGrants: ResourceGrantEntry[] = [];
   const resourceGrantsByGroup = new Map<string, Omit<ResourceGrantEntry, 'source' | 'group_id' | 'group_name'>[]>();
   for (const row of resourceGrantRows) {
     const base = {
@@ -198,7 +204,9 @@ projectsApp.openapi(
       resource_id: row.resourceId,
       expires_at: row.expiresAt?.toISOString() ?? null,
     };
-    if (row.principalType === 'member') {
+    if (row.principalType === 'project') {
+      everyoneResourceGrants.push({ ...base, source: 'project', group_id: null, group_name: null });
+    } else if (row.principalType === 'member') {
       const arr = resourceGrantsByUser.get(row.principalId) ?? [];
       arr.push({ ...base, source: 'direct', group_id: null, group_name: null });
       resourceGrantsByUser.set(row.principalId, arr);
@@ -330,8 +338,11 @@ projectsApp.openapi(
          *  into `effective_project_role`. */
         custom_role_policies: customPoliciesByUser.get(member.userId) ?? [],
         /** IAM v2 per-resource (agent/skill) grants scoped to this user,
-         *  direct or via a group they belong to. */
-        resource_grants: resourceGrantsByUser.get(member.userId) ?? [],
+         *  direct, via a group they belong to, or to everyone in the project. */
+        resource_grants: [
+          ...(resourceGrantsByUser.get(member.userId) ?? []),
+          ...everyoneResourceGrants,
+        ],
       };
     })
     .sort((a, b) => {

@@ -5,12 +5,15 @@ import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
-import { getProjectDetail, type ProjectConfigSummary } from '../../core/rest/projects-client';
+import { getProjectDetail } from '../../core/rest/projects-client';
+import { projectConfigAgentsToOpenCodeAgents } from '../../core/agents/composer-agents';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';
+// Framework-free since it moved to core; re-exported so `./react` keeps it.
+export { projectConfigAgentsToOpenCodeAgents };
 
 // ============================================================================
 // Agent Hooks
@@ -68,7 +71,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
       const agents: Agent[] = Array.isArray(data)
         ? data
         : Object.values(data as Record<string, Agent>);
-      // Agents are defined in the project repo (.kortix/opencode/agents), so the
+      // Agents are defined in the project repo (agents/, legacy .kortix/opencode/agents), so the
       // roster is stable across every session that shares a working directory.
       // Cache under a directory-scoped (or global) STABLE key — not the
       // ephemeral per-sandbox server id — so a new session's picker paints from
@@ -82,32 +85,6 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
     staleTime: projectId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
   });
-}
-
-/**
- * Put the declared project default first so every consumer's ordinary
- * "first visible agent" fallback agrees with the project contract. Explicit
- * per-session/user picks still resolve by name and therefore keep precedence.
- */
-export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): Agent[] {
-  const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
-  const defaultName = config.default_agent ?? config.open_code_default_agent;
-  if (!defaultName) return agents;
-  return agents.sort((left, right) => {
-    if (left.name === defaultName) return -1;
-    if (right.name === defaultName) return 1;
-    return 0;
-  });
-}
-
-function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents'][number]): Agent {
-  return {
-    name: agent.name,
-    description: agent.description ?? undefined,
-    mode: agent.mode ?? undefined,
-    source: agent.source,
-    hidden: agent.enabled === false,
-  } as unknown as Agent;
 }
 
 export function useOpenCodeAgent(agentName: string) {

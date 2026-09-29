@@ -71,11 +71,10 @@ export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STR
  *
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
  *    connector/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
- *  - `computer`     → computer only (default Computers profile slug).
- * Additional Computers profile slugs are created through the connector API.
- * They never pass through manifest parsing because machine ids are account
- * control-plane identities, not repository configuration.
- * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
+ *  - `computer`     → computer only (the project's computer connector).
+ * Computer connectors are created by pairing a machine, never by manifest
+ * parsing: a paired machine is an account, not repository configuration.
+ * See KORTIX-206. The pairs themselves are
  * canonically defined in `@kortix/manifest-schema` (imported above) — this
  * `export` just preserves this module's existing public surface, since
  * connector/manifest-crud.ts imports `RESERVED_SLUG_PROVIDERS` from here.
@@ -157,8 +156,7 @@ export interface ConnectorSpec {
   enabled: boolean;
   provider: ConnectorProvider;
   /** Credential storage mode. `shared` is the only mode — `per_user` (each
-   *  member brings their own) was removed 2026-07-05 (docs/specs/2026-07-05-
-   *  agent-first-config-unification.md §2.5). A manifest that still says
+   *  member brings their own) was removed 2026-07-05. A manifest that still says
    *  `credential = "per_user"` is tolerated (legacy, warning-only) but always
    *  resolves to `shared` here — it can never round-trip back into git. */
   credentialMode: 'shared';
@@ -182,12 +180,6 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
-  /** computer: legacy single-machine binding. */
-  tunnelId?: string | null;
-  /** computer: profile-scoped machine allowlist. */
-  tunnelIds?: string[] | null;
-  /** computer: verified owner accounts for the selected machine allowlist. */
-  tunnelAccountIds?: string[] | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
@@ -375,7 +367,9 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
     platform: spec.platform,
-    tunnelIds: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : null),
+    // Retired field, kept as null so every stored hash stays valid and no
+    // connector re-fetches its catalog because of this change.
+    tunnelIds: null,
     spec: spec.spec,
     auth: spec.auth,
     authAuto: spec.authAuto ?? false,
@@ -591,11 +585,11 @@ function parseProviderFields(
   }
 
   if (provider === 'computer') {
-    // API-only: profiles select account-owned machines through the connector
-    // API. Tunnel ids must not enter repository configuration.
+    // Pairing creates the computer connector; each paired machine is an
+    // account on it. Machines must not enter repository configuration.
     return err(
       slug,
-      'provider="computer" is managed through the connector API (Computers) — it cannot be declared in kortix.yaml',
+      'provider="computer" is created by pairing a computer — it cannot be declared in kortix.yaml',
       filename,
     );
   }

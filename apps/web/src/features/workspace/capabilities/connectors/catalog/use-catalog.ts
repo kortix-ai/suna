@@ -132,10 +132,7 @@ export interface ConnectProviderStatus {
  */
 export function useConnectProviderStatus(enabled: boolean): ConnectProviderStatus {
   const query = useQuery({
-    // Version the key so tabs opened before the Composio cutover cannot keep an
-    // Infinity-stale `provider: "pipedream"` answer in memory after deployment.
-    queryKey: ['connect-status', 'composio-first-v2'],
-    queryFn: getConnectStatus,
+    ...connectStatusQuery,
     // A deployment can change underneath an open tab. Revalidate on mount so a
     // rolling release cannot leave the catalogue pinned to the previous provider.
     staleTime: 30_000,
@@ -160,6 +157,39 @@ export function useConnectProviderStatus(enabled: boolean): ConnectProviderStatu
   // Composio endpoint and surface its real error if the provider is unavailable.
   if (query.isError) return { state: 'unknown', provider: 'composio' };
   return { state: 'asking', provider: null };
+}
+
+/** The query behind `connect-status`, shared with the Customize prefetch. */
+export const connectStatusQuery = {
+  // Version the key so tabs opened before the Composio cutover cannot keep an
+  // Infinity-stale `provider: "pipedream"` answer in memory after deployment.
+  queryKey: ['connect-status', 'composio-first-v2'] as const,
+  queryFn: getConnectStatus,
+};
+
+/**
+ * The browse page's one request, keyed per catalogue. Exported so the
+ * Customize prefetch (`use-customize-prefetch.ts`) fills the exact cache entry
+ * the Discover landing reads.
+ */
+export function catalogSectionsQuery(
+  projectId: string,
+  catalogue: 'discover' | 'composio' | 'pipedream' | null,
+) {
+  return {
+    queryKey: ['catalog-sections', projectId, catalogue] as const,
+    queryFn: async (): Promise<BrowseSectionsPage> => {
+      const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
+      if (catalogue === 'discover') {
+        return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
+      }
+      if (catalogue === 'pipedream') {
+        return sectionsPageFromPipedream(await listPipedreamSections(projectId, limits));
+      }
+      return sectionsPageFromConnect(await listConnectSections(projectId, limits));
+    },
+    staleTime: 5 * 60_000,
+  };
 }
 
 export async function listConnectCatalogPage(input: {
@@ -231,12 +261,15 @@ export function useCatalog(
     discoverEnabled: boolean;
     /** The category the grid is filtered to, or `null` for everything. */
     focusCategory?: string | null;
+    /** Show the native Computer card: this deployment can connect computers. */
+    computers?: boolean;
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
   const category = opts.focusCategory ?? null;
+  const computers = opts.computers === true;
   const searching = activeQuery.length > 0;
 
   // Probed whenever Easy Connect is the source, whether or not the catalogue is
@@ -302,18 +335,7 @@ export function useCatalog(
   // request. Pipedream's paged endpoint carries its own facet.
   const sectionsCatalogue = source === 'discover' ? 'discover' : easyConnectProvider;
   const sectionsQuery = useQuery({
-    queryKey: ['catalog-sections', projectId, sectionsCatalogue],
-    queryFn: async (): Promise<BrowseSectionsPage> => {
-      const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
-      if (sectionsCatalogue === 'discover') {
-        return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
-      }
-      if (sectionsCatalogue === 'pipedream') {
-        return sectionsPageFromPipedream(await listPipedreamSections(projectId, limits));
-      }
-      return sectionsPageFromConnect(await listConnectSections(projectId, limits));
-    },
-    staleTime: 5 * 60_000,
+    ...catalogSectionsQuery(projectId, sectionsCatalogue),
     enabled:
       opts.enabled &&
       (source === 'discover' || easyConnectRunnable) &&
@@ -328,6 +350,7 @@ export function useCatalog(
     // The native Computers card is ours, not the catalogue's, so it is matched
     // locally and hidden inside a category it does not claim.
     const includeComputers =
+      computers &&
       category === null &&
       (!activeQuery ||
         `${native.name} ${native.description ?? ''}`
@@ -348,6 +371,7 @@ export function useCatalog(
     );
   }, [
     tI18nComplete,
+    computers,
     category,
     activeQuery,
     source,
@@ -393,11 +417,11 @@ export function useCatalog(
   const sections = useMemo<CatalogSection[]>(() => {
     if (searching || category !== null || !sectionsQuery.data) return [];
     return browseSections(sectionsQuery.data, {
-      native: computersCatalogEntry(tI18nComplete),
+      native: computers ? computersCatalogEntry(tI18nComplete) : null,
       cardCount: SECTION_CARD_COUNT,
       title: (label) => localizedSectionTitle(label, tI18nComplete),
     });
-  }, [searching, category, sectionsQuery.data, tI18nComplete]);
+  }, [searching, category, sectionsQuery.data, tI18nComplete, computers]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
   const categories = useMemo<PipedreamCategory[]>(() => {

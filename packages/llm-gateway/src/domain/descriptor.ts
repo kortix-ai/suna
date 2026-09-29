@@ -31,8 +31,17 @@ export interface UpstreamDescriptor {
   apiKey: string;
   /** Stable non-secret identifier for credentials that share one provider. */
   credentialRef?: string;
-  /** Set only for an explicitly selected account-secret pool member. */
+  /**
+   * Set only for an account-secret pool member: an explicitly selected session
+   * pool, or the project-shared accounts a session without a pool falls back to.
+   * A 429 records the key's cooldown and moves the request to the next member.
+   */
   poolSecretId?: string;
+  /**
+   * The login behind `apiKey` can be refreshed (a ChatGPT OAuth login). A 401
+   * asks the host for a fresh descriptor once and retries with it.
+   */
+  refreshableCredential?: boolean;
   /**
    * Provider failover. When the first candidate sets this, a failed dispatch
    * (thrown error or non-2xx before any output) moves the same request to the

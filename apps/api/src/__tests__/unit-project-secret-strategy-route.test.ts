@@ -20,7 +20,11 @@ const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realIam = await import('../iam');
+mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
 let authType: 'service_account' | 'supabase' | 'pat' = 'supabase';
@@ -218,7 +222,9 @@ mock.module('../projects/lib/access', () => ({
   assertProjectCapability: async () => undefined,
 }));
 
+const realSync = await import('../projects/lib/sandbox-env-sync');
 mock.module('../projects/lib/sandbox-env-sync', () => ({
+  ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
     propagations.push({ projectId, options });
     if (propagationGate) await propagationGate;
@@ -506,8 +512,7 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     expect(audits).toHaveLength(1);
   });
 
-  // The DEFAULT shape since docs/specs/2026-08-19-secrets-exposure-usage-model.md
-  // §6: an egress-enforced secret is served by handle substitution, so the
+  // The DEFAULT shape: an egress-enforced secret is served by handle substitution, so the
   // policy is a HOST LIST and there is no injection slot to name. This route
   // used to reject it with `policy.inject is invalid`.
   test('stores a substitution-only policy that names no injection slot', async () => {

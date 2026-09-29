@@ -1,5 +1,5 @@
 /**
- * The session notice (docs/specs/config-releases.md, "Telling the session").
+ * The session notice.
  *
  * The agent must be told, in words, which commit's config it runs and that
  * `/workspace` is a separate checkout. It must be told exactly once per
@@ -14,7 +14,8 @@ import {
   configReleaseNoticePath,
   renderConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '../config-release/notice'
+} from '@/services/config-release/notice'
+import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 
 const COMMIT = '1234567890abcdef1234567890abcdef12345678'
 let dir: string
@@ -33,7 +34,7 @@ describe('the notice text', () => {
   test('names the commit, the checkout, and both ways to catch up', () => {
     const body = renderConfigReleaseNotice({
       sourceCommit: COMMIT,
-      configDir: '.kortix/opencode',
+      sourcePaths: releaseSourcePaths('.kortix/opencode'),
       sessionId: 'ses-1',
     })
     expect(body).toContain('commit 1234567890ab')
@@ -53,7 +54,7 @@ describe('the notice text', () => {
     // agent say why and where to write instead.
     const body = renderConfigReleaseNotice({
       sourceCommit: COMMIT,
-      configDir: '.kortix/opencode',
+      sourcePaths: releaseSourcePaths('.kortix/opencode'),
       releaseDir: '/opt/kortix/config/abc123',
     })
     expect(body).toContain('read-only from `/opt/kortix/config/abc123`')
@@ -61,14 +62,14 @@ describe('the notice text', () => {
   })
 
   test('without a known release dir it still names the store, never "null"', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, configDir: null })
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths(null) })
     expect(body).toContain('/opt/kortix/config/<release>')
     expect(body).not.toContain('null')
     expect(body).not.toContain('undefined')
   })
 
   test('stays factual when the commit or the session id is unknown', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: null, configDir: null })
+    const body = renderConfigReleaseNotice({ sourceCommit: null, sourcePaths: releaseSourcePaths(null) })
     expect(body).toContain('may be behind the base branch')
     expect(body).toContain('kortix sessions reload <session id>')
     expect(body).toContain('`/workspace/agents`, `/workspace/skills` or `/workspace/harnesses/opencode`')
@@ -77,26 +78,26 @@ describe('the notice text', () => {
   })
 
   test('a legacy project is told about its one config dir only', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, configDir: '.kortix/opencode' })
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') })
     expect(body).toContain('Editing a file under `/workspace/.kortix/opencode` does NOT change')
     expect(body).not.toContain('/workspace/skills')
   })
 
   test('names the project config dir when the manifest moved it', () => {
-    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, configDir: 'config/agents' })
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('config/agents') })
     expect(body).toContain('/workspace/config/agents')
   })
 })
 
 describe('writing it', () => {
   test('a converged session is told once, with the right commit', () => {
-    expect(writeConfigReleaseNotice({ sourceCommit: COMMIT, configDir: '.kortix/opencode' }, path)).toBe('written')
+    expect(writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)).toBe('written')
     expect(readFileSync(path, 'utf8')).toContain('commit 1234567890ab')
     expect(configReleaseNoticePath(path)).toBe(path)
   })
 
   test('an unchanged convergence writes nothing at all', () => {
-    const notice = { sourceCommit: COMMIT, configDir: '.kortix/opencode' }
+    const notice = { sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }
     writeConfigReleaseNotice(notice, path)
     const before = statSync(path).mtimeMs
     expect(writeConfigReleaseNotice(notice, path)).toBe('unchanged')
@@ -104,16 +105,16 @@ describe('writing it', () => {
   })
 
   test('a new release rewrites it with the new commit', () => {
-    writeConfigReleaseNotice({ sourceCommit: COMMIT, configDir: '.kortix/opencode' }, path)
+    writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)
     const next = 'fedcba9876543210fedcba9876543210fedcba98'
-    expect(writeConfigReleaseNotice({ sourceCommit: next, configDir: '.kortix/opencode' }, path)).toBe('written')
+    expect(writeConfigReleaseNotice({ sourceCommit: next, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)).toBe('written')
     const body = readFileSync(path, 'utf8')
     expect(body).toContain('commit fedcba987654')
     expect(body).not.toContain('1234567890ab')
   })
 
   test('clearing it removes the file and the instruction path', () => {
-    writeConfigReleaseNotice({ sourceCommit: COMMIT, configDir: '.kortix/opencode' }, path)
+    writeConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') }, path)
     clearConfigReleaseNotice(path)
     expect(existsSync(path)).toBe(false)
     expect(configReleaseNoticePath(path)).toBeNull()

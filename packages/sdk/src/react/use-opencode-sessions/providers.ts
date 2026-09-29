@@ -19,14 +19,13 @@ import {
   filterToGatewayProviders,
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
-  LLM_PROVIDER_CREDENTIALS,
   mergeNativeProviderLists,
-  mergeProjectSecretConnectedProviders,
   nativeProviderListFromCatalog,
+  nativeRuntimeProviderList,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasModels,
-} from '../provider-selection';
+} from '../../core/models/provider-selection';
 import { shouldLoadProjectModelPicker } from './provider-load-plan';
 
 // ============================================================================
@@ -97,18 +96,14 @@ export function useOpenCodeProviders() {
     queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
-      let rawProviders = normalizeProviderList(unwrap(result));
+      let providers = normalizeProviderList(unwrap(result));
       if (projectId) {
         const secrets = await listProjectSecrets(projectId);
         const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
         const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
-        rawProviders = mergeProjectSecretConnectedProviders(
-          rawProviders,
-          secretNames,
-          LLM_PROVIDER_CREDENTIALS,
-        );
+        // The same transform `pickerProviderList` applies (framework-free core).
+        providers = nativeRuntimeProviderList(providers, secretNames);
       }
-      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
 
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero

@@ -32,6 +32,7 @@ const PROJECT = '11111111-1111-4111-8111-111111111111';
 const USER = '22222222-2222-4222-8222-222222222222';
 const GROUP = '33333333-3333-4333-8333-333333333333';
 const ASSIGNMENT = '44444444-4444-4444-4444-444444444444';
+const CONNECTION = '88888888-8888-4888-8888-888888888888';
 
 const ROLES = [
   { role_id: 'builtin:manager', key: 'manager', name: 'Manager', description: null, resource_type: 'project', is_system: true, account_id: null },
@@ -74,6 +75,24 @@ const ASSIGNMENTS = [
     expires_at: '2026-09-01T00:00:00.000Z',
     granted_by: 'user_1',
     source: 'scim',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    assignment_id: '77777777-7777-4777-8777-777777777777',
+    account_id: 'account_1',
+    principal_type: 'project',
+    principal_id: PROJECT,
+    role_id: 'sys_agent_user',
+    role_key: 'agent-user',
+    role_is_system: true,
+    scope_type: 'project',
+    scope_id: PROJECT,
+    object_type: 'connection',
+    object_id: CONNECTION,
+    expires_at: null,
+    granted_by: 'user_1',
+    source: 'manual',
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   },
@@ -255,7 +274,7 @@ describe('kortix access assignments', () => {
     const code = await runAccess(['assignments', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout) as { assignments: Array<{ assignment_id: string }> };
-    expect(parsed.assignments).toHaveLength(2);
+    expect(parsed.assignments).toHaveLength(ASSIGNMENTS.length);
     expect(parsed.assignments[0].assignment_id).toBe(ASSIGNMENT);
   });
 });
@@ -362,6 +381,87 @@ describe('kortix access grant (assignment form)', () => {
     ]);
     expect(code).toBe(0);
     expect(post()!.body.expires_at).toBe('2026-12-01T00:00:00.000Z');
+  });
+});
+
+describe('kortix access grant — everyone in the project, and connector accounts', () => {
+  const post = () => requests.find((r) => r.method === 'POST' && r.url.includes('/iam/assignments'));
+
+  test('--everyone --agent grants the agent to the project principal', async () => {
+    const code = await runAccess(['grant', '--everyone', '--agent', 'support-bot']);
+    expect(code).toBe(0);
+    expect(post()!.body).toMatchObject({
+      principal_type: 'project',
+      principal_id: PROJECT,
+      role_key: 'agent-user',
+      scope_type: 'project',
+      scope_id: PROJECT,
+      object_type: 'agent',
+      object_id: 'support-bot',
+    });
+    expect(stripAnsi(stdout)).toContain('to everyone in project');
+  });
+
+  test('--connection narrows a shared connector account to a group', async () => {
+    const code = await runAccess(['grant', '--group', GROUP, '--connection', CONNECTION]);
+    expect(code).toBe(0);
+    expect(post()!.body).toMatchObject({
+      principal_type: 'group',
+      principal_id: GROUP,
+      role_key: 'agent-user',
+      scope_type: 'project',
+      scope_id: PROJECT,
+      object_type: 'connection',
+      object_id: CONNECTION,
+    });
+    expect(stripAnsi(stdout)).toContain(`on connection ${CONNECTION}`);
+  });
+
+  test('--everyone --connection opens a narrowed account to the whole project again', async () => {
+    const code = await runAccess(['grant', '--everyone', '--connection', CONNECTION]);
+    expect(code).toBe(0);
+    expect(post()!.body).toMatchObject({
+      principal_type: 'project',
+      principal_id: PROJECT,
+      object_type: 'connection',
+      object_id: CONNECTION,
+    });
+  });
+
+  test('--everyone without an object is refused before any request: it holds no role', async () => {
+    const code = await runAccess(['grant', '--everyone', '--role', 'manager']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('--everyone holds an agent or a connection');
+    expect(post()).toBeUndefined();
+  });
+
+  test('--everyone at account scope is refused: an object grant is project-scoped', async () => {
+    const code = await runAccess(['grant', '--everyone', '--agent', 'support-bot', '--account']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('project-scoped');
+    expect(post()).toBeUndefined();
+  });
+
+  test('--agent and --connection together are refused: one object per grant', async () => {
+    const code = await runAccess(['grant', '--user', USER, '--agent', 'a', '--connection', CONNECTION]);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('Pass one object');
+    expect(post()).toBeUndefined();
+  });
+
+  test('--everyone with --user is two principals, and names both', async () => {
+    const code = await runAccess(['grant', '--everyone', '--user', USER, '--agent', 'support-bot']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('--user and --everyone');
+  });
+
+  test('the listing names a grant to the project principal "everyone"', async () => {
+    const code = await runAccess(['assignments']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('everyone');
+    expect(out).toContain(`connection:${CONNECTION}`);
+    expect(out).not.toContain(`project:${PROJECT}`);
   });
 });
 

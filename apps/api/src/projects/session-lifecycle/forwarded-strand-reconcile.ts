@@ -43,15 +43,14 @@ import {
   type StoredSandboxTurn,
   closeSandboxTurnByMessageId,
 } from '../sandbox-turn-lifecycle';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { wireIdTime } from '../wire-message-id';
+import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
+import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, parsePlacementTip, strandedPlacement, tipIsBusy } from './forwarded-placement';
+import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
 
-const WORKSPACE = '/workspace';
 /** The stranded prompt and the assistant that proves it both sit at the tip. */
 const TIP_LIMIT = 12;
 const MAX_STRAND_REDELIVERIES = 3;
@@ -117,26 +116,11 @@ const liveDeps: StrandReconcileDeps = {
   },
   async readTip(sessionId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return null;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return null;
-    return parsePlacementTip(await res.json().catch(() => null));
+    return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok || res.status === 404;
+    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
   },
   async requeueStranded(sessionId, messageId) {
     const [row] = await db
@@ -259,7 +243,7 @@ export async function reconcileForwardedTurnsAtEnd(
   for (const turn of forwarded) {
     const at = wireIdTime(turn.messageId!);
     if (at === null || turn.messageId === endedMessageId) continue;
-    if (at < endedAt) older.push(turn);
+    if (wireIdClockDelta(at, endedAt) < BigInt(0)) older.push(turn);
     else newer.push(turn);
   }
   for (const turn of older) {
@@ -307,8 +291,21 @@ export async function reconcileForwardedTurnsAtEnd(
   // row is a send still on the wire), the message must actually be on the
   // tip, and the tip must not be mid-step (an open newest assistant is a
   // fresh turn that will read it).
+  // AND OLD ENOUGH — the same floor the reaper's own redelivery defers on.
+  // "Accepted, unanswered, tip idle" is also what the seconds between the box
+  // accepting a FRESH prompt and starting its step look like, and the end
+  // relay lands in exactly that window (prod 2026-09-28: a ~20 h spike of
+  // orphan deletions where every deleted prompt was ≤3 s old, 99% of them
+  // non-redeliverable, so each deletion was a lost message the client then
+  // re-sent). Below ORPHANED_PROMPT_MIN_AGE_MS the verdict is not
+  // established: leave the row open — the next turn end re-asks it, and the
+  // reaper's redelivery runs this same gate at ≥ the floor. A row that
+  // proves no age never qualifies, like the reaper's legacy records.
   for (const { turn, verdict } of verdicts) {
+    const orphanAgeMs = turn.startedAtMs === null ? null : Date.now() - turn.startedAtMs;
     const orphanedAtTip =
+      orphanAgeMs !== null &&
+      orphanAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS &&
       !verdict.stranded &&
       !verdict.answered &&
       turn.state === 'active' &&

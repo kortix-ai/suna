@@ -12,7 +12,6 @@ import {
   View,
   Pressable,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +29,7 @@ import {
 } from '@/lib/icons';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -250,7 +250,7 @@ function ScheduleCreateSheet({
 
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: withAlpha(fg, 0.08) }}>
         <Button size="lg" onPress={handleSave} disabled={!canSave} className="rounded-full">
-          {create.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
+          {create.isPending && <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />}
           <Text>Create schedule</Text>
         </Button>
       </View>

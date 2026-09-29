@@ -7,12 +7,34 @@ import { runWorkerTick } from './audit-scope';
 const PAGE_SIZE = 1_000;
 const ACTIVE_DELAY_MS = 100;
 const IDLE_DELAY_MS = 60_000;
-const ERROR_DELAY_MS = 5_000;
+// Escalating retry delay for a page that keeps failing: 5s, 30s, 120s, then
+// capped at 300s. A flat 5s retry forever burns I/O on every replica (the
+// query is the same expensive scan every time) without ever making progress.
+const ERROR_DELAYS_MS = [5_000, 30_000, 120_000, 300_000];
+// After this many consecutive failures on the SAME account, stop retrying it
+// and advance the cursor past it. One permanently broken account must not
+// stall reconciliation for every account after it forever.
+const MAX_CONSECUTIVE_ACCOUNT_FAILURES = 3;
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let stopped = true;
 let active: Promise<void> | null = null;
 let lastScannedAccountId: string | null = null;
+let failureState: AuditReconciliationFailureState = { consecutiveFailures: 0, failingAccountId: null };
+
+/** Raised by {@link runAuditReconciliationPage} so the caller knows which
+ * account was being reconciled when the page failed, without changing the
+ * function's success-path return shape. */
+export class AuditReconciliationPageError extends Error {
+  readonly accountId: string;
+
+  constructor(accountId: string, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'AuditReconciliationPageError';
+    this.accountId = accountId;
+    this.cause = cause;
+  }
+}
 
 interface PendingAccount extends Record<string, unknown> {
   accountId: string;
@@ -29,6 +51,46 @@ export function nextAuditReconciliationCursor(
 ): string | null {
   if (!page.accountId) return null;
   return page.result?.complete ? page.accountId : previousAccountId;
+}
+
+export interface AuditReconciliationFailureState {
+  consecutiveFailures: number;
+  failingAccountId: string | null;
+}
+
+export interface AuditReconciliationFailureDecision {
+  state: AuditReconciliationFailureState;
+  delayMs: number;
+  /** Set when the same account has failed `MAX_CONSECUTIVE_ACCOUNT_FAILURES`
+   * times in a row: the caller should advance its cursor to this account id
+   * so the next tick scans past it instead of retrying it again. */
+  skipToAccountId: string | null;
+}
+
+/**
+ * Decide the retry delay for a failed page, and whether to give up on the
+ * account that failed and move on.
+ *
+ * Pure so the escalation/skip policy is testable without a database or fake
+ * timers, same as {@link nextAuditReconciliationCursor}.
+ */
+export function nextAuditReconciliationFailureDecision(
+  previousState: AuditReconciliationFailureState,
+  failedAccountId: string | null,
+): AuditReconciliationFailureDecision {
+  const sameAccount =
+    failedAccountId !== null && failedAccountId === previousState.failingAccountId;
+  const consecutiveFailures = sameAccount ? previousState.consecutiveFailures + 1 : 1;
+  const skip = failedAccountId !== null && consecutiveFailures >= MAX_CONSECUTIVE_ACCOUNT_FAILURES;
+  const delayMs =
+    ERROR_DELAYS_MS[Math.min(consecutiveFailures - 1, ERROR_DELAYS_MS.length - 1)];
+  return {
+    state: skip
+      ? { consecutiveFailures: 0, failingAccountId: null }
+      : { consecutiveFailures, failingAccountId: failedAccountId },
+    delayMs,
+    skipToAccountId: skip ? failedAccountId : null,
+  };
 }
 
 /**
@@ -51,7 +113,12 @@ export async function runAuditReconciliationPage(
   const accountId = Array.from(rows as unknown as PendingAccount[])[0]?.accountId ?? null;
   if (!accountId) return { accountId: null, result: null };
 
-  const result = await reconcileAuditEvents(accountId, PAGE_SIZE);
+  let result: AuditReconciliationResult;
+  try {
+    result = await reconcileAuditEvents(accountId, PAGE_SIZE);
+  } catch (error) {
+    throw new AuditReconciliationPageError(accountId, error);
+  }
   if (result.complete) {
     await recordAuditEvent({
       accountId,
@@ -76,6 +143,7 @@ async function tick(): Promise<void> {
   try {
     const previousAccountId = lastScannedAccountId;
     const page = await runAuditReconciliationPage(previousAccountId);
+    failureState = { consecutiveFailures: 0, failingAccountId: null };
     if (page.accountId) {
       // Do not advance past an account while it still has another bounded
       // source-ledger page. Advancing here limited a large backfill to one
@@ -87,11 +155,21 @@ async function tick(): Promise<void> {
       schedule(IDLE_DELAY_MS);
     }
   } catch (error) {
+    const failedAccountId = error instanceof AuditReconciliationPageError ? error.accountId : null;
+    const decision = nextAuditReconciliationFailureDecision(failureState, failedAccountId);
+    failureState = decision.state;
+    if (decision.skipToAccountId) {
+      console.warn(
+        '[audit-reconciliation] skipping account after repeated failures',
+        decision.skipToAccountId,
+      );
+      lastScannedAccountId = decision.skipToAccountId;
+    }
     console.warn(
       '[audit-reconciliation] page failed',
       error instanceof Error ? error.message : String(error),
     );
-    schedule(ERROR_DELAY_MS);
+    schedule(decision.delayMs);
   }
 }
 
@@ -112,6 +190,7 @@ export function startAuditReconciliationWorker(): void {
   if (!stopped) return;
   stopped = false;
   lastScannedAccountId = null;
+  failureState = { consecutiveFailures: 0, failingAccountId: null };
   schedule(0);
 }
 
@@ -120,5 +199,6 @@ export async function stopAuditReconciliationWorker(): Promise<void> {
   if (timer) clearTimeout(timer);
   timer = null;
   lastScannedAccountId = null;
+  failureState = { consecutiveFailures: 0, failingAccountId: null };
   await active;
 }

@@ -19,7 +19,7 @@ import {
   isShallowRepo,
   materializeRepo,
   scheduleHistoryBackfill,
-} from '../git'
+} from '@/lib/git/git'
 import { testOpenCodeConfig as baseConfig } from './helpers/open-code-harness'
 
 function git(args: string[], cwd?: string) {
@@ -81,6 +81,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Module-level state: clear it on the way OUT too, or the next file in this
+  // bun process inherits it (see test-state-reset-tripwire.test.ts).
+  __setScaffoldRepoPathForTests()
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 

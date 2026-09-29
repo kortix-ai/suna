@@ -246,7 +246,7 @@ export async function convergeSessionConfig(
     if (!target) return 'no-session';
 
     // ── CHOKEPOINT — the `config_releases` flag for every convergence
-    // trigger (docs/specs/config-releases.md, "Feature flag"). Resume,
+    // trigger. Resume,
     // restart, turn end, an API write that moved the base branch, and a push
     // through the git proxy ALL arrive here. Off ⇒ nothing reaches the box
     // and no release is requested, so OpenCode keeps reading the session's

@@ -11,7 +11,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import { humanizeSearchQuery } from '@/features/session/tool/shared/search-query';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';

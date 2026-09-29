@@ -84,6 +84,22 @@ test('saving prevents navigation away from the pending selection', () => {
   expect(html).toMatch(/<button[^>]*disabled[^>]*>Manage provider keys<\/button>/);
 });
 
+describe('both pool editors share resource states', () => {
+  for (const selection of [undefined, {}]) {
+    const mode = selection ? 'new' : 'session';
+    test(`${mode} lists the same usable providers and excludes unusable keys`, () => {
+      const html = render({ selection, resources: [key('Primary'), { ...key('Secondary'), provider_id: 'openai' }, { ...key('Inactive'), active: false }] });
+      expect(html).toContain('Primary');
+      expect(html).not.toContain('Inactive');
+      expect(html).toContain('Provider');
+    });
+    test(`${mode} displays the loading state when resources are not ready`, () => {
+      const html = render({ selection, resources: [key('Primary')] });
+      expect(html).not.toContain('Keys could not be loaded.');
+    });
+  }
+});
+
 describe('a session offers only keys it can use when it runs', () => {
   const team = { ...key('Team key'), access_mode: 'project', granted_user_ids: [] };
   const mine = { ...key('My key'), access_mode: 'members', granted_user_ids: ['me'] };
@@ -110,4 +126,16 @@ describe('a session offers only keys it can use when it runs', () => {
     const own = render({ resources: [chatgpt], session: { visibility: 'private', created_by: 'me' }, providerId: 'codex' });
     expect(own).toContain('Using your default ChatGPT connection');
   });
+});
+
+test('a ChatGPT account whose login stopped working says so where a session selects it', () => {
+  const chatGpt = (label: string, needsReauthAt: string | null) =>
+    ({ ...key(label), provider_id: 'codex', name: 'CODEX_AUTH_JSON', needs_reauth_at: needsReauthAt });
+  const html = render({
+    resources: [chatGpt('ChatGPT · Work', '2026-09-25T10:00:00.000Z'), chatGpt('ChatGPT · Home', null)],
+    providerId: 'codex',
+  });
+  expect(html).toContain('ChatGPT · Work');
+  expect(html).toContain('ChatGPT · Home');
+  expect(html.match(/Needs reconnection/g)).toHaveLength(1);
 });

@@ -5,10 +5,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { llmPriceMarkup } from '../../billing/services/tiers';
+import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { cachedManagedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -142,7 +145,18 @@ projectsApp.openapi(
       principalUserId: loaded.userId,
       personalUserId: await requestPersonalOwner(c, loaded),
     });
-    return c.json(catalog);
+    const quotes = await cachedManagedPricingRoutes(
+      config.MORPH_MANAGED_MODELS,
+      llmPriceMarkup(),
+      Boolean(config.MORPH_API_KEY),
+      { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
+    );
+    return c.json({
+      ...catalog,
+      managedPricingRoutes: Object.fromEntries(
+        Object.entries(quotes).filter(([id]) => id in catalog.models),
+      ),
+    });
   },
 );
 
@@ -305,6 +319,10 @@ projectsApp.openapi(
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
       200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      // The catalog is identical for every project — only the auth check is
+      // project-scoped. A repeat with a matching If-None-Match ends here with
+      // no body instead of re-transferring the ~4.5MB payload.
+      304: { description: 'Not modified — the catalog revision has not changed' },
       ...errors(403, 404),
     },
   }),
@@ -312,7 +330,20 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    return c.json(runtimeModelCatalog.snapshot());
+    // Global, project-independent data (see comment above): the ETag is
+    // derived from the runtime catalog's own revision counter, not from
+    // hashing the ~4.5MB body on every request. `revision` only advances on
+    // an actual models.dev refresh (hourly at most), so this is cheap and
+    // still exact. `max-age` lets the browser's HTTP cache skip the network
+    // round trip entirely for the hour after the first fetch, matching the
+    // 1h `staleTime` every web consumer already sets on this query.
+    const status = runtimeModelCatalog.status();
+    const etag = `W/"llm-catalog-${status.revision}-${status.providerCount}-${status.modelCount}"`;
+    c.header('Cache-Control', 'private, max-age=3600');
+    c.header('ETag', etag);
+    if (c.req.header('if-none-match') === etag) return c.body(null, 304);
+    c.header('Content-Type', 'application/json');
+    return c.body(JSON.stringify(runtimeModelCatalog.snapshot()), 200);
   },
 );
 

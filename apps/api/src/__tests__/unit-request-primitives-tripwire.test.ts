@@ -68,7 +68,7 @@ const XFF_ALLOW: Record<string, string> = {
   'scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
   // TODO(follow-up): convert once PR #7403 lands. The raw header is stored on
   // purpose as webhook delivery metadata, so the follow-up keeps the raw value.
-  'projects/lib/triggers.ts': 'open PR #7403 edits this file; stores the raw header as webhook metadata',
+  'projects/lib/trigger-webhook-auth.ts': 'webhook payload stores the raw forwarded header as metadata',
 };
 
 // Any 8-4-4-4-12 hex regex literal, strict or loose.
@@ -94,8 +94,6 @@ const JSON_OBJECT_ALLOW: Record<string, string> = {};
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
   'shared/html.ts': 'the one implementation',
-  // TODO(follow-up): import shared/html.ts once PR #7180 lands.
-  'apps/public-proxy.ts': 'open PR #7180 edits this file',
 };
 
 describe('request primitives have one implementation', () => {

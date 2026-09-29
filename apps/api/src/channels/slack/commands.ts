@@ -2,7 +2,8 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { escapeMrkdwn, formatRelativeTime, repoOgImage, sessionWebUrl } from './util';
+import { escapeMrkdwn, formatRelativeTime, sessionWebUrl } from './util';
+import { SLACK_PREVIEW_WAIT_MS, repoPreviewImages } from '../repo-preview';
 import { currentChannelSelection } from './selection';
 import { buildSlackLoginUrl } from './login';
 import { findBotUserIdByName, isBotUser } from '../slack-api';
@@ -187,17 +188,20 @@ async function slashSessions(ctx: SlashCtx): Promise<SlashResponse> {
       ],
     };
   }
+  // Only previews known to load: a private repository has none (repo-preview.ts).
+  const images = await repoPreviewImages(rows.map((r) => r.repoUrl), { waitMs: SLACK_PREVIEW_WAIT_MS });
   return {
     response_type: 'ephemeral',
     blocks: [
       { type: 'header', text: { type: 'plain_text', text: 'Recent sessions', emoji: true } },
       ...rows.map((r) => {
-        const og = repoOgImage(r.repoUrl);
+        const og = images.get(r.repoUrl);
+        const title = r.title ? `*${escapeMrkdwn(r.title)}*\n${escapeMrkdwn(r.projectName)}` : `*${escapeMrkdwn(r.projectName)}*`;
         return {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*${escapeMrkdwn(r.projectName)}*  ·  ${formatRelativeTime(r.lastMessageAt)}\n_<${sessionWebUrl(config.FRONTEND_URL, r.projectId, r.sessionId)}|Open session>_`,
+            text: `${title}  ·  ${formatRelativeTime(r.lastMessageAt)}\n_<${sessionWebUrl(config.FRONTEND_URL, r.projectId, r.sessionId)}|Open session>_`,
           },
           ...(og ? { accessory: { type: 'image', image_url: og, alt_text: `${r.projectName} repo` } } : {}),
         };

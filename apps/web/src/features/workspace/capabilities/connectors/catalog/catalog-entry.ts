@@ -43,13 +43,13 @@ export type CatalogEntry =
     })
   | (CatalogEntryFields & { source: 'computer' });
 
-/** Native platform provider. The tunnel fleet is its account directory. */
+/** Native platform provider. Each member's paired machine is one of its accounts. */
 export function computersCatalogEntry(tI18nComplete: UiTranslator): CatalogEntry {
   return {
     source: 'computer',
     key: 'computer:computers',
     slug: 'computers',
-    name: 'Computer Tunnels',
+    name: 'Computer',
     description: tI18nComplete.raw('text070855f4fe8d'),
     icon: null,
     categories: ['developer-tools'],

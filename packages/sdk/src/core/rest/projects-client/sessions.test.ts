@@ -6,7 +6,9 @@ import type {
   ProjectSession,
   RemovedSessionPrompt,
   SessionConfigRelease,
+  SessionManagedCatalogState,
   SessionPrompt,
+  SessionPublicShare,
   SessionReloadResult,
   SessionTurn,
   SessionTurnStatus,
@@ -16,6 +18,7 @@ import {
   sessionParentId,
   createSessionPrompt,
   createSessionPublicShare,
+  findActiveTranscriptShare,
   claimWarmProjectSession,
   deleteProjectSession,
   deleteSessionPrompt,
@@ -199,6 +202,62 @@ test('createSessionPublicShare POSTs the share input', async () => {
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(input);
   expect(result.share.share_id).toBe('SH1');
+});
+
+test('createSessionPublicShare mints a transcript share with { transcript: true }', async () => {
+  nextResponse = { status: 201, body: { share: { share_id: 'SH2', resource_type: 'transcript' } } };
+  const result = await createSessionPublicShare('P1', 'S1', { transcript: true });
+  expect(last().url).toContain('/projects/P1/sessions/S1/public-shares');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ transcript: true });
+  expect(result.share.resource_type).toBe('transcript');
+});
+
+function share(overrides: Partial<SessionPublicShare>): SessionPublicShare {
+  return {
+    share_id: 'SH',
+    session_id: 'S1',
+    project_id: 'P1',
+    resource_type: 'transcript',
+    label: 'Conversation',
+    port: null,
+    path: '/',
+    file_path: null,
+    mode: 'view',
+    allow_websocket: false,
+    expires_at: null,
+    revoked_at: null,
+    created_at: '2026-09-01T00:00:00.000Z',
+    updated_at: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+test('findActiveTranscriptShare returns the newest live transcript share', () => {
+  const now = new Date('2026-09-26T00:00:00.000Z');
+  const shares = [
+    share({ share_id: 'preview', resource_type: 'preview', port: 3000 }),
+    share({ share_id: 'old', created_at: '2026-09-01T00:00:00.000Z' }),
+    share({ share_id: 'new', created_at: '2026-09-20T00:00:00.000Z', expires_at: '2026-10-01T00:00:00.000Z' }),
+    share({ share_id: 'revoked', created_at: '2026-09-25T00:00:00.000Z', revoked_at: '2026-09-25T01:00:00.000Z' }),
+    share({ share_id: 'expired', created_at: '2026-09-24T00:00:00.000Z', expires_at: '2026-09-25T00:00:00.000Z' }),
+  ];
+  expect(findActiveTranscriptShare(shares, now)?.share_id).toBe('new');
+});
+
+test('findActiveTranscriptShare is null when no transcript share is live', () => {
+  const now = new Date('2026-09-26T00:00:00.000Z');
+  expect(findActiveTranscriptShare([], now)).toBeNull();
+  expect(
+    findActiveTranscriptShare(
+      [
+        share({ resource_type: 'file', file_path: '/workspace/a.md' }),
+        share({ revoked_at: '2026-09-02T00:00:00.000Z' }),
+        share({ expires_at: '2026-09-26T00:00:00.000Z' }),
+      ],
+      now,
+    ),
+  ).toBeNull();
 });
 
 test('revokeSessionPublicShare DELETEs the specific share', async () => {
@@ -487,6 +546,17 @@ test('getSessionTranscriptSync pages older windows with the previous window curs
   expect(envelope.next_cursor).toBe('msg_older');
 });
 
+test("getSessionTranscriptSync reads a sub-agent's own window with `child`", async () => {
+  nextResponse = {
+    status: 200,
+    body: { available: false, reason: null, source: 'none', complete: false, captured_at: null, opencode_session_id: 'ses_sub', message_count: 0, messages: [] },
+  };
+  await getSessionTranscriptSync('P1', 'S1', { limit: 40, child: 'ses_sub' });
+  expect(last().url).toContain('child=ses_sub');
+  await getSessionTranscriptSync('P1', 'S1', { limit: 40 });
+  expect(last().url).not.toContain('child=');
+});
+
 test('getSessionTranscriptSync omits the cursor on a first window', async () => {
   nextResponse = {
     status: 200,
@@ -676,6 +746,55 @@ test('getProjectSessionConfigState carries the release block unchanged', async (
   const result = await getProjectSessionConfigState('P1', 'S1');
   const release: SessionConfigRelease | undefined = result.release;
   expect(release).toEqual(RELEASE_FALLBACK);
+});
+
+const MANAGED_CATALOG_STALE: SessionManagedCatalogState = {
+  ids: null,
+  fallback_reason:
+    'servable models unavailable at https://gw.kortix.test/v1/models?scope=picker; running the baked/bundled managed lineup',
+};
+
+test('getProjectSessionConfigState carries the managed_catalog block unchanged — the SAME place a config fallback is visible', async () => {
+  // 2026-09-26: a real dev box woken that day answered every OTHER health
+  // check clean (current cli/skills, a proven config release) and STILL
+  // served a month-old managed lineup. This is the field that makes that
+  // fact readable by a client instead of buried in a daemon log line.
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: false,
+      sandbox_reachable: true,
+      managed_catalog: MANAGED_CATALOG_STALE,
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  const managedCatalog: SessionManagedCatalogState | undefined = result.managed_catalog;
+  expect(managedCatalog).toEqual(MANAGED_CATALOG_STALE);
+});
+
+test('getProjectSessionConfigState carries confirmed managed ids unchanged', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      base_ref: 'main',
+      running_etag: null,
+      latest_etag: null,
+      commit_sha: 'c'.repeat(40),
+      stale: false,
+      sandbox_reachable: true,
+      managed_catalog: {
+        ids: ['deepseek-v4.1-flash', 'glm-5.3-flash', 'kimi-k3'],
+        fallback_reason: null,
+      },
+    },
+  };
+  const result = await getProjectSessionConfigState('P1', 'S1');
+  expect(result.managed_catalog?.ids).toEqual(['deepseek-v4.1-flash', 'glm-5.3-flash', 'kimi-k3']);
+  expect(result.managed_catalog?.fallback_reason).toBeNull();
 });
 
 test('getProjectSessionConfigState from an API without releases has no release block', async () => {

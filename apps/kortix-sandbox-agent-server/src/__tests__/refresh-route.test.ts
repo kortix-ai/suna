@@ -16,17 +16,23 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode, VerifiedReloadResult } from '../harness/open-code/lifecycle'
-import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
+import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import {
   buildOpenCodeTestApp,
   signTestUserContext,
   TEST_SANDBOX_TOKEN,
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
+import { resolveHarness } from '@/harness/harness'
+import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 const roots: string[] = []
 
@@ -96,7 +102,7 @@ function fakeOpencode(
       reloads.push(reloadOpts)
       return opts.reload
         ? opts.reload(reloadOpts.forceFail)
-        : { outcome: 'swapped' as const, port: 4097, pid: 2, turnEnded: false }
+        : { outcome: 'swapped' as const, port: 4097, pid: 2, turnEnded: false, orphanedMessageId: null }
     },
   } as unknown as Opencode
   return { opencode, reloads }
@@ -239,7 +245,7 @@ describe('repo work and reload', () => {
     const lifecycle = fakeOpencode({
       reload: async () => {
         await held
-        return { outcome: 'swapped', port: 4097, pid: 2, turnEnded: false }
+        return { outcome: 'swapped', port: 4097, pid: 2, turnEnded: false, orphanedMessageId: null }
       },
     })
     const daemon = app({ projectTarget: repo.worktree, repoUrl: repo.remote, branchName: 'main' }, lifecycle)

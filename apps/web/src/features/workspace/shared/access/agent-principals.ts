@@ -1,6 +1,6 @@
 'use client';
 
-// Agents as principals (spec `docs/specs/2026-09-22-agents-as-principals.md`).
+// Agents as principals.
 //
 // An agent session authorizes as the AGENT (its service account), not as the
 // person who launched it:
@@ -161,6 +161,40 @@ export function useAgentIdentities(accountId: string | undefined, enabled = true
   });
 }
 
+/** Query key for one account's IAM roles list — shared by every reader
+ *  (`useAgentAuthority` below, `ProjectAgentAccessList`) and by the early
+ *  prefetch in `access-projects-tab.tsx`, so all three land in one cache
+ *  entry instead of the literal `['iam-roles', accountId]` drifting between
+ *  hand-copied call sites. */
+export const agentRolesQueryKey = (accountId: string | undefined) =>
+  ['iam-roles', accountId] as const;
+
+/** Query key for one project's service-account role assignments — shared with
+ *  {@link fetchProjectAgentAssignments} so an early prefetch (e.g.
+ *  `access-projects-tab.tsx`, which knows `accountId`/`projectId` long before
+ *  `ProjectAgentAccessList` mounts) lands in the exact cache slot this hook
+ *  reads, instead of a second request under a slightly different key. */
+export const projectAgentAssignmentsQueryKey = (
+  accountId: string | undefined,
+  projectId: string,
+) => ['iam-assignments', accountId, 'service_account', projectId] as const;
+
+/** The two-request merge behind {@link useProjectAgentAssignments}, factored
+ *  out so a prefetch can call the SAME fetch — not a hand-copied duplicate
+ *  that silently drifts from the filter below. */
+export async function fetchProjectAgentAssignments(
+  accountId: string,
+  projectId: string,
+): Promise<RoleAssignment[]> {
+  const [project, account] = await Promise.all([
+    listAssignments(accountId, { scopeType: 'project', scopeId: projectId }),
+    listAssignments(accountId, { scopeType: 'account' }),
+  ]);
+  return [...project, ...account].filter(
+    (a) => a.principal_type === 'service_account' && !a.object_type,
+  );
+}
+
 /** Every service-account role assignment in one project. Admin-only. */
 export function useProjectAgentAssignments(
   accountId: string | undefined,
@@ -168,16 +202,8 @@ export function useProjectAgentAssignments(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: ['iam-assignments', accountId, 'service_account', projectId],
-    queryFn: async () => {
-      const [project, account] = await Promise.all([
-        listAssignments(accountId as string, { scopeType: 'project', scopeId: projectId }),
-        listAssignments(accountId as string, { scopeType: 'account' }),
-      ]);
-      return [...project, ...account].filter(
-        (a) => a.principal_type === 'service_account' && !a.object_type,
-      );
-    },
+    queryKey: projectAgentAssignmentsQueryKey(accountId, projectId),
+    queryFn: () => fetchProjectAgentAssignments(accountId as string, projectId),
     enabled: enabled && !!accountId,
     staleTime: 30_000,
     retry: false,
@@ -225,7 +251,7 @@ export function useAgentAuthority({
     [assignmentsQuery.data, identity, projectId],
   );
   const rolesQuery = useQuery({
-    queryKey: ['iam-roles', accountId],
+    queryKey: agentRolesQueryKey(accountId),
     queryFn: () => listRoles(accountId as string),
     enabled: !!accountId && rows.length > 0,
     staleTime: 30_000,

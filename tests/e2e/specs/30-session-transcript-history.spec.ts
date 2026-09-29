@@ -83,21 +83,12 @@ test('30 — saved session history paints while sandbox start and the open bundl
       waitUntil: 'domcontentloaded',
     });
     await expect(page.getByRole('heading', { name: 'Feature flags', exact: true })).toBeVisible();
-    const row = featureFlagRow(page.locator('body'), page, 'Session Transcript History');
-    const toggle = row.getByRole('switch');
-    await expect(toggle).not.toBeChecked();
-    const patched = page.waitForResponse(
-      (r) =>
-        r.url().endsWith(`/projects/${projectId}/features`) && r.request().method() === 'PATCH',
-    );
-    await toggle.click();
-    const changed = await patched;
-    expect(changed.status()).toBe(200);
-    expect(changed.request().postDataJSON()).toEqual({
-      feature: 'session_transcript_history',
-      enabled: true,
-    });
-    await expect(toggle).toBeChecked();
+    // Saved history has no switch: every session keeps it. The list renders
+    // (Marketplace is always offered) and names no saved-history flag.
+    await expect(
+      featureFlagRow(page.locator('body'), page, 'Marketplace').getByRole('switch'),
+    ).toBeVisible();
+    await expect(page.getByText('Session Transcript History', { exact: true })).toHaveCount(0);
 
     const held = new Promise<void>((resolve) => {
       releaseReads = resolve;
@@ -207,7 +198,8 @@ test('30 — saved session history paints while sandbox start and the open bundl
     await expect(page.getByTestId('session-busy-indicator')).toBeVisible();
     await expect(page.getByTestId('session-busy-indicator')).toContainText('Thinking');
     await expect(
-      page.getByText('Starting your computer… your message will send automatically.', {
+      // The SDK's `SESSION_NOTICE.starting`: one wording on web and mobile.
+      page.getByText("Starting this session's computer. Your message sends automatically.", {
         exact: true,
       }),
     ).toBeVisible();
@@ -321,10 +313,6 @@ test('30 — a file the agent showed renders from saved history while the sandbo
       [sessionId],
       env.databaseUrl,
     );
-    await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
-      feature: 'session_transcript_history',
-      enabled: true,
-    });
 
     // The stored copy capture would have made while the box was up.
     const attachmentId = crypto.randomUUID();
@@ -520,10 +508,6 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
       await fundAccount(env.databaseUrl!, accountId);
       await api(auth.access_token, 'PATCH', `/projects/${projectId}/onboarding`, {
         completed: true,
-      });
-      await api(auth.access_token, 'PATCH', `/projects/${projectId}/features`, {
-        feature: 'session_transcript_history',
-        enabled: true,
       });
       // The picker is the contract, not a model name. A hard-coded
       // `gpt-5.6-luna` failed 13 of 13 previews: a preview's picker offers
@@ -748,11 +732,7 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
           expect(savedReply(history, reply)[0].info.parentID).toBe(messages[0].info.id);
         }
       });
-      await test.step('enabling history recovers an older inline image and sandbox file', async () => {
-        await api(auth.access_token, 'PATCH', `/projects/${projectId}/features`, {
-          feature: 'session_transcript_history',
-          enabled: false,
-        });
+      await test.step('a later prompt keeps its image and file for saved history', async () => {
         const legacyPrompt =
           'Read the attached legacy-notes.txt file with a tool. Reply with exactly its contents, without other text.';
         await api(
@@ -782,10 +762,6 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
         );
         await expect(page.getByText(legacyReply, { exact: true })).toBeVisible({
           timeout: 240_000,
-        });
-        await api(auth.access_token, 'PATCH', `/projects/${projectId}/features`, {
-          feature: 'session_transcript_history',
-          enabled: true,
         });
       });
       await test.step('saved attachments and completed replies load while the computer is stopped', async () => {

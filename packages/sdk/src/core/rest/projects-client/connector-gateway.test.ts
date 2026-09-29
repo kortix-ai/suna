@@ -131,7 +131,7 @@ test('catalog entries carry the accounts this caller may run the connector as, d
         accounts: [
           {
             connection_id: 'conn-personal',
-            label: 'markokraemer.mail@gmail.com',
+            label: 'user@example.com',
             owner_type: 'member',
             is_default: false,
           },
@@ -202,6 +202,19 @@ test('call accepts one tool identifier and sends the canonical gateway payload',
     connector: 'slack',
     action: 'send_message',
     args: { channel: 'C1', text: 'hello' },
+  });
+});
+
+test('call sends approval_context outside args so it never reaches the provider', async () => {
+  responseBody = { ok: true, data: null, risk: 'write' };
+  await callConnector('project-one', 'gmail.send_draft', { draft_id: 'd1' }, {
+    approvalContext: 'Sends draft d1 to a@example.com, subject "Hi"',
+  });
+  expect(JSON.parse(String(calls[0]?.body))).toEqual({
+    connector: 'gmail',
+    action: 'send_draft',
+    args: { draft_id: 'd1' },
+    approval_context: 'Sends draft d1 to a@example.com, subject "Hi"',
   });
 });
 

@@ -1,4 +1,4 @@
-import type { HarnessLifecycleService, HarnessState } from '../lifecycle-contract'
+import type { HarnessLifecycleService, HarnessState } from '../contract/lifecycle-contract'
 import { spawn, type ChildProcess } from 'node:child_process'
 
 /**
@@ -37,6 +37,18 @@ export type VerifiedReloadResult =
        * "nothing was interrupted" produce different things said to the user.
        */
       turnEnded: boolean | null
+      /**
+       * The assistant message the RETIRED process left open, read from it
+       * before it was killed. `null` when there was none, or when it could not
+       * be read.
+       *
+       * The retired process emits neither `session.idle` nor `session.error`,
+       * so nothing downstream can settle that row by itself. This id is the
+       * only handle on it, and it exists for exactly as long as the outgoing
+       * process does — which is why it is read here and not by a caller after
+       * the fact.
+       */
+      orphanedMessageId: string | null
     }
   | {
       outcome: 'kept-old'
@@ -48,6 +60,13 @@ export type VerifiedReloadResult =
        * candidate failure says anything about the config.
        */
       candidateFailed?: boolean
+      /**
+       * True when `mayPromote` called the promotion off. Nothing is wrong with
+       * the release and nothing is wrong with the box: a turn simply started
+       * while the release was being built. The caller must NOT quarantine the
+       * release or record a config failure for it — the next trigger applies it.
+       */
+      promotionCalledOff?: boolean
     }
 
 /**
@@ -64,6 +83,23 @@ export interface VerifiedReloadOptions {
   forceFail?: boolean
   /** Runs on the candidate before promotion; a failure keeps the running process. */
   prove?: CandidateProof
+  /**
+   * The LAST moment a swap can be called off, asked after the candidate is
+   * proven and before the live port moves.
+   *
+   * `prove` answers "can the new config run"; this answers "may we retire the
+   * process that is running right now". They are different questions and they
+   * are asked seconds apart: a caller's turn check runs before the release is
+   * downloaded and extracted (2.4-6.1 s on dev), and the candidate boot adds
+   * ~3.3 s more. A prompt that lands inside that window starts a turn on the
+   * incumbent, and promoting anyway kills the process writing it — the client
+   * sees `HTTP 503` and the assistant row stays open with `completed = null`.
+   *
+   * `false` retires the CANDIDATE instead. The incumbent keeps its pid, its
+   * port and its turn, and the caller reports `kept-old`. Omitted ⇒ promote,
+   * so the boot path and every caller with nothing to lose is unchanged.
+   */
+  mayPromote?: () => Promise<boolean>
 }
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -72,22 +108,24 @@ import { describeOpencodeError, isConfigErrorName } from './proven-check'
 import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
-import { AGENT_ENV_SH } from '../../agent-env-file'
-import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '../../llm-proxy'
+import { AGENT_ENV_SH } from '../shared/agent-env-file'
+import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
-import { buildGitIdentityEnv } from '../../git'
-import { egressShimEnv } from '../../egress-shim'
-import { logger } from '../../logger'
+import { buildGitIdentityEnv } from '@/lib/git/git'
+import { egressShimEnv } from '@/services/egress-shim'
+import { logger } from '@/lib/log/logger'
 import { applyManagedOpencodeEnv } from './managed-opencode-env'
-import { mergeProjectEnv, type ProjectEnvStore } from '../../project-env'
+import { mergeProjectEnv, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { OPENCODE_CURRENT_LINK, OPENCODE_SYSTEM_LINK } from './opencode-binary'
 import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
-} from '../../secret-capabilities'
-import { configReleaseNoticePath } from '../../config-release/notice'
-import { bootLinkPath, readBootLinkTarget } from '../../boot-config'
-import { SKILLS_DIR } from '../../project-layout'
+} from '@/services/sandbox-env/secret-capabilities'
+import { configReleaseNoticePath } from '@/services/config-release/notice'
+import { bootLinkPath, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { opencodeTurnInFlight } from './opencode-turn-state'
+import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from './fallback-models'
+import { SKILLS_DIR } from './project-layout'
 
 const READY_POLL_MS = 100
 // OpenCode announces readiness on stdout. `serve.ts` prints this line only
@@ -607,6 +645,7 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
   // reconcile diffs the live managed set against it to decide whether one
   // controlled restart is warranted.
   lastConfiguredProviderModelIds = new Set(Object.keys(catalog))
+  lastConfiguredCapabilities = new Map(Object.entries(catalog).map(([id, model]) => [id, capabilityKey(model)]))
   const models = Object.fromEntries(
     Object.entries(catalog).map(([id, model]) => {
       // The gateway catalog's string `provider` is UI metadata describing the
@@ -961,6 +1000,24 @@ let managedCacheAt = 0
 /** The kortix-provider model ids the most recently WRITTEN config registers.
  *  Written on every spawn, so it is what the running OpenCode holds. */
 let lastConfiguredProviderModelIds: Set<string> | null = null
+let lastConfiguredCapabilities: Map<string, string> | null = null
+
+// The fields OpenCode turns into image input and thinking variants. A box that
+// booted on the baked catalog keeps stale values here until it restarts.
+function capabilityKey(model: KortixGatewayModel): string {
+  return JSON.stringify([model.attachment ?? null, model.modalities ?? null, model.reasoning_options ?? null])
+}
+
+/**
+ * Why the most recent LIVE managed fetch (`fetchManagedModels`) did not
+ * confirm this box against the control plane's current managed lineup, or
+ * null when the last attempt succeeded (or none has run yet on a box with no
+ * gateway configured, which reports null the same way — see
+ * `managedCatalogFallbackReason`'s doc for why that is the right answer).
+ * Cleared on every genuine success so a box that recovers stops reporting a
+ * stale complaint.
+ */
+let lastManagedFetchFailureReason: string | null = null
 
 /**
  * Compose the catalog OpenCode boots with: disk catalog first, managed set on
@@ -1019,13 +1076,23 @@ export async function fetchManagedModels(
       const models = body.models ?? {}
       if (Object.keys(models).length === 0) {
         logger.info(`[opencode] servable listing is empty at ${url}; keeping the on-disk catalog`)
+        // A free-tier account with no connected provider legitimately has
+        // nothing servable — NOT a fetch failure, so the fallback reason (which
+        // means "we could not confirm this box against the live lineup") stays
+        // whatever it already was.
         return null
       }
       // Remote JSON becomes OpenCode's provider config — rebuild it to a known
       // shape before it can get anywhere near the config or the disk.
       const clean = sanitizeCatalogForDisk(models)
-      if (!clean) return null
+      if (!clean) {
+        lastManagedFetchFailureReason = `servable listing at ${url} had no usable models after validation`
+        return null
+      }
       logger.info(`[opencode] fetched ${Object.keys(clean).length} servable models from ${url}`)
+      // A genuine success clears any earlier failure — this box IS confirmed
+      // against the live lineup again.
+      lastManagedFetchFailureReason = null
       return clean
     } catch (err) {
       logger.warn(
@@ -1037,6 +1104,14 @@ export async function fetchManagedModels(
     }
   }
   logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog + bundled managed set`)
+  // NO SILENT STALENESS. This box is about to run (or keep running) on the
+  // baked/bundled managed set, unconfirmed against the live lineup — the exact
+  // condition that let a retired/renamed managed id survive on a box after the
+  // control plane moved on. `managedCatalogFallbackReason()` surfaces this on
+  // `/kortix/health` (`runtime.running`), the SAME channel a config fallback
+  // is already visible on, so it is a fact the control plane can read per box
+  // rather than a log line nobody is tailing.
+  lastManagedFetchFailureReason = `servable models unavailable at ${url}; running the baked/bundled managed lineup`
   return null
 }
 
@@ -1084,6 +1159,39 @@ export function cachedManagedModels(): Record<string, KortixGatewayModel> | null
 }
 
 /**
+ * The managed model ids THIS BOX currently believes are servable — the
+ * cheap freshness signal `/kortix/health` reports (`runtime.running.
+ * managed_model_ids`) so the control plane can tell a current box from a
+ * stale one without ever fetching anything itself.
+ *
+ * Null means "unconfirmed", not "empty": either no live fetch has ever
+ * succeeded on this box (fresh boot, gateway unreachable), or the cache aged
+ * out. A box reporting null is exactly the case `managedCatalogFallbackReason`
+ * explains — the control plane must not read null as "zero managed models
+ * exist" and must not skip the box's `managed_catalog_fallback_reason` either.
+ */
+export function managedModelIdsSnapshot(): string[] | null {
+  const cache = cachedManagedModels()
+  return cache ? Object.keys(cache) : null
+}
+
+/**
+ * Why this box is not (or was not, last time it tried) confirmed against the
+ * control plane's live managed lineup — null when the last attempt succeeded.
+ *
+ * NO SILENT STALENESS. Before this, a failed boot fetch was a single
+ * `logger.warn` line (`fetchManagedModels`'s final branch) and nothing else:
+ * the box quietly kept running the baked/bundled managed set for its whole
+ * life with no signal anywhere the control plane could read. This is that
+ * signal, surfaced on `/kortix/health` next to `managed_model_ids` — the SAME
+ * channel a config-release fallback is already visible on
+ * (`DaemonConfigReport.fallback_reason`), not a second, unwatched place.
+ */
+export function managedCatalogFallbackReason(): string | null {
+  return lastManagedFetchFailureReason
+}
+
+/**
  * Settle the boot prefetch, for the POST-SPAWN reconcile only.
  *
  * Bounded by the prefetch's own ≤5s budget, which started at proxy-up — by the
@@ -1100,17 +1208,33 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
 }
 
 /**
- * Managed ids the live gateway serves that the running OpenCode does NOT have.
+ * Managed ids the live gateway serves that the running OpenCode does NOT have,
+ * or has with stale image/thinking capabilities.
  *
- * Each one is a model the picker offers and the runtime answers `ModelNotFound`
- * for — the 2026-08-19 outage, exactly. An empty result means the boot config
+ * A missing id is a model the picker offers and the runtime answers
+ * `ModelNotFound` for — the 2026-08-19 outage, exactly. A stale id is a model
+ * whose `modalities` changed: OpenCode replaces every image with "Cannot read
+ * image" until it restarts (2026-09-29). An empty result means the boot config
  * was already complete and nothing has to be restarted.
  */
 export function missingManagedModelIds(live: Record<string, KortixGatewayModel> | null): string[] {
   if (!live) return []
   const configured = lastConfiguredProviderModelIds
   if (!configured) return []
-  return Object.keys(live).filter((id) => !configured.has(id))
+  return Object.keys(live).filter(
+    (id) => !configured.has(id) || lastConfiguredCapabilities?.get(id) !== capabilityKey(live[id]!),
+  )
+}
+
+/**
+ * The `kortix` provider ids THIS box's OpenCode actually registered at its
+ * last config build — read-only. This is `catalog_fingerprint`'s source of
+ * truth (the runtime-convergence contract (PR #7785), Rule 1.2): the provider map a
+ * running box really serves, never a second opinion re-derived from a file it
+ * only hoped to load. Null before OpenCode has built a config at all.
+ */
+export function configuredKortixProviderModelIds(): readonly string[] | null {
+  return lastConfiguredProviderModelIds ? [...lastConfiguredProviderModelIds] : null
 }
 
 /**
@@ -1138,6 +1262,129 @@ export function resetManagedModelsStateForTests(): void {
   managedCache = null
   managedCacheAt = 0
   lastConfiguredProviderModelIds = null
+  lastConfiguredCapabilities = null
+  lastManagedFetchFailureReason = null
+}
+
+export type ManagedCatalogConvergeOutcome =
+  /** No managed id was missing; nothing was fetched-and-stale. */
+  | 'unchanged'
+  /** A managed id was missing and the overlay file was rewritten, but the
+   *  caller asked NOT to restart (`allowRestart: false`) — the next natural
+   *  opencode start (a config-release swap, a wake, a later on-demand
+   *  converge) picks the file up. Mirrors the runtime-assets rule: a catalog
+   *  that merely changed must not cost this call an OpenCode restart. */
+  | 'file-updated'
+  /** A managed id was missing and a verified OpenCode swap installed it. */
+  | 'restarted'
+  /** A restart was warranted but declined — a turn is live/unreadable, or the
+   *  verified candidate did not come up. `reason` says which. */
+  | 'declined'
+  /** No gateway credentials on this box (KORTIX_LLM_BASE_URL/KORTIX_TOKEN),
+   *  or the gateway itself never answered. */
+  | 'no-gateway'
+
+export interface ManagedCatalogConvergeResult {
+  outcome: ManagedCatalogConvergeOutcome
+  /** Managed ids the live gateway serves that this box's booted config lacks,
+   *  as of the FRESH fetch this call made — empty when `unchanged`/`no-gateway`. */
+  missing: string[]
+  /** Size of the live managed listing this call fetched, 0 when unavailable. */
+  managed: number
+  reason?: string
+}
+
+/**
+ * Converge the managed-model catalog ON DEMAND, at any point in a session's
+ * life — not gated by the once-per-process flag `reconcileManagedModels`
+ * (boot.ts) carries, which runs exactly once, right after boot.
+ *
+ * Two callers, two `allowRestart` values, one repair:
+ *
+ *  - `allowRestart: false` — the NON-BLOCKING lane. `control.refresh()` calls
+ *    this detached on every warm-reuse/reload/resume (the same three moments
+ *    `scheduleRuntimeAssetsReconcile` already reconciles the CLI + skills
+ *    for), and the API's turn-start asset-convergence lane schedules a plain
+ *    `/kortix/refresh?restart=0` when the catalog fingerprint merely changed.
+ *    A missing id rewrites the overlay file and returns `file-updated`
+ *    WITHOUT touching the running OpenCode — config blocks nothing, binaries
+ *    (and this) must not either.
+ *  - `allowRestart: true` (default) — the EAGER lane. The API's turn-start
+ *    gate calls `POST /kortix/catalog/converge` (this function, through
+ *    `HarnessControlOperations.convergeCatalog`) and AWAITS it only when the
+ *    model THIS turn asked for is the one missing — the failure a user must
+ *    never see twice. One attempt: idle-gated up front and again by
+ *    `reloadVerified`'s `mayPromote`, exactly like `config-release.ts`. Never
+ *    ends a running turn, never retries.
+ *
+ * Always a FRESH fetch (`fetchManagedModels`, ~3KB, ≤5s budget) — never the
+ * boot prefetch, which may be minutes stale by the time either caller runs.
+ */
+export async function convergeManagedModelCatalog(
+  opencode: Pick<Opencode, 'getInternalUrl' | 'reloadVerified'>,
+  cfg: Pick<Config, 'workspace'>,
+  opts: {
+    allowRestart?: boolean
+    catalogTargetFile?: string
+    turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
+  } = {},
+): Promise<ManagedCatalogConvergeResult> {
+  const allowRestart = opts.allowRestart !== false
+  const startedAt = Date.now()
+  const baseUrl = process.env.KORTIX_LLM_BASE_URL
+  const apiKey = process.env.KORTIX_TOKEN
+  if (!hasKortixLlmGateway(process.env) || !baseUrl || !apiKey) {
+    return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'no gateway credentials on this box' }
+  }
+  const live = await fetchManagedModels(baseUrl, apiKey)
+  if (!live) {
+    return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'live managed listing unavailable' }
+  }
+  rememberManagedModels(live)
+  const missing = missingManagedModelIds(live)
+  const managed = Object.keys(live).length
+  if (missing.length === 0) {
+    logger.info('[opencode] on-demand catalog converge: nothing missing', { managed, ms: Date.now() - startedAt })
+    return { outcome: 'unchanged', missing: [], managed }
+  }
+  const written = writeManagedOverlayCatalogFile({
+    currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+    targetCatalogFile: opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
+    managed: live,
+  })
+  if (written) process.env.KORTIX_LLM_CATALOG_FILE = written
+  if (!allowRestart) {
+    logger.info('[opencode] on-demand catalog converge: file updated, restart deferred', {
+      missing,
+      managed,
+      ms: Date.now() - startedAt,
+    })
+    return { outcome: 'file-updated', missing, managed }
+  }
+  const probe = opts.turnProbe ?? opencodeTurnInFlight
+  const idle = async (): Promise<boolean> => (await probe(opencode.getInternalUrl(), cfg.workspace)) === false
+  if (!(await idle())) {
+    logger.warn('[opencode] on-demand catalog converge: skipping restart — a turn is live or unreadable', {
+      missing,
+      ms: Date.now() - startedAt,
+    })
+    return { outcome: 'declined', missing, managed, reason: 'a turn is live or its state is unknown' }
+  }
+  const result = await opencode.reloadVerified({ mayPromote: idle })
+  if (result.outcome !== 'swapped') {
+    logger.warn('[opencode] on-demand catalog converge: verified swap declined', {
+      missing,
+      reason: result.reason,
+      ms: Date.now() - startedAt,
+    })
+    return { outcome: 'declined', missing, managed, reason: result.reason ?? 'reload declined' }
+  }
+  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing managed models', {
+    missing,
+    managed,
+    ms: Date.now() - startedAt,
+  })
+  return { outcome: 'restarted', missing, managed }
 }
 
 export type GatewayCatalogRefreshResult = {
@@ -1194,190 +1441,6 @@ export async function refreshGatewayCatalogFile(opts: {
   })
   return { changed, catalogFile: opts.targetCatalogFile }
 }
-
-// One `reasoning_options` entry (models.dev's shape, mirrored — see
-// @kortix/llm-catalog's CatalogReasoningOption). Present iff the model
-// exposes a tunable reasoning-effort knob; this is the PRIORITY field the
-// chat runtime/composer's effort control reads off the model opencode
-// registers, so it must survive the full gateway -> opencode hop intact.
-// Three real shapes — `effort` (values), `toggle` (neither), `budget_tokens`
-// (min/max, no values — mainline Anthropic's shape) — all fields but `type`
-// optional so every shape survives the hop unmodified.
-type KortixReasoningOption = { type: string; values?: string[]; min?: number; max?: number }
-
-type KortixCostTier = {
-  input?: number
-  output?: number
-  cache_read?: number
-  cache_write?: number
-  tier?: { type: string; size: number }
-}
-
-type KortixCost = {
-  input?: number
-  output?: number
-  cache_read?: number
-  cache_write?: number
-  tiers?: KortixCostTier[]
-  context_over_200k?: KortixCostTier
-}
-
-type KortixModalities = { input?: string[]; output?: string[] }
-
-type KortixGatewayModel = {
-  name: string
-  // The REAL upstream provider this model resolves against ('anthropic',
-  // 'openai', 'codex', 'kortix', ...). Every model here is registered under
-  // the single synthetic `kortix` opencode provider (see buildKortixProvider
-  // below) — this is what the web picker groups/brands by instead of
-  // string-splitting the wire model id (see model-selector.tsx's
-  // pickerGroupId / use-model-store.ts's subProviderOf).
-  provider?: string
-  reasoning?: boolean
-  reasoning_options?: KortixReasoningOption[]
-  // Explicit OpenCode variant map (id → request overlay). Present when the
-  // catalog ships one; otherwise derived from `reasoning_options` at config
-  // build (see variantsFromReasoningOptions).
-  variants?: Record<string, Record<string, unknown>>
-  tool_call?: boolean
-  attachment?: boolean
-  temperature?: boolean
-  structured_output?: boolean
-  knowledge?: string
-  family?: string
-  modalities?: KortixModalities
-  limit?: { context?: number; input?: number; output?: number }
-  cost?: KortixCost
-  // Free-text blurb models.dev publishes for the model. Threaded through
-  // like the rest of the enriched field set (was previously dropped between
-  // the web catalog and the served/fallback gateway shapes).
-  description?: string
-  open_weights?: boolean
-  last_updated?: string
-}
-
-export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'deepseek-v4.1-flash': {
-    name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.15, output: 0.6, cache_read: 0.0359375 },
-  },
-  'glm-5.3-flash': {
-    name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 0.1, output: 0.35, cache_read: 0.02 },
-  },
-  'kimi-k3': {
-    name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true,
-    limit: { context: 1_048_576, output: 16_384 }, cost: { input: 2.5, output: 14, cache_read: 0.29 },
-  },
-  'openai/gpt-5.5': {
-    name: 'GPT-5.5',
-    provider: 'openai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    // models.dev: false — OpenAI reasoning models (gpt-5.x) reject a
-    // client-sent `temperature`, so advertising support here would make
-    // OpenCode send one and 400 the turn whenever this fallback catalog is
-    // in effect. Must match capabilitiesOf() in the served catalog
-    // (apps/api/src/llm-gateway/models/catalog-models.ts).
-    temperature: false,
-    limit: { context: 1_050_000, output: 64_000 },
-  },
-  'google/gemini-3.5-flash': {
-    name: 'Gemini 3.5 Flash',
-    provider: 'google',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'google/gemini-3.1-pro-preview': {
-    name: 'Gemini 3.1 Pro',
-    provider: 'google',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'deepseek/deepseek-v4-flash': {
-    name: 'DeepSeek V4 Flash',
-    provider: 'deepseek',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'deepseek/deepseek-v4-pro': {
-    name: 'DeepSeek V4 Pro',
-    provider: 'deepseek',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'minimax/minimax-m3': {
-    name: 'MiniMax M3',
-    provider: 'minimax',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'moonshotai/kimi-k2.6': {
-    name: 'Kimi K2.6',
-    provider: 'moonshotai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 262_144, output: 64_000 },
-  },
-  'z-ai/glm-5.1': {
-    name: 'GLM 5.1',
-    provider: 'z-ai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 202_752, output: 64_000 },
-  },
-  'x-ai/grok-4.3': {
-    name: 'Grok 4.3',
-    // models.dev's real provider id is 'xai' (no hyphen) — matches
-    // @kortix/llm-catalog's PROVIDER_LABELS key and gatewayModelsAll's
-    // `provider` field. The model-id PREFIX here ('x-ai/...') is just this
-    // fallback table's own key convention and is left alone; only the
-    // `provider` value (what the picker actually groups/labels by) must
-    // match models.dev's real id or the picker mislabels/falls back to
-    // "Kortix" for this entry.
-    provider: 'xai',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-}
-
-/** The managed subset of the bundled fallback table: bare ids branded `kortix`.
- *  Used when the live managed fetch is unavailable, so a managed model is
- *  present in OpenCode's provider map even with a stale baked catalog AND a
- *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
- *  apps/api/src/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
- *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
-export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
-  Object.entries(MINIMAL_FALLBACK_MODELS).filter(
-    ([id, model]) => !id.includes('/') && model.provider === 'kortix',
-  ),
-)
 
 // Conservative window for a model we have no declared limit for. Better to
 // compact a little early than to never compact and get stuck at the wall.
@@ -1706,6 +1769,14 @@ export interface OpencodeLifecycleOptions {
    * and would say it to people whose work completed normally.
    */
   onUnplannedRespawn?: () => void | Promise<boolean | void>
+  /**
+   * Read the assistant message a process has left open, by its base URL.
+   *
+   * Called on the OUTGOING opencode immediately before a verified reload kills
+   * it. Best-effort and short-budget: a reload is never delayed or failed
+   * because this could not answer.
+   */
+  readOpenTurn?: (baseUrl: string) => Promise<string | null>
 }
 
 export function createOpencodeLifecycle(
@@ -2650,6 +2721,23 @@ export function createOpencodeLifecycle(
       const proven = await verifyCandidateBoots(opts)
       if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason, candidateFailed: proven.candidateFailed }
 
+      // The promotion is the only irreversible step, so the last check belongs
+      // HERE — not before the build, where the caller's turn check already ran
+      // seconds ago. See `mayPromote`.
+      if (opts.mayPromote && !(await opts.mayPromote().catch(() => false))) {
+        await killProcessGroup(proven.candidate, 'SIGTERM').catch(() => {})
+        logger.info('[opencode] promotion called off; the candidate is retired and the running instance keeps its turn', {
+          candidatePort: proven.port,
+          pid: child?.pid ?? null,
+        })
+        return {
+          outcome: 'kept-old',
+          reason: 'a turn started while the release was being built; the swap waits for the next trigger',
+          candidateFailed: false,
+          promotionCalledOff: true,
+        }
+      }
+
       const previous = child
       const previousPort = livePort()
       activePort = proven.port
@@ -2665,6 +2753,15 @@ export function createOpencodeLifecycle(
       }
       reportReadyResponse(proven.candidate)
       markReady()
+      // BEFORE the kill, and only then. The process about to die is the only
+      // one that can answer for the turn it was writing: the replacement was
+      // built from the same on-disk root but never held that turn's stream, so
+      // asking it afterwards returns nothing. See `orphanedMessageId`.
+      const orphanedMessageId = previous
+        ? await options
+            .readOpenTurn?.(`http://127.0.0.1:${previousPort}`)
+            .catch(() => null) ?? null
+        : null
       if (previous) await killProcessGroup(previous, 'SIGTERM').catch(() => {})
       logger.info('[opencode] candidate promoted', {
         port: activePort,
@@ -2688,6 +2785,7 @@ export function createOpencodeLifecycle(
         port: activePort,
         pid: this.getPid(),
         turnEnded,
+        orphanedMessageId,
       }
     },
 

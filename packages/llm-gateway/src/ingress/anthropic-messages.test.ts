@@ -198,6 +198,92 @@ describe('anthropicMessagesToChat', () => {
     expect(out.thinking).toEqual({ type: 'disabled' });
   });
 
+  // Claude Code sends `thinking:{type:'adaptive'}` with the tier in
+  // `output_config.effort`. Forwarding the adaptive object made the transport
+  // read it as an explicit disable, so every Claude Code turn ran without
+  // reasoning.
+  test('maps adaptive thinking + output_config.effort to reasoning_effort, never forwarding the adaptive object', () => {
+    const out = anthropicMessagesToChat({
+      model: 'kimi-k3',
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking: { type: 'adaptive', display: 'omitted' },
+      output_config: { effort: 'high' },
+    } as never);
+    expect(out.reasoning_effort).toBe('high');
+    expect(out.thinking).toBeUndefined();
+  });
+
+  test('adaptive thinking without an effort leaves reasoning to the project default', () => {
+    const out = anthropicMessagesToChat({
+      model: 'kimi-k3',
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking: { type: 'adaptive' },
+    } as never);
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+
+  test('maps output_config.effort without a thinking block to reasoning_effort', () => {
+    const out = anthropicMessagesToChat({
+      model: 'kimi-k3',
+      messages: [{ role: 'user', content: 'hi' }],
+      output_config: { effort: 'low' },
+    } as never);
+    expect(out.reasoning_effort).toBe('low');
+  });
+
+  test('an explicit thinking:{type:"disabled"} still wins over output_config.effort', () => {
+    const out = anthropicMessagesToChat({
+      model: 'kimi-k3',
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'high' },
+    } as never);
+    expect(out.thinking).toEqual({ type: 'disabled' });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  test('moves images inside a tool_result into a user message after the tool message', () => {
+    const out = anthropicMessagesToChat({
+      model: 'kimi-k3',
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: '/a.png' } }],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_1',
+              content: [
+                { type: 'text', text: 'screenshot' },
+                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(out.messages).toEqual([
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 'toolu_1', type: 'function', function: { name: 'Read', arguments: '{"file_path":"/a.png"}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'toolu_1', content: 'screenshot\n[1 image attached in the next message]' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Image from tool result toolu_1:' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+        ],
+      },
+    ]);
+  });
 });
 
 describe('chatJsonToAnthropicMessage', () => {
@@ -263,6 +349,25 @@ describe('chatJsonToAnthropicMessage', () => {
     expect(out.stop_reason).toBe('max_tokens');
   });
 
+  test('splits cached prompt tokens out of input_tokens', () => {
+    const out = chatJsonToAnthropicMessage({
+      id: 'chatcmpl-1',
+      model: 'kimi-k3',
+      choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: {
+        prompt_tokens: 1500,
+        completion_tokens: 7,
+        prompt_tokens_details: { cached_tokens: 1000, cache_write_tokens: 300 },
+      },
+    });
+    expect(out.usage).toEqual({
+      input_tokens: 200,
+      output_tokens: 7,
+      cache_read_input_tokens: 1000,
+      cache_creation_input_tokens: 300,
+    });
+  });
+
   test('defaults usage to zero when the OpenAI body omits it', () => {
     const out = chatJsonToAnthropicMessage({
       id: 'chatcmpl-abc',
@@ -307,6 +412,20 @@ async function collectAnthropicEvents(
     events.push({ event: eventLine.slice(6).trim(), data: JSON.parse(dataLine.slice(5).trim()) });
   }
   return events;
+}
+
+// A content_block_delta is only valid while its block is open. Track the open
+// set and assert every delta targets an index that has started and not stopped.
+function assertEveryDeltaTargetsAnOpenBlock(
+  events: { event: string; data: AnthropicSseEventData }[],
+): void {
+  const openIndices = new Set<number>();
+  for (const { event, data } of events) {
+    if (event === 'content_block_start') openIndices.add(data.index as number);
+    else if (event === 'content_block_stop') openIndices.delete(data.index as number);
+    else if (event === 'content_block_delta')
+      expect(openIndices.has(data.index as number)).toBe(true);
+  }
 }
 
 function chunk(delta: Record<string, unknown>, finish: string | null = null): string {
@@ -445,6 +564,101 @@ describe('chatSseToAnthropicSse', () => {
     expect(events[4].data.content_block?.type).toBe('tool_use');
   });
 
+  test('opens a fresh text block for text that arrives after a tool_use block was closed', async () => {
+    const openai = encodeSse(
+      chunk({ role: 'assistant', content: '' }),
+      chunk({ content: 'checking the weather ' }),
+      chunk({
+        tool_calls: [
+          {
+            index: 0,
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'get_weather', arguments: '{"city":"paris"}' },
+          },
+        ],
+      }),
+      chunk({ content: 'done.' }),
+      chunk({}, 'tool_calls'),
+      'data: [DONE]\n\n',
+    );
+
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    const types = events.map((e) => e.event);
+    expect(types).toEqual([
+      'message_start',
+      'content_block_start',
+      'content_block_delta',
+      'content_block_stop',
+      'content_block_start',
+      'content_block_delta',
+      'content_block_stop',
+      'content_block_start',
+      'content_block_delta',
+      'content_block_stop',
+      'message_delta',
+      'message_stop',
+    ]);
+
+    expect(events[1].data).toMatchObject({ index: 0, content_block: { type: 'text' } });
+    expect(events[4].data).toMatchObject({ index: 1, content_block: { type: 'tool_use' } });
+    expect(events[7].data).toMatchObject({ index: 2, content_block: { type: 'text' } });
+    expect(events[8].data.delta).toEqual({ type: 'text_delta', text: 'done.' });
+
+    assertEveryDeltaTargetsAnOpenBlock(events);
+  });
+
+  test('keeps resumed tool arguments on an open block after interleaved text', async () => {
+    const openai = encodeSse(
+      chunk({ role: 'assistant', content: '' }),
+      chunk({
+        tool_calls: [{
+          index: 0,
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'get_weather', arguments: '{"city":' },
+        }],
+      }),
+      chunk({ content: 'Checking.' }),
+      chunk({
+        tool_calls: [{
+          index: 0,
+          function: { arguments: '"Paris"}' },
+        }],
+      }),
+      chunk({}, 'tool_calls'),
+      'data: [DONE]\n\n',
+    );
+
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    assertEveryDeltaTargetsAnOpenBlock(events);
+    const argumentDeltas = events
+      .filter((entry) => entry.event === 'content_block_delta')
+      .map((entry) => entry.data.delta)
+      .filter((delta): delta is { type: string; partial_json: string } =>
+        delta?.type === 'input_json_delta',
+      );
+    expect(argumentDeltas.map((delta) => delta.partial_json).join('')).toBe('{"city":"Paris"}');
+  });
+
+  test('keeps interleaved tool indices in separate complete blocks', async () => {
+    const openai = encodeSse(
+      chunk({ tool_calls: [{ index: 0, id: 'call_0', function: { name: 'first', arguments: '{"a":' } }] }),
+      chunk({ tool_calls: [{ index: 1, id: 'call_1', function: { name: 'second', arguments: '{"b":2}' } }] }),
+      chunk({ tool_calls: [{ index: 0, function: { arguments: '1}' } }] }),
+      chunk({}, 'tool_calls'),
+      'data: [DONE]\n\n',
+    );
+
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    assertEveryDeltaTargetsAnOpenBlock(events);
+    const starts = events.filter((entry) => entry.event === 'content_block_start');
+    expect(starts.map((entry) => entry.data.content_block?.id)).toEqual(['call_0', 'call_1']);
+    const deltas = events.filter((entry) => entry.event === 'content_block_delta');
+    expect(deltas.filter((entry) => entry.data.index === 0).map((entry) => entry.data.delta?.partial_json).join('')).toBe('{"a":1}');
+    expect(deltas.filter((entry) => entry.data.index === 1).map((entry) => entry.data.delta?.partial_json).join('')).toBe('{"b":2}');
+  });
+
   test('translates a mid-stream OpenAI error frame into an Anthropic error event without dropping the connection', async () => {
     const openai = encodeSse(
       chunk({ role: 'assistant', content: '' }),
@@ -455,6 +669,51 @@ describe('chatSseToAnthropicSse', () => {
     const errorEvent = events.find((e) => e.event === 'error');
     expect(errorEvent?.data.error).toEqual({ type: 'overloaded_error', message: 'Overloaded' });
     expect(events.at(-1)?.event).toBe('message_stop');
+  });
+
+  // Claude Code sizes the context window and triggers auto-compaction from the
+  // usage on message_delta. The upstream reports usage only in its last chunk,
+  // after message_start went out with zero, so message_delta must carry it.
+  test('reports the final prompt usage on message_delta, cache tokens split out', async () => {
+    const openai = encodeSse(
+      chunk({ role: 'assistant', content: 'pong' }),
+      chunk({}, 'stop'),
+      `data: ${JSON.stringify({
+        id: 'chatcmpl-xyz',
+        choices: [],
+        usage: {
+          prompt_tokens: 120000,
+          completion_tokens: 9,
+          prompt_tokens_details: { cached_tokens: 100000 },
+        },
+      })}\n\n`,
+      'data: [DONE]\n\n',
+    );
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    const delta = events.find((e) => e.event === 'message_delta');
+    expect(delta?.data.usage).toEqual({
+      input_tokens: 20000,
+      output_tokens: 9,
+      cache_read_input_tokens: 100000,
+      cache_creation_input_tokens: 0,
+    });
+  });
+
+  // A stream that breaks before [DONE] is a failed turn. Reporting it as
+  // end_turn made Claude Code accept a truncated answer instead of retrying.
+  test('reports an interrupted upstream stream as an error, not as end_turn', async () => {
+    const encoder = new TextEncoder();
+    const openai = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(chunk({ role: 'assistant', content: 'half an ans' })));
+        controller.error(new Error('socket hang up'));
+      },
+    });
+    const events = await collectAnthropicEvents(chatSseToAnthropicSse(openai));
+    const names = events.map((e) => e.event);
+    expect(names).toContain('error');
+    expect(names).not.toContain('message_delta');
+    expect(events.find((e) => e.event === 'error')?.data.error?.type).toBe('api_error');
   });
 
   test('always terminates with message_stop even for an empty stream', async () => {

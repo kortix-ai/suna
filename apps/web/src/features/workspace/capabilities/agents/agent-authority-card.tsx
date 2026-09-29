@@ -1,8 +1,7 @@
 'use client';
 
 /**
- * "What this agent can do" — the agent's authority as the platform computes it
- * (spec `docs/specs/2026-09-22-agents-as-principals.md` §2.1):
+ * "What this agent can do" — the agent's authority as the platform computes it:
  *
  *   Kortix permissions (kortix.yaml) ∩ ceiling role (IAM) − human-only
  *

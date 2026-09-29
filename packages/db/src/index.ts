@@ -24,6 +24,7 @@ export {
   accountInvitations,
   accountGithubInstallations,
   accountGithubInstallationStates,
+  accountGithubUserTokens,
   accountRoleEnum,
   accountsRelations,
   accountGithubInstallationsRelations,
@@ -114,6 +115,8 @@ export {
   creditUsage,
   accountDeletionRequests,
   creditPurchases,
+  // Mobile push notification device tokens
+  pushDeviceTokens,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,

@@ -1,10 +1,14 @@
 {
   "generatedAt": "static",
-  "count": 675,
+  "count": 693,
   "routes": [
     {
       "method": "GET",
       "path": "/.well-known/oauth-authorization-server"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/v1/mcp"
     },
     {
       "method": "GET",
@@ -41,6 +45,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/refresh-credential"
     },
     {
       "method": "POST",
@@ -723,6 +731,10 @@
       "path": "/v1/apps/edge/tls-check"
     },
     {
+      "method": "GET",
+      "path": "/v1/auth/client-config"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
     },
@@ -1219,6 +1231,26 @@
       "path": "/v1/marketplace/sources/:id"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/mcp"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/device-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/device-token/:token"
+    },
+    {
       "method": "GET",
       "path": "/v1/oauth/.well-known/oauth-authorization-server"
     },
@@ -1233,6 +1265,18 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/oauth/grants/:clientId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/register"
     },
     {
       "method": "POST",
@@ -1667,6 +1711,14 @@
       "path": "/v1/projects/:projectId/channels/teams/message"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/edit"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/mode"
     },
@@ -1697,6 +1749,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/commits/:sha/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/computers"
     },
     {
       "method": "GET",
@@ -1777,6 +1833,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/revoke"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/share"
     },
     {
       "method": "GET",
@@ -2005,6 +2065,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/reminders"
     },
     {
       "method": "GET",
@@ -2259,6 +2323,22 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/reload-stream"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
@@ -2340,6 +2420,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/turn-permission"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/turn-question"
     },
     {
@@ -2397,6 +2481,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/github/repository-branches"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/user-token"
     },
     {
       "method": "POST",
@@ -2465,6 +2553,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunk/:sha256"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/chunks/:component"
     },
     {
       "method": "GET",
@@ -2540,14 +2636,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/tunnel/audit/:tunnelId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/connections"
-    },
-    {
-      "method": "POST",
       "path": "/v1/tunnel/connections"
     },
     {
@@ -2587,36 +2675,12 @@
       "path": "/v1/tunnel/device-auth/:code/status"
     },
     {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests"
-    },
-    {
       "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/deny"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests/stream"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permissions/:tunnelId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permissions/:tunnelId"
+      "path": "/v1/tunnel/rpc/:tunnelId"
     },
     {
       "method": "DELETE",
-      "path": "/v1/tunnel/permissions/:tunnelId/:permissionId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/rpc/:tunnelId"
+      "path": "/v1/tunnel/self"
     },
     {
       "method": "GET",

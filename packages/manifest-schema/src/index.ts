@@ -54,6 +54,7 @@ import {
   rejectChannelsV2,
   validateAgentsV2,
   validateDefaultAgentV2,
+  validateHarnessesV2,
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
@@ -142,6 +143,8 @@ export {
   ENV_NAME_RE,
   GRANTABLE_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
+  PI_PACKAGE_NPM_RE,
+  PI_PACKAGE_PATH_RE,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_PERMISSIONS,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
@@ -189,6 +192,8 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
+  type HarnessesV2,
+  type PiPackageEntryV2,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -201,9 +206,9 @@ export {
  * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/
  * workspace/enabled) plus `file`, the path of the agent's `.md`; agent behavior
  * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
- * lives entirely in that `.md` frontmatter + body, never in this manifest. YAML-only, `[[channels]]` removed, deny-by-default grant
- * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
- * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
+ * lives entirely in that `.md` frontmatter + body, never in this manifest.
+ * YAML-only, `[[channels]]` removed, deny-by-default grant sets. (decision
+ * 2026-07-05: "one home per concern").
  */
 const KNOWN_SCHEMA_VERSION = 2;
 
@@ -345,6 +350,7 @@ function validateManifestBodyV2(
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
+  validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
@@ -865,6 +871,13 @@ function validateSandboxTemplates(node: unknown, path: string, issues: ManifestI
     expectBoundedIntOrAbsent(entry.cpu, `${where}.cpu`, SANDBOX_CPU_BOUNDS, issues);
     expectBoundedIntOrAbsent(entry.memory, `${where}.memory`, SANDBOX_MEMORY_BOUNDS, issues);
     expectBoundedIntOrAbsent(entry.disk, `${where}.disk`, SANDBOX_DISK_BOUNDS, issues);
+    if (entry.container_runtime !== undefined && typeof entry.container_runtime !== 'boolean') {
+      issues.push({
+        path: `${where}.container_runtime`,
+        message: '`container_runtime` must be true or false.',
+        severity: 'error',
+      });
+    }
     if (entry.gpu !== undefined) {
       issues.push({
         path: `${where}.gpu`,
@@ -1056,7 +1069,7 @@ function validateMonitorDuration(
 }
 
 /**
- * `type: monitor` — the third trigger type (docs/specs/2026-08-12-monitors.md).
+ * `type: monitor` — the third trigger type.
  * A monitor names a repo command (`run`) that the platform supervises 24/7 in
  * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
  * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
@@ -1477,8 +1490,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     if (entry.credential !== undefined) {
       const cm = typeof entry.credential === 'string' ? entry.credential.trim().toLowerCase() : '';
       if (cm === 'per_user') {
-        // `per_user` (each member brings their own) was removed 2026-07-05
-        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5).
+        // `per_user` (each member brings their own) was removed 2026-07-05.
         // v1 tolerates it as a legacy value — it always resolves to `shared`
         // at runtime and is never round-tripped back into git. v2 is a clean
         // break: reject it outright, same as the removed CLI actions.
@@ -1524,8 +1536,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
     }
     if (entry.agent_scope !== undefined) {
       // The connector-side agent gate was removed 2026-07 (wave-2 of the
-      // agent-first cut, docs/specs/2026-07-05-agent-first-config-unification.md
-      // §2.5): connector access is now purely the agent's own `connectors`
+      // agent-first cut): connector access is now purely the agent's own `connectors`
       // grant (`[[agents]].connectors` in v1, `agents.<name>.connectors` in
       // v2). The runtime (apps/api's connectors.ts `parseConnectorEntry`) no
       // longer reads `agent_scope` at all — it parses fine and is simply

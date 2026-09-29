@@ -6,6 +6,38 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Computers are connector accounts. `addComputerToProject(projectId,
+  { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
+  `project(id).connectors.connections.addComputer`, and
+  `useAddComputerToProject` add a machine the caller already paired to a
+  project as an account of its `computer` connector: private (`share: 'me'`,
+  the default) or shared with the project (`'project'`). `Connection` gains
+  optional `tunnel_id` and `machine` (`online`, `last_heartbeat_at`,
+  `hostname`, `platform`), set on `computer` accounts only.
+- `Connection.machine` gains optional `access` (`{ mode: 'ask' | 'always' |
+  'off', granted_until }` or `null`): who may use the machine, as its owner
+  set it on the computer. `null` or absent for agents that never report it.
+- A paired computer follows its owner: their private account exists in every
+  project they belong to without a call. `addComputerToProject` with
+  `share: 'me'` stays accepted but is no longer needed; `share: 'project'` is
+  how a machine is shared with a project. `useApproveDeviceAuth` needs no
+  `projectId` on current servers, and its `connectionId` is `null` when the
+  approval named no project.
+- `useApproveDeviceAuth` accepts optional `projectId` and `share`, sent as
+  `project_id` and `share`, and returns the created account's optional
+  `connectionId`; `DeviceAuthInfo` gains optional `projectId`;
+  `TunnelConnection` gains optional `ownerUserId`.
+- `useTunnelConnections` accepts an optional `{ refetchInterval }` (default
+  5 s; `false` stops polling).
+- The wire message-id clock is public: `mintWireMessageIdAbove` (mint above a
+  known floor clock, with an optional `backdateMs`), `newestWireIdClock`,
+  `wireIdClock`, `wireIdClockAt`, `isWireIdAheadOf`, `WIRE_MESSAGE_ID`, and the
+  clock constants. `wireIdClockDelta(clock, reference)` is the signed distance
+  between two clocks on the 48-bit ring and `maxWireIdClock(clocks)` the newest
+  of several; compare clocks with these, never with `>`, so ids on both sides
+  of a wrap keep their order. Exported from the root and from
+  `@kortix/sdk/wire-message-id`, which loads this one import-free module.
+  `mintWireMessageId` is unchanged.
 - Typed unified session-cost reads through
   `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
   combines finalized LLM and compute costs, model usage, and ledger entries.
@@ -23,8 +55,37 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `<script>` tag with no bundler.
 - `KortixMasterProject` — the kortix-master daemon's board project.
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
+- `@kortix/sdk/internal/diagnostics-store` and
+  `@kortix/sdk/internal/managed-storage`. `apps/web` now imports the SDK's
+  LSP diagnostics store and quota-safe storage instead of keeping its own
+  copies. Not covered by semver.
 
 ### Deprecated
+- The `session_transcript_history` member of `FeatureFlagKey`. Saved session
+  history graduated out of the flag system: every session saves its transcript
+  and shows it while its computer is off. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'session_transcript_history')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'session_transcript_history', …)` answers `400`.
+  `useSession` now starts its saved-history read at mount instead of after the
+  project detail answers. Removed in the next major.
+- The `agent_tunnel` member of `FeatureFlagKey`. Computers need no flag. It is
+  absent from `FEATURE_FLAG_KEYS`, and `useFeatureFlag(id, 'agent_tunnel')`
+  reports `enabled: true`. Removed in the next major.
+- `ConnectorConfig.tunnelIds` and `ConnectorDraftInput.tunnel_ids`. A
+  `computer` connector no longer carries a machine list; each machine is an
+  account. Servers do not send the first and ignore the second.
+- `@kortix/sdk/react` tunnel hooks whose route the API deleted. They fail at
+  once with `ENDPOINT_RETIRED` and send no request: `useCreateTunnelConnection`
+  (pairing is device auth only), `useTunnelPermissions`,
+  `useGrantTunnelPermission`, `useRevokeTunnelPermission`,
+  `useTunnelPermissionRequests`, `useApprovePermissionRequest`,
+  `useDenyPermissionRequest`, `useTunnelAuditLogs`, and the types
+  `TunnelPermission`, `TunnelPermissionRequest`, `TunnelAuditLog`,
+  `AuditLogPage`, `TunnelConnectionCreateResponse`. Human approval of a risky
+  computer call is a connector policy (`require_approval`).
+- `buildTunnelEventStreamUrl`. It builds the URL of the deleted
+  `/tunnel/permission-requests/stream` route. Removed in the next major.
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
@@ -60,6 +121,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     Retired queries never retry or poll.
 
 ### Fixed
+- `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
+  no longer throw when `window.localStorage` resolves to `null` (some
+  embedded WebViews do this instead of throwing) or when a resolved storage
+  throws on read during quota reclaim or pruning. Added
+  `safeSessionGetItem`, `safeSessionSetItem` and `safeSessionRemoveItem` with
+  the same guarantee for `sessionStorage`, plus `safeSessionStorage` and
+  `createSafeSessionJSONStorage` for zustand `persist` stores.
 - `BillingError` (402) and `RequestTooLargeError` (431) now extend `ApiError`.
   `err instanceof ApiError` matches every failed request, and a 402 keeps the
   backend's machine `code` (for example `app_budget_exceeded`), `details` and

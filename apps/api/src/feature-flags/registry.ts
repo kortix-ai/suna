@@ -115,24 +115,10 @@ export interface FeatureFlagDef {
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: paired machines are selectable accounts inside a
- * regular `computer` connector profile. A profile can contain one or more
- * machines and uses the normal connector grant, policy, call, and audit paths.
- * Pairing does not auto-create project access. This flag gates the dedicated
- * fleet surface (Customize → Computers, device auth, and tunnel permissions).
- * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration. See docs/specs/computer-connector.md.
+ * Computers need no flag: a paired machine is an account on the project's
+ * `computer` connector. The platform-wide `TUNNEL_ENABLED` env is the only gate.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
-  {
-    key: 'session_transcript_history',
-    name: 'Session Transcript History',
-    description: 'Save chat history after each turn and show it from the database while the session computer starts.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-  },
   {
     key: 'marketplace',
     name: 'Marketplace',
@@ -143,22 +129,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // On by default for every project — no longer gated behind an opt-in toggle.
     platformDefault: () => true,
     enforcement: 'routes',
-  },
-  {
-    key: 'agent_tunnel',
-    name: 'Agent Computer Tunnel',
-    description:
-      'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
-    stability: 'experimental',
-    // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
-    // Explicit opt-in: off by default even where the service is available.
-    platformDefault: () => false,
-    enforcement: 'ui-only',
-    enforcementNote:
-      'Tunnel state is account-scoped (device auth, machines) and the computer ' +
-      'connector deliberately materializes independent of this flag — see the ' +
-      'registry header. The platform-wide TUNNEL_ENABLED env is the hard gate.',
   },
   {
     key: 'connectors_api_discover',
@@ -251,7 +221,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'monitors',
     name: 'Monitors',
     description:
-      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental; see docs/specs/2026-08-12-monitors.md.',
+      'Run 24/7 watchers from your repo that observe anything — logs, feeds, APIs — and fire trigger events into agent sessions. Runs on a persistent per-project monitor box. The contract is still experimental.',
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
@@ -260,6 +230,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Explicit opt-in: off by default even where Platinum is available.
     platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
   },
   {
@@ -346,9 +329,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
     stability: 'experimental',
-    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
-    // Settings row disappears and the surface is dark for every project.
-    available: () => config.CONFIG_RELEASES_ENABLED,
+    available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
     // "its off for now, as its untested"). The behaviour it gates is the
     // intended one; the default is a rollout decision, not a design opinion.
@@ -365,7 +346,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
       'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
       'no release is built, no archive is stored, and no kortix.config_releases ' +
-      'row is written. See docs/specs/config-releases.md → "Feature flag".',
+      'row is written.',
   },
   {
     key: 'agent_principal',
@@ -379,8 +360,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // different power per person, let an owner-launched agent ignore its own
     // grant entirely (super-admin short-circuit), and ran every unattended
     // trigger as the account owner. Switching a project OFF restores that old
-    // model as an escape hatch for one release; the switch is then deleted
-    // (spec docs/specs/2026-09-22-agents-as-principals.md §5).
+    // model as an escape hatch for one release; the switch is then deleted.
     platformDefault: () => true,
     // Not listed in Settings → Feature flags. An agent acting as itself is how
     // Kortix works, not a choice we offer, so presenting a switch would invite
