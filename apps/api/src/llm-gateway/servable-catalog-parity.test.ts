@@ -65,6 +65,7 @@ const memberGate = (userId: string) => members.includes(userId);
 
 mock.module('../repositories/project-model-access', () => ({
   getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }),
+  getProjectGatewayResolution: async () => ({ access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: true }),
 }));
 
 mock.module('../billing/services/entitlements', () => ({
