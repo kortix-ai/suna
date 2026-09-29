@@ -54,6 +54,13 @@ remembered across launches (stored in `userData/frontend_url`).
 `KORTIX_DESKTOP_USER_DATA=<dir>` runs against an isolated profile instead of
 the real one.
 
+Launch and **Go ▸ Home** load the instance's site root (`homeUrl()` in
+`src/instance-store.js`), not the saved `/projects` URL. The web middleware
+sends a signed-in `/` into the project this profile had open last, from the
+owner-scoped `kortix_last_project` cookie — the same as `kortix.com` in a
+browser. With no remembered project it lands on the `/projects/start` door. A
+saved URL with any other path loads as saved.
+
 ### First launch: choose a Kortix instance
 
 A new profile asks which instance to connect to before any page loads. The
