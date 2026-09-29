@@ -91,14 +91,20 @@ function streamErrorTraceStatus(error: SseErrorFrame): number {
 /**
  * Resolution failures a project's own fallback chain takes over, as the HTTP
  * status the same failure has from a provider: every own key or ChatGPT account
- * paused after a rate limit is a 429, a login that needs reconnection is a 401.
- * The chain's retry setting then decides exactly as for a failed attempt. Every
- * other resolution failure (not connected, disabled, excluded by the agent's
- * grant) is a setup or policy answer and stays the request's error.
+ * paused after a rate limit is a 429, a login that needs reconnection is a 401,
+ * and a model that is unavailable here — retired, not served by this
+ * deployment, or no longer recognized — is a 404, the status a provider answers
+ * for a model it will not serve. The chain's retry setting then decides exactly
+ * as for a failed attempt. Every other resolution failure (not connected,
+ * disabled, excluded by the agent's grant) is a setup or policy answer and
+ * stays the request's error.
  */
 const CHAIN_TAKES_OVER: Partial<Record<NoUpstreamReasonCode, number>> = {
   provider_pool_rate_limited: 429,
   provider_reauth_required: 401,
+  model_not_found: 404,
+  model_retired: 404,
+  model_disabled_on_deployment: 404,
 };
 
 const EMPTY_USAGE: TokenCounts = {

@@ -159,9 +159,11 @@ export function rawProviderError(error: UpstreamHttpError): Response {
 const MAX_FALLBACK_MODELS = 8;
 
 // 4xx statuses that mean "this upstream will not serve you now" rather than
-// "the request is wrong". A `transient` fallback chain moves past these, every
+// "the request is wrong": the model is unavailable (404 — OpenAI's
+// `model_not_found`, Anthropic's `not_found_error`), the key or endpoint is
+// limited (402, 403, 429). A `transient` fallback chain moves past these, every
 // 5xx, and every failure without an HTTP status (network, timeout).
-const LIMIT_STATUSES = new Set([402, 403, 429]);
+const LIMIT_STATUSES = new Set([402, 403, 404, 429]);
 
 // Cross-region inference profile prefixes to try, best first. `global.` serves
 // every commercial region; `us.` is the widest regional profile.
