@@ -41,7 +41,12 @@ let effectiveBefore: Record<string, { connection_id: string }> = {};
 let effectiveAfter: Record<string, { connection_id: string }> = {};
 let invalidated = false;
 /** Secrets the (mocked) project secret store can resolve for the session owner. */
-let availableSecretRows: Array<{ secretId: string; identifier: string; key: string; value: string }> = [];
+let availableSecretRows: Array<{
+  secretId: string;
+  identifier: string;
+  key: string;
+  value: string;
+}> = [];
 let canReadSecretNames = false;
 /** Validated bindings that count as personal (private-visibility) connections. */
 let personalAliases = new Set<string>();
@@ -90,11 +95,21 @@ mock.module('../lib/app', () => ({ projectsApp: app }));
 mock.module('../lib/access', () => ({
   loadProjectForUser: async () => ({
     userId: callerId,
-    row: { accountId, metadata: {}, repoUrl: 'https://example.test/repo', defaultBranch: null, manifestPath: null },
+    row: {
+      accountId,
+      metadata: {},
+      repoUrl: 'https://example.test/repo',
+      defaultBranch: null,
+      manifestPath: null,
+    },
   }),
   assertProjectCapability: async () => {},
   projectCapabilityAllowed: async () => canReadSecretNames,
-  loadVisibleSession: async () => ({ row: { ...sessionRow }, canManageLifecycle: true, ownerIsMachine: false }),
+  loadVisibleSession: async () => ({
+    row: { ...sessionRow },
+    canManageLifecycle: true,
+    ownerIsMachine: false,
+  }),
 }));
 const realSecretGrant = await import('../lib/secret-grant');
 mock.module('../lib/secret-grant', () => ({
@@ -124,8 +139,11 @@ mock.module('../lib/sandbox-env-sync', () => ({
 const realScb = await import('../lib/session-connector-bindings');
 mock.module('../lib/session-connector-bindings', () => ({
   ...realScb,
-  resolveEffectiveSessionConnectorBindings: async () => (invalidated ? effectiveAfter : effectiveBefore),
-  validateSessionConnectorBindings: async (input: { bindings?: Record<string, { connection_id: string }> }) => {
+  resolveEffectiveSessionConnectorBindings: async () =>
+    invalidated ? effectiveAfter : effectiveBefore,
+  validateSessionConnectorBindings: async (input: {
+    bindings?: Record<string, { connection_id: string }>;
+  }) => {
     if (validateError) return validateError;
     const bindings = Object.entries(input.bindings ?? {}).map(([alias, value]) => ({
       alias,
@@ -149,8 +167,6 @@ mock.module('../../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => true,
 }));
 
-const rowsOf = () =>
-  Object.entries(durableBindings).map(([alias, connectionId]) => ({ alias, connectionId }));
 const fakeDb: any = {
   select: () => ({
     from: (table: unknown) => {
@@ -160,17 +176,19 @@ const fakeDb: any = {
             ? [{ serviceAccountId: 'sa-1' }]
             : []
           : table === projectSessionConnectorBindings
-            ? rowsOf()
+            ? Object.entries(durableBindings).map(([alias, connectionId]) => ({
+                alias,
+                connectionId,
+              }))
             : (() => {
                 throw new Error('unexpected select table');
               })();
-      const query: any = {
-        where: () => query,
-        limit: (n: number) => rows.slice(0, n),
-        then: (resolve: (rows: unknown) => unknown, reject: (err: unknown) => unknown) =>
-          Promise.resolve(rows).then(resolve, reject),
-      };
-      return query;
+      // The route awaits the bindings select directly and chains `.limit(1)`
+      // on the service-account select; shape each to match, like drizzle does.
+      if (table === serviceAccounts) {
+        return { where: () => ({ limit: (n: number) => rows.slice(0, n) }) };
+      }
+      return { where: () => Promise.resolve(rows) };
     },
   }),
   update: (table: unknown) => ({
@@ -211,7 +229,9 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
   test('null → list narrowing under an "all" grant: no droppable names, warning still fires', async () => {
     sessionRow.secretsAllowlist = null;
     agentGrant = { env: 'all', connectors: 'all' };
-    availableSecretRows = [{ secretId: 's1', identifier: 'GMAIL_TOKEN', key: 'GMAIL_TOKEN', value: 'v' }];
+    availableSecretRows = [
+      { secretId: 's1', identifier: 'GMAIL_TOKEN', key: 'GMAIL_TOKEN', value: 'v' },
+    ];
     pushResult = { applied: true };
     const response = await putScope({ secrets: ['GMAIL_TOKEN'] });
     expect(response.status).toBe(200);
@@ -231,7 +251,9 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
         'Values the agent already read remain in its context and in shells it already started — rotate them if that matters.',
     });
     expect(pushCalls).toBe(1);
-    expect(sessionUpdates).toEqual([{ updatedAt: expect.any(Date), secretsAllowlist: ['GMAIL_TOKEN'] }]);
+    expect(sessionUpdates).toEqual([
+      { updatedAt: expect.any(Date), secretsAllowlist: ['GMAIL_TOKEN'] },
+    ]);
   });
 
   test('narrowing away a named secret echoes the name only to a caller that may read secret names', async () => {
@@ -278,7 +300,9 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
     expect(body.added_secrets).toEqual(['C_SECRET']);
     expect(body.retroactive).toBe(true);
     expect(body.applied_live).toBe(true);
-    expect(body.detail).toBe('Applied to the running sandbox now — the OpenCode process and new shells see the new scope.');
+    expect(body.detail).toBe(
+      'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+    );
   });
 
   test('a no-op allowlist write neither pushes nor changes the scope', async () => {
@@ -297,7 +321,9 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
   test('a failed sandbox push surfaces push_failed and push_reason', async () => {
     sessionRow.secretsAllowlist = null;
     agentGrant = { env: 'all', connectors: 'all' };
-    availableSecretRows = [{ secretId: 's1', identifier: 'GMAIL_TOKEN', key: 'GMAIL_TOKEN', value: 'v' }];
+    availableSecretRows = [
+      { secretId: 's1', identifier: 'GMAIL_TOKEN', key: 'GMAIL_TOKEN', value: 'v' },
+    ];
     pushResult = { applied: false, reason: 'box stopped' };
     const response = await putScope({ secrets: ['GMAIL_TOKEN'] });
     expect(response.status).toBe(200);
@@ -397,7 +423,9 @@ describe('PUT scope — connector bindings decision', () => {
         createdBy: callerId,
       },
     ]);
-    expect(sessionUpdates).toEqual([{ updatedAt: expect.any(Date), connectorBindingsConfigured: true }]);
+    expect(sessionUpdates).toEqual([
+      { updatedAt: expect.any(Date), connectorBindingsConfigured: true },
+    ]);
   });
 
   test('null clears the override: stored rows go and the session inherits again', async () => {
@@ -413,7 +441,9 @@ describe('PUT scope — connector bindings decision', () => {
     expect(body.detail).toBe('Connector access is back to the project defaults.');
     expect(bindingDeletes).toBe(1);
     expect(insertedBindings).toEqual([]);
-    expect(sessionUpdates).toEqual([{ updatedAt: expect.any(Date), connectorBindingsConfigured: false }]);
+    expect(sessionUpdates).toEqual([
+      { updatedAt: expect.any(Date), connectorBindingsConfigured: false },
+    ]);
   });
 
   test('binding an alias the agent grant does not list is refused with 403', async () => {
@@ -440,10 +470,17 @@ describe('PUT scope — connector bindings decision', () => {
   });
 
   test('a validation refusal passes its own error and code through', async () => {
-    validateError = { ok: false, error: 'connection c1 is not usable', code: 'CONNECTION_NOT_USABLE' };
+    validateError = {
+      ok: false,
+      error: 'connection c1 is not usable',
+      code: 'CONNECTION_NOT_USABLE',
+    };
     const response = await putScope({ connector_bindings: { gmail: { connection_id: connId1 } } });
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: 'connection c1 is not usable', code: 'CONNECTION_NOT_USABLE' });
+    expect(await response.json()).toEqual({
+      error: 'connection c1 is not usable',
+      code: 'CONNECTION_NOT_USABLE',
+    });
   });
 
   test('an alias absent after the write is reported in dropped_bindings', async () => {
