@@ -845,7 +845,7 @@ flow(
     /** `kortix <args>`: the tool's JSON reply, or the refusal text. */
     const cli = async (id: number, args: string[], extra: Record<string, unknown> = {}, token = pat) => {
       const r = await call(id, "kortix", { args, ...extra }, token);
-      let out: { exit_code: number | null; stdout: string; stderr: string; timed_out?: string; truncated?: string } | null = null;
+      let out: { exit_code: number | null; stdout: string; json?: any; stderr: string; timed_out?: string; truncated?: string } | null = null;
       try {
         out = JSON.parse(r.text);
       } catch {
@@ -895,30 +895,32 @@ flow(
     await ctx.step("[\"whoami\",\"--json\"] answers as the token's user through this API", async () => {
       const r = await cli(5, ["whoami", "--json"]);
       if (r.isError || r.out?.exit_code !== 0) throw new Error(r.text.slice(0, 500));
-      const who = JSON.parse(r.out.stdout);
+      // `--json` output arrives as a JSON value (`json`), never as a cut string, even for a user with many accounts.
+      if (r.out.json === undefined || r.out.truncated) throw new Error(`whoami --json is not whole JSON: ${r.text.slice(0, 300)}`);
+      const who = r.out.json;
       const me = JSON.parse((await call(6, "call_api", { method: "GET", path: "/v1/accounts/me" })).text.split("\n").slice(1).join("\n"));
       const id = who.user_id ?? who.user?.user_id ?? who.user?.id;
-      if (!id || ![me.user_id, me.id, me.user?.id, me.user?.user_id].includes(id)) throw new Error(`whoami ${r.out.stdout.slice(0, 300)} vs me ${JSON.stringify(me).slice(0, 300)}`);
+      if (!id || ![me.user_id, me.id, me.user?.id, me.user?.user_id].includes(id)) throw new Error(`whoami ${JSON.stringify(who).slice(0, 300)} vs me ${JSON.stringify(me).slice(0, 300)}`);
     });
     await ctx.step("secrets set then ls with project_id: the key is listed, the value is in no output", async () => {
       const value = `mcp-secret-${Date.now().toString(36)}`;
       const set = await cli(7, ["secrets", "set", `MCP_T=${value}`], { project_id: p.id });
       if (set.isError || set.out?.exit_code !== 0) throw new Error(set.text.slice(0, 500));
       const ls = await cli(8, ["secrets", "ls", "--json"], { project_id: p.id });
-      if (ls.isError || !ls.out!.stdout.includes("MCP_T")) throw new Error(ls.text.slice(0, 500));
+      if (ls.isError || !JSON.stringify(ls.out!.json ?? ls.out!.stdout).includes("MCP_T")) throw new Error(ls.text.slice(0, 500));
       if (ls.text.includes(value) || set.text.includes(value)) throw new Error("the secret value appeared in a tool result");
       const without = await cli(9, ["secrets", "ls", "--json"]);
-      if (without.out?.stdout.includes("MCP_T") && without.out.exit_code === 0) throw new Error("secrets ls without a project answered for one");
+      if (JSON.stringify(without.out?.json ?? without.out?.stdout ?? "").includes("MCP_T") && without.out?.exit_code === 0) throw new Error("secrets ls without a project answered for one");
       await cli(10, ["secrets", "rm", "MCP_T", "--yes"], { project_id: p.id });
     });
     await ctx.step("triggers ls, system-skills and a failing command: exit code and stderr come back, a non-zero exit is isError", async () => {
       const triggers = await cli(11, ["triggers", "ls", "--json"], { project_id: p.id });
       if (triggers.isError || triggers.out?.exit_code !== 0) throw new Error(triggers.text.slice(0, 400));
-      JSON.parse(triggers.out.stdout);
+      if (triggers.out.json === undefined) throw new Error(`triggers ls --json is not a JSON value: ${triggers.text.slice(0, 300)}`);
       const skills = await cli(12, ["system-skills"]);
       if (skills.isError || !skills.out?.stdout.includes("kortix-system")) throw new Error(skills.text.slice(0, 400));
       const bad = await cli(13, ["secrets", "no-such-subcommand"]);
-      if (!bad.isError || !bad.out || bad.out.exit_code === 0 || !(bad.out.stderr + bad.out.stdout).trim()) throw new Error(bad.text.slice(0, 300));
+      if (!bad.isError || !bad.out || bad.out.exit_code === 0 || !(bad.out.stderr + (bad.out.stdout ?? "")).trim()) throw new Error(bad.text.slice(0, 300));
       const unknown = await cli(29, ["no-such-command"]);
       if (!unknown.isError || !unknown.text.includes("not a kortix command")) throw new Error(`unknown command: ${unknown.text.slice(0, 300)}`);
       const leadingFlag = await cli(30, ["--project", p.id, "update"]);

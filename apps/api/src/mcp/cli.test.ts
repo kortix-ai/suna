@@ -144,6 +144,20 @@ describe('runCli', () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
+  test('--json output comes back as a JSON value, a large one too; a cut one stays a string with the note', async () => {
+    const big = JSON.stringify({ accounts: Array.from({ length: 800 }, (_, i) => ({ id: `acct-${i}`, name: `"quoted" ${i}` })) });
+    expect(big.length).toBeGreaterThan(24_000);
+    const r = await runCli({ ...base, args: ['whoami', '--json'], cli: fakeCli(`printf '%s' '${big}'`) });
+    const out = JSON.parse((r as { json: string }).json);
+    expect(out.json.accounts).toHaveLength(800);
+    expect(out.stdout).toBeUndefined();
+    expect(out.truncated).toBeUndefined();
+    const huge = await runCli({ ...base, args: ['whoami', '--json'], cli: fakeCli(`printf '[' ; head -c 200000 /dev/zero | tr '\\0' '1'; printf ']'`) });
+    const cut = JSON.parse((huge as { json: string }).json);
+    expect(cut.json).toBeUndefined();
+    expect(cut.truncated).toContain('not valid JSON');
+  });
+
   test('output over the cap is cut with a note and the reply stays valid JSON', async () => {
     const r = await runCli({ ...base, args: ['whoami'], cli: fakeCli(`head -c 500000 /dev/zero | tr '\\0' '"'`) });
     const json = (r as { json: string }).json;

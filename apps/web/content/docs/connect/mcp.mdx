@@ -168,7 +168,7 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 | `search_connector_apps` | `project_id`*, `query`*, `limit`, `cursor` | Searches the catalogue of managed apps a connector can be added from. |
 | `add_connector` | `project_id`*, `app` or `provider` + `slug`, `name`, `url`, `transport`, `endpoint`, `spec`, `base_url` | Adds a connector to the project now (committed to `kortix.yaml` on `main`, then synced). |
 | `remove_connector` | `project_id`*, `connector`* | Removes a connector from the project. |
-| `kortix` | `args`*, `project_id`, `session_id` | Runs the real `kortix` CLI as you and returns `exit_code`, `stdout` and `stderr`. See [Run any CLI command](#run-any-cli-command). |
+| `kortix` | `args`*, `project_id`, `session_id` | Runs the real `kortix` CLI as you and returns `exit_code`, `stdout` (or `json` for `--json` output) and `stderr`. See [Run any CLI command](#run-any-cli-command). |
 | `search_api` | `query`*, `limit` | Searches the Kortix API routes by keyword. |
 | `describe_api` | `method`*, `path`* | Returns one route's parameters, request body and response schema. |
 | `call_api` | `method`*, `path`*, `project_id`, `query`, `body` | Calls any `/v1/` route as you. `project_id` fills `{projectId}` in the path. |
@@ -204,7 +204,7 @@ a shell line.
   output you parse.
 - `project_id` sets the project of a project-scoped command. `session_id` sets
   the session of a command that acts on one.
-- The result is JSON: `exit_code`, `stdout`, `stderr`. A non-zero `exit_code`
+- The result is JSON: `exit_code`, `stdout`, `stderr`. With `--json`, the command's output arrives as a JSON value in `json` instead of `stdout`. Output that does not fit is cut and marked `truncated`; cut JSON is not valid JSON, so narrow the command. A non-zero `exit_code`
   is an MCP error. Each stream is cut at 24,000 (stdout) and 8,000 (stderr)
   characters, and the result says so in `truncated`.
 - A command that runs longer than about 45 seconds is killed. The result has

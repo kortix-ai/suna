@@ -112,7 +112,7 @@ export function cliEnv(input: { token: string; apiUrl: string; home: string; tmp
 // ─── Running ────────────────────────────────────────────────────────────────
 
 export const MAX_CONCURRENT = 4;
-const STDOUT_CAP = 24_000;
+const STDOUT_CAP = 45_000;
 const STDERR_CAP = 8_000;
 /** `text()` cuts at 60 000 characters; the JSON around the streams must stay whole. */
 const RESULT_CAP = 55_000;
@@ -190,14 +190,27 @@ export async function runCli(input: {
     clearTimeout(grace);
     await Promise.all(streams.map((x) => x.stop()));
     const [out, err] = [streams[0].result(), streams[1].result()];
-    const render = (stdoutText: string) =>
-      JSON.stringify({
+    // `--json` output travels as a JSON value, not an escaped string: half the size, and usable as is.
+    const parsedJson = (text: string): unknown => {
+      if (!/^\s*[[{]/.test(text)) return undefined;
+      try {
+        return JSON.parse(text);
+      } catch {
+        return undefined;
+      }
+    };
+    const render = (stdoutText: string) => {
+      const value = out.truncated ? undefined : parsedJson(stdoutText);
+      return JSON.stringify({
         exit_code: timedOut ? null : exitCode,
         ...(timedOut ? { timed_out: `killed after ${Math.round(input.timeoutMs / 1000)} s` } : {}),
-        stdout: stdoutText,
+        ...(value !== undefined ? { json: value } : { stdout: stdoutText }),
         stderr: err.text,
-        ...(out.truncated || err.truncated ? { truncated: `output cut at ${STDOUT_CAP} (stdout) / ${STDERR_CAP} (stderr) characters; narrow the command (--json, a filter, a limit)` } : {}),
+        ...(out.truncated || err.truncated
+          ? { truncated: `output cut (stdout ${STDOUT_CAP}, stderr ${STDERR_CAP} characters max); cut JSON is not valid JSON. Narrow the command: a filter, a --limit, or one item instead of a list` }
+          : {}),
       });
+    };
     let stdoutText = out.text;
     let json = render(stdoutText);
     // Quotes and newlines double in JSON: shrink stdout until the whole reply fits.
@@ -217,7 +230,7 @@ export const KORTIX_TOOL = {
   name: 'kortix',
   title: 'Run the kortix CLI',
   description:
-    'Run the real `kortix` CLI as you: everything the CLI does (secrets, triggers, cr, review, reminders, agents, models, gateway, providers, channels, sandboxes, apps, marketplace, files, access, roles, permissions, audit, grants, members, groups, tokens, billing, projects, sessions, system-skills, …). `args` is the argv after `kortix`, e.g. ["secrets","ls","--json"]. Discover with ["--help"] and ["<group>","--help"]; prefer `--json` for output you parse. `project_id` sets the project the command runs in; `session_id` sets the session where a command takes one. Returns {exit_code, stdout, stderr}; a non-zero exit code is `isError`. First-class tools exist for sessions, sandbox files and connectors: prefer start_session, run_command, read_file and call_connector to this one. Refused before it runs: `--host`, hosts, login, logout, init, ship, update, uninstall, self-host, tui, connect, chat without --prompt, token, env pull|push, apps deploy (a local directory: use run_command in a session sandbox), connectors mcp. Commands time out after about 45 seconds.',
+    'Run the real `kortix` CLI as you: everything the CLI does (secrets, triggers, cr, review, reminders, agents, models, gateway, providers, channels, sandboxes, apps, marketplace, files, access, roles, permissions, audit, grants, members, groups, tokens, billing, projects, sessions, system-skills, …). `args` is the argv after `kortix`, e.g. ["secrets","ls","--json"]. Discover with ["--help"] and ["<group>","--help"]; prefer `--json` for output you parse. `project_id` sets the project the command runs in; `session_id` sets the session where a command takes one. Returns {exit_code, stdout (or json: the parsed value when the output is JSON, e.g. with --json), stderr}; a non-zero exit code is `isError`. First-class tools exist for sessions, sandbox files and connectors: prefer start_session, run_command, read_file and call_connector to this one. Refused before it runs: `--host`, hosts, login, logout, init, ship, update, uninstall, self-host, tui, connect, chat without --prompt, token, env pull|push, apps deploy (a local directory: use run_command in a session sandbox), connectors mcp. Commands time out after about 45 seconds.',
   inputSchema: {
     type: 'object',
     properties: {

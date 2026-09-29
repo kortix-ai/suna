@@ -277,7 +277,7 @@ connectors the project has.
 
 The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
 `kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the
-context, and the result is `exit_code`, `stdout`, `stderr`. Discover with
+context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `stderr`. Discover with
 `["--help"]` and `["<group>", "--help"]`. Prefer the first-class tools for
 sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
 `login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
