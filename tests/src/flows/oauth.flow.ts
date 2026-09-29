@@ -565,6 +565,8 @@ flow(
       "DELETE /v1/oauth/grants/:clientId",
       "POST /v1/accounts/tokens",
       "POST /v1/projects/:projectId/cli-token",
+      "POST /v1/accounts/:accountId/iam/service-accounts",
+      "POST /v1/projects/:projectId/gateway/keys",
       "GET /v1/accounts/me",
       "GET /v1/oauth/authorize/consent/:requestId",
     ],
@@ -604,7 +606,7 @@ flow(
       (await ctx.client.as(ctx.P.ANON).del("/v1/oauth/grants/:clientId", { params: { clientId }, headers })).status(403);
     });
 
-    await ctx.step("the app's kortix_oat_ cannot mint a durable token either: POST /accounts/tokens and /projects/:id/cli-token → 403, so a revoke ends its access", async () => {
+    await ctx.step("the app's kortix_oat_ cannot mint a durable credential either: PAT, CLI token, SCIM token, OAuth client, service account, gateway key → 403, so a revoke ends its access", async () => {
       const headers = { Authorization: `Bearer ${access}` };
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/tokens", { name: "OAU-9-oat" }, { headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/cli-token", {}, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
@@ -612,6 +614,8 @@ flow(
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/scim/tokens", { name: "OAU-9-oat" }, { params, headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients", { name: "OAU-9-oat", redirect_uris: ["https://app.example.test/cb"] }, { params, headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret", {}, { params: { ...params, clientId }, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/service-accounts", { name: "OAU-9-oat" }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/gateway/keys", { name: "OAU-9-oat" }, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
     });
 
     await ctx.step("DELETE /oauth/grants/<not-a-uuid> → 404, not a 500", async () => {

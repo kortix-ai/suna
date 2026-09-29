@@ -69,6 +69,8 @@ projectsApp.openapi(
     responses: { 200: json(z.any(), 'Gateway API key created'), ...errors(400, 403, 404) },
   }),
   async (c: any) => {
+    // A connected app's revocable `kortix_oat_` token must not mint a durable one.
+    if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot mint gateway keys.' }, 403);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
