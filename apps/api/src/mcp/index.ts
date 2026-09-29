@@ -455,7 +455,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         session_id: SESSION_ID,
-        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` says how many exist.' },
+        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` is how many came back; `complete: true` means no older message exists.' },
         wait_seconds: { type: 'number', description: 'Wait up to this long (max 45) for the running turn to end before reading.' },
       },
       required: ['session_id'],
