@@ -381,8 +381,7 @@ export class AuditQueue {
     if (snapshot.length === 0) return this.inFlight ?? Promise.resolve();
 
     const previous = this.inFlight;
-    let run: Promise<void>;
-    run = (previous ?? Promise.resolve())
+    const run: Promise<void> = (previous ?? Promise.resolve())
       .then(() => this.write(snapshot))
       .finally(() => {
         if (this.inFlight === run) {
