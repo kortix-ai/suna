@@ -85,6 +85,10 @@ work.
 Each root run writes a benchmark to
 `tests/test-results/local/benchmark-<timestamp>.json`.
 
+An API performance change reports a measured before/after from
+`apps/api/scripts/prompt-latency-bench.ts`. The runbook and the baseline are
+in `references/api-latency-baseline.md`.
+
 ## Your machine is the pre-merge gate
 
 A pull request into `main` runs **no** GitHub Actions job by itself. Every test
