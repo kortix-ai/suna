@@ -131,7 +131,6 @@ describe('dotm resolver characterization (sampled cycle values)', () => {
       // 25 dots get styled; it emits only its three opacity constants
       // (strand 1, near-strand 0.24, base 0.08).
       expect(opacities).toHaveLength(21);
-      expect(['0.08', '0.24', '1'].includes(opacities[0]!)).toBe(true);
       for (const opacity of new Set(opacities)) {
         expect(['0.08', '0.24', '1']).toContain(opacity);
       }
