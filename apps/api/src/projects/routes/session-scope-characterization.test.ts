@@ -45,7 +45,6 @@ let grantThrows: string | null = null;
 let personalOwner: string | null = OWNER_ID;
 let pushResult: { applied: boolean; reason?: string } = { applied: true };
 let pushCalls = 0;
-let validatedBindings: Record<string, unknown> | null = null;
 const writeCalls: string[] = [];
 let updateSets: Array<Record<string, unknown>> = [];
 let insertValues: Array<unknown> = [];
@@ -154,7 +153,7 @@ mock.module('../lib/session-connector-bindings', () => ({
   },
   invalidateSessionConnectorLookup: () => {},
   validateSessionConnectorBindings: async (input: { bindings: Record<string, { connection_id: string }> }) =>
-    validatedBindings ?? okValidated(input.bindings ?? {}),
+    okValidated(input.bindings ?? {}),
 }));
 
 mock.module('../secrets', () => ({
@@ -222,7 +221,6 @@ beforeEach(() => {
   personalOwner = OWNER_ID;
   pushResult = { applied: true };
   pushCalls = 0;
-  validatedBindings = null;
   writeCalls.length = 0;
   updateSets = [];
   insertValues = [];
@@ -435,7 +433,6 @@ describe('PUT scope — bindings envelope', () => {
   test('an explicit bindings map replaces the stored rows, writes update+delete+insert in order', async () => {
     durableBindingRows = [{ alias: 'gmail', connectionId: CONN_ID }];
     effectiveMaps = [{ gmail: { connection_id: CONN_ID } }, { gmail: { connection_id: CONN_ID_2 } }];
-    serviceAccountRows = [];
 
     const res = await putScope({ connector_bindings: { gmail: { connection_id: CONN_ID_2 } } });
     expect(res.status).toBe(200);
