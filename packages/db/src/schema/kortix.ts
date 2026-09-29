@@ -2419,6 +2419,8 @@ export const providerEvents = kortixSchema.table(
     index('idx_provider_events_kind').on(table.kind),
     index('idx_provider_events_outcome').on(table.outcome),
     index('idx_provider_events_created').on(table.createdAt),
+    // `reconcileAuditEvents` filters by `account_id` alone (see the test).
+    index('idx_provider_events_account').on(table.accountId),
   ],
 );
 
