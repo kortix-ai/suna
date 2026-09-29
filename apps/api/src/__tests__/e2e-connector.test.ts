@@ -782,8 +782,9 @@ describe('connector-scoped policy enforcement', () => {
       execution_id: 'exec-1',
       retryable: false,
       approval_url: 'https://app.kortix.test/approve/token-exec-1',
+      // No approval_context on the call, so the agent is told to describe it next time.
       approval_instructions:
-        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.',
+        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
     });
   });
 

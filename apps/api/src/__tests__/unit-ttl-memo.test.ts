@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, setSystemTime } from 'bun:test';
 import { ttlMemo } from '../shared/ttl-memo';
 
 // `bun test` sets NODE_ENV=test, which normally bypasses the memo entirely —
@@ -187,6 +187,14 @@ function resolvePending(resolvers: Array<(v: number) => void>, index: number, va
  * SWR serves the last resolved value at once and refreshes behind it.
  */
 describe('ttlMemo stale-while-revalidate', () => {
+  // A 10 ms TTL on the wall clock expires again between a refresh settling and
+  // the next assertion on a loaded CI runner. Tests that assert "fresh again"
+  // drive Date.now() instead, so only the explicit advance() moves time.
+  let clock = 0;
+  const freezeClock = () => setSystemTime(new Date((clock = Date.now())));
+  const advance = (ms: number) => setSystemTime(new Date((clock += ms)));
+  afterEach(() => setSystemTime());
+
   it('serves the stale value immediately and refreshes behind the call', async () => {
     let calls = 0;
     const resolvers: Array<(v: number) => void> = [];
@@ -200,12 +208,13 @@ describe('ttlMemo stale-while-revalidate', () => {
       },
       enableInTests: true,
     });
+    freezeClock();
 
     const first = memo('a');
     resolvePending(resolvers, 0, 1);
     expect(await first).toBe(1);
 
-    await sleep(25); // TTL expires, the value is now stale
+    advance(25); // TTL expires, the value is now stale
     // The call returns the stale 1 without waiting on the refresh (which will
     // resolve to 2) — the provider round trip is off the request path.
     expect(await memo('a')).toBe(1);
@@ -255,11 +264,12 @@ describe('ttlMemo stale-while-revalidate', () => {
       },
       enableInTests: true,
     });
+    freezeClock();
 
     expect(await memo('a')).toBe(1);
-    await sleep(25);
+    advance(25);
     expect(await memo('a')).toBe(1); // stale kept; refresh #2 rejects
-    await sleep(25);
+    advance(25);
     expect(await memo('a')).toBe(1); // stale served; refresh #3 retries
     await sleep(0); // let refresh #3 settle
     expect(await memo('a')).toBe(3); // fresh now

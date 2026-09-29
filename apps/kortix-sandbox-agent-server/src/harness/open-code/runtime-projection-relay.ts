@@ -1,5 +1,9 @@
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv } from '@/lib/kortix-api/relay-context'
+import {
+  noteControlPlaneResponse,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
 import { runtimeStateStore, type RuntimeStateDoc } from './runtime-state-projection'
 
 /**
@@ -143,6 +147,14 @@ async function doPush(reason: string, unavailableRetries = 0): Promise<void> {
   const { doc, etag } = state
   if (etag === lastPushedEtag) return
 
+  // A credential the control plane has refused, repeatedly and without
+  // contradiction, cannot accept this push: the server answers 401 and the API
+  // logs one warn line per boot/change trigger — the `POST
+  // /v1/platform/runtime-projection -> 401` spike in KRTX-446. Skip while the
+  // shared breaker reports the credential dead; it clears on the next non-dead
+  // answer, so this resumes by itself and never stops the daemon.
+  if (sessionTokenPresumedDead()) return
+
   const url = `${apiRoot}/platform/runtime-projection`
 
   // Pre-shed proactively when we can already see the document exceeding the
@@ -182,6 +194,11 @@ async function doPush(reason: string, unavailableRetries = 0): Promise<void> {
     logger.warn('[runtime-projection] push failed', { err: (err as Error).message })
     return
   }
+
+  // Feed the shared dead-session-credential breaker (KRTX-446): a 401 carrying
+  // the terminal refusal is one more signal on the streak, and any other answer
+  // is proof the credential works again — which is what clears the breaker.
+  noteControlPlaneResponse(res.status, res.ok ? null : await res.text().catch(() => ''))
 
   if (res.status === 413) {
     // The server said too big even after our pre-check: shed the full ladder
