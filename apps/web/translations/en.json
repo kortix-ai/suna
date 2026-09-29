@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Connect a model to start chatting",
-      "description": "This session needs an LLM connected before it can respond. Bring your own API key from any provider.",
-      "upgradeDescription": "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider.",
       "upgrade": "Upgrade",
-      "bringKey": "Bring your own key",
       "barTitle": "No model connected",
       "barDescription": "connect one to start chatting",
       "connectModel": "Connect model",

@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "モデルを接続してチャットを開始",
-      "description": "応答するには、このセッションにLLMを接続する必要があります。任意のプロバイダーのAPIキーを持ち込めます。",
-      "upgradeDescription": "応答するには、このセッションにLLMを接続する必要があります。アップグレードするとKortixのマネージドモデルにすぐアクセスできます。または、任意のプロバイダーのAPIキーを持ち込めます。",
       "upgrade": "アップグレード",
-      "bringKey": "自分のキーを持ち込む",
       "barTitle": "モデル未接続",
       "barDescription": "接続してチャットを開始",
       "connectModel": "モデルを接続",
