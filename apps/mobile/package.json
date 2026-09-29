@@ -128,6 +128,7 @@
     "@babel/plugin-transform-react-jsx": "^7.26.0",
     "@babel/plugin-transform-unicode-regex": "^7.26.0",
     "@types/react": "~19.2.18",
+    "@types/react-test-renderer": "19.1.0",
     "babel-preset-expo": "~56.0.20",
     "canvaskit-wasm": "^0.42.0",
     "mermaid": "11.15.0",
@@ -135,6 +136,7 @@
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.6.14",
     "react-native-svg-transformer": "^1.5.1",
+    "react-test-renderer": "19.2.3",
     "sharp": "^0.35.4",
     "typescript": "~5.9.2"
   },
