@@ -1739,11 +1739,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "连接模型以开始聊天",
-      "description": "此会话需要先连接 LLM 才能响应。你可以使用任意提供商的 API 密钥。",
-      "upgradeDescription": "此会话需要先连接 LLM 才能响应。升级即可立即使用 Kortix 托管模型，也可以使用任意提供商的 API 密钥。",
       "upgrade": "升级",
-      "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
       "connectModel": "连接模型",

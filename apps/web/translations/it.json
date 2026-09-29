@@ -1739,11 +1739,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Collega un modello per iniziare a chattare",
-      "description": "Questa sessione richiede un LLM collegato prima di poter rispondere. Usa la tua chiave API di qualsiasi provider.",
-      "upgradeDescription": "Questa sessione richiede un LLM collegato prima di poter rispondere. Esegui l’upgrade per accedere subito ai modelli gestiti da Kortix oppure usa la tua chiave API di qualsiasi provider.",
       "upgrade": "Esegui l’upgrade",
-      "bringKey": "Usa la tua chiave",
       "barTitle": "Nessun modello collegato",
       "barDescription": "collegane uno per iniziare a chattare",
       "connectModel": "Collega modello",

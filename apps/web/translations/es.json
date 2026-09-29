@@ -1739,11 +1739,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Conecta un modelo para empezar a chatear",
-      "description": "Esta sesión necesita un LLM conectado para poder responder. Usa tu propia clave de API de cualquier proveedor.",
-      "upgradeDescription": "Esta sesión necesita un LLM conectado para poder responder. Obtén acceso instantáneo a los modelos administrados de Kortix con una mejora, o usa tu propia clave de API de cualquier proveedor.",
       "upgrade": "Mejorar plan",
-      "bringKey": "Usar tu propia clave",
       "barTitle": "No hay ningún modelo conectado",
       "barDescription": "conecta uno para empezar a chatear",
       "connectModel": "Conectar modelo",
