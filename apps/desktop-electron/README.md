@@ -54,6 +54,11 @@ remembered across launches (stored in `userData/frontend_url`).
 `KORTIX_DESKTOP_USER_DATA=<dir>` runs against an isolated profile instead of
 the real one.
 
+**Go ▸ Copy Current URL** (⌘/Ctrl+L) copies the address the window is on — the
+session URL inside a session — so it can be pasted and shared. It is enabled
+only on app pages (the same in-app routes the navigation gate allows); on a
+blank, error, or external page it is disabled.
+
 ### First launch: choose a Kortix instance
 
 A new profile asks which instance to connect to before any page loads. The

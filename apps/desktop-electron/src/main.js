@@ -16,13 +16,13 @@
 // `window.__TAURI__` bridge shape (see preload.js) so the web app's desktop
 // bridge (apps/web/src/lib/desktop.ts) runs UNCHANGED.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
-const { menuContextForUrl } = require('./menu-state');
+const { menuContextForUrl, copyableUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
 const { backgroundForTheme, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
@@ -568,13 +568,16 @@ function navigateWindow(direction) {
 function refreshNavigationMenu() {
   const menu = Menu.getApplicationMenu();
   if (!menu) return;
+  const url = mainWindow?.webContents.getURL() || '';
   const forward = menu.getMenuItemById('kx-go-forward');
   if (forward) forward.enabled = mainHistoryTarget('forward') >= 0;
-  const context = menuContextForUrl(mainWindow?.webContents.getURL() || '');
+  const context = menuContextForUrl(url);
   const newSession = menu.getMenuItemById('kx-file-new-session');
   const closeTab = menu.getMenuItemById('kx-file-close-tab');
+  const copyUrl = menu.getMenuItemById('kx-go-copy-url');
   if (newSession) newSession.enabled = context.inProject;
   if (closeTab) closeTab.enabled = context.hasActiveTab;
+  if (copyUrl) copyUrl.enabled = copyableUrl(url) !== null;
 }
 
 function sendDesktopCommand(command) {
@@ -1005,6 +1008,20 @@ function buildMenu() {
           label: 'Home',
           accelerator: shortcuts.home,
           click: () => navigateWindow('home'),
+        },
+        { type: 'separator' },
+        {
+          // The shell has no address bar, so a session link is otherwise
+          // unshareable. Copy the page the window is on; enabled state follows
+          // the same URL as refreshNavigationMenu.
+          id: 'kx-go-copy-url',
+          label: 'Copy Current URL',
+          accelerator: 'CommandOrControl+L',
+          enabled: false,
+          click: () => {
+            const url = copyableUrl(mainWindow?.webContents.getURL() || '');
+            if (url) clipboard.writeText(url);
+          },
         },
       ],
     },

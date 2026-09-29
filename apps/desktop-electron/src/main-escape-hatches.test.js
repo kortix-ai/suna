@@ -37,6 +37,16 @@ describe('desktop escape hatches', () => {
     expect(home).toContain('navigateMainWindow(instanceStore.appUrl())');
   });
 
+  test('Go ▸ Copy Current URL copies the page URL through the shared builder', () => {
+    expect(main).toMatch(
+      /id: 'kx-go-copy-url',\s*label: 'Copy Current URL',\s*accelerator: 'CommandOrControl\+L',\s*enabled: false,\s*click: \(\) => \{\s*const url = copyableUrl\(mainWindow\?\.webContents\.getURL\(\) \|\| ''\);\s*if \(url\) clipboard\.writeText\(url\);/,
+    );
+    // The enabled state follows every committed navigation, like the other
+    // Go items.
+    expect(main).toContain("menu.getMenuItemById('kx-go-copy-url')");
+    expect(main).toMatch(/copyUrl\.enabled = copyableUrl\(url\) !== null/);
+  });
+
   test('a renderer that dies offers Reload instead of leaving an empty window', () => {
     expect(main).toContain("'render-process-gone'");
     expect(main).toContain('rendererGoneNeedsRecovery(');
