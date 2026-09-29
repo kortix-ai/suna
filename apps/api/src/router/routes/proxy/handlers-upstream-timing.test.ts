@@ -171,7 +171,9 @@ function parseServerTiming(value: string | null): Record<string, number> {
   const out: Record<string, number> = {};
   for (const entry of (value ?? '').split(',')) {
     const match = /^\s*([\w-]+)\s*;\s*dur=([\d.]+)\s*$/.exec(entry);
-    if (match) out[match[1]!] = Number(match[2]);
+    const name = match?.[1];
+    const duration = match?.[2];
+    if (name && duration) out[name] = Number(duration);
   }
   return out;
 }
