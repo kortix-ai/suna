@@ -118,6 +118,8 @@ interface PlatinumSandbox {
   id: string;
   state?: string;
   name?: string;
+  /** Absent on Platinum builds before #1335. */
+  autoResume?: boolean;
   /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
    *  response to an already-committed sandbox rather than a fresh create. */
   replayed?: boolean;
@@ -136,6 +138,23 @@ interface PlatinumSandboxPage {
   total?: number;
   has_more?: boolean;
 }
+/**
+ * A box created before `auto_resume: false` shipped (see create) still lets any
+ * stray request wake it. The stop that parks it closes that, once, so no
+ * backfill is needed: every box Kortix stops from now on is covered. Only when
+ * Platinum reports the field — an older build reads a PATCH naming no field it
+ * knows as "clear the name". Best effort: the stop itself already succeeded.
+ */
+async function disableAutoResume(externalId: string, sandbox: PlatinumSandbox | null): Promise<void> {
+  if (sandbox?.autoResume !== true || sandbox.metadata?.['kortix.workload'] === 'app') return;
+  await platinumJson(`/v1/sandboxes/${externalId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ auto_resume: false }),
+  }).catch((err) =>
+    console.warn(`[platinum] could not turn auto-resume off for ${externalId}:`, err instanceof Error ? err.message : err),
+  );
+}
+
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
 
 /**
@@ -420,6 +439,14 @@ export class PlatinumProvider implements SandboxProvider {
       envVars,
       type: autoStop === 0 ? 'persistent' : 'ephemeral',
       auto_stop_minutes: autoStop,
+      // Only Kortix wakes a session box. Platinum's edge resumes a stopped VM on
+      // ANY inbound request, and Kortix keeps sending some after a stop (5-min
+      // cached edge URLs, an SSE reconnect, a retry). The VM then ran while our
+      // row said `stopped`, its session credential refused: 68 prod boxes in
+      // one day, one left serving nothing for 18 h (2026-09-28). Apps keep the
+      // default: a visitor's request is supposed to wake them. Platinum builds
+      // before #1335 drop the unknown field (non-strict schema).
+      auto_resume: workloadType === 'app',
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
@@ -819,7 +846,10 @@ export class PlatinumProvider implements SandboxProvider {
         () => null,
       );
       const state = String(sandbox?.state ?? '').toLowerCase();
-      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') return;
+      if (!sandbox || state === 'stopped' || state.includes('archiv') || state === 'failed') {
+        await disableAutoResume(externalId, sandbox);
+        return;
+      }
       if (Date.now() >= deadline) {
         throw new Error(
           `Platinum stop for ${externalId} did not reach stopped within ${deadlineMs}ms (last state: ${state || 'unknown'})`,

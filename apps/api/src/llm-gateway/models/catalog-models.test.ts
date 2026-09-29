@@ -189,6 +189,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/enriched']).toEqual({
       name: 'Enriched',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released,
       release_date: released,
       family,
@@ -200,6 +201,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released: undefined,
       release_date: undefined,
       family: undefined,

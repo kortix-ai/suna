@@ -28,6 +28,15 @@ describe('compactMessage', () => {
       { tool: 'bash', status: 'completed', input: '{"command":"echo mcp-e2e-ok"}', output: 'mcp-e2e-ok\n' },
       { tool: 'read', status: 'error', input: '{"path":"x"}', output: 'ENOENT' },
     ]);
-    expect(compactMessage(message, 10, true).tools[0]!.input).toBe('{"command…');
+    expect(compactMessage(message, 10, true).tools[0]!.input).toBe('{"command"…[truncated: 10 of 29 chars]');
+  });
+
+  test('full keeps a long final answer whole (well past `chars`) and marks a cut with kept and total length', () => {
+    const long = { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'x'.repeat(6000) }] };
+    expect(compactMessage(long, 700, true).text).toHaveLength(6000);
+    const huge = { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'y'.repeat(20_000) }] };
+    expect(compactMessage(huge, 700, true).text.endsWith('…[truncated: 16000 of 20000 chars]')).toBe(true);
+    // The digest keeps its one-line cut.
+    expect(compactMessage(long, 700).text).toHaveLength(700);
   });
 });

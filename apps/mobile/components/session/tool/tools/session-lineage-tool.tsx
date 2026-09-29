@@ -40,7 +40,4 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
     </BasicTool>
   );
 }
-ToolRegistry.register('session_lineage', SessionLineageTool);
 ToolRegistry.register('session-lineage', SessionLineageTool);
-ToolRegistry.register('oc-session_lineage', SessionLineageTool);
-ToolRegistry.register('oc-session-lineage', SessionLineageTool);

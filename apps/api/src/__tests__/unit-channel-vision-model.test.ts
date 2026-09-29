@@ -282,6 +282,7 @@ mock.module('../llm-gateway/models/served-managed-models', () => ({
 }));
 
 mock.module('../llm-gateway/enablement', () => ({
+  projectLlmGatewayEnabled: () => true,
   projectLlmGatewayEnabledById: async () => true,
 }));
 

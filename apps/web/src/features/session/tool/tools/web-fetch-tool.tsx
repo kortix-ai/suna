@@ -10,8 +10,8 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { extractReadableHtml } from '@/features/session/tool/tool-renderers-sanitization';
-import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
+import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
+import { openSafeExternalUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import {
   CaretRightIcon as ChevronRight,

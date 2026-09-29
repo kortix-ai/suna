@@ -136,7 +136,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       }
       result.push({
         providerID: p.id,
-        providerName: p.name,
+        providerName: model.provider_name ?? p.name,
         modelID,
         modelName: (model.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,

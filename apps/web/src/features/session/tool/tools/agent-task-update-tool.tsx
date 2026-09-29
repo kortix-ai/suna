@@ -42,19 +42,11 @@ export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps)
       return <AgentMessageTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
   }
 }
-ToolRegistry.register('agent_task_update', AgentTaskUpdateTool);
 ToolRegistry.register('agent-task-update', AgentTaskUpdateTool);
-ToolRegistry.register('task_update', AgentTaskUpdateTool);
 ToolRegistry.register('task-update', AgentTaskUpdateTool);
-ToolRegistry.register('agent_task_message', AgentMessageTool);
 ToolRegistry.register('agent-task-message', AgentMessageTool);
-ToolRegistry.register('task_message', AgentMessageTool);
 ToolRegistry.register('task-message', AgentMessageTool);
-ToolRegistry.register('agent_task_approve', TaskDoneTool);
 ToolRegistry.register('agent-task-approve', TaskDoneTool);
-ToolRegistry.register('agent_task_cancel', AgentStopTool);
 ToolRegistry.register('agent-task-cancel', AgentStopTool);
-ToolRegistry.register('task_approve', TaskDoneTool);
 ToolRegistry.register('task-approve', TaskDoneTool);
-ToolRegistry.register('task_cancel', AgentStopTool);
 ToolRegistry.register('task-cancel', AgentStopTool);

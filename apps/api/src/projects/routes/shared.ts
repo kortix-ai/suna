@@ -315,7 +315,7 @@ export async function resumeStoppedSandbox(
       // provider-running precedes the guest daemon binding its port.
       scheduleSandboxRuntimeRefresh(row.sessionId, 'resume');
       // The project's half of the same problem. The woken VM still holds the
-      // `.kortix/opencode` tree and compiled agent config of its provision day;
+      // config dir, skills and compiled agent config of its provision day;
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
       // a no-op — no opencode restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');
@@ -1823,6 +1823,59 @@ async function runOpenSession(args: {
         : STALE_OPENCODE_NOT_READY_MS,
       STALE_OPENCODE_BOOT_HARD_MS,
     );
+    if (staleBoot && ensured.reason === 'unreachable') {
+      // Provider-running, daemon silent past the budget. On Platinum that is a
+      // corpse parking cannot fix — relaunch it first (decideDeadDaemonOnOpen).
+      // The repair re-probes twice and checks the provider before it touches
+      // anything, so a slow boot is never relaunched on this word alone.
+      const { decideDeadDaemonOnOpen, DEAD_DAEMON_REPAIR_REQUESTED_KEY, LEGACY_CHECK_METADATA_KEY } =
+        await import('../lib/legacy-runtime-bootstrap');
+      const since = Date.parse(String(metadataForBudget.opencodeUnreachableWaitStartedAt ?? ''));
+      const action = decideDeadDaemonOnOpen({
+        provider: row.provider,
+        metadata: sandboxMetadata(row),
+        unreachableSinceMs: Number.isFinite(since) ? since : null,
+        nowMs: Date.now(),
+      });
+      let repairing = action === 'wait';
+      if (action === 'request') {
+        const { scheduleLegacyRuntimeBootstrap } = await import('../lib/legacy-runtime-bootstrap-wiring');
+        // A `current` verdict from hours ago says nothing about a daemon that
+        // just refused a connection; without dropping it the repair's 6 h
+        // recent-check gate skips exactly this box.
+        const { [LEGACY_CHECK_METADATA_KEY]: _staleCheck, ...metadata } = sandboxMetadata(row);
+        repairing = scheduleLegacyRuntimeBootstrap(
+          { ...row, projectId, externalId: runningExternalId, metadata },
+          'session-open-dead-daemon',
+        );
+        if (repairing) {
+          await db
+            .update(sessionSandboxes)
+            .set({
+              metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+                [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: new Date().toISOString(),
+              })}::jsonb`,
+            })
+            .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+          console.warn('[start] daemon dead on a running box; relaunching instead of parking', {
+            session_id: row.sessionId,
+            sandbox_id: row.sandboxId,
+            external_id: runningExternalId,
+          });
+        }
+      }
+      if (repairing) {
+        return {
+          stage: 'starting',
+          agent_name: visible.row.agentName ?? 'default',
+          retriable: true,
+          sandbox: serializeSandboxRow(row),
+          opencode_session_id: null,
+          runtime_url: sessionRuntimeUrlPath(runningExternalId),
+          reason: 'runtime_updating',
+        };
+      }
+    }
     if (staleBoot) {
       log.did('reconciled');
       log.did('reconciled');

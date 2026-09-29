@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 693,
+  "count": 695,
   "routes": [
     {
       "method": "GET",
@@ -8,7 +8,15 @@
     },
     {
       "method": "GET",
+      "path": "/.well-known/oauth-protected-resource"
+    },
+    {
+      "method": "GET",
       "path": "/.well-known/oauth-protected-resource/v1/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/openid-configuration"
     },
     {
       "method": "GET",

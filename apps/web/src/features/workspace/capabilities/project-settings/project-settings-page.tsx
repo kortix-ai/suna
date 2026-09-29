@@ -202,7 +202,7 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
               className="min-w-0 flex-1 py-2"
             >
               <Tabs value={active} className="w-fit">
-                <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
+                <TabsList orientation="horizontal" className="w-fit">
                   {sections.map((section) => (
                     <SectionTrigger
                       key={section.key}

@@ -11,7 +11,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { stripMarkupForToolOutput } from '@/features/session/tool/tool-renderers-sanitization';
+import { stripMarkupForToolOutput } from '@kortix/shared';
 import { TerminalWindowIcon as Terminal } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';

@@ -120,6 +120,22 @@ export interface QueuedContinueSessionPayload {
    * `withRemintedWireId`; absent on a row that never waited or re-delivered.
    */
   redeliveredMessageIds?: string[];
+  /**
+   * Stamped on every queued row when a Stop hold is released. Rows sharing it
+   * are delivered as separate user messages and answered in ONE turn: all but
+   * the last go out `noReply`. Absent on a normal queue, which stays one
+   * prompt per turn.
+   */
+  releasedBatchId?: string;
+  /**
+   * Stamped with `releasedBatchId`: true on a row the Stop HELD, false on the
+   * send that released it. A held row predates anything staged while the
+   * session was stopped — a rewind — and must not commit it; the send made
+   * after the rewind is the prompt that does. Read in place of the usual
+   * "did it wait" markers, which every batch row picks up by waiting behind
+   * its own siblings (`placeQueuedContinue`).
+   */
+  releasedFromHold?: boolean;
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;

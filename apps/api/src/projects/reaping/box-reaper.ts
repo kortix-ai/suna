@@ -754,16 +754,23 @@ export async function reapAndReconcileSandboxes(
               providerStatus === 'stopped' &&
               decideStoppedObservation(row.metadata, now) === 'await_confirmation'
             ) {
-              console.warn('[reaper] provider reported stopped mid-turn; awaiting confirmation', {
-                sandboxId: row.sandboxId,
-                externalId: row.externalId,
-                provider: row.provider,
-                turns: storedSandboxTurns(row.metadata).map((turn) => turn.token),
-              });
               // No clock is passed on purpose: `now` is this PASS's start, and
               // a batch of provider round-trips can be minutes older than the
               // observation it would be stamped on. See markPendingStopObservation.
-              await markPendingStopObservation(row.sandboxId);
+              const armed = await markPendingStopObservation(row.sandboxId);
+              // One line per stop episode — the pass that ARMS the marker. The
+              // confirmation window is 60 s at a 20 s cadence, so a warn every
+              // pass triples an episode's line count; the drip-extend warn
+              // follows the same rule one branch above (one incident, not one
+              // warning every 20 s).
+              if (armed) {
+                console.warn('[reaper] provider reported stopped mid-turn; awaiting confirmation', {
+                  sandboxId: row.sandboxId,
+                  externalId: row.externalId,
+                  provider: row.provider,
+                  turns: storedSandboxTurns(row.metadata).map((turn) => turn.token),
+                });
+              }
               result.skipped += 1;
               break;
             }

@@ -491,6 +491,24 @@ connectors:
 `,
   },
   {
+    name: 'v2: `file` names the agent .md',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: agents/a.md\n',
+  },
+  {
+    name: 'v2: `file` rejects a traversal segment',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: ../a.md\n',
+  },
+  {
+    name: 'v2: `file` rejects a non-.md file',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: agents/a.txt\n',
+  },
+  {
     name: 'v2: flat `mode` on agent block rejected (moved to .md)',
     format: 'yaml',
     valid: false,

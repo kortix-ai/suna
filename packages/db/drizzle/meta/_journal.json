@@ -666,6 +666,20 @@
       "when": 1790656129079,
       "tag": "20260929042849_computer_accounts_lineage",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1790686483090,
+      "tag": "20260929125443_session_initiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790703018479,
+      "tag": "20260929173018_drizzle_snapshot_drop_opencode_archive",
+      "breakpoints": true
     }
   ]
 }

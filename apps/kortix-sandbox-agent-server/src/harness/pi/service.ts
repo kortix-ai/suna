@@ -9,7 +9,7 @@ import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
 import { isRepoMaterialized } from '@/lib/git/git'
 import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
-import { createPiAssetsService } from './assets'
+import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'
 import type { PiBootState } from './boot-state'
 import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiConfig } from './config'
@@ -36,6 +36,7 @@ export function createPiHarnessService(
   const runtime = new PiRuntime({ cfg, sessionId, hooks: options.hooks, env })
   let started = false
   const live = () => (started ? runtime : null)
+  registerPiSkillReload(async () => live()?.reloadSkills())
   const surface = createPiSurface(live)
   const pushProjection = (reason: string) =>
     schedulePiProjectionPush(() => {
@@ -92,7 +93,7 @@ export function createPiHarnessService(
     },
     control: createPiControlService(live, () => pushProjection('kortix-env-applied')),
     diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError),
-    queries: createPiQueryService(live, surface),
+    queries: createPiQueryService(live),
     background: { start: (currentCfg) => startPiBackground(live, currentCfg) },
     assets: createPiAssetsService(),
   }

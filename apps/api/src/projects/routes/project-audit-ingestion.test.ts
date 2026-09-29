@@ -5,9 +5,9 @@
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
-import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
 import { runWithContext } from '../../lib/request-context';
-import { attachInboundAuditScope } from '../../shared/audit-scope';
+import { attachInboundAuditScope, currentInboundAuditScope } from '../../shared/audit-scope';
+import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
 import {
   SESSION_EVENT_RATE_LIMITED_ACTION,
   __resetAuditRateGuardForTest,
@@ -35,6 +35,14 @@ let insertedValues: Array<Record<string, unknown>> = [];
 let insertStatements: Array<Array<Record<string, unknown>>> = [];
 /** When set, the Nth (0-based) statement rejects with this error. */
 let failStatementAt: { index: number; error: unknown } | null = null;
+/** When set, every statement from this 0-based index on rejects with this error. */
+let failStatementFrom: { index: number; error: unknown } | null = null;
+/**
+ * When set, the statement at this index advances the request's inbound audit
+ * scope clock to `startedAtAgoMs` before resolving — a fake of the wall time
+ * the request has spent, without sleeping for it.
+ */
+let burnBudgetAt: { index: number; startedAtAgoMs: number } | null = null;
 /** Wall-clock milliseconds each mocked INSERT consumes; 0 by default. */
 let insertDelayMs = 0;
 
@@ -82,6 +90,15 @@ mock.module('../../shared/db', () => ({
             returning: async () => {
               if (insertDelayMs > 0) await Bun.sleep(insertDelayMs);
               if (failStatementAt?.index === index) throw failStatementAt.error;
+              if (failStatementFrom && index >= failStatementFrom.index) {
+                throw failStatementFrom.error;
+              }
+              if (burnBudgetAt?.index === index) {
+                const scope = currentInboundAuditScope();
+                if (scope)
+                  (scope as { startedAt: number }).startedAt =
+                    Date.now() - burnBudgetAt.startedAtAgoMs;
+              }
               return values.map((value) => ({ eventId: value.eventId }));
             },
           }),
@@ -99,7 +116,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-const { auditIngestChunkSize } = await import('./project-audit');
+const { auditIngestChunkSize, boundChunkWrite } = await import('./project-audit');
 
 function hostileEvent() {
   return {
@@ -128,6 +145,8 @@ beforeEach(() => {
   insertedValues = [];
   insertStatements = [];
   failStatementAt = null;
+  failStatementFrom = null;
+  burnBudgetAt = null;
   insertDelayMs = 0;
 });
 
@@ -543,14 +562,222 @@ describe('audit ingest request-deadline budget', () => {
   });
 
   test('stops at a chunk boundary once the budget is spent, keeping committed rows', async () => {
-    // Chunk 1 is attempted (~23.8s left) and consumes 1.5s in a slow
-    // statement; the ~22.3s left can no longer cover another chunk.
+    // 10s spent before the handler. Each chunk consumes 1.5s in a slow
+    // statement; after three chunks (~10.5s left) the remaining budget can no
+    // longer cover one more statement's worst case (its capped lock wait plus
+    // the audit pool's statement timeout), so the loop stops here.
     insertDelayMs = 1_500;
-    const { status, retryAfter, body } = await postWithStartedAt(200, 1_200);
+    const { status, retryAfter, body } = await postWithStartedAt(200, 10_000);
 
     expect(status).toBe(503);
     expect(retryAfter).toBe('5');
-    expect(body).toMatchObject({ accepted: 200, inserted: 25, retry_after_seconds: 5 });
+    expect(body).toMatchObject({ accepted: 200, inserted: 75, retry_after_seconds: 5 });
+    expect(insertStatements).toHaveLength(3);
+  });
+});
+
+/**
+ * The contention fallback (KRTX-470). A contended statement used to hand the
+ * WHOLE remaining batch back to the relay, which re-posted every row — prod
+ * 2026-09-29: 6,115 57014 statement timeouts in 3 h, each a full 200-row
+ * statement whose work rolled back and came back as another full-batch POST.
+ * The handler now retries the same rows in half-size statements while the
+ * request's remaining budget affords one, so a contended batch makes progress
+ * instead of burning the audit pool's two backends on work that rolls back.
+ */
+describe('audit ingest contention fallback', () => {
+  beforeEach(() => {
+    // Default statement size: the whole relay batch in one statement.
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+  });
+
+  afterAll(() => {
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+  });
+
+  function event(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `fallback-${n}`,
+      type: 'tool.execute.after',
+      occurred_at: '2026-09-29T12:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'e'.repeat(64),
+    };
+  }
+
+  async function post(count: number) {
+    const response = await projectsApp.request(
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ events: Array.from({ length: count }, (_, i) => event(i + 1)) }),
+      },
+    );
+    return {
+      status: response.status,
+      retryAfter: response.headers.get('retry-after'),
+      body: (await response.json()) as Record<string, unknown>,
+    };
+  }
+
+  test('a statement timeout falls back to smaller statements and lands the batch', async () => {
+    failStatementAt = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    const { status, body } = await post(200);
+
+    // The 200-row statement died; the same rows then landed as 100 + 100.
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ accepted: 200, inserted: 200, duplicates: 0 });
+    expect(insertStatements.map((batch) => batch.length)).toEqual([200, 100, 100]);
+  });
+
+  test('the fallback stops at the 25-row floor and answers the contended 503', async () => {
+    failStatementFrom = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    const { status, retryAfter, body } = await post(200);
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(typeof body.error).toBe('string');
+    expect(body).toMatchObject({ accepted: 200, inserted: 0 });
+    // 200, then halved 100 -> 50 -> 25, where the floor stops the loop.
+    expect(insertStatements.map((batch) => batch.length)).toEqual([200, 100, 50, 25]);
+  });
+
+  test('a request with little budget left still lands rows the full-chunk budget refused', async () => {
+    // 13s spent before the handler: the old 23s one-chunk preflight answered
+    // 503 with zero inserts. The per-attempt budget caps the lock wait to what
+    // ~12s affords, so the batch still writes — in statements that fit.
+    return runWithContext(
+      'POST',
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      async () => {
+        attachInboundAuditScope({
+          owner: 'hono',
+          method: 'POST',
+          startedAt: Date.now() - 13_000,
+        });
+        const response = await projectsApp.request(
+          `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ events: Array.from({ length: 200 }, (_, i) => event(i + 1)) }),
+          },
+        );
+        const body = (await response.json()) as Record<string, unknown>;
+        expect(response.status).toBe(200);
+        expect(body).toMatchObject({ accepted: 200, inserted: 200 });
+        expect(insertStatements.map((batch) => batch.length)).toEqual([200]);
+      },
+    );
+  });
+
+  test('rows a fallback landed stay committed when the budget then runs out', async () => {
+    failStatementAt = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+    };
+    burnBudgetAt = { index: 1, startedAtAgoMs: 24_000 };
+    await runWithContext('POST', `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`, async () => {
+      attachInboundAuditScope({
+        owner: 'hono',
+        method: 'POST',
+        startedAt: Date.now(),
+      });
+      const response = await projectsApp.request(
+        `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ events: Array.from({ length: 200 }, (_, i) => event(i + 1)) }),
+        },
+      );
+      const body = (await response.json()) as Record<string, unknown>;
+      // Statement 1 (100 rows) committed, then only ~1s of the 25s deadline
+      // remained — under one statement's worst case, so the loop stopped and
+      // answered the controlled 503 instead of racing the deadline.
+      expect(response.status).toBe(503);
+      expect(response.headers.get('retry-after')).toBe('5');
+      expect(body).toMatchObject({ accepted: 200, inserted: 100 });
+      expect(insertStatements.map((batch) => batch.length)).toEqual([200, 100]);
+    });
+  });
+
+  test('a statement that never resolves answers the controlled 503 before the deadline', async () => {
+    // The wait for an audit-pool backend has no bound of its own: postgres.js
+    // has no acquire-queue timeout, and the pool is two backends shared with
+    // the audit queue's own writes. Prod 2026-09-29, hours after the budget
+    // check (KRTX-644) shipped: bursts of `…/audit/events` posts kept both
+    // backends busy and ingest requests STILL died with the uncontrolled
+    // `request exceeded the 25s server processing deadline` abort
+    // mid-acquire — KRTX-522's deadline-503 lines, 08:48–09:09 UTC. The
+    // chunk race (`boundChunkWrite`) cuts the write off at the request's
+    // remaining budget instead.
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK; // default: one statement per batch
+    // The mocked INSERT resolves after 60s — far past every budget, the
+    // shape of a statement queued behind a saturated audit pool. Without the
+    // race the route hangs past the 25s deadline; with it, the route answers
+    // the controlled contended 503 the relay already paces on.
+    insertDelayMs = 60_000;
+    const started = Date.now();
+    const { status, retryAfter, body } = await runWithContext(
+      'POST',
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      async () => {
+        attachInboundAuditScope({ owner: 'hono', method: 'POST', startedAt: Date.now() - 1_000 });
+        return post(200);
+      },
+    );
+    const wallMs = Date.now() - started;
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({ accepted: 200, inserted: 0, retry_after_seconds: 5 });
+    // One statement was attempted, and the route answered inside the 25s
+    // deadline the request-deadline middleware would otherwise abort at.
     expect(insertStatements).toHaveLength(1);
+    expect(wallMs).toBeLessThan(24_000);
+  }, 40_000);
+});
+
+describe('boundChunkWrite', () => {
+  test('a statement that resolves inside its bound wins the race with its value', async () => {
+    const started = Date.now();
+    const result = await boundChunkWrite(
+      Bun.sleep(20).then(() => 'landed'),
+      5_000,
+    );
+
+    expect(result).toEqual({ timedOut: false, value: 'landed' });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('a statement still pending at its bound loses the race and the caller moves on', async () => {
+    const started = Date.now();
+    const never = new Promise<never>(() => {});
+    const result = await boundChunkWrite(never, 50);
+
+    expect(result).toEqual({ timedOut: true });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('a statement that rejects inside its bound propagates the rejection', async () => {
+    const boom = Promise.reject(new Error('statement timeout'));
+
+    await expect(boundChunkWrite(boom, 5_000)).rejects.toThrow('statement timeout');
   });
 });

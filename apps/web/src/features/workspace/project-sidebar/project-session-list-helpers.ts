@@ -1,5 +1,5 @@
 import { stripChatMentionMarkup } from '@/components/projects/session-label';
-import { sessionParentId, type ChangeRequest, type ProjectSession, type ProjectSessionStatus } from '@kortix/sdk';
+import { type ChangeRequest, type ProjectSession, type ProjectSessionStatus } from '@kortix/sdk';
 
 /**
  * Pure helpers extracted from `project-session-list.tsx` so every decision the
@@ -351,87 +351,19 @@ export function resolveSessionListViewState(params: {
   return 'content';
 }
 
-/** A coordinator (or standalone) session plus the sessions it spawned. */
-export interface SessionGroup {
-  session: ProjectSession;
-  children: ProjectSession[];
-}
+export type StarterSection = 'shared' | 'automated';
 
 /**
- * Fold a flat, already-sorted session list into coordinator groups: a session
- * spawned by another session in the list (metadata.spawned_by_session) nests
- * under it — the sidebar renders the coordinator as a folder and its children
- * as files. A deeper chain (a child that spawned its own child) flattens under
- * its topmost ancestor present in the list. A child whose coordinator is
- * absent (deleted, other project, or a stale stamp) stays top-level rather
- * than disappearing.
- *
- * A group takes the position of its FIRST member in the list, not of its
- * coordinator: the list is newest-first, so a quiet coordinator whose child is
- * working sits where that child would, instead of below it.
+ * Which sidebar section a session's RUN lives in, from its `initiator`: another
+ * member's run is Shared, an automated run (trigger, channel, API, platform) is
+ * Automated, and the viewer's own run (or an unclassified row) is neither.
  */
-export function groupSessionsByCoordinator(sessions: ProjectSession[]): SessionGroup[] {
-  const present = new Set(sessions.map((session) => session.session_id));
-  const parentBySessionId = new Map<string, string | null>();
-  for (const session of sessions) {
-    const parent = sessionParentId(session);
-    parentBySessionId.set(session.session_id, parent && present.has(parent) ? parent : null);
-  }
-
-  // Walk the parent chain to the topmost ancestor still present in
-  // `sessions`. A cycle (metadata pointing back into its own chain) has no
-  // root: every session on it renders top-level, once.
-  const rootIdOf = (sessionId: string): string => {
-    let current = sessionId;
-    const seen = new Set<string>([current]);
-    for (;;) {
-      const parent = parentBySessionId.get(current) ?? null;
-      if (!parent) return current;
-      if (seen.has(parent)) return sessionId;
-      seen.add(parent);
-      current = parent;
-    }
-  };
-
-  const byId = new Map(sessions.map((session) => [session.session_id, session]));
-  const groups = new Map<string, SessionGroup>();
-  const order: SessionGroup[] = [];
-  for (const session of sessions) {
-    const rootId = rootIdOf(session.session_id);
-    let group = groups.get(rootId);
-    if (!group) {
-      group = { session: byId.get(rootId)!, children: [] };
-      groups.set(rootId, group);
-      order.push(group);
-    }
-    if (rootId !== session.session_id) group.children.push(session);
-  }
-  return order;
-}
-
-/**
- * `groupSessionsByCoordinator` across sections. Nesting per section left a
- * sub-agent stranded whenever its coordinator sorted into another section
- * (a running child under a completed coordinator, a child active today under
- * a coordinator last touched yesterday). Groups are built over the whole list,
- * and each group renders in the FIRST section any of its members sits in. A
- * section left with no group is dropped.
- */
-export function groupSectionsByCoordinator<T extends { sessions: ProjectSession[] }>(
-  sections: T[],
-): Array<T & { groups: SessionGroup[] }> {
-  const sectionIndexOf = new Map<string, number>();
-  sections.forEach((section, index) => {
-    for (const session of section.sessions) sectionIndexOf.set(session.session_id, index);
-  });
-  const bySection = sections.map(() => [] as SessionGroup[]);
-  for (const group of groupSessionsByCoordinator(sections.flatMap((section) => section.sessions))) {
-    const index = Math.min(
-      ...[group.session, ...group.children].map((s) => sectionIndexOf.get(s.session_id)!),
-    );
-    bySection[index]!.push(group);
-  }
-  return sections
-    .map((section, index) => ({ ...section, groups: bySection[index]! }))
-    .filter((section) => section.groups.length > 0);
+export function starterSectionOf(
+  session: Pick<ProjectSession, 'initiator' | 'is_owner'>,
+  viewerId: string | null,
+): StarterSection | null {
+  const initiator = session.initiator;
+  if (!initiator) return session.is_owner === false ? 'shared' : null;
+  if (initiator.type !== 'member') return 'automated';
+  return initiator.id && viewerId && initiator.id !== viewerId ? 'shared' : null;
 }

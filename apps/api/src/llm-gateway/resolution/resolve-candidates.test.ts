@@ -3,7 +3,10 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as realTiers from '../../billing/services/tiers';
 
 let modelAccess = { disabledProviders: [] as string[], disabledModels: [] as string[] };
-mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => modelAccess }));
+mock.module('../../repositories/project-model-access', () => ({
+  getProjectModelAccess: async () => modelAccess,
+  getProjectGatewayResolution: async () => ({ access: modelAccess, pooledEnabled }),
+}));
 
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
@@ -30,10 +33,13 @@ let resolvedSecret: string | null = null;
 let secretsByName: Record<string, string | null> = {};
 let resolvedSecrets: Array<{ identifier: string; value: string }> = [];
 let pooledEnabled = false;
+let flagHelperCalls = 0;
 type PooledSecret = { secretId: string; label: string; value: string | null; updatedAt?: Date };
 let pooledSecrets: { configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { configured: false, coolingDown: false, secrets: [] };
 let defaultCodexSecret: PooledSecret | null = null;
-mock.module('../../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => pooledEnabled }));
+mock.module('../../feature-flags/for-project', () => ({
+  projectFeatureFlagEnabled: async () => { flagHelperCalls += 1; return pooledEnabled; },
+}));
 const resolveSessionProviderSecrets = mock(async (_input: unknown) => pooledSecrets);
 const resolveDefaultCodexAccountSecret = mock(async (..._args: unknown[]) => defaultCodexSecret);
 // The project's shared ChatGPT accounts an unconfigured session falls back to.
@@ -118,8 +124,12 @@ mock.module('./descriptors', () => ({
 }));
 
 let catalogUpstream: { baseUrl?: string; envVar: string; kind: string } | null = null;
+let catalogUpstreamCalls: unknown[][] = [];
 mock.module('../models/provider-registry', () => ({
-  resolveCatalogUpstream: () => catalogUpstream,
+  resolveCatalogUpstream: (...args: unknown[]) => {
+    catalogUpstreamCalls.push(args);
+    return catalogUpstream;
+  },
 }));
 
 mock.module('../routing', () => ({
@@ -152,6 +162,7 @@ function principal(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   pooledEnabled = false;
+  flagHelperCalls = 0;
   resolveSessionProviderSecrets.mockClear();
   pooledSecrets = { configured: false, coolingDown: false, secrets: [] };
   defaultCodexSecret = null;
@@ -249,6 +260,19 @@ describe('resolveCandidates — selected account key pool', () => {
   });
 });
 
+describe('resolveCandidates — one projects-row read per resolve', () => {
+  test('the pooled flag never pays its own projects-row query', async () => {
+    pooledEnabled = true;
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'id-a', label: 'A', value: 'key-a' },
+    ] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((candidate) => candidate.poolSecretId)).toEqual(['id-a']);
+    expect(flagHelperCalls).toBe(0);
+  });
+});
+
 describe('resolveCandidates — BYOK billing', () => {
   // BYOK bills the provider account directly. The tier and the billing switch
   // must not change that, and a managed model registered under the same id
@@ -301,6 +325,43 @@ describe('resolveCandidates — BYOK billing', () => {
     expect(candidates).toHaveLength(2);
     expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['primary', 'secondary']);
     expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['sk-primary', 'sk-secondary']);
+  });
+
+  // OpenCode Go refuses a request without `x-opencode-session` (MissingSessionID)
+  // and asks clients to name themselves in User-Agent. Routing is per model:
+  // its MiniMax/Grok models use other wire formats than its GLM models.
+  test('BYOK OpenCode: resolves each model transport and sends the session header', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_API_KEY', kind: 'anthropic' };
+    catalogUpstreamCalls = [];
+    resolvedSecret = 'sk-go';
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/minimax-m3');
+    expect(catalogUpstreamCalls[0]).toEqual(['opencode-go', 'minimax-m3']);
+    expect(candidate).toMatchObject({ kind: 'anthropic', resolvedModel: 'minimax-m3' });
+    expect(candidate?.headers?.['x-opencode-session']).toBe('ses_1');
+    expect(candidate?.headers?.['User-Agent']).toMatch(/^Kortix/);
+  });
+
+  test('BYOK OpenCode without a session keys the session header to the API key', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_API_KEY', kind: 'openai-compat' };
+    resolvedSecret = 'sk-go';
+    const p = principal({ keyId: 'key_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/glm-5.3');
+    expect(candidate?.headers?.['x-opencode-session']).toBe('key_1');
+  });
+
+  test('BYOK providers other than OpenCode get no OpenCode headers', async () => {
+    catalogUpstream = { baseUrl: 'https://api.groq.com/openai/v1', envVar: 'GROQ_API_KEY', kind: 'openai-compat' };
+    resolvedSecret = 'sk-groq';
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'groq/llama-4');
+    expect(candidate?.headers).toBeUndefined();
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {

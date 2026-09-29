@@ -1,12 +1,12 @@
 // Generated from the channels-company user-visible UI catalog.
 export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   '': 'texte3b0c44298fc',
-  '      .kortix/memory/ and open one change request': 'text8525d67b94af',
   '      "body.data.direction": "inbound"': 'textf7f0abe0bc9f',
   '      activity. Review git history, merged change': 'text05fe4f848b83',
   '      cpu: 2': 'text07e120899739',
   '      image: python:3.12-slim': 'text0e7e46a78843',
   '      memory: 4': 'text9e4c8fccd622',
+  '      memory/ and open one change request': 'text073fce23e704',
   '      Reflect on the last 24 hours of project': 'texta0d80d6f8177',
   '      requests and session digests. Update': 'textc236204dab7f',
   '      there is no durable knowledge.': 'texteb5c07bfd7b7',
@@ -58,7 +58,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   '  // throwaway branch, so the agent starts wide open.': 'textfe03288dc0ba',
   '  // Tighten per tool here when you want a stricter': 'textf9a506e11baa',
   '  bash: ask': 'textba8071b5f41a',
-  '  config_dir: .kortix/opencode': 'texte520886435ac',
+  '  config_dir: harnesses/opencode': 'textaa132a97a22a',
   '  default: python': 'texta3b3522bd552',
   '  invoice-clerk:': 'text36ec3a61e2e2',
   '  kortix:': 'textabd5597038ae',
@@ -68,8 +68,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   '  required: [STRIPE_API_KEY]': 'text1505b0533fdc',
   '  templates:': 'textb7d225614f26',
   '---': 'textcb3f91d54eee',
-  '.kortix/opencode/agents/invoice-clerk.md': 'text09af73e458ca',
-  '.kortix/opencode/opencode.jsonc': 'textb353663cbfbc',
   '{': 'text021fb596db81',
   '}': 'textd10b36aa74a5',
   '@kortix draft the Q3 launch note from the changelog and put it in the repo': 'textb11a223ff4eb',
@@ -99,10 +97,10 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   '→ connected: slack workspace acme-hq': 'textbd5a646673af',
   '+5 −1': 'text30997fa6a7bd',
   '$ git clone git@github.com:northwind/northwind.git': 'texte7b035793c5e',
-  '$ git log --oneline .kortix/opencode/agents/': 'text258bc3256175',
+  '$ git log --oneline agents/': 'textf41e793a1253',
   '$ git revert 8f2a1c4': 'text87bc74425fd5',
   '$ grep -n "STRIPE_API_KEY" kortix.yaml': 'text5eb8fc2f6406',
-  '$ grep -ri "annual" .kortix/memory': 'text1f740a094773',
+  '$ grep -ri "annual" memory': 'text601eb4f02129',
   '$ kortix channels connect --manual \\': 'textd90822f4e563',
   '$ kortix channels connect --wait': 'textaa3f91c9a6c3',
   '$ kortix channels disconnect': 'textcaa6c42f2b7c',
@@ -153,6 +151,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Agents, skills and memory are not rows in a database you cannot see. They are markdown files next to your code, cloned into every session, readable by a person and editable by an agent.':
     'text3f095895acf1',
   'agents:': 'text72eed84ff65c',
+  'agents/invoice-clerk.md': 'text2fec4da809fd',
   'An agent can read its own configuration, edit it, and propose the change. Put that on a schedule and the repo gets better at being your company while everyone is asleep.':
     'textc3fb1b602d28',
   'An agent rewriting its own instructions arrives the same way a database migration does: a branch, a commit, a diff, a reviewer. The company has one review process, not two.':
@@ -213,6 +212,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'From the starter template. Every new project ships with it, switched off.': 'text3eb54d5ae20d',
   'From the thread': 'textba9b3136ea65',
   'grep your whole company.': 'textf9e0dab461a6',
+  'harnesses/opencode/opencode.jsonc': 'text0922e6bf143c',
   'History you can prove': 'text6e01738cffed',
   'how this company does a job': 'texted52186abc68',
   'Illustration. Acme is a placeholder, not a customer.': 'text6568e46c8eb2',
@@ -230,8 +230,8 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text5a6d9b697f7a',
   'It improves itself': 'text8d359019e29f',
   'It is a git repo. It does what git repos do.': 'text1abf3be956d7',
-  'It reads the git history and the sessions of the last day, then writes what it learned into .kortix/memory/ as plain markdown.':
-    'text5e2c07a588ca',
+  'It reads the git history and the sessions of the last day, then writes what it learned into memory/ as plain markdown.':
+    'textbab3f6d8c284',
   'It runs as an agent you chose': 'text7949be83e927',
   kortix: 'text388f7968512c',
   'kortix channels': 'textc27d8467e76a',

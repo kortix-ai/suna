@@ -32,14 +32,13 @@ const OPENAI_NPM = '@ai-sdk/openai';
 const ANTHROPIC_NPM = '@ai-sdk/anthropic';
 const BEDROCK_NPM = '@ai-sdk/amazon-bedrock';
 
-// Codex descriptors (apps/api's descriptors.ts `codexDescriptor`) never carry a
-// models.dev `npm` field — they're built by hand for the ChatGPT OAuth backend,
-// not resolved from the catalog — so they're identified by shape instead:
-// `kind: 'openai-responses'` (nothing else uses that kind) or, redundantly,
-// `provider: 'openai-codex'`. Either is sufficient on its own; checking both
-// costs nothing and survives either field changing independently.
+// Codex descriptors (apps/api's descriptors.ts `codexDescriptor`) are built by
+// hand for the ChatGPT OAuth backend and carry `provider: 'openai-codex'`.
+// `kind: 'openai-responses'` alone is not Codex: a catalog model that models.dev
+// serves over the Responses API (OpenCode Go's Grok/GPT/Muse) also uses it, and
+// must not inherit Codex's forced effort, store:false, or stream-only quirks.
 export function isCodexDescriptor(descriptor: UpstreamDescriptor): boolean {
-  return descriptor.provider === 'openai-codex' || descriptor.kind === 'openai-responses';
+  return descriptor.provider === 'openai-codex';
 }
 
 export function aiSdkFamilyFor(descriptor: UpstreamDescriptor): AiSdkFamily {
@@ -47,8 +46,8 @@ export function aiSdkFamilyFor(descriptor: UpstreamDescriptor): AiSdkFamily {
   if (npm === OPENAI_NPM) return 'openai';
   if (npm === ANTHROPIC_NPM) return 'anthropic';
   if (npm === BEDROCK_NPM) return 'bedrock';
-  // Codex speaks the same OpenAI Responses API as genuine OpenAI.
-  if (isCodexDescriptor(descriptor)) return 'openai';
+  // Codex and every other Responses-API descriptor speak OpenAI's Responses API.
+  if (isCodexDescriptor(descriptor) || descriptor.kind === 'openai-responses') return 'openai';
   // A genuine api.openai.com descriptor that predates (or is missing) npm
   // threading must still resolve to the real `@ai-sdk/openai` package. Mirrors
   // the SAME `isGenuineOpenAiUpstream`/`descriptor.provider === 'openai'`
@@ -95,8 +94,10 @@ export function trimTrailingSlash(url: string): string {
 // (transports/anthropic/request.ts's `anthropicModelName`); mirrored here
 // because the AI-SDK engine builds its own LanguageModel straight from the
 // catalog's resolvedModel and never goes through that transport.
+// Claude ids only: other Anthropic-format providers use dotted ids verbatim.
+// OpenCode Go answers "Model is unavailable" to `qwen3-8-flash` (live 2026-09-29).
 function anthropicModelName(model: string): string {
-  return model.replace(/(\d)\.(\d)/g, '$1-$2');
+  return model.startsWith('claude-') ? model.replace(/(\d)\.(\d)/g, '$1-$2') : model;
 }
 
 // Amazon Nova's Bedrock Converse API hard-rejects (400) any call whose max

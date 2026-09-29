@@ -23,7 +23,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/overview',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/overview',
+    summary: 'Get LLM gateway usage overview',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -80,7 +80,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/series',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/series',
+    summary: 'Get LLM gateway usage time series',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -166,7 +166,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/sessions',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/sessions',
+    summary: 'List LLM gateway usage per session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -202,7 +202,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/breakdown',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/breakdown',
+    summary: 'Get LLM gateway usage breakdown',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -266,7 +266,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/budgets',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/budgets',
+    summary: 'List LLM gateway budgets',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'Gateway budgets + per-member spend'), ...errors(404) },
@@ -352,7 +352,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/gateway/budgets',
     tags: ['gateway'],
-    summary: 'PUT /:projectId/gateway/budgets',
+    summary: 'Set an LLM gateway budget',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -435,7 +435,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/gateway/budgets/{budgetId}',
     tags: ['gateway'],
-    summary: 'DELETE /:projectId/gateway/budgets/:budgetId',
+    summary: 'Delete an LLM gateway budget',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), budgetId: z.string().uuid() }),

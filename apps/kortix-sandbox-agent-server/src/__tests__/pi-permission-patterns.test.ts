@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
+import { PermissionBroker, compilePermissionPolicy, skillGranted } from '@/harness/pi/interactions'
 
 /**
  * A per-pattern rule (`bash: { 'rm -rf *': 'deny', '*': 'allow' }`) is a
@@ -42,6 +42,18 @@ describe('pi per-pattern permissions', () => {
     ['an empty policy allows, as OpenCode does', {}, 'bash', { command: 'ls' }, 'allow'],
     // An unknown action is dropped at compile time; nothing else restricts.
     ['an invalid action is dropped, not enforced', { bash: { 'rm -rf *': 'nonsense' } }, 'bash', { command: 'rm -rf /' }, 'allow'],
+    // B1: a bare whole-agent action (`permission: deny`) covers every tool, as on OpenCode.
+    ['a bare "deny" denies every tool', 'deny', 'bash', { command: 'ls' }, 'deny'],
+    ['…including the file tools', 'deny', 'write', { path: 'a.txt' }, 'deny'],
+    ['a bare "ask" asks for every tool', 'ask', 'read', { path: 'a.txt' }, 'ask'],
+    ['a bare "allow" allows', 'allow', 'bash', { command: 'ls' }, 'allow'],
+    ['an unknown bare string is no policy', 'nonsense', 'bash', { command: 'ls' }, 'allow'],
+    // B2: OpenCode's `edit` rule governs every file-writing tool; pi calls one of them `write`.
+    ['an edit deny stops write', { edit: 'deny' }, 'write', { path: 'a.txt' }, 'deny'],
+    ['an edit pattern map applies to write paths', { edit: { '*.env': 'deny', '*': 'allow' } }, 'write', { path: 'apps/api/.env' }, 'deny'],
+    ['…and lets other write paths through', { edit: { '*.env': 'deny', '*': 'allow' } }, 'write', { path: 'apps/api/index.ts' }, 'allow'],
+    ['an edit rule outranks the "*" fallback for write', { '*': 'allow', edit: 'deny' }, 'write', { path: 'a.txt' }, 'deny'],
+    ['an edit rule does not touch read', { edit: 'deny' }, 'read', { path: 'a.txt' }, 'allow'],
   ] as const)('%s', (_name, policy, tool, args, expected) => {
     expect(broker(policy).rule(tool, args)).toBe(expected)
   })
@@ -52,5 +64,18 @@ describe('pi per-pattern permissions', () => {
     permissions.reply(permissions.list()[0]!.id, 'always')
     expect(permissions.rule('bash', { command: 'ls' })).toBe('allow')
     expect(permissions.rule('bash', { command: 'rm -rf /' })).toBe('deny')
+  })
+
+  // B3: the manifest `skills:` grant compiles to `permission.skill`; pi filters its skill list by it.
+  test.each([
+    ['no policy grants every skill', {}, 'kortix-memory', true],
+    ['a named grant keeps the named skill', { skill: { 'kortix-memory': 'allow', '*': 'deny' } }, 'kortix-memory', true],
+    ['…and drops every other skill', { skill: { 'kortix-memory': 'allow', '*': 'deny' } }, 'kortix-browser', false],
+    ['skills: none drops every skill', { skill: 'deny' }, 'kortix-memory', false],
+    ['skills: all keeps every skill', { skill: 'allow' }, 'kortix-memory', true],
+    ['a bare "deny" drops every skill', 'deny', 'kortix-memory', false],
+    ['an "ask" skill stays listed', { skill: 'ask' }, 'kortix-memory', true],
+  ] as const)('%s', (_name, policy, skill, expected) => {
+    expect(skillGranted(compilePermissionPolicy(policy), skill)).toBe(expected)
   })
 })

@@ -11,5 +11,5 @@ export async function buildTeamsHomeCard(tenantId: string, onlyProjectId?: strin
   const projects = (await listTenantProjects(tenantId).catch(() => [])).filter(
     (p) => !onlyProjectId || p.projectId === onlyProjectId,
   );
-  return buildHomeCard({ projects: projectRows(projects) });
+  return buildHomeCard({ projects: await projectRows(projects) });
 }

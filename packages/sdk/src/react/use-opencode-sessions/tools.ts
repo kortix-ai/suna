@@ -10,6 +10,7 @@ import { unwrap } from './shared';
 // Tool Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeToolIds() {
   const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<string[]>({
@@ -44,6 +45,7 @@ export function useOpenCodeTools(providerID: string, modelID: string) {
 // Skill Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeSkills() {
   const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Skill[]>({

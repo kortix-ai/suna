@@ -1,65 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-
 import {
   capScrapeContent,
-  extractReadableHtml,
   getScrapeContent,
-  prefersPreviewLink,
-  safeHttpUrl,
   scrapeResultKeys,
   webFetchErrorSummary,
   webFetchTrigger,
 } from './web-fetch';
-
-describe('safeHttpUrl (web lib/safe-url)', () => {
-  test('keeps http(s) URLs and normalises them', () => {
-    expect(safeHttpUrl('https://example.com')).toBe('https://example.com/');
-    expect(safeHttpUrl('  http://a.b/c?d=1 ')).toBe('http://a.b/c?d=1');
-  });
-
-  test('refuses relative, non-http and non-string values', () => {
-    expect(safeHttpUrl('/internal/session/abc?token=secret123')).toBeNull();
-    expect(safeHttpUrl('javascript:alert(1)')).toBeNull();
-    expect(safeHttpUrl('')).toBeNull();
-    expect(safeHttpUrl(42)).toBeNull();
-  });
-});
-
-describe('prefersPreviewLink (web preview-url-fallback)', () => {
-  test('document URLs are link-only previews', () => {
-    expect(prefersPreviewLink('https://x.dev/report.pdf')).toBe(true);
-    expect(prefersPreviewLink('https://x.dev/deck.pptx?v=2')).toBe(true);
-    expect(prefersPreviewLink('https://x.dev/')).toBe(false);
-    expect(prefersPreviewLink(null)).toBe(false);
-  });
-});
-
-describe('extractReadableHtml (web tool-renderers-sanitization)', () => {
-  const cases: [string, string, { title?: string; text: string }][] = [
-    ['entities', '<title>A &amp; B</title><p>&nbsp;&#65;&#x42; &unknown; &abcdefghijklmnop;</p>', { title: 'A & B', text: 'A & B\nAB &unknown; &abcdefghijklmnop;' }],
-    ['nested blocks and breaks', '<article><h1> One </h1><div>Two <b>three</b><br>four</div></article>', { title: undefined, text: 'One\nTwo three\nfour' }],
-    ['head and active content', '<head><title>  The <b>title</b> &quot;X&quot; </title><style>hidden</style></head><script>hidden</script><p>shown</p>', { title: 'The title "X"', text: 'shown' }],
-    ['broken markup and comments', '<p>one<!-- hidden -->two</p><div>three<unclosed', { title: undefined, text: 'onetwo\nthree' }],
-    ['whitespace', '<p>  alpha\t beta  </p>\n\n<p> gamma\r\ndelta </p>', { title: undefined, text: 'alpha beta\ngamma\ndelta' }],
-  ];
-
-  test.each(cases)('mobile sanitizer: %s', (_name, html, expected) => {
-    expect(extractReadableHtml(html)).toEqual(expected);
-  });
-
-  test('reads the title and the visible text, skipping head, script and style', () => {
-    const html =
-      '<!doctype html><html><head><title>Kortix &amp; Co</title><style>p{}</style></head>' +
-      '<body><script>var x = "<p>no</p>";</script><h1>Hello</h1><p>World &lt;3</p><!-- hidden --></body></html>';
-    const { title, text } = extractReadableHtml(html);
-    expect(title).toBe('Kortix & Co');
-    expect(text).toBe('Hello\nWorld <3');
-  });
-
-  test('a page without a title has no title', () => {
-    expect(extractReadableHtml('<div>a</div>').title).toBeUndefined();
-  });
-});
 
 describe('web fetch trigger', () => {
   test('the page title leads and the domain is its subtitle', () => {

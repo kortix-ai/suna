@@ -10,6 +10,7 @@ import { unwrap } from './shared';
 // Project Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeProjects() {
   const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Project[]>({

@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const computer = require('./computer');
+const { isApprovalDialogPath } = require('./nav-rules');
 
 const FULL_REFRESH_MS = 60_000;
 const STATE_POLL_MS = 5_000;
@@ -519,11 +520,35 @@ function setupComputer(deps) {
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
-    const wc = approvalWindow.webContents;
+    const win = approvalWindow;
+    const wc = win.webContents;
+    // A dialog, not a second app window: leaving its pages (Back, a link into
+    // the app) is Cancel. On macOS a modal child is a sheet with no close
+    // button, so this and Esc are its way out.
+    const leavesDialog = (next) => {
+      try {
+        return !(deps.isConfiguredAppUrl(next, deps.appUrl()) && isApprovalDialogPath(new URL(next).pathname));
+      } catch {
+        return true;
+      }
+    };
+    const cancel = () => {
+      if (!win.isDestroyed()) win.close();
+    };
     wc.on('will-navigate', (event, next) => {
-      if (deps.shouldLoadInApp(next)) return;
+      if (!leavesDialog(next)) return;
       event.preventDefault();
-      if (/^https?:\/\//i.test(next)) void shell.openExternal(next);
+      if (deps.shouldLoadInApp(next)) cancel();
+      else if (/^https?:\/\//i.test(next)) void shell.openExternal(next);
+    });
+    // Client-side routing (the web Back's router.replace) never fires will-navigate.
+    wc.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && details.isSameDocument && leavesDialog(details.url)) cancel();
+    });
+    wc.on('before-input-event', (event, input) => {
+      if (input.key !== 'Escape' || (input.type !== 'keyDown' && input.type !== 'keyUp')) return;
+      event.preventDefault();
+      cancel();
     });
     wc.setWindowOpenHandler(({ url: next }) => {
       if (/^https?:\/\//i.test(next)) void shell.openExternal(next);

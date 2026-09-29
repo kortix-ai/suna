@@ -222,7 +222,7 @@ export { parseReminderPrompt, type ReminderPromptInfo } from '@kortix/shared';
 //
 // Matches any XML block: <tag_name>...content...</tag_name> (`xmlBlocks`).
 // No hardcoded tag names. Runs LAST in the parsing pipeline so all
-// other XML subsystems (file refs, session refs, reply context, DCP,
+// other XML subsystems (file refs, session refs, reply context,
 // kortix_system) have already consumed their tags. Whatever remains
 // is a system notification.
 

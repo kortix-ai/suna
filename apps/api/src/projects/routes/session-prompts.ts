@@ -1,7 +1,7 @@
 /** Session prompt queue: enqueue, list, remove, retry, and hold. */
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
@@ -10,7 +10,7 @@ import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -18,9 +18,9 @@ import {
   deleteInboxPrompt,
   drainSessionLifecycleQueue,
   enqueueContinueSessionCommand,
+  enqueueReleasingHold,
   holdInboxPrompts,
   listInboxPrompts,
-  releaseInboxHold,
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
@@ -125,11 +125,21 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts',
+    summary: 'Send a prompt (message) to a session',
+    description:
+      'Send a message to a session. The prompt queues and delivers in order.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: lenientBody({
+          client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
+          message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
+          parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
+          placement: z.enum(['transcript,composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
+          overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
+          remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
+          client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),
+        }) } }, required: true },
     },
     responses: {
       200: json(z.any(), 'Already queued (same client_message_id)'),
@@ -271,7 +281,13 @@ projectsApp.openapi(
     // clientMessageId = same row" contract — enforced by the database, not by a
     // cache that a second pod would not share.
     const idempotencyKey = `prompt:${sessionId}:${clientMessageId}`;
-    const enqueued = await enqueueContinueSessionCommand({
+    // Sending anything NEW lifts a hold the stop button left on this session's
+    // queue — the same rule the browser-local queue always had, and the reason
+    // stop cannot wedge a session: everything typed afterwards would otherwise
+    // land behind rows that are, by construction, never due. The send joins
+    // the released batch; `enqueueReleasingHold` enqueues it held and releases
+    // them together, so no drain can claim it alone in between (KRTX-683).
+    const send: Parameters<typeof enqueueContinueSessionCommand>[0] = {
       source: 'ui',
       projectId,
       accountId: loaded.row.accountId,
@@ -305,7 +321,10 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
-    });
+    };
+    const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
+      enqueueContinueSessionCommand({ ...send, ...hold }),
+    );
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
     const response = {
@@ -326,12 +345,6 @@ projectsApp.openapi(
     };
     if (enqueued.deduped) return c.json(response, 200);
 
-    // Sending anything NEW lifts a hold the stop button left on this session's
-    // queue — the same rule the browser-local queue always had, and the reason
-    // stop cannot wedge a session: everything typed afterwards would otherwise
-    // land behind rows that are, by construction, never due.
-    await releaseInboxHold(sessionId).catch(() => undefined);
-
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
     // claims by idempotency key so this row does not wait behind older work.
@@ -345,7 +358,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/prompts',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/prompts',
+    summary: 'List queued prompts of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -392,7 +405,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId/prompts/:promptId',
+    summary: 'Cancel a queued prompt',
     ...auth,
     request: {
       params: z.object({
@@ -493,7 +506,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}/retry',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts/:promptId/retry',
+    summary: 'Retry a failed prompt',
     ...auth,
     request: {
       params: z.object({
@@ -531,9 +544,10 @@ projectsApp.openapi(
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
     // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
-    // the ordering gate, releases the session's hold, and keeps the wire
-    // `message_id` unchanged so the proxy still absorbs a retry of a delivery
-    // that actually landed.
+    // the ordering gate and releases the session's hold, and the drain re-mints
+    // its wire id. When the release frees OTHER held rows, "send now" is a
+    // Stop release: the row joins that batch, is NOT promoted, and the batch is
+    // answered in one turn in queue order (KRTX-683).
     const requeued = await retryInboxPrompt(sessionId, promptId);
     if (!requeued) return c.json({ error: 'Not found' }, 404);
 
@@ -549,11 +563,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/hold',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts/hold',
+    summary: 'Hold or release the prompt queue of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: lenientBody({
+          held: z.boolean().openapi({ description: 'true holds the prompt queue; false releases it.' }),
+        }) } }, required: true },
     },
     responses: {
       200: json(

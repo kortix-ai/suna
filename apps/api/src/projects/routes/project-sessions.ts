@@ -14,14 +14,14 @@ import {
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -44,7 +44,7 @@ import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
-import { loadProjectSessionInventory } from '../lib/session-list';
+import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
@@ -69,7 +69,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions',
+    summary: 'Create a session (start an agent task)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -243,7 +243,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions',
+    summary: 'List sessions of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -254,6 +254,12 @@ projectsApp.openapi(
           // how a caller walks it.
           limit: z.coerce.number().int().min(1).max(SESSION_PAGE_MAX_LIMIT).optional(),
           cursor: z.string().optional(),
+          // `root` = top-level sessions only (each row carries `child_count`);
+          // a session id = that session's children. Absent = the flat list.
+          parent: z.string().min(1).max(128).optional(),
+          started_by: z.enum(['me', 'others', 'automated']).optional(),
+          // Server-side search over every session the viewer may see.
+          q: z.string().trim().min(1).max(200).optional(),
         }),
       },
     responses: {
@@ -282,6 +288,7 @@ projectsApp.openapi(
     orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
+    filter: { parent: query.parent ?? null, startedBy: query.started_by ?? null, q: query.q ?? null },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
@@ -300,7 +307,8 @@ projectsApp.openapi(
   const body = inventory.items.map((item) => {
     const row = item.row;
     const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
-    return serializeSession(row, {
+    const serialized = serializeSession(row, {
+      initiatorName: row.initiatorId ? (inventory.initiatorNames.get(row.initiatorId) ?? null) : null,
       grants: inventory.grantsBySession.get(row.sessionId) ?? [],
       viewerId: loaded.userId,
       canManageProject: inventory.canManageProject,
@@ -318,6 +326,12 @@ projectsApp.openapi(
       // single-session read below still returns metadata whole.
       trimListMetadata: true,
     });
+    if (query.parent !== 'root') return serialized;
+    return {
+      ...serialized,
+      child_count: inventory.childCounts.get(row.sessionId) ?? 0,
+      ...(query.q ? { search_match: sessionRowMatchesSearch(row, query.q, [owner?.email, owner?.name].filter((v): v is string => Boolean(v))) ? 'self' : 'child' } : {}),
+    };
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
@@ -349,7 +363,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId',
+    summary: 'Get a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -401,11 +415,16 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/sessions/{sessionId}/sharing',
     tags: ['sessions'],
-    summary: 'PUT /:projectId/sessions/:sessionId/sharing',
+    summary: 'Set who can see a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            mode: z.enum(['project,private,members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
+            ownerId: z.string().optional().openapi({ description: 'For mode private: the owner user id. Defaults to the caller.' }),
+            memberIds: z.array(z.string()).optional().openapi({ description: 'For mode members: user ids.' }),
+            groupIds: z.array(z.string()).optional().openapi({ description: 'For mode members: group ids.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -534,11 +553,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'PATCH /:projectId/sessions/:sessionId',
+    summary: 'Rename a session or merge metadata into it',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
+            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata. Server-managed keys are rejected.' }),
+          }) } } },
       },
     responses: {
         200: json(SessionSchema, 'The updated session'),
@@ -669,7 +691,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId',
+    summary: 'Delete a session (soft delete; its branch is kept)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),

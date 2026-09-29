@@ -189,4 +189,3 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   );
 }
 ToolRegistry.register('memory', MemoryTool);
-ToolRegistry.register('oc-memory', MemoryTool);

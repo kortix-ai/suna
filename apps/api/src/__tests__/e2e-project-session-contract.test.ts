@@ -45,6 +45,7 @@ let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStopCalls = 0;
+let deadDaemonRepairs = 0;
 let providerStopHook: (() => void) | null = null;
 let providerStatus = 'stopped';
 let providerStatusSequence: string[] = [];
@@ -120,6 +121,7 @@ function resetState() {
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
   providerStopCalls = 0;
+  deadDaemonRepairs = 0;
   providerStopHook = null;
   providerStatus = 'stopped';
   providerStatusSequence = [];
@@ -168,6 +170,9 @@ function resetState() {
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -494,6 +499,17 @@ mock.module('../platform/providers', () => ({
         }
       : {}),
   }),
+}));
+
+// Count the open path's dead-daemon relaunches instead of running one: the
+// real repair is fire-and-forget against the mocked provider above.
+const realBootstrapWiring = await import('../projects/lib/legacy-runtime-bootstrap-wiring');
+mock.module('../projects/lib/legacy-runtime-bootstrap-wiring', () => ({
+  ...realBootstrapWiring,
+  scheduleLegacyRuntimeBootstrap: (_row: unknown, reason?: string) => {
+    if (reason === 'session-open-dead-daemon') deadDaemonRepairs += 1;
+    return true;
+  },
 }));
 
 const realRuntimeInspection = await import('../projects/runtime-inspection');
@@ -851,6 +867,9 @@ mock.module('../shared/db', () => ({
             visibility: values.visibility ?? 'private',
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
+            parentSessionId: values.parentSessionId ?? null,
+            initiatorType: values.initiatorType ?? null,
+            initiatorId: values.initiatorId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -1272,6 +1291,77 @@ describe('project session API contract', () => {
     const created = await response.json();
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
     expect(created.visibility).toBe('project');
+  });
+
+  test('a spawn under a trigger run belongs to that run: initiator, origin and source (KRTX-639)', async () => {
+    // The coordinator a trigger started. Its worker's in-session token resolves
+    // origin `user`, yet nobody attended the run: the worker must carry the
+    // trigger as its starter, the unattended origin, and `agent` as its source.
+    sessionRow = {
+      ...sessionRow!,
+      origin: 'schedule',
+      initiatorType: 'trigger',
+      initiatorId: 'software-factory',
+    };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(SESSION_ID);
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.initiator).toEqual({ type: 'trigger', id: 'software-factory', label: 'software-factory' });
+    expect(created.origin).toBe('schedule');
+    expect(created.metadata?.source).toBe('agent');
+    // Ownership does not move: the coordinator's token still owns its worker.
+    expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
+  });
+
+  test('a spawn under a backend session never inherits `backend` (KRTX-639)', async () => {
+    sessionRow = { ...sessionRow!, origin: 'backend', initiatorType: 'api', initiatorId: 'sa-1' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.origin).toBe('user');
+    expect(created.initiator?.type).toBe('api');
+  });
+
+  test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {
+    const app = createApp();
+    const web = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(web.status).toBe(201);
+    const webSession = await web.json();
+    expect(webSession.parent_session_id).toBeNull();
+    expect(webSession.initiator).toMatchObject({ type: 'member', id: webSession.created_by });
+    expect(webSession.metadata?.source).toBe('ui');
+
+    const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(cli.status).toBe(201);
+    expect((await cli.json()).metadata?.source).toBe('cli');
   });
 
   test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
@@ -3304,7 +3394,52 @@ describe('project session API contract', () => {
   // showed the box alive. A failed boot on a present box parks retriable and
   // stops the provider box, so a DB-stopped row cannot keep burning unmetered
   // compute.
-  test('dashboard start parks (not preserves) a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  // 2026-09-28 prod: a Platinum daemon exited, pt-init never relaunched it, and
+  // every /start parked the box and resumed the same dead snapshot for 18 h.
+  test('dashboard start relaunches a dead daemon on a running Platinum box instead of parking it', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', opencodeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-daemon-dead',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          opencodeReadyWaitReason: 'unreachable',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'starting', retriable: true, reason: 'runtime_updating' });
+    expect(deadDaemonRepairs).toBe(1);
+    expect(providerStopCalls).toBe(0);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(typeof (sessionSandboxRows[0]?.metadata as Record<string, unknown>).deadDaemonRepairRequestedAt).toBe('string');
+
+    // The next poll waits for that relaunch; it neither parks nor asks again.
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(await again.json()).toMatchObject({ stage: 'starting', reason: 'runtime_updating' });
+    expect(deadDaemonRepairs).toBe(1);
+    expect(providerStopCalls).toBe(0);
+  });
+
+  test('dashboard start parks (not preserves) a running sandbox whose relaunch could not revive its runtime', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -3328,6 +3463,15 @@ describe('project session API contract', () => {
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
           opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
           opencodeReadyWaitReason: 'unreachable',
+          // The open already asked for a relaunch and it failed: only now park.
+          deadDaemonRepairRequestedAt: new Date(Date.now() - 20_000).toISOString(),
+          legacyRuntimeBootstrap: {
+            state: 'failed',
+            attempts: 1,
+            manifestBuild: 1,
+            lastAttemptAt: new Date(Date.now() - 19_000).toISOString(),
+            finishedAt: new Date(Date.now() - 10_000).toISOString(),
+          },
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),

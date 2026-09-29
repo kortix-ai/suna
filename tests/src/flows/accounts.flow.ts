@@ -25,6 +25,20 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
     const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
     r.status(200);
   });
+  await ctx.step(
+    "the personal account is named, never after the email (KRTX-638: no \"<email>'s Account\")",
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts');
+      r.status(200);
+      const personal = r
+        .json<Array<{ account_id: string; name: string }>>()
+        .find((account) => account.account_id === ctx.P.OWNER.userId);
+      if (!personal) throw new Error('OWNER has no personal account in GET /v1/accounts');
+      if (!personal.name.trim()) throw new Error('personal account has an empty name');
+      if (personal.name.includes('@') || personal.name.endsWith("'s Account"))
+        throw new Error(`personal account is still named after the email: ${personal.name}`);
+    },
+  );
 });
 
 flow(

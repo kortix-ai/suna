@@ -90,18 +90,6 @@ export function repoSlugFromName(name: string): string {
 }
 
 /**
- * `github.com/<owner>/<repo>` for the repository "Create in GitHub" would
- * make, or null while the owner is still unknown. Rendered under the source
- * picker so the derived slug is visible BEFORE the user presses Create —
- * `repoSlugFromName` can change the name they typed quite a lot, and finding
- * that out from the created repo is finding out too late.
- */
-export function plannedRepoPath(ownerLogin: string | null, name: string): string | null {
-  if (!ownerLogin) return null;
-  return `github.com/${ownerLogin}/${repoSlugFromName(name)}`;
-}
-
-/**
  * Whether the GitHub-specific inputs for `state.source` are filled in.
  *
  * Both sources need an installation. Only `github-import` needs a repository:
