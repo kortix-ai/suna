@@ -111,7 +111,7 @@ enabled = false
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], permissions: ['project.cr.open'], env: 'all' },
+      grant: { agent: 'support', connectors: ['github'], permissions: ['project.gitops.push'], env: 'all' },
     });
   });
 
@@ -211,7 +211,7 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
     });
     expect(result).toEqual({
       ok: true,
-      grant: { agent: 'support', connectors: ['github'], permissions: ['project.cr.open'], env: [] },
+      grant: { agent: 'support', connectors: ['github'], permissions: ['project.gitops.push'], env: [] },
     });
   });
 

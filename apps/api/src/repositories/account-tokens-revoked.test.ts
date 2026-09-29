@@ -155,7 +155,13 @@ describe('validateAccountToken revocation gate', () => {
 
     const result = await validateAccountToken(secretKey);
 
-    expect(result).toEqual({ isValid: false, error: 'Session token is not active' });
+    expect(result).toEqual({
+      isValid: false,
+      error: 'Session token is not active',
+      // KRTX-446: the lease refusal is a DEAD credential — the auth gate
+      // marks it with the typed 401 so a retrying client can stop.
+      credentialDead: true,
+    });
   });
 
   test('an active session can use its sandbox credential', async () => {
