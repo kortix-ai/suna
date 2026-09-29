@@ -187,7 +187,12 @@
     "account": {
       "label": "Konto",
       "createIn": "Erstellen in {account}",
-      "choose": "Konto auswählen"
+      "choose": "Konto auswählen",
+      "loggedInAs": "Angemeldet als",
+      "nameLabel": "Kontoname",
+      "nameHint": "Dein Team sieht ihn in der Seitenleiste und in Einladungen. Du kannst ihn später ändern.",
+      "nameRequired": "Kontoname ist erforderlich",
+      "renameFailed": "Der Kontoname konnte nicht gespeichert werden. Versuche es erneut."
     },
     "name": {
       "label": "Name des Projekts",
@@ -215,7 +220,6 @@
       "label": "Repository",
       "defaultBranch": "Standard-Branch",
       "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden. Versuchen Sie es erneut.",
-      "createsPath": "Erstellt <path>{path}</path>",
       "loadRepositoriesError": "Repositories konnten nicht geladen werden. Versuchen Sie es erneut.",
       "sources": {
         "managed": {
@@ -1171,6 +1175,10 @@
         "reminders": {
           "name": "Erinnerungen",
           "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
+        },
+        "us_region": {
+          "name": "US-Region",
+          "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
         }
       }
     },
@@ -19000,7 +19008,27 @@
       "text2edf70730233": "Nachricht an den Agenten (optional)",
       "texte88286ad9739": "Projekterinnerungen aufgelistet",
       "text711edad21902": "Computer zum Projekt hinzugefügt",
-      "texta3ecfa724d04": "Computer hat sich selbst getrennt"
+      "texta3ecfa724d04": "Computer hat sich selbst getrennt",
+      "text734315a9e07d": "MCP-Ressourcenmetadaten gelesen",
+      "text872227a135cd": "OpenID-Konfiguration gelesen",
+      "textd19297f36620": "React mit Server Components und dateibasiertem Routing.",
+      "text030637ad147a": "Python-Webframework mit allem, was man braucht.",
+      "textaf48bcf0b951": "Frontend",
+      "text2fb4019a35e4": "Backend",
+      "text21f231146e6c": "Phoenix (demnächst)",
+      "textb53181a4d853": "Mein Konto",
+      "textd696a35bdd18": "Profil",
+      "text9e8197ce9e5f": "Seitenleiste anzeigen",
+      "text073549e7238a": "Minimap anzeigen",
+      "texte9736daa7c32": "Statusleiste anzeigen",
+      "textefb52e7172b7": "Design",
+      "text27bf0f2d3f3f": "Personen einladen",
+      "text9c0b617e79e9": "Projekt löschen",
+      "text8aec60d8fca6": "Dasselbe Menü in jeder Zeilengröße: Symbole, Tastenkürzel, Kontrollkästchen, Optionsfelder, ein Untermenü und eine destruktive Zeile.",
+      "textd71a0c697cce": "Segmentiert",
+      "text9ae34cca7f2d": "Von Kortix verwaltet",
+      "textafecbae4466e": "Kortix erstellt und verwaltet ein privates Repository für dieses Projekt.",
+      "text6cb9b40da8a0": "Kortix erstellt ein privates Repository in deinem GitHub-Konto."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -19102,6 +19130,7 @@
     "copyProjectId": "Projekt-ID",
     "copySessionId": "Sitzungs-ID",
     "copySessionLink": "Sitzungslink",
+    "copySessionTitle": "Sitzungstitel",
     "copyAction": "{label} kopieren",
     "copied": "{label} kopiert",
     "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
@@ -19903,6 +19932,9 @@
   },
   "projectSelector": {
     "welcome": "Willkommen bei Kortix",
+    "nameAccountTitle": "Benenne dein Konto",
+    "nameAccountBody": "Hier leben deine Projekte, Agenten und Teammitglieder.",
+    "nameAccountContinue": "Weiter",
     "welcomeBack": "Willkommen zurück",
     "descriptionNew": "Erstelle dein erstes Projekt oder tritt einem bei, das dein Team geteilt hat.",
     "descriptionReturning": "Öffne ein Projekt oder erstelle ein neues.",

@@ -12,8 +12,6 @@
  *   `parsePresentationOutput` (`@kortix/sdk`).
  * - memory: `parseMemoryView` (`@kortix/sdk`), `parseMemorySearchOutput`,
  *   `parseMemoryEntryOutput` (web `lib/utils`, mobile `lib/session/tools` ports).
- * - DCP (`context_info`, `compress`, `distill`, `prune`): plain text, rendered
- *   through `ToolOutputFallback` on both surfaces.
  *
  * No output carries a top-level `error` field or `success: false` unless the
  * spec is the embedded-failure case: `detectEmbeddedFailure`
@@ -416,38 +414,6 @@ Session: ses_7Hc1pRzK3dLe
 Created: 2026-09-03 | Updated: 2026-09-16
 Tags: postgres, advisory-locks, billing, pgbouncer`;
 
-// ─── DCP ─────────────────────────────────────────────────────────────────────
-
-const CONTEXT_INFO_OUTPUT = `## Context usage
-
-**112,480 / 200,000 tokens (56%)**
-
-| Segment | Tokens |
-| --- | ---: |
-| System prompt | 9,812 |
-| Tool definitions | 14,236 |
-| Conversation | 31,904 |
-| Tool outputs | 56,528 |
-
-Prunable tool outputs: 7 calls, 38,140 tokens (ids 4, 7, 9, 10, 12, 13, 15).`;
-
-const COMPRESS_OUTPUT = `Compressed 9 messages about "advisory lock research" into a 3-sentence summary:
-
-Postgres advisory locks give acme-dashboard a named lock with no table row. PgBouncer runs in transaction pooling mode, so billing-sync must use pg_try_advisory_xact_lock and exit when it returns false. Stripe writes keep idempotency keys as a second guard.`;
-
-const DISTILL_OUTPUT = `Distilled 3 tool outputs (18,420 tokens → 1,210 tokens):
-
-- **#12 webfetch** functions-admin.html: the four advisory lock functions and when each releases.
-- **#13 scrape_webpage**: Vercel Pro $20 per member, Render Professional $19 per user; fly.io timed out.
-- **#15 web_search**: session locks leak through pooled connections; use transaction-level locks.`;
-
-const PRUNE_OUTPUT = `Pruned 4 tool outputs (19,720 tokens freed):
-
-- #4 read apps/api/src/jobs/billing-sync.ts (superseded by a later read)
-- #7 bash pnpm test --filter api (stale output)
-- #9 image_search saas pricing page three tier cards
-- #10 webfetch https://supabase.com/pricing`;
-
 // ─── Group ───────────────────────────────────────────────────────────────────
 
 export const WEB_MEMORY_TOOL_GROUP: FixtureToolGroup = {
@@ -648,57 +614,6 @@ export const WEB_MEMORY_TOOL_GROUP: FixtureToolGroup = {
       error: 'Error: LTM entry #1204 not found',
       durationMs: 110,
       note: 'LTM entry: caption, content, tags, session, and the `Updated:` split out of the `Created:` field.',
-    },
-    // ── DCP ──
-    {
-      renderer: 'context-info-tool.tsx',
-      tool: 'context_info',
-      input: {},
-      output: CONTEXT_INFO_OUTPUT,
-      error: 'Error: DCP state is not available for this session',
-      durationMs: 60,
-      note: 'Token breakdown rendered as markdown through `ToolOutputFallback`. The renderer returns null without output (pending/running/error). `shouldShowToolPart` (sdk parts.ts `HIDDEN_TOOLS`) hides `context_info` from the chat turn on both surfaces (web session-chat.tsx, mobile SessionTurn.tsx / turn-body.ts); only a direct renderer mount shows it.',
-    },
-    {
-      renderer: 'dcp-compress-tool.tsx',
-      tool: 'compress',
-      input: {
-        topic: 'advisory lock research',
-        content: {
-          startString: 'Research Postgres advisory locks for acme-dashboard',
-          endString: 'use transaction-level locks.',
-          summary:
-            'billing-sync must use pg_try_advisory_xact_lock under PgBouncer transaction pooling.',
-        },
-      },
-      output: COMPRESS_OUTPUT,
-      error: 'Error: startString was not found in the conversation',
-      durationMs: 240,
-    },
-    {
-      renderer: 'dcp-distill-tool.tsx',
-      tool: 'distill',
-      input: {
-        ids: ['12', '13', '15'],
-        distillation: [
-          'Four advisory lock functions; xact variants release at transaction end.',
-          'Vercel Pro $20/member, Render Professional $19/user, fly.io timed out.',
-          'Session locks leak through pooled connections.',
-        ],
-      },
-      output: DISTILL_OUTPUT,
-      error: 'Error: Unknown tool ids: 15',
-      durationMs: 200,
-      note: 'The trigger shows "3 tools" on both surfaces (web `ids.length` + i18n `tools`, mobile `dcpIdsLabel`).',
-    },
-    {
-      renderer: 'dcp-prune-tool.tsx',
-      tool: 'prune',
-      input: { ids: ['4', '7', '9', '10'], reason: 'noise' },
-      output: PRUNE_OUTPUT,
-      error: 'Error: Unknown tool ids: 10',
-      durationMs: 90,
-      note: 'The trigger shows the `reason` and "4 tools". `narration.ts` hides compress/distill/prune/context_info from the Easy panel only.',
     },
   ],
 };

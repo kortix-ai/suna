@@ -143,7 +143,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ## 4. Accounts & identity
 
 `ME-1` `GET /accounts/me` → 200 user + memberships. `ANON` → 401.
-`ACCT-1` `GET /accounts` → list memberships (auto-claims pending plain account invites by email; an invite carrying a project grant waits for Join via `INV-8`).
+`ACCT-1` `GET /accounts` → list memberships (auto-claims pending plain account invites by email; an invite carrying a project grant waits for Join via `INV-8`). The caller's personal account is never named after their email (KRTX-638): a new account gets a suggested name — first name, work-email company, or the personal email's leading letters — and `/new` asks the user to confirm it on their first project.
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment).
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.

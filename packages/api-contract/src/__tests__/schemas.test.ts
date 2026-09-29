@@ -148,6 +148,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       pi_harness: false,
       config_releases: true,
       agent_principal: false,
+      us_region: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -724,6 +725,7 @@ describe('envelopes', () => {
       'pi_harness',
       'config_releases',
       'agent_principal',
+      'us_region',
     ]);
   });
 
