@@ -33,6 +33,7 @@ import {
   renderJob,
   type JobState,
 } from './jobs';
+import { CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type Host } from './connectors';
 import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from './shape';
 
 type Dispatch = (request: Request) => Promise<Response>;
@@ -50,7 +51,7 @@ interface ToolContext {
   deadline: number;
 }
 
-type ToolResult = {
+export type ToolResult = {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[];
   isError?: boolean;
 };
@@ -62,7 +63,7 @@ const text = (value: string, isError = false): ToolResult => ({
 
 // ─── The Kortix API, in-process, as the caller ──────────────────────────────
 
-type ApiReply = {
+export type ApiReply = {
   status: number;
   body: string;
   /** The reply's `Retry-After`, when it sent one. */
@@ -79,7 +80,7 @@ async function callApi(
   ctx: ToolContext,
   method: string,
   path: string,
-  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean } = {},
+  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean; raw?: { body: Uint8Array; headers: Record<string, string> } } = {},
 ): Promise<ApiReply> {
   const url = new URL(path, ctx.origin);
   // Guard the path the router will see (dot segments, %-escapes), not the caller's spelling.
@@ -104,8 +105,9 @@ async function callApi(
   headers.set('x-kortix-client', 'mcp');
   headers.set('accept', 'application/json');
   if (opts.body !== undefined) headers.set('content-type', 'application/json');
+  for (const [k, v] of Object.entries(opts.raw?.headers ?? {})) headers.set(k, v);
   const response = await ctx.dispatch(
-    new Request(url, { method, headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
+    new Request(url, { method, headers, body: opts.raw ? (opts.raw.body as BodyInit) : opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
   );
   const reply: ApiReply = {
     status: response.status,
@@ -455,7 +457,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         session_id: SESSION_ID,
-        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` says how many exist.' },
+        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` is how many came back; `complete: true` means no older message exists.' },
         wait_seconds: { type: 'number', description: 'Wait up to this long (max 45) for the running turn to end before reading.' },
       },
       required: ['session_id'],
@@ -970,9 +972,32 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       return apiResult(await callApi(ctx, method, path, { query, body, summarizeBinary: true }), `${method} ${path}`);
     }
     default:
+      if (isConnectorTool(name)) return runConnectorTool(name, input, connectorHost(ctx));
       throw Object.assign(new Error(`Unknown tool: ${name}`), { rpcCode: -32602 });
   }
 }
+
+/** What ./connectors.ts needs from this file: the in-process transport and the sandbox file read. */
+const connectorHost = (ctx: ToolContext): Host => ({
+  call: (method, path, opts) => callApi(ctx, method, path, opts),
+  text,
+  apiResult: (r) => apiResult(r),
+  input: (message) => new ToolInputError(message),
+  arg,
+  optionalArg,
+  projectId: projectArg,
+  async readSandboxFile(sessionId, path) {
+    const sandbox = await resolveSandbox(ctx, sessionId);
+    if (!('session' in sandbox)) return apiResult(sandbox);
+    const home = await expandHome(ctx, sandbox, path);
+    if ('error' in home) return home.error;
+    const r = await callSandbox(ctx, sandbox, 'GET', '/file/content', { query: { path: home.path } });
+    if (r.status >= 400) return apiResult(r);
+    const file = JSON.parse(r.body);
+    // The daemon answers text as a string and everything else as base64.
+    return { bytes: file.type === 'text' ? new TextEncoder().encode(file.content) : new Uint8Array(Buffer.from(file.content, 'base64')), mime: typeof file.mimeType === 'string' ? file.mimeType : undefined };
+  },
+});
 
 function instructions(): string {
   return [
@@ -981,6 +1006,7 @@ function instructions(): string {
     'Sessions: start_session delegates a task to a Kortix agent in its own cloud sandbox; read_session (with wait_seconds) follows it; send_message continues it; list_sessions finds existing ones.',
     "Sandboxes: run_command runs bash in a session's sandbox, and read_file / write_file / list_files reach its live /workspace. With a project_id instead of a session_id, read_file and list_files read the project's git repository.",
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
+    'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps and add_connector add one to the project.',
     'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {projectId}).',
   ].join('\n');
 }
@@ -1001,7 +1027,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: TOOLS };
+      return { tools: [...TOOLS, ...CONNECTOR_TOOLS] };
     case 'tools/call': {
       if (typeof params.name !== 'string') throw Object.assign(new Error('Invalid params: name must be a tool name'), { rpcCode: -32602 });
       try {
