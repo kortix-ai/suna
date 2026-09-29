@@ -128,6 +128,7 @@ export function useCreateOpenCodeSession() {
   });
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useDeleteOpenCodeSession() {
   const queryClient = useQueryClient();
 

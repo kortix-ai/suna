@@ -33,7 +33,4 @@ export function SessionStatsTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('session_stats', SessionStatsTool);
 ToolRegistry.register('session-stats', SessionStatsTool);
-ToolRegistry.register('oc-session_stats', SessionStatsTool);
-ToolRegistry.register('oc-session-stats', SessionStatsTool);

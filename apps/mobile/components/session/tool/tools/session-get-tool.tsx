@@ -271,10 +271,7 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     </BasicTool>
   );
 }
-ToolRegistry.register('session_get', SessionGetTool);
 ToolRegistry.register('session-get', SessionGetTool);
-ToolRegistry.register('oc-session_get', SessionGetTool);
-ToolRegistry.register('oc-session-get', SessionGetTool);
 
 // ─── Legacy body (imported by tool-part-renderer.tsx) ────────────────────────
 

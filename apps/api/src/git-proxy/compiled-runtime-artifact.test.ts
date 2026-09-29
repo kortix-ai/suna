@@ -118,12 +118,15 @@ describe("buildCompiledRuntimeArtifact", () => {
     expect(artifact.size).toBeGreaterThan(0);
     expect(manifest).toEqual(artifact.manifest);
     expect(JSON.parse(manifest.agent_config)).toEqual({
+      default_agent: "kortix",
       agent: {
         kortix: {
           mode: "primary",
           prompt: "Answer from the compiled runtime.\n",
         },
       },
+      // #8027 (W1 B5): the compiled config names the manifest's default agent.
+      default_agent: "kortix",
     });
     expect(manifest.opencode_config_dir).toBe(".kortix/opencode");
     expect(manifest.opencode_config_archive_sha256).toMatch(/^[0-9a-f]{64}$/);

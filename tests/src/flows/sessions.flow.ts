@@ -5,7 +5,9 @@
  * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
  * the local profile against a database session with a saved transcript.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
 
@@ -910,11 +912,20 @@ flow(
     });
 
     await ctx.step(
-      'anon: the transcript share reads the conversation → 200 digest from the live sandbox or the saved transcript',
+      'anon: the transcript share reads the conversation → 503 until the sandbox is active, then a 200 digest from the live sandbox or the saved transcript',
       async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-          params: { shareId: transcriptShareId },
-        });
+        // The fixture session was created moments ago; while its sandbox starts
+        // and nothing is saved, the contract answers 503.
+        const r = await waitFor(
+          () => anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: transcriptShareId } }),
+          {
+            until: (res) => res.statusCode !== 503,
+            timeoutMs: 180_000,
+            intervalMs: 2_000,
+            description: 'the shared session to become readable',
+            retryOnError: isKe2eRetryableError,
+          },
+        );
         r.status(200).body().exists('$.messages');
         const source = r.json<{ source?: string }>().source;
         if (source !== 'live' && source !== 'mirror') {
