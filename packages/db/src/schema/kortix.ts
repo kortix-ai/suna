@@ -6380,6 +6380,14 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
   index('session_user_provider_connections_connection').on(table.connectionId),
 ]);
 
+/** One lease per signed-in user's visible browser tab and session. */
+export const sessionPresenceLeases = kortixSchema.table('session_presence_leases', {
+  userId: uuid('user_id').notNull(),
+  sessionId: text('session_id').notNull().references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  tabId: uuid('tab_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.sessionId, table.tabId] })]);
+
 /**
  * A user's Expo push device token plus that device's per-event notification
  * preferences. One row per physical device (`token` is the Expo push token

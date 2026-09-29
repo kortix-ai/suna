@@ -88,6 +88,8 @@ import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionTurnOutcome, useSessionWorking } from './use-session-working';
 import { cancelSessionTurn } from './session-stop';
 import { useVisibleAgents } from './use-visible-agents';
+import { createKortix } from '../core/client/kortix';
+import { platformConfig } from '../core/http/config';
 
 /** Coarse session lifecycle for the host's top-level gating. */
 export type SessionPhase = 'starting' | 'ready' | 'error';
@@ -813,6 +815,8 @@ export async function answerPermission(
 }
 
 export interface UseSessionOptions {
+  /** Renew this browser tab's presence while the signed-in session view is visible. */
+  browserPresence?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
@@ -918,7 +922,28 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     chatEngine = true,
     initialOpenCodeSessionId = null,
     subscribeMessages = true,
+    browserPresence = false,
   } = options;
+
+  useEffect(() => {
+    if (!browserPresence || !projectId || !sessionId) return;
+    const tab_id = crypto.randomUUID();
+    const handle = createKortix(platformConfig()).session(projectId, sessionId);
+    const send = (active: boolean) => {
+      void handle.presence({ tab_id, active }).catch(() => {});
+    };
+    const visibility = () => send(!document.hidden);
+    visibility();
+    const interval = window.setInterval(() => {
+      if (!document.hidden) send(true);
+    }, 30_000);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', visibility);
+      send(false);
+    };
+  }, [browserPresence, projectId, sessionId]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;

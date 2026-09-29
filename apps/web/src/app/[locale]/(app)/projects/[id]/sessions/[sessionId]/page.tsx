@@ -233,6 +233,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
   const session = useSession(projectId, sessionId, {
+    browserPresence: !!user,
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,

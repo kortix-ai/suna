@@ -40,6 +40,7 @@ function harness(opts: {
   session?: SessionPushTarget | null;
   rows?: PushDeviceTokenRow[];
   enabled?: boolean;
+  isPresent?: SessionPushDeps['isPresent'];
   send?: SessionPushDeps['send'];
 }) {
   const sent: ExpoPushMessage[][] = [];
@@ -47,6 +48,7 @@ function harness(opts: {
   const warnings: unknown[][] = [];
   const deps: SessionPushDeps = {
     enabled: opts.enabled ?? true,
+    isPresent: opts.isPresent,
     logger: { warn: (...args: unknown[]) => void warnings.push(args) },
     loadSession: async () => (opts.session === undefined ? { createdBy: USER, title: 'Fix the build' } : opts.session),
     store: {
@@ -200,6 +202,13 @@ describe('preference filtering', () => {
 
 describe('createSessionNotifier', () => {
   const event = { type: 'completion' as const, sessionId: SESSION, projectId: PROJECT };
+
+  test('suppresses only the present creator session', async () => {
+    const h = harness({ isPresent: async (user, session) => user === USER && session === SESSION });
+    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'present' });
+    expect(h.sent).toHaveLength(0);
+    expect(h.listed).toHaveLength(0);
+  });
 
   test('sends to every allowed device of the session creator', async () => {
     const h = harness({ rows: [row('a'), row('b', { platform: 'android', playSound: false })] });
