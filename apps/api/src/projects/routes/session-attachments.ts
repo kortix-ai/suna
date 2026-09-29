@@ -2,7 +2,6 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
 import { MAX_SESSION_ATTACHMENT_BYTES } from "@kortix/shared";
 import { auth, errors, json } from "../../openapi";
-import { requireFeatureFlag } from "../../feature-flags/gate";
 import { PROJECT_ACTIONS } from "../../iam";
 import { assertAgentScope } from "../../iam/agent-scope";
 import { projectsApp } from "../lib/app";
@@ -84,12 +83,6 @@ projectsApp.openapi(
     );
     if (!visible || sessionIsTombstoned(visible.row))
       return c.json({ error: "Not found" }, 404);
-    const gate = requireFeatureFlag(
-      c,
-      loaded.row.metadata,
-      "session_transcript_history",
-    );
-    if (gate) return gate as any;
     const body = await c.req.formData();
     const file = body.get("file");
     const attachmentId = body.get("attachment_id");

@@ -120,18 +120,6 @@ export interface FeatureFlagDef {
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
-    key: 'session_transcript_history',
-    name: 'Session Transcript History',
-    description:
-      'Save the whole chat history after each turn, tool calls and sub-agents included, and show it from the database while the session computer starts.',
-    stability: 'beta',
-    available: () => true,
-    // On by default: saved history is how web, mobile and the CLI show a
-    // session while its computer is off. A project can still turn it off.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-  },
-  {
     key: 'marketplace',
     name: 'Marketplace',
     description:
