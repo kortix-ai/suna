@@ -92,7 +92,7 @@ import {
   type ChangedFile,
 } from '@/lib/session/session-actions';
 import { useCompactionStore } from '@/stores/compaction-store';
-import { projectKeys, useProjectSessionsPaged } from '@/lib/projects/hooks';
+import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import {
   deleteProjectSession,
   restartProjectSession,
@@ -147,36 +147,30 @@ export interface SessionActionsSheetRef {
 
 export interface SessionActionsSheetProps {
   projectId: string;
-  /**
-   * Run the background poll on the live-session lookup below. `false` pauses
-   * it while the project screen is not focused (a root screen — Billing,
-   * Settings — covers it), matching every other project-sessions poll.
-   * Default `true`.
-   */
-  poll?: boolean;
 }
 
 export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, SessionActionsSheetProps>(
-  function SessionActionsSheet({ projectId, poll = true }, ref) {
+  function SessionActionsSheet({ projectId }, ref) {
     const insets = useSafeAreaInsets();
     const toast = useToast();
     const queryClient = useQueryClient();
 
     // The freshest copy of the session: a caller may have long-pressed a row
     // from a list that has since refetched, and Rename/Share should never
-    // seed from a stale title or a stale sharing state. `sessions` here is
-    // every page loaded so far (not just the first 50) — a long press past
-    // the first page (the Sessions page's list, or the drawer's) must still
-    // resolve to the live row, not the static one `present()` was called
-    // with. This is the SAME query the Sessions page and the drawer already
-    // run (`projectKeys.projectSessionsPaged`), so mounting this sheet
-    // subscribes to their cache instead of starting a second one.
-    const { sessions: liveSessions } = useProjectSessionsPaged(projectId, { poll });
-    const liveRow = React.useCallback(
-      (session: ProjectSession) =>
-        liveSessions.find((s) => s.session_id === session.session_id) ?? session,
-      [liveSessions]
+    // seed from a stale title or a stale sharing state. The row comes from
+    // whichever cached list holds it (the drawer's sections, the Sessions
+    // page, a parent's children), and the sheet re-renders on any list write
+    // so a rename shows at once. No query of its own.
+    const [, bumpLists] = React.useReducer((n: number) => n + 1, 0);
+    React.useEffect(
+      () =>
+        queryClient.getQueryCache().subscribe((event) => {
+          if (event.query.queryKey[0] === 'project-sessions') bumpLists();
+        }),
+      [queryClient]
     );
+    const liveRow = (session: ProjectSession) =>
+      cachedSessionRow(queryClient, projectId, session.session_id) ?? session;
 
     const invalidateSessions = React.useCallback(
       () => queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) }),
@@ -386,9 +380,10 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         // put it back first, so it is cancelled. The paged list only: the flat
         // one names the open thread, which keeps its title until the delete
         // succeeds.
-        const pagedKey = projectKeys.projectSessionsPaged(projectId);
-        await queryClient.cancelQueries({ queryKey: pagedKey });
-        undo = writeSessionLists(queryClient, [pagedKey], (cached) =>
+        // Paged lists and children only (keys longer than the flat list's).
+        const listKeys = sessionListKeys(queryClient, projectId).filter((key) => key.length > 2);
+        await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
+        undo = writeSessionLists(queryClient, listKeys, (cached) =>
           applyToSessionCache<ProjectSession>(cached, (rows) =>
             withoutSession(rows, confirmDelete.session_id)
           )

@@ -314,7 +314,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

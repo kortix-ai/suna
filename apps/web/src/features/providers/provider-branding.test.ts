@@ -33,7 +33,13 @@ describe('providerIconSrc', () => {
     expect(providerIconSrc('fireworks')).toBe('/provider-icons/fireworks-ai.svg');
   });
 
-  test('returns undefined for an unmapped id (caller falls back to initials)', () => {
+  // A catalog provider without a bundled asset (OpenCode Go, and ~150 others)
+  // rendered initials built from the synthetic "Kortix" name: a "K" avatar.
+  test('falls back to the models.dev logo for a catalog provider without a bundled asset', () => {
+    expect(providerIconSrc('opencode-go')).toBe('https://models.dev/logos/opencode-go.svg');
+  });
+
+  test('returns undefined for an id outside the catalog (caller falls back to initials)', () => {
     expect(providerIconSrc('some-brand-new-provider')).toBeUndefined();
   });
 });

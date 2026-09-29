@@ -768,7 +768,15 @@ export function extractTurnIdentity(
   let messageId: string | null = null;
   if (body?.byteLength) {
     try {
-      const parsed = JSON.parse(new TextDecoder().decode(body)) as { messageID?: unknown };
+      const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+        messageID?: unknown;
+        noReply?: unknown;
+      };
+      // `noReply` persists the message and starts no loop: there is no turn to
+      // track, and no idle relay will ever arrive to close one. Such a POST
+      // skips the ledger's live-turn serialization; the inbox admission gate
+      // is what keeps it out of a live turn.
+      if (parsed.noReply === true) return null;
       if (typeof parsed.messageID === 'string' && parsed.messageID.trim()) {
         messageId = parsed.messageID.trim();
       }

@@ -45,6 +45,21 @@ export interface ProjectSessionMetadata {
   [key: string]: unknown;
 }
 
+export type ProjectSessionInitiatorType = 'member' | 'trigger' | 'channel' | 'api' | 'system';
+
+/**
+ * Who started the RUN (the whole session tree). Server-derived at create and
+ * immutable; a child copies its parent's. `null` on the row means the backfill
+ * could not classify it — treat that as a `member` of `created_by`.
+ */
+export interface ProjectSessionInitiator {
+  type: ProjectSessionInitiatorType;
+  /** member: user id · trigger: slug · channel: 'slack'|'teams'|'email'|'telegram' · api: service account id · system: source. */
+  id: string | null;
+  /** Display label: member name, trigger slug, channel name, service account name, or 'Kortix'. */
+  label: string | null;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -76,6 +91,14 @@ export interface ProjectSession {
   opencode_sessions: ProjectOpenCodeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
+  /** The session that spawned this one, or null for a top-level session. */
+  parent_session_id?: string | null;
+  /** Who started the run this session belongs to. */
+  initiator?: ProjectSessionInitiator | null;
+  /** Visible children. Present only on a `parent: 'root'` list. */
+  child_count?: number;
+  /** Why a root matched `q`. Present only on a `parent: 'root'` list with `q`. */
+  search_match?: 'self' | 'child';
   owner_email?: string | null;
   owner_name?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
@@ -127,9 +150,17 @@ export interface ProjectSession {
  * parent makes any tree walk loop forever.
  */
 export function sessionParentId(
-  session: Pick<ProjectSession, 'session_id'> & { metadata?: ProjectSessionMetadata },
+  session: Pick<ProjectSession, 'session_id'> & {
+    parent_session_id?: string | null;
+    metadata?: ProjectSessionMetadata;
+  },
 ): string | null {
-  const parent = session.metadata?.spawned_by_session;
+  // `parent_session_id` is the server column; the metadata key is the legacy
+  // copy that is still written for one release.
+  const parent =
+    typeof session.parent_session_id === 'string'
+      ? session.parent_session_id
+      : session.metadata?.spawned_by_session;
   if (typeof parent !== 'string') return null;
   const trimmed = parent.trim();
   if (!trimmed || trimmed === session.session_id) return null;
@@ -282,6 +313,13 @@ export interface ListProjectSessionsOptions {
   limit?: number;
   /** A previous page's `next_cursor`. Opaque — pass it back unmodified. */
   cursor?: string | null;
+  /** `'root'` = top-level sessions only (each row carries `child_count`); a
+   *  session id = that session's children. Omit for the legacy flat list. */
+  parent?: 'root' | string;
+  /** Filter by who started the run, relative to the viewer. */
+  startedBy?: 'me' | 'others' | 'automated';
+  /** Server-side search over every session the viewer may see (1..200 chars). */
+  q?: string;
 }
 
 /** One keyset page of a project's sessions. */
@@ -296,6 +334,10 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
   if (options?.limit !== undefined) params.set('limit', String(options.limit));
   if (options?.cursor) params.set('cursor', options.cursor);
+  if (options?.parent) params.set('parent', options.parent);
+  if (options?.startedBy) params.set('started_by', options.startedBy);
+  const q = options?.q?.trim();
+  if (q) params.set('q', q);
   return params.size > 0 ? `?${params}` : '';
 }
 

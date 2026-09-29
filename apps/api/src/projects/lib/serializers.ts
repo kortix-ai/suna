@@ -17,6 +17,7 @@ import {
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { normalizeAuditClientSource } from '../../shared/audit-client-source';
+import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
@@ -120,6 +121,8 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** Display name of a member/service-account initiator that is not the owner. */
+    initiatorName?: string | null;
     /** Whether created_by identifies a human, service account, or stale principal. */
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
@@ -197,6 +200,20 @@ export function serializeSession(
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     visibility: row.visibility,
     origin: row.origin,
+    parent_session_id: row.parentSessionId ?? null,
+    initiator: row.initiatorType
+      ? {
+          type: row.initiatorType,
+          id: row.initiatorId,
+          label: sessionInitiatorLabel(
+            { type: row.initiatorType, id: row.initiatorId },
+            ctx?.initiatorName ??
+              (row.initiatorId && row.initiatorId === row.createdBy
+                ? (ctx?.ownerName ?? ctx?.ownerEmail ?? null)
+                : null),
+          ),
+        }
+      : null,
     secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
     sharing: visibilityToIntent(
       row.visibility as 'private' | 'project' | 'restricted',

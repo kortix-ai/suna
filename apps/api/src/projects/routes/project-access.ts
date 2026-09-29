@@ -4,7 +4,7 @@ import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { actorOf } from '../../iam/actor';
 import { revokeProjectRole } from '../../iam/assignments';
 import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import {
@@ -25,7 +25,7 @@ import {
   parseExpiresAtBody,
   assertProjectCapability,
 } from '../lib/access';
-import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
+import { AccessMemberSchema, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readJsonObject } from '../../shared/http-body';
 
@@ -37,7 +37,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/access',
     tags: ['access'],
-    summary: 'GET /:projectId/access',
+    summary: 'List project members and their roles',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -371,11 +371,14 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/access/{userId}',
     tags: ['access'],
-    summary: 'PUT /:projectId/access/:userId',
+    summary: 'Set a member\'s role on a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), userId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            role: z.enum(['manager,member']).openapi({ description: 'Project role.' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -450,7 +453,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/access/{userId}',
     tags: ['access'],
-    summary: 'DELETE /:projectId/access/:userId',
+    summary: 'Remove a member from a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), userId: z.string() }),

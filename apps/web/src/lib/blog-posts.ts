@@ -618,7 +618,7 @@ env:
 sandbox:
   templates:
     - slug: ops
-      dockerfile: .kortix/Dockerfile
+      dockerfile: Dockerfile.ops
       cpu: 4
       memory: 8
 
@@ -1233,11 +1233,11 @@ const aiTransformationCompanyOs: BlogPostEntry = {
       type: 'code',
       code: `acme-ai-workspace/
 ├─ kortix.yaml              # project, sandboxes, triggers, connectors, policy
-├─ .kortix/opencode/
-│  ├─ agents/               # role-specific agents: finance, support, sales, legal
-│  ├─ skills/               # repeatable client playbooks and workflows
-│  └─ commands/             # approved operating motions
+├─ agents/                  # role-specific agents: finance, support, sales, legal
+├─ skills/                  # repeatable client playbooks and workflows
 ├─ memory/                  # durable company context and decisions
+├─ harnesses/opencode/
+│  └─ commands/             # approved operating motions
 ├─ artifacts/               # reports, briefs, packets, launch plans
 └─ docs/                    # source-of-truth operating docs`,
     },
@@ -1817,9 +1817,9 @@ default_agent: kortix
 project:
   name: acme
 
-# OpenCode keeps agents, skills, commands, tools, plugins and models here.
+# Files only OpenCode reads: commands, tools, plugins and models.
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
 
 # An omitted grant resolves to \`none\`. Grant explicitly.
 agents:
@@ -1841,7 +1841,7 @@ triggers:
     timezone: UTC
     prompt: |
       Reflect on the last 24 hours of project activity, update
-      .kortix/memory/, and open one change request.`,
+      memory/, and open one change request.`,
     },
     {
       type: 'p',

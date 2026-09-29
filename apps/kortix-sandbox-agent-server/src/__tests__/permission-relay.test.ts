@@ -9,7 +9,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 
 import { dispatch, type PermissionRequest } from '@/harness/open-code/events'
-import { relayPermissionToApi } from '@/harness/open-code/permission-relay'
+import { relayPermissionToApi } from '@/harness/shared/permission-relay'
 
 type Recorded = { method: string; path: string; auth: string | null; body: any }
 

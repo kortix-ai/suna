@@ -1476,3 +1476,42 @@ test('ProjectSession.metadata types spawned_by_session as an optional string', (
   const parent: string | undefined = session.metadata.spawned_by_session;
   expect(parent).toBe('parent-1');
 });
+
+// ── KRTX-639: attribution + hierarchy filters ──────────────────────────────
+
+test('listProjectSessionsPage forwards parent, startedBy and q as parent, started_by, q', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessionsPage('P1', { parent: 'root', startedBy: 'automated', q: 'nightly' });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('parent')).toBe('root');
+  expect(url.searchParams.get('started_by')).toBe('automated');
+  expect(url.searchParams.get('q')).toBe('nightly');
+});
+
+test('listProjectSessions sends a child parent id and trims q', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { parent: 'S9', q: '  hi  ' });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('parent')).toBe('S9');
+  expect(url.searchParams.get('q')).toBe('hi');
+});
+
+test('listProjectSessions omits filter params that are absent or blank', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { q: '   ' });
+  expect(last().url).not.toContain('q=');
+  expect(last().url).not.toContain('parent=');
+  expect(last().url).not.toContain('started_by=');
+});
+
+test('sessionParentId prefers parent_session_id over metadata.spawned_by_session', () => {
+  const row = { session_id: 'c', parent_session_id: 'p-new', metadata: { spawned_by_session: 'p-old' } };
+  expect(sessionParentId(row as unknown as ProjectSession)).toBe('p-new');
+});
+
+test('sessionParentId falls back to metadata when parent_session_id is null or self', () => {
+  const nullRow = { session_id: 'c', parent_session_id: null, metadata: { spawned_by_session: 'p-old' } };
+  expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
+  const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
+  expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
+});

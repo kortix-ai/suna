@@ -69,4 +69,19 @@ describe('compareInboxSendOrder', () => {
 
     expect([queueList, quickQueue, first].sort(compareInboxSendOrder)).toEqual([first, quickQueue, queueList]);
   });
+
+  test('a released Stop batch runs in typing order, whatever each row\'s placement (KRTX-683)', () => {
+    const released = (r: SessionLifecycleCommandRow) => {
+      (r.payload as Record<string, unknown>).releasedBatchId = 'b1';
+      return r;
+    };
+    const alpha = released(row('00000000-0000-0000-0000-000000000001', 1_000, '2026-08-01T00:00:00Z', '', 'composer'));
+    const bravo = released(row('00000000-0000-0000-0000-000000000002', 2_000, '2026-08-01T00:00:01Z', '', 'composer'));
+    const charlie = released(row('00000000-0000-0000-0000-000000000003', 3_000, '2026-08-01T00:00:02Z', '', 'transcript'));
+    // A Quick Queue send made AFTER the release is not in the batch: it still
+    // runs ahead of the Queue List lane.
+    const later = row('00000000-0000-0000-0000-000000000004', 4_000, '2026-08-01T00:00:03Z', '', 'transcript');
+
+    expect([charlie, later, bravo, alpha].sort(compareInboxSendOrder)).toEqual([later, alpha, bravo, charlie]);
+  });
 });

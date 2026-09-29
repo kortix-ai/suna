@@ -1504,6 +1504,7 @@
     "useSandboxServices",
     "useSendOpenCodeMessage",
     "useSession",
+    "useSessionChildren",
     "useSessionMessages",
     "useSessionModelSelection",
     "useSessionPicks",

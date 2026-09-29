@@ -13,7 +13,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * ACCURACY GATE for this page specifically:
  *  - Every line of YAML, every path and every CLI command on this page is real.
  *    Ground truth: `packages/starter/templates/base/kortix.yaml`, the same
- *    template's `.kortix/` tree, `packages/manifest-schema/src/index.v2.ts`,
+ *    template's file tree, `packages/manifest-schema/src/index.v2.ts`,
  *    and `apps/web/content/docs/project/manifest.mdx`. Do not invent a field.
  *  - `channels:` is NOT a manifest key in schema version 2 — the validator
  *    rejects it. Channel routing is live project state; connecting a channel
@@ -67,7 +67,7 @@ export const definition = {
       '',
       '# Where the runtime config lives. Past this: files.',
       'opencode:',
-      '  config_dir: .kortix/opencode',
+      '  config_dir: harnesses/opencode',
       '',
       '# Secret NAMES only. The values are encrypted in the',
       '# platform and injected when the machine boots.',
@@ -110,7 +110,7 @@ export const definition = {
     ],
   },
   runtime: {
-    title: '.kortix/opencode/opencode.jsonc',
+    title: 'harnesses/opencode/opencode.jsonc',
     caption: 'The runtime — models, tools, permissions.',
     lines: [
       '{',
@@ -127,7 +127,7 @@ export const definition = {
     ],
   },
   agentFile: {
-    title: '.kortix/opencode/agents/invoice-clerk.md',
+    title: 'agents/invoice-clerk.md',
     caption: 'The agent — a stock OpenCode agent file. What it says lives here.',
     lines: [
       '---',
@@ -175,17 +175,17 @@ export const repo = {
   tree: [
     { path: 'northwind/', note: 'the repo, and the company', depth: 0 },
     { path: 'kortix.yaml', note: 'the Kortix layer', depth: 1 },
-    { path: '.kortix/', note: '', depth: 1 },
-    { path: 'memory/', note: '', depth: 2 },
-    { path: 'MEMORY.md', note: 'what the company has learned', depth: 3 },
+    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'kortix.md', note: '', depth: 2 },
+    { path: 'invoice-clerk.md', note: '', depth: 2 },
+    { path: 'skills/', note: 'how this company does a job', depth: 1 },
+    { path: 'reconcile-invoices/', note: '', depth: 2 },
+    { path: 'SKILL.md', note: 'read once, used every session', depth: 3 },
+    { path: 'memory/', note: '', depth: 1 },
+    { path: 'MEMORY.md', note: 'what the company has learned', depth: 2 },
+    { path: 'harnesses/', note: '', depth: 1 },
     { path: 'opencode/', note: '', depth: 2 },
     { path: 'opencode.jsonc', note: 'the runtime agents think in', depth: 3 },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 3 },
-    { path: 'kortix.md', note: '', depth: 4 },
-    { path: 'invoice-clerk.md', note: '', depth: 4 },
-    { path: 'skills/', note: 'how this company does a job', depth: 3 },
-    { path: 'reconcile-invoices/', note: '', depth: 4 },
-    { path: 'SKILL.md', note: 'read once, used every session', depth: 5 },
     { path: 'tools/', note: 'the tools you wrote yourself', depth: 3 },
     { path: 'plugins/', note: 'and the ones you installed', depth: 3 },
     { path: 'src/', note: 'and the rest of your repo', depth: 1 },
@@ -219,7 +219,7 @@ export const grep = {
     title: 'northwind — main',
     lines: [
       '# what does the company believe about pricing?',
-      '$ grep -ri "annual" .kortix/memory',
+      '$ grep -ri "annual" memory',
       'MEMORY.md: never quote annual before the security review',
       '',
       '# who is allowed to touch the Stripe key?',
@@ -228,7 +228,7 @@ export const grep = {
       '48:    secrets: [STRIPE_API_KEY]',
       '',
       '# who changed the invoice clerk, and when?',
-      '$ git log --oneline .kortix/opencode/agents/',
+      '$ git log --oneline agents/',
       '8f2a1c4  invoice-clerk: stop guessing at refunds',
       '1d90b73  invoice-clerk: first draft of the persona',
     ],
@@ -261,7 +261,7 @@ export const change = {
     title: 'skill: reconcile-invoices — handle partial refunds',
     author: 'opened by invoice-clerk',
     branch: '9f4c2b7e → main',
-    file: '.kortix/opencode/skills/reconcile-invoices/SKILL.md',
+    file: 'skills/reconcile-invoices/SKILL.md',
     /** `kind`: 'ctx' | 'del' | 'add'. Monochrome by design — no diff colours. */
     diff: [
       { kind: 'ctx', text: '## Matching a payment to an invoice' },
@@ -318,7 +318,7 @@ export const selfImprove = {
       '      Reflect on the last 24 hours of project',
       '      activity. Review git history, merged change',
       '      requests and session digests. Update',
-      '      .kortix/memory/ and open one change request',
+      '      memory/ and open one change request',
       '      titled `memory: ...`. Exit without one when',
       '      there is no durable knowledge.',
     ],
@@ -337,7 +337,7 @@ export const selfImprove = {
     {
       n: '02',
       title: 'It edits the company',
-      body: 'It reads the git history and the sessions of the last day, then writes what it learned into .kortix/memory/ as plain markdown.',
+      body: 'It reads the git history and the sessions of the last day, then writes what it learned into memory/ as plain markdown.',
     },
     {
       n: '03',

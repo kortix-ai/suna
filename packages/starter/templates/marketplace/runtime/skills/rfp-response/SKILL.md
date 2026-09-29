@@ -62,12 +62,12 @@ carried as skills and memory until the team updates them:
 
 | Question topic | Vetted source | Typical confidence |
 |---|---|---|
-| Pricing tiers / packaging | `.kortix/memory/rfp-answers.md#pricing` | High — exact match |
-| Implementation timeline & onboarding | `.kortix/memory/rfp-answers.md#implementation` | High |
-| Product capabilities / integrations | `.kortix/memory/rfp-answers.md#product` + live product docs | High — verify against current docs |
-| Support model & SLAs | `.kortix/memory/rfp-answers.md#support` | High |
-| Company background & references | `.kortix/memory/rfp-answers.md#company` | High |
-| Security or compliance basics | `.kortix/memory/rfp-answers.md#security-basics` | Medium — a full security review belongs to the `questionnaire-response` skill, not this one |
+| Pricing tiers / packaging | `memory/rfp-answers.md#pricing` | High — exact match |
+| Implementation timeline & onboarding | `memory/rfp-answers.md#implementation` | High |
+| Product capabilities / integrations | `memory/rfp-answers.md#product` + live product docs | High — verify against current docs |
+| Support model & SLAs | `memory/rfp-answers.md#support` | High |
+| Company background & references | `memory/rfp-answers.md#company` | High |
+| Security or compliance basics | `memory/rfp-answers.md#security-basics` | Medium — a full security review belongs to the `questionnaire-response` skill, not this one |
 | Anything with no matching entry | — | Flag for a person |
 
 A "confident match" means the question maps clearly to one vetted entry, and for

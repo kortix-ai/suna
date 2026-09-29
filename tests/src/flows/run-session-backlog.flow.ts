@@ -1,8 +1,8 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
- * GOLD-1, CHN-6, SESS-10, CONN-26.
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, SESS-2, SESS-3, SESS-9, SESS-12,
+ * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -26,6 +26,7 @@ import { flow, harnessFlow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
+import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 import { subscribe } from '../fixtures/billing';
 import {
   abortTurn,
@@ -1219,5 +1220,123 @@ flow(
         },
       );
     });
+  },
+);
+
+/**
+ * A manifest with one extra agent, `no-edit`, whose `.md` denies every way to
+ * write a file: the file tools (`edit`), the shell, and delegation.
+ */
+const NO_EDIT_FILES = {
+  'kortix.yaml': [
+    'kortix_version: 2',
+    'default_agent: kortix',
+    'agents:',
+    '  kortix:',
+    '    kortix_permissions: all',
+    '    skills: all',
+    '  no-edit:',
+    '    kortix_permissions: all',
+    '',
+  ].join('\n'),
+  '.kortix/opencode/agents/no-edit.md': [
+    '---',
+    'description: Reads this repository and never writes files.',
+    'mode: primary',
+    'permission:',
+    '  edit: deny',
+    '  bash: deny',
+    '  task: deny',
+    '---',
+    'You answer questions about this repository. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+};
+
+harnessFlow(
+  'RUN-10',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    // Boot (≤540s) + the boot turn (≤240s).
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
+      });
+      const path = `ke2e-run10-${Date.now()}.txt`;
+      const done = `RUN10_DONE_${Date.now()}`;
+      // The boot prompt runs on the session's agent on every harness; a later
+      // /prompts delivery may name no agent.
+      const session = await bootSession(ctx, harness, {
+        project,
+        agentName: 'no-edit',
+        prompt:
+          `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
+          `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
+      });
+      await ctx.step('no file tool ran; on pi the write was attempted and refused', async () => {
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        const fileTools = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'write' || t.tool === 'edit');
+        const ran = fileTools.filter((t) => t.status !== 'error');
+        if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
+        // OpenCode never offers a tool its policy denies, so its model has no
+        // write tool to call. pi offers every tool and refuses the call; a
+        // refused `write` is the proof that `edit: deny` reached it.
+        if (harness === 'pi' && fileTools.length === 0) {
+          throw new Error(`the pi agent never called a file tool, so the policy was not exercised: ${JSON.stringify(messages.map((m) => m.tools))}`);
+        }
+      });
+      await ctx.step('the file does not exist in the workspace', async () => {
+        const file = await ctx.client
+          .as(ctx.P.OWNER)
+          .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+        file.status(404);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+flow(
+  'RUN-11',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    await ctx.step('the project asks for pi and turns the LLM gateway off', async () => {
+      for (const [feature, enabled] of [['pi_harness', true], ['llm_gateway', false]] as const) {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .patch('/v1/projects/:projectId/features', { feature, enabled }, { params: { projectId: project.id } });
+        r.status(200).body().has(`$.experimental.${feature}`, enabled);
+      }
+    });
+    // pi has no model path without the gateway: the session boots OpenCode,
+    // and bootSession proves it from the daemon's health.
+    await bootSession(ctx, 'opencode', { project });
   },
 );
