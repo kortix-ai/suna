@@ -62,8 +62,11 @@ const BASE_STARTER_PATHS = [
 ];
 
 let repoCreateCalls: any[];
+let personalRepoCreateRefused: boolean;
 let fileShaCalls: any[];
 let commitCalls: any[];
+/** One entry per `commitFiles` call — the starter must land as ONE commit. */
+let commitBatches: any[];
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
 let installationRows: Array<typeof accountGithubInstallations.$inferSelect>;
@@ -105,8 +108,10 @@ function resetState() {
   setTestAuth();
   for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
+  personalRepoCreateRefused = false;
   fileShaCalls = [];
   commitCalls = [];
+  commitBatches = [];
   insertedProject = null;
   grantedProjectRole = null;
   gitConnectionRows = [];
@@ -254,7 +259,14 @@ mock.module('../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a factory
+// that only lists the exports it overrides deletes every other one — and the
+// next export added to `projects/github.ts` becomes
+// `SyntaxError: Export named 'X' not found` in this file, which that change
+// never touched (.claude/skills/learnings/SKILL.md).
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   // provision-core.ts classifies rate-limited repo creates with this class.
   GitHubApiError: class GitHubApiError extends Error {
     constructor(
@@ -291,12 +303,27 @@ mock.module('../projects/github', () => ({
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
+  // The starter is written in one commit (`commitFiles`). Each file is recorded
+  // with the batch's auth / branch / message so the per-file assertions below
+  // still read every path and its content.
+  commitFiles: async (input: any) => {
+    commitBatches.push(input);
+    for (const file of input.files) {
+      commitCalls.push({ ...file, auth: input.auth, branch: input.branch, message: input.message });
+    }
+  },
   createInstallationToken: async (installationId: string) => {
     expect(['42', '84']).toContain(installationId);
     return { token: 'installation-token', expires_at: '2026-01-01T00:00:00Z' };
   },
   createRepo: async (input: any) => {
     repoCreateCalls.push(input);
+    if (personalRepoCreateRefused) {
+      const error = new Error('GitHub /user/repos failed (403): Resource not accessible by integration') as Error & { status: number; path: string };
+      error.status = 403;
+      error.path = '/user/repos';
+      throw error;
+    }
     return {
       id: 7,
       name: 'company-os',
@@ -645,6 +672,28 @@ function createApp() {
 
 describe('create-repo starter scaffold contract', () => {
   beforeEach(() => resetState());
+
+  // GitHub refuses `POST /user/repos` for an App installation token. A personal
+  // owner with no stored user authorization is asked to authorize — an
+  // actionable 409 the web client answers with the GitHub popup — before any
+  // call reaches GitHub, so no raw GitHub error and no half-created project.
+  test('a personal owner without GitHub user authorization gets an actionable 409, not a raw GitHub error', async () => {
+    installationRows[0]!.ownerType = 'User';
+    personalRepoCreateRefused = true;
+    const res = await createApp().request('/v1/projects/create-repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'demo', installation_id: '42' }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'github_user_authorization_required',
+      owner_login: 'kortix-org',
+    });
+    expect(repoCreateCalls).toHaveLength(0);
+    expect(insertedProject).toBeNull();
+  });
 
   test('builds exactly the minimal starter scaffold', () => {
     const files = buildStarterFiles({
@@ -1070,13 +1119,18 @@ describe('create-repo starter scaffold contract', () => {
     });
     expect(repoCreateCalls[0].owner).toBeUndefined();
 
-    expect(fileShaCalls.map((call) => call.path)).toEqual(['README.md']);
-    expect(fileShaCalls[0]).toMatchObject({
+    // One commit, not one per file: ~180 sequential Contents-API writes ran
+    // past the API's 25 s request deadline. The tree overwrites the
+    // `auto_init` README in that same commit, so no sha lookup is needed.
+    expect(commitBatches).toHaveLength(1);
+    expect(commitBatches[0]).toMatchObject({
       owner: 'kortix-org',
       repo: 'company-os',
       branch: 'main',
+      message: 'chore: scaffold the Kortix starter',
       auth: { token: 'installation-token', source: 'app_installation' },
     });
+    expect(fileShaCalls).toEqual([]);
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
@@ -1084,14 +1138,8 @@ describe('create-repo starter scaffold contract', () => {
     expect(committedPaths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
-    expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
-    // README.md is upserted via sha because `auto_init: true` creates one
-    // on repo creation. Every other file is brand-new.
-    const readmeIdx = committedPaths.indexOf('README.md');
-    expect(commitCalls[readmeIdx]!.existingSha).toBe('existing-readme-sha');
-    expect(
-      commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined),
-    ).toBe(true);
+    // README.md replaces the `auto_init` one inside the same tree.
+    expect(committedPaths).toContain('README.md');
 
     expect(insertedProject).toMatchObject({
       accountId: ACCOUNT_ID,
@@ -1121,7 +1169,12 @@ describe('create-repo starter scaffold contract', () => {
         externalRepoId: '7',
         authMethod: 'github_app',
         installationId: '42',
-        managed: true,
+        // The repository lives in the ACCOUNT's GitHub, reached through the
+        // account's own installation. `managed: true` means "lives in the
+        // Kortix managed-git backend": with it, the mirror cloned this repo
+        // with the managed-org PAT, which cannot see it (503
+        // git_mirror_unavailable on the first session).
+        managed: false,
         visibility: 'private',
         status: 'connected',
       }),
@@ -1160,7 +1213,7 @@ describe('create-repo starter scaffold contract', () => {
       expect.objectContaining({
         projectId: PROJECT_ID,
         provider: 'github',
-        managed: true,
+        managed: false,
       }),
     );
   });

@@ -320,6 +320,7 @@ function sandboxTemplateSchema(): JsonSchemaFragment {
       cpu: { type: 'integer', minimum: SANDBOX_CPU_BOUNDS.min },
       memory: { type: 'integer', minimum: SANDBOX_MEMORY_BOUNDS.min },
       disk: { type: 'integer', minimum: SANDBOX_DISK_BOUNDS.min },
+      container_runtime: { type: 'boolean' },
     },
     // Exactly one of image/dockerfile (`validateSandboxTemplates`).
     oneOf: [

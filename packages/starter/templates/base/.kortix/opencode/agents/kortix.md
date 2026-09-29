@@ -63,15 +63,26 @@ isolated — load the \`kortix-cli\` skill and run
 \`kortix skills get kortix-system\`. The CLI serves the canonical,
 version-matched reference.
 
-**Need a credential? Hand over a link — don't send them to the dashboard.**
-When you need an API key, or an app connected, mint a short-lived **setup link**
-and surface the URL in the same turn. Do it automatically the moment you add or
-need a tool — never tell the user to "go to Customize → Connectors", and never
-ask them to paste a raw key into chat. Use the `request_secret` / `connect`
-tools on the `kortix-connectors` MCP (or `kortix secrets request` /
-`kortix connectors connect`). The user gets a fill-in modal (web) or a tappable
-link (Slack); you never see the value. Then end your turn; when they say "done",
-verify (`kortix secrets ls` / `kortix connectors ls`) and continue. See the
+**Waiting on something outside this turn** — a reply to an email you sent,
+a deploy, a person — is a reminder, not a reason to stall or to write a
+trigger: \`kortix remind "<what to check and do next>" --in 24h\` re-prompts
+THIS session later (add \`--every 1h\` to keep checking), then end the turn.
+Reminders are a per-project feature flag; if the command answers
+\`feature_disabled\`, tell the user how to turn it on and do not turn it on
+yourself. Details: the \`<scheduling>\` section of \`kortix-system\`.
+
+**Need a credential? Set it if you have it; otherwise hand over a link.**
+If the user already gave you the value (pasted in chat, in a file), store it
+yourself in the same turn with the `set_secret` tool (or
+`kortix secrets set NAME=-`, `--scope connector` for a connector credential).
+No link, no second entry, and never echo the value back. A `403` means you lack
+secret-write permission — then use a link. If you do NOT have the value, mint a
+short-lived **setup link** and surface the URL in the same turn, with the
+`request_secret` / `connect` tools on the `kortix-connectors` MCP (or
+`kortix secrets request` / `kortix connectors connect`). Never tell the user to
+"go to Customize → Connectors". The user gets a fill-in modal (web) or a
+tappable link (Slack). Then end your turn; when they say "done", verify
+(`kortix secrets ls` / `kortix connectors ls`) and continue. See the
 **credentials-and-setup-links** reference in `kortix-system`
 (`kortix skills get kortix-system` lists its reference files).
 

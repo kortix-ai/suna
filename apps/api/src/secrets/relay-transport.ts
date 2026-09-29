@@ -44,7 +44,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { PassThrough, Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { config } from '../config';
 import {
   createPinnedRequestOptions,
@@ -236,7 +236,12 @@ export async function openUpstream(
       // time-based control, and it is armed on the response socket below.
       request.setTimeout(0);
 
-      const out = new PassThrough();
+      // Pull, don't push: the upstream is read only when the consumer reads.
+      // Reading ahead let a burst over the byte budget destroy `out` before
+      // the caller held it, and an `error` with no listener is an uncaught
+      // exception. `read()` is also the backpressure: a full buffer pauses
+      // the socket, the next read resumes it.
+      const out = new Readable({ read: () => response.resume() });
       let responseBytes = 0;
       let idleTimer: ReturnType<typeof setTimeout> | undefined;
       const clearIdle = () => {
@@ -270,17 +275,12 @@ export async function openUpstream(
           );
           return;
         }
-        // Respect the consumer: a false return means the reader is behind, so
-        // stop pulling from the socket until it drains. This is the ONLY real
-        // backpressure in the pipeline.
-        if (!out.write(chunk)) {
-          response.pause();
-          out.once('drain', () => response.resume());
-        }
+        if (!out.push(chunk)) response.pause();
       });
+      response.pause();
       response.on('end', () => {
         clearIdle();
-        out.end();
+        out.push(null);
       });
       response.on('error', (error) => {
         clearIdle();

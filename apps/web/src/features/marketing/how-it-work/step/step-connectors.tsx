@@ -18,7 +18,7 @@ import { useStepShowcaseStart } from '../use-step-showcase';
  * Order matters visually, not semantically: adjacent tiles are kept different
  * in color and weight so no two neighbours read as one blob.
  */
-const APPS: string[] = [
+export const APPS: string[] = [
   'slack.com',
   'notion.so',
   'github.com',

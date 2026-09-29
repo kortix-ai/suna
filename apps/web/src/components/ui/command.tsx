@@ -11,11 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
-import { Kbd, KbdGroup } from './kbd';
 
 const CMDK_SHARED_CLASSES = [
   '[&_[cmdk-group]]:px-1.5',
@@ -239,57 +236,11 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
         // read too dark next to the sidebar rows.
         'hover:bg-hover hover:text-foreground transition-none',
         '[&:not([data-nav=pointer]_*)]:data-[selected=true]:bg-hover [&:not([data-nav=pointer]_*)]:data-[selected=true]:text-foreground',
-        "[&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "[&_svg:not([class*='text-'])]:text-muted-foreground relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
     />
-  );
-}
-
-/**
- * Rich hover detail for a `CommandItem` — wrap the item, pass the detail as
- * `content`, and a card floats out beside the row after a short hover (or on
- * keyboard focus). Renders the bare item untouched when `content` is empty,
- * so callers can wrap every row and only rows with something to say get a
- * card. Unlike the stock `HoverCardContent` (`z-50`), this one stacks via the
- * dialog z-ladder, so it stays ABOVE the command popover it lives in.
- */
-function CommandItemHoverCard({
-  content,
-  side = 'right',
-  align = 'start',
-  sideOffset = 4,
-  openDelay = 150,
-  closeDelay = 100,
-  className,
-  children,
-}: {
-  content: React.ReactNode;
-  side?: 'top' | 'bottom' | 'left' | 'right';
-  align?: 'start' | 'center' | 'end';
-  sideOffset?: number;
-  openDelay?: number;
-  closeDelay?: number;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const depth = useDialogDepth();
-  if (!content) return <>{children}</>;
-  return (
-    <HoverCard openDelay={openDelay} closeDelay={closeDelay}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent
-        data-slot="command-item-hover-card"
-        side={side}
-        align={align}
-        sideOffset={sideOffset}
-        style={{ zIndex: floatingZ(depth) + 1 }}
-        className={cn('w-60 rounded-md border p-3 shadow-md', className)}
-      >
-        {content}
-      </HoverCardContent>
-    </HoverCard>
   );
 }
 
@@ -315,14 +266,6 @@ function CommandFooter({ className, children, ...props }: React.ComponentProps<'
     >
       {children}
     </div>
-  );
-}
-
-function CommandKbd({ children }: { children: React.ReactNode }) {
-  return (
-    <KbdGroup>
-      <Kbd>{children}</Kbd>
-    </KbdGroup>
   );
 }
 
@@ -403,8 +346,6 @@ export {
   CommandGroup,
   CommandInput,
   CommandItem,
-  CommandItemHoverCard,
-  CommandKbd,
   CommandList,
   CommandPopover,
   CommandPopoverContent,

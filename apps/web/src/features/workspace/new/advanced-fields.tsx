@@ -22,6 +22,7 @@ import type { NewWorkspaceFormState } from '@/features/workspace/new/new-workspa
 import {
   type GitAccountOption,
   type RepositoryAction,
+  createNeedsGitHubAuthorization,
   defaultGitAccount,
   gitAccountOptions,
   parseGitAccount,
@@ -159,6 +160,11 @@ export function AdvancedFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionsLoading]);
 
+  // A personal account creates on the user's own GitHub authorization, so the
+  // submit opens one popup the first time (`github-user-authorization.ts`).
+  // Said here rather than discovered when the window appears.
+  const createNeedsAuthorization = selected !== null && createNeedsGitHubAuthorization(selected);
+
   function ownerTypeLabel(option: GitAccountOption): string | null {
     if (option.kind !== 'github') return null;
     const kind = githubOwnerKind(option.ownerType);
@@ -288,6 +294,11 @@ export function AdvancedFields({
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          {createNeedsAuthorization && action === 'create' ? (
+            <p className="text-muted-foreground text-xs">
+              {t('repository.createPersonalAuthorize')}
+            </p>
+          ) : null}
           {action === 'create' ? (
             <p className="text-muted-foreground text-xs">
               {plannedRepoPath(selected.ownerLogin, state.name)

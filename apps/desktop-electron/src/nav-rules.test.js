@@ -2,7 +2,7 @@ const { describe, expect, test } = require('bun:test');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
-const { APP_PATH_PREFIXES, backIndex, isAppPath, isPreviewHost } = require('./nav-rules');
+const { APP_PATH_PREFIXES, isAppPath, isPreviewHost } = require('./nav-rules');
 
 /**
  * The web middleware's `DESKTOP_ALLOWED_ROUTES`, read from source. The shell
@@ -46,18 +46,6 @@ describe('desktop navigation gate', () => {
     // Removed routes the shell used to list.
     expect(isAppPath('/templates')).toBe(false);
     expect(isAppPath('/accounts')).toBe(false);
-  });
-
-  test('Back traverses to the previous entry only when it loads in the app', () => {
-    const inApp = (url) => url.startsWith('https://kortix.com/projects');
-    const urls = ['about:blank', 'https://github.com/apps/kortix', 'https://kortix.com/projects/p1', 'https://kortix.com/projects/p1/sessions/s1'];
-    expect(backIndex(urls, 3, inApp)).toBe(2);
-    // Electron's will-navigate gate does not run on history traversal, so
-    // Back onto github.com would load GitHub inside the app window.
-    expect(backIndex(urls, 2, inApp)).toBe(-1);
-    // The window's first entry has nothing behind it.
-    expect(backIndex(urls, 0, inApp)).toBe(-1);
-    expect(backIndex([], 0, inApp)).toBe(-1);
   });
 
   test('treats sandbox previews and tunnels as in-app hosts', () => {

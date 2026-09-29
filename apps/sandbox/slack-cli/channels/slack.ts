@@ -125,6 +125,7 @@ const METHOD_TO_ACTION: Record<string, string> = {
   'chat.update': 'update_message',
   'chat.delete': 'delete_message',
   'reactions.add': 'add_reaction',
+  'reactions.remove': 'remove_reaction',
   'conversations.history': 'get_history',
   'conversations.replies': 'get_thread',
   'conversations.list': 'list_channels',
@@ -213,6 +214,45 @@ async function apiGet(
   return connectorCall(method, params);
 }
 
+// Where a human reply in the thread goes. The API binds a thread to the
+// session that posts in it; every send path reports the result, so the agent
+// always knows whether a reply will come back here.
+type ThreadBinding = Record<string, unknown> & { bound?: unknown; reason?: unknown };
+
+const BINDING_HINTS: Record<string, string> = {
+  thread_bound_to_another_session:
+    'Replies in this thread go to ANOTHER session, not this one. Move it here with `slack bind-thread --channel <channel> --thread <thread_ts> --force`, or post a new top-level message.',
+  thread_owned_by_another_user:
+    "Another user's session owns this thread; replies go there and --force cannot move it. Post a new top-level message to get replies here.",
+  thread_owned_by_another_project:
+    'Another project owns this thread; replies go there. Post a new top-level message to get replies here.',
+  workspace_unknown: 'The project has no Slack install on record, so the thread was not bound. Replies will start a new session.',
+  bind_failed: 'The bind was not written; replies will start a new session. Run `slack bind-thread --channel <channel> --thread <thread_ts>` once.',
+  not_reported:
+    'The API did not report a binding (older API). Run `slack bind-thread --channel <channel> --thread <thread_ts>` to make sure replies come back here.',
+  top_level_file:
+    'A top-level file post has no thread to bind. If you expect a reply, post a text message with `slack send --channel` instead.',
+};
+
+function withHint(binding: ThreadBinding): ThreadBinding {
+  if (binding.bound === true) return binding;
+  const reason = typeof binding.reason === 'string' ? binding.reason : 'bind_failed';
+  return { ...binding, hint: BINDING_HINTS[reason] ?? BINDING_HINTS.bind_failed };
+}
+
+async function bindThread(channel: string, threadTs: string, force = false): Promise<ThreadBinding> {
+  const sessionId = kortixSessionId();
+  const projectId = kortixProjectId();
+  if (!sessionId) throw new CliError('KORTIX_SESSION_ID not set — cannot bind this session.');
+  if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot bind.');
+  return kortixPost<ThreadBinding>(`/projects/${projectId}/channels/slack/bind-thread`, {
+    session_id: sessionId,
+    channel,
+    thread_ts: threadTs,
+    ...(force ? { force: true } : {}),
+  });
+}
+
 async function send(opts: {
   channel: string;
   text?: string;
@@ -238,7 +278,17 @@ async function send(opts: {
         ...(opts.threadTs ? { thread_ts: opts.threadTs } : {}),
       },
     );
-    return { ok: true, files: res.files, channel: opts.channel };
+    let threadBinding: ThreadBinding = { bound: false, reason: 'top_level_file' };
+    if (opts.threadTs) {
+      threadBinding = await bindThread(opts.channel, opts.threadTs).catch((err) => ({
+        bound: false,
+        thread_ts: opts.threadTs,
+        reason:
+          err instanceof CliError && err.details.status === 409 ? 'thread_bound_to_another_session' : 'bind_failed',
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
+    return { ok: true, files: res.files, channel: opts.channel, thread_binding: withHint(threadBinding) };
   }
 
   if (!opts.text && (!opts.blocks || opts.blocks.length === 0)) {
@@ -250,7 +300,20 @@ async function send(opts: {
   if (opts.threadTs) body.thread_ts = opts.threadTs;
   const data = await apiPost('chat.postMessage', body);
   if (!data.ok) throw new CliError(data.error ?? 'send failed');
-  return { ok: true, ts: data.ts, channel: data.channel };
+  // The API binds the thread to this session on a successful post, so a human
+  // reply in it comes back here. Anything but `bound: true` carries a `hint`.
+  return {
+    ok: true,
+    ts: data.ts,
+    channel: data.channel,
+    thread_binding: withHint(
+      (data.thread_binding as ThreadBinding | undefined) ?? {
+        bound: 'unknown',
+        thread_ts: opts.threadTs ?? data.ts,
+        reason: 'not_reported',
+      },
+    ),
+  };
 }
 
 function deriveFallbackText(blocks: unknown[] | undefined): string {
@@ -287,8 +350,8 @@ async function del(opts: { channel: string; ts: string }) {
   return { ok: true };
 }
 
-async function react(opts: { channel: string; ts: string; emoji: string }) {
-  const data = await apiPost('reactions.add', {
+async function react(opts: { channel: string; ts: string; emoji: string }, method = 'reactions.add') {
+  const data = await apiPost(method, {
     channel: opts.channel,
     timestamp: opts.ts,
     name: opts.emoji,
@@ -533,6 +596,9 @@ async function main(): Promise<void> {
     case 'react':
       out(await react(requiredFlags(flags, 'channel', 'ts', 'emoji')));
       break;
+    case 'unreact':
+      out(await react(requiredFlags(flags, 'channel', 'ts', 'emoji'), 'reactions.remove'));
+      break;
     case 'typing':
       validateRequired(flags, 'channel');
       out({ ok: true, note: 'Slack Web API does not support typing indicators for bots' });
@@ -547,26 +613,17 @@ async function main(): Promise<void> {
       break;
     case 'bind-thread': {
       // Bind THIS session to a Slack thread so later replies route back to it —
-      // e.g. after a webhook run posts an approval request, a human's "APPROVE"
-      // reply resumes this session. Defaults to the Slack-turn env when present.
+      // e.g. a thread a human started. `slack send --channel` binds its own
+      // thread already. A thread another session owns fails with HTTP 409
+      // unless --force moves it (only between your own sessions of the project).
       const channel = flags.channel ?? getEnv('SLACK_CHANNEL_ID');
       const threadTs = flags.thread ?? getEnv('SLACK_THREAD_TS');
-      const sessionId = kortixSessionId();
-      const projectId = kortixProjectId();
       if (!channel || !threadTs) {
         throw new CliError(
           'bind-thread needs --channel and --thread (defaults to $SLACK_CHANNEL_ID/$SLACK_THREAD_TS on Slack turns)',
         );
       }
-      if (!sessionId) throw new CliError('KORTIX_SESSION_ID not set — cannot bind this session.');
-      if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot bind.');
-      out(
-        await kortixPost(`/projects/${projectId}/channels/slack/bind-thread`, {
-          session_id: sessionId,
-          channel,
-          thread_ts: threadTs,
-        }),
-      );
+      out(await bindThread(channel, threadTs, flags.force === 'true'));
       break;
     }
     case 'channels':
@@ -621,13 +678,15 @@ Turn commands (use these when answering a Slack message):
 
 Commands:
   send         (--channel, [--text|--text-file], [--blocks|--blocks-file], [--thread], [--file])
+               # binds the thread to this session: replies come back here (see thread_binding)
   edit         (--channel, --ts, --text|--text-file|--blocks|--blocks-file)
   delete       (--channel, --ts)
   react        (--channel, --ts, --emoji)
+  unreact      (--channel, --ts, --emoji)   # remove a reaction you added
   typing       (--channel)               # no-op on Slack Web API
   history      (--channel, [--limit])
   thread       (--channel, --ts, [--limit])
-  bind-thread  (--channel, --thread)     # route later replies in this thread back to this session
+  bind-thread  (--channel, --thread, [--force])  # route replies in a thread back to this session; 409 if another session owns it, --force moves it
   channels     ([--limit])
   channel-info (--channel)
   join         (--channel)

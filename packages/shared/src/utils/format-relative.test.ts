@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { formatRelative, formatRelativeTime, formatRelativeDate } from './format-relative';
+import { formatRelative, formatRelativeTime } from './format-relative';
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -150,9 +150,5 @@ describe('formatRelative date fallback', () => {
 describe('formatRelative aliases', () => {
   test('formatRelativeTime is the same function', () => {
     expect(formatRelativeTime).toBe(formatRelative);
-  });
-
-  test('formatRelativeDate is the same function', () => {
-    expect(formatRelativeDate).toBe(formatRelative);
   });
 });

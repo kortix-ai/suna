@@ -6,9 +6,9 @@ import {
 } from '@/components/approvals/approval-request';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
 import { WarningIcon } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 export function ApprovalDecision({ token }: { token: string }) {
@@ -38,12 +38,12 @@ export function ApprovalDecision({ token }: { token: string }) {
     };
   }, [token]);
 
-  async function decide(decision: ApprovalDecisionValue) {
+  async function decide(decision: ApprovalDecisionValue, note?: string) {
     if (!details) return;
     setBusyDecision(decision);
     setError(null);
     try {
-      await resolveApproval(details.project_id, details.execution_id, decision);
+      await resolveApproval(details.project_id, details.execution_id, decision, { note });
       setOutcome(decision);
       setDetails((current) => (current ? { ...current, pending: false } : current));
       successToast(
@@ -94,6 +94,7 @@ export function ApprovalDecision({ token }: { token: string }) {
         requestedAt: details.requested_at,
         argsPreview: details.args_preview,
         reviewComplete: details.review_complete === true,
+        approvalContext: details.approval_context ?? null,
         resolution:
           !details.pending && details.status === 'ok'
             ? 'approve'

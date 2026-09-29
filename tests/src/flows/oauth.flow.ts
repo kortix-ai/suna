@@ -8,6 +8,7 @@
  * behavior) rather than a full happy-path token exchange. Maps to spec OAU-*.
  */
 import { flow } from "../core/flow";
+import { CliSandbox } from "../fixtures/cli";
 
 // ── OAU-1: GET /authorize ────────────────────────────────────────────────────
 flow("OAU-1", { domain: "oauth", routes: ["GET /v1/oauth/authorize"] }, async (ctx) => {
@@ -497,3 +498,151 @@ flow("OAU-8", { domain: "oauth", routes: ["POST /v1/oauth/token", "GET /v1/oauth
     del.status(200);
   });
 });
+
+/** Register a public PKCE client (as an MCP client does), approve it as OWNER, and exchange the code. */
+async function approveConnectedApp(ctx: Parameters<Parameters<typeof flow>[2]>[0], name: string, redirectUri: string) {
+  const reg = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { client_name: name, redirect_uris: [redirectUri] });
+  reg.status(201);
+  const clientId: string = reg.json<any>().client_id;
+  const { verifier, challenge } = await pkcePair();
+  const authz = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+    query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "kortix", state: "s", code_challenge: challenge, code_challenge_method: "S256" },
+  });
+  authz.status(302);
+  const requestId = new URL(authz.header("location")!).searchParams.get("request_id")!;
+  const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: requestId, approved: true });
+  ok.status(200);
+  const code = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+  const tok = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "authorization_code", client_id: clientId, code, redirect_uri: redirectUri, code_verifier: verifier }));
+  tok.status(200);
+  return { clientId, access: tok.json<any>().access_token as string, refresh: tok.json<any>().refresh_token as string };
+}
+
+// ── OAU-9: connected apps — list and revoke the apps you approved ───────────
+// The consent screen says "You can revoke access at any time in your account
+// settings". This is that surface: the same rule as personal tokens (a browser
+// session or an unscoped PAT manages them; an app's own kortix_oat_ cannot),
+// and a revoke kills the app's live tokens on their next request.
+flow(
+  "OAU-9",
+  {
+    domain: "oauth",
+    routes: [
+      "POST /v1/oauth/register",
+      "GET /v1/oauth/authorize",
+      "POST /v1/oauth/authorize/consent",
+      "POST /v1/oauth/token",
+      "GET /v1/oauth/grants",
+      "DELETE /v1/oauth/grants/:clientId",
+      "POST /v1/accounts/tokens",
+      "GET /v1/accounts/me",
+      "GET /v1/oauth/authorize/consent/:requestId",
+    ],
+  },
+  async (ctx) => {
+    const redirectUri = "http://127.0.0.1:33420/callback";
+    const name = ctx.fixtures.name("connected-app");
+    let clientId = "";
+    let access = "";
+    let refresh = "";
+
+    await ctx.step("a self-registered public client (an MCP client) is approved and gets tokens", async () => {
+      ({ clientId, access, refresh } = await approveConnectedApp(ctx, name, redirectUri));
+    });
+
+    await ctx.step("GET /oauth/grants lists it: its name, self_registered, the loopback host, the kortix scope, active", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/grants");
+      r.status(200);
+      const grant = r.json<{ grants: any[] }>().grants.find((g) => g.client_id === clientId);
+      if (!grant) throw new Error(`not listed: ${r.text().slice(0, 300)}`);
+      if (grant.name !== name || grant.self_registered !== true || grant.active !== true || !grant.scopes.includes("kortix") || !grant.redirect_hosts.includes("127.0.0.1:33420") || !grant.last_active_at || !grant.granted_at) {
+        throw new Error(`grant: ${JSON.stringify(grant)}`);
+      }
+    });
+
+    await ctx.step("another user never sees it, and cannot revoke it (404: nothing of theirs)", async () => {
+      const other = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/oauth/grants");
+      other.status(200);
+      if (other.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("another user sees the grant");
+      (await ctx.client.as(ctx.P.NONMEMBER).del("/v1/oauth/grants/:clientId", { params: { clientId } })).status(404);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } })).status(200);
+    });
+
+    await ctx.step("the app's own kortix_oat_ token cannot list or revoke connected apps (403)", async () => {
+      const headers = { Authorization: `Bearer ${access}` };
+      (await ctx.client.as(ctx.P.ANON).get("/v1/oauth/grants", { headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).del("/v1/oauth/grants/:clientId", { params: { clientId }, headers })).status(403);
+    });
+
+    await ctx.step("an unscoped personal access token lists them, like the browser", async () => {
+      const pat = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: "OAU-9" });
+      pat.status(201);
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/grants", { headers: { Authorization: `Bearer ${pat.json<any>().secret_key}` } });
+      r.status(200);
+      if (!r.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("PAT list misses the grant");
+    });
+
+    await ctx.step("revoke → both tokens die on their next use, the grant is gone, a second revoke is 404", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId } });
+      r.status(200).body().has("$.ok", true);
+      if (r.json<any>().revoked_tokens !== 2) throw new Error(`revoked_tokens: ${r.text()}`);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } })).status(401);
+      const refreshed = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, refresh_token: refresh }));
+      refreshed.status(400).body().has("$.error", "invalid_grant");
+      const after = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/grants");
+      if (after.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("revoked grant still listed");
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId } })).status(404);
+    });
+
+    await ctx.step("the app must ask again: the consent is no longer remembered", async () => {
+      const { challenge } = await pkcePair();
+      const authz = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "kortix", state: "s2", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      authz.status(302);
+      const requestId = new URL(authz.header("location")!).searchParams.get("request_id")!;
+      const meta = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/authorize/consent/:requestId", { params: { requestId } });
+      meta.status(200).body().has("$.remembered", false);
+    });
+  },
+);
+
+// ── OAU-10: the same connected apps through the real `kortix` CLI process ────
+flow(
+  "OAU-10",
+  {
+    domain: "oauth",
+    routes: ["GET /v1/oauth/grants", "DELETE /v1/oauth/grants/:clientId", "GET /v1/accounts/me"],
+  },
+  async (ctx) => {
+    const name = ctx.fixtures.name("cli-connected-app");
+    const app = await approveConnectedApp(ctx, name, "http://127.0.0.1:33421/callback");
+    const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("oau10") });
+    const sb = new CliSandbox("oau10");
+    ctx.track("cli-sandbox", sb.cwd);
+    try {
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+      if (login.exitCode !== 0) throw new Error(`login: ${login.all.slice(0, 300)}`);
+
+      await ctx.step("`kortix tokens apps ls --json` lists the app, marked self-registered", async () => {
+        const r = await sb.run(["tokens", "apps", "ls", "--json"]);
+        if (r.exitCode !== 0) throw new Error(`exit ${r.exitCode}: ${r.all.slice(0, 300)}`);
+        const row = (JSON.parse(r.stdout) as any[]).find((g) => g.client_id === app.clientId);
+        if (row?.name !== name || row.self_registered !== true) throw new Error(`row: ${JSON.stringify(row)}`);
+        const table = await sb.run(["tokens", "apps", "ls"]);
+        if (!table.stdout.includes(name) || !table.stdout.includes("(unverified)")) throw new Error(`table: ${table.stdout.slice(0, 400)}`);
+      });
+
+      await ctx.step("`kortix tokens apps rm <id> -y --json` revokes it; its access token answers 401", async () => {
+        const r = await sb.run(["tokens", "apps", "rm", app.clientId, "-y", "--json"]);
+        if (r.exitCode !== 0) throw new Error(`exit ${r.exitCode}: ${r.all.slice(0, 300)}`);
+        if (JSON.parse(r.stdout).revoked_tokens !== 2) throw new Error(`rm: ${r.stdout}`);
+        (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${app.access}` } })).status(401);
+        const again = await sb.run(["tokens", "apps", "rm", app.clientId, "-y"]);
+        if (again.exitCode === 0) throw new Error("a second rm of the same app succeeded");
+      });
+    } finally {
+      sb.dispose();
+    }
+  },
+);

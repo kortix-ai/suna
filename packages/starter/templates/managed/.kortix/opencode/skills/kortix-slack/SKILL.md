@@ -1,6 +1,6 @@
 ---
 name: kortix-slack
-description: How to CONNECT Slack (one command — `kortix channels connect`, prints a one-click install link) and how to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the user asks to connect/set up Slack, when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), or when the user asks how to do anything in Slack.
+description: How to CONNECT Slack (one command — `kortix channels connect`, prints a one-click install link) and how to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the user asks to connect/set up Slack, when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), when this session messages someone in Slack and needs their reply to come back (thread binding, `slack bind-thread`), or when the user asks how to do anything in Slack.
 ---
 
 <skill name="slack">
@@ -15,6 +15,44 @@ The `slack` CLI is on `$PATH` and **just works** — every call runs through the
 
 Everything else (`slack history`, `slack react`, `slack send --file`, `slack search`, …) is for when the task explicitly asks for it.
 </overview>
+
+<thread-binding>
+### A reply comes back to you ONLY if its thread is bound to THIS session
+
+Every Slack thread routes to exactly one Kortix session. A human reply in a thread goes to the session that thread is bound to. A reply in an **unbound** thread starts a **new** session: the user answers, and you never see it.
+
+**`slack send --channel` binds for you.** When this session posts with `--channel` (a DM, a channel, a reply in a thread), the platform binds that thread to this session. The command output tells you the result:
+
+```sh
+slack send --channel U0123ABCD --text "Can you approve the deploy?"
+# {"ok": true, "ts": "1700000000.000100", "channel": "D0123ABCD",
+#  "thread_binding": {"bound": true, "thread_ts": "1700000000.000100", "session_id": "<this session>"}}
+```
+
+**Every `slack send --channel` prints `thread_binding`. Read it whenever you expect an answer.** Anything but `bound: true` carries a `hint` with the next command. Act on it:
+
+| `thread_binding` | Meaning | What to do |
+| --- | --- | --- |
+| `bound: true` | Replies in this thread come back to this session as your next turn. | Tell the user you asked in Slack, then end the turn. Do not poll. |
+| `bound: false`, `reason: thread_bound_to_another_session`, `owner_session_id` | Another session of this project owns the thread. Replies go there, not here. | To take it over: `slack bind-thread --channel <channel> --thread <thread_ts> --force`. Otherwise post a NEW top-level message (`slack send --channel <id>` without `--thread`). |
+| `bound: false`, `reason: thread_owned_by_another_user` / `thread_owned_by_another_project` | Another person's session, or another project, owns the thread. `--force` cannot move it. | Post a NEW top-level message. |
+| `bound: false`, `reason: workspace_unknown` / `bind_failed` | The bind was not written. Replies will start a new session. | Run `slack bind-thread --channel <channel> --thread <thread_ts>` once. If it fails, tell the user replies will not reach this session. |
+| `bound: false`, `reason: top_level_file` | A top-level `--file` post has no thread to bind. | Post a text message with `slack send --channel` if you expect a reply. |
+| `bound: "unknown"`, `reason: not_reported` | The API did not report a binding. | Run `slack bind-thread --channel <channel> --thread <thread_ts>` and read its result. |
+
+### `slack bind-thread` — check or bind a thread explicitly
+
+`slack bind-thread --channel <id> --thread <ts>` binds a thread this session did not start (for example a thread a human started), and doubles as the check "is this thread mine?":
+
+- `{"ok": true, "bound": true, "session_id": "<this session>"}` — the thread is yours (already, or now).
+- exit 1, `status: 409` — another session owns the thread; the error names it. **The default never takes a thread over.**
+- `--force` moves the thread to this session: `{"bound": true, "rebound_from": "<old session>"}`. It works only when both sessions belong to the same project and were started by the same user. Otherwise it fails with `status: 403` (`THREAD_OWNED_BY_ANOTHER_USER` / `THREAD_OWNED_BY_ANOTHER_PROJECT`). After a move, replies stop reaching the old session — use `--force` only when the user wants this session to own the conversation.
+
+Rules:
+- **Tell the human to reply IN THE THREAD.** A top-level message in the DM or channel is a new thread and starts a new session.
+- **`slack send --file --thread <ts>` binds that thread; a top-level `--file` post binds nothing.**
+- **Answer a bound reply with `slack send "<answer>"`.** The reply opened a Slack turn in this session, so the plain answer form works.
+</thread-binding>
 
 <connecting>
 ### "Connect my Slack" = ONE command. Nothing else.
@@ -279,6 +317,8 @@ Each turn finalizes exactly one stream. Don't call `slack send` twice — the se
 ### When `slack send` fails
 
 A `slack send` with no `--channel` is the turn's answer. When it cannot be delivered into a Slack turn it exits 1 with `{"ok": false, "code": "ANSWER_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}` — it never prints `ok: true` for an undelivered answer. `no_open_turn` means this run was not started from Slack, or the turn was closed before you answered; if the user is waiting in a thread, deliver the same answer with `slack send --channel <id> --thread <ts>` (the channel and thread are in the prompt header and in `$SLACK_CHANNEL_ID` / `$SLACK_THREAD_TS`). `relay_request_failed` is a Kortix API failure, not a missing turn: retry once, then post with `--channel/--thread`.
+
+**A reminder fire is not a Slack turn either.** When you set a reminder (`kortix remind`) from a Slack thread, write the channel id and thread ts into the reminder text — e.g. `kortix remind "Check whether the deploy finished; post the result with slack send --channel C0123ABCD --thread 1727600000.000100" --in 30m` — and answer the fire with `slack send --channel <id> --thread <ts>`. A plain `slack send` on that turn exits 1 with `no_open_turn`.
 </final-answer>
 
 <asking-the-user>
@@ -368,8 +408,11 @@ slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
 ### React to a message
 
 ```sh
-slack react --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "white_check_mark"
+slack react   --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "white_check_mark"
+slack unreact --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_TRIGGER_TS" --emoji "eyes"   # remove one you added
 ```
+
+A "seen it" reaction (`eyes`, `hourglass`, `thinking_face`, …) is temporary. The platform already marks the message ⏳ while you work, so you rarely need one. If you add one, remove it with `slack unreact` right after `slack send`. A marker left behind reads as "still working" forever.
 
 ### Post to a different channel (announcements, cross-posts)
 
@@ -417,6 +460,7 @@ Full help: `slack help`.
 - **`slack send --file` does NOT finalize the stream.** It posts a separate file message. Follow it with a regular `slack send "..."` to close the turn.
 - **`$SLACK_CHANNEL_ID`, `$SLACK_THREAD_TS`, `$SLACK_TRIGGER_TS` are pre-injected on Slack turns.** Use them — don't hard-code IDs.
 - **Stay in the thread.** Unless the task explicitly says "post in #channel-X", everything goes in the originating thread. Cross-posting to other channels needs a real reason (incident broadcast, scheduled digest).
+- **Clean up your temporary reactions.** An `eyes` (or other "working") reaction you added stays on the message until you `slack unreact` it. Remove it once you have replied.
 - **The user can hit Stop.** A red Stop button sits under the plan block; the user can click it any time. If you see the turn end abruptly, that's why — don't retry automatically.
 </gotchas>
 

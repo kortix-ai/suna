@@ -197,6 +197,26 @@ describe('sandbox-health poll caching', () => {
     expect(await cached('p1')).toBe(2);
   });
 
+  test('after the TTL the poll serves the last answer and refreshes behind it', async () => {
+    // KRTX-620: the idle client re-polls at 120s, far past the 10s TTL, so the
+    // provider probe used to run on every request and its multi-second tail
+    // became the route's p95. With `staleWhileRevalidate` the poll answers from
+    // cache and the provider round trip happens off the request path.
+    let calls = 0;
+    const cached = ttlMemo({
+      ttlMs: 10,
+      staleWhileRevalidate: true,
+      keyFn: (projectId: string) => projectId,
+      loader: async () => ++calls,
+      enableInTests: true,
+    });
+
+    expect(await cached('p1')).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 25)); // TTL expires
+    expect(await cached('p1')).toBe(1); // stale answer, not a blocking reload
+    expect(calls).toBe(2); // refresh already running behind the response
+  });
+
   test('a failed provider call is never cached — the next poll retries', async () => {
     let calls = 0;
     const cached = memo(SANDBOX_HEALTH_TTL_MS, async () => {

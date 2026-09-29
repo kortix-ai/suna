@@ -61,3 +61,12 @@ export function accessSummary(
   }
   return { kind: 'members', count: grantees.length };
 }
+
+/**
+ * A ChatGPT account whose login stopped working: the gateway marked it
+ * (`needs_reauth_at`), or it is inactive. It stays selectable; reconnecting it
+ * clears the mark.
+ */
+export function needsReconnection(secret: Pick<AccountSecretResource, 'active' | 'needs_reauth_at'>): boolean {
+  return !secret.active || Boolean(secret.needs_reauth_at);
+}

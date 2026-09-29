@@ -27,10 +27,11 @@ the existing layout first and put a new trigger where its siblings are. Rules:
 
 | The user wants… | Use | How |
 | --- | --- | --- |
-| A one-time reminder or delayed action ("remind me at 4pm", "send this tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
+| To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
+| A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
 | Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
 | To react to an external event ("when a PR opens", "when our error tracker alerts") | **webhook trigger** | `type: webhook` + `secret_env` |
-| To **pause mid-task and resume later with full context** | **No native equivalent** | See [Pausing mid-task](#pausing-mid-task) — re-fire later instead |
+| To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
 
 Don't reach for a trigger when the work finishes in this turn, or when you
 just need to ask the user something — answer or ask directly. Triggers are
@@ -151,39 +152,46 @@ Make recurring runs idempotent yourself:
 
 ## Pausing mid-task
 
-There is **no native "sleep then resume this exact turn with full
-conversation context" primitive** in Kortix. A session turn either
-completes or it doesn't — you can't suspend an in-flight turn for hours and
-wake it where it left off.
+A session turn either completes or it doesn't — you can't suspend an
+in-flight turn for hours. A **session reminder** is the resume half: it
+re-prompts THIS session later, with its whole conversation and workspace.
+
+Reminders are a **per-project feature flag** (`reminders`, off by default).
+`kortix projects features` shows whether it is on. If `kortix remind` answers
+"Reminders is not enabled for this project", tell the user and name the switch
+(`kortix projects features enable reminders`, or Settings → Feature flags) —
+enabling it is their decision, not yours — and fall back to a one-off `run_at`
+trigger (`session_mode: reuse`) until they do.
 
 When you'd reach for a mid-task wait (rate-limit cooldown, waiting on an
-approval or an email reply, an API cooldown), do this instead:
+approval or an email reply, a slow external job):
 
-1. **End the current turn** at the natural breakpoint, leaving a clear note
-   of what's done and what's pending.
-2. **Schedule a re-fire** for when the wait is over — a one-off `run_at`
-   cron trigger (or a recurring one if you need to poll). Put everything
-   the resumed run needs into its `prompt`.
-3. To carry context across the gap, set **`session_mode: reuse`** so the
-   re-fire resumes the *same* session and its accumulated state — the
-   closest equivalent to "continue where I left off."
+1. **Set a reminder** that says exactly what to check and what to do next:
+   ```bash
+   kortix remind "The rate-limit window has reset. Resume the export from record 1,001." --in 1h
+   kortix remind "Did the vendor reply to the contract email? If yes, summarize it for the user and remove this reminder. If no, do nothing." --in 24h --every 1h
+   ```
+   `--in`/`--at` alone fires once. Add `--every <duration>` (min `5m`) or
+   `--cron "<6-field>" --timezone <tz>` to keep checking.
+2. **End the turn** at the natural breakpoint, with a clear note of what's
+   done and what's pending.
+3. Each fire arrives as a prompt that starts `[REMINDER reminder.<id> — …]`
+   and wakes the session if it was parked. It is not a new user message.
+4. **Remove a recurring reminder the moment its condition is met:**
+   `kortix reminders rm <id>`. Every fire is a model turn.
 
-```yaml
-triggers:
-  # "Check back in an hour after the rate limit resets"
-  - slug: resume-export
-    name: Resume the data export
-    type: cron
-    agent: default
-    enabled: true
-    run_at: "2026-07-01T15:00:00Z"
-    session_mode: reuse
-    prompt: "Rate-limit window has reset — resume the export from record 1,001 and continue to the end."
-```
+**From a Slack or Teams thread**, put the channel and thread ids into the
+reminder text: the fire is not a channel turn, so the answer must be posted
+with `slack send --channel <id> --thread <ts>` (see `kortix-slack`).
+
+`kortix reminders ls` shows this session's reminders, `pause <id>` /
+`resume <id>` turn one off and on. A reminder lives in the database, not
+`kortix.yaml`: no CR, no manifest edit, and it pauses itself if its session
+is deleted. It never starts a new session — for work that must survive the
+session, use a trigger.
 
 For very short waits *within* a single turn (seconds to a couple of
-minutes), a plain `sleep` in the run is fine. Anything longer must become a
-re-fire — don't try to block a turn for hours.
+minutes), a plain `sleep` in the run is fine.
 
 ## Stopping & managing triggers
 
@@ -204,14 +212,16 @@ keeps firing (and keeps costing runs):
 - **A trigger that keeps failing** (auth expired, missing permission you
   can't fix) should be disabled, not left to burn runs every fire while
   blocked.
+- **Reminders:** `kortix reminders pause <id>` (keep) or
+  `kortix reminders rm <id>` (delete). `kortix reminders ls` lists them.
+  The project-wide `triggers_paused` kill-switch also stops reminders.
 
 ## Worked examples
 
 **"Remind me at 4pm to review the contract."**
-→ One-off cron. Convert 4pm in the user's timezone to an ISO-8601 instant;
-create a `type: cron` trigger with `run_at` and a `prompt` that states the
-reminder and posts it to the user's channel. It fires once, then sits
-dormant.
+→ Session reminder. Convert 4pm in the user's timezone to an ISO-8601
+instant, then `kortix remind "Remind the user to review the contract; post it to their channel." --at 2026-10-01T14:00:00Z`.
+It fires once in this session, then shows as `done` in `kortix reminders ls`.
 
 **"Every weekday at 8am, give me a digest of overnight support tickets in
 Slack."**
@@ -234,13 +244,14 @@ on a real change. This is the [idempotency](#idempotency--dedup-for-recurring-ru
 pattern in action.
 
 **"Process 50k records, but the API rate-limits me."**
-→ Not a mid-turn pause. Process a batch, then schedule a `run_at` re-fire
-(with `session_mode: reuse`) for after the cooldown, prompting the next run
-to resume from where this one stopped. See [Pausing mid-task](#pausing-mid-task).
+→ Not a mid-turn pause. Process a batch, then
+`kortix remind "Cooldown is over. Continue from record <n>." --in 15m` and
+end the turn. See [Pausing mid-task](#pausing-mid-task).
 
 ## Quick checklist
 
-- [ ] Right mechanism? One-off `run_at` vs recurring `cron` vs `webhook`.
+- [ ] Right mechanism? Session reminder (this task) vs one-off `run_at`
+      vs recurring `cron` vs `webhook` (project work).
 - [ ] 6-field cron, correct `timezone`, no DOM+DOW "first-Monday" trap, no
       exact-minute gate.
 - [ ] `fresh` vs `reuse` chosen deliberately; `prompt` carries all needed

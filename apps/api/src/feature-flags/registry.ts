@@ -127,10 +127,13 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'session_transcript_history',
     name: 'Session Transcript History',
-    description: 'Save chat history after each turn and show it from the database while the session computer starts.',
-    stability: 'experimental',
+    description:
+      'Save the whole chat history after each turn, tool calls and sub-agents included, and show it from the database while the session computer starts.',
+    stability: 'beta',
     available: () => true,
-    platformDefault: () => false,
+    // On by default: saved history is how web, mobile and the CLI show a
+    // session while its computer is off. A project can still turn it off.
+    platformDefault: () => true,
     enforcement: 'behavioral',
   },
   {
@@ -260,6 +263,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Explicit opt-in: off by default even where Platinum is available.
     platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
   },
   {

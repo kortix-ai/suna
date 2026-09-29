@@ -45,10 +45,9 @@ import {
   type ProjectSession,
 } from '@kortix/sdk';
 import { qk, removeCachedProjectSession, useProjectSessions } from '@kortix/sdk/react';
-import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import Link from 'next/link';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -62,6 +61,7 @@ import {
 } from './project-sessions-helpers';
 import { SessionDetail } from './session-detail';
 import { SessionRow, type SessionRowActions } from './session-row';
+import { SessionsEmptyState } from './sessions-empty-state';
 import { SessionsSelectionBar } from './sessions-selection-bar';
 import { SessionsToolbar } from './sessions-toolbar';
 
@@ -569,30 +569,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
               }
             />
           ) : listState === 'empty' ? (
-            <EmptyState
-              size="sm"
-              icon={ChatIcon}
-              title={tI18nComplete.raw('textf502267deff4')}
-              description={tI18nComplete.raw('text93e404732659')}
-              action={
-                // The composer route is known at render time, so this is an
-                // anchor whose payload Next already holds — the first control a
-                // brand-new project offers must not run a cold RSC fetch.
-                creatingSession ? (
-                  <Button variant="outline" size="sm" className="gap-1.5" disabled aria-busy>
-                    <PlusIcon className="size-3.5 shrink-0" />
-                    {tI18nComplete.raw('textcffdba22adf2')}
-                  </Button>
-                ) : (
-                  <Button asChild variant="outline" size="sm" className="gap-1.5">
-                    <Link href={`/projects/${projectId}`} prefetch>
-                      <PlusIcon className="size-3.5 shrink-0" />
-                      {tI18nComplete.raw('textcffdba22adf2')}
-                    </Link>
-                  </Button>
-                )
-              }
-            />
+            <SessionsEmptyState className="flex-1 pb-24" />
           ) : grouped.sections.length === 0 ? (
             // Covers BOTH "the filters/search match nothing" and "every section
             // was hidden via the menu's Show list" — `visibleSessions.length`

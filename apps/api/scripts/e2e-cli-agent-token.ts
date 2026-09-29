@@ -33,10 +33,11 @@ import {
   creditAccounts,
   projectSessions,
   readStoredAgentGrant,
+  sessionLifecycleCommands,
+  sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../src/shared/db';
 import { createAccountToken } from '../src/repositories/account-tokens';
-import { createExecutorClient } from '../../../packages/executor-sdk/src/index';
 import { ApiError, createKortix } from '@kortix/sdk';
 
 const ROOT = resolve(import.meta.dir, '../../..');
@@ -252,6 +253,17 @@ async function setup(): Promise<void> {
     agentName: 'kortix',
     status: 'running',
   });
+  // A session credential is valid only while its sandbox lease is
+  // provisioning/active (validateAccountToken). No box runs here, so the lease
+  // row is seeded; the project DELETE in cleanup() removes it.
+  await db.insert(sessionSandboxes).values({
+    sandboxId: randomUUID(),
+    sessionId,
+    accountId,
+    projectId,
+    externalId: `cli-agent-e2e-${sessionId}`,
+    status: 'active',
+  });
 
   const minted = await createAccountToken({
     accountId,
@@ -375,26 +387,6 @@ async function driveExistingSessionGrantRefresh(): Promise<void> {
   }
 }
 
-async function driveExecutorCompatibilityAdapter(): Promise<void> {
-  const client = createExecutorClient({
-    apiUrl: API,
-    token: agentToken,
-    projectId,
-  });
-  const catalog = await client.connectors();
-  check(
-    'deprecated Executor adapter live catalog uses the agent token',
-    catalog.some((connector) => connector.slug === FIXTURE_SLUG),
-  );
-  const called = await client.call<{ args?: { q?: string } }>(FIXTURE_SLUG, 'get', {
-    q: 'executor-adapter-agent-token',
-  });
-  check(
-    'deprecated Executor adapter remaps a live call through @kortix/sdk',
-    called.ok === true && called.data?.args?.q === 'executor-adapter-agent-token',
-  );
-}
-
 async function driveMcp(): Promise<void> {
   const proc = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, 'connectors', 'mcp'],
@@ -480,6 +472,7 @@ async function commandMatrix(): Promise<void> {
     'status',
     '--json',
   ]);
+  await restoreLease();
 
   await expectCli('secrets set writes through the real API', ['secrets', 'set', 'CLI_AGENT_E2E=value']);
   await expectCli('secrets ls reads persisted metadata', ['secrets', 'ls'], { stdout: /CLI_AGENT_E2E/ });
@@ -529,7 +522,6 @@ async function commandMatrix(): Promise<void> {
   await seedCallableAction();
   await driveExistingSessionGrantRefresh();
   await driveConnectorSdk();
-  await driveExecutorCompatibilityAdapter();
   const inheritedCatalog = await expectCli(
     'unconfigured session scope inherits the active project connection',
     ['connectors', 'ls', '--session', sessionId],
@@ -556,7 +548,9 @@ async function commandMatrix(): Promise<void> {
   await expectCli(
     'explicit empty connector scope denies a forced call',
     ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"must-not-run"}'],
-    { code: 1, stdout: /connector_not_found|not found/i },
+    // An empty scope binds no connection, so the gateway denies with
+    // connector_not_connected; older builds said connector_not_found.
+    { code: 1, stdout: /"status"\s*:\s*"denied"[\s\S]*connector_not_(found|connected)/ },
   );
 
   const createdConnection = await expectCli(
@@ -634,9 +628,10 @@ async function commandMatrix(): Promise<void> {
     stdout: /get.*require_approval/s,
   });
 
+  const REASON = 'Reads the echo record for approve-agent-token';
   const pendingApproval = await expectCli(
     'connector call returns a machine-readable approval handoff',
-    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"approve-agent-token"}'],
+    ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"approve-agent-token"}', '--reason', REASON],
     { stdout: /"status"\s*:\s*"pending_approval"/ },
   );
   let approvalExecutionId = '';
@@ -651,6 +646,26 @@ async function commandMatrix(): Promise<void> {
     check('approval handoff stdout is valid JSON', false, pendingApproval.stdout);
   }
   if (!approvalExecutionId) throw new Error('approval execution id was not returned');
+  const [describedRow] = await db
+    .select({ resultSummary: connectorCalls.resultSummary })
+    .from(connectorCalls)
+    .where(eq(connectorCalls.executionId, approvalExecutionId));
+  check(
+    'call --reason is stored on the pending row, outside the args',
+    (describedRow?.resultSummary as Record<string, unknown> | undefined)?.approval_context === REASON &&
+      JSON.stringify((describedRow?.resultSummary as Record<string, unknown>)?.args_preview) ===
+        '{"q":"approve-agent-token"}',
+    JSON.stringify(describedRow?.resultSummary),
+  );
+  const inbox = await api(`/projects/${projectId}/approvals`);
+  const inboxRow = (inbox.body?.approvals ?? []).find(
+    (row: { execution_id?: string }) => row.execution_id === approvalExecutionId,
+  );
+  check(
+    'GET /approvals shows the approver the agent description',
+    inbox.status === 200 && inboxRow?.detail?.approval_context === REASON,
+    `${inbox.status} ${JSON.stringify(inboxRow?.detail)}`,
+  );
   const agentApproval = await api(
     `/projects/${projectId}/approvals/${approvalExecutionId}`,
     { method: 'POST', body: JSON.stringify({ decision: 'approve' }) },
@@ -670,6 +685,8 @@ async function commandMatrix(): Promise<void> {
     humanApproval.status === 200 && humanApproval.body?.ok === true,
     `${humanApproval.status} ${humanApproval.text}`,
   );
+  // The approval callback tries to wake the (absent) box and withdraws the lease.
+  await restoreLease(`approval-resume:${approvalExecutionId}`);
   await expectCli(
     'approved exact connector call executes once on retry',
     ['connectors', 'call', `${FIXTURE_SLUG}.get`, '{"q":"approve-agent-token"}'],
@@ -683,7 +700,13 @@ async function commandMatrix(): Promise<void> {
   );
   let denialExecutionId = '';
   try {
-    denialExecutionId = JSON.parse(pendingDenial.stdout)?.execution_id ?? '';
+    const denialPayload = JSON.parse(pendingDenial.stdout);
+    denialExecutionId = denialPayload?.execution_id ?? '';
+    check(
+      'a gated call without --reason tells the agent how to describe it',
+      String(denialPayload?.approval_instructions ?? '').includes('--reason'),
+      String(denialPayload?.approval_instructions),
+    );
   } catch {
     // The assertion below reports invalid JSON without exposing credentials.
   }
@@ -692,15 +715,27 @@ async function commandMatrix(): Promise<void> {
     !!denialExecutionId && denialExecutionId !== approvalExecutionId,
   );
   if (!denialExecutionId) throw new Error('denial execution id was not returned');
+  const DENY_NOTE = 'Not this record. Use the one from yesterday.';
   const humanDenial = await api(`/projects/${projectId}/approvals/${denialExecutionId}`, {
     method: 'POST',
-    body: JSON.stringify({ decision: 'deny' }),
+    body: JSON.stringify({ decision: 'deny', note: DENY_NOTE }),
   });
   check(
     'human session launcher denies the second pending connector call',
     humanDenial.status === 200 && humanDenial.body?.ok === true,
     `${humanDenial.status} ${humanDenial.text}`,
   );
+  const [resume] = await db
+    .select({ payload: sessionLifecycleCommands.payload })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, `approval-resume:${denialExecutionId}`));
+  const resumeText = String((resume?.payload as { text?: string } | undefined)?.text ?? '');
+  check(
+    "the deny note reaches the agent's resume prompt",
+    resumeText.includes('was denied') && resumeText.includes(DENY_NOTE),
+    resumeText,
+  );
+  await restoreLease(`approval-resume:${denialExecutionId}`);
   await expectCli('connectors policy rm removes the rule', ['connectors', 'policy', FIXTURE_SLUG, 'rm', 'get']);
   await expectCli('connectors policy clear is idempotent', ['connectors', 'policy', FIXTURE_SLUG, 'clear']);
   await expectCli('connectors ls lists project connectors', ['connectors', 'ls'], { stdout: new RegExp(FIXTURE_SLUG) });
@@ -875,6 +910,30 @@ async function deniedGrantBoundary(): Promise<void> {
     await db.delete(accountTokens).where(eq(accountTokens.tokenId, denied.tokenId));
     await expectCli('secrets unset removes the fixture', ['secrets', 'unset', 'CLI_AGENT_E2E']);
   }
+}
+
+/**
+ * No box runs in this matrix. Anything that tries to wake the session (a
+ * `sessions status` probe, an approval callback) finds none at the provider
+ * and withdraws the session lease, which is the product working. Restore the
+ * seeded lease so the next step still holds a live session credential.
+ */
+async function restoreLease(afterCommand?: string): Promise<void> {
+  // A decision's resume command drains asynchronously; restoring before it
+  // settles loses the race and the lease is withdrawn again.
+  for (let i = 0; afterCommand && i < 60; i += 1) {
+    const [row] = await db
+      .select({ status: sessionLifecycleCommands.status })
+      .from(sessionLifecycleCommands)
+      .where(eq(sessionLifecycleCommands.idempotencyKey, afterCommand));
+    if (row && row.status !== 'running' && row.status !== 'queued') break;
+    if (row?.status === 'queued' && i > 10) break;
+    await Bun.sleep(500);
+  }
+  await db
+    .update(sessionSandboxes)
+    .set({ status: 'active' })
+    .where(eq(sessionSandboxes.sessionId, sessionId));
 }
 
 async function cleanup(): Promise<void> {

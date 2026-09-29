@@ -607,6 +607,7 @@ export async function ensureLocalStack(
   const {
     DB_URL,
     API_URL,
+    ANON_KEY,
     SERVICE_ROLE_KEY,
     JWT_SECRET,
     S3_PROTOCOL_ACCESS_KEY_ID,
@@ -648,6 +649,8 @@ export async function ensureLocalStack(
           DATABASE_URL: DB_URL,
           SUPABASE_URL: API_URL,
           SUPABASE_SERVICE_ROLE_KEY: SERVICE_ROLE_KEY,
+          // Public by design; served by GET /v1/auth/client-config (AUTH-3).
+          ...(ANON_KEY ? { SUPABASE_ANON_KEY: ANON_KEY } : {}),
           API_KEY_SECRET: "local-flow-runner-api-key-secret",
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),

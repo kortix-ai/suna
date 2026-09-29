@@ -34,6 +34,7 @@ import {
 } from '../connector-gateway/gateway.ts';
 import { CliError, connectorErrorPayload, out, parseExecArgs } from '../connector-gateway/io.ts';
 import { runConnectorMcpServer } from '../connector-gateway/mcp.ts';
+import { saveResult } from '../connector-gateway/result-spill.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
@@ -63,7 +64,7 @@ interface ConnectorCallInput {
 
 const CONNECTOR_CALL_USAGE =
   'usage: kortix connectors call <connector>.<action> [json-args | @args.json | -] ' +
-  '[--attach <file>]... [--attach-path <dotted.path>] ' +
+  '[--account <label>] [--reason <text>] [--attach <file>]... [--attach-path <dotted.path>] [--out <file>] ' +
   '(split form also supported: <connector> <action> [json-args])';
 
 /**
@@ -177,7 +178,8 @@ async function dispatch(
     case 'connectors':
     case 'ls': {
       const connector = connectorClient(flags.project);
-      const connectors = await connector.catalog();
+      // Name/status/tool-count only — never ask for the per-action schemas.
+      const connectors = await connector.catalog({ includeSchemas: false });
       out({
         connectors: connectors.map((c) => ({
           slug: c.slug,
@@ -229,6 +231,7 @@ async function dispatch(
 
     case 'call': {
       const { slug, action, rawArgs } = parseConnectorCallInput(args, flags);
+      if (flags.out === 'true') throw new CliError('--out needs a file path', 'USAGE');
       const connector = connectorClient(flags.project);
       let parsed = await readCallArgs(rawArgs);
       const attach = (repeated.attach ?? []).filter((path) => path !== 'true');
@@ -280,8 +283,12 @@ async function dispatch(
       // available — it never falls back to a different account.
       const result = await callWithApprovalHandoff(connector, slug, action, parsed, {
         account: flags.account,
+        approvalContext: flags.reason,
       });
-      out(result);
+      // `--out <file>`: the full result goes to the file, a summary to stdout
+      // (bytes, the shape of `data`, the path). Large results stay out of the
+      // agent's context, where OpenCode would truncate them.
+      out(flags.out ? await saveResult(result, resolve(flags.out)) : result);
       break;
     }
 
@@ -422,7 +429,7 @@ async function dispatch(
           ls: 'kortix connectors ls — list connectors + tools this session can use',
           discover: 'kortix connectors discover "<intent>" — search tools by natural language',
           show: "kortix connectors show <connector>.<action> — show a tool's input schema",
-          call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|project>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args",
+          call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|project>] [--reason <text>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args. --reason <text> tells the human approver what the call does when policy holds it (who it emails, what it says, what it deletes); always pass it for writes whose args are only ids (send_draft, delete, merge). --out <file> writes the full JSON result to <file> and prints only { saved_to, bytes, shape } — use it for list/search calls that can return more than ~16 KB, then query the file with jq or bun",
           upload:
             'kortix connectors upload <file> --connector <slug> — stage one file; prints `ref`, the value {"$kortix_attachment":"<id>"}. Put it in call args: as an attachments[] element it becomes the provider attachment item, in a string field (contentBytes, content) it becomes the base64. Single-use, expires in 24 h',
           add: 'kortix connectors add <slug> --provider composio --app <toolkit> — add a managed app connector NOW (no CR), then connect',
