@@ -133,6 +133,13 @@ test('an MFA account: the link needs a second factor, and chat runs on the one i
     await linkChatIdentity(person, MEMBER);
     expect(await lookupChatIdentity(person)).toEqual({ userId: MEMBER, mfaVerified: false });
     expect(await resolveProjectChatActor(person, project.project_id)).toEqual({ reason: 'unlinked' });
+
+    // A manager check (connector approvals) carries the link's second factor too.
+    const owner = chatUser('teams', TENANT, 'aad-mfa-owner');
+    await linkChatIdentity(owner, OWNER, { mfaVerified: true });
+    expect(
+      await resolveProjectChatActor(owner, project.project_id, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE),
+    ).toEqual({ userId: OWNER });
   } finally {
     await requireMfa(false);
   }
