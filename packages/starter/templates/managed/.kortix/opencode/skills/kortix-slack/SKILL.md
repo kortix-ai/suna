@@ -317,6 +317,8 @@ Each turn finalizes exactly one stream. Don't call `slack send` twice — the se
 ### When `slack send` fails
 
 A `slack send` with no `--channel` is the turn's answer. When it cannot be delivered into a Slack turn it exits 1 with `{"ok": false, "code": "ANSWER_NOT_RELAYED", "reason": "<why>", "error": "…<what to do>"}` — it never prints `ok: true` for an undelivered answer. `no_open_turn` means this run was not started from Slack, or the turn was closed before you answered; if the user is waiting in a thread, deliver the same answer with `slack send --channel <id> --thread <ts>` (the channel and thread are in the prompt header and in `$SLACK_CHANNEL_ID` / `$SLACK_THREAD_TS`). `relay_request_failed` is a Kortix API failure, not a missing turn: retry once, then post with `--channel/--thread`.
+
+**A reminder fire is not a Slack turn either.** When you set a reminder (`kortix remind`) from a Slack thread, write the channel id and thread ts into the reminder text — e.g. `kortix remind "Check whether the deploy finished; post the result with slack send --channel C0123ABCD --thread 1727600000.000100" --in 30m` — and answer the fire with `slack send --channel <id> --thread <ts>`. A plain `slack send` on that turn exits 1 with `no_open_turn`.
 </final-answer>
 
 <asking-the-user>

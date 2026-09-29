@@ -424,6 +424,25 @@ interface RunningAssets {
   opencode_version: string | null;
 }
 
+/**
+ * The WHICH-BYTES identity a "reading must not change it" check may compare.
+ * The raw `runtime.running` payload also carries `build`/`at` (the daemon's
+ * last reconciliation PASS) and other operational fields (managed model ids,
+ * catalog fallback reason, agent path) that legitimately advance between two
+ * health reads a few seconds apart — this file's own comment on `bootBox`
+ * says so: "`build`/`at` describe the last PASS and may legitimately be null
+ * on a box whose daemon restarted; `running` may not." Comparing the full raw
+ * object caught that legitimate advance as a false "the lane applied
+ * something" (gate run 36497729410: `build` went `null` → `1790636576`
+ * between two reads 8s apart on a real Platinum box; every earlier gate ran
+ * against a stub that always reported `null`, so this never fired). Compare
+ * only the typed identity fields.
+ */
+function identityOf(running: RunningAssets): RunningAssets {
+  const { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, opencode_version } = running;
+  return { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, opencode_version };
+}
+
 interface BootedBox {
   sandboxId: string;
   box: (suffix: string) => string;
@@ -557,9 +576,12 @@ flow(
 
     await ctx.step('and the lane APPLIED nothing while it was being read', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(running)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const before = identityOf(running);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(before)) {
         throw new Error(
-          `reading a current box must not change it: ${JSON.stringify(running)} → ${JSON.stringify(after)}`,
+          `reading a current box must not change it: ${JSON.stringify(before)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });

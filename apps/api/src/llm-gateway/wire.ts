@@ -447,11 +447,26 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         headers,
       });
     } catch (error) {
+      const err = error as { code?: unknown; name?: unknown; message?: unknown };
+      // A request the CALLER already gave up on is not a gateway failure and
+      // must not be counted as one. The sandbox boot fetch gives the model
+      // catalog a 2 s budget (`MANAGED_MODELS_TIMEOUT_MS` in the sandbox agent)
+      // and aborts the rest; this hop then rejected with
+      // `gateway_proxy_error: The connection was closed.` and answered 503, so
+      // a routine client cancel was logged and counted as a 5xx on
+      // GET /v1/llm-gateway/v1/models. `req.signal` is the exact signal this hop
+      // forwards to the gateway, so an abort here is always the client
+      // cancelling: `aborted` covers a signal already marked dead, the
+      // `AbortError` covers the same disconnect before that flag settles. 499
+      // ("client closed request") keeps it out of the 5xx metric; the client is
+      // gone, so the body is never read.
+      if (c.req.raw.signal.aborted || err?.name === 'AbortError') {
+        return new Response(null, { status: 499 });
+      }
       // Say what actually happened. Until 2026-08-24 every throw here was
       // reported as "unreachable", which is what a ZlibError (the gateway
       // forwarded `content-encoding: gzip` on a body fetch had already
       // inflated) looked like to users and to the edge worker for days.
-      const err = error as { code?: unknown; name?: unknown; message?: unknown };
       const cause =
         typeof err?.code === 'string'
           ? err.code
