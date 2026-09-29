@@ -28,8 +28,8 @@ import type { AuditRouteLabel } from './audit-labels';
 export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | string>> = {
   'GET /.well-known/oauth-authorization-server': { action: 'oauth.server_metadata.read', title: 'Read OAuth server metadata' },
   'GET /.well-known/oauth-protected-resource': { action: 'mcp.resource_metadata.read', title: 'Read MCP resource metadata' },
-  'GET /.well-known/oauth-protected-resource/v1/mcp': { action: 'mcp.resource_metadata.read', title: 'Read MCP server metadata' },
-  'GET /.well-known/openid-configuration': { action: 'oauth.server_metadata.read', title: 'Read OpenID configuration' },
+  'GET /.well-known/oauth-protected-resource/v1/mcp': { action: 'mcp.server_metadata.read', title: 'Read MCP server metadata' },
+  'GET /.well-known/openid-configuration': { action: 'oauth.openid_configuration.read', title: 'Read OpenID configuration' },
   'GET /health': { action: 'system.health.read', title: 'Checked API health' },
   'GET /health/live': { action: 'system.health.liveness.read', title: 'Checked API liveness' },
   'GET /health/ready': { action: 'system.health.readiness.read', title: 'Checked API readiness' },

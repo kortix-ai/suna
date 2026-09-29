@@ -505,7 +505,7 @@ This page lists 695 route actions and 64 other events.
 | --- | --- | --- |
 | `mcp.request` | Called the MCP server | `POST /v1/mcp` (also `DELETE /v1/mcp`, `GET /v1/mcp`) |
 | `mcp.resource_metadata.read` | Read MCP resource metadata | `GET /.well-known/oauth-protected-resource` |
-| `mcp.resource_metadata.read` | Read MCP server metadata | `GET /.well-known/oauth-protected-resource/v1/mcp` |
+| `mcp.server_metadata.read` | Read MCP server metadata | `GET /.well-known/oauth-protected-resource/v1/mcp` |
 
 ## `member.`
 
@@ -548,8 +548,8 @@ This page lists 695 route actions and 64 other events.
 | `oauth.consent_request.read` | Viewed OAuth consent request | `GET /v1/oauth/authorize/consent/:requestId` |
 | `oauth.grant.list` | Listed connected apps | `GET /v1/oauth/grants` |
 | `oauth.grant.revoke` | Revoked a connected app | `DELETE /v1/oauth/grants/:clientId` |
+| `oauth.openid_configuration.read` | Read OpenID configuration | `GET /.well-known/openid-configuration` |
 | `oauth.server_metadata.read` | Read OAuth server metadata | `GET /.well-known/oauth-authorization-server` (also `GET /v1/oauth/.well-known/oauth-authorization-server`) |
-| `oauth.server_metadata.read` | Read OpenID configuration | `GET /.well-known/openid-configuration` |
 | `oauth.token.create` | Issued an OAuth token | `POST /v1/oauth/token` |
 | `oauth.token.revoke` | Revoked an OAuth token | `POST /v1/oauth/revoke` |
 | `oauth.userinfo.read` | Viewed OAuth user information | `GET /v1/oauth/userinfo` |
