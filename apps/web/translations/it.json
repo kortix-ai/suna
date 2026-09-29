@@ -19074,7 +19074,9 @@
       "text2edf70730233": "Messaggio per l'agente (facoltativo)",
       "texte88286ad9739": "Promemoria del progetto elencati",
       "text711edad21902": "Computer aggiunto al progetto",
-      "texta3ecfa724d04": "Il computer si è scollegato"
+      "texta3ecfa724d04": "Il computer si è scollegato",
+      "text734315a9e07d": "Metadati della risorsa MCP letti",
+      "text872227a135cd": "Configurazione OpenID letta"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

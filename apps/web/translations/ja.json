@@ -1436,7 +1436,7 @@
       "actions": "セッション操作",
       "actionsFor": "{title} の操作",
       "reviewCount": "確認待ち：{count}",
-      "expandChildren": "起動したセッションを{count}件表示",
+      "expandChildren": "起動したセッションを{count, plural, other {#件}}表示",
       "collapseChildren": "起動したセッションを非表示",
       "showMore": "さらに表示",
       "brief": {
@@ -19074,7 +19074,9 @@
       "text2edf70730233": "エージェントへのメッセージ（任意）",
       "texte88286ad9739": "プロジェクトのリマインダーを一覧表示しました",
       "text711edad21902": "コンピュータをプロジェクトに追加しました",
-      "texta3ecfa724d04": "コンピューターが自身のペアリングを解除しました"
+      "texta3ecfa724d04": "コンピューターが自身のペアリングを解除しました",
+      "text734315a9e07d": "MCPリソースのメタデータを読み取り",
+      "text872227a135cd": "OpenID設定を読み取り"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
