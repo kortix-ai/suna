@@ -41,7 +41,7 @@ export {
 export { useBillingModal } from './use-billing-modal';
 
 // Credits ledger (rich variant with typeFilter, account-scoped via context)
-export { useTransactions, useTransactionsSummary } from './use-transactions';
+export { useTransactions } from './use-transactions';
 
 // Session-first LLM and compute cost explorer
 export {
