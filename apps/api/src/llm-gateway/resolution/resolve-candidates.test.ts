@@ -3,7 +3,10 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as realTiers from '../../billing/services/tiers';
 
 let modelAccess = { disabledProviders: [] as string[], disabledModels: [] as string[] };
-mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => modelAccess }));
+mock.module('../../repositories/project-model-access', () => ({
+  getProjectModelAccess: async () => modelAccess,
+  getProjectGatewayResolution: async () => ({ access: modelAccess, pooledEnabled }),
+}));
 
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
@@ -30,10 +33,13 @@ let resolvedSecret: string | null = null;
 let secretsByName: Record<string, string | null> = {};
 let resolvedSecrets: Array<{ identifier: string; value: string }> = [];
 let pooledEnabled = false;
+let flagHelperCalls = 0;
 type PooledSecret = { secretId: string; label: string; value: string | null; updatedAt?: Date };
 let pooledSecrets: { configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { configured: false, coolingDown: false, secrets: [] };
 let defaultCodexSecret: PooledSecret | null = null;
-mock.module('../../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => pooledEnabled }));
+mock.module('../../feature-flags/for-project', () => ({
+  projectFeatureFlagEnabled: async () => { flagHelperCalls += 1; return pooledEnabled; },
+}));
 const resolveSessionProviderSecrets = mock(async (_input: unknown) => pooledSecrets);
 const resolveDefaultCodexAccountSecret = mock(async (..._args: unknown[]) => defaultCodexSecret);
 // The project's shared ChatGPT accounts an unconfigured session falls back to.
@@ -152,6 +158,7 @@ function principal(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   pooledEnabled = false;
+  flagHelperCalls = 0;
   resolveSessionProviderSecrets.mockClear();
   pooledSecrets = { configured: false, coolingDown: false, secrets: [] };
   defaultCodexSecret = null;
@@ -246,6 +253,19 @@ describe('resolveCandidates — selected account key pool', () => {
     pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 7, secrets: [] };
     await expect(resolveCandidates(principal({ sessionId: 'session-1' }),
       'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: 7 });
+  });
+});
+
+describe('resolveCandidates — one projects-row read per resolve', () => {
+  test('the pooled flag never pays its own projects-row query', async () => {
+    pooledEnabled = true;
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'id-a', label: 'A', value: 'key-a' },
+    ] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((candidate) => candidate.poolSecretId)).toEqual(['id-a']);
+    expect(flagHelperCalls).toBe(0);
   });
 });
 

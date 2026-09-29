@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Connectez un modèle pour commencer à discuter",
-      "description": "Cette session nécessite la connexion d’un LLM avant de pouvoir répondre. Utilisez votre propre clé API, quel que soit le fournisseur.",
-      "upgradeDescription": "Cette session nécessite la connexion d’un LLM avant de pouvoir répondre. Passez à une offre supérieure pour accéder instantanément aux modèles gérés de Kortix, ou utilisez votre propre clé API, quel que soit le fournisseur.",
       "upgrade": "Passer à une offre supérieure",
-      "bringKey": "Utiliser votre propre clé",
       "barTitle": "Aucun modèle connecté",
       "barDescription": "connectez-en un pour commencer à discuter",
       "connectModel": "Connecter un modèle",

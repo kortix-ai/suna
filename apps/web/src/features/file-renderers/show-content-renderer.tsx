@@ -43,7 +43,7 @@ import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
