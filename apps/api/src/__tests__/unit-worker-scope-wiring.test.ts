@@ -66,7 +66,6 @@ const NOT_WORKERS: Record<string, string> = {
   'sandbox-proxy/ws-proxy.ts': 'keepalive ping on one open preview WebSocket',
   'shared/access-control-cache.ts': 'refreshes the in-memory access-control cache',
   'snapshots/tmp-reaper.ts': 'deletes stale local tmp directories; no database writes',
-  'tunnel/routes/permission-requests.ts': 'keepalive on one open SSE stream',
 };
 
 /** Start calls in index.ts → the worker they run, or why they are not one. */

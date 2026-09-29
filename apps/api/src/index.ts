@@ -101,7 +101,7 @@ import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
-  isTransientGitMirrorError,
+  transientGitMirrorCause,
   pushPolicyWarning,
 } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
@@ -1107,12 +1107,23 @@ app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
 import { warmPipedreamCatalog } from './connectors/pipedream';
+// TUNNEL_ENABLED=false: the relay never starts, so every tunnel route answers
+// 503. The web hides its computer surfaces when the machine list fails.
+app.use('/v1/tunnel/*', async (c, next) => {
+  if (config.TUNNEL_ENABLED) return next();
+  return c.json({ error: 'Computers are disabled on this deployment', code: 'tunnel_disabled' }, 503);
+});
+
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
+// Machine self-unpair: authenticated by the machine's own token, not a user.
+import { createTunnelSelfRouter } from './tunnel/routes/connections';
+app.route('/v1/tunnel/self', createTunnelSelfRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
   // Skip auth for public device-auth routes: POST /device-auth and GET /device-auth/:code/status
+  if (c.req.path === '/v1/tunnel/self') return next();
   const path = c.req.path.replace('/v1/tunnel/device-auth', '');
   if (c.req.path.startsWith('/v1/tunnel/device-auth')) {
     if (c.req.method === 'POST' && (path === '' || path === '/')) return next();
@@ -1215,14 +1226,15 @@ app.onError((err, c) => {
   // request-deadline). A PERMANENT failure (bad ref, real auth denial, corrupt
   // local repo) still falls through to Sentry with a meaningful `fatal:`
   // message. See projects/git/mirror.ts.
-  if (isTransientGitMirrorError(err)) {
-    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${err.kind}] ${err.message}`, {
+  const transientGitError = transientGitMirrorCause(err);
+  if (transientGitError) {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${transientGitError.kind}] ${transientGitError.message}`, {
       method,
       path,
       errorType: 'GitOperationError',
-      gitKind: err.kind,
-      gitArgs: err.gitArgs,
-      signal: err.signal,
+      gitKind: transientGitError.kind,
+      gitArgs: transientGitError.gitArgs,
+      signal: transientGitError.signal,
     });
     c.header('Retry-After', '10');
     return c.json(

@@ -56,7 +56,7 @@ export const REQUEST_DEADLINE_CODE = 'request_deadline' as const;
 // latency and therefore must not be bounded by a fixed deadline.
 const EXEMPT_PREFIXES = [
   '/v1/p', // sandbox preview proxy (SSE event stream, long-poll, ws)
-  '/v1/tunnel', // tunnel SSE (permission-requests) + ws
+  '/v1/tunnel', // tunnel RPC relay (machine latency) + ws
   '/v1/git', // git smart-HTTP (large packfile up/download)
   '/v1/router', // LLM gateway — streamed chat completions
   '/v1/llm', // LLM chat completions (streamed; p99 >10s is normal)

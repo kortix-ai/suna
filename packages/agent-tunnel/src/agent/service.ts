@@ -1,9 +1,10 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { platform } from 'os';
 import { join } from 'path';
 
 import {
   SUPPORTED_PLATFORMS_MESSAGE,
+  type Outcome,
   type RunnerParts,
   posixShellCommand,
   serviceDriver,
@@ -12,7 +13,9 @@ import {
   type ServicePaths,
   getServicePaths,
   rotateServiceLogs,
+  serviceHomeEnv,
 } from './service-paths';
+import { agentTunnelVersion } from './version';
 
 export {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
@@ -20,7 +23,10 @@ export {
   SERVICE_LABEL,
   TERMINAL_SERVICE_EXIT_CODE,
   type ServicePaths,
+  agentTunnelHome,
   getServicePaths,
+  serviceHomeEnv,
+  serviceLabelFor,
   rotateServiceLogs,
   serviceLogFiles,
 } from './service-paths';
@@ -34,6 +40,13 @@ export interface ServiceStatus {
   platform: NodeJS.Platform;
   installed: boolean;
   active: boolean | null;
+  /** False while paused: disabled in the supervisor, so login does not start it. */
+  enabled?: boolean;
+  /**
+   * The installed unit is exactly what `install` would write now. False after
+   * an app update or move: the unit points at an old runner (R5).
+   */
+  upToDate?: boolean;
   path?: string;
   detail?: string;
 }
@@ -52,7 +65,9 @@ export function isEphemeralRunnerPath(path: string): boolean {
     normalized.includes('/_npx/') ||
     normalized.includes('/_cacache/') ||
     normalized.includes('/.pnpm-store/') ||
-    normalized.includes('/.yarn/$$virtual/')
+    normalized.includes('/.yarn/$$virtual/') ||
+    // A Linux AppImage is mounted at a new /tmp/.mount_* path on every launch.
+    normalized.includes('/.mount_')
   );
 }
 
@@ -68,6 +83,13 @@ export function vendorRunner(scriptPath: string, paths: ServicePaths = getServic
   const source = realpathSync(scriptPath);
   copyFileSync(source, paths.vendoredRunner);
   try { chmodSync(paths.vendoredRunner, 0o700); } catch {}
+  // The copy has no package.json beside it, so it would report version
+  // "unknown" and the desktop's version check (R5) could never pass.
+  writeFileSync(
+    join(paths.binDir, 'package.json'),
+    JSON.stringify({ name: '@kortix/agent-tunnel', version: agentTunnelVersion(), private: true }),
+    { mode: 0o600 },
+  );
   writeFileSync(
     join(paths.binDir, 'agent-cli.source.json'),
     JSON.stringify({ source, vendoredFrom: scriptPath }, null, 2),
@@ -76,11 +98,45 @@ export function vendorRunner(scriptPath: string, paths: ServicePaths = getServic
   return paths.vendoredRunner;
 }
 
-function currentRunnerParts(): RunnerParts {
-  const script = process.argv[1];
-  if (script && existsSync(script)) {
-    return { command: process.execPath, args: [vendorRunner(script), 'run', '--service'] };
+/**
+ * The command the supervisor runs: this interpreter and this bundle.
+ *
+ * Under Electron (the desktop app runs the bundle with ELECTRON_RUN_AS_NODE)
+ * the interpreter is the app binary, which must be told to act as Node again,
+ * and the bundle sits inside the app, which the updater replaces in place, so
+ * it is not vendored. A Linux AppImage is the exception: its mount path changes
+ * per launch, so the service runs the AppImage file and a vendored bundle.
+ */
+export function runnerPartsFor(
+  script: string,
+  runtime: { execPath: string; electron?: string; appImage?: string } = {
+    execPath: process.execPath,
+    electron: process.versions.electron,
+    appImage: process.env.APPIMAGE,
+  },
+  paths: ServicePaths = getServicePaths(),
+  vendor: (script: string, paths: ServicePaths) => string = vendorRunner,
+): RunnerParts {
+  const env = serviceHomeEnv(paths.configDir);
+  if (runtime.electron) {
+    return {
+      command: runtime.appImage || runtime.execPath,
+      args: [runtime.appImage ? vendor(script, paths) : script, 'run', '--service'],
+      env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+    };
   }
+  return { command: runtime.execPath, args: [vendor(script, paths), 'run', '--service'], env };
+}
+
+/** Where vendorRunner WOULD put the bundle, without copying anything. */
+const plannedRunner = (script: string, paths: ServicePaths) =>
+  isEphemeralRunnerPath(script) ? paths.vendoredRunner : script;
+
+function currentRunnerParts(
+  vendor: (script: string, paths: ServicePaths) => string = vendorRunner,
+): RunnerParts {
+  const script = process.argv[1];
+  if (script && existsSync(script)) return runnerPartsFor(script, undefined, getServicePaths(), vendor);
   throw new Error(
     'Cannot install the background service because the current Agent Tunnel executable was not found',
   );
@@ -98,11 +154,7 @@ export function buildServiceShellCommand(): string {
  * functions.
  */
 function withDriver(
-  operate: (driver: NonNullable<ReturnType<typeof serviceDriver>>, paths: ServicePaths, installed: boolean) => {
-    active?: boolean | null;
-    installed?: boolean;
-    detail?: string;
-  },
+  operate: (driver: NonNullable<ReturnType<typeof serviceDriver>>, paths: ServicePaths, installed: boolean) => Outcome,
   fallback: { installed: boolean; active: boolean | null },
 ): ServiceStatus {
   const driver = serviceDriver();
@@ -121,6 +173,8 @@ function withDriver(
     platform: platform(),
     installed: outcome.installed ?? installed,
     active: outcome.active ?? fallback.active,
+    ...(outcome.enabled !== undefined ? { enabled: outcome.enabled } : {}),
+    ...(outcome.upToDate !== undefined ? { upToDate: outcome.upToDate } : {}),
     path,
     detail: outcome.detail,
   };
@@ -163,6 +217,33 @@ export function stopService(): ServiceStatus {
   );
 }
 
+/** R3: stops the service and keeps it stopped across login and reboot. */
+export function pauseService(): ServiceStatus {
+  return withDriver(
+    (driver, paths, installed) => ({ ...driver.pause(paths, installed), active: false }),
+    { installed: false, active: false },
+  );
+}
+
+/**
+ * Reverses pauseService. A unit that points at an old runner (the app moved or
+ * updated while paused) is rewritten first, so Resume never starts a unit whose
+ * executable is gone.
+ */
+export function resumeService(): ServiceStatus {
+  const current = getServiceStatus();
+  // Install enables the job on every supervisor, so it also ends the pause.
+  if (current.installed && current.upToDate === false) return installService();
+  return resumeUnit();
+}
+
+function resumeUnit(): ServiceStatus {
+  return withDriver(
+    (driver, paths, installed) => driver.resume(paths, installed),
+    { installed: false, active: null },
+  );
+}
+
 export function restartService(): ServiceStatus {
   stopService();
   return startService();
@@ -180,7 +261,13 @@ export function getServiceStatus(): ServiceStatus {
     };
   }
   return withDriver(
-    (driver, paths, installed) => driver.status(paths, installed),
+    (driver, paths, installed) => {
+      let upToDate = false;
+      try {
+        upToDate = installed && readFileSync(driver.unitPath(paths), 'utf8') === driver.render(paths, currentRunnerParts(plannedRunner));
+      } catch {}
+      return { ...driver.status(paths, installed), upToDate };
+    },
     { installed: false, active: null },
   );
 }
