@@ -8,6 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
@@ -140,268 +141,42 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const authorized = await authorizeSessionRescope(c);
+    if (authorized instanceof Response) return authorized;
+    const { projectId, sessionId, loaded, visible, grant, body } = authorized;
+    const { wantsSecrets, wantsBindings, clearsBindings } = authorized;
 
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
+    const { currentDurableBindings, currentEffectiveBindings, currentEffectiveBindingIds } =
+      await readCurrentBindings({ loaded, projectId, sessionId, grant });
+
+    const secretsDecision = await decideSecretsRescope({
       c,
-      loaded.userId,
-      loaded.row.accountId,
+      loaded,
+      visible,
       projectId,
-      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
-    );
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    // Seeing a session is not permission to re-scope it — same gate as the model
-    // change, for the same reason.
-    if (!mayChangeSessionModel(visible)) {
-      return c.json(
-        { error: 'Only the session owner or a project manager can re-scope this session' },
-        403,
-      );
-    }
+      grant,
+      body,
+      wantsSecrets,
+    });
+    if (secretsDecision instanceof Response) return secretsDecision;
+    const { nextAllowlist, droppedSecrets, addedSecrets, narrowedSecrets, canReadSecretNames } =
+      secretsDecision;
 
-    const parsedBody = SessionScopeInputSchema.safeParse(await readJsonObject(c));
-    if (!parsedBody.success) {
-      return c.json(
-        {
-          error: parsedBody.error.issues.map((issue) => issue.message).join('; '),
-          code: 'INVALID_SESSION_SCOPE',
-        },
-        400,
-      );
-    }
-    const body = parsedBody.data;
-    const wantsSecrets = Object.hasOwn(body, 'secrets');
-    const wantsBindings = Object.hasOwn(body, 'connector_bindings');
-    // `null` CLEARS the override: drop the stored rows AND the configured flag,
-    // so every granted alias resolves to the project default again. `{}` is the
-    // opposite — an explicit "no connectors at all". Before this existed an
-    // override was one-way: nothing in the API could undo one.
-    const clearsBindings = wantsBindings && body.connector_bindings === null;
-
-    // The agent grant is the ceiling for both axes. Resolved from the agent this
-    // session actually runs, and fail-closed: if it cannot be established, the
-    // re-scope is refused rather than applied against an unverified ceiling.
-    let grant: Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
-    try {
-      grant = await resolveSessionAgentGrant({
-        projectId,
-        repoUrl: loaded.row.repoUrl,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-        sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
-      });
-    } catch (err) {
-      return c.json(
-        {
-          error: `could not resolve this agent's grant, so the new scope cannot be checked against it: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-          code: 'AGENT_GRANT_UNRESOLVED',
-        },
-        409,
-      );
-    }
-
-    const currentDurableBindings = Object.fromEntries(
-      (
-        await db
-          .select({
-            alias: projectSessionConnectorBindings.connectorAlias,
-            connectionId: projectSessionConnectorBindings.connectionId,
-          })
-          .from(projectSessionConnectorBindings)
-          .where(
-            and(
-              eq(projectSessionConnectorBindings.sessionId, sessionId),
-              eq(projectSessionConnectorBindings.projectId, projectId),
-            ),
-          )
-      ).map((row) => [row.alias, row.connectionId]),
-    );
-    const currentEffectiveBindings = await resolveEffectiveSessionConnectorBindings({
-      accountId: loaded.row.accountId,
+    const bindingsDecision = await decideBindingsRescope({
+      c,
+      loaded,
+      visible,
       projectId,
       sessionId,
-      grantedConnectors: grant?.connectors,
+      grant,
+      body,
+      wantsBindings,
+      clearsBindings,
+      currentDurableBindings,
+      currentEffectiveBindingIds,
     });
-    const currentEffectiveBindingIds = Object.fromEntries(
-      Object.entries(currentEffectiveBindings).map(([alias, binding]) => [
-        alias,
-        binding.connection_id,
-      ]),
-    );
-
-    let nextAllowlist = visible.row.secretsAllowlist ?? null;
-    let droppedSecrets: string[] = [];
-    let addedSecrets: string[] = [];
-    // Distinct from `droppedSecrets.length > 0`: a session's allowlist starts
-    // null ("everything the grant allows"), so its FIRST narrowing may shrink
-    // the effective set without being able to name what it lost — which is
-    // precisely when the warning matters most.
-    let narrowedSecrets = false;
-    let canReadSecretNames = false;
-    if (wantsSecrets) {
-      const decided = rescopeSessionSecrets({
-        current: visible.row.secretsAllowlist ?? null,
-        requested: (body.secrets ?? null) as string[] | null,
-        agentGrantEnv: grant?.env,
-      });
-      if (!decided.ok) return c.json({ error: decided.message, code: decided.code }, 403);
-      nextAllowlist = decided.allowlist;
-      droppedSecrets = decided.dropped;
-      addedSecrets = decided.added;
-      narrowedSecrets = decided.narrowed;
-      // Only affects whether the dropped NAMES are echoed back — never whether
-      // the narrowing itself is reported.
-      canReadSecretNames = await projectCapabilityAllowed(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_SECRET_READ,
-      );
-      if (nextAllowlist !== null && nextAllowlist.length > 0) {
-        // The SESSION OWNER, not the caller. Delivery resolves per principal —
-        // `resolveOwnerRawEnv` keys the per-prompt push on `createdBy`, and
-        // sessions.ts spells out why: "a per-user secret override resolves per
-        // principal… if a manager restarted another member's session we'd inject
-        // the MANAGER's personal secret".
-        //
-        // Validating against the caller let a project manager re-scoping someone
-        // else's session add an identifier that exists only as the MANAGER's own
-        // personal override. The API answered 200 with it listed in
-        // `secrets_allowlist` and "Applies from the next prompt." — and the
-        // session never received it, on that prompt or any later one, with
-        // nothing anywhere saying so.
-        //
-        // Falls back to the caller only when the row carries no creator, which
-        // matches how every other principal-resolution site degrades.
-        const secretsPrincipal = await resolveSessionPersonalOwner({
-          projectId,
-          sessionId: visible.row.sessionId,
-          accountId: loaded.row.accountId,
-          legacyUserId: visible.row.createdBy ?? loaded.userId,
-        });
-        const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal);
-        const available = new Set(
-          availableSecrets.map((secret) => secret.identifier.toUpperCase()),
-        );
-        const unavailable = nextAllowlist.filter(
-          (identifier) => !available.has(identifier.toUpperCase()),
-        );
-        if (unavailable.length > 0) {
-          return c.json(
-            {
-              error: `secret identifier is not available: ${unavailable.join(', ')}`,
-              code: 'SECRET_IDENTIFIER_NOT_AVAILABLE',
-            },
-            403,
-          );
-        }
-        const collision = secretKeyCollisionInAllowlist(availableSecrets, nextAllowlist);
-        if (collision) {
-          return c.json(
-            {
-              error: `secrets allowlist names multiple identifiers for env key "${collision.key}": ${collision.identifiers.join(', ')}`,
-              code: 'SECRET_IDENTIFIER_KEY_COLLISION',
-            },
-            409,
-          );
-        }
-      }
-    }
-
-    let nextBindings = currentDurableBindings;
-    let droppedBindings: string[] = [];
-    if (clearsBindings) {
-      // No grant check and no binding validation: removing every stored binding
-      // cannot widen what this session may reach beyond the project default,
-      // which is what an un-overridden session already resolves to.
-      nextBindings = {};
-    } else if (wantsBindings) {
-      const requested = Object.fromEntries(
-        Object.entries(body.connector_bindings ?? {}).map(([alias, value]) => [
-          alias,
-          value.connection_id,
-        ]),
-      );
-      const decided = rescopeSessionBindings({
-        current: currentEffectiveBindingIds,
-        requested,
-        grantedConnectors: grant?.connectors,
-      });
-      if (!decided.ok) return c.json({ error: decided.message, code: decided.code }, 403);
-      nextBindings = decided.bindings;
-    }
-
-    let bindingRows: Array<{
-      sessionId: string;
-      projectId: string;
-      accountId: string;
-      connectorAlias: string;
-      connectorId: string;
-      connectionId: string;
-      source: 'request';
-      createdBy: string;
-    }> = [];
-    if (wantsBindings && !clearsBindings) {
-      const [ownerServiceAccount] = visible.row.createdBy
-        ? await db
-            .select({ id: serviceAccounts.serviceAccountId })
-            .from(serviceAccounts)
-            .where(
-              and(
-                eq(serviceAccounts.serviceAccountId, visible.row.createdBy),
-                eq(serviceAccounts.accountId, loaded.row.accountId),
-              ),
-            )
-            .limit(1)
-        : [];
-      const validated = await validateSessionConnectorBindings({
-        accountId: loaded.row.accountId,
-        projectId,
-        actingUserId: visible.row.createdBy ?? '',
-        actingPrincipalIsServiceAccount: ownerServiceAccount !== undefined,
-        mayManageSystemConnections: false,
-        bindings: Object.fromEntries(
-          Object.entries(nextBindings).map(([alias, authorizationId]) => [
-            alias,
-            { connection_id: authorizationId },
-          ]),
-        ),
-      });
-      if (!validated.ok) {
-        return c.json({ error: validated.error, code: validated.code }, 403);
-      }
-      if (
-        visible.row.visibility !== 'private' &&
-        sessionConnectorBindingsRequirePrivateVisibility(validated.bindings)
-      ) {
-        return c.json(
-          {
-            error: 'A user authorization requires a private session',
-            code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
-          },
-          409,
-        );
-      }
-      bindingRows = validated.bindings.map((binding) => ({
-        sessionId,
-        projectId,
-        accountId: loaded.row.accountId,
-        connectorAlias: binding.alias,
-        connectorId: binding.connectorId,
-        connectionId: binding.connectionId,
-        source: 'request' as const,
-        createdBy: loaded.userId,
-      }));
-    }
+    if (bindingsDecision instanceof Response) return bindingsDecision;
+    const { bindingRows } = bindingsDecision;
 
     await db.transaction(async (tx) => {
       const sessionUpdates: {
@@ -447,27 +222,15 @@ projectsApp.openapi(
         }
       }
     });
-    if (wantsBindings) {
-      // The transaction above may have just changed
-      // `connectorBindingsConfigured` / the session's binding rows. Drop the
-      // request-scoped session-lookup memo (session-connector-bindings.ts) so
-      // the re-resolution below reads the row THIS transaction wrote, not the
-      // pre-write one cached by `currentEffectiveBindings` earlier in this
-      // handler.
-      invalidateSessionConnectorLookup(sessionId, loaded.row.accountId, projectId);
-    }
 
-    const effectiveBindings = await resolveEffectiveSessionConnectorBindings({
-      accountId: loaded.row.accountId,
+    const { effectiveBindings, droppedBindings } = await resolvePostWriteBindings({
+      loaded,
       projectId,
       sessionId,
-      grantedConnectors: grant?.connectors,
+      grant,
+      wantsBindings,
+      currentEffectiveBindings,
     });
-    if (wantsBindings) {
-      droppedBindings = Object.keys(currentEffectiveBindings).filter(
-        (alias) => !Object.hasOwn(effectiveBindings, alias),
-      );
-    }
 
     // Connector bindings are resolved server-side at call time, so they need no
     // push. Secrets are different: the allowlist narrows what the sandbox
@@ -504,52 +267,545 @@ projectsApp.openapi(
       }
     }
 
-    return c.json({
-      secrets_allowlist: nextAllowlist,
-      required_connectors: null,
-      connector_bindings: effectiveBindings,
-      // Names are gated; the WARNING is not. Enumerating the agent grant to
-      // report what a null → list narrowing dropped hands the caller secret
-      // identifiers they may not be entitled to see: this route gates on
-      // project.session.stop, and a plain member holds that for their own
-      // session while deliberately lacking project.secret.read. `narrowed`
-      // carries no names, so the "rotate them" warning still fires for everyone
-      // — which is the part that actually matters.
-      dropped_secrets: canReadSecretNames ? droppedSecrets : [],
-      added_secrets: addedSecrets,
-      dropped_bindings: droppedBindings,
-      // Echoed so the caller can re-render from THIS response instead of
-      // re-fetching the scope to learn whether an override now exists.
-      connector_bindings_configured: wantsBindings
-        ? !clearsBindings
-        : visible.row.connectorBindingsConfigured === true,
-      connector_bindings_inherit_unbound: visible.row.connectorBindingsInheritUnbound === true,
-      // Connector bindings ARE retroactive (resolved at call time). Secrets are
-      // not: a dropped one stops being delivered from the next prompt, but the
-      // agent's context and any shell it already spawned still hold what it read.
-      // Keyed on `narrowed`, not on the dropped NAMES. Narrowing a session away
-      // from an unrestricted allowlist shrinks what it may read even when the
-      // agent's grant is 'all' and the lost names cannot be enumerated — and
-      // that is the largest narrowing there is. Keying off the names suppressed
-      // this warning on exactly that case, telling a user revoking every secret
-      // from a live session that nothing had been dropped.
-      retroactive: !narrowedSecrets,
-      applied_live: scopeAppliedLive,
-      ...(scopePushFailed ? { push_failed: true as const, push_reason: scopePushReason } : {}),
-      detail: scopeSecretsChanged
-        ? narrowedSecrets
-          ? scopeAppliedLive
-            ? 'Dropped secrets are cleared from the running sandbox now; new shells and the OpenCode process no longer see them. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
-            : 'Dropped secrets stop being delivered from the next prompt. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
-          : scopeAppliedLive
-            ? 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.'
-            : 'Applies from the next prompt.'
-        : clearsBindings
-          ? 'Connector access is back to the project defaults.'
-          : 'No change to the secrets scope.',
+    return scopeResponse({
+      c,
+      nextAllowlist,
+      effectiveBindings,
+      canReadSecretNames,
+      droppedSecrets,
+      addedSecrets,
+      droppedBindings,
+      wantsBindings,
+      clearsBindings,
+      visible,
+      narrowedSecrets,
+      scopeAppliedLive,
+      scopePushFailed,
+      scopePushReason,
+      scopeSecretsChanged,
     });
   },
 );
+
+type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
+type VisibleSession = Awaited<ReturnType<typeof loadVisibleSession>>;
+type SessionAgentGrant = Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
+type SessionScopeBody = z.infer<typeof SessionScopeInputSchema>;
+type EffectiveSessionBindings = Awaited<
+  ReturnType<typeof resolveEffectiveSessionConnectorBindings>
+>;
+type ScopeBindingRow = {
+  sessionId: string;
+  projectId: string;
+  accountId: string;
+  connectorAlias: string;
+  connectorId: string;
+  connectionId: string;
+  source: 'request';
+  createdBy: string;
+};
+
+/**
+ * The PUT scope handler's prologue: authorize the caller, parse the body,
+ * and resolve the agent grant that ceilings both axes. Returns the shaped
+ * 400/403/404/409 response, or the decision inputs the handler threads
+ * through the helpers below.
+ */
+async function authorizeSessionRescope(c: Context) {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'session');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+  );
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
+  const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+  // Seeing a session is not permission to re-scope it — same gate as the model
+  // change, for the same reason.
+  if (!mayChangeSessionModel(visible)) {
+    return c.json(
+      { error: 'Only the session owner or a project manager can re-scope this session' },
+      403,
+    );
+  }
+
+  const parsedBody = SessionScopeInputSchema.safeParse(await readJsonObject(c));
+  if (!parsedBody.success) {
+    return c.json(
+      {
+        error: parsedBody.error.issues.map((issue) => issue.message).join('; '),
+        code: 'INVALID_SESSION_SCOPE',
+      },
+      400,
+    );
+  }
+  const body = parsedBody.data;
+  const wantsSecrets = Object.hasOwn(body, 'secrets');
+  const wantsBindings = Object.hasOwn(body, 'connector_bindings');
+  // `null` CLEARS the override: drop the stored rows AND the configured flag,
+  // so every granted alias resolves to the project default again. `{}` is the
+  // opposite — an explicit "no connectors at all". Before this existed an
+  // override was one-way: nothing in the API could undo one.
+  const clearsBindings = wantsBindings && body.connector_bindings === null;
+
+  // The agent grant is the ceiling for both axes. Resolved from the agent this
+  // session actually runs, and fail-closed: if it cannot be established, the
+  // re-scope is refused rather than applied against an unverified ceiling.
+  let grant: Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
+  try {
+    grant = await resolveSessionAgentGrant({
+      projectId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath,
+      sessionAgent: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+    });
+  } catch (err) {
+    return c.json(
+      {
+        error: `could not resolve this agent's grant, so the new scope cannot be checked against it: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        code: 'AGENT_GRANT_UNRESOLVED',
+      },
+      409,
+    );
+  }
+  return {
+    projectId,
+    sessionId,
+    loaded,
+    visible,
+    grant,
+    body,
+    wantsSecrets,
+    wantsBindings,
+    clearsBindings,
+  };
+}
+
+/**
+ * The pre-write binding snapshot both decisions compare against: the rows
+ * stored for this session, the effective map they resolve to under the
+ * agent grant, and that map keyed by connection id.
+ */
+async function readCurrentBindings(input: {
+  loaded: LoadedProject;
+  projectId: string;
+  sessionId: string;
+  grant: SessionAgentGrant;
+}) {
+  const { loaded, projectId, sessionId, grant } = input;
+  const currentDurableBindings = Object.fromEntries(
+    (
+      await db
+        .select({
+          alias: projectSessionConnectorBindings.connectorAlias,
+          connectionId: projectSessionConnectorBindings.connectionId,
+        })
+        .from(projectSessionConnectorBindings)
+        .where(
+          and(
+            eq(projectSessionConnectorBindings.sessionId, sessionId),
+            eq(projectSessionConnectorBindings.projectId, projectId),
+          ),
+        )
+    ).map((row) => [row.alias, row.connectionId]),
+  );
+  const currentEffectiveBindings = await resolveEffectiveSessionConnectorBindings({
+    accountId: loaded.row.accountId,
+    projectId,
+    sessionId,
+    grantedConnectors: grant?.connectors,
+  });
+  const currentEffectiveBindingIds = Object.fromEntries(
+    Object.entries(currentEffectiveBindings).map(([alias, binding]) => [
+      alias,
+      binding.connection_id,
+    ]),
+  );
+  return { currentDurableBindings, currentEffectiveBindings, currentEffectiveBindingIds };
+}
+
+/**
+ * The secrets decision: settle the new allowlist against the agent grant,
+ * verify every named identifier is deliverable for the session OWNER, and
+ * reject a key-colliding allowlist. Returns the shaped 403/409 response or
+ * the fields the handler threads into the write and the response.
+ */
+export async function decideSecretsRescope(input: {
+  c: Context;
+  loaded: LoadedProject;
+  visible: VisibleSession;
+  projectId: string;
+  grant: SessionAgentGrant;
+  body: SessionScopeBody;
+  wantsSecrets: boolean;
+}): Promise<
+  Response | {
+    nextAllowlist: string[] | null;
+    droppedSecrets: string[];
+    addedSecrets: string[];
+    narrowedSecrets: boolean;
+    canReadSecretNames: boolean;
+  }
+> {
+  const { c, loaded, visible, projectId, grant, body, wantsSecrets } = input;
+  let nextAllowlist = visible.row.secretsAllowlist ?? null;
+  let droppedSecrets: string[] = [];
+  let addedSecrets: string[] = [];
+  // Distinct from `droppedSecrets.length > 0`: a session's allowlist starts
+  // null ("everything the grant allows"), so its FIRST narrowing may shrink
+  // the effective set without being able to name what it lost — which is
+  // precisely when the warning matters most.
+  let narrowedSecrets = false;
+  let canReadSecretNames = false;
+  if (wantsSecrets) {
+    const decided = rescopeSessionSecrets({
+      current: visible.row.secretsAllowlist ?? null,
+      requested: (body.secrets ?? null) as string[] | null,
+      agentGrantEnv: grant?.env,
+    });
+    if (!decided.ok) return c.json({ error: decided.message, code: decided.code }, 403);
+    nextAllowlist = decided.allowlist;
+    droppedSecrets = decided.dropped;
+    addedSecrets = decided.added;
+    narrowedSecrets = decided.narrowed;
+    // Only affects whether the dropped NAMES are echoed back — never whether
+    // the narrowing itself is reported.
+    canReadSecretNames = await projectCapabilityAllowed(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+    );
+    if (nextAllowlist !== null && nextAllowlist.length > 0) {
+      // The SESSION OWNER, not the caller. Delivery resolves per principal —
+      // `resolveOwnerRawEnv` keys the per-prompt push on `createdBy`, and
+      // sessions.ts spells out why: "a per-user secret override resolves per
+      // principal… if a manager restarted another member's session we'd inject
+      // the MANAGER's personal secret".
+      //
+      // Validating against the caller let a project manager re-scoping someone
+      // else's session add an identifier that exists only as the MANAGER's own
+      // personal override. The API answered 200 with it listed in
+      // `secrets_allowlist` and "Applies from the next prompt." — and the
+      // session never received it, on that prompt or any later one, with
+      // nothing anywhere saying so.
+      //
+      // Falls back to the caller only when the row carries no creator, which
+      // matches how every other principal-resolution site degrades.
+      const secretsPrincipal = await resolveSessionPersonalOwner({
+        projectId,
+        sessionId: visible.row.sessionId,
+        accountId: loaded.row.accountId,
+        legacyUserId: visible.row.createdBy ?? loaded.userId,
+      });
+      const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal);
+      const available = new Set(
+        availableSecrets.map((secret) => secret.identifier.toUpperCase()),
+      );
+      const unavailable = nextAllowlist.filter(
+        (identifier) => !available.has(identifier.toUpperCase()),
+      );
+      if (unavailable.length > 0) {
+        return c.json(
+          {
+            error: `secret identifier is not available: ${unavailable.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_NOT_AVAILABLE',
+          },
+          403,
+        );
+      }
+      const collision = secretKeyCollisionInAllowlist(availableSecrets, nextAllowlist);
+      if (collision) {
+        return c.json(
+          {
+            error: `secrets allowlist names multiple identifiers for env key "${collision.key}": ${collision.identifiers.join(', ')}`,
+            code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+          },
+          409,
+        );
+      }
+    }
+  }
+  return { nextAllowlist, droppedSecrets, addedSecrets, narrowedSecrets, canReadSecretNames };
+}
+
+/**
+ * The bindings decision: settle the new binding map against the agent grant,
+ * then validate the requested connections for the session OWNER and shape
+ * the rows the transaction writes. Returns the shaped 403/409 response or
+ * the rows.
+ */
+export async function decideBindingsRescope(input: {
+  c: Context;
+  loaded: LoadedProject;
+  visible: VisibleSession;
+  projectId: string;
+  sessionId: string;
+  grant: SessionAgentGrant;
+  body: SessionScopeBody;
+  wantsBindings: boolean;
+  clearsBindings: boolean;
+  currentDurableBindings: Record<string, string>;
+  currentEffectiveBindingIds: Record<string, string>;
+}): Promise<Response | { bindingRows: ScopeBindingRow[] }> {
+  const {
+    c,
+    loaded,
+    visible,
+    projectId,
+    sessionId,
+    grant,
+    body,
+    wantsBindings,
+    clearsBindings,
+    currentDurableBindings,
+    currentEffectiveBindingIds,
+  } = input;
+  let nextBindings = currentDurableBindings;
+  if (clearsBindings) {
+    // No grant check and no binding validation: removing every stored binding
+    // cannot widen what this session may reach beyond the project default,
+    // which is what an un-overridden session already resolves to.
+    nextBindings = {};
+  } else if (wantsBindings) {
+    const requested = Object.fromEntries(
+      Object.entries(body.connector_bindings ?? {}).map(([alias, value]) => [
+        alias,
+        value.connection_id,
+      ]),
+    );
+    const decided = rescopeSessionBindings({
+      current: currentEffectiveBindingIds,
+      requested,
+      grantedConnectors: grant?.connectors,
+    });
+    if (!decided.ok) return c.json({ error: decided.message, code: decided.code }, 403);
+    nextBindings = decided.bindings;
+  }
+
+  let bindingRows: Array<{
+    sessionId: string;
+    projectId: string;
+    accountId: string;
+    connectorAlias: string;
+    connectorId: string;
+    connectionId: string;
+    source: 'request';
+    createdBy: string;
+  }> = [];
+  if (wantsBindings && !clearsBindings) {
+    const [ownerServiceAccount] = visible.row.createdBy
+      ? await db
+          .select({ id: serviceAccounts.serviceAccountId })
+          .from(serviceAccounts)
+          .where(
+            and(
+              eq(serviceAccounts.serviceAccountId, visible.row.createdBy),
+              eq(serviceAccounts.accountId, loaded.row.accountId),
+            ),
+          )
+          .limit(1)
+      : [];
+    const validated = await validateSessionConnectorBindings({
+      accountId: loaded.row.accountId,
+      projectId,
+      actingUserId: visible.row.createdBy ?? '',
+      actingPrincipalIsServiceAccount: ownerServiceAccount !== undefined,
+      mayManageSystemConnections: false,
+      bindings: Object.fromEntries(
+        Object.entries(nextBindings).map(([alias, authorizationId]) => [
+          alias,
+          { connection_id: authorizationId },
+        ]),
+      ),
+    });
+    if (!validated.ok) {
+      return c.json({ error: validated.error, code: validated.code }, 403);
+    }
+    if (
+      visible.row.visibility !== 'private' &&
+      sessionConnectorBindingsRequirePrivateVisibility(validated.bindings)
+    ) {
+      return c.json(
+        {
+          error: 'A user authorization requires a private session',
+          code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
+        },
+        409,
+      );
+    }
+    bindingRows = validated.bindings.map((binding) => ({
+      sessionId,
+      projectId,
+      accountId: loaded.row.accountId,
+      connectorAlias: binding.alias,
+      connectorId: binding.connectorId,
+      connectionId: binding.connectionId,
+      source: 'request' as const,
+      createdBy: loaded.userId,
+    }));
+  }
+  return { bindingRows };
+}
+
+/**
+ * After the transaction: drop the request-scoped session-lookup memo,
+ * re-resolve the effective bindings from the committed rows, and name the
+ * aliases the re-scope removed from the effective map.
+ */
+async function resolvePostWriteBindings(input: {
+  loaded: LoadedProject;
+  projectId: string;
+  sessionId: string;
+  grant: SessionAgentGrant;
+  wantsBindings: boolean;
+  currentEffectiveBindings: EffectiveSessionBindings;
+}) {
+  const { loaded, projectId, sessionId, grant, wantsBindings, currentEffectiveBindings } =
+    input;
+  let droppedBindings: string[] = [];
+  if (wantsBindings) {
+    // The transaction above may have just changed
+    // `connectorBindingsConfigured` / the session's binding rows. Drop the
+    // request-scoped session-lookup memo (session-connector-bindings.ts) so
+    // the re-resolution below reads the row THIS transaction wrote, not the
+    // pre-write one cached by `currentEffectiveBindings` earlier in this
+    // handler.
+    invalidateSessionConnectorLookup(sessionId, loaded.row.accountId, projectId);
+  }
+
+  const effectiveBindings = await resolveEffectiveSessionConnectorBindings({
+    accountId: loaded.row.accountId,
+    projectId,
+    sessionId,
+    grantedConnectors: grant?.connectors,
+  });
+  if (wantsBindings) {
+    droppedBindings = Object.keys(currentEffectiveBindings).filter(
+      (alias) => !Object.hasOwn(effectiveBindings, alias),
+    );
+  }
+  return { effectiveBindings, droppedBindings };
+}
+
+/**
+ * The response `detail` sentence: a flat switch over the two decisions and
+ * the live push — the same six strings the 4-deep nested ternary produced.
+ */
+export function scopeResponseDetail(input: {
+  scopeSecretsChanged: boolean;
+  narrowedSecrets: boolean;
+  scopeAppliedLive: boolean;
+  clearsBindings: boolean;
+}): string {
+  const { scopeSecretsChanged, narrowedSecrets, scopeAppliedLive, clearsBindings } =
+    input;
+  if (!scopeSecretsChanged) {
+    return clearsBindings
+      ? 'Connector access is back to the project defaults.'
+      : 'No change to the secrets scope.';
+  }
+  if (narrowedSecrets) {
+    return scopeAppliedLive
+      ? 'Dropped secrets are cleared from the running sandbox now; new shells and the OpenCode process no longer see them. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
+      : 'Dropped secrets stop being delivered from the next prompt. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.';
+  }
+  return scopeAppliedLive
+    ? 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.'
+    : 'Applies from the next prompt.';
+}
+
+/**
+ * The re-scope response envelope, assembled from the decisions above and
+ * the write/push outcome. Field for field the body the handler built
+ * inline before the split.
+ */
+function scopeResponse(input: {
+  c: Context;
+  nextAllowlist: string[] | null;
+  effectiveBindings: EffectiveSessionBindings;
+  canReadSecretNames: boolean;
+  droppedSecrets: string[];
+  addedSecrets: string[];
+  droppedBindings: string[];
+  wantsBindings: boolean;
+  clearsBindings: boolean;
+  visible: VisibleSession;
+  narrowedSecrets: boolean;
+  scopeAppliedLive: boolean;
+  scopePushFailed: boolean;
+  scopePushReason: string | undefined;
+  scopeSecretsChanged: boolean;
+}): Response {
+  const {
+    c,
+    nextAllowlist,
+    effectiveBindings,
+    canReadSecretNames,
+    droppedSecrets,
+    addedSecrets,
+    droppedBindings,
+    wantsBindings,
+    clearsBindings,
+    visible,
+    narrowedSecrets,
+    scopeAppliedLive,
+    scopePushFailed,
+    scopePushReason,
+    scopeSecretsChanged,
+  } = input;
+  return c.json({
+    secrets_allowlist: nextAllowlist,
+    required_connectors: null,
+    connector_bindings: effectiveBindings,
+    // Names are gated; the WARNING is not. Enumerating the agent grant to
+    // report what a null → list narrowing dropped hands the caller secret
+    // identifiers they may not be entitled to see: this route gates on
+    // project.session.stop, and a plain member holds that for their own
+    // session while deliberately lacking project.secret.read. `narrowed`
+    // carries no names, so the "rotate them" warning still fires for everyone
+    // — which is the part that actually matters.
+    dropped_secrets: canReadSecretNames ? droppedSecrets : [],
+    added_secrets: addedSecrets,
+    dropped_bindings: droppedBindings,
+    // Echoed so the caller can re-render from THIS response instead of
+    // re-fetching the scope to learn whether an override now exists.
+    connector_bindings_configured: wantsBindings
+      ? !clearsBindings
+      : visible.row.connectorBindingsConfigured === true,
+    connector_bindings_inherit_unbound: visible.row.connectorBindingsInheritUnbound === true,
+    // Connector bindings ARE retroactive (resolved at call time). Secrets are
+    // not: a dropped one stops being delivered from the next prompt, but the
+    // agent's context and any shell it already spawned still hold what it read.
+    // Keyed on `narrowed`, not on the dropped NAMES. Narrowing a session away
+    // from an unrestricted allowlist shrinks what it may read even when the
+    // agent's grant is 'all' and the lost names cannot be enumerated — and
+    // that is the largest narrowing there is. Keying off the names suppressed
+    // this warning on exactly that case, telling a user revoking every secret
+    // from a live session that nothing had been dropped.
+    retroactive: !narrowedSecrets,
+    applied_live: scopeAppliedLive,
+    ...(scopePushFailed ? { push_failed: true as const, push_reason: scopePushReason } : {}),
+    detail: scopeResponseDetail({
+      scopeSecretsChanged,
+      narrowedSecrets,
+      scopeAppliedLive,
+      clearsBindings,
+    }),
+  });
+}
 
 /**
  * Change the model a session uses, mid-flight.
