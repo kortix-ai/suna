@@ -89,6 +89,32 @@ describe('session-token-health', () => {
     expect(sessionTokenPresumedDead()).toBe(true);
   });
 
+  // The API has TWO terminal refusals for a session credential. `revokeSession
+  // ConnectorTokens` (session delete) and `revokeAllAccountTokensForUser`
+  // (offboarding) revoke the token ROW, so the API answers `PAT not found or
+  // revoked` instead of the lease refusal. A living box can meet either one;
+  // recognising only the lease refusal left the revoked one hammering the API
+  // forever — the `infra:log:a7e64945398f` warn spike in KRTX-446.
+  test('trips on the revoked-token refusal too', () => {
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD + 5; i++) {
+      noteControlPlaneResponse(
+        401,
+        '{"error":true,"message":"PAT not found or revoked","status":401}',
+      );
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(true);
+  });
+
+  test('a merely invalid or expired PAT refusal never trips it', () => {
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD + 5; i++) {
+      noteControlPlaneResponse(401, 'PAT expired');
+      noteControlPlaneResponse(401, '{"error":"Invalid PAT","status":401}');
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(false);
+  });
+
   test('an unrelated 401 (bad signature, malformed context) never trips it', () => {
     for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD + 5; i++) {
       noteControlPlaneResponse(401, 'malformed user context');

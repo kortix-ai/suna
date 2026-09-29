@@ -59,7 +59,20 @@ import { logger } from '../log/logger'
  * closed at its source: a box whose row and VM disagree is reconciled within
  * one sweep (apps/api/src/projects/reaping/row-vm-divergence.ts).
  */
-const SESSION_TOKEN_DEAD_PATTERN = /session token is not active/i
+const SESSION_TOKEN_DEAD_PATTERN =
+  // The API has TWO terminal refusals for a session credential, and a living
+  // box can meet either one:
+  //   - `Session token is not active` — the sandbox row left
+  //     `provisioning`/`active`, so `validateAccountToken` withdrew the lease
+  //     (`SESSION_LEASE_REFUSAL`).
+  //   - `PAT not found or revoked` — the token ROW is gone or revoked, which is
+  //     what session delete (`revokeSessionConnectorTokens`) and account
+  //     offboarding (`revokeAllAccountTokensForUser`) write.
+  // Both are permanent for this credential: no retry schedule can bring either
+  // back. Recognising only the first left the second hammering the API forever
+  // (KRTX-446). The daemon holds exactly one session credential, so neither
+  // string can mean a human PAT here.
+  /session token is not active|pat not found or revoked/i
 
 /** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5
@@ -94,10 +107,11 @@ export function sessionTokenPresumedDead(): boolean {
 
 /**
  * Report one control-plane HTTP response. Called from every daemon->API call
- * site that can receive the "Session token is not active" 401 — never trust
- * a single occurrence (a genuinely transient 401 during token rotation reads
- * identically for one call), but never let it keep retrying past the
- * threshold either.
+ * site that can receive a terminal session-credential 401 — `Session token is
+ * not active` (session row parked) or `PAT not found or revoked` (token row
+ * revoked) — never trust a single occurrence (a genuinely transient 401 during
+ * token rotation reads identically for one call), but never let it keep
+ * retrying past the threshold either.
  */
 export function noteControlPlaneResponse(status: number, bodyText: string | null | undefined): void {
   const isDeadToken = status === 401 && SESSION_TOKEN_DEAD_PATTERN.test(bodyText ?? '')
