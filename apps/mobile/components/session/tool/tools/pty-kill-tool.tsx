@@ -8,10 +8,11 @@
 
 import { useMemo } from 'react';
 import { isErrorOutput } from '@kortix/sdk';
+import { stripMarkupForToolOutput } from '@kortix/shared';
 import { Text } from '@/components/ui/text';
 import { TerminalWindowIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import { PTY_TEXT, ptyKillId, stripMarkupForToolOutput } from '@/lib/session/tools/files-pty';
+import { PTY_TEXT, ptyKillId } from '@/lib/session/tools/files-pty';
 import { webSpace } from '@/lib/session/user-message';
 import { BasicTool, partInput, partOutput, ToolOutputFallback, ToolResultCard } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';

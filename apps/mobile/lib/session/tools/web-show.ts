@@ -13,10 +13,10 @@
  */
 
 import { buildStaticFileLocalUrl, isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 
 import { isSvgName } from '@/lib/files/svg-policy';
 import { isLocalSandboxFilePath } from '../tool-part-accessors';
-import { safeHttpUrl } from './web-fetch';
 
 // ─── Type resolution ─────────────────────────────────────────────────────────
 

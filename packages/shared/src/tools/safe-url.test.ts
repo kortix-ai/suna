@@ -20,6 +20,7 @@ describe('prefersPreviewLink', () => {
   test('document URLs are link-only previews', () => {
     expect(prefersPreviewLink('https://x.dev/report.pdf')).toBe(true);
     expect(prefersPreviewLink('https://x.dev/deck.pptx?v=2')).toBe(true);
+    expect(prefersPreviewLink('/v1/p/sandbox/3210/sheet.xlsx')).toBe(true);
     expect(prefersPreviewLink('https://x.dev/')).toBe(false);
     expect(prefersPreviewLink(null)).toBe(false);
   });

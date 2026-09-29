@@ -3,9 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { decodeHtmlEntitiesOnce, extractReadableHtml, stripMarkupForToolOutput } from './html-text';
 
 // Phase-1 characterization cases (KRTX-366): the shared module implements the
-// web copy's semantics, pinned before any host imports it. Case data lifted
-// verbatim from apps/web .../tool-renderers-sanitization.test.ts and
-// apps/mobile .../web-fetch.test.ts.
+// web copy's semantics, pinned before any host imports it. KRTX-365 phase 3
+// moved the host copies onto this module.
 const cases: [string, string, { title?: string; text: string }][] = [
   ['entities', '<title>A &amp; B</title><p>&nbsp;&#65;&#x42; &unknown; &abcdefghijklmnop;</p>', { title: 'A & B', text: 'A & B\nAB &unknown; &abcdefghijklmnop;' }],
   ['nested blocks and breaks', '<article><h1> One </h1><div>Two <b>three</b><br>four</div></article>', { title: undefined, text: 'One\nTwo three\nfour' }],

@@ -16,6 +16,7 @@
 
 import { useMemo } from 'react';
 import { Image, Pressable, View } from 'react-native';
+import { safeHttpUrl } from '@kortix/shared';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
 import { Button } from '@/components/ui/button';
@@ -24,7 +25,6 @@ import { ImageIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { imageGenTitle, parseImageOutput } from '@/lib/session/tools/web-media';
-import { safeHttpUrl } from '@/lib/session/tools/web-fetch';
 import { webSpace } from '@/lib/session/user-message';
 import {
   BasicTool,

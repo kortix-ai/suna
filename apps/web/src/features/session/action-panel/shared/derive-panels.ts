@@ -26,7 +26,7 @@ import {
   type WebSearchSource,
 } from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
-import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
+import { extractReadableHtml } from '@kortix/shared';
 import {
   contextLabelForTool,
   createArtifactKind,
