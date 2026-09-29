@@ -55,7 +55,6 @@ import {
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { matchesLabelFilters } from '@/features/workspace/project-sidebar/session-label-filter';
 import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
-import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { SessionStarterMark, useSessionStarter } from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
