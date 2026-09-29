@@ -43,13 +43,6 @@ export interface TurnStreamBody {
   error_provider?: string;
 }
 
-export interface TurnStreamSessionRow {
-  sessionId: string;
-  accountId: string;
-  createdBy: string | null;
-  metadata: unknown;
-}
-
 /** Everything the per-kind handlers work with, resolved by the route sleeve
  *  before the dispatch. */
 export interface TurnStreamContext {
@@ -59,7 +52,12 @@ export interface TurnStreamContext {
   body: TurnStreamBody;
   authenticatedSandboxId: string | null;
   authenticatedSandboxMetadata: unknown;
-  turnStreamSession: TurnStreamSessionRow;
+  turnStreamSession: {
+    sessionId: string;
+    accountId: string;
+    createdBy: string | null;
+    metadata: unknown;
+  };
   turnStreamMetadata: Record<string, unknown>;
   childSession: boolean;
 }
