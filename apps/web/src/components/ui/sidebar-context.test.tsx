@@ -5,9 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   SidebarContext,
   SidebarProvider,
+  type SidebarToggleOptions,
   useOptionalSidebar,
   useSidebar,
-  type SidebarToggleOptions,
 } from './sidebar';
 
 /**
