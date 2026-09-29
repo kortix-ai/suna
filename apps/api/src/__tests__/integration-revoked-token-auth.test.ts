@@ -102,6 +102,9 @@ describe('a revoked_at-stamped token stops authenticating', () => {
 
     const after = await authedRequest(secretKey);
     expect(after.status).toBe(401);
+    // KRTX-446: the gate marks the refusal so a retrying client can stop.
+    // The sandbox daemon's dead-credential breaker classifies this code.
+    expect((await after.json()).code).toBe('session_token_revoked');
   });
 
   test('a token revoked the ordinary way (both columns) is still refused', async () => {
