@@ -546,6 +546,11 @@ export async function ensureDefaultConnection(input: {
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
+  // A computer account is one paired machine. A machine-less shared row would
+  // win unattended resolution and answer every call with computer_unpaired.
+  if (connector.providerType === 'computer') {
+    throw new Error('Computer accounts are added by pairing a computer, not by a credential');
+  }
 
   // Its own row: labelled `connector.name` on create, or marked as its slot
   // once finalize relabelled it to the authorized identity or someone renamed it.

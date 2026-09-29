@@ -297,7 +297,8 @@ describe('decideImpersonation', () => {
       // device-auth approve path that the single connections entry missed.
       '/v1/tunnel/connections',
       '/v1/tunnel/device-auth/CODE123/approve',
-      '/v1/tunnel/permissions/x',
+      '/v1/tunnel/connections/x',
+      '/v1/projects/p1/computers',
       // Public shares without expiry = permanent unauthenticated link.
       '/v1/projects/p1/sessions/s1/public-shares',
       // Agent governance written into kortix.yaml.

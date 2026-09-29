@@ -21,7 +21,7 @@ import {
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
@@ -81,6 +81,7 @@ import {
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
 import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
+import { useAddComputerToProject, useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -121,6 +122,12 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { useAuth } from '@/features/providers/auth-provider';
+import {
+  ComputerConnectModal,
+  ComputerGlyph,
+  ComputerStateDot,
+  computerDisplayName,
+} from '@/features/tunnel/computer-connect';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
@@ -272,7 +279,9 @@ function ConnectionRow({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   const isProjectAuthorization = connection.owner_type === 'project';
+  const isComputer = Boolean(connection.tunnel_id);
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
@@ -284,58 +293,85 @@ function ConnectionRow({
 
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
-      <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-sm',
-          isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
-        )}
-      >
-        {isProjectAuthorization ? (
-          <Users className="text-kortix-blue size-5" />
-        ) : (
-          <Lock className="text-kortix-purple size-5" />
-        )}
-      </span>
+      {isComputer ? (
+        <ComputerGlyph />
+      ) : (
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-sm',
+            isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
+          )}
+        >
+          {isProjectAuthorization ? (
+            <Users className="text-kortix-blue size-5" />
+          ) : (
+            <Lock className="text-kortix-purple size-5" />
+          )}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{connection.label}</span>
+          <span className="truncate text-sm font-medium">
+            {isComputer
+              ? computerDisplayName(connection.label, { hostname: connection.machine?.hostname }) ||
+                connection.label
+              : connection.label}
+          </span>
+          {/* A computer account: is the machine it points at online right now? */}
+          {isComputer ? (
+            <Hint
+              label={connection.machine?.online ? tComputers('online') : tComputers('offline')}
+            >
+              <span className="inline-flex p-1">
+                <ComputerStateDot state={connection.machine?.online ? 'online' : 'offline'} />
+              </span>
+            </Hint>
+          ) : null}
           {connection.is_default && (
             <Badge variant="outline" size="xs">
               {tI18nComplete.raw('text21b111cbfe6e')}
             </Badge>
           )}
-          {/* Who may use this account, on every card: the list has one group. */}
-          <Hint
-            label={
-              visibility.kind === 'named'
-                ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
-                : visibility.kind === 'everyone'
-                  ? tSharing('everyoneMeta')
-                  : tSharing('onlyYouDescription')
-            }
-          >
-            <Badge variant="outline" size="xs" data-testid="account-visibility">
-              {visibility.kind === 'you' ? (
-                <Lock />
-              ) : visibility.kind === 'everyone' ? (
-                <UsersThree />
-              ) : (
-                <Users />
-              )}
-              {visibility.kind === 'you'
-                ? tSharing('onlyYou')
-                : visibility.kind === 'everyone'
-                  ? tSharing('visibilityEveryone')
-                  : visibility.more > 0
-                    ? tSharing('visibilityNamedMore', {
-                        names: visibility.names.join(', '),
-                        count: visibility.more,
-                      })
-                    : visibility.names.join(', ')}
-            </Badge>
-          </Hint>
+          {/* Who may use this account, on every card: the list has one group.
+              A computer row says it in its meta line instead. */}
+          {isComputer ? null : (
+            <Hint
+              label={
+                visibility.kind === 'named'
+                  ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
+                  : visibility.kind === 'everyone'
+                    ? tSharing('everyoneMeta')
+                    : tSharing('onlyYouDescription')
+              }
+            >
+              <Badge variant="outline" size="xs" data-testid="account-visibility">
+                {visibility.kind === 'you' ? (
+                  <Lock />
+                ) : visibility.kind === 'everyone' ? (
+                  <UsersThree />
+                ) : (
+                  <Users />
+                )}
+                {visibility.kind === 'you'
+                  ? tSharing('onlyYou')
+                  : visibility.kind === 'everyone'
+                    ? tSharing('visibilityEveryone')
+                    : visibility.more > 0
+                      ? tSharing('visibilityNamedMore', {
+                          names: visibility.names.join(', '),
+                          count: visibility.more,
+                        })
+                      : visibility.names.join(', ')}
+              </Badge>
+            </Hint>
+          )}
         </div>
         <InlineMeta>
+          {isComputer
+            ? isProjectAuthorization
+              ? tComputers('sharedWithThisProject')
+              : tComputers('yoursEveryProject')
+            : null}
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
@@ -482,11 +518,16 @@ export function ConnectionsList({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
   // creates the account and this then opens `SetCredentialModal` for it. A
   // managed provider (Composio/Pipedream) runs hosted OAuth through
   // `useAddManagedAccount`.
-  const isDirectProvider = !isManagedConnectorProvider(connector.provider);
+  // A computer account is a paired machine: "Add" pairs one (desktop one-click,
+  // or download + npx) instead of asking for a credential.
+  const isComputer = connector.provider === 'computer';
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  const [computerOpen, setComputerOpen] = useState(false);
   const { user } = useAuth();
   const viewerId = user?.id ?? null;
   const [addOpen, setAddOpen] = useState(false);
@@ -525,6 +566,10 @@ export function ConnectionsList({
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
   const openAdd = () => {
+    if (isComputer) {
+      setComputerOpen(true);
+      return;
+    }
     setDraft(EMPTY_NEW_ACCOUNT);
     setAddOpen(true);
   };
@@ -588,6 +633,12 @@ export function ConnectionsList({
     },
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
+  // A computer is shared by sharing the MACHINE with the project: a shared
+  // account appears beside the owner's own, which keeps following them.
+  const shareComputer = useAddComputerToProject();
+  // Your own computer row follows you into every project, so its Disconnect
+  // removes the machine from Kortix (every project), not one account.
+  const unpairComputer = useDeleteTunnelConnection();
   const disconnect = useMutation({
     mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
     onSuccess: () => {
@@ -653,6 +704,64 @@ export function ConnectionsList({
         })
     : undefined;
 
+  // A member's computer account follows them into every project, so it is
+  // never removed from one project: Disconnect unpairs the machine.
+  const ownComputer = (connection: Connection) => isComputer && connection.owner_type === 'member';
+  const sharedMachine = (connection: Connection) =>
+    rows.some(
+      (row) =>
+        row.owner_type === 'project' &&
+        row.status === 'active' &&
+        row.tunnel_id === connection.tunnel_id,
+    );
+  const shareMachine = (connection: Connection) => {
+    if (!connection.tunnel_id) return;
+    shareComputer.mutate(
+      { projectId, tunnelId: connection.tunnel_id, share: 'project' },
+      {
+        onSuccess: () => {
+          successToast(tComputers('sharedWithProject'));
+          refresh();
+        },
+        onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
+      },
+    );
+  };
+  const renderRow = (connection: Connection) => {
+    const mine = ownComputer(connection);
+    return (
+      <ConnectionRow
+        key={connection.connection_id}
+        connection={connection}
+        viewerId={viewerId}
+        isMine={connection.owner_type === 'member'}
+        canManage={canManageConnections}
+        pending={
+          pendingConnectionId === connection.connection_id ||
+          (shareComputer.isPending && shareComputer.variables?.tunnelId === connection.tunnel_id)
+        }
+        disabled={disabled}
+        onSetDefault={() => setDefault.mutate(connection.connection_id)}
+        onDisconnect={() => setConfirmDisconnect(connection)}
+        onRename={() => openRename(connection)}
+        onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
+        onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+        onShare={
+          mine
+            ? !connection.tunnel_id || sharedMachine(connection)
+              ? undefined
+              : () => shareMachine(connection)
+            : accountId
+              ? () => {
+                  setShareTarget(connection);
+                  setShareOpen(true);
+                }
+              : undefined
+        }
+      />
+    );
+  };
+
   return (
     <div className="space-y-6">
       <section className="space-y-4">
@@ -675,33 +784,10 @@ export function ConnectionsList({
             title={tSharing('noAccountsTitle')}
             description={tSharing('noAccountsDescription', { connector: displayName })}
           />
+        ) : isComputer ? (
+          <ComputerAccountGroups rows={rows} renderRow={renderRow} />
         ) : (
-          <ul className="space-y-2">
-            {rows.map((connection) => (
-              <ConnectionRow
-                key={connection.connection_id}
-                connection={connection}
-                viewerId={viewerId}
-                isMine={connection.owner_type === 'member'}
-                canManage={canManageConnections}
-                pending={pendingConnectionId === connection.connection_id}
-                disabled={disabled}
-                onSetDefault={() => setDefault.mutate(connection.connection_id)}
-                onDisconnect={() => setConfirmDisconnect(connection)}
-                onRename={() => openRename(connection)}
-                onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
-                onSetCredential={setCredential ? () => setCredential(connection) : undefined}
-                onShare={
-                  accountId
-                    ? () => {
-                        setShareTarget(connection);
-                        setShareOpen(true);
-                      }
-                    : undefined
-                }
-              />
-            ))}
-          </ul>
+          <ul className="space-y-2">{rows.map(renderRow)}</ul>
         )}
       </section>
 
@@ -838,15 +924,40 @@ export function ConnectionsList({
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
         title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
-          confirmDisconnect?.owner_type === 'project'
-            ? tI18nComplete.raw('texte2cbafcec553')
-            : tI18nComplete.raw('text64db32d83da9')
+          confirmDisconnect && ownComputer(confirmDisconnect)
+            ? tComputers('unpairDescription')
+            : confirmDisconnect?.owner_type === 'project'
+              ? tI18nComplete.raw('texte2cbafcec553')
+              : tI18nComplete.raw('text64db32d83da9')
         }
         confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
-        isPending={disconnect.isPending}
-        onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
+        isPending={disconnect.isPending || unpairComputer.isPending}
+        onConfirm={() => {
+          if (!confirmDisconnect) return;
+          if (ownComputer(confirmDisconnect) && confirmDisconnect.tunnel_id) {
+            unpairComputer.mutate(confirmDisconnect.tunnel_id, {
+              onSuccess: () => {
+                successToast(tComputers('disconnected'));
+                setConfirmDisconnect(null);
+                refresh();
+              },
+              onError: (e: Error) => errorToast(e.message || tComputers('disconnectFailed')),
+            });
+            return;
+          }
+          disconnect.mutate(confirmDisconnect.connection_id);
+        }}
       />
+
+      {isComputer ? (
+        <ComputerConnectModal
+          projectId={projectId}
+          open={computerOpen}
+          onOpenChange={setComputerOpen}
+          onConnected={refresh}
+        />
+      ) : null}
 
       {isDirectProvider ? (
         <SetCredentialModal
@@ -866,6 +977,23 @@ export function ConnectionsList({
       ) : null}
     </div>
   );
+}
+
+/**
+ * A computer's accounts: the caller's own machines first (they follow them
+ * into every project), then the machines shared with this project. Each row
+ * says which it is.
+ */
+function ComputerAccountGroups({
+  rows,
+  renderRow,
+}: {
+  rows: readonly Connection[];
+  renderRow: (connection: Connection) => ReactNode;
+}) {
+  const mine = rows.filter((row) => row.owner_type === 'member');
+  const shared = rows.filter((row) => row.owner_type !== 'member');
+  return <ul className="space-y-2">{[...mine, ...shared].map(renderRow)}</ul>;
 }
 
 function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {

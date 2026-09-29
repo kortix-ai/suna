@@ -84,14 +84,11 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { agent_principal: false } }, 'agent_principal')).toBe(false);
   });
 
-  test('agent_tunnel respects an explicit choice but stays AND-gated on availability', () => {
-    const available = findCatalogFlag('agent_tunnel').available;
-    expect(resolveFeatureFlag({ experimental: { agent_tunnel: true } }, 'agent_tunnel')).toBe(
-      available,
-    );
-    expect(resolveFeatureFlag({ experimental: { agent_tunnel: false } }, 'agent_tunnel')).toBe(
-      false,
-    );
+  test('agent_tunnel graduated: computers need no flag and a stored override is inert', () => {
+    expect(isFeatureFlagKey('agent_tunnel')).toBe(false);
+    const metadata = { experimental: { agent_tunnel: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('agent_tunnel');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
   test('agentmail_email is explicit opt-in', () => {
@@ -235,7 +232,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
       expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'agent_tunnel')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'teams')).toBe('boolean');
     }
   });
 });
@@ -280,10 +277,6 @@ describe('buildFeatureFlagCatalog', () => {
     expect(teams.stability).toBe('experimental');
     expect(teams.enabled).toBe(false);
     expect(teams.overridden).toBe(false);
-
-    const tunnel = catalog.find((f) => f.key === 'agent_tunnel');
-    if (!tunnel) throw new Error('Missing Agent Computer Tunnel flag');
-    expect(tunnel.overridden).toBe(false);
   });
 
   test('an unavailable flag is never enabled', () => {

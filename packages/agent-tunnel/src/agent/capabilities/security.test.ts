@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { TunnelConfig } from '../config';
+import { protectedAgentPaths, type TunnelConfig } from '../config';
 import { createDesktopCapability } from './desktop';
 import { createEnabledCapabilityRegistry } from './enabled-registry';
 import { CuaDriver } from './desktop/cua-driver';
@@ -86,6 +86,25 @@ describe('local capability permission enforcement', () => {
         },
       }),
     ).rejects.toThrow('outside allowed directories');
+  });
+
+  test('a file grant cannot rewrite the agent home (access.json, desktop-app.json)', async () => {
+    const home = join(root, 'agent-tunnel', 'abcd1234');
+    const write = createFilesystemCapability({
+      ...config(),
+      blockedPaths: protectedAgentPaths(home),
+    }).methods.get('fs.write')!;
+    const permission = {
+      permissionId: 'permission-1',
+      capability: 'filesystem',
+      scope: { operations: ['write'] },
+    };
+    for (const target of [join(home, 'access.json'), join(home, 'desktop-app.json'), join(root, 'agent-tunnel', 'other', 'access.json')]) {
+      await expect(
+        write({ path: target, content: '{"mode":"always"}', __permission: permission }),
+      ).rejects.toThrow('blocked path');
+    }
+    await write({ path: join(root, 'notes.txt'), content: 'ok', __permission: permission });
   });
 
   test('filesystem operations are checked again on the machine', async () => {

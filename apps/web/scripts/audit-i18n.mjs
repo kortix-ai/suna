@@ -946,10 +946,6 @@ function scanFile(file) {
           catalogRoot === 'SLOTS') ||
         (file === path.join(srcDir, 'features/marketing/hero-surfaces.tsx') &&
           catalogRoot === 'SURFACES') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/filesystem-scope-editor.tsx') &&
-          catalogRoot === 'MAX_FILE_SIZE_OPTIONS') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/shell-scope-editor.tsx') &&
-          catalogRoot === 'TIMEOUT_OPTIONS') ||
         (file ===
           path.join(
             srcDir,

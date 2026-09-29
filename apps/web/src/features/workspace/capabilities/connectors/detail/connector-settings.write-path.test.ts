@@ -69,7 +69,7 @@ describe('connector settings write path', () => {
   test('ConnectionSection is imported and mounted, gated to direct providers only', () => {
     // Managed (Composio/Pipedream), channel, and computer connectors have no
     // transport config of their own — Accounts (`ConnectionsList`,
-    // `ChannelConnectionSection`, `ComputerConnectorAccount`) covers them.
+    // `ChannelConnectionSection`) covers them.
     expect(source).toMatch(/import\s*\{[^}]*\bConnectionSection\b/);
     expect(source).toContain('const isDirectProvider =');
     expect(source).toContain(

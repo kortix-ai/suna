@@ -27,7 +27,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   flags: Partial<Record<FeatureFlagKey, boolean>>;
   isLoading: boolean;
 } {
-  const agentTunnel = useFeatureFlag(projectId, 'agent_tunnel');
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
@@ -48,7 +47,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
 
   return {
     flags: {
-      agent_tunnel: agentTunnel.enabled,
       marketplace: marketplace.enabled,
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
