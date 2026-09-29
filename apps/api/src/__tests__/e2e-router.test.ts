@@ -221,6 +221,11 @@ mock.module('../router/services/llm', () => ({
         : next,
     };
   },
+  // Stream billing (#8057) is covered by router/services/llm-sse-settlement.test.ts.
+  // Here it only drains its tee'd copy, as the real settlement does.
+  settleStreamUsage: async ({ stream }: { stream: ReadableStream<Uint8Array> }) => {
+    await stream.pipeTo(new WritableStream());
+  },
   calculateCost: (modelConfig: any, prompt: number, completion: number) => {
     return (
       ((prompt / 1_000_000) * (modelConfig?.inputPer1M || 0) +

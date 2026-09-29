@@ -723,6 +723,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setProjectPolicies(projectId, ...a),
       },
 
+      /** Reminders on every session the caller can open — see `listProjectReminders`. */
+      reminders: {
+        list: () => P.listProjectReminders(projectId),
+      },
       triggers: {
         list: () => P.listProjectTriggers(projectId),
         create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) =>

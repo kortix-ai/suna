@@ -206,15 +206,26 @@ export function resolveConfigAgents(
   };
 }
 
-export async function loadProjectConfig(
+interface ResolvedProjectManifest {
+  repoFiles: ProjectFileEntry[];
+  resolved: Awaited<ReturnType<typeof readManifestFromRepo>>;
+  manifestRaw: string | null;
+  manifestFormat: ManifestFormat;
+  manifest: Record<string, unknown>;
+  loadedAgents: LoadedAgents;
+  opencodeDir: string;
+  openCodeRaw: string | null;
+}
+
+async function resolveProjectManifest(
   project: GitBackedProject,
+  candidatePaths: string[],
   files?: ProjectFileEntry[],
-): Promise<ProjectConfigSummary> {
+): Promise<ResolvedProjectManifest> {
   const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
   // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
   // the matched format. Without this, a yaml-only project reads no manifest here
   // → its [[agents]] scoping silently vanishes from the config introspection.
-  const candidatePaths = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
   const resolved = await readManifestFromRepo(project, candidatePaths, project.defaultBranch)
     // A broken `imports:` must not make the summary report "no manifest" (the
     // UI would offer to create one). Degrade to the root file alone; the
@@ -260,21 +271,49 @@ export async function loadProjectConfig(
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
   const openCodeRaw = await optionalFile(project, `${opencodeDir}/opencode.jsonc`);
+  return {
+    repoFiles,
+    resolved,
+    manifestRaw,
+    manifestFormat,
+    manifest,
+    loadedAgents,
+    opencodeDir,
+    openCodeRaw,
+  };
+}
 
-  // Build matchers off the configured opencode dir. The trailing
-  // `s?` on agents/commands is opencode's own historical quirk (it
-  // accepts both `agent/` and `agents/`); we follow suit.
-  const escapedDir = escapeRegExp(opencodeDir);
-  const agentRe = new RegExp(`^${escapedDir}/agents?/[^/]+\\.md$`);
-  const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
-  const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
+interface OpenCodeResourceMatch<T> {
+  /** Sort key for the scan: the path for agents, the slug for skills/commands. */
+  key: string;
+  /** The value the entry builder receives. */
+  target: T;
+}
 
-  const agentPaths = repoFiles
-    .map((file) => file.path)
-    .filter((path) => agentRe.test(path))
-    .sort();
-  const nativeAgents = await Promise.all(
-    agentPaths.map(async (path) => {
+async function scanOpenCodeResources<TTarget, TEntry>(
+  repoFiles: ProjectFileEntry[],
+  matcher: (path: string) => OpenCodeResourceMatch<TTarget> | null,
+  buildEntry: (target: TTarget) => Promise<TEntry>,
+  compare: (a: string, b: string) => number,
+): Promise<TEntry[]> {
+  return Promise.all(
+    repoFiles
+      .map((file) => matcher(file.path))
+      .filter((match): match is OpenCodeResourceMatch<TTarget> => Boolean(match))
+      .sort((a, b) => compare(a.key, b.key))
+      .map((match) => buildEntry(match.target)),
+  );
+}
+
+async function scanAgents(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  agentRe: RegExp,
+): Promise<NativeAgentSummary[]> {
+  return scanOpenCodeResources(
+    repoFiles,
+    (path) => (agentRe.test(path) ? { key: path, target: path } : null),
+    async (path) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -284,23 +323,34 @@ export async function loadProjectConfig(
         mode: meta.mode || null,
         model: meta.model || null,
       };
-    }),
+    },
+    // Native agent paths sort in plain code-point order (the historical `.sort()`).
+    (a, b) => (a < b ? -1 : a > b ? 1 : 0),
   );
-  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+}
 
+async function scanSkills(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  skillRe: RegExp,
+  opencodeDir: string,
+): Promise<ProjectConfigSummary['skills']> {
+  // Skills dedupe by slug (first path wins) as the matcher's own behavior; the
+  // agent and command scans do not dedupe.
   const seenSkills = new Set<string>();
-  const skillPaths = repoFiles
-    .map((file) => file.path.match(skillRe))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .filter((match) => {
-      if (seenSkills.has(match[1])) return false;
+  return scanOpenCodeResources(
+    repoFiles,
+    (path) => {
+      const match = path.match(skillRe);
+      if (!match) return null;
+      if (seenSkills.has(match[1])) return null;
       seenSkills.add(match[1]);
-      return true;
-    })
-    .map((match) => ({ slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` }))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
-  const skills = await Promise.all(
-    skillPaths.map(async ({ slug, path }) => {
+      return {
+        key: match[1],
+        target: { slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` },
+      };
+    },
+    async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -308,20 +358,27 @@ export async function loadProjectConfig(
         path,
         description: meta.description || null,
       };
-    }),
+    },
+    (a, b) => a.localeCompare(b),
   );
+}
 
-  // OpenCode slash commands — `<opencode>/command/<slug>.md` or
-  // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
-  // include either if present). Frontmatter `description:` is what gets
-  // surfaced in the command picker.
-  const commandPaths = repoFiles
-    .map((file) => file.path.match(commandRe))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map((match) => ({ slug: match[1], path: match.input as string }))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
-  const commands = await Promise.all(
-    commandPaths.map(async ({ slug, path }) => {
+// OpenCode slash commands — `<opencode>/command/<slug>.md` or
+// `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
+// include either if present). Frontmatter `description:` is what gets
+// surfaced in the command picker.
+async function scanCommands(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  commandRe: RegExp,
+): Promise<ProjectConfigSummary['commands']> {
+  return scanOpenCodeResources(
+    repoFiles,
+    (path) => {
+      const match = path.match(commandRe);
+      return match ? { key: match[1], target: { slug: match[1], path } } : null;
+    },
+    async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -329,8 +386,39 @@ export async function loadProjectConfig(
         path,
         description: meta.description || null,
       };
-    }),
+    },
+    (a, b) => a.localeCompare(b),
   );
+}
+
+export async function loadProjectConfig(
+  project: GitBackedProject,
+  files?: ProjectFileEntry[],
+): Promise<ProjectConfigSummary> {
+  const candidatePaths = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+  const {
+    repoFiles,
+    resolved,
+    manifestRaw,
+    manifestFormat,
+    manifest,
+    loadedAgents,
+    opencodeDir,
+    openCodeRaw,
+  } = await resolveProjectManifest(project, candidatePaths, files);
+
+  // Build matchers off the configured opencode dir. The trailing
+  // `s?` on agents/commands is opencode's own historical quirk (it
+  // accepts both `agent/` and `agents/`); we follow suit.
+  const escapedDir = escapeRegExp(opencodeDir);
+  const agentRe = new RegExp(`^${escapedDir}/agents?/[^/]+\\.md$`);
+  const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
+  const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
+
+  const nativeAgents = await scanAgents(project, repoFiles, agentRe);
+  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+  const skills = await scanSkills(project, repoFiles, skillRe, opencodeDir);
+  const commands = await scanCommands(project, repoFiles, commandRe);
 
   const signals = {
     manifest: Boolean(manifestRaw),

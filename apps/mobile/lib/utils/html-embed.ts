@@ -94,6 +94,25 @@ export function allowBrowserNavigation(request: { url: string }): boolean {
 }
 
 /**
+ * The ONLY origin that may receive the live Supabase `Authorization` header:
+ * the sandbox-proxy / API origin a preview URL is built from. Any other origin
+ * (a typed URL, an external link followed inside the WebView, a redirect
+ * off-host) must not, or the session token leaks to a third-party server.
+ *
+ * Pure so the in-app Browser and the in-session preview sheet share one guard
+ * (`apps/mobile/components/pages/BrowserPage.tsx`, `SandboxPreviewSheet`).
+ */
+export function isTrustedProxyUrl(url: string, backendUrl: string): boolean {
+  try {
+    const target = new URL(url);
+    const trusted = new URL(backendUrl);
+    return target.protocol === trusted.protocol && target.host === trusted.host;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Page-script source that defines `sanitizeUntrustedHtml(root)`. It removes
  * active and embedding elements and every on* handler and style attribute.
  * Link attributes (href, xlink:href, cite) keep only http:, https:, mailto:,
