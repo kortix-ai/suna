@@ -494,7 +494,6 @@ async function handleKortixPassthrough(
 
   let upstream: Response;
   try {
-    // Same attribution as handleKortixProxy — see the comment there.
     upstream = await timeUpstream(() =>
       fetch(targetUrl, {
         method,

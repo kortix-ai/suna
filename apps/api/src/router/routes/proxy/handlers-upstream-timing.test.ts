@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { Hono } from 'hono';
 
 import { getDiagnosticFields, runWithContext } from '../../../lib/request-context';
-import { upstreamMsSoFar } from '../../../middleware/upstream-timing';
+import { upstreamMsSoFar, upstreamTiming } from '../../../middleware/upstream-timing';
 
 // KRTX-577: POST /v1/router/tavily/search p95 rose to ~21 s against a 3.8 s
 // baseline, and no telemetry could say whether Tavily's upstream or this API's
@@ -11,8 +12,7 @@ import { upstreamMsSoFar } from '../../../middleware/upstream-timing';
 // up in `upstream_ms`, a slow reservation must NOT, and the completion log
 // line must carry the split.
 
-const UPSTREAM_DELAY_MS = 300;
-const RESERVATION_DELAY_MS = 300;
+const DELAY_MS = 300;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -23,7 +23,7 @@ const fastUpstream = () =>
   });
 
 const slowUpstream = async (): Promise<Response> => {
-  await sleep(UPSTREAM_DELAY_MS);
+  await sleep(DELAY_MS);
   return fastUpstream();
 };
 
@@ -133,7 +133,7 @@ describe('proxy upstream attribution (KRTX-577)', () => {
   });
 
   test('a slow credit reservation does NOT inflate upstream_ms', async () => {
-    reserveDelays.push(RESERVATION_DELAY_MS);
+    reserveDelays.push(DELAY_MS);
     const measured = await measure();
 
     expect(measured.status).toBe(200);
@@ -148,8 +148,6 @@ describe('proxy upstream attribution (KRTX-577)', () => {
   test('the proxied response carries the split in its Server-Timing header', async () => {
     // Drives the real middleware chain: upstreamTiming emits the header, the
     // handler records the upstream wait through it.
-    const { Hono } = await import('hono');
-    const { upstreamTiming } = await import('../../../middleware/upstream-timing');
     globalThis.fetch = slowUpstream as unknown as typeof fetch;
 
     const app = new Hono();
