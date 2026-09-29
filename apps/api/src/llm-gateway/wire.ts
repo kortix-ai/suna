@@ -1,6 +1,9 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { enforceRateLimit, sessionLlmLimiter } from '../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
+import { authenticatePrincipal } from './hooks';
 import { createInternalGatewayRoutes } from './internal-routes';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────
@@ -387,6 +390,24 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       );
     }
 
+    const token = c.req.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const principal = token ? await authenticatePrincipal(token) : null;
+    if (!principal) return c.json({ error: 'Unauthorized', code: 'unauthorized' }, 401);
+    const denied = await enforceRateLimit(
+      c,
+      sessionLlmLimiter,
+      principal.accountId,
+      { limit: 600, windowMs: 60_000 },
+      {
+        accountId: principal.accountId,
+        actorUserId: principal.userId,
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'llm_gateway',
+        metadata: { limiter: 'session_llm' },
+      },
+    );
+    if (denied) return denied;
+
     const headers = new Headers(c.req.raw.headers);
     headers.delete('host');
     headers.delete('connection');
@@ -440,6 +461,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       const headers = new Headers(upstream.headers);
       for (const name of ['content-encoding', 'content-length', 'transfer-encoding', 'connection'])
         headers.delete(name);
+      for (const name of ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset']) {
+        const value = c.res.headers.get(name);
+        if (value) headers.set(name, value);
+      }
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
