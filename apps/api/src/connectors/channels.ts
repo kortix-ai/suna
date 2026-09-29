@@ -221,7 +221,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     verb: 'GET',
     name: 'Get channel history',
     description:
-      'Fetch recent messages from a channel. Provide `channel`; optional `limit` (default 20).',
+      'Fetch recent messages from a channel. Provide `channel`; optional `limit`.',
     risk: 'read',
     properties: {
       channel: { type: 'string', description: 'Channel ID to read.' },
@@ -241,10 +241,9 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     properties: {
       channel: { type: 'string', description: 'Channel ID the thread is in.' },
       ts: { type: 'string', description: 'Timestamp (ts) of the thread root message.' },
-      limit: { type: 'number', description: 'Max replies to return (default 20).' },
+      limit: { type: 'number', description: 'Max replies to return (default: Slack\'s).' },
     },
     required: ['channel', 'ts'],
-    defaults: { limit: 20 },
   },
   {
     path: 'list_channels',
@@ -297,13 +296,12 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'users.list',
     verb: 'GET',
     name: 'List users',
-    description: 'List workspace members. Optional `limit` (default 100).',
+    description: 'List workspace members. Optional `limit`.',
     risk: 'read',
     properties: {
-      limit: { type: 'number', description: 'Max users to return (default 100).' },
+      limit: { type: 'number', description: 'Max users to return (default: Slack\'s).' },
     },
     required: [],
-    defaults: { limit: 100 },
   },
   {
     path: 'user_info',
