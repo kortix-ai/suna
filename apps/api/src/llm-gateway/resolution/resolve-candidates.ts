@@ -1,5 +1,4 @@
-import { getProjectModelAccess } from '../../repositories/project-model-access';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { getProjectGatewayResolution, type getProjectModelAccess } from '../../repositories/project-model-access';
 import {
   resolveDefaultCodexAccountSecret,
   resolveProjectSharedProviderSecrets,
@@ -65,14 +64,20 @@ const BRING_YOUR_OWN_KEY_SUGGESTION =
   'this model, or pick a model your key covers.';
 
 type ResolutionOptions = { providerSecretPools?: Record<string, string[]>; probe?: boolean };
-type Context = { principal: AuthedPrincipal; effectiveModel: string; personalUserId: string | null; options?: ResolutionOptions };
+type Context = {
+  principal: AuthedPrincipal;
+  effectiveModel: string;
+  personalUserId: string | null;
+  pooledEnabled: boolean;
+  options?: ResolutionOptions;
+};
 
-async function selectedPool(context: Context, providerId: string, name: string, enabled?: boolean) {
+async function selectedPool(context: Context, providerId: string, name: string) {
   const { principal, options, personalUserId } = context;
   if (!principal.projectId) return null;
   const prospectiveIds = options?.providerSecretPools?.[providerId];
   if ((prospectiveIds === undefined && !principal.sessionId) || !principal.userId ||
-    !(enabled ?? await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets'))) return null;
+    !context.pooledEnabled) return null;
   return resolveSessionProviderSecrets({
     accountId: principal.accountId, projectId: principal.projectId,
     ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
@@ -186,11 +191,10 @@ async function codexFallback(context: Context, sharedFailure: GatewayResolutionE
 }
 
 async function resolveCodexCandidates(context: Context): Promise<UpstreamDescriptor[]> {
-  const { principal, effectiveModel, personalUserId } = context;
+  const { principal, effectiveModel, personalUserId, pooledEnabled } = context;
   if (!principal.projectId) throw new GatewayResolutionError('provider_not_connected',
     'Connect Codex to use this model.', 'Connect your ChatGPT/Codex account in project settings, then retry.');
-  const pooledEnabled = await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets');
-  const pool = await selectedPool(context, 'codex', 'CODEX_AUTH_JSON', pooledEnabled);
+  const pool = await selectedPool(context, 'codex', 'CODEX_AUTH_JSON');
   if (pool?.configured) {
     if (!codexGrantAllowed(principal)) throw codexGrantRefusal();
     if (!pool.secrets.length) throw new GatewayResolutionError(
@@ -351,9 +355,10 @@ export async function resolveCandidates(
   // Whose PERSONAL keys apply (spec 2026-09-22 §2.3): absent = the token user
   // (legacy); null = none (agent-principal session with no on-behalf-of human).
   const personalUserId = principal.personalUserId === undefined ? principal.userId : principal.personalUserId;
-  const access = principal.projectId
-    ? await getProjectModelAccess(principal.projectId)
-    : { disabledProviders: [], disabledModels: [] };
+  // Avoid a second projects-row query on every resolution (KRTX-586).
+  const { access, pooledEnabled } = principal.projectId
+    ? await getProjectGatewayResolution(principal.projectId)
+    : { access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false };
   if (!modelAccessAllows(access, effectiveModel)) {
     const providerDisabled = access.disabledProviders.includes(modelAccessProvider(effectiveModel));
     throw new GatewayResolutionError(
@@ -363,7 +368,7 @@ export async function resolveCandidates(
     );
   }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
-  const context = { principal, effectiveModel, personalUserId, options };
+  const context = { principal, effectiveModel, personalUserId, pooledEnabled, options };
   if (provider === 'codex') return resolveCodexCandidates(context);
 
   const byok = resolveCatalogUpstream(provider);
