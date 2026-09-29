@@ -591,7 +591,16 @@ describe('resume (resumeStoppedSandbox)', () => {
 
       providerStatus = 'running';
       releaseStart();
-      await until(async () => (await read(f)).sandbox.status === 'active');
+      // `finalize()` (routes/shared.ts) commits the sandbox row `active`
+      // BEFORE it awaits the turn-recovery and compute-reopen calls that
+      // follow in the same async chain — those are separate, later commits,
+      // not part of the same transaction. A row read the instant status
+      // flips can therefore land in the real, narrow window between "active"
+      // and "metered". Wait for both to be true before asserting either, the
+      // same way `providerStarts` above is waited on before its exact count
+      // is asserted — this still pins the invariant (exactly one meter, not
+      // zero, not more), it just observes it after it has actually happened.
+      await until(async () => (await read(f)).sandbox.status === 'active' && computeReopens > 0);
       state = await read(f);
       expect(state.session.status).toBe('running');
       expect(state.sandbox.metadata).not.toHaveProperty('runtimeWakeId');

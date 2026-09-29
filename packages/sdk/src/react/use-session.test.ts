@@ -590,6 +590,14 @@ describe('SESSION_START_POLL_OPTIONS', () => {
   test('keeps interval fetches active while the document is hidden', () => {
     expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
   });
+
+  test('a cached ready result is rechecked so an open tab wakes a parked sandbox', () => {
+    expect(
+      SESSION_START_POLL_OPTIONS.refetchInterval({
+        state: { error: null, data: { stage: 'ready' } as never },
+      }),
+    ).toBe(60_000);
+  });
 });
 
 // T5 — outcome-aware staleTime: a remount renders a cached `ready`

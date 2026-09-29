@@ -24,6 +24,8 @@ describe('credits / usage-limit detection (web session-error-banner.tsx)', () =>
     expect(isUsageLimitError('subscription_required')).toBe(true);
     expect(isUsageLimitError('Billing inactive')).toBe(true);
     expect(isUsageLimitError('Model not found')).toBe(false);
+    // A provider's own plan cap is not a Kortix entitlement (KRTX-621).
+    expect(isUsageLimitError('The usage limit has been reached')).toBe(false);
   });
 
   test('balance', () => {
@@ -68,6 +70,8 @@ describe('turnErrorCard routing (web TurnErrorDisplay)', () => {
       text: 'Insufficient credits. Balance: $1',
     });
     expect(turnErrorCard({ errorText: 'Free usage exceeded' }).kind).toBe('usage-limit');
+    // Provider plan cap → the generic error card, never the upgrade card.
+    expect(turnErrorCard({ errorText: 'The usage limit has been reached' }).kind).toBe('error');
     expect(turnErrorCard({ errorText: 'ModelNotFound', errorDetails: { provider: 'openai' } })).toEqual({
       kind: 'error',
       text: 'ModelNotFound',

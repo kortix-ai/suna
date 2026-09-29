@@ -86,8 +86,6 @@ export const ALLOWED_EXTENSIONS = [
   '.kanvax',
 ] as const;
 
-export const EXTRACTABLE_EXTENSIONS = ['.zip'] as const;
-
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -109,9 +107,4 @@ export function isAllowedFile(file: { name: string; size?: number }): { allowed:
   }
 
   return { allowed: true };
-}
-
-export function isExtractableArchive(file: { name: string }): boolean {
-  const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-  return EXTRACTABLE_EXTENSIONS.includes(ext as any);
 }

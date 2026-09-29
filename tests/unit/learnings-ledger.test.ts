@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -56,7 +57,7 @@ describe('the learnings ledger', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('keeps MEMORY.md equal to what scripts/index.sh generates', () => {
+  it('keeps MEMORY.md listing the lines scripts/index.sh generates, in any order', () => {
     let failure = '';
     try {
       execFileSync('bash', [join(LEDGER, 'scripts', 'index.sh'), '--check'], { stdio: 'pipe' });
@@ -64,5 +65,33 @@ describe('the learnings ledger', () => {
       failure = String((error as { stderr?: Buffer }).stderr ?? error);
     }
     expect(failure).toBe('');
+  });
+
+  it('accepts an index reordered by a squash merge and rejects one that lost a line', () => {
+    // A squash merge on GitHub keeps a branch's index line below entries merged
+    // after it branched. That drift must not turn main red; a lost line must.
+    const copy = mkdtempSync(join(tmpdir(), 'learnings-'));
+    try {
+      cpSync(LEDGER, copy, { recursive: true });
+      const memory = join(copy, 'MEMORY.md');
+      const check = () => {
+        try {
+          execFileSync('bash', [join(copy, 'scripts', 'index.sh'), '--check'], { stdio: 'pipe' });
+          return 0;
+        } catch {
+          return 1;
+        }
+      };
+      const lines = readFileSync(memory, 'utf8').split('\n');
+      const first = lines.findIndex((line) => line.startsWith('- `'));
+      const moved = [...lines];
+      [moved[first], moved[first + 1]] = [moved[first + 1], moved[first]];
+      writeFileSync(memory, moved.join('\n'));
+      expect(check()).toBe(0);
+      writeFileSync(memory, lines.filter((_, i) => i !== first).join('\n'));
+      expect(check()).toBe(1);
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
   });
 });

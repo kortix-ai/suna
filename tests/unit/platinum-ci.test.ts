@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { PREVIEW_HOST_RAM_MB } from '../src/core/preview-session-reaper';
 import {
   CI_DOCKER_COMPOSE_AMD64_SHA256,
   CI_DOCKER_COMPOSE_VERSION,
@@ -43,10 +44,20 @@ describe('Platinum CI worker plan', () => {
     expect(platinumWarmReadinessTimeoutMs(undefined)).toBe(120_000);
   });
 
+  // Platinum refuses to start a sandbox with less RAM than its template was
+  // captured with: `ram_mb=8192 is below the template minimum (16384)`. #7955
+  // cut preview hosts to 8 GB and left the templates at 16 GB, so every NEW
+  // preview host failed on 2026-09-28 (a running host is reused and hid it).
+  test('the templates never ask for more RAM than a preview host gets', () => {
+    expect(buildPlatinumTemplateSpec({ lockHash, repository: 'kortix-ai/suna', cacheSha: sha }).default_ram_mb)
+      .toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
+    expect(buildPlatinumWarmTemplateRequest(lockHash).default_ram_mb).toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
+  });
+
   test('uses one content-addressed template for one lockfile', () => {
-    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v14');
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v14-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb-base');
+    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v15');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v15-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -56,7 +67,7 @@ describe('Platinum CI worker plan', () => {
     expect(spec.name).toBe(platinumBaseTemplateName(lockHash));
     expect(spec.base_image).toBe(PLATINUM_CI_NODE_IMAGE);
     expect(spec.default_cpu).toBe(8);
-    expect(spec.default_ram_mb).toBe(16_384);
+    expect(spec.default_ram_mb).toBe(PREVIEW_HOST_RAM_MB);
     expect(spec.default_disk_gb).toBe(50);
     expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
@@ -85,7 +96,7 @@ describe('Platinum CI worker plan', () => {
         timeoutSec: 2_700,
       },
       default_cpu: 8,
-      default_ram_mb: 16_384,
+      default_ram_mb: PREVIEW_HOST_RAM_MB,
       default_disk_gb: 50,
     });
     for (const step of spec.steps) {

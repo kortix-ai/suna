@@ -2130,6 +2130,12 @@ interface SessionChatProps {
   /** Start scrolled to the top instead of the bottom (e.g. sub-session modal viewer) */
   initialScrollTop?: boolean;
   /**
+   * The Kortix session (`<projectId>/<sessionId>`) a read-only sub-agent
+   * session runs inside. With it, the sub-agent's saved transcript paints while
+   * the computer is off; without it, only the running computer can answer.
+   */
+  savedHistoryScope?: string;
+  /**
    * Fired once this component is painting a real surface — the conversation or
    * the not-found card — rather than its own "starting" loader.
    *
@@ -2182,6 +2188,7 @@ export function SessionChat({
   readOnly,
   inputReplacement,
   initialScrollTop,
+  savedHistoryScope,
   onContentReady,
   deferComposerFocus,
 }: SessionChatProps) {
@@ -2347,7 +2354,10 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const localSync = useSessionSync(sessionState ? '' : sessionId);
+  const localSync = useSessionSync(
+    sessionState ? '' : sessionId,
+    savedHistoryScope ? { kortixSessionScope: savedHistoryScope, savedChild: true } : undefined,
+  );
   // The page's `useSession` runs with `subscribeMessages: false`, so its
   // `messages` is a render-time snapshot and the page does not re-render per
   // streamed delta. The live rows are read HERE, where they are drawn.

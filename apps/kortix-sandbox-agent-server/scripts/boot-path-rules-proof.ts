@@ -10,7 +10,7 @@
  *
  * Exit code 1 when a rule passes on the OLD tree — that rule catches nothing.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { evaluateBootPathRules, productionSources } from '../src/__tests__/helpers/boot-path-rules'
@@ -27,7 +27,12 @@ try {
   const untar = Bun.spawnSync(['tar', '-x', '-C', staging], { stdin: archive.stdout })
   if (untar.exitCode !== 0) throw new Error(`tar failed: ${untar.stderr.toString()}`)
 
-  const old = await productionSources(join(staging, prefix))
+  // A tree from before the layered layout (no `src/services/`) keeps the
+  // release store at `boot-config.ts`. Map that name, so each rule judges the
+  // code and not a path that moved. `harness/` is the same in both layouts.
+  const legacyName = (name: string) => (name === 'boot-config.ts' ? 'services/config-release/boot-config.ts' : name)
+  const layered = existsSync(join(staging, prefix, 'services'))
+  const old = (await productionSources(join(staging, prefix))).map((file) => (layered ? file : { ...file, name: legacyName(file.name) }))
   const current = await productionSources(srcRoot)
   const oldVerdicts = evaluateBootPathRules(old)
   const currentVerdicts = evaluateBootPathRules(current)

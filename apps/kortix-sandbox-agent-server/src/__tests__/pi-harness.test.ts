@@ -14,15 +14,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadConfig } from '../config'
-import { resetKortixEventBusForTests } from '../kortix-event-bus'
-import { buildDaemonApp } from '../proxy'
-import { requirePiConfig } from '../harness/pi/config'
-import { createPiHarnessService, type PiHarnessService } from '../harness/pi/service'
-import type { PiBootState } from '../harness/pi/boot-state'
-import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '../harness/pi/extensions/host'
-import { ensureProjectPackageBundle } from '../harness/pi/extensions/bundle'
+import { loadConfig } from '@/harness/harness'
+import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { buildDaemonApp } from '@/app/server'
+import { requirePiConfig } from '@/harness/pi/config'
+import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
+import type { PiBootState } from '@/harness/pi/boot-state'
+import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
+import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
+import { readHostHealth } from '@/harness/shared/host-health'
 
 const TOKEN = 'pi-test-token'
 const MODEL_ID = 'test-model'
@@ -263,6 +264,13 @@ describe('pi harness', () => {
     expect(after.status).toBe('ok')
     expect(after.opencode).toBe('ok')
     expect(after.model).toBe(`kortix/${MODEL_ID}`)
+    // The host facts every harness reports (E19): pi's runtime_truth is the
+    // pure read — identity real, components unknown until pi runs the ticker.
+    const truth = after.runtime_truth as { daemon_build: unknown; components: Record<string, { state: string }> }
+    expect(truth.daemon_build).toBeDefined()
+    expect(Object.keys(truth.components).sort()).toEqual(['catalog', 'cli', 'config_release', 'daemon', 'managed_skills'])
+    const host = await readHostHealth({ cfg: loadConfig(r.env), bootTime: Date.now(), bootState: r.bootState, staticWebPort: null, resources: () => null })
+    expect(Object.keys(after)).toEqual(expect.arrayContaining(Object.keys(host)))
   })
 
   test('a failed pi start is a boot_error, not a silent down', async () => {

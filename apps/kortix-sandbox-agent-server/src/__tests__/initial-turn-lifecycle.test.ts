@@ -7,8 +7,8 @@ import {
   relayInitialTurnAcceptedToApi,
   relayTurnBeginAfterInitialAcceptance,
   resetClaimedInitialTurnForTests,
-} from '../harness/open-code/boot';
-import type { OpenCodeBootState as SandboxBootState } from '../harness/open-code/boot-state';
+} from '@/harness/open-code/boot';
+import type { OpenCodeBootState as SandboxBootState } from '@/harness/open-code/boot-state';
 
 const KEYS = [
   'KORTIX_PROJECT_ID',
@@ -36,11 +36,15 @@ afterEach(() => {
   }
 });
 
+// Every fake server binds 127.0.0.1, the address the code under test calls. On
+// macOS a wildcard port-0 bind can share its port with another process's
+// 127.0.0.1 listener, and the fetch then reaches that process instead.
 describe('daemon-delivered initial turn lifecycle', () => {
   test('claims the first prompt with the single session credential', async () => {
     let observed: { authorization: string | null; body: unknown } | null = null;
     const server = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       async fetch(request) {
         observed = {
           authorization: request.headers.get('authorization'),
@@ -80,6 +84,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     let requests = 0;
     const server = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       fetch() {
         requests += 1;
         if (requests === 1) return Response.json({ error: 'temporary' }, { status: 503 });
@@ -140,6 +145,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     let observed: { authorization: string | null; body: Record<string, unknown> } | null = null;
     const server = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       async fetch(request) {
         observed = {
           authorization: request.headers.get('authorization'),
@@ -176,6 +182,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     const lifecycleRelays: Array<Record<string, unknown>> = [];
     const server = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       async fetch(request) {
         const path = new URL(request.url).pathname;
         // The routes the probe reads on OpenCode 1.18.23: `msg_new` was never
@@ -238,6 +245,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     let acceptanceRelays = 0;
     const server = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       async fetch(request) {
         if (request.method === 'GET') {
           if (new URL(request.url).pathname === '/session/status') {
@@ -281,6 +289,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     const pickupServer = (relays: Array<Record<string, unknown>>, stage: () => Stage) =>
       Bun.serve({
         port: 0,
+        hostname: '127.0.0.1',
         async fetch(request) {
           const path = new URL(request.url).pathname;
           if (request.method === 'GET') {

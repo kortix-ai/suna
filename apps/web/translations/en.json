@@ -38,6 +38,7 @@
     "deleteAccount": "Delete account",
     "connectAccount": "Connect account",
     "oauthWaiting": "Waiting for authorization…",
+    "oauthFinishing": "Signed in. Saving your account…",
     "oauthExpired": "Authorization timed out. Try again.",
     "oauthPrivateDescription": "Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.",
     "chatGptSubscription": "ChatGPT subscription",
@@ -45,6 +46,7 @@
     "manageChatGptAccounts": "Manage ChatGPT accounts",
     "connect": "Connect",
     "connectChatGpt": "Connect ChatGPT",
+    "reconnectChatGpt": "Reconnect ChatGPT",
     "noChatGptAccounts": "No ChatGPT accounts yet",
     "oauthCreationDescription": "Sign in with your ChatGPT Plus or Pro account. Kortix stores the login encrypted and never shows it.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -237,7 +239,8 @@
       "actionCreate": "Create a new repository",
       "actionImport": "Import an existing repository",
       "ownerTypePersonal": "Personal account",
-      "ownerTypeOrg": "Organization"
+      "ownerTypeOrg": "Organization",
+      "createPersonalAuthorize": "Kortix asks GitHub for your authorization the first time you create a repository in a personal account."
     }
   },
   "projectHome": {
@@ -889,6 +892,24 @@
         "empty": "No builds recorded yet. The platform default builds once globally; custom templates build on first use."
       }
     },
+    "connectedApps": {
+      "title": "Connected apps",
+      "description": "Apps you signed in to with Kortix, such as MCP clients. Each acts as you until you revoke it.",
+      "emptyTitle": "No connected apps",
+      "emptyDescription": "Apps you approve with Sign in with Kortix, such as Claude, Cursor or Codex over MCP, show here.",
+      "loadFailed": "Could not load connected apps",
+      "retry": "Retry",
+      "unverified": "Unverified app",
+      "lastActive": "Active {time}",
+      "approved": "Approved {time}",
+      "revokeApp": "Revoke access",
+      "actionsFor": "Actions for {name}",
+      "revokeTitle": "Revoke this app?",
+      "revokeDescription": "{name} loses access to your Kortix account at once. To use it again, you approve it again.",
+      "revoke": "Revoke",
+      "revoked": "App access revoked",
+      "revokeFailed": "Could not revoke the app"
+    },
     "featureFlags": {
       "stability": {
         "experimental": "Experimental",
@@ -976,6 +997,14 @@
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
+        },
+        "mcp": {
+          "name": "MCP server",
+          "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
+        },
+        "reminders": {
+          "name": "Reminders",
+          "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
         }
       }
     },
@@ -1410,7 +1439,7 @@
     "upgradePlan": "Upgrade plan",
     "sessionList": {
       "loadError": "Failed to load sessions",
-      "empty": "No sessions yet",
+      "empty": "Sessions you start will show up here",
       "noMatches": "No sessions match the active filters.",
       "actions": "Session actions",
       "actionsFor": "Actions for {title}",
@@ -1446,6 +1475,7 @@
       "createAccount": "Create an account…",
       "settings": "Settings",
       "downloadApp": "Download app",
+      "connectMcp": "Connect MCP",
       "logOut": "Log out",
       "find": "Find a project…",
       "accountSettings": "Account settings",
@@ -1523,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Loading…",
-    "loadMoreSessions": "Load more sessions"
+    "loadMoreSessions": "Load more sessions",
+    "reminders": "Reminders"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -2771,6 +2802,21 @@
       }
     }
   },
+  "firstChat": {
+    "title": "Your first chat with Kortix",
+    "greeting": "Welcome, {name}. I'm Kortix.",
+    "greetingNoName": "Welcome. I'm Kortix.",
+    "intro": "Bring me anything: a task, a workflow, or a half-formed idea. We'll figure it out together.",
+    "question": "Where do you want to start?",
+    "recommendTools": "Recommend tools",
+    "updateMemory": "Update memory",
+    "placeholder": "Tell Kortix what you're working on",
+    "toolsPrompt": "Recommend tools and connectors that fit my workflow. Ask me what I work on first if you need to.",
+    "memoryPrompt": "Get to know how I work. Ask me one short question at a time about my role, what I work on, the tools I use, and how I like to work. Save my answers to project memory so future sessions start with them.",
+    "inviteTeammate": "Invite teammate",
+    "connectSlack": "Connect Slack",
+    "slackConnected": "Slack connected"
+  },
   "announcements": {
     "memories": {
       "title": "Introducing Memories",
@@ -3591,7 +3637,7 @@
       "openRow1Title": "Open source",
       "openRow1Body": "One of the largest open AI-for-work platforms. Read every line — nothing is a black box.",
       "openRow2Title": "Any model, your keys",
-      "openRow2Body": "Bring any provider, or the Claude, ChatGPT, or Cursor subscription you already pay for.",
+      "openRow2Body": "Bring any provider, or the ChatGPT subscription you already pay for.",
       "openRow3Title": "Self-host anywhere",
       "openRow3Body": "Managed cloud, your VPC, on-prem, even air-gapped. Nothing phones home.",
       "openRow4Title": "Fork a whole company",
@@ -10009,6 +10055,9 @@
       "text0e47f09a748f": "Zoom in",
       "text0e498a7ede47": "Enabled {value0}",
       "text0e52f6b9d025": "Markdown",
+      "text4cab70e9226b": "Save as PDF",
+      "textce87352f1102": "This file is too large to save as PDF. Download the Markdown instead.",
+      "text3b0c86f182b0": "Couldn't prepare the PDF.",
       "text0e570ca6fabe": "Source",
       "text0e613afafe9e": "What never changes",
       "text0e66373f45dc": "Label",
@@ -10307,7 +10356,6 @@
       "text1785635529d1": "Provision on demand",
       "text178880c99bfa": "One-shot database migration on every roll",
       "text1797cd1f264b": "Your ChatGPT subscription",
-      "text17b2d4b0499f": "Medium risk",
       "text17c982d8eb68": "Trigger settings",
       "text17ca81a2d026": "A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the project, and every outbound call is assembled on our side of the wall.",
       "text17ccfa5b681e": "Maintenance",
@@ -11947,7 +11995,6 @@
       "text467065a16a2e": "Textarea",
       "text467d579386a6": "An agent never exceeds its human",
       "text46800e585f61": "Pass a DOCX URL with the",
-      "text4682a7f79721": "High risk",
       "text46866b323e0b": "What an agent means to keep is committed on the session branch and proposed back toward main. Merge is default-deny for agents; an admin can grant project.cr.merge in kortix.yaml, and widening that grant is itself a reviewed change.",
       "text469ad0b25e29": "Still in \"Attributes & Claims\", click \"Add a group claim\".",
       "text469bcc02c9f9": "Every host port, reassigned automatically if one is already taken",
@@ -14665,7 +14712,6 @@
       "text93d6bb239aae": "No policy = a locked door: Cloudflare denies everyone until at least one Allow policy exists. This is the most common \"SSO redirects but access is denied\" cause.",
       "text93d6de7104f0": "Remove icon",
       "text93dcf1d1d25e": "Weekends",
-      "text93e404732659": "Start a session to give this project its first task.",
       "text93f4b14c9e2b": "No active notifications",
       "text93f5222a6e5c": "- Escalate only what needs a human",
       "text93fbaf02beca": "01 · Isolation",
@@ -15012,7 +15058,7 @@
       "text9d48410d14d3": "Enterprise feature",
       "text9d4b2eae7c42": "The shipped default is permissive — an action runs unless you have said otherwise. For a sales project the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.",
       "text9d53e28e9e39": "Project-by-project access is listed in the Projects section on this page.",
-      "text9d54b2fd9149": "Bring any provider, or the ChatGPT, Claude or Cursor subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.",
+      "text9d54b2fd9149": "Bring any provider, or the ChatGPT subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.",
       "text9d5adef979f7": "Grandfathered",
       "text9d6304b7f8dc": "Identity Management → Configuration",
       "text9d74727714db": "Dismissed",
@@ -16015,7 +16061,6 @@
       "textba05a1dd202f": "Push what open AGI means: fully autonomous cognitive beings as digital coworkers.",
       "textba0e4962bc0f": "size-3.5 shrink-0",
       "textba0e4afa9340": "Symbol",
-      "textba13e1e74457": "Low risk",
       "textba1eac1c3fa4": "Accounts that started at least one session",
       "textba24f124cec0": "Learn more.",
       "textba34a96f2969": "Last updated:",
@@ -18705,6 +18750,7 @@
       "texta23bbd5b005e": "Checked sandbox preview CORS access",
       "textaf6efe6ab19e": "Checked session agent config freshness",
       "text24ce0e45fb23": "Checked sign-in email",
+      "textef01adfb4372": "Read the sign-in configuration",
       "text4fde9c00516c": "Checked the sandbox entrypoint",
       "text412f891b55a9": "Cloned or fetched Git repository",
       "text1fd8295dda82": "Closed change request",
@@ -19195,7 +19241,23 @@
       "text5176d59f25fd": "Resolved session config release",
       "text273c48dbf3b9": "Registered push notification device",
       "textbb666ddf7a57": "Removed push notification device",
-      "text397ab5aecbbf": "Relayed session permission request"
+      "text397ab5aecbbf": "Relayed session permission request",
+      "text3ec6c235548a": "Read MCP server metadata",
+      "text7740934de920": "Registered an OAuth client",
+      "textcd36423ea12a": "Called the MCP server",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Listed connected apps",
+      "text37698a37f9d2": "Revoked a connected app",
+      "text8c8fb214b592": "Authorized GitHub as a user",
+      "text4192bb1e9ee5": "Listed session reminders",
+      "texteee2410ea3db": "Created session reminder",
+      "text33954223cc7e": "Turned session reminder on or off",
+      "textb7ece0360b75": "Deleted session reminder",
+      "text9dcde51d9ff2": "Agent's description",
+      "textfa0db737cb09": "Written by the agent and not verified. The parameters below are what the connector receives.",
+      "text2edf70730233": "Message to the agent (optional)",
+      "texte88286ad9739": "Listed project reminders"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -19238,108 +19300,53 @@
     "skip": "Skip",
     "skipForNow": "Skip for now",
     "progress": "Setup progress",
-    "demo": {
-      "title": "Book a 20-minute setup call",
-      "description": "A couple of focused minutes with the team to get your command center dialed in."
-    },
-    "kickoff": {
-      "tools": " I connected these tools too: {count}. Use them if they help.",
-      "noDomain": "I finished setting up my project.{toolsClause} Introduce yourself, explain what you can do, and ask what I need help with first.",
-      "withDomain": "I finished setting up my project for {domain}. Research the company and tell me what you find.{toolsClause} Then ask what I need help with first."
-    },
-    "company": {
-      "title": "Tell us about your company",
-      "description": "Your agent uses the domain to research your own company. Nothing is shared publicly.",
+    "work": {
+      "title": "What do you mostly work on?",
+      "description": "Kortix uses this to suggest your first tasks.",
+      "ariaLabel": "What you work on",
+      "noteLabel": "Tell us in a few words",
+      "notePlaceholder": "For example, research or recruiting",
       "continue": "Continue",
-      "skipSurvey": "Skip survey",
-      "domain": "Company domain",
-      "invalidDomain": "Enter a valid link like acme.com or https://acme.com"
-    },
-    "tools": {
-      "title": "Connect your tools",
-      "description": "Pick the apps you live in and authorize them right here. Your agent can read, write, and act across everything you connect.",
-      "continue": "Continue",
-      "skipForNow": "Skip for now",
-      "searchPlaceholder": "Search 3,000+ apps…",
-      "notConfiguredTitle": "App connect isn’t configured on this deployment",
-      "notConfiguredDescription": "You can still continue and connect tools later from Connectors.",
-      "noMatches": "Nothing matches “{query}”.",
-      "trySearch": "Try a search.",
-      "addConnection": "Add a {app} connection",
-      "connected": "Connected",
-      "loadMore": "Load more",
-      "addApp": "Add {app}",
-      "appFallback": "app",
-      "connectionDescription": "Create a connector connection before authorization. You can add more than one connection for the same app.",
-      "categories": {
-        "email": "Email",
-        "aiAgents": "AI agents",
-        "developerTools": "Developer tools",
-        "scheduling": "Scheduling and booking",
-        "notes": "Notes",
-        "spreadsheets": "Spreadsheets",
-        "artificialIntelligence": "Artificial intelligence",
-        "socialMedia": "Social media",
-        "fileStorage": "File management and storage",
-        "documents": "Documents",
-        "crm": "CRM",
-        "projectManagement": "Project management",
-        "productivity": "Productivity",
-        "analytics": "Analytics",
-        "webScraping": "AI web scraping",
-        "videoAudio": "Video and audio",
-        "teamChat": "Team chat",
-        "onlineCourses": "Online courses",
-        "taskManagement": "Task management",
-        "design": "Images and design",
-        "databases": "Databases",
-        "newsLifestyle": "News and lifestyle",
-        "ecommerce": "E-commerce",
-        "signatures": "Signatures"
+      "options": {
+        "founder": "Running a company",
+        "engineering": "Engineering",
+        "product_design": "Product and design",
+        "sales": "Sales",
+        "marketing": "Marketing",
+        "finance_ops": "Operations",
+        "support": "Support and success",
+        "other": "Something else"
       }
     },
-    "slack": {
-      "title": "Add Kortix to Slack",
-      "description": "This is where most teams actually use Kortix — @mention your agent, kick off tasks, get results in the channel.",
-      "continue": "Continue",
-      "notNow": "Not now",
-      "connected": "Connected to Slack",
-      "installMethod": "Slack install method",
-      "add": "Add to Slack",
-      "addDescription": "One click, nothing to configure",
-      "custom": "Use a custom Slack app",
-      "customDescription": "For self-hosted workspaces, or when managed install is unavailable",
-      "waiting": "Waiting for approval in Slack…",
-      "waitingDescription": "Complete the install in the Slack popup. Kortix checks the connection every 2.5 seconds.",
-      "bringOwn": "Bring your own Slack app",
-      "bringOwnDescription": "For self-hosted setups or workspace-scoped installs.",
-      "closeCustom": "Close custom Slack app setup"
+    "apps": {
+      "title": "Which apps do you use?",
+      "description": "Click an app to connect it. You can add more any time.",
+      "ariaLabel": "Apps",
+      "searchPlaceholder": "Search apps or categories",
+      "clearSearch": "Clear search",
+      "connectApp": "Connect {app}",
+      "appConnected": "{app} is connected",
+      "connectedCount": "{count} connected",
+      "noMatches": "No apps match “{query}”",
+      "notConfiguredTitle": "Apps are not set up here",
+      "notConfiguredDescription": "This deployment has no app catalogue. You can add connectors later from Settings.",
+      "continue": "Continue"
     },
     "plan": {
-      "title": "How do you want to power your agent?",
-      "descriptionConnected": "A model is already connected, so you’re good to go. Add another provider or upgrade if you want more.",
-      "descriptionDisconnected": "Your agent needs a model to think with. Nothing happens until you continue.",
+      "title": "Which models should Kortix use?",
+      "description": "You can change this any time in Settings.",
       "seePlans": "See plans",
+      "open": "Open workspace",
       "addKey": "Add a key",
-      "continue": "Continue",
       "modelAccess": "Model access",
-      "useKortix": "Use Kortix models",
-      "useKortixDescription": "Instant access, higher limits, nothing to configure",
-      "connectAnother": "Connect another provider",
-      "bringKey": "Bring your own API key",
-      "providerDescription": "Anthropic, OpenAI, or any other provider",
-      "keepCurrent": "Keep what I have",
-      "decideLater": "Decide later",
-      "keepCurrentDescription": "Carry on with the model that’s already connected",
-      "decideLaterDescription": "The composer will ask the first time you send a task"
-    },
-    "done": {
-      "title": "Your command center is live",
-      "descriptionWithTools": "{count} tools connected. Opening starts your first conversation with Kortix.",
-      "description": "Opening starts your first conversation with Kortix.",
-      "openProject": "Open project",
-      "firstMessage": "Your first message",
-      "bookCall": "Book a 20-minute setup call with Marko"
+      "useKortix": "Kortix models",
+      "recommended": "Recommended",
+      "useKortixDescription": "Ready now. Runs on your plan’s credits.",
+      "useKortixNeedsPlan": "Needs a Kortix plan or credits.",
+      "bringKey": "My own API key",
+      "providerDescription": "Anthropic, OpenAI, or another provider.",
+      "keyConnected": "A key is connected.",
+      "decideLater": "Decide later"
     }
   },
   "commandPalette": {
@@ -20128,8 +20135,8 @@
     "textOnly": "Text only",
     "zdrTitle": "Zero data retention",
     "zdrDescription": "Zero data retention (ZDR) means the model provider processes your text and images, then does not keep the input or reply after the request. Kortix stores your project and conversation history separately.",
-    "usProvidersTitle": "US-based providers",
-    "usProvidersDescription": "Each Kortix model runs on one pinned inference provider headquartered in the US. Requests never fall back to another provider.",
+    "usProvidersTitle": "Hosted in the US",
+    "usProvidersDescription": "Kortix models run in US data centers. We only partner with American inference providers.",
     "hiddenHint": "Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.",
     "hidden": "Hidden from picker",
     "disableModel": "Disable model",
@@ -20300,5 +20307,66 @@
     "connectFailed": "Could not connect the account. Try again.",
     "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the project's connection managers can also manage.",
     "ownerMeta": "Your account"
+  },
+  "connectMcp": {
+    "title": "Connect Kortix over MCP",
+    "description": "Add this URL to Claude, ChatGPT, Cursor, Codex or any MCP client. The client asks you to sign in to Kortix the first time. Nothing to install.",
+    "urlLabel": "MCP URL",
+    "addToClient": "Add it to your client",
+    "other": "Other",
+    "claudeSteps": "In Claude (web or desktop), open Settings → Connectors → Add custom connector, paste the URL, and sign in.",
+    "claudeCodeHint": "Then run /mcp in Claude Code and sign in.",
+    "otherHint": "ChatGPT (developer mode), VS Code, Windsurf and other clients: add a remote MCP server with the URL above, or this JSON.",
+    "addToCursor": "Add to Cursor",
+    "signInOnFirstUse": "Cursor asks you to sign in to Kortix on first use.",
+    "docs": "Docs",
+    "done": "Done",
+    "copy": "Copy"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "Unverified app",
+    "unverifiedBody": "{client} registered itself with Kortix. Kortix has not verified who runs it. Allow it only if you are connecting it yourself right now.",
+    "redirectsTo": "Sends you back to"
+  },
+  "reminders": {
+    "title": "Reminders",
+    "description": "Scheduled check-ins that re-prompt a session. Agents set them while they work; each one fires until it is removed.",
+    "docs": "How reminders work",
+    "tabActive": "Active",
+    "tabPaused": "Paused",
+    "tabDone": "Done",
+    "emptyTitle": "No reminders",
+    "emptyDescription": "When an agent or a person sets a reminder on a session, it shows up here.",
+    "emptyTabDescription": "Nothing in this list.",
+    "loadFailed": "Could not load reminders",
+    "retry": "Retry",
+    "sessionFilter": "Session: {name}",
+    "clearFilter": "Show all sessions",
+    "untitledSession": "Untitled session",
+    "once": "Once",
+    "every": "Every {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Next {time}",
+    "firedAt": "Fired {time}",
+    "pausedLabel": "Paused",
+    "doneLabel": "Done",
+    "pause": "Pause",
+    "resume": "Resume",
+    "remove": "Remove",
+    "openSession": "Open session",
+    "removeTitle": "Remove this reminder?",
+    "removeDescription": "It stops firing and is deleted. The session keeps its history.",
+    "paused": "Reminder paused",
+    "resumed": "Reminder resumed",
+    "removed": "Reminder removed",
+    "updateFailed": "Could not update the reminder",
+    "chipLabel": "{count, plural, one {# active reminder} other {# active reminders}}",
+    "chipTitle": "Reminders on this session",
+    "manage": "Manage reminders",
+    "cardLabel": "Reminder",
+    "cardOneTime": "One-time",
+    "cardRecurring": "Recurring",
+    "cardManage": "Manage",
+    "gateDescription": "Turn on Reminders to let agents and people schedule check-ins that re-prompt a session."
   }
 }

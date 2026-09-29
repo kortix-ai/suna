@@ -6,6 +6,8 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
+import { runWithContext } from '../../lib/request-context';
+import { attachInboundAuditScope } from '../../shared/audit-scope';
 import {
   SESSION_EVENT_RATE_LIMITED_ACTION,
   __resetAuditRateGuardForTest,
@@ -33,6 +35,8 @@ let insertedValues: Array<Record<string, unknown>> = [];
 let insertStatements: Array<Array<Record<string, unknown>>> = [];
 /** When set, the Nth (0-based) statement rejects with this error. */
 let failStatementAt: { index: number; error: unknown } | null = null;
+/** Wall-clock milliseconds each mocked INSERT consumes; 0 by default. */
+let insertDelayMs = 0;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
@@ -76,6 +80,7 @@ mock.module('../../shared/db', () => ({
         return {
           onConflictDoNothing: () => ({
             returning: async () => {
+              if (insertDelayMs > 0) await Bun.sleep(insertDelayMs);
               if (failStatementAt?.index === index) throw failStatementAt.error;
               return values.map((value) => ({ eventId: value.eventId }));
             },
@@ -123,6 +128,7 @@ beforeEach(() => {
   insertedValues = [];
   insertStatements = [];
   failStatementAt = null;
+  insertDelayMs = 0;
 });
 
 afterAll(() => {
@@ -449,5 +455,102 @@ describe('audit ingest contention', () => {
 
     expect(response.status).toBe(500);
     expect(response.headers.get('retry-after')).toBeNull();
+  });
+});
+
+/**
+ * The ingest loop against the request's 25s server deadline
+ * (`remainingIngestBudgetMs` in project-audit.ts). A multi-chunk batch under a
+ * slow database used to run past the deadline mid-loop and die with the
+ * error-level `request exceeded the 25s server processing deadline` abort
+ * (prod 2026-09-28: the route's dominant error class, hours of 700-1000
+ * lines/h against a 141/h baseline). Now the loop stops at a chunk boundary
+ * and answers with the same controlled contended 503 the lock path returns.
+ */
+describe('audit ingest request-deadline budget', () => {
+  beforeEach(() => {
+    process.env.KORTIX_AUDIT_INGEST_CHUNK = '25';
+  });
+
+  afterAll(() => {
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+  });
+
+  function event(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `budget-${n}`,
+      type: 'tool.execute.after',
+      occurred_at: '2026-09-28T12:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'd'.repeat(64),
+    };
+  }
+
+  /**
+   * Drive the route inside a request context whose inbound audit scope carries
+   * the given `startedAt` — exactly what the edge does in production
+   * (`shared/audit-edge.ts`).
+   */
+  async function postWithStartedAt(count: number, startedAtMsAgo: number) {
+    return runWithContext(
+      'POST',
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      async () => {
+        attachInboundAuditScope({
+          owner: 'hono',
+          method: 'POST',
+          startedAt: Date.now() - startedAtMsAgo,
+        });
+        const response = await projectsApp.request(
+          `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ events: Array.from({ length: count }, (_, i) => event(i + 1)) }),
+          },
+        );
+        return {
+          status: response.status,
+          retryAfter: response.headers.get('retry-after'),
+          body: (await response.json()) as Record<string, unknown>,
+        };
+      },
+    );
+  }
+
+  test('a request with no budget left for another chunk 503s before any insert', async () => {
+    // 20s spent before the handler: ~5s left, under the ~23s one-chunk budget.
+    const { status, retryAfter, body } = await postWithStartedAt(200, 20_000);
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({ accepted: 200, inserted: 0, retry_after_seconds: 5 });
+    expect(typeof body.error).toBe('string');
+    // Nothing reached the database; the relay's spool keeps the whole batch.
+    expect(insertStatements).toHaveLength(0);
+  });
+
+  test('a fresh request still writes a full 200-row batch', async () => {
+    const { status, body } = await postWithStartedAt(200, 1_000);
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ accepted: 200, inserted: 200 });
+    expect(insertStatements.map((batch) => batch.length)).toEqual(
+      Array.from({ length: 8 }, () => 25),
+    );
+  });
+
+  test('stops at a chunk boundary once the budget is spent, keeping committed rows', async () => {
+    // Chunk 1 is attempted (~23.8s left) and consumes 1.5s in a slow
+    // statement; the ~22.3s left can no longer cover another chunk.
+    insertDelayMs = 1_500;
+    const { status, retryAfter, body } = await postWithStartedAt(200, 1_200);
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({ accepted: 200, inserted: 25, retry_after_seconds: 5 });
+    expect(insertStatements).toHaveLength(1);
   });
 });

@@ -1,14 +1,17 @@
-import { dispatchCli, isManagementSubcommand } from './cli'
-import { loadConfig } from './config'
-import { runGitCredentialHelper } from './git'
-import { resolveHarness, warmPiSystemPackages } from './harness/harness'
-import { kortixEventBus } from './kortix-event-bus'
-import { enableDaemonLogFile, logger } from './logger'
-import { runMonitorMode } from './monitor-mode'
-import { startStaticWebServer } from './static-web'
+import { dispatchCli, isManagementSubcommand } from '@/app/cli'
+import { runGitCredentialHelper } from '@/lib/git/git'
+import { harnessProtectedPathSegments, loadConfig, resolveHarness, warmPiSystemPackages, type HarnessBootContext } from '@/harness/harness'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
+import { enableDaemonLogFile, logger } from '@/lib/log/logger'
+import { runMonitorMode } from '@/app/monitor-mode'
+import { startStaticWebServer } from '@/services/static-web/static-web'
+import { startProxy } from '@/app/server'
+import { installShutdownHandlers } from '@/app/shutdown'
+import { bakeRuntimeAssetsState, registerHarnessAssets } from '@/services/runtime-assets/runtime-assets'
 
 async function main() {
   const bootTime = Date.now()
+  registerHarnessAssets((cfg) => resolveHarness(cfg).assets)
   const cfg = loadConfig()
   const selected = resolveHarness(cfg)
   const bootState = selected.createBootState()
@@ -30,9 +33,13 @@ async function main() {
   })
 
   // Static previews stay available while the repository and runtime boot.
-  const staticWeb = startStaticWebServer(cfg.staticPort)
+  const staticWeb = startStaticWebServer(harnessProtectedPathSegments(), cfg.staticPort)
   bootMark('static-web')
-  const context = { cfg, bootTime, bootState, bootMark, staticWeb }
+  const serve: HarnessBootContext['serve'] = (harness, projectEnv) => {
+    const server = startProxy(cfg, harness, bootTime, bootState, projectEnv, staticWeb.port)
+    return { server, shutdown: installShutdownHandlers(harness.lifecycle, server, staticWeb) }
+  }
+  const context: HarnessBootContext = { cfg, bootTime, bootState, bootMark, serve }
 
   // Warm-seed capture has always taken precedence over monitor selection.
   if (await selected.runWarmSeed?.(context)) return
@@ -65,6 +72,22 @@ if (import.meta.main) {
         process.stderr.write(`[warm-pi-packages] ${error instanceof Error ? error.message : String(error)}\n`)
         process.exit(1)
       })
+  } else if (subcommand === 'bake-runtime-assets-state') {
+    // Image build only: record which CLI, daemon, skill overlay and OpenCode
+    // this image carries, so a box booted from it states that on its FIRST
+    // health read instead of after its first reconcile. A missing artifact
+    // fails the build rather than shipping a box that reports a lie.
+    bakeRuntimeAssetsState()
+      .then((state) => {
+        process.stdout.write(`${JSON.stringify(state)}\n`)
+        process.exit(0)
+      })
+      .catch((error) => {
+        process.stderr.write(
+          `[bake-runtime-assets-state] ${error instanceof Error ? error.message : String(error)}\n`,
+        )
+        process.exit(1)
+      })
   } else if (subcommand === 'install-compiled-runtime') {
     const cfg = loadConfig()
     resolveHarness(cfg).installCompiledRuntime(cfg)
@@ -81,7 +104,7 @@ if (import.meta.main) {
   } else if (isManagementSubcommand(subcommand)) {
     // kortixd management CLI: version / install / update / rollback /
     // --health-check / --help. `serve` and any unrecognized verb fall through
-    // to the daemon below. See src/cli.ts.
+    // to the daemon below. See src/app/cli.ts.
     dispatchCli(process.argv.slice(2))
       .then((outcome) => {
         if (outcome.action === 'exit') process.exit(outcome.code)

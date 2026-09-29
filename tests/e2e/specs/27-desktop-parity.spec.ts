@@ -726,6 +726,20 @@ for (const runtime of runtimes) {
               enabled: true,
               accelerator: "CommandOrControl+W",
             });
+          // KRTX-48: a production build (the shipped channel) shows one
+          // "Change Kortix Instance…" entry and hides the developer presets.
+          const frontendMenu = await desktopApp.evaluate(({ Menu }) => {
+            const menu = Menu.getApplicationMenu();
+            return {
+              changeLabel:
+                menu?.getMenuItemById("kx-change-instance")?.label ?? null,
+              hasDevPresets: Boolean(menu?.getMenuItemById("kx-frontend-url")),
+            };
+          });
+          expect(frontendMenu).toEqual({
+            changeLabel: "Change Kortix Instance…",
+            hasDevPresets: false,
+          });
           await clickNativeMenu("kx-app-settings");
           await expect(page.getByRole("dialog")).toBeVisible();
           await page
@@ -2256,7 +2270,7 @@ nativeBrowserTest?.(
       await expect.poll(currentZoom).toBe(0.94);
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
 
-      for (const route of ["apps", "files"] as const) {
+      for (const route of ["apps", "files", "reminders"] as const) {
         await main.goto(`${baseURL}/projects/${project.id}/${route}`);
         const row = main
           .locator(".kx-titlebar-row[data-sidebar-collapsed='true']")

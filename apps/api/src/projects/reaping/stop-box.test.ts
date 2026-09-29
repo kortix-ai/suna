@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { logger } from '../../lib/logger';
 import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 
 // T11: close the live opencode turn on a box BEFORE `provider.stop()`
@@ -164,6 +165,54 @@ describe('stopExpiredBox — pre-stop abort', () => {
     expect(abortFetchCalls).toHaveLength(aborts);
     expect(callOrder).toEqual([...(aborts ? ['abort'] : []), 'provider.stop']);
     expect(providerStopCalls).toEqual(['ext-1']);
+  });
+
+  // KRTX-619: a bulk idle-reap stops a cohort at once; each box whose daemon is
+  // already going down rejects with `TimeoutError: The operation timed out.`.
+  // That is an expected miss (the abort never gates the stop), so it ships at
+  // info. A warn per box turned a routine reaper backlog into a log spike.
+  test('an unreachable daemon (timeout) is an expected miss: info, never warn', async () => {
+    abortFetchImpl = async () => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    };
+    const infoSpy = mock(() => {});
+    const warnSpy = mock(() => {});
+    const origInfo = logger.info;
+    const origWarn = console.warn;
+    logger.info = infoSpy as unknown as typeof logger.info;
+    console.warn = warnSpy as unknown as typeof console.warn;
+    try {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(outcome).toBe('stopped');
+      expect(infoSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      logger.info = origInfo;
+      console.warn = origWarn;
+    }
+  });
+
+  test('a non-timeout abort failure stays a warning', async () => {
+    abortFetchImpl = async () => {
+      throw new Error('ingress resolution exploded');
+    };
+    const infoSpy = mock(() => {});
+    const warnSpy = mock(() => {});
+    const origInfo = logger.info;
+    const origWarn = console.warn;
+    logger.info = infoSpy as unknown as typeof logger.info;
+    console.warn = warnSpy as unknown as typeof console.warn;
+    try {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(outcome).toBe('stopped');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(infoSpy).not.toHaveBeenCalled();
+    } finally {
+      logger.info = origInfo;
+      console.warn = origWarn;
+    }
   });
 
   test('a genuine provider.stop failure still reports errors, independent of the abort outcome', async () => {

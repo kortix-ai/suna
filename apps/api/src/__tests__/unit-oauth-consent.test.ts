@@ -73,7 +73,11 @@ mock.module('../config', () => ({
   config: { FRONTEND_URL: 'https://app.example', KORTIX_URL: 'https://api.example', API_KEY_SECRET: 'test-secret' },
 }));
 
-mock.module('../shared/db', () => ({ db: fake.db }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#8006 added one), and bun reports it as an unhandled
+// `Export named ... not found` between tests.
+const realDb = await import('../shared/db');
+mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
 
 const { oauthApp } = await import('../oauth');
 
@@ -142,6 +146,8 @@ describe('OAuth authorization request persistence + consent', () => {
       scope: 'profile kortix',
       scopes: ['profile', 'kortix'],
       remembered: false,
+      self_registered: false,
+      redirect_to: 'client.example',
     });
   });
 

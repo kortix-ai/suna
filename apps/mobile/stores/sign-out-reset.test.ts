@@ -1,22 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// The tab store is not imported here. Bun shares one module registry across
-// test files, and the persist middleware keeps the storage object it was
-// created with, so importing it under this mock breaks tab-store.test.ts.
-
-// In-memory AsyncStorage: the persisted stores write through it.
-const storage = new Map<string, string>();
-mock.module('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => storage.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      storage.set(key, value);
-    },
-    removeItem: async (key: string) => {
-      storage.delete(key);
-    },
-  },
-}));
+import { storage } from './in-memory-async-storage';
 
 let uuid = 0;
 mock.module('expo-crypto', () => ({ randomUUID: () => `uuid-${++uuid}` }));

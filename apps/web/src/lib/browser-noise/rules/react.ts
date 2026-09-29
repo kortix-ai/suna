@@ -430,8 +430,92 @@ export function isExpectedNextRecoveryBailoutNoise(input: {
     containsKnownPattern(stripErrorWrappers(normalizeString(input.message)), REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES);
 }
 
+// Digest-less React #419 ("The server could not finish this Suspense boundary,
+// likely due to an error during server rendering. Switched to client
+// rendering.") — the SIBLING of React #412 ("Connection closed.", the RSC
+// response-stream close already dropped by `isConnectionClosedNoise` in
+// `network.ts`).
+//
+// React throws #419 in `updateDehydratedSuspenseComponent`
+// (`ReactFiberBeginWork.js`) when it hydrates a dehydrated Suspense boundary
+// that is a PERMANENT FALLBACK (`isSuspenseInstanceFallback`) and the boundary's
+// digest is not `REACT_RECOVERABLE_DIGEST` (the empty string). React then
+// `retrySuspenseComponentWithoutHydrating(...)` — it SWITCHES THAT BOUNDARY TO
+// CLIENT RENDERING and reports the error through `onRecoverableError`. The
+// capture is the recoverable-client-render report, not a crash: the boundary
+// re-renders on the client and the page is fine.
+//
+// A boundary is left as a permanent fallback when a server-streamed RSC render
+// never finishes — the client navigation that requested it was superseded (a
+// second navigation, a redirect, a router.refresh, a tab close) or the RSC
+// response stream was cut. That abandoned render writes a `<template>` fallback
+// with NO `data-dgst`; `getSuspenseInstanceFallbackErrorDetails` then returns
+// `digest: undefined`, and React (which only special-cases the empty-string
+// digest) still throws #419 with `error.digest === undefined`. Next.js's own
+// `onRecoverableError` skips only the `BailoutToCSRError` digest
+// (`BAILOUT_TO_CLIENT_SIDE_RENDERING`) and the router digests, so this
+// digest-less #419 reaches the global `onerror` handler and Sentry.
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967) —
+// always the bare `Error` message `Minified React error #419; …`, mechanism
+// `auto.browser.global_handlers.onerror` (`handled:false` — UNCAUGHT, never
+// reached a React error boundary), NO `digest`, ONE minified React-chunk frame,
+// NO resolved first-party `apps/web/src/…` frame:
+//   - `0f0acef1…`: 8 occurrences / 0 identified users, release
+//     `be835a3720ec1ce4b859a4eb33a78f2d8e592bf8`, across `/dashboard`,
+//     `/accounts/<account_id>`, `/marketplace/<company>/<item>` and a session
+//     thread page; browsers Opera 135 / Windows 10 and Chrome.
+//   - `28722ba7…`: 12 occurrences / 0 identified users, release
+//     `a9378b74ce2d0f3aa1c1da2f48612fffa76220ec`, same routes; Chrome 153 /
+//     Android 10.
+//   - `605c1cbe…` (2) and `27f12854…` (1) are the same class on other chunks.
+// Every event's breadcrumbs are a `[runtime-env]` console line then a
+// `navigation` from the route to the SAME route — a client navigation that
+// superseded an in-flight RSC render. 23 occurrences over 3 days, 0 identified
+// users at all, self-healing: no user impact.
+//
+// The message + an ABSENT digest is the anchor. A 404 / HTTP-error or redirect
+// digest is the `next-recovery-bailout` class (handled above); a real
+// server-render error digest (a hash) keeps reporting, and the server-side
+// Sentry config captures the actual server error separately, so the digest-less
+// client duplicate carries no unique signal. A resolved first-party
+// `apps/web/src/…` frame keeps reporting (a real first-party
+// `throw new Error('The server could not finish this Suspense boundary…')`
+// de-minifies to `apps/web/src/…`). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no digest or
+// frame context, so a bare `#419` match there would swallow a real first-party
+// regression the negative guard exists to preserve; the frame- and
+// digest-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+export function isServerSuspenseBailoutNoise(input: {
+  message?: unknown;
+  digest?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!containsKnownPattern(message, REACT_SERVER_SUSPENSE_BAILOUT_MESSAGES)) {
+    return false;
+  }
+  // Only the digest-less capture is noise. A 404/HTTP-error or redirect digest
+  // is the `next-recovery-bailout` class (handled above); a real server-render
+  // error digest (a hash) keeps reporting.
+  if (normalizeString(input.digest) !== '') {
+    return false;
+  }
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or the
+  // window.onerror `filename`) means our own code threw this bailout message →
+  // a real first-party regression; keep reporting so the call site can be found
+  // and fixed. The production noise shape has only minified React-chunk frames.
+  if (sourcesOf(input).some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 export const REACT_RULES: readonly NoiseRule[] = [
   { id: 'next-recovery-bailout', appliesTo: 'both', match: isExpectedNextRecoveryBailoutNoise },
+  { id: 'server-suspense-bailout', appliesTo: 'both', match: isServerSuspenseBailoutNoise },
   {
     // Recoverable hydration noise (React #418 / "Hydration failed because the
     // server rendered ...") is virtually always the browser mutating the DOM

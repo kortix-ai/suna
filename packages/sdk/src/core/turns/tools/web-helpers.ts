@@ -15,125 +15,79 @@ export interface WebSearchQueryResult {
   sources: WebSearchSource[];
 }
 
-export function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
+function parseJsonOutput(output: string | any, trimBom = false): any {
+  if (typeof output === 'object' && output !== null) return output;
+  if (typeof output !== 'string') return null;
+  try {
+    let result = JSON.parse(output);
+    if (typeof result === 'string') {
+      try {
+        result = JSON.parse(result);
+      } catch {}
+    }
+    return typeof result === 'object' ? result : null;
+  } catch {
+    const trimmed = trimBom && output.trim().replace(/^\uFEFF/, '');
+    if (trimmed && trimmed !== output) {
+      try { return JSON.parse(trimmed); } catch {}
+    }
+    return null;
+  }
+}
+
+function collectSources(list: any[]): WebSearchSource[] {
+  return list.filter((s) => s.title && s.url).map((s) => ({
+    title: s.title,
+    url: s.url,
+    snippet: s.snippet || s.content || s.text || undefined,
+    author: s.author || undefined,
+    publishedDate: s.publishedDate || s.published_date || undefined,
+  }));
+}
+
+export function parseWebSearchOutput(
+  output: string | any,
+): WebSearchQueryResult[] {
   if (!output) return [];
-
-  let parsed: any = null;
-  if (typeof output === 'object' && output !== null) {
-    parsed = output;
-  } else if (typeof output === 'string') {
-    try {
-      let result = JSON.parse(output);
-
-      if (typeof result === 'string') {
-        try {
-          result = JSON.parse(result);
-        } catch {}
+  const parsed = parseJsonOutput(output, true);
+  if (parsed?.success === false) return [];
+  if (Array.isArray(parsed?.results) && parsed.results.length > 0) {
+    const firstItem = parsed.results[0];
+    if (firstItem && typeof firstItem.query === 'string') {
+      const queries: WebSearchQueryResult[] = [];
+      for (const r of parsed.results) {
+        if (typeof r.query !== 'string') continue;
+        queries.push({
+          query: r.query,
+          answer: r.answer || undefined,
+          sources: Array.isArray(r.results) ? collectSources(r.results) : [],
+        });
       }
-      parsed = typeof result === 'object' ? result : null;
-    } catch {
-      const trimmed = output.trim().replace(/^\uFEFF/, '');
-      if (trimmed !== output) {
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {}
-      }
+      if (queries.length > 0) return queries;
+    } else if (firstItem && (firstItem.title || firstItem.url)) {
+      const sources = collectSources(parsed.results);
+      if (sources.length > 0) return [{ query: parsed.query || '', answer: parsed.answer || undefined, sources }];
     }
   }
-
-  if (parsed) {
-    if (parsed.success === false) return [];
-
-    if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
-      const firstItem = parsed.results[0];
-      if (firstItem && typeof firstItem.query === 'string') {
-        const queryResults: WebSearchQueryResult[] = [];
-        for (const r of parsed.results) {
-          if (typeof r.query !== 'string') continue;
-          const sources: WebSearchSource[] = [];
-          if (Array.isArray(r.results)) {
-            for (const s of r.results) {
-              if (s.title && s.url) {
-                sources.push({
-                  title: s.title,
-                  url: s.url,
-                  snippet: s.snippet || s.content || s.text || undefined,
-                  author: s.author || undefined,
-                  publishedDate: s.publishedDate || s.published_date || undefined,
-                });
-              }
-            }
-          }
-          queryResults.push({
-            query: r.query,
-            answer: r.answer || undefined,
-            sources,
-          });
-        }
-        if (queryResults.length > 0) return queryResults;
-      } else if (firstItem && (firstItem.title || firstItem.url)) {
-        const sources: WebSearchSource[] = [];
-        for (const s of parsed.results) {
-          if (s.title && s.url) {
-            sources.push({
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet || s.content || s.text || undefined,
-              author: s.author || undefined,
-              publishedDate: s.publishedDate || s.published_date || undefined,
-            });
-          }
-        }
-        if (sources.length > 0) {
-          return [
-            {
-              query: parsed.query || '',
-              answer: parsed.answer || undefined,
-              sources,
-            },
-          ];
-        }
-      }
-    }
-
-    if (parsed.query && typeof parsed.query === 'string') {
-      const sources: WebSearchSource[] = [];
-      if (Array.isArray(parsed.results)) {
-        for (const s of parsed.results) {
-          if (s.title && s.url) {
-            sources.push({
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet || s.content || s.text || undefined,
-              author: s.author || undefined,
-              publishedDate: s.publishedDate || s.published_date || undefined,
-            });
-          }
-        }
-      }
-      return [{ query: parsed.query, answer: parsed.answer || undefined, sources }];
-    }
-
-    if (
-      Array.isArray(parsed) &&
-      parsed.length > 0 &&
-      parsed[0] &&
-      (parsed[0].title || parsed[0].url)
-    ) {
-      const sources: WebSearchSource[] = [];
-      for (const s of parsed) {
-        if (s.title && s.url) {
-          sources.push({
-            title: s.title,
-            url: s.url,
-            snippet: s.snippet || s.content || s.text || undefined,
-            author: s.author || undefined,
-            publishedDate: s.publishedDate || s.published_date || undefined,
-          });
-        }
-      }
-      if (sources.length > 0) return [{ query: '', sources }];
-    }
+  if (parsed?.query && typeof parsed.query === 'string') {
+    return [
+      {
+        query: parsed.query,
+        answer: parsed.answer || undefined,
+        sources: Array.isArray(parsed.results)
+          ? collectSources(parsed.results)
+          : [],
+      },
+    ];
+  }
+  if (
+    Array.isArray(parsed) &&
+    parsed.length > 0 &&
+    parsed[0] &&
+    (parsed[0].title || parsed[0].url)
+  ) {
+    const sources = collectSources(parsed);
+    if (sources.length > 0) return [{ query: '', sources }];
   }
 
   if (typeof output === 'string') {
@@ -160,14 +114,7 @@ export function parseWebSearchOutput(output: string | any): WebSearchQueryResult
 
   if (typeof output === 'string') {
     const recovered = recoverLinkResults(output);
-    if (recovered.length > 0) {
-      return [
-        {
-          query: '',
-          sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
-        },
-      ];
-    }
+    if (recovered.length > 0) return [{ query: '', sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })) }];
   }
   return [];
 }
@@ -246,7 +193,10 @@ export function parseScrapeInputUrls(input: Record<string, unknown>): string[] {
 }
 
 /** Build per-URL failure cards when the tool returns a plain error string. */
-export function buildScrapeFailureResults(output: string, urls: string[]): ScrapeResult[] {
+export function buildScrapeFailureResults(
+  output: string,
+  urls: string[],
+): ScrapeResult[] {
   if (urls.length === 0) return [];
   const cleaned = output.replace(/^Error:\s*/i, '').trim();
 
@@ -270,30 +220,22 @@ export function resolveScrapeResults(
   return buildScrapeFailureResults(outputStr, parseScrapeInputUrls(input));
 }
 
-export function parseScrapeOutput(output: string | any): ParsedScrapeOutput | null {
+export function parseScrapeOutput(
+  output: string | any,
+): ParsedScrapeOutput | null {
   if (!output) return null;
-  let parsed: any = null;
-  if (typeof output === 'object' && output !== null) {
-    parsed = output;
-  } else if (typeof output === 'string') {
-    try {
-      let result = JSON.parse(output);
-      if (typeof result === 'string') {
-        try {
-          result = JSON.parse(result);
-        } catch {}
-      }
-      parsed = typeof result === 'object' ? result : null;
-    } catch {}
-  }
+  const parsed = parseJsonOutput(output);
   if (!parsed) return null;
 
   if (parsed.results && Array.isArray(parsed.results)) {
     return {
       total: parsed.total || parsed.results.length,
       successful:
-        parsed.successful ?? parsed.results.filter((r: any) => r.success !== false).length,
-      failed: parsed.failed ?? parsed.results.filter((r: any) => r.success === false).length,
+        parsed.successful ??
+        parsed.results.filter((r: any) => r.success !== false).length,
+      failed:
+        parsed.failed ??
+        parsed.results.filter((r: any) => r.success === false).length,
       results: parsed.results.map((r: any) => ({
         url: r.url || '',
         success: r.success !== false,

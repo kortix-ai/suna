@@ -101,6 +101,13 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.ENABLE_EMAIL_SIGNUP).toBe('true');
     expect(env.ENABLE_EMAIL_AUTOCONFIRM).toBe('true');
     expect(env.KORTIX_PUBLIC_AUTH_METHODS).toBe('password');
+    // GET /v1/auth/client-config is complete on a fresh install: the API loads
+    // every .env key (env_file), so it reports the anon key, the auth methods
+    // and an explicit empty provider list (none, like the web auth page).
+    expect(env.KORTIX_PUBLIC_AUTH_PROVIDERS).toBe('');
+    expect(env.SUPABASE_ANON_KEY).toBeTruthy();
+    expect(env.SUPABASE_PUBLIC_URL).toBeTruthy();
+    expect((readCompose().services['kortix-api'] as { env_file: string[] }).env_file).toContain('.env');
     expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
     expect(env.DAYTONA_SERVER_URL).toBe('https://app.daytona.io/api');
 
@@ -129,6 +136,27 @@ describe('kortix self-host (generic Docker CLI)', () => {
 
     // No local-source-build leftovers.
     expect(env.KORTIX_LOCAL_IMAGES).toBeUndefined();
+  });
+
+  test('auth accepts the mobile app callback (kortix://) on a fresh and an upgraded instance', async () => {
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect(readEnv().ADDITIONAL_REDIRECT_URLS).toBe('kortix://**');
+
+    // An instance created before this default has the key empty; its next
+    // write fills it in.
+    const envFile = join(configRoot, instance, '.env');
+    writeFileSync(
+      envFile,
+      readFileSync(envFile, 'utf8').replace(/^ADDITIONAL_REDIRECT_URLS=.*$/m, 'ADDITIONAL_REDIRECT_URLS='),
+    );
+    expect(readEnv().ADDITIONAL_REDIRECT_URLS).toBe('');
+    expect((await run(['env', 'set', 'KORTIX_ALLOW_DOWNTIME=1'])).code).toBe(0);
+    expect(readEnv().ADDITIONAL_REDIRECT_URLS).toBe('kortix://**');
+
+    // An operator's own allow-list is theirs: never rewritten.
+    const custom = 'https://kortix.example.com/auth/callback';
+    expect((await run(['env', 'set', `ADDITIONAL_REDIRECT_URLS=${custom}`])).code).toBe(0);
+    expect(readEnv().ADDITIONAL_REDIRECT_URLS).toBe(custom);
   });
 
   test('--channel latest tracks the :latest tag instead of :stable', async () => {

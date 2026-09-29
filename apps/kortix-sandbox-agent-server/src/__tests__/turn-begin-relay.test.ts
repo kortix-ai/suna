@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '../harness/open-code/boot'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '@/harness/open-code/boot'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+} from '@/lib/kortix-api/session-token-health'
 
 // A BOX-INITIATED turn (OpenCode's synthetic `<pty_exited>` wake-up) must be
 // announced to apps/api so it gets turn authority — live incident 2026-08-20
@@ -51,6 +56,7 @@ function startMocks(getMessages: () => unknown[]) {
 let saved: Record<string, string | undefined> = {}
 beforeEach(() => {
   __resetRelayedTurnBegins()
+  resetSessionTokenHealthForTests()
   saved = {
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
@@ -60,6 +66,7 @@ beforeEach(() => {
   delete process.env.KORTIX_TOKEN
 })
 afterEach(() => {
+  resetSessionTokenHealthForTests()
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k]
     else process.env[k] = v
@@ -179,6 +186,26 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
     sessionEnv(m.baseUrl)
     delete process.env.KORTIX_PROJECT_ID
     delete process.env.KORTIX_SESSION_ID
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnBeginToApi(ROOT, opencode, cfg)
+      expect(m.calls()).toBe(0)
+    } finally {
+      m.stop()
+    }
+  })
+
+  // KRTX-446: a box that outlives its session keeps emitting `busy`/`retry`
+  // frames, and each one re-issued two `POST .../turn-stream -> 401`s. Once the
+  // shared breaker reports the credential dead (here, the revoked-token refusal
+  // — session delete revokes the token ROW), the relay must issue nothing.
+  test('does not relay once the API has affirmed the session credential is dead', async () => {
+    const m = startMocks(syntheticTurn)
+    sessionEnv(m.baseUrl)
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(401, 'PAT not found or revoked')
+    }
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
