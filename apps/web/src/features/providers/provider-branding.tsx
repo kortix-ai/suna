@@ -40,6 +40,7 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
   codex: { src: '/provider-icons/openai.svg', fallback: 'GPT' },
   opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
+  'opencode-go': { src: '/provider-icons/opencode.svg', fallback: 'OC' },
   kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
   'github-copilot': { src: '/provider-icons/github-copilot.svg', fallback: 'GH' },
   google: { src: '/provider-icons/google.svg', fallback: 'GO' },
