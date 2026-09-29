@@ -201,6 +201,15 @@ const allowedLiteralValues = new Set([
   'Slack',
   'GitHub',
   'Linear',
+  // Framework names in the design-system Select demos: proper nouns, like the
+  // product names above.
+  'Next.js',
+  'Remix',
+  'Astro',
+  'Nuxt',
+  'Django',
+  'Ruby on Rails',
+  'Laravel',
   'Discover and read Kortix public API and documentation resources.',
 ]);
 

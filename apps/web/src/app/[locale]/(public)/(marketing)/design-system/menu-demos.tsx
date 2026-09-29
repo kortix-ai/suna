@@ -12,6 +12,8 @@ import {
 } from '@phosphor-icons/react';
 import { useState, type ReactNode } from 'react';
 
+import { useTranslations } from '@/i18n/use-translations';
+
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -80,6 +82,7 @@ const FRAMEWORKS = [
 ];
 
 export function SelectDemos() {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-8">
       <DemoRow caption="Item sizes">
@@ -108,10 +111,10 @@ export function SelectDemos() {
           </SelectTrigger>
           <SelectContent className="w-80">
             <SelectGroup>
-              <SelectLabel>Frontend</SelectLabel>
+              <SelectLabel>{t.raw('textaf48bcf0b951')}</SelectLabel>
               <SelectItem
                 value="next"
-                description="React with server components and file-based routing."
+                description={t.raw('textd19297f36620')}
               >
                 {FRAMEWORKS[0].label}
               </SelectItem>
@@ -120,14 +123,14 @@ export function SelectDemos() {
             </SelectGroup>
             <SelectSeparator />
             <SelectGroup>
-              <SelectLabel>Backend</SelectLabel>
-              <SelectItem value="django" description="Batteries-included Python web framework.">
+              <SelectLabel>{t.raw('text2fb4019a35e4')}</SelectLabel>
+              <SelectItem value="django" description={t.raw('text030637ad147a')}>
                 Django
               </SelectItem>
               <SelectItem value="rails">Ruby on Rails</SelectItem>
               <SelectItem value="laravel">Laravel</SelectItem>
               <SelectItem value="phoenix" disabled>
-                Phoenix (coming soon)
+                {t.raw('text21f231146e6c')}
               </SelectItem>
             </SelectGroup>
           </SelectContent>
@@ -146,51 +149,52 @@ function AdvancedMenuContent({ size }: { size: MenuRowSize }) {
   const [sidebar, setSidebar] = useState(true);
   const [minimap, setMinimap] = useState(false);
   const [theme, setTheme] = useState('system');
+  const t = useTranslations('hardcodedUi.i18nComplete');
 
   return (
     <DropdownMenuContent align="start" className="w-64">
-      <DropdownMenuLabel>My account</DropdownMenuLabel>
+      <DropdownMenuLabel>{t.raw('textb53181a4d853')}</DropdownMenuLabel>
       <DropdownMenuGroup>
         <DropdownMenuItem size={size}>
           <UserIcon />
-          Profile
+          {t.raw('textd696a35bdd18')}
           <DropdownMenuShortcut>{SHORTCUT.profile}</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem size={size}>
           <GearIcon />
-          Settings
+          {t.raw('text74a883a037bc')}
           <DropdownMenuShortcut>{SHORTCUT.settings}</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem size={size}>
           <KeyboardIcon />
-          Keyboard shortcuts
+          {t.raw('texte9bef0b0f3c2')}
           <DropdownMenuShortcut>{SHORTCUT.shortcuts}</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuGroup>
 
       <DropdownMenuSeparator />
-      <DropdownMenuLabel>View</DropdownMenuLabel>
+      <DropdownMenuLabel>{t.raw('textdcc839a4015c')}</DropdownMenuLabel>
       <DropdownMenuCheckboxItem size={size} checked={sidebar} onCheckedChange={setSidebar}>
-        Show sidebar
+        {t.raw('text9e8197ce9e5f')}
       </DropdownMenuCheckboxItem>
       <DropdownMenuCheckboxItem size={size} checked={minimap} onCheckedChange={setMinimap}>
-        Show minimap
+        {t.raw('text073549e7238a')}
       </DropdownMenuCheckboxItem>
       <DropdownMenuCheckboxItem size={size} checked disabled>
-        Show status bar
+        {t.raw('texte9736daa7c32')}
       </DropdownMenuCheckboxItem>
 
       <DropdownMenuSeparator />
-      <DropdownMenuLabel>Theme</DropdownMenuLabel>
+      <DropdownMenuLabel>{t.raw('textefb52e7172b7')}</DropdownMenuLabel>
       <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
         <DropdownMenuRadioItem size={size} side="left" value="light">
-          Light
+          {t.raw('textdbcd5e7bb7a0')}
         </DropdownMenuRadioItem>
         <DropdownMenuRadioItem size={size} side="left" value="dark">
-          Dark
+          {t.raw('text60acc53f13a5')}
         </DropdownMenuRadioItem>
         <DropdownMenuRadioItem size={size} side="left" value="system">
-          System
+          {t.raw('text6725e7bbcd28')}
         </DropdownMenuRadioItem>
       </DropdownMenuRadioGroup>
 
@@ -198,20 +202,20 @@ function AdvancedMenuContent({ size }: { size: MenuRowSize }) {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger size={size}>
           <UserPlusIcon />
-          Invite people
+          {t.raw('text27bf0f2d3f3f')}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-48">
           <DropdownMenuItem size={size}>
             <EnvelopeIcon />
-            Email
+            {t.raw('text969ccbd3cf63')}
           </DropdownMenuItem>
           <DropdownMenuItem size={size}>
             <LinkIcon />
-            Copy link
+            {t.raw('textdbf362d4f210')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem size={size} inset>
-            More options
+            {t.raw('textbc79cdffbaa8')}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -219,7 +223,7 @@ function AdvancedMenuContent({ size }: { size: MenuRowSize }) {
       <DropdownMenuSeparator />
       <DropdownMenuItem size={size} variant="destructive">
         <TrashIcon />
-        Delete project
+        {t.raw('text9c0b617e79e9')}
         <DropdownMenuShortcut>{SHORTCUT.delete}</DropdownMenuShortcut>
       </DropdownMenuItem>
     </DropdownMenuContent>
@@ -227,6 +231,7 @@ function AdvancedMenuContent({ size }: { size: MenuRowSize }) {
 }
 
 export function DropdownDemos() {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-8">
       <DemoRow caption="Item sizes">
@@ -234,7 +239,7 @@ export function DropdownDemos() {
           <Sized key={size} label={ROWS_LABEL[size]}>
             <DropdownMenu>
               <DropdownMenuTrigger className="w-48">
-                <span>My account</span>
+                <span>{t.raw('textb53181a4d853')}</span>
                 <CaretDownIcon className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE.sm)} />
               </DropdownMenuTrigger>
               <AdvancedMenuContent size={size} />
@@ -243,8 +248,7 @@ export function DropdownDemos() {
         ))}
       </DemoRow>
       <p className="text-muted-foreground text-xs">
-        The same menu at every row size: icons, shortcuts, checkboxes, radios, a submenu and a
-        destructive row.
+        {t.raw('text8aec60d8fca6')}
       </p>
     </div>
   );
