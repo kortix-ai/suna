@@ -24,13 +24,6 @@ export const RUNTIME_WAKE_LEASE_MS = 240_000;
 export const RUNTIME_WAKE_HARD_MS = 10 * 60_000;
 // Covers the provider stop timeout while maintenance owns the late-start check.
 export const RUNTIME_WAKE_CLEANUP_LEASE_MS = 180_000;
-/**
- * The FIRST retry cooldown. Superseded as a standalone knob by
- * `RUNTIME_START_RETRY_BACKOFF_MS`, whose first entry is this value; kept so
- * the number has one name and rows written before the escalating ladder read
- * the same way.
- */
-export const RUNTIME_WAKE_RETRY_COOLDOWN_MS = 120_000;
 export const RUNTIME_WAKE_LATE_START_GUARD_MS = 15 * 60_000;
 // Wake-poll cadence. A Platinum CoW resume reaches `running` in ~1.9s
 // (measured 3/3: 1918/1906/2391ms), so a flat 1000ms poll spent up to a full
@@ -352,23 +345,6 @@ export const RUNTIME_START_FAILURE_KEYS = [
   'runtimeStartFailedAt',
   'runtimeStartRetryAfterAt',
 ] as const;
-
-/**
- * Legacy predicate: "is `runtimeWakeRetryAfterAt` still in the future?".
- * `stampedRuntimeFailureState` replaced it on the `/start` path because a bare
- * cooldown check cannot tell a re-attemptable failure from a terminal one, and
- * answering only that question is what produced the 10-hour replay. Kept for
- * callers that want the raw clock.
- */
-export function runtimeWakeRetryCoolingDown(
-  metadata: Record<string, unknown> | null | undefined,
-  now: Date = new Date(),
-): boolean {
-  const value = metadata?.runtimeWakeRetryAfterAt;
-  if (typeof value !== 'string') return false;
-  const retryAtMs = Date.parse(value);
-  return Number.isFinite(retryAtMs) && retryAtMs > now.getTime();
-}
 
 export function isAmbiguousRuntimeStartError(error: unknown): boolean {
   const name = error instanceof Error ? error.name.toLowerCase() : '';

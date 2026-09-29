@@ -230,6 +230,8 @@ export function managedModels(): Record<string, GatewayModel> {
       ...(caps ?? {}),
       // Curated fields always win over the models.dev record.
       attachment: m.vision,
+      modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+      ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
       limit: m.limit,
       ...(cost ? { cost } : {}),
     };

@@ -63,6 +63,14 @@ isolated — load the \`kortix-cli\` skill and run
 \`kortix skills get kortix-system\`. The CLI serves the canonical,
 version-matched reference.
 
+**Waiting on something outside this turn** — a reply to an email you sent,
+a deploy, a person — is a reminder, not a reason to stall or to write a
+trigger: \`kortix remind "<what to check and do next>" --in 24h\` re-prompts
+THIS session later (add \`--every 1h\` to keep checking), then end the turn.
+Reminders are a per-project feature flag; if the command answers
+\`feature_disabled\`, tell the user how to turn it on and do not turn it on
+yourself. Details: the \`<scheduling>\` section of \`kortix-system\`.
+
 **Need a credential? Set it if you have it; otherwise hand over a link.**
 If the user already gave you the value (pasted in chat, in a file), store it
 yourself in the same turn with the `set_secret` tool (or

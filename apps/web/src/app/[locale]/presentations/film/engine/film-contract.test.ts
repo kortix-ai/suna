@@ -34,8 +34,18 @@ describe('film grid', () => {
     expect(pyConst('FPS')).toBe(FPS);
   });
 
-  test('the launch film and its score are the same length', () => {
-    expect(filmSources).toContain(`frames: bars(${pyConst('BARS')})`);
+  test('every film and its score are the same length', () => {
+    // Per film file: each `frames: bars(N)` has a score of `bars: N`, and back.
+    const files = readdirSync(FILMS, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('index.tsx'))
+      .map((f) => readFileSync(join(FILMS, f), 'utf8'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const src of files) {
+      const picture = new Set([...src.matchAll(/frames: bars\((\d+)\)/g)].map((m) => m[1]));
+      const sound = new Set([...src.matchAll(/^\s*bars: (\d+),/gm)].map((m) => m[1]));
+      expect([...sound].sort()).toEqual([...picture].sort());
+    }
   });
 });
 
@@ -44,6 +54,12 @@ describe('film assets', () => {
     const paths = [...filmSources.matchAll(/['"](\/(?:media|film)\/[^'"$]+)['"]/g)].map((m) => m[1]);
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.filter((p) => !existsSync(join(WEB, 'public', p)))).toEqual([]);
+  });
+
+  test('every product capture a film shows exists', () => {
+    const shots = [...filmSources.matchAll(/\$\{M\}\/([\w-]+\.webp)/g)].map((m) => m[1]);
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.filter((n) => !existsSync(join(WEB, 'public/media/film', n)))).toEqual([]);
   });
 
   test('every cue names a sound effect on disk', () => {
