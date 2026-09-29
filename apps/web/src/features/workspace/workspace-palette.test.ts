@@ -387,7 +387,7 @@ describe('buildRootSuggestions — the no-query root page', () => {
     expect(result).not.toContain('restart-config');
   });
 
-  test('New session and Open Audit are search-only: absent from Suggestions, still in the registry', () => {
+  test('search-only rows (New session, Open Audit, Home, Open session) are absent from Suggestions, still in the registry', () => {
     const suggested = buildRootSuggestions(items).map((i) => i.id);
     for (const id of SEARCH_ONLY_ITEM_IDS) {
       expect(suggested).not.toContain(id);

@@ -290,6 +290,9 @@ export const WORKSPACE_SWITCHER_ITEM_ID = 'nav-projects';
 export const SEARCH_ONLY_ITEM_IDS: ReadonlySet<string> = new Set([
   'new-session',
   'open-session-audit',
+  // Home and the session list are one click away in the sidebar already.
+  'proj-home',
+  'proj-sessions',
 ]);
 
 /**
@@ -301,13 +304,11 @@ export const SEARCH_ONLY_ITEM_IDS: ReadonlySet<string> = new Set([
  */
 export const SUGGESTION_PRIORITY: readonly string[] = [
   WORKSPACE_SWITCHER_ITEM_ID,
-  'proj-sessions',
   'open-session-files',
   'open-session-browser',
   'open-session-terminal',
   'view-changes',
   'review-changes',
-  'proj-home',
   'nav-accounts',
 ];
 
