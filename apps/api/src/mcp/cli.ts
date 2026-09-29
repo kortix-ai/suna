@@ -63,6 +63,10 @@ export function denial(args: string[]): Denial | null {
   const [command = '', sub = ''] = args;
   const top = Object.hasOwn(DENY_COMMANDS, command) ? DENY_COMMANDS[command]! : undefined;
   if (top) return top;
+  // Only a known command may lead: a leading flag must never reach a command this table did not see.
+  if (!CLI_ALLOWED.includes(command) && command !== '--help' && command !== '-h') {
+    return { reason: `\`${command.slice(0, 40)}\` is not a kortix command`, use: '["--help"] lists the commands' };
+  }
   const nested = DENY_SUBCOMMANDS.find((d) => d.path[0] === command && d.path[1] === sub);
   if (nested) return nested.denial;
   if (command === 'whoami' && args.includes('--token-only')) return DENY_COMMANDS.token!;
@@ -95,6 +99,7 @@ export function cliEnv(input: { token: string; apiUrl: string; home: string; tmp
     TMPDIR: input.tmp,
     NO_COLOR: '1',
     CI: '1',
+    KORTIX_NO_UPDATE_CHECK: '1',
     KORTIX_API_URL: input.apiUrl,
     KORTIX_TOKEN: input.token,
     // The CLI would read a sandbox env file for unset keys; the server has none to offer.
