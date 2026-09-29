@@ -261,7 +261,9 @@ The failures that most often block Step 4 have known fixes. Read
 debugging one from scratch: out-of-order migration timestamps, stale
 `mock.module` stubs after a refactor, source-anchor tests after a file move,
 unintentional i18n catalog reordering, a stale `learnings/MEMORY.md`, and a
-CodeQL alert in old code that a large diff surfaced for the first time.
+CodeQL alert in old code that a large diff surfaced for the first time — fix a
+real finding on `main`; dismiss a *proven* false positive on GitHub with a
+written, evidence-backed justification, never silently.
 
 ## 4. Gotchas (hard-won)
 

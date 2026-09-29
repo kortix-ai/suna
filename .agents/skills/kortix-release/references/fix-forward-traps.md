@@ -67,10 +67,33 @@ regenerated file alongside the entry.
 ## A CodeQL alert in old code, surfaced by a large diff
 
 CodeQL analyzes the whole changed file, not just the changed lines, so a
-large or long-overdue diff can surface a real finding in code the PR did not
-intend to touch (real incident: PR #8159, "green main — config archive race
-(CodeQL)", 2026-09-29). Fix the underlying issue on `main` like any other red
-check. Do not dismiss or suppress a CodeQL alert to unblock a promotion —
+large or long-overdue diff can surface a finding in code the PR did not intend
+to touch (real incident: PR #8159, "green main — config archive race
+(CodeQL)", 2026-09-29 — a real stat-then-read race, fixed on `main`).
 `staging`'s branch protection requires every review conversation resolved
 (`required_conversation_resolution: true`), so an unresolved CodeQL thread
-blocks the merge button until it is actually addressed.
+blocks the merge button regardless of which path below applies.
+
+Two outcomes, never a third:
+
+- **A real finding** — fix the underlying issue on `main` like any other red
+  check (PR #8159). Never silence it with a suppression comment, a config
+  exclusion, or a weakened query to unblock a promotion.
+- **A proven false positive** — dismiss it on GitHub with a written
+  justification that cites the concrete spec or constraint that makes the
+  flagged code correct, then re-run the check:
+
+  ```bash
+  gh api -X PATCH repos/kortix-ai/suna/code-scanning/alerts/<n> \
+    -f state=dismissed -f dismissed_reason="false positive" \
+    -f dismissed_comment="<spec/evidence>"
+  ```
+
+  Real example: alert 6965, `js/weak-cryptographic-algorithm` on
+  `apps/api/src/connectors/call.ts:318` — OAuth 1.0a (RFC 5849 §3.4.2)
+  mandates HMAC-SHA1 as the signature method, and HMAC-SHA1 is not broken as a
+  MAC (the break is in SHA-1 as a collision-resistant hash, which does not
+  apply to its use as a MAC); changing the algorithm would break every OAuth1
+  connector. **Never dismiss an alert without that evidence in the comment** —
+  "flaky" or "not a priority" is not a justification and leaves the thread
+  unresolved in spirit even if GitHub shows it closed.
