@@ -8,9 +8,9 @@
 // never create two accounts for one machine.
 //
 // Existing rows cannot collide: connector_connections.tunnel_id was added by
-// 20260928210714434_computer_accounts.sql in the same release, and every
+// 20260929014000000_computer_accounts.sql in the same release, and every
 // writer since (device-auth approve, POST /projects/:id/computers, the
-// 20260928210716000 backfill) reuses the owner's row for a machine it already
+// 20260929014000400 backfill) reuses the owner's row for a machine it already
 // holds. A collision would fail the build and leave an INVALID index; drop it
 // by hand and dedupe first (see packages/db/MIGRATIONS.md).
 //

@@ -11,10 +11,10 @@
 --
 -- All three are nullable with no default: a catalog-only change, no rewrite.
 -- The foreign key is added NOT VALID (no scan) and validated by
--- 20260928210714500_computer_accounts_validate.sql. Every existing row has
+-- 20260929014000100_computer_accounts_validate.sql. Every existing row has
 -- tunnel_id NULL, so validation cannot fail. The indexes are built by the two
 -- following .concurrent.ts files; the data backfill runs after them in
--- 20260928210716000_computer_accounts_backfill.concurrent.ts.
+-- 20260929014000400_computer_accounts_backfill.concurrent.ts.
 --
 -- mixed-version-safe: adds nullable columns and one NOT VALID foreign key.
 -- Drops nothing, renames nothing. Old API versions never read or write the new

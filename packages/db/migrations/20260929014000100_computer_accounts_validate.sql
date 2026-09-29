@@ -1,6 +1,6 @@
 -- Migration: computer_accounts_validate
 --
--- Step 2 for 20260928210714434_computer_accounts.sql, which added the
+-- Step 2 for 20260929014000000_computer_accounts.sql, which added the
 -- connector_connections.tunnel_id foreign key NOT VALID. The constraint already
 -- governs every INSERT and UPDATE; this marks the pre-existing rows as checked.
 -- Every pre-existing row has tunnel_id NULL, so validation cannot fail.

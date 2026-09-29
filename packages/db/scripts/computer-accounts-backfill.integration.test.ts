@@ -14,7 +14,7 @@ const migrationPath = resolve(
   import.meta.dir,
   '..',
   'migrations',
-  '20260928210716000_computer_accounts_backfill.concurrent.ts',
+  '20260929014000400_computer_accounts_backfill.concurrent.ts',
 );
 
 const TEAM = crypto.randomUUID();

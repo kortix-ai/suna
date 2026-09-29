@@ -1,7 +1,7 @@
 // Migration: tunnel_connections_owner_user_index  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // Builds the index kortix.ts declares as idx_tunnel_connections_owner_user for the column added by
-// 20260928210714434_computer_accounts.sql. One CONCURRENTLY build per file and
+// 20260929014000000_computer_accounts.sql. One CONCURRENTLY build per file and
 // per table (learnings: one CREATE INDEX CONCURRENTLY per table at a time).
 //
 // lock_timeout is 180s, not the 2-5s house value: CREATE INDEX CONCURRENTLY
