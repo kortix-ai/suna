@@ -97,6 +97,7 @@ describe('runtime model catalog', () => {
               modalities: { input: ['text', 'image'], output: ['text'] },
               limit: { context: 1_000_000, input: 900_000, output: 128_000 },
               cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+              provider: { npm: '@ai-sdk/anthropic', api: 'https://override.test/v1' },
             },
           },
         },
@@ -118,6 +119,7 @@ describe('runtime model catalog', () => {
       limit: { context: 1_000_000, input: 900_000, output: 128_000 },
       cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
       reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+      provider: { npm: '@ai-sdk/anthropic', api: 'https://override.test/v1' },
     });
   });
 
