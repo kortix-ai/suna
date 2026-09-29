@@ -42,9 +42,9 @@
 import { Database } from 'bun:sqlite'
 import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { logger } from '../../logger'
+import { logger } from '@/lib/log/logger'
 
-import { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder } from '../../inline-attachments'
+import { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder } from '../shared/inline-attachments'
 export { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder }
 /** Attachments at or below this size stay inline — the row is not worth a file. */
 export const OFFLOAD_MIN_BYTES = 32 * 1024
@@ -125,7 +125,7 @@ function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer } | nu
 }
 
 // `isOffloadPlaceholder` (the 1×1 placeholder test) is host-level now — see
-// src/inline-attachments.ts — and re-exported above for existing importers.
+// src/harness/shared/inline-attachments.ts — and re-exported above for existing importers.
 
 export function sidecarPathFor(sidecarDir: string, attachmentId: string): string {
   // Attachment ids are OpenCode-minted (`prt_…`); refuse anything that could

@@ -24,7 +24,11 @@ import {
   useRequestChangesOnChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { type ReviewVerdict, listProjectSessions, PROJECT_SESSION_NAME_LOOKUP_LIMIT } from '@kortix/sdk';
+import {
+  type ReviewVerdict,
+  listProjectSessions,
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
+} from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -152,7 +156,7 @@ export function ReviewCenterConnected({
     const executionId = connectorCallId(id);
     if (executionId) {
       resolve.mutate(
-        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny' },
+        { executionId, decision: verdict === 'approve' ? 'approve' : 'deny', note: feedback },
         {
           onSuccess: () =>
             verdict === 'approve'

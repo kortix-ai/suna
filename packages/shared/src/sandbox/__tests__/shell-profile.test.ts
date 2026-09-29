@@ -104,7 +104,7 @@ describe('the shell profile hook restores the Kortix tool directories', () => {
 
   test('reads the same agent env file the daemon writes', () => {
     const daemonSource = readFileSync(
-      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/agent-env-file.ts'),
+      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts'),
       'utf8',
     );
     const dir = /export const AGENT_ENV_DIR = '([^']+)'/.exec(daemonSource)?.[1];
@@ -172,6 +172,7 @@ describe('every image that runs the web terminal bakes the hook as root', () => 
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
+      managedSkillsPath: 'managed-skills',
     });
     const at = image.indexOf(kortixShellProfileRun());
     expect(at).toBeGreaterThan(-1);

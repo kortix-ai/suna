@@ -381,7 +381,7 @@ export const portable = {
     {
       id: 'models',
       k: 'Any model, your own keys',
-      v: 'Bring any provider, or the ChatGPT, Claude or Cursor subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.',
+      v: 'Bring any provider, or the ChatGPT subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.',
     },
     {
       id: 'hosting',

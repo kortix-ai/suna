@@ -40,6 +40,8 @@ import { type SandboxProvider, type SandboxStatus, getProvider } from '../../pla
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
+import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
+import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
 import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
@@ -88,6 +90,7 @@ export interface ReapResult {
   husksFinalized: number; // an orphaned open assistant turn we closed server-side
   turnsSettled: number; // ledger rows still open on a box that is no longer running
   errors: number;
+  transient: number; // an expected, transient provider failure (Daytona 429 / gateway blip); the next pass retries it
 }
 
 export const EMPTY_REAP_RESULT: ReapResult = {
@@ -102,6 +105,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
   husksFinalized: 0,
   turnsSettled: 0,
   errors: 0,
+  transient: 0,
 };
 
 export interface SandboxReaperDependencies {
@@ -346,7 +350,7 @@ export async function reapAndReconcileSandboxes(
           // the observation, and the drip below needs it: an answer proves the
           // runtime is up and only its description of the turn is missing (an
           // agent build that omits the turn fields returns 200 without them —
-          // apps/kortix-sandbox-agent-server/src/routes/health.ts). Nothing
+          // apps/kortix-sandbox-agent-server/src/routes/kortix/health.ts). Nothing
           // coming back at all proves the opposite, and a box like that must
           // die on the bound its record already carries.
           let answeredProbes = 0;
@@ -684,18 +688,24 @@ export async function reapAndReconcileSandboxes(
               );
               probeBackoff.set(row.sandboxId, { backoffMs: nextBackoffMs, until: now.getTime() + nextBackoffMs });
             }
-            console.warn('[reaper] turn observation unknown; drip-extending', {
-              sandboxId: row.sandboxId,
-              externalId: row.externalId,
-              provider: row.provider,
-              turns: turns.length,
-              // Was the daemon ASKED this pass, or is this a backed-off drip?
-              // Without this the log cannot tell 20 s drips from 20 s probes.
-              probed: backedOffProbes === 0,
-              backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
-              deadlineAt: row.deadlineAt.toISOString(),
-              extended,
-            });
+            // An unchanged unreadable turn is one incident, not one warning
+            // every 20 s. A readable answer clears the back-off above; the next
+            // unknown episode warns again. Log a failed extension on every pass.
+            if (
+              (backedOffProbes === 0 && probeBackoff.get(row.sandboxId)?.backoffMs === PROBE_BACKOFF_MIN_MS) ||
+              !extended
+            ) {
+              console.warn('[reaper] turn observation unknown; drip-extending', {
+                sandboxId: row.sandboxId,
+                externalId: row.externalId,
+                provider: row.provider,
+                turns: turns.length,
+                probed: backedOffProbes === 0,
+                backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
+                deadlineAt: row.deadlineAt.toISOString(),
+                extended,
+              });
+            }
           }
           // THE ONE RULE. `deadline_at` is pushed out only by a
           // control-plane-OBSERVED turn start and pulled in by a
@@ -783,10 +793,21 @@ export async function reapAndReconcileSandboxes(
             break;
         }
       } catch (err) {
-        result.errors += 1;
-        console.error(
-          `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
-        );
+        // An expected, transient provider failure — a Daytona org-wide 429
+        // (`ThrottlerException`) or a gateway blip — is the provider working as
+        // designed. Every other call site classifies it (`shared/daytona-rate-limit.ts`,
+        // `shared/daytona-transient.ts`) so it never pages; the reaper must too,
+        // or one org throttle across a live fleet emits an error line per box.
+        // Counting it separately and logging NOTHING here keeps this page quiet
+        // while the next pass still retries the renewal.
+        if (isDaytonaRateLimitError(err) || isDaytonaTransientProviderError(err)) {
+          result.transient += 1;
+        } else {
+          result.errors += 1;
+          console.error(
+            `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
+          );
+        }
       }
     }
   };
@@ -803,6 +824,13 @@ export async function reapAndReconcileSandboxes(
       matching: result.matching,
       examined: result.candidates,
       deferred: result.deferred,
+    });
+  }
+  // One aggregate line per pass instead of one error line per row: a transient
+  // provider throttle is expected, and the next pass retries it.
+  if (result.transient > 0) {
+    console.info('[reaper] provider transient errors — retrying next pass', {
+      transient: result.transient,
     });
   }
   return result;

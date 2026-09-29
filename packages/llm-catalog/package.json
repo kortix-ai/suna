@@ -14,7 +14,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./lite": "./src/lite.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -25,6 +26,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./lite": {
+        "types": "./dist/lite.d.ts",
+        "import": "./dist/lite.js"
       }
     },
     "files": ["dist", "README.md"]

@@ -368,8 +368,9 @@ never patch around it in the TUI.
 
 ## 9. Delivery
 
-- Branch `tui`, worktree `../suna-tui`. Draft PR against `main` with the
-  `preview` label on the first commit. Merge only on explicit approval.
+- Branch `tui`, worktree `../suna-tui`. PR against `main` once verified in
+  the local box. Self-merge when verified (AGENTS.md "Default delivery",
+  rule 5).
 - Docs: `apps/tui/README.md` and a docs page under
   `apps/web/content/docs/` (follow the timestamp-manifest rule from memory
   `new-docs-page-needs-timestamp-manifest`).

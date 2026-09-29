@@ -18,9 +18,22 @@ afterEach(() => {
 });
 
 const boundary = await import('./host-boundary');
-import type { SecretSetupLinkSubmitResult } from './host-boundary';
+import type { OAuthConsentRequest, SecretSetupLinkSubmitResult } from './host-boundary';
 
 describe('host boundary transport', () => {
+  test('consent request carries whether the client registered itself and where approval redirects', async () => {
+    responseFactory = () =>
+      Response.json({ client_name: 'Claude', scopes: ['kortix'], remembered: false, self_registered: true, redirect_to: 'claude.ai' });
+    const request: OAuthConsentRequest = await boundary.getOAuthConsentRequest('req-1', {
+      backendUrl: 'https://api.example.test/v1',
+      accessToken: 'jwt',
+    });
+
+    expect(requests[0]?.url).toBe('https://api.example.test/v1/oauth/authorize/consent/req-1');
+    expect(request.self_registered).toBe(true);
+    expect(request.redirect_to).toBe('claude.ai');
+  });
+
   test('secret submit returns the names the requesting agent will not receive', async () => {
     responseFactory = () =>
       Response.json({

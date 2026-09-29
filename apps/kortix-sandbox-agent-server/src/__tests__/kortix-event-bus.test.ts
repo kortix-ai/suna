@@ -1,4 +1,4 @@
-import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '../harness/open-code/event-bus'
+import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '@/harness/open-code/event-bus'
 /**
  * The sequencer — the property the whole stream design rests on.
  *
@@ -10,7 +10,7 @@ import { publishOpenCodeEvent, OPENCODE_EVENT_RECOVERY } from '../harness/open-c
  */
 import { describe, expect, test } from 'bun:test'
 
-import { KortixEventBus, type KortixEvent } from '../kortix-event-bus'
+import { KortixEventBus, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
 
 function collect(): { events: KortixEvent[]; listener: (e: KortixEvent) => void } {
   const events: KortixEvent[] = []

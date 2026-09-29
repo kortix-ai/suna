@@ -20,6 +20,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import { apiRegion, databaseRegion } from './lib/deployment-region';
+import { requestLogLevel } from './lib/request-log-level';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -86,7 +87,8 @@ import { upstreamTiming } from './middleware/upstream-timing';
 import { installFetchTiming } from './lib/server-timing';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
 import { oauthApp } from './oauth';
-import { oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { createMcpApp } from './mcp';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
@@ -116,7 +118,7 @@ import {
 } from './projects/suna-migration/suna-migration-worker';
 import { router } from './router';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
+import { runtimeAssetsApp, runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
@@ -433,7 +435,11 @@ app.use('*', async (c, next) => {
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
-    const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
+    // WARN only for a real failure. A slow-but-successful request stays INFO —
+    // paging on it fired on ordinary contention (KRTX-627: 174 WARN lines on
+    // one read route, none 5xx). Latency regressions stay covered by the
+    // infra-sweep's p95 detector, and the line still carries `duration`.
+    const level = requestLogLevel(status);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
@@ -643,6 +649,15 @@ function hasInternalObservabilityAuth(c: any): boolean {
 // edges that route only /v1/*.
 app.get('/.well-known/oauth-authorization-server', (c) => {
   return c.json(oauthAuthorizationServerMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+
+// RFC 9728 protected-resource metadata for the MCP endpoint — what an MCP
+// client reads after the endpoint's 401 challenge to find the authorization
+// server above.
+app.get('/.well-known/oauth-protected-resource/v1/mcp', (c) => {
+  return c.json(mcpProtectedResourceMetadata(new URL(c.req.url).origin), 200, {
     'cache-control': 'public, max-age=3600',
   });
 });
@@ -978,6 +993,9 @@ app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+// /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
+// It answers its own 401 with an OAuth challenge, so no auth middleware here.
+app.route('/v1/mcp', createMcpApp(dispatchInProcess));
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served
@@ -1712,6 +1730,9 @@ async function bootServices() {
     // Absent binaries are a legitimate state (a checkout that never built one);
     // the route reports that per component. Nothing to do here.
   });
+  // Same reasoning, same shape, for the chunk index: it reads the same ~200 MB
+  // and would otherwise be built inside the first converging box's request.
+  void warmRuntimeChunkIndex();
 }
 
 // Graceful shutdown
@@ -1788,6 +1809,16 @@ import {
  * outside Hono names its entrypoint class so its row says what it was.
  * `unit-audit-boundary-wiring.test.ts` fails if a branch escapes it.
  */
+// MCP tool calls (./mcp) re-enter the API as ordinary requests: through the
+// audit boundary and this dispatcher, never around them. There is no socket,
+// so nothing to time out and nothing to upgrade.
+const IN_PROCESS_SERVER = { timeout() {}, upgrade: () => false };
+async function dispatchInProcess(req: Request): Promise<Response> {
+  const url = getRequestUrl(req, config.PORT);
+  const response = await runInboundAudit(req, url, () => dispatchInbound(req, url, IN_PROCESS_SERVER));
+  return response ?? new Response(null, { status: 500 });
+}
+
 async function dispatchInbound(
   req: Request,
   url: URL,

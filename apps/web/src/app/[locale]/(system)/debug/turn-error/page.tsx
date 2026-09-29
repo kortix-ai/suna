@@ -148,13 +148,13 @@ const CASES: DebugCase[] = [
     row: 'checkpoint, no caret',
   },
   {
-    title: 'Usage limit (keeps the boxed upgrade card)',
+    title: 'Provider usage limit (429) — a checkpoint, not a Kortix upsell',
     error: {
       name: 'UnknownError',
       data: { message: '{"message":"The usage limit has been reached","code":429}' },
     },
     sentence: 'The usage limit has been reached',
-    row: 'billing card',
+    row: 'checkpoint, opens',
   },
 ];
 

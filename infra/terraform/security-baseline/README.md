@@ -44,7 +44,11 @@ in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
       `CrossSiteScripting_BODY`, `EC2MetaDataSSRF_BODY`
     - AWSManagedRulesKnownBadInputsRuleSet: `Log4JRCE_BODY`, `JavaDeserializationRCE_BODY`,
       `ReactJSRCE_BODY`
-    URI/query/header/cookie rules + AmazonIpReputationList stay in Block. A matching
+    On 2026-09-28 `SizeRestrictions_URIPATH` (path > 1024 bytes) was also set to
+    **Count**: setup-link tokens ride in the path (`/v1/setup-links/secret/ksl_…`)
+    and a token with a few described fields passes 1024 bytes. Block answered
+    with a 403 page without CORS headers, so the intake form could not load.
+    Other URI/query/header/cookie rules + AmazonIpReputationList stay in Block. A matching
     Cloudflare custom-firewall `skip` rule (zone kortix.com) skips CF's free managed ruleset
     for the same API hosts, since CF was independently blocking command-injection-like prompt
     content at the edge. Re-blocking any `*_BODY` rule will break prompts + git push again.

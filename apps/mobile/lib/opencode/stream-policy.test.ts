@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  statusesToHydrate,
   HEARTBEAT_TIMEOUT_MS,
   HOLLOW_STREAM_END_MS,
   MAX_HARD_FAILURES,
@@ -222,5 +223,49 @@ describe('questionsToHydrate', () => {
       () => true,
     );
     expect(added.map((entry) => entry.id)).toEqual(['q1']);
+  });
+});
+
+// KRTX-606: a thread opened (or a stream reopened) mid-turn read "not
+// running" — busy/idle came only from live frames, and nothing re-read it.
+describe('statusesToHydrate', () => {
+  type Status = { type: 'busy' | 'idle' };
+  const busy: Status = { type: 'busy' };
+  const all = () => true;
+
+  test('a busy session the store has no status for reads busy', () => {
+    expect(statusesToHydrate({ s1: busy }, {}, {}, all)).toEqual([['s1', busy]]);
+  });
+
+  // A first prompt is seeded busy before a freshly booted box has put the turn
+  // on the wire, and that box answers "not busy". Writing idle from absence
+  // would erase the seed: the exact "not running while running" of KRTX-606.
+  test('absence from the list never writes idle over a busy slot', () => {
+    expect(statusesToHydrate({}, { s1: busy }, { s1: busy }, all)).toEqual([]);
+  });
+
+  test('a listed busy session overwrites an idle slot', () => {
+    const slot: Status = { type: 'idle' };
+    expect(statusesToHydrate({ s1: busy }, { s1: slot }, { s1: slot }, all)).toEqual([['s1', busy]]);
+  });
+
+  test('a frame that landed while the read was in flight wins', () => {
+    const before: Record<string, Status> = { s1: { type: 'idle' } };
+    const current: Record<string, Status> = { s1: { type: 'idle' } };
+    expect(statusesToHydrate({ s1: busy }, before, current, all)).toEqual([]);
+  });
+
+  test('a session on another computer is left alone', () => {
+    expect(statusesToHydrate({}, { s2: busy }, { s2: busy }, (id) => id !== 's2')).toEqual([]);
+  });
+
+  test('an unchanged status is not rewritten', () => {
+    const slot: Status = { type: 'busy' };
+    expect(statusesToHydrate({ s1: busy }, { s1: slot }, { s1: slot }, all)).toEqual([]);
+  });
+
+  test('a malformed body writes nothing', () => {
+    expect(statusesToHydrate(null, {}, {}, all)).toEqual([]);
+    expect(statusesToHydrate([busy], {}, {}, all)).toEqual([]);
   });
 });

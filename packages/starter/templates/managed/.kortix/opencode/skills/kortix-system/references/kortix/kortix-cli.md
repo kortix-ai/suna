@@ -5,9 +5,8 @@ dashboard can do — from a terminal, from a coding agent, from a session
 sandbox. It is **always available** inside a Kortix session sandbox:
 
 - the binary is on `PATH` (`/usr/local/bin/kortix`)
-- `KORTIX_CLI_TOKEN` is pre-injected — a project-scoped token the CLI
-  authenticates with automatically (not `KORTIX_SANDBOX_TOKEN` / its
-  deprecated `KORTIX_TOKEN` alias; see "Inside a sandbox" below)
+- `KORTIX_TOKEN` is pre-injected — the session-scoped token the CLI
+  authenticates with automatically (see "Inside a sandbox" below)
 - `KORTIX_API_URL` points at the platform you're running against
 
 So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
@@ -174,8 +173,8 @@ the exact HTTPS hosts the policy lists.
 | Command | Effect |
 | --- | --- |
 | `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. In a session it lists only your agent's granted secrets; a declared key outside the grant shows `not granted` (set or not, you never receive it — ask the human to enable it under Customize → Agents → your agent → Secrets). |
-| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
-| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
+| `kortix secrets set NAME=VALUE … [--scope runtime\|connector]` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). **Use it whenever you HAVE the value** — including a key the human gave you in chat. `--scope connector` keeps it server-side for a connector. `403` = your agent lacks secret-write permission → use `request`. |
+| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER value(s) you do NOT have.** Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
 | `kortix secrets unset NAME …` | Remove. |
 | `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | (Experimental network enforcement only.) Send one policy-bound HTTPS request. Kortix adds the secret server-side. Use it when a request cannot be relayed transparently. |
 
@@ -186,10 +185,12 @@ a plaintext environment variable. An egress-enforced secret (experimental,
 present only when the project enabled it) is a handle, and a service-spent one
 has no sandbox presence at all.
 
-> **Asking a human for a secret.** You usually don't *have* the value, so don't
-> use `set`. Run `kortix secrets request APOLLO_API_KEY` (or the `request_secret`
-> tool on the `kortix-connectors` MCP), surface the returned URL, end your turn, and
-> when they say "done" confirm with `kortix secrets ls`. See the
+> **Have the value? Set it. Lack it? Request it.** When the human already gave
+> you the value, store it now: `printf '%s' "$V" | kortix secrets set NAME=-`
+> (or the `set_secret` tool) — no link. When you lack it, run
+> `kortix secrets request APOLLO_API_KEY` (or the `request_secret` tool on the
+> `kortix-connectors` MCP), surface the returned URL, end your turn, and when they
+> say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
 ### Connectors — call external tools
@@ -210,7 +211,9 @@ package**. JSON output.
 | `kortix connectors accounts <slug>` | List the accounts a connector holds, default first. Use this whenever it matters which account runs, or a human asks which/how many are connected — never infer it from one call's result. |
 | `kortix connectors accounts <slug> --default <label>` | Pin one account as the one an unnamed call uses. |
 | `kortix connectors call <connector> <action> '<json>' [--account <label\|id\|me\|project>]` | Invoke an action, optionally naming which account. Omit `--account` for the default. The gateway resolves the account, enforces policy, and audits. Every successful result echoes `account` — say which one ran when it matters. |
+| `kortix connectors call <connector> <action> '<json>' --reason "<text>"` | Describe the effect for the human approver when a policy holds the call. Pass it on every write whose args are only ids (`send_draft`, deletes, merges). The approver sees it labelled as your description, next to the arguments. |
 | `kortix connectors call <connector> <action> @args.json --attach <file>` | Attach a file from `/workspace/{output,artifacts,reports,deliverables}`. The gateway writes it into the action's attachments array as the provider's item (e.g. Microsoft Graph `body.message.attachments`). `@file` / `-` read large args. |
+| `kortix connectors call <connector> <action> '<json>' --out <file>` | Write the full JSON result to `<file>` (parent dirs created). Stdout gets only `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). Use it for results too large to read; query the file with `jq` or `bun`. |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
@@ -324,6 +327,25 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+
+### Reminders
+
+A reminder re-prompts ONE session later or on repeat. It is a trigger
+scoped to that session and stored in the database — no `kortix.yaml`
+edit. Inside a sandbox `--session` defaults to `$KORTIX_SESSION_ID`.
+
+| Command | What it does |
+| --- | --- |
+| `kortix remind "<text>" --in 24h` | Fire once, 24h from now. `--at <ISO>` for an instant. |
+| `kortix remind "<text>" --in 24h --every 1h` | First fire in 24h, then hourly until removed. `--every` min `5m`. |
+| `kortix reminders add "<text>" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin` | Repeat on a 6-field cron. |
+| `kortix reminders ls [--json]` | This session's reminders: id, state (`active`/`paused`/`done`), next fire. |
+| `kortix reminders pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
+| `kortix reminders rm <id>` | Delete it. Do this as soon as its condition is met. |
+
+Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
+parked session. A fire never starts a new session; if the session is
+deleted or failed the reminder pauses itself. Max 20 active per session.
 
 ### Channels (Slack)
 
@@ -467,25 +489,19 @@ outright.
 The session bootstrap injects:
 
 ```
-KORTIX_CLI_TOKEN=kortix_pat_…       ← project-scoped PAT; what the CLI authenticates with
-KORTIX_SANDBOX_TOKEN=kortix_sb_…    ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
-KORTIX_TOKEN=kortix_sb_…            ← deprecated alias for KORTIX_SANDBOX_TOKEN, same value
+KORTIX_TOKEN=kortix_pat_…     ← the session's one Kortix credential; the CLI authenticates with it
 KORTIX_API_URL=https://<host>/v1
 KORTIX_PROJECT_ID=<uuid>
 KORTIX_SESSION_ID=<uuid>
-KORTIX_BRANCH_NAME=<session-branch>
+KORTIX_AGENT_NAME=<agent>
+KORTIX_BRANCH_NAME=<session-branch>   ← only when the agent has full repository access
 ```
 
-The CLI reads `KORTIX_CLI_TOKEN` automatically and uses `KORTIX_API_URL` as the
-host base. No config file,
-no `kortix login` needed — `kortix …` just works.
-
-> **Don't authenticate with `KORTIX_SANDBOX_TOKEN`** (or its deprecated
-> `KORTIX_TOKEN` alias). That's the sandbox *service key* (used for the LLM
-> gateway, the tool router, and just-in-time git clone credentials). The
-> project-scoped routes the CLI calls (`change-requests`, `secrets`, …)
-> reject it with `401 Invalid or expired token` — it isn't expired, it's
-> simply the wrong token. Use the CLI; it already holds the right one.
+The CLI reads `KORTIX_TOKEN` and uses `KORTIX_API_URL` as the host base. No
+config file, no `kortix login` needed — `kortix …` just works. The token is
+bound to this session: a route that names a session accepts only
+`$KORTIX_SESSION_ID`, and it holds only the agent's `kortix_permissions`.
+Provider, connector, and Git credentials stay server-side.
 
 ### Rotating
 
@@ -571,9 +587,8 @@ conflict story, and data model.
 
 | Variable | Purpose |
 | --- | --- |
-| `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
-| `KORTIX_SANDBOX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
-| `KORTIX_TOKEN` | Deprecated alias for `KORTIX_SANDBOX_TOKEN`, same value. **Not** a CLI token. |
+| `KORTIX_TOKEN` | Session-scoped PAT the CLI authenticates with (injected in sandboxes). |
+| `KORTIX_SESSION_ID` | This session. `kortix reminders`, `cr open`, and `review` default `--session` to it. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |

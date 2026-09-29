@@ -298,6 +298,7 @@ describe('connectors', () => {
       'idx_connector_calls_connector',
       'idx_connector_calls_connection',
       'idx_connector_calls_status',
+      'idx_connector_calls_account',
     ]);
   });
 

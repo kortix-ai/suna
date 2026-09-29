@@ -125,7 +125,7 @@ export async function cancelForwardedPrompt(
       { method: 'GET', headers, signal: AbortSignal.timeout(5_000) },
     );
     if (!res.ok) {
-      logger.warn('[cancel-forwarded] tip read refused', { session_id: sessionId, status: res.status });
+      logger.warn('[cancel-forwarded] tip read refused', { session_id: sessionId, upstream_status: res.status });
       return { outcome: 'unreachable' };
     }
     const body = (await res.json().catch(() => null)) as Array<{

@@ -89,12 +89,24 @@ describe('approvalRequestFromAction', () => {
       risk: 'write',
       requestedAt: '2026-08-09T10:00:00.000Z',
       argsPreview: { subject: 'Weekly report', to: ['marko@kortix.ai'] },
+      approvalContext: null,
       reviewComplete: true,
       resolution: null,
       pending: true,
       status: 'pending_approval',
       resolvedAt: null,
     });
+  });
+
+  test("carries the agent's description of an id-only call", () => {
+    const row = action({
+      result_summary: {
+        args_preview: { draft_id: 'r-1' },
+        args_preview_complete: true,
+        approval_context: 'Sends draft r-1 to a@example.test',
+      },
+    });
+    expect(approvalRequestFromAction(row).approvalContext).toBe('Sends draft r-1 to a@example.test');
   });
 
   test('reports a shortened preview as incomplete — which no longer blocks it', () => {

@@ -176,6 +176,10 @@ Subcommands:
                                     several accounts and none named or pinned,
                                     the call is denied (reason account_required)
                                     instead of guessing.
+       [--reason <text>]            What the call does, shown to the human if a
+                                    policy holds it for approval. Pass it when
+                                    the args are only ids (send_draft: say who
+                                    it goes to and what it says).
        [--attach <file>]...         Attach a file from /workspace/{output,
                                     artifacts,reports,deliverables}: stages the
                                     bytes and appends a reference to the
@@ -184,6 +188,11 @@ Subcommands:
                                     builds the provider's attachment item.
        [--attach-path <a.b.c>]      Name that array when auto-detection fails.
        [json] as @file.json or -    Read large JSON args from a file or stdin.
+       [--out <file>]               Write the full JSON result to <file>
+                                    (parent dirs created) and print only a
+                                    summary: saved_to, bytes, and the shape of
+                                    \`data\` (keys, array lengths, pageInfo).
+                                    Use it for results too large to read.
   upload <file> --connector <slug>  Stage one file for a call. Prints \`ref\`,
                                     {"$kortix_attachment":"<id>"}: as an
                                     attachments[] element it becomes the

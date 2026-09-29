@@ -46,6 +46,7 @@
     "deleteAccount": "Excluir conta",
     "connectAccount": "Conectar conta",
     "oauthWaiting": "Aguardando autorização…",
+    "oauthFinishing": "Login concluído. Salvando sua conta…",
     "oauthExpired": "A autorização expirou. Tente novamente.",
     "oauthPrivateDescription": "Use seu plano ChatGPT Plus ou Pro neste projeto. Novas contas ficam privadas até você compartilhá-las.",
     "chatGptSubscription": "Assinatura do ChatGPT",
@@ -53,6 +54,7 @@
     "manageChatGptAccounts": "Gerenciar contas ChatGPT",
     "connect": "Conectar",
     "connectChatGpt": "Conectar ChatGPT",
+    "reconnectChatGpt": "Reconectar ChatGPT",
     "noChatGptAccounts": "Nenhuma conta ChatGPT ainda",
     "oauthCreationDescription": "Entre com sua conta ChatGPT Plus ou Pro. O Kortix armazena o login criptografado e nunca o exibe.",
     "defaultAccountLabel": "ChatGPT · {name}",
@@ -237,7 +239,8 @@
       "actionCreate": "Criar um novo repositório",
       "actionImport": "Importar um repositório existente",
       "ownerTypePersonal": "Conta pessoal",
-      "ownerTypeOrg": "Organização"
+      "ownerTypeOrg": "Organização",
+      "createPersonalAuthorize": "Na primeira vez que você criar um repositório em uma conta pessoal, o Kortix pedirá sua autorização no GitHub."
     }
   },
   "projectHome": {
@@ -1063,6 +1066,24 @@
         "empty": "Nenhuma criação registrada ainda. O padrão da plataforma é criado uma vez globalmente; modelos personalizados são criados no primeiro uso."
       }
     },
+    "connectedApps": {
+      "title": "Apps conectados",
+      "description": "Apps em que você entrou com o Kortix, como clientes MCP. Cada um age em seu nome até você revogá-lo.",
+      "emptyTitle": "Nenhum app conectado",
+      "emptyDescription": "Os apps que você aprova com Entrar com o Kortix, como Claude, Cursor ou Codex via MCP, aparecem aqui.",
+      "loadFailed": "Não foi possível carregar os apps conectados",
+      "retry": "Tentar novamente",
+      "unverified": "App não verificado",
+      "lastActive": "Ativo {time}",
+      "approved": "Aprovado {time}",
+      "revokeApp": "Revogar acesso",
+      "actionsFor": "Ações para {name}",
+      "revokeTitle": "Revogar este app?",
+      "revokeDescription": "{name} perde o acesso à sua conta Kortix imediatamente. Para usá-lo de novo, aprove-o novamente.",
+      "revoke": "Revogar",
+      "revoked": "Acesso do app revogado",
+      "revokeFailed": "Não foi possível revogar o app"
+    },
     "featureFlags": {
       "stability": {
         "experimental": "Experimental",
@@ -1150,6 +1171,10 @@
         "config_releases": {
           "name": "Versões de configuração",
           "description": "Executa as sessões com a configuração de agente atual do branch base, servida apenas para leitura, para que um agente, skill ou ferramenta integrado chegue a todas as sessões em curso. Desativado, cada sessão lê a sua própria pasta de configuração no workspace."
+        },
+        "mcp": {
+          "name": "Servidor MCP",
+          "description": "Conecte Claude, ChatGPT, Cursor, Codex ou qualquer cliente MCP a este projeto via OAuth. O cliente entra como você e chama o Kortix com as suas permissões. A URL fica em Conectar MCP, no menu do espaço de trabalho."
         }
       }
     },
@@ -1410,7 +1435,7 @@
     "upgradePlan": "Atualizar plano",
     "sessionList": {
       "loadError": "Não foi possível carregar as sessões",
-      "empty": "Ainda não existem sessões",
+      "empty": "As sessões que você iniciar vão aparecer aqui",
       "noMatches": "Nenhuma sessão corresponde aos filtros ativos.",
       "actions": "Ações da sessão",
       "actionsFor": "Ações para {title}",
@@ -1446,6 +1471,7 @@
       "createAccount": "Criar uma conta…",
       "settings": "Configurações",
       "downloadApp": "Transferir aplicação",
+      "connectMcp": "Conectar MCP",
       "logOut": "Sair",
       "find": "Encontrar um projeto…",
       "accountSettings": "Configurações da conta",
@@ -2758,6 +2784,21 @@
       }
     }
   },
+  "firstChat": {
+    "title": "Seu primeiro chat com Kortix",
+    "greeting": "Boas-vindas, {name}. Eu sou o Kortix.",
+    "greetingNoName": "Boas-vindas. Eu sou o Kortix.",
+    "intro": "Traga qualquer coisa: uma tarefa, um workflow ou uma ideia ainda em formação. Vamos resolver isso juntos.",
+    "question": "Por onde você quer começar?",
+    "recommendTools": "Recomendar ferramentas",
+    "updateMemory": "Atualizar a memória do projeto",
+    "placeholder": "Conte ao Kortix no que você está trabalhando",
+    "toolsPrompt": "Recomende ferramentas e conectores que combinem com meu workflow. Pergunte primeiro no que eu trabalho, se precisar.",
+    "memoryPrompt": "Conheça como eu trabalho. Faça uma pergunta curta de cada vez sobre minha função, no que trabalho, as ferramentas que uso e como gosto de trabalhar. Salve minhas respostas na memória do projeto para que as próximas sessões já comecem com elas.",
+    "inviteTeammate": "Convidar colega",
+    "connectSlack": "Conectar Slack",
+    "slackConnected": "Slack conectado"
+  },
   "announcements": {
     "memories": {
       "title": "Apresentando Memórias",
@@ -3862,7 +3903,7 @@
       "openRow1Title": "Código aberto",
       "openRow1Body": "Uma das maiores plataformas abertas de IA para trabalho. Leia cada linha – nada é uma caixa preta.",
       "openRow2Title": "Qualquer modelo, suas chaves",
-      "openRow2Body": "Traga qualquer provedor ou a assinatura Claude, ChatGPT ou Cursor que você já pagou.",
+      "openRow2Body": "Traga qualquer provedor ou a assinatura ChatGPT que você já pagou.",
       "openRow3Title": "Hospede-se sozinho em qualquer lugar",
       "openRow3Body": "Nuvem gerenciada, sua VPC, no local e até mesmo isolada. Nada telefona para casa.",
       "openRow4Title": "Fork uma empresa inteira",
@@ -9996,6 +10037,9 @@
       "text0e47f09a748f": "Aumentar zoom",
       "text0e498a7ede47": "{value0} ativado",
       "text0e52f6b9d025": "Markdown",
+      "text4cab70e9226b": "Salvar como PDF",
+      "textce87352f1102": "Este arquivo é grande demais para salvar como PDF. Baixe o arquivo Markdown.",
+      "text3b0c86f182b0": "Não foi possível preparar o PDF.",
       "text0e570ca6fabe": "Fonte",
       "text0e613afafe9e": "O que nunca muda",
       "text0e66373f45dc": "Rótulo",
@@ -10294,7 +10338,6 @@
       "text1785635529d1": "Provisionar sob demanda",
       "text178880c99bfa": "Migração única do banco de dados a cada atualização",
       "text1797cd1f264b": "Sua assinatura do ChatGPT",
-      "text17b2d4b0499f": "Risco médio",
       "text17c982d8eb68": "Configurações do gatilho",
       "text17ca81a2d026": "Um sandbox é uma máquina Linux real onde o modelo pode executar qualquer coisa. Por isso, não colocamos suas credenciais nele. O sandbox carrega exatamente um token do Kortix, limitado ao projeto, e cada chamada externa é montada do nosso lado do muro.",
       "text17ccfa5b681e": "Manutenção",
@@ -11934,7 +11977,6 @@
       "text467065a16a2e": "Área de texto",
       "text467d579386a6": "Um agente nunca ultrapassa seu humano",
       "text46800e585f61": "Passe uma URL de DOCX com a",
-      "text4682a7f79721": "Alto risco",
       "text46866b323e0b": "O que um agente deve manter é commitado na branch da sessão e proposto de volta para a main. O merge é negado por padrão para agentes; um administrador pode conceder project.cr.merge em kortix.yaml, e ampliar essa concessão é, por si só, uma alteração revisada.",
       "text469ad0b25e29": "Ainda em \"Attributes & Claims\", clique em \"Add a group claim\".",
       "text469bcc02c9f9": "Cada porta do host, reatribuída automaticamente se já estiver em uso",
@@ -14652,7 +14694,6 @@
       "text93d6bb239aae": "Sem política = porta trancada: o Cloudflare nega acesso a todos até existir pelo menos uma política Allow. Esta é a causa mais comum de \"o SSO redireciona, mas o acesso é negado\".",
       "text93d6de7104f0": "Remover ícone",
       "text93dcf1d1d25e": "Fins de semana",
-      "text93e404732659": "Inicie uma sessão para dar a este projeto sua primeira tarefa.",
       "text93f4b14c9e2b": "Nenhuma notificação ativa",
       "text93f5222a6e5c": "- Escale apenas o que precisa de uma pessoa",
       "text93fbaf02beca": "01 · Isolamento",
@@ -14999,7 +15040,7 @@
       "text9d48410d14d3": "Recurso empresarial",
       "text9d4b2eae7c42": "O padrão enviado é permissivo — uma ação é executada, a menos que você diga o contrário. Em um projeto de vendas, a primeira coisa a fazer é definir as ações de saída como Perguntar e as destrutivas como Bloquear. Estamos dizendo isso em vez de deixar você presumir que o padrão mais seguro foi escolhido por você.",
       "text9d53e28e9e39": "O acesso por projeto está listado na seção Projetos desta página.",
-      "text9d54b2fd9149": "Use qualquer provider ou a assinatura do ChatGPT, Claude ou Cursor que você já paga. O modelo é configuração no seu repo, não uma decisão que um vendor toma por você.",
+      "text9d54b2fd9149": "Use qualquer provider ou a assinatura do ChatGPT que você já paga. O modelo é configuração no seu repo, não uma decisão que um vendor toma por você.",
       "text9d5adef979f7": "Legado",
       "text9d6304b7f8dc": "Gerenciamento → Configuração de Identidade",
       "text9d74727714db": "Descartada",
@@ -16002,7 +16043,6 @@
       "textba05a1dd202f": "Expanda o significado de AGI aberta: seres cognitivos totalmente autônomos como colegas de trabalho digitais.",
       "textba0e4962bc0f": "size-3.5 shrink-0",
       "textba0e4afa9340": "Símbolo",
-      "textba13e1e74457": "Baixo risco",
       "textba1eac1c3fa4": "Contas que iniciaram pelo menos uma sessão",
       "textba24f124cec0": "Saiba mais.",
       "textba34a96f2969": "Última atualização:",
@@ -18692,6 +18732,7 @@
       "texta23bbd5b005e": "Acesso CORS da prévia do sandbox verificado",
       "textaf6efe6ab19e": "Atualidade da configuração do agente da sessão verificada",
       "text24ce0e45fb23": "E-mail de login verificado",
+      "textef01adfb4372": "Configuração de login lida",
       "text4fde9c00516c": "Ponto de entrada do sandbox verificado",
       "text412f891b55a9": "Repositório Git clonado ou buscado",
       "text1fd8295dda82": "Solicitação de alteração fechada",
@@ -19182,7 +19223,22 @@
       "text5176d59f25fd": "Versão de configuração da sessão resolvida",
       "text273c48dbf3b9": "Dispositivo de notificações push registrado",
       "textbb666ddf7a57": "Dispositivo de notificações push removido",
-      "text397ab5aecbbf": "Solicitação de permissão da sessão repassada"
+      "text397ab5aecbbf": "Solicitação de permissão da sessão repassada",
+      "text3ec6c235548a": "Metadados do servidor MCP lidos",
+      "text7740934de920": "Cliente OAuth registrado",
+      "textcd36423ea12a": "Servidor MCP chamado",
+      "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
+      "text890355ac3800": "Checked runtime-asset chunks",
+      "textd88c84258c7a": "Listou os apps conectados",
+      "text37698a37f9d2": "Revogou um app conectado",
+      "text8c8fb214b592": "Autorizou o GitHub como usuário",
+      "text4192bb1e9ee5": "Lembretes de sessão listados",
+      "texteee2410ea3db": "Lembrete de sessão criado",
+      "text33954223cc7e": "Lembrete de sessão ativado ou desativado",
+      "textb7ece0360b75": "Lembrete de sessão excluído",
+      "text9dcde51d9ff2": "Descrição do agente",
+      "textfa0db737cb09": "Escrita pelo agente e não verificada. O conector recebe os parâmetros abaixo.",
+      "text2edf70730233": "Mensagem para o agente (opcional)"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -19225,108 +19281,53 @@
     "skip": "Pular",
     "skipForNow": "Pular por enquanto",
     "progress": "Progresso da configuração",
-    "demo": {
-      "title": "Agende uma chamada de configuração de 20 minutos",
-      "description": "Alguns minutos de concentração com a equipe para conectar seu centro de comando."
-    },
-    "kickoff": {
-      "tools": "Conectei essas ferramentas também: {count}. Use-os se eles ajudarem.",
-      "noDomain": "Terminei de configurar meu projeto.{toolsClause} Apresente-se, explique o que você pode fazer e pergunte primeiro em que preciso de ajuda.",
-      "withDomain": "Terminei de configurar meu projeto para {domain}. Pesquise a empresa e me diga o que você encontrou.{toolsClause} Em seguida, pergunte primeiro no que preciso de ajuda."
-    },
-    "company": {
-      "title": "Conte-nos sobre sua empresa",
-      "description": "Seu agente usa o domínio para pesquisar sua própria empresa. Nada é compartilhado publicamente.",
+    "work": {
+      "title": "Em que você trabalha principalmente?",
+      "description": "O Kortix usa isso para sugerir suas primeiras tarefas.",
+      "ariaLabel": "Em que você trabalha",
+      "noteLabel": "Conte em poucas palavras",
+      "notePlaceholder": "Por exemplo, pesquisa ou recrutamento",
       "continue": "Continuar",
-      "skipSurvey": "Pular pesquisa",
-      "domain": "Domínio da empresa",
-      "invalidDomain": "Insira um link válido como acme.com ou https://acme.com"
-    },
-    "tools": {
-      "title": "Conecte suas ferramentas",
-      "description": "Escolha os aplicativos em que você mora e autorize-os aqui mesmo. Seu agente pode ler, escrever e agir em tudo que você conectar.",
-      "continue": "Continuar",
-      "skipForNow": "Pular por enquanto",
-      "searchPlaceholder": "Pesquise mais de 3.000 aplicativos…",
-      "notConfiguredTitle": "O App Connect não está configurado nesta implantação",
-      "notConfiguredDescription": "Você ainda pode continuar e conectar ferramentas posteriormente nos Conectores.",
-      "noMatches": "Nada corresponde a “{query}”.",
-      "trySearch": "Tente uma pesquisa.",
-      "addConnection": "Adicione uma conexão {app}",
-      "connected": "Conectado",
-      "loadMore": "Carregar mais",
-      "addApp": "Adicionar {app}",
-      "appFallback": "aplicativo",
-      "connectionDescription": "Crie uma conexão de conector antes da autorização. Você pode adicionar mais de uma conexão para o mesmo aplicativo.",
-      "categories": {
-        "email": "E-mail",
-        "aiAgents": "Agentes de IA",
-        "developerTools": "Ferramentas de desenvolvedor",
-        "scheduling": "Agendamento e reserva",
-        "notes": "Notas",
-        "spreadsheets": "Planilhas",
-        "artificialIntelligence": "Inteligência artificial",
-        "socialMedia": "Redes sociais",
-        "fileStorage": "Gerenciamento e armazenamento de arquivos",
-        "documents": "Documentos",
-        "crm": "CRM",
-        "projectManagement": "Gerenciamento de projetos",
-        "productivity": "Produtividade",
-        "analytics": "Análise",
-        "webScraping": "Web scraping de IA",
-        "videoAudio": "Vídeo e áudio",
-        "teamChat": "Bate-papo em equipe",
-        "onlineCourses": "Cursos on-line",
-        "taskManagement": "Gerenciamento de tarefas",
-        "design": "Imagens e design",
-        "databases": "Bancos de dados",
-        "newsLifestyle": "Notícias e estilo de vida",
-        "ecommerce": "Comércio eletrônico",
-        "signatures": "Assinaturas"
+      "options": {
+        "founder": "Dirigir uma empresa",
+        "engineering": "Engenharia",
+        "product_design": "Produto e design",
+        "sales": "Vendas",
+        "marketing": "Marketing",
+        "finance_ops": "Operações",
+        "support": "Suporte e sucesso do cliente",
+        "other": "Outra coisa"
       }
     },
-    "slack": {
-      "title": "Adicionar Kortix ao Slack",
-      "description": "É aqui que a maioria das equipes realmente usa o Kortix – @mencione seu agente, inicie tarefas, obtenha resultados no canal.",
-      "continue": "Continuar",
-      "notNow": "Agora não",
-      "connected": "Conectado ao Slack",
-      "installMethod": "Método de instalação do Slack",
-      "add": "Adicionar ao Slack",
-      "addDescription": "Um clique, nada para configurar",
-      "custom": "Use um aplicativo Slack personalizado",
-      "customDescription": "Para espaços de trabalho auto-hospedados ou quando a instalação gerenciada não está disponível",
-      "waiting": "Aguardando aprovação no Slack…",
-      "waitingDescription": "Conclua a instalação no pop-up do Slack. Kortix verifica a conexão a cada 2,5 segundos.",
-      "bringOwn": "Traga seu próprio aplicativo Slack",
-      "bringOwnDescription": "Para configurações auto-hospedadas ou instalações com escopo de espaço de trabalho.",
-      "closeCustom": "Fechar configuração personalizada do aplicativo Slack"
+    "apps": {
+      "title": "Quais apps você usa?",
+      "description": "Clique em um app para conectá-lo. Você pode adicionar mais a qualquer momento.",
+      "ariaLabel": "Apps",
+      "searchPlaceholder": "Buscar apps ou categorias",
+      "clearSearch": "Limpar pesquisa",
+      "connectApp": "Conectar {app}",
+      "appConnected": "{app} está conectado",
+      "connectedCount": "{count} conectados",
+      "noMatches": "Nenhum app corresponde a “{query}”",
+      "notConfiguredTitle": "Os apps não estão configurados aqui",
+      "notConfiguredDescription": "Esta instalação não tem catálogo de apps. Você pode adicionar conectores depois em Configurações.",
+      "continue": "Continuar"
     },
     "plan": {
-      "title": "Como você deseja capacitar seu agente?",
-      "descriptionConnected": "Um modelo já está conectado, então você está pronto para prosseguir. Adicione outro provedor ou atualize se quiser mais.",
-      "descriptionDisconnected": "Seu agente precisa de um modelo para pensar. Nada acontece até você continuar.",
+      "title": "Quais modelos o Kortix deve usar?",
+      "description": "Você pode mudar isso a qualquer momento em Configurações.",
       "seePlans": "Ver planos",
+      "open": "Abrir workspace",
       "addKey": "Adicionar uma chave",
-      "continue": "Continuar",
-      "modelAccess": "Acesso ao modelo",
-      "useKortix": "Use modelos Kortix",
-      "useKortixDescription": "Acesso instantâneo, limites mais altos, nada para configurar",
-      "connectAnother": "Conecte outro provedor",
-      "bringKey": "Traga sua própria chave de API",
-      "providerDescription": "Anthropic, OpenAI ou qualquer outro provedor",
-      "keepCurrent": "Mantenha o que eu tenho",
-      "decideLater": "Decida mais tarde",
-      "keepCurrentDescription": "Continue com o modelo que já está conectado",
-      "decideLaterDescription": "O compositor perguntará na primeira vez que você enviar uma tarefa"
-    },
-    "done": {
-      "title": "Seu centro de comando está ativo",
-      "descriptionWithTools": "{count} ferramentas conectadas. A abertura inicia sua primeira conversa com Kortix.",
-      "description": "A abertura inicia sua primeira conversa com Kortix.",
-      "openProject": "Abrir projeto",
-      "firstMessage": "Sua primeira mensagem",
-      "bookCall": "Agende uma chamada de configuração de 20 minutos com Marko"
+      "modelAccess": "Acesso a modelos",
+      "useKortix": "Modelos Kortix",
+      "recommended": "Recomendado",
+      "useKortixDescription": "Prontos agora. Usam os créditos do seu plano.",
+      "useKortixNeedsPlan": "Requer um plano Kortix ou créditos.",
+      "bringKey": "Minha própria chave de API",
+      "providerDescription": "Anthropic, OpenAI ou outro provedor.",
+      "keyConnected": "Uma chave está conectada.",
+      "decideLater": "Decidir depois"
     }
   },
   "commandPalette": {
@@ -20115,8 +20116,8 @@
     "textOnly": "Apenas texto",
     "zdrTitle": "Retenção zero de dados",
     "zdrDescription": "Retenção zero de dados (ZDR) significa que o provedor processa seus textos e imagens, mas não guarda a entrada nem a resposta após a solicitação. A Kortix armazena seus projetos e conversas separadamente.",
-    "usProvidersTitle": "Provedores sediados nos EUA",
-    "usProvidersDescription": "Cada modelo da Kortix usa um único provedor de inferência fixo, sediado nos EUA. As solicitações nunca passam para outro provedor.",
+    "usProvidersTitle": "Hospedado nos EUA",
+    "usProvidersDescription": "Os modelos da Kortix rodam em data centers nos EUA. Trabalhamos apenas com provedores de inferência americanos.",
     "hiddenHint": "Oculto no seletor. Solicitações diretas continuam permitidas; desative-as no menu do modelo.",
     "hidden": "Oculto no seletor",
     "disableModel": "Desativar modelo",
@@ -20300,5 +20301,25 @@
     "connectFailed": "Não foi possível conectar a conta. Tente novamente.",
     "sharePrivateDescription": "Escolha quem mais pode usar sua conta. Ela passa a ser uma conta compartilhada, que quem gerencia as conexões do projeto também pode gerenciar.",
     "ownerMeta": "Sua conta"
+  },
+  "connectMcp": {
+    "title": "Conectar o Kortix via MCP",
+    "description": "Adicione esta URL ao Claude, ChatGPT, Cursor, Codex ou a qualquer cliente MCP. Na primeira vez, o cliente pede que você entre no Kortix. Nada para instalar.",
+    "urlLabel": "URL do MCP",
+    "addToClient": "Adicione ao seu cliente",
+    "other": "Outro",
+    "claudeSteps": "No Claude (web ou desktop), abra Configurações → Conectores → Adicionar conector personalizado, cole a URL e entre.",
+    "claudeCodeHint": "Depois execute /mcp no Claude Code e entre.",
+    "otherHint": "ChatGPT (modo desenvolvedor), VS Code, Windsurf e outros clientes: adicione um servidor MCP remoto com a URL acima ou com este JSON.",
+    "addToCursor": "Adicionar ao Cursor",
+    "signInOnFirstUse": "O Cursor pede que você entre no Kortix no primeiro uso.",
+    "docs": "Documentação",
+    "done": "Concluído",
+    "copy": "Copiar"
+  },
+  "oauthConsent": {
+    "unverifiedTitle": "App não verificado",
+    "unverifiedBody": "{client} se registrou sozinho no Kortix. O Kortix não verificou quem o opera. Permita apenas se você mesmo estiver conectando agora.",
+    "redirectsTo": "Leva você de volta para"
   }
 }

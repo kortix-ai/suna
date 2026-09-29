@@ -301,7 +301,7 @@ export default function StartScreen() {
             </View>
           </View>
         ) : splashHidden ? (
-          <KortixLoader size="xlarge" />
+          <KortixLoader size="large" />
         ) : null}
       </View>
     </>
