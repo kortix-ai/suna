@@ -765,6 +765,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadDefaultMode: loadDefaultModeFor,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // Lazy: channels import connectors, so a static import here would cycle.
+    postApprovalCard: async (input) =>
+      (await import('../channels/approval-card-relay')).postApprovalCard(input),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(connectorCalls)
@@ -1547,7 +1550,22 @@ async function listConnectors(
   ] =
     await Promise.all([
       db
-        .select()
+        .select({
+          connectorId: connectorActions.connectorId,
+          path: connectorActions.path,
+          name: connectorActions.name,
+          description: connectorActions.description,
+          risk: connectorActions.risk,
+          // The full per-action JSON Schema is the bulk of this route's
+          // payload (1.6 MB on prod). A caller that opts out
+          // (`?include_schemas=false` — the dashboard and `kortix connectors
+          // ls`) must not make Postgres detoast and ship every schema just for
+          // the response to null it below.
+          inputSchema:
+            options.includeSchemas === false
+              ? sql<Record<string, unknown> | null>`null`
+              : connectorActions.inputSchema,
+        })
         .from(connectorActions)
         .where(
           inArray(

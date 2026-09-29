@@ -43,6 +43,7 @@ export type FeatureFlagKey =
   | 'meta_agent'
   | 'apps'
   | 'monitors'
+  | 'reminders'
   | 'warm_sessions'
   | 'secrets_egress'
   | 'pi_worker'
@@ -67,6 +68,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'meta_agent',
   'apps',
   'monitors',
+  'reminders',
   'warm_sessions',
   'secrets_egress',
   'pi_worker',

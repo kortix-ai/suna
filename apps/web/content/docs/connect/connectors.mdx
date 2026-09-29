@@ -280,7 +280,26 @@ not grant authority. The page requires a signed-in Kortix account. Kortix then
 verifies that the account can access and approve actions in the project.
 
 The approval page shows the redacted parameters that the connector will receive.
-Approve or deny the call once. Kortix sends the decision back into the session
+A caller can add `approval_context` (CLI: `--reason`) to describe the effect.
+Use it when the parameters are only references: `gmail.send_draft` takes a
+draft id, so the agent states the recipient, subject, and body. The page shows
+this text as the agent's description, not verified. The parameters remain the
+evidence. Kortix never sends `approval_context` to the provider.
+
+Approve or deny the call once. Add an optional message to the decision. The
+message goes back to the agent with the decision, so a deny can say what to do
+instead.
+
+Every pending call also appears in **Customize → Review → Needs you** for the
+project, with a count on **Review** in the sidebar.
+
+When the call comes from a Slack or Teams session, Kortix posts an approval
+card in that thread. The card shows the agent's description, the parameters,
+and **Approve** / **Deny**. In Slack, **Reply…** opens a box for a message to
+the agent; in Teams, the card has the message box inline. Only a project
+manager or the person who started the session can decide. A decision made
+anywhere (the thread, Kortix, or the approval page) replaces the card's
+buttons with the outcome, and the agent continues in the same thread. Kortix sends the decision back into the session
 through a durable callback. An approval applies only to the exact request
 digest. A changed recipient, subject, body, channel, URL, or other parameter
 requires a new decision.

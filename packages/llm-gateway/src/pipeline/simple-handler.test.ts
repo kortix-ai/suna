@@ -1128,6 +1128,28 @@ describe('model fallback chains (route.fallbackModels)', () => {
     ]);
   });
 
+  // Incident 2026-09-28: a routed model the provider would not serve (404 —
+  // OpenAI's "the model does not exist or you do not have access to it") left
+  // the request with the "model isn't available" error. A 404 is the provider's
+  // own "not available" class, so the chain the project configured on Retry on:
+  // transient must run.
+  test('a model the provider will not serve (404) reaches a transient chain', async () => {
+    const { response, resolved, traces } = await run({
+      respond: (url) => (isPrimary(url)
+        ? new Response(
+            JSON.stringify({ error: { message: 'The model does not exist or you do not have access to it.' } }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          )
+        : ok('from fallback')),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('from fallback');
+    expect(resolved).toEqual(['primary-model', 'fallback-model']);
+    expect(traces.at(-1)?.attemptFailures).toEqual([
+      expect.objectContaining({ routeModel: 'primary-model', status: 404 }),
+    ]);
+  });
+
   // Incident 2026-09-28: codex/gpt-6-sol on a ChatGPT plan hit its usage
   // limit (429); the project's own chain of Kortix models never ran.
   test.each([
@@ -1229,6 +1251,42 @@ describe('model fallback chains (route.fallbackModels)', () => {
       code,
       status: code === 'provider_pool_rate_limited' ? 429 : 401,
     })]);
+  });
+
+  // A routed model that cannot be resolved at all is the same "the provider
+  // will not serve this model" class as an upstream 404. The project's own
+  // chain is configured for exactly this, so it runs.
+  const unroutable = (code: 'model_not_found' | 'model_retired' | 'model_disabled_on_deployment') => () => {
+    throw new GatewayResolutionError(code, `The model is unavailable: ${code}`, 'Choose another model.');
+  };
+  test.each(['model_not_found', 'model_retired', 'model_disabled_on_deployment'] as const)(
+    'a project chain takes over an unroutable primary (%s)',
+    async (code) => {
+      const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+      const { response, traces } = await run({
+        policyId: 'project:exact:primary-model',
+        fallbackOn: 'transient',
+        resolve: (model) => (model === 'primary-model' ? unroutable(code)() : [managedUpstream]),
+        respond: () => ok('from fallback'),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('from fallback');
+      expect(traces.at(-1)?.attemptFailures).toEqual([
+        expect.objectContaining({ stage: 'resolve', routeModel: 'primary-model', code, status: 404 }),
+      ]);
+    },
+  );
+
+  test('an unroutable primary on the platform route keeps its own error', async () => {
+    const { response, calls } = await run({
+      policyId: 'platform-default',
+      fallbackOn: 'transient',
+      resolve: (model) => (model === 'primary-model' ? unroutable('model_not_found')() : [fallbackUpstream]),
+      respond: () => ok('from fallback'),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'model_not_found' } });
+    expect(calls).toEqual([]);
   });
 
   test('a paused ChatGPT model on the platform route returns its own error', async () => {

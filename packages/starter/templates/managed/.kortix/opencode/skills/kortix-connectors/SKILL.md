@@ -23,6 +23,16 @@ Use the **`kortix connectors` CLI** for normal agent work:
 - `kortix connectors call <connector> <action> '<json>' [--account <label>]`
   invokes one action. Every successful result echoes `account`: say which one
   ran when it matters.
+- `kortix connectors call … --reason "<what this does>"` tells the human what
+  the call does if a policy holds it for approval. The approver sees it next
+  to the real arguments. **Always pass it on a write whose args are only ids**
+  — `send_draft` (say who it goes to, the subject, and the body), a delete (say
+  what gets deleted), a merge. Without it the approver sees only `draft_id`.
+  A gated call returns `approval_url`: share it, then stop the turn. The human's
+  decision, and any message they add to it, arrives as your next prompt — a
+  deny with a message is an instruction, not a dead end. In a Slack or Teams
+  session Kortix posts an approval card in the thread itself
+  (`approval_instructions` says so): do not repost the link, just stop.
 - `kortix connectors call … --attach <file>` attaches a file (see **Attach
   files** below). Never put base64 in args.
 - `kortix connectors call … --out <file>` writes the full JSON result to

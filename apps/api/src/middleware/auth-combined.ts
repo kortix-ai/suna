@@ -23,6 +23,7 @@ import { presentedKortixToken, withTokenAttemptBudget } from './token-attempt-bu
 
 import { serviceAccountPrincipal, patPrincipal, jwtPrincipal } from './auth-principal';
 import { applyOAuthAccessTokenPrincipal } from './auth-oauth';
+import { deadCredential401 } from './auth';
 import { enforceTokenProjectScope, extractPreviewSandboxId, setPreviewSessionCookie } from './auth-scope';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
@@ -162,6 +163,12 @@ async function resolvePat(c: Context, next: Next, token: string, isPreviewRoute:
     const patResult = await validateAccountToken(token);
     if (!patResult.isValid || !patResult.userId) {
       auditLoginFail({ c, reason: patResult.error ?? 'invalid_pat', authType: 'pat' });
+      // Same typed 401 as supabaseAuth's resolvePat: a credential that can
+      // never come back is marked with code 'session_token_revoked' so the
+      // caller's retry loop can stop.
+      if (patResult.credentialDead) {
+        throw deadCredential401(patResult.error || 'Credential is no longer valid');
+      }
       throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
     }
     if (patResult.projectId) {

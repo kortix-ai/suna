@@ -156,6 +156,13 @@ A session turn either completes or it doesn't — you can't suspend an
 in-flight turn for hours. A **session reminder** is the resume half: it
 re-prompts THIS session later, with its whole conversation and workspace.
 
+Reminders are a **per-project feature flag** (`reminders`, off by default).
+`kortix projects features` shows whether it is on. If `kortix remind` answers
+"Reminders is not enabled for this project", tell the user and name the switch
+(`kortix projects features enable reminders`, or Settings → Feature flags) —
+enabling it is their decision, not yours — and fall back to a one-off `run_at`
+trigger (`session_mode: reuse`) until they do.
+
 When you'd reach for a mid-task wait (rate-limit cooldown, waiting on an
 approval or an email reply, a slow external job):
 
@@ -172,6 +179,10 @@ approval or an email reply, a slow external job):
    and wakes the session if it was parked. It is not a new user message.
 4. **Remove a recurring reminder the moment its condition is met:**
    `kortix reminders rm <id>`. Every fire is a model turn.
+
+**From a Slack or Teams thread**, put the channel and thread ids into the
+reminder text: the fire is not a channel turn, so the answer must be posted
+with `slack send --channel <id> --thread <ts>` (see `kortix-slack`).
 
 `kortix reminders ls` shows this session's reminders, `pause <id>` /
 `resume <id>` turn one off and on. A reminder lives in the database, not

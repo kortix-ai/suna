@@ -176,6 +176,10 @@ Subcommands:
                                     several accounts and none named or pinned,
                                     the call is denied (reason account_required)
                                     instead of guessing.
+       [--reason <text>]            What the call does, shown to the human if a
+                                    policy holds it for approval. Pass it when
+                                    the args are only ids (send_draft: say who
+                                    it goes to and what it says).
        [--attach <file>]...         Attach a file from /workspace/{output,
                                     artifacts,reports,deliverables}: stages the
                                     bytes and appends a reference to the
@@ -542,9 +546,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       }
       case 'ls':
       case 'list': {
+        // The server includes every action's JSON Schema unless asked not to
+        // (it is the bulk of this route's payload — 1.6 MB on prod). The human
+        // view renders name/status/action count only, so it opts out; `--json`
+        // keeps the historical response.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors`);
+        }>(`${ex}/connectors${json ? '' : '?include_schemas=false'}`);
         if (json) {
           emitJson({ connectors });
           return 0;
@@ -580,14 +588,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'show': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        // The server omits each action's `inputSchema` by default (it is the
-        // dominant contributor to this route's payload — see
-        // apps/api/src/connectors/db-deps.ts `listConnectors`). `--json` is a
-        // scripting contract that historically included it, so ask for it
-        // explicitly; the human-readable view below never renders it.
+        // The server INCLUDES each action's `inputSchema` unless the caller
+        // passes `include_schemas=false` (it is the bulk of this route's
+        // payload — see apps/api/src/connectors/db-deps.ts `listConnectors`).
+        // `--json` is a scripting contract that historically included it, so
+        // ask for it explicitly; the human-readable view below never renders
+        // it, so the human path opts out.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors${json ? '?include_schemas=true' : ''}`);
+        }>(`${ex}/connectors${json ? '?include_schemas=true' : '?include_schemas=false'}`);
         const c = connectors.find((x) => x.slug === slug);
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);

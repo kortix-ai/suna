@@ -715,6 +715,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
 | `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. Pass large args as `@file.json` or `-` (stdin). |
+| `kortix connectors call <connector>.<action> '<json-args>' --reason "<text>"` | Describe what the call does for the human approver when a policy holds it. The approval card shows it as the agent's description next to the arguments. |
 | `kortix connectors call <connector>.<action> @args.json --attach <file>` | Stage a file and append its reference to the action's attachments array. The gateway writes the bytes into the provider's attachment item. `--attach` repeats; `--attach-path <a.b.c>` names the array. See [Attach files](/docs/connect/connectors#attach-files). |
 | `kortix connectors call <connector>.<action> '<json-args>' --out <file>` | Write the full JSON result to `<file>` and print only a summary: `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). See [Large results](/docs/connect/connectors#large-results). |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |

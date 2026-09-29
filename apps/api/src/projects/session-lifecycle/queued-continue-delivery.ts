@@ -1,4 +1,7 @@
+import { sessionLifecycleCommands } from '@kortix/db';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
+import { db } from '../../shared/db';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
@@ -7,6 +10,7 @@ import { assertInboxDeliveryActive, InboxDeliveryPaused, releasePausedInboxDeliv
 import { removeStrandedOpencodeMessage } from './runtime-client';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, remintForRepair, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
+import type { PromptOverridesWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
 
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
@@ -76,12 +80,47 @@ async function repairPlacement(row: SessionLifecycleCommandRow, wireMessageId: s
   return replaced;
 }
 
+/**
+ * A continuation that names no model (approval resume, connector connected,
+ * secret submitted, auto-recovery, a trigger without its own model) runs on the
+ * agent/model/variant of the session's newest turn that named one. Without
+ * this OpenCode falls back to the default agent's own `model:` pin, which can
+ * be a model the user no longer uses or the gateway cannot serve.
+ */
+export async function continuationOverrides(
+  sessionId: string,
+  own: PromptOverridesWire | undefined,
+): Promise<PromptOverridesWire | undefined> {
+  if (own?.model) return own;
+  const [last] = await db
+    .select({ payload: sessionLifecycleCommands.payload })
+    .from(sessionLifecycleCommands)
+    .where(and(
+      eq(sessionLifecycleCommands.sessionId, sessionId),
+      eq(sessionLifecycleCommands.commandType, 'continue_session'),
+      sql`${sessionLifecycleCommands.payload}->'overrides'->'model' is not null`,
+      sql`jsonb_typeof(${sessionLifecycleCommands.payload}->'overrides'->'model') = 'object'`,
+    ))
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    .limit(1);
+  const picked = (last?.payload as { overrides?: PromptOverridesWire } | undefined)?.overrides;
+  if (!picked?.model) return own;
+  return {
+    ...(picked.agent ? { agent: picked.agent } : {}),
+    model: picked.model,
+    ...(picked.variant ? { variant: picked.variant } : {}),
+    // The continuation's own non-null picks (e.g. a directory) still win.
+    ...Object.fromEntries(Object.entries(own ?? {}).filter(([, value]) => value != null)),
+  };
+}
+
 export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   text: string, wireId: string | undefined, placedIntoLiveTurn: boolean, underPlaced: boolean,
   tl: ProvisionTimeline): Promise<Status> {
   let wireMessageId = wireId;
   const isPendingFirstPrompt = row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
   try {
+    const overrides = await continuationOverrides(row.sessionId!, payload.overrides ?? undefined);
     let attempt = Number(payload.deliveryAttempt ?? 0);
     let delivery: SessionDeliveryOutcome;
     for (let round = 0; ; round += 1) {
@@ -90,7 +129,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         source: row.source as SessionInvocationSource, sessionId: row.sessionId!, projectId: row.projectId,
         text, userId: row.actorUserId,
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
-        ...(payload.overrides ? { overrides: payload.overrides } : {}),
+        ...(overrides ? { overrides } : {}),
         ...(wireMessageId ? { wireMessageId } : {}),
         materializationKey: row.commandId, isPendingFirstPrompt,
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
