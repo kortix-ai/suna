@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { Database } from '@kortix/db';
+import { type Database, projects, providerTransitions } from '@kortix/db';
 import {
   ACTIVE_EXTERNAL_ID_META_KEY,
   ACTIVE_SNAPSHOT_NAME_META_KEY,
   PIN_META_KEY,
   TRANSITION_META_KEY,
+  activateWithCas,
   readActiveRouting,
 } from './provider-transition-store';
 
@@ -121,5 +122,93 @@ describe('readActiveRouting', () => {
     );
 
     expect(routing?.activeSnapshotName).toBeNull();
+  });
+});
+
+/**
+ * Minimal transaction handle for `activateWithCas`. It answers the two SELECTs
+ * (project row, then the lease-epoch read) and records every UPDATE. The generated
+ * SQL is not asserted here — this pins the DECISION (which reason, which writer
+ * ran); the integration flow pins the SQL against real PostgreSQL.
+ */
+function activationTransaction(opts: {
+  project: {
+    metadata: Record<string, unknown> | null;
+    generation: number | null;
+    status: string;
+  } | null;
+  leaseEpochRow?: { leaseEpoch: number | null } | null;
+}) {
+  const updates: Array<{ table: unknown; set: Record<string, unknown> }> = [];
+  const tx = {
+    select(columns: Record<string, unknown>) {
+      const readingLeaseEpoch = 'leaseEpoch' in columns;
+      return {
+        from: () => ({
+          where: () => ({
+            for: () => ({ limit: async () => (opts.project ? [opts.project] : []) }),
+            limit: async () => {
+              if (readingLeaseEpoch) return opts.leaseEpochRow ? [opts.leaseEpochRow] : [];
+              return opts.project ? [opts.project] : [];
+            },
+          }),
+        }),
+      };
+    },
+    update(table: unknown) {
+      return {
+        set: (set: Record<string, unknown>) => {
+          updates.push({ table, set });
+          return {
+            where: () =>
+              Object.assign(Promise.resolve([] as unknown[]), { returning: async () => [] }),
+          };
+        },
+      };
+    },
+  };
+  const db = {
+    transaction: (run: (t: typeof tx) => Promise<unknown>) => run(tx),
+  } as unknown as Database;
+  return { db, updates };
+}
+
+describe('activateWithCas', () => {
+  const ARGS = {
+    projectId: '00000000-0000-4000-a000-000000000201',
+    transitionId: '00000000-0000-4000-a000-000000000501',
+    targetProvider: 'platinum',
+    generation: 4,
+    snapshotName: 'kortix-ppwarm-project-current',
+    externalTemplateId: 'tpl_project_current',
+    now: new Date('2026-09-26T00:00:00Z'),
+  };
+
+  test('a stale generation loses the CAS, supersedes the row, and never moves the pin', async () => {
+    const { db, updates } = activationTransaction({
+      project: { metadata: { [PIN_META_KEY]: 'daytona' }, generation: 5, status: 'active' },
+    });
+
+    const result = await activateWithCas(db, ARGS);
+
+    expect(result).toEqual({ activated: false, reason: 'lost_cas' });
+    expect(updates).toEqual([
+      {
+        table: providerTransitions,
+        set: { status: 'superseded', heartbeatAt: null, updatedAt: ARGS.now },
+      },
+    ]);
+  });
+
+  test('a fenced-out zombie loses the lease and touches neither the pin nor the row', async () => {
+    const { db, updates } = activationTransaction({
+      project: { metadata: { [PIN_META_KEY]: 'daytona' }, generation: 4, status: 'active' },
+      leaseEpochRow: { leaseEpoch: 1 },
+    });
+
+    const result = await activateWithCas(db, { ...ARGS, leaseEpoch: 2 });
+
+    expect(result).toEqual({ activated: false, reason: 'lost_lease' });
+    expect(updates).toEqual([]);
   });
 });
