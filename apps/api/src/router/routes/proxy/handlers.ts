@@ -8,6 +8,7 @@ import {
   settleStreamUsage,
 } from '../../services/llm';
 import { resolveActorFromRequest, type ActorContext } from '../../../shared/actor-context';
+import { assertSafeEgressUrl, UnsafeEgressError } from '../../../shared/ssrf-guard';
 import type { ToolCreditReservation } from './app';
 import {
   refundLlmReservation,
@@ -59,6 +60,38 @@ function usageRoute(service: ProxyServiceConfig, subPath: string): string {
 // 3. User's own API key, no Kortix token anywhere
 //    → Pure passthrough. No billing, no gating (self-hosted / non-Kortix user).
 
+// Firecrawl forwards a caller-supplied `url` body field to its own fetcher.
+// Reject loopback / link-local (cloud metadata) / private / non-http(s) targets
+// here, before the credit reservation and the upstream hop, so SSRF protection
+// never depends on the upstream service or on the caller's credit balance.
+async function assertSafeFirecrawlTarget(
+  c: any,
+  service: ProxyServiceConfig,
+  method: string,
+): Promise<void> {
+  if (service.name !== 'firecrawl' || method.toUpperCase() !== 'POST') return;
+  const body = await getRequestBody(c, method);
+  if (!body) return;
+  let url: unknown;
+  try {
+    const text = typeof body === 'string' ? body : new TextDecoder().decode(body);
+    url = JSON.parse(text)?.url;
+  } catch {
+    return; // no JSON body — the upstream rejects it
+  }
+  if (typeof url !== 'string' || url.length === 0) return; // routes with no url field
+  try {
+    await assertSafeEgressUrl(url, { allowHttp: true });
+  } catch (error) {
+    if (error instanceof UnsafeEgressError) {
+      throw new HTTPException(400, {
+        message: 'URL not allowed: only public http(s) targets may be fetched',
+      });
+    }
+    throw error;
+  }
+}
+
 export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: string) {
   const fullPath = new URL(c.req.url).pathname;
   const prefixStr = `/${prefix}`;
@@ -67,6 +100,8 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
   const subPath = prefixIdx !== -1 ? fullPath.slice(prefixIdx + prefixStr.length) || '/' : '/';
   const queryString = new URL(c.req.url).search;
   const method = c.req.method;
+
+  await assertSafeFirecrawlTarget(c, service, method);
 
   const auth = await tryAuthenticate(c);
 
