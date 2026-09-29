@@ -673,6 +673,13 @@
       "when": 1790686483090,
       "tag": "20260929125443_session_initiator",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790703625970,
+      "tag": "20260929174025_chat_identity_mfa_verified",
+      "breakpoints": true
     }
   ]
 }

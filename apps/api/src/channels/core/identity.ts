@@ -1,7 +1,15 @@
-import { and, eq, isNull } from 'drizzle-orm';
-import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import {
+  accountMembers,
+  accounts,
+  chatEventDedup,
+  chatUserIdentities,
+  projectAccessRequests,
+  projects,
+} from '@kortix/db';
 import { db } from '../../shared/db';
 import { authorize } from '../../iam';
+import { mfaGateBlocks } from '../../iam/authorize';
 import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
@@ -39,33 +47,120 @@ function linkRow(user: ChatUser) {
   );
 }
 
-/** The Kortix user behind a live link, or null. */
-export async function lookupChatIdentity(user: ChatUser): Promise<{ userId: string } | null> {
+/** The Kortix user behind a live link, or null. `mfaVerified`: the link was made after a second factor. */
+export async function lookupChatIdentity(user: ChatUser): Promise<{ userId: string; mfaVerified: boolean } | null> {
   const [row] = await db
-    .select({ userId: chatUserIdentities.userId })
+    .select({ userId: chatUserIdentities.userId, mfaVerifiedAt: chatUserIdentities.mfaVerifiedAt })
     .from(chatUserIdentities)
     .where(linkRow(user))
     .limit(1);
-  return row ?? null;
+  return row ? { userId: row.userId, mfaVerified: row.mfaVerifiedAt !== null } : null;
 }
 
+export type ChatLinkResult = { ok: true } | { ok: false; reason: 'linked_to_other' };
+
 /**
- * Link `user` to `userId`. A re-link (same chat user, new Kortix user)
- * replaces the mapping and clears any revocation.
+ * Link `user` to `userId`. Linking again as the same Kortix user refreshes the
+ * link, and a revoked link can be taken by anyone who proves the chat identity.
+ * A live link to ANOTHER Kortix user is never replaced: that person runs
+ * `/logout` in the chat first. A sign-in link links whoever opens it, so
+ * replacing live links let anyone holding one take over a linked identity
+ * (2026-09-29 permissions audit). `mfaVerified` records whether the Kortix
+ * session making the link had passed a second factor.
  */
-export async function linkChatIdentity(user: ChatUser, userId: string): Promise<void> {
-  await db
+export async function linkChatIdentity(
+  user: ChatUser,
+  userId: string,
+  opts: { mfaVerified?: boolean } = {},
+): Promise<ChatLinkResult> {
+  const now = new Date();
+  const rows = await db
     .insert(chatUserIdentities)
     .values({
       platform: user.platform,
       workspaceId: user.workspaceId,
       platformUserId: user.platformUserId,
       userId,
+      mfaVerifiedAt: opts.mfaVerified ? now : null,
     })
     .onConflictDoUpdate({
       target: [chatUserIdentities.platform, chatUserIdentities.workspaceId, chatUserIdentities.platformUserId],
-      set: { userId, linkedAt: new Date(), revokedAt: null },
-    });
+      set: {
+        userId,
+        linkedAt: now,
+        revokedAt: null,
+        // A refresh without MFA (a Slack reinstall) keeps a live link's stamp.
+        mfaVerifiedAt: opts.mfaVerified
+          ? now
+          : sql`case when ${chatUserIdentities.revokedAt} is null then ${chatUserIdentities.mfaVerifiedAt} end`,
+      },
+      // One statement, so two racing links cannot both replace a live link.
+      setWhere: or(isNotNull(chatUserIdentities.revokedAt), eq(chatUserIdentities.userId, userId)),
+    })
+    .returning({ identityId: chatUserIdentities.identityId });
+  return rows.length > 0 ? { ok: true } : { ok: false, reason: 'linked_to_other' };
+}
+
+/**
+ * Spend a sign-in link: true the first time its `nonce` is claimed, false
+ * after. The claim lives until the link expires (`exp`), so a link works once.
+ */
+export async function claimChatLoginToken(platform: ChatPlatform, nonce: string, exp: number): Promise<boolean> {
+  const rows = await db
+    .insert(chatEventDedup)
+    .values({ eventId: `login:${platform}:${nonce}`, expiresAt: new Date(exp) })
+    .onConflictDoNothing({ target: chatEventDedup.eventId })
+    .returning({ eventId: chatEventDedup.eventId });
+  return rows.length > 0;
+}
+
+export type ChatLoginOutcome =
+  | { ok: true; hasAccess: boolean; fresh: boolean }
+  | { ok: false; reason: 'mfa_required' | 'used' | 'linked_to_other' };
+
+/**
+ * Complete a `/login` link for the signed-in `userId`. Both bind routes run
+ * this after they verify the link and find the workspace's `accountIds`.
+ *
+ * 1. An account the person is a member of requires MFA, and this Kortix
+ *    session has not passed it: refuse BEFORE the link is spent, so the person
+ *    verifies in the web app (the `account_mfa_required` step-up) and clicks
+ *    again. A link made without MFA would not pass the account's gate in chat.
+ * 2. Spend the link. A spent link is refused, except to the person it
+ *    already linked (a page reload), which changes nothing.
+ * 3. Link, but never over a live link to someone else.
+ *
+ * `fresh` is false for the reload case: nothing new happened, so callers
+ * resume no parked message.
+ */
+export async function completeChatLogin(input: {
+  user: ChatUser;
+  userId: string;
+  login: { nonce: string; exp: number };
+  accountIds: string[];
+  mfaAal: string | undefined;
+  tokenId: string | null | undefined;
+}): Promise<ChatLoginOutcome> {
+  const member = await Promise.all(input.accountIds.map((a) => isAccountMember(input.userId, a)));
+  const memberAccountIds = input.accountIds.filter((_, i) => member[i]);
+  const hasAccess = memberAccountIds.length > 0;
+  if (hasAccess) {
+    const rows = await db
+      .select({ mfaRequired: accounts.mfaRequired })
+      .from(accounts)
+      .where(inArray(accounts.accountId, memberAccountIds));
+    const accountMfaRequired = rows.some((r) => r.mfaRequired);
+    if (mfaGateBlocks({ accountMfaRequired }, input.tokenId, input.mfaAal)) {
+      return { ok: false, reason: 'mfa_required' };
+    }
+  }
+  if (!(await claimChatLoginToken(input.user.platform, input.login.nonce, input.login.exp))) {
+    const link = await lookupChatIdentity(input.user);
+    return link?.userId === input.userId ? { ok: true, hasAccess, fresh: false } : { ok: false, reason: 'used' };
+  }
+  const linked = await linkChatIdentity(input.user, input.userId, { mfaVerified: input.mfaAal === 'aal2' });
+  if (!linked.ok) return linked;
+  return { ok: true, hasAccess, fresh: true };
 }
 
 export async function revokeChatIdentity(user: ChatUser): Promise<boolean> {
@@ -128,11 +223,17 @@ export async function resolveChatActor(
   const link = await lookupChatIdentity(user);
   if (!link) return { reason: 'unlinked' };
   if (!(await isAccountMember(link.userId, project.accountId))) return { reason: 'not_member' };
-  // Role-only is the honest classification: the webhook has no token of its own.
-  const verdict = await authorize(actorForUser(link.userId, project.accountId), action, {
-    type: 'project',
-    id: project.projectId,
-  });
+  // Role-only is the honest classification: the webhook has no token of its
+  // own. The second factor is the one the link was made with.
+  const verdict = await authorize(
+    actorForUser(link.userId, project.accountId, link.mfaVerified ? { mfaAal: 'aal2' } : {}),
+    action,
+    { type: 'project', id: project.projectId },
+  );
+  // The account requires MFA and this link was made without it: linking
+  // again from a Kortix session that passed MFA fixes it, so ask for that,
+  // not for project access the person may already have.
+  if (!verdict.allowed && verdict.reason === 'account_mfa_required') return { reason: 'unlinked' };
   if (!verdict.allowed) return { reason: 'not_member' };
   return { userId: link.userId };
 }

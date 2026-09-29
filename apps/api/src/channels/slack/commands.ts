@@ -271,12 +271,13 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
   // an admin linking a bot that anyone in the channel can trigger is strictly
   // MORE dangerous than a regular member doing the same.
   //
-  // So the check is the one resolveChatActor already performs for every Slack
-  // message — linked identity, member of this project's account, PROJECT_WRITE.
-  // Anyone who can @-mention the agent and have it act can delegate exactly that
-  // and nothing more. Reusing it also means the two can never disagree: if this
-  // passes, the bot's mentions will resolve; if it fails, they would not have.
-  // Manager tier on purpose: the bot then acts as this person across the workspace.
+  // So the check is resolveChatActor's, the one every Slack message passes —
+  // linked identity, member of this project's account — at the manager tier
+  // (PROJECT_WRITE), not the per-message project.session.start. The bot then
+  // acts as this person for everyone who can make it post, so delegating stays
+  // with the people who could change the project themselves, as it was before
+  // messages moved to session.start (2026-09-29). A manager also passes the
+  // per-message gate, so a linked bot's mentions always resolve.
   const actor = await resolveProjectChatActor(slackUserOf(ctx), selection.projectId, PROJECT_ACTIONS.PROJECT_WRITE);
   if ('reason' in actor) {
     return {
@@ -307,7 +308,13 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
         : `Could not verify <@${botUserId}> with Slack. Nothing was linked; try again.`,
     };
   }
-  await linkChatIdentity(chatUser('slack', ctx.teamId, botUserId), me.userId);
+  // The bot acts as this person, so it carries the second factor their own link was made with.
+  const linked = await linkChatIdentity(chatUser('slack', ctx.teamId, botUserId), me.userId, {
+    mfaVerified: me.mfaVerified,
+  });
+  if (!linked.ok) {
+    return { response_type: 'ephemeral', text: `<@${botUserId}> is already linked to a different Kortix account. Have them disconnect first.` };
+  }
   return {
     response_type: 'ephemeral',
     text: `Linked <@${botUserId}> to your Kortix account. Its @-mentions of Kortix in this workspace now run as you. Undo with \`${ctx.command} logout\` semantics via support, or re-link to someone else.`,
