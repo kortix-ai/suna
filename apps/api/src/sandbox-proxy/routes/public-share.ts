@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
-import { getTraceHeaders } from '../../lib/request-context';
 import { previewOriginFor } from '../preview-hosts';
-import { ingressTargetUrl } from '../../platform/providers/ingress-url';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   STATIC_FILE_SHARE_PORT,
@@ -10,25 +8,9 @@ import {
   touchPublicShare,
   transcriptShareViewerUrl,
 } from '../../shared/session-public-shares';
-import {
-  buildSandboxUpstreamHeaders,
-  invalidatePreviewLink,
-  loadSandbox,
-  markSandboxUsed,
-  resolveSandboxIngress,
-  wakeSandbox,
-} from '../backend';
+import { forwardToSandbox } from './preview';
 
 const publicShareApp = new Hono();
-
-const STRIP_FORWARD_HEADERS = new Set([
-  'host',
-  'authorization',
-  'cookie',
-  'traceparent',
-  'x-request-id',
-  'accept-encoding',
-]);
 
 const VIEW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -168,6 +150,17 @@ publicShareApp.get('/:token', async (c) => {
   });
 });
 
+/**
+ * One forward of the path form. The gates above are the path-form pre-check;
+ * the transport — ingress resolution, the stripped/signed header set, the
+ * 502/503 retry-and-wake loop, redirect rewriting — is `forwardToSandbox`'s,
+ * the same forwarder the preview origin drives public shares through
+ * (`preview-origin.ts`), with `{ kind: 'public_share' }` access. What stays
+ * path-form-specific is the response contract below: the API origin carries the
+ * viewer's `__preview_session` cookie and shares a registrable domain with the
+ * web app, so the answer never sets a cookie and author content runs in an
+ * opaque origin (see publicResponseHeaders).
+ */
 async function forwardPublicShare(c: any, args: {
   token: string;
   share: any;
@@ -191,84 +184,33 @@ async function forwardPublicShare(c: any, args: {
     return c.json({ error: 'This public share is view-only' }, 405);
   }
 
-  const sandbox = await loadSandbox(args.share.externalId!);
-  if (!sandbox) return c.json({ error: 'Sandbox not found' }, 404);
-  if (sandbox.status !== 'active') {
-    return c.json({ error: 'Sandbox is not running', status: sandbox.status }, 503);
-  }
-
   const origin = c.req.header('Origin') || '';
   let body: ArrayBuffer | undefined;
   if (method !== 'GET' && method !== 'HEAD') {
     body = await c.req.raw.clone().arrayBuffer();
   }
 
-  const maxRetries = 2;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const ingress = await resolveSandboxIngress(sandbox, {
-        port: args.port,
-        path: args.remainingPath,
-        transport: 'http',
-      });
-      const targetUrl = ingressTargetUrl(ingress, args.remainingPath + args.queryString);
-      const headers = new Headers();
-      for (const [key, value] of c.req.raw.headers.entries()) {
-        if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
-        headers.set(key, value);
-      }
-      headers.set('Accept-Encoding', 'identity');
-      for (const [key, value] of Object.entries(getTraceHeaders())) {
-        headers.set(key, value);
-      }
-      const authHeaders = await buildSandboxUpstreamHeaders({
-        sandboxId: args.share.externalId!,
-        userId: '',
-        serviceKey: sandbox.serviceKey,
-        providerHeaders: ingress.headers,
-      });
-      for (const [key, value] of Object.entries(authHeaders)) {
-        headers.set(key, value);
-      }
-      const previewOrigin = new URL(ingress.url);
-      if (headers.has('origin')) headers.set('origin', previewOrigin.origin);
-      headers.set('x-forwarded-host', previewOrigin.host);
-      headers.set('X-Forwarded-Prefix', `${publicOrigin(c)}${args.redirectPrefix}`);
+  const upstream = await forwardToSandbox(
+    args.share.externalId!,
+    args.port,
+    { kind: 'public_share' },
+    method,
+    args.remainingPath,
+    args.queryString,
+    c.req.raw.headers,
+    body,
+    origin,
+    args.redirectPrefix,
+    publicOrigin(c),
+  );
 
-      const upstream = await fetch(targetUrl, {
-        method,
-        headers,
-        body,
-        redirect: 'manual',
-        // Bun/undici streaming extensions — not in the lib RequestInit type.
-        decompress: false,
-        duplex: 'half',
-      } as RequestInit);
+  void touchPublicShare(args.share.shareId).catch(() => {});
 
-      if ((upstream.status === 502 || upstream.status === 503) && attempt < maxRetries) {
-        invalidatePreviewLink(args.share.externalId!, args.port);
-        await wakeSandbox(args.share.externalId!);
-        await new Promise((r) => setTimeout(r, 1500));
-        continue;
-      }
-
-      void markSandboxUsed(args.share.externalId!);
-      void touchPublicShare(args.share.shareId).catch(() => {});
-
-      return new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers: publicResponseHeaders(upstream.headers, origin),
-      });
-    } catch (err) {
-      if (attempt >= maxRetries) {
-        return c.json({ error: 'Sandbox upstream unreachable', detail: (err as Error).message }, 502);
-      }
-      await wakeSandbox(args.share.externalId!);
-    }
-  }
-
-  return c.json({ error: 'Sandbox upstream unreachable' }, 502);
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: publicResponseHeaders(upstream.headers, origin),
+  });
 }
 
 function fileOpenQuery(filePath: string): string {
