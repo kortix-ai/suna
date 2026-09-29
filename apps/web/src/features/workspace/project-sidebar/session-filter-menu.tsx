@@ -402,19 +402,19 @@ export function SessionFilterMenu({
     : { owner: false, access: false };
   const showOwnerFacet = pageFacetVisibility.owner;
   const showAccessFacet = pageFacetVisibility.access;
+  const labelOptions = [...new Set(sessions.flatMap((session) => session.labels ?? []))].sort();
   const showFiltersSection =
     statusOptions.length > 0 ||
     sourceOptions.length > 0 ||
     showOwnerFacet ||
     showAccessFacet ||
-    sessions.some((session) => session.labels?.length);
+    labelOptions.length > 0 || labelFilters.length > 0;
   const hasActiveFacets =
     statusFilters.length > 0 ||
     sourceFilters.length > 0 ||
     activeOwners.length > 0 ||
     activeAccess.length > 0 ||
     labelFilters.length > 0;
-  const labelOptions = [...new Set(sessions.flatMap((session) => session.labels ?? []))].sort();
   const ownerFilterSet = new Set(activeOwners);
   const accessFilterSet = new Set(activeAccess);
   const accessLabels: Record<SessionAccessFilter, string> = {
