@@ -474,7 +474,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   function connectorDataPlane(projectId?: string) {
     return {
       /** Callable catalog for this project or token scope. */
-      catalog: () => P.getConnectorCatalog(projectId),
+      catalog: (options?: Parameters<typeof P.getConnectorCatalog>[1]) =>
+        P.getConnectorCatalog(projectId, options),
       /** Flattened `<connector>.<action>` tool list. */
       tools: () => P.listConnectorTools(projectId),
       /** Search callable tools by id and description. */

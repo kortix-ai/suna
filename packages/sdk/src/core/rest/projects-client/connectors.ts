@@ -140,8 +140,10 @@ export async function listConnectorTools(projectId?: string): Promise<ConnectorT
   const tools: ConnectorTool[] = [];
   // Neither this nor any caller of it (search, discover) reads `inputSchema` —
   // only `describeConnectorTool` below does, and it fetches its own schema
-  // directly instead of going through this bulk listing.
-  for (const connector of await getConnectorCatalog(projectId)) {
+  // directly instead of going through this bulk listing. The API includes each
+  // action's JSON Schema by default (439KB on prod), so opt out or this summary
+  // pays the whole payload for nothing.
+  for (const connector of await getConnectorCatalog(projectId, { includeSchemas: false })) {
     for (const action of connector.actions) {
       tools.push({
         tool: `${connector.slug}.${action.path}`,
