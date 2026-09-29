@@ -10,7 +10,8 @@ import { describe, expect, test } from 'bun:test';
 import type { AssistantMessage, Message, ModelPricingLookup, Part, UserMessage } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import type { MessageWithParts } from '@/ui/types';
-import { estimateBreakdown, getSessionContextMetrics } from './session-context-modal';
+import { estimateBreakdown } from './session-context-modal';
+import { getSessionContextMetrics } from './session-context-metrics';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
