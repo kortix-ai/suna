@@ -34,6 +34,7 @@ const { createInstanceStore } = require('./instance-store');
 const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
 const { isAppPath, isPreviewHost } = require('./nav-rules');
 const { rendererGoneNeedsRecovery } = require('./renderer-recovery');
+const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
 const { setupComputer } = require('./computer-tray');
@@ -49,6 +50,11 @@ app.setPath(
   'userData',
   process.env.KORTIX_DESKTOP_USER_DATA || path.join(app.getPath('appData'), `${app.getName()} Desktop`),
 );
+
+const reportCrash = setupCrashTelemetry({
+  app,
+  dsn: process.env.KORTIX_DESKTOP_SENTRY_DSN || require('../package.json').kortixDesktopSentryDsn,
+});
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
@@ -494,6 +500,7 @@ function createMainWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     if (!rendererGoneNeedsRecovery(details)) return;
     console.warn(`[kortix] renderer gone: ${details?.reason} (exit ${details?.exitCode}).`);
+    reportCrash?.('renderer', `${details?.reason || 'unknown'} (exit ${details?.exitCode ?? 'unknown'})`);
     if (!mainWindow || mainWindow.isDestroyed()) return;
     void dialog
       .showMessageBox(mainWindow, {
