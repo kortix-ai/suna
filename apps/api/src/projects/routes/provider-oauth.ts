@@ -2,7 +2,7 @@
 import { parseSharingIntent } from '../../connectors/share';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
@@ -26,7 +26,7 @@ import {
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   loadSecretViewsForUser,
@@ -267,11 +267,15 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/oauth/{provider}/start',
     tags: ['secrets'],
-    summary: 'POST /:projectId/oauth/:provider/start',
+    summary: 'Start an LLM provider OAuth login',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), provider: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            resource_label: z.string().optional().openapi({ description: 'Label of the connection.' }),
+            resource_id: z.string().optional().openapi({ description: 'Existing connection to re-authorize.' }),
+            sharing: z.record(z.string(), z.any()).optional().openapi({ description: 'Who can use the connection.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'Device challenge'),
@@ -412,11 +416,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/oauth/{provider}/poll',
     tags: ['secrets'],
-    summary: 'POST /:projectId/oauth/:provider/poll',
+    summary: 'Poll an LLM provider OAuth login',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), provider: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            flow_id: z.string().openapi({ description: 'Flow id returned by start.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'Poll result'),
@@ -527,7 +533,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/oauth',
     tags: ['secrets'],
-    summary: 'GET /:projectId/oauth',
+    summary: 'List connected LLM provider logins',
     ...auth,
       request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -575,7 +581,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/oauth/{provider}',
     tags: ['secrets'],
-    summary: 'DELETE /:projectId/oauth/:provider',
+    summary: 'Disconnect an LLM provider login',
     ...auth,
       request: { params: z.object({ projectId: z.string(), provider: z.string() }) },
     responses: {

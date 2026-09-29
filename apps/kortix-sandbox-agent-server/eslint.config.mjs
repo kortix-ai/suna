@@ -238,7 +238,6 @@ export const OPENCODE_NAMES_ALLOWED = {
   'src/routes/kortix/abort.ts': ['opencodeSessionId', 'opencode_session_id'],
   'src/routes/kortix/env.ts': ['opencodeEnv'],
   'src/routes/kortix/harness-control.ts': ['opencode'],
-  'src/services/config-release/notice.ts': ['opencode'],
   'src/services/resources/resources.ts': ['opencode', 'opencode-kortix', 'opencode.exe'],
   'src/services/runtime-assets/port.ts': ['opencode'],
   'src/services/runtime-assets/runtime-assets.ts': ['DEFAULT_OPENCODE_CURRENT_LINK', 'bakedOpencodeVersion', 'opencode', 'opencode.current', 'opencodeVersion', 'opencode_version'],

@@ -3,11 +3,11 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { buildDenialError } from '../../iam/denial-message';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { getBackend, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import {
   buildConnectionRef,
   getProjectGitConnection,
@@ -29,7 +29,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/git-token',
     tags: ['github'],
-    summary: 'POST /:projectId/git-token',
+    summary: 'Mint a short-lived Git token for the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -123,7 +123,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/git/connection',
     tags: ['github'],
-    summary: 'GET /:projectId/git/connection',
+    summary: 'Get the project Git connection',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -162,11 +162,14 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/git/collaborators',
     tags: ['github'],
-    summary: 'POST /:projectId/git/collaborators',
+    summary: 'Add a Git repository collaborator',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            github_username: z.string().openapi({ description: 'GitHub login to invite.' }),
+            permission: z.enum(['read,write']).optional().openapi({ description: 'read or write. Default write.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),

@@ -21,6 +21,8 @@
  * exit code is the contract; the API side-effect is pinned by the declared
  * `routes` so the coverage gate still counts the GET /accounts/me hit.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { flow } from '../core/flow';
 import { assert } from '../core/expect';
 import { CliSandbox, browserLogin } from '../fixtures/cli';
@@ -47,17 +49,23 @@ flow('INIT-1', { domain: 'cli', routes: [] }, async (ctx) => {
           true,
           sb.exists('init-one/kortix.yaml'),
         );
+        // The root project layout: harness-neutral folders at the root, the
+        // OpenCode-only files under harnesses/opencode, and no .kortix/ folder.
+        for (const path of [
+          'agents/kortix.md',
+          'skills/kortix-cli/SKILL.md',
+          'memory/MEMORY.md',
+          'harnesses/opencode/opencode.jsonc',
+        ]) {
+          check(`${path} written`, sb.exists(`init-one/${path}`), true, sb.exists(`init-one/${path}`));
+        }
+        check('no .kortix/ folder', !sb.exists('init-one/.kortix'), false, sb.exists('init-one/.kortix'));
+        const manifest = readFileSync(join(sb.cwd, 'init-one', 'kortix.yaml'), 'utf8');
         check(
-          '.kortix/ written',
-          sb.exists('init-one/.kortix'),
+          'kortix.yaml names the agent file and the OpenCode dir',
+          manifest.includes('file: agents/kortix.md') && manifest.includes('config_dir: harnesses/opencode'),
           true,
-          sb.exists('init-one/.kortix'),
-        );
-        check(
-          '.kortix/opencode/ runtime dir written (default agent + config)',
-          sb.exists('init-one/.kortix/opencode/opencode.jsonc'),
-          true,
-          sb.exists('init-one/.kortix/opencode/opencode.jsonc'),
+          manifest.includes('file: agents/kortix.md'),
         );
         // codex is the default primary → AGENTS.md pointer is wired.
         check(
@@ -121,16 +129,22 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
         // Selected agents' native dirs are symlinks onto the OpenCode config dir;
         // existsSync follows the link, so a resolving path proves it works.
         check(
-          '.opencode → .kortix/opencode resolves',
+          '.opencode → harnesses/opencode resolves',
           sb.exists('wired/.opencode/opencode.jsonc'),
           true,
           sb.exists('wired/.opencode/opencode.jsonc'),
+        );
+        check(
+          '.agents/skills → skills resolves (OpenCode reads it natively)',
+          sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
+          true,
+          sb.exists('wired/.agents/skills/kortix-cli/SKILL.md'),
         );
         // kortix-cli is the canonical scaffolded skill (agents.ts CANONICAL_SKILL);
         // the other kortix-* skills are injected at sandbox boot, not scaffolded
         // (starter 10-skill floor, #5770).
         check(
-          '.claude → .kortix/opencode resolves to shared skills',
+          '.claude/skills → skills resolves to the shared skills',
           sb.exists('wired/.claude/skills/kortix-cli/SKILL.md'),
           true,
           sb.exists('wired/.claude/skills/kortix-cli/SKILL.md'),
@@ -148,12 +162,13 @@ flow('INIT-3', { domain: 'cli', routes: [] }, async (ctx) => {
           false,
           sb.exists('wired/.cursor'),
         );
-        // codex was NOT selected → no .agents link (codex wires .agents, not .codex).
+        // `.agents/skills` is shared by OpenCode and Codex, so the unselected-tool
+        // check uses pi: it was NOT selected → no .pi link.
         check(
-          'unselected codex not wired',
-          !sb.exists('wired/.agents'),
+          'unselected pi not wired',
+          !sb.exists('wired/.pi'),
           false,
-          sb.exists('wired/.agents'),
+          sb.exists('wired/.pi'),
         );
       } finally {
         sb.dispose();

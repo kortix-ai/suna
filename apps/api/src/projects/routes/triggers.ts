@@ -6,7 +6,7 @@ import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
@@ -79,7 +79,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/triggers',
     tags: ['triggers'],
-    summary: 'GET /:projectId/triggers',
+    summary: 'List project triggers',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -112,11 +112,34 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/triggers',
     tags: ['triggers'],
-    summary: 'POST /:projectId/triggers',
+    summary: 'Create a project trigger (cron, webhook or event)',
+    description:
+      'Create a trigger. It is committed to kortix.yaml. Send name, type and prompt_template, plus cron, secret_env or run by type.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
+          type: z.enum(['cron,webhook,monitor']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command.' }),
+          prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
+          slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
+          agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
+          model: z.string().optional().openapi({ description: 'Model as provider/model. Empty uses the default model.' }),
+          enabled: z.boolean().optional().openapi({ description: 'Default true.' }),
+          cron: z.string().optional().openapi({ description: 'Cron expression. Required for a cron trigger unless run_at is set.' }),
+          run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
+          timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
+          secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
+          run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
+          mode: z.enum(['poll,stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
+          interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
+          expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
+          session_mode: z.enum(['fresh,reuse,pinned,keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
+          session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
+          session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
+          filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to expected value; a delivery fires only if all match.' }),
+          session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
+        }) } } },
     },
     responses: {
       201: json(TriggerSchema, 'The created trigger'),
@@ -230,7 +253,9 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          paused: z.boolean().openapi({ description: 'true stops the platform from auto-running every trigger of the project.' }),
+        }) } } },
     },
     responses: {
       200: json(AnyObject, 'Updated triggers (includes triggers_paused)'),
@@ -277,11 +302,28 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/triggers/{slug}',
     tags: ['triggers'],
-    summary: 'PATCH /:projectId/triggers/:slug',
+    summary: 'Update a project trigger',
+    description:
+      'Update a trigger. Send only the fields to change.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          name: z.string().optional().openapi({ description: 'New name.' }),
+          prompt_template: z.string().optional().openapi({ description: 'New prompt.' }),
+          agent: z.string().optional().openapi({ description: 'Agent to run.' }),
+          model: z.string().optional().openapi({ description: 'Model as provider/model.' }),
+          enabled: z.boolean().optional().openapi({ description: 'Turn the trigger on or off.' }),
+          cron: z.string().optional().openapi({ description: 'Cron expression.' }),
+          run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
+          timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
+          secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
+          session_mode: z.enum(['fresh,reuse,pinned,keyed']).optional().openapi({ description: 'Session reuse mode.' }),
+          session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
+          session_key: z.string().optional().openapi({ description: 'Session key template.' }),
+          filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter.' }),
+          session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'OK'),
@@ -405,7 +447,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/triggers/{slug}',
     tags: ['triggers'],
-    summary: 'DELETE /:projectId/triggers/:slug',
+    summary: 'Delete a project trigger',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
@@ -470,7 +512,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/triggers/{slug}/fire',
     tags: ['triggers'],
-    summary: 'POST /:projectId/triggers/:slug/fire',
+    summary: 'Fire a project trigger now',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),

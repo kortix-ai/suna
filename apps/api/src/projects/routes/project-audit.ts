@@ -574,7 +574,7 @@ projectsApp.openapi(
             projectId,
             sessionId,
             remaining_ms: remainingIngestBudgetMs(c),
-            chunk_budget_ms: AUDIT_INGEST_CHUNK_BUDGET_MS,
+            chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
             accepted: parsed.accepted,
             attempted,
             inserted: insertedCount,
@@ -694,7 +694,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/audit',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/audit',
+    summary: 'List audit events of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),

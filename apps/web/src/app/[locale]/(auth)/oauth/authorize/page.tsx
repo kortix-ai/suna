@@ -207,7 +207,8 @@ function OAuthConsent() {
         window.location.href = data.redirect_uri;
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      // The API says why (expired or already used request): show it.
+      setError(err instanceof Error && err.message ? err.message : 'Network error. Please try again.');
       setDecision(null);
     }
   };
@@ -272,7 +273,7 @@ function OAuthConsent() {
                 {scopes.map((s) => (
                   <li key={s} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm">
                     <Check className="text-muted-foreground size-4 shrink-0" />
-                    <span className="min-w-0 truncate">{SCOPE_DESCRIPTIONS[s] || s}</span>
+                    <span className="min-w-0">{SCOPE_DESCRIPTIONS[s] || s}</span>
                   </li>
                 ))}
               </ul>

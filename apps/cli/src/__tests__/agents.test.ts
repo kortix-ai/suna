@@ -21,8 +21,8 @@ beforeEach(() => {
   // Derived from CANONICAL_SKILL, never spelled out — the fixture must follow
   // the constant wherever it points.
   mkdirSync(join(dir, CANONICAL_SKILL, '..'), { recursive: true });
-  mkdirSync(join(dir, '.kortix', 'opencode', 'agents'), { recursive: true });
-  mkdirSync(join(dir, '.kortix', 'opencode', 'commands'), { recursive: true });
+  mkdirSync(join(dir, 'agents'), { recursive: true });
+  mkdirSync(join(dir, 'harnesses', 'opencode', 'commands'), { recursive: true });
   writeFileSync(join(dir, CANONICAL_SKILL), 'canonical skill', 'utf8');
 });
 
@@ -46,31 +46,29 @@ describe('wireCodingAgents', () => {
     expect(result.skipped).toEqual([]);
     expect(result.written.sort()).toEqual(
       [
-        '.agents → .kortix/opencode',
-        '.claude/agents → ../.kortix/opencode/agents',
-        '.claude/commands → ../.kortix/opencode/commands',
-        '.claude/skills → ../.kortix/opencode/skills',
-        '.opencode → .kortix/opencode',
-        '.pi/skills → ../.kortix/opencode/skills',
+        '.agents/skills → ../skills',
+        '.claude/agents → ../agents',
+        '.claude/commands → ../harnesses/opencode/commands',
+        '.claude/skills → ../skills',
+        '.opencode → harnesses/opencode',
+        '.pi/skills → ../skills',
         'AGENTS.md',
       ].sort(),
     );
 
-    // OpenCode and Codex can consume the complete canonical directory.
-    for (const link of ['.opencode', '.agents']) {
-      expect(lstatSync(join(dir, link)).isSymbolicLink()).toBe(true);
-      expect(readlinkSync(join(dir, link))).toBe('.kortix/opencode');
-      const skill = join(dir, link, CANONICAL_SKILL.replace('.kortix/opencode/', ''));
-      expect(readFileSync(skill, 'utf8')).toBe('canonical skill');
-    }
+    // OpenCode reads its config dir; OpenCode and Codex read `.agents/skills`.
+    expect(readlinkSync(join(dir, '.opencode'))).toBe('harnesses/opencode');
+    expect(lstatSync(join(dir, '.agents')).isDirectory()).toBe(true);
+    expect(readlinkSync(join(dir, '.agents', 'skills'))).toBe('../skills');
+    expect(readFileSync(join(dir, '.agents', CANONICAL_SKILL), 'utf8')).toBe('canonical skill');
 
     // Claude Code and Pi keep their runtime files and receive native links.
     expect(readFileSync(join(dir, '.claude', 'CLAUDE.md'), 'utf8')).toBe('claude runtime');
     expect(readFileSync(join(dir, '.pi', 'README.md'), 'utf8')).toBe('pi runtime');
-    expect(readlinkSync(join(dir, '.claude', 'skills'))).toBe('../.kortix/opencode/skills');
-    expect(readlinkSync(join(dir, '.claude', 'agents'))).toBe('../.kortix/opencode/agents');
-    expect(readlinkSync(join(dir, '.claude', 'commands'))).toBe('../.kortix/opencode/commands');
-    expect(readlinkSync(join(dir, '.pi', 'skills'))).toBe('../.kortix/opencode/skills');
+    expect(readlinkSync(join(dir, '.claude', 'skills'))).toBe('../skills');
+    expect(readlinkSync(join(dir, '.claude', 'agents'))).toBe('../agents');
+    expect(readlinkSync(join(dir, '.claude', 'commands'))).toBe('../harnesses/opencode/commands');
+    expect(readlinkSync(join(dir, '.pi', 'skills'))).toBe('../skills');
     expect(readFileSync(join(dir, '.claude', 'skills', 'kortix-cli', 'SKILL.md'), 'utf8')).toBe(
       'canonical skill',
     );
@@ -91,14 +89,14 @@ describe('wireCodingAgents', () => {
 
     expect(result.written.sort()).toEqual(
       [
-        '.claude/agents → ../.kortix/opencode/agents',
-        '.claude/commands → ../.kortix/opencode/commands',
-        '.claude/skills → ../.kortix/opencode/skills',
-        '.opencode → .kortix/opencode',
+        '.agents/skills → ../skills',
+        '.claude/agents → ../agents',
+        '.claude/commands → ../harnesses/opencode/commands',
+        '.claude/skills → ../skills',
+        '.opencode → harnesses/opencode',
       ].sort(),
     );
-    // No codex/cursor selected → no .agents link, no AGENTS.md.
-    expect(existsSync(join(dir, '.agents'))).toBe(false);
+    // No codex/cursor selected → no AGENTS.md.
     expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false);
   });
 
@@ -118,7 +116,7 @@ describe('wireCodingAgents', () => {
     // Re-running without overwrite leaves everything in place (all skipped).
     const second = wireCodingAgents({ repoRoot: dir, agents, overwrite: false });
     expect(second.written).toEqual([]);
-    expect(second.skipped.sort()).toEqual(['.agents', '.opencode', 'AGENTS.md'].sort());
+    expect(second.skipped.sort()).toEqual(['.agents/skills', '.opencode', 'AGENTS.md'].sort());
 
     // With overwrite the stale link/file is removed and re-created cleanly.
     const third = wireCodingAgents({ repoRoot: dir, agents, overwrite: true });
