@@ -121,6 +121,7 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { useAuth } from '@/features/providers/auth-provider';
+import { ComputerConnectModal, MachineDot } from '@/features/tunnel/computer-connect';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
@@ -272,6 +273,7 @@ function ConnectionRow({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
@@ -299,6 +301,16 @@ function ConnectionRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium">{connection.label}</span>
+          {/* A computer account: is the machine it points at online right now? */}
+          {connection.tunnel_id ? (
+            <Hint
+              label={connection.machine?.online ? tComputers('online') : tComputers('offline')}
+            >
+              <span className="inline-flex p-1">
+                <MachineDot online={connection.machine?.online} />
+              </span>
+            </Hint>
+          ) : null}
           {connection.is_default && (
             <Badge variant="outline" size="xs">
               {tI18nComplete.raw('text21b111cbfe6e')}
@@ -486,7 +498,11 @@ export function ConnectionsList({
   // creates the account and this then opens `SetCredentialModal` for it. A
   // managed provider (Composio/Pipedream) runs hosted OAuth through
   // `useAddManagedAccount`.
-  const isDirectProvider = !isManagedConnectorProvider(connector.provider);
+  // A computer account is a paired machine: "Add" pairs one (desktop one-click,
+  // or download + npx) instead of asking for a credential.
+  const isComputer = connector.provider === 'computer';
+  const isDirectProvider = !isManagedConnectorProvider(connector.provider) && !isComputer;
+  const [computerOpen, setComputerOpen] = useState(false);
   const { user } = useAuth();
   const viewerId = user?.id ?? null;
   const [addOpen, setAddOpen] = useState(false);
@@ -525,6 +541,10 @@ export function ConnectionsList({
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
   const openAdd = () => {
+    if (isComputer) {
+      setComputerOpen(true);
+      return;
+    }
     setDraft(EMPTY_NEW_ACCOUNT);
     setAddOpen(true);
   };
@@ -847,6 +867,15 @@ export function ConnectionsList({
         isPending={disconnect.isPending}
         onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
       />
+
+      {isComputer ? (
+        <ComputerConnectModal
+          projectId={projectId}
+          open={computerOpen}
+          onOpenChange={setComputerOpen}
+          onConnected={refresh}
+        />
+      ) : null}
 
       {isDirectProvider ? (
         <SetCredentialModal

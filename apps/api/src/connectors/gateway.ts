@@ -72,10 +72,9 @@ export interface GatewayConnector {
     | 'channel'
     | 'computer';
   platform?: string | null;
-  /** Server-side machine allowlist for a Computers connector profile. */
-  tunnelIds?: string[] | null;
-  /** Verified machine-owner accounts paired with the Computers allowlist. */
-  tunnelAccountIds?: string[] | null;
+  /** Computer connectors: the paired machine of the resolved account. Null
+   *  when the machine was unpaired. */
+  connectionTunnelId?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ConnectorAuth;
@@ -267,17 +266,15 @@ export interface GatewayDeps {
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
-   * connectors. Verifies the selected machine belongs to the connector's
-   * stored id + owner-account grant, then relays through the tunnel core.
+   * connectors. Relays one call to the machine of the account the generic
+   * resolver chose, through the tunnel core.
    */
   executeComputerCall?(input: {
+    tunnelId: string;
     accountId: string;
     projectId: string;
     sessionId: string | null;
     actorUserId: string;
-    allowedTunnelIds: string[] | null;
-    allowedTunnelAccountIds: string[] | null;
-    selector: string | null;
     method: string;
     args: Record<string, unknown>;
   }): Promise<ComputerCallOutcome>;
@@ -290,12 +287,11 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      kind: 'permission_required';
-      requestId: string;
+      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`
+       *  or `error` for a failure on the machine or in the relay. */
+      kind: 'computer_unpaired' | 'computer_offline' | 'computer_capability_not_approved' | 'error';
       message: string;
-    }
-  | { ok: false; kind: 'no_machine'; message: string }
-  | { ok: false; kind: 'error'; message: string };
+    };
 
 export interface CallInput {
   projectId: string;
@@ -392,8 +388,7 @@ async function resolveConnectorForCall(
 
 /**
  * The account echo for a successful call — `undefined` when the connector
- * resolved no connection (a no-credential/public connector, or a Computers
- * profile keyed on tunnelIds rather than a `connector_connections` row).
+ * resolved no connection (a no-credential/public connector).
  */
 function gatewayConnectorAccount(connector: GatewayConnector): CallResultAccount | undefined {
   if (!connector.connectionId) return undefined;
@@ -770,54 +765,41 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       );
     }
 
-    // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
-    // core. The connector profile owns the machine allowlist.
+    // Computers (Agent Computer Tunnel): the generic resolver chose the
+    // account; its machine receives the call through the shared tunnel core.
     if (connector.provider === 'computer') {
       if (action.binding.kind !== 'tunnel') {
         throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      if (connector.tunnelIds && connector.tunnelIds.length === 0) {
-        return {
-          status: 'error',
-          reason: 'computer connector has no assigned machines',
-        };
-      }
-      const selector =
-        typeof executionArgs.computer === 'string' ? executionArgs.computer.trim() || null : null;
-      const callArgs = Object.fromEntries(
-        Object.entries(executionArgs).filter(([key]) => key !== 'computer'),
-      );
-      const outcome = await deps.executeComputerCall({
-        accountId: input.accountId,
-        projectId: input.projectId,
-        sessionId: input.sessionId ?? null,
-        actorUserId: input.subject.userId,
-        allowedTunnelIds: connector.tunnelIds ?? null,
-        allowedTunnelAccountIds: connector.tunnelAccountIds ?? null,
-        selector,
-        method: action.binding.method,
-        args: callArgs,
-      });
+      const outcome = connector.connectionTunnelId
+        ? await deps.executeComputerCall({
+            tunnelId: connector.connectionTunnelId,
+            accountId: input.accountId,
+            projectId: input.projectId,
+            sessionId: input.sessionId ?? null,
+            actorUserId: input.subject.userId,
+            method: action.binding.method,
+            args: executionArgs,
+          })
+        : ({
+            ok: false,
+            kind: 'computer_unpaired',
+            message: 'This computer was unpaired. Pair it again to use it.',
+          } as const);
       if (outcome.ok) {
         await audit(deps, input, connector, 'ok', action.risk, {
           method: action.binding.method,
         });
         return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
       }
-      if (outcome.kind === 'permission_required') {
-        await audit(deps, input, connector, 'pending_approval', action.risk, {
-          reason: 'tunnel_permission_required',
-          request_id: outcome.requestId,
-        });
-        return {
-          status: 'pending_approval',
-          reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
-        };
-      }
       await audit(deps, input, connector, 'error', action.risk, {
-        reason: outcome.message.slice(0, 500),
+        reason: outcome.kind,
+        message: outcome.message.slice(0, 500),
       });
+      if (outcome.kind !== 'error') {
+        return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
+      }
       logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }

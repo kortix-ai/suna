@@ -10,6 +10,8 @@ import type { TunnelCapability } from '../shared/types';
  * rules below can be read — and tested — without a CLI around them.
  */
 
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TUNNEL_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SETUP_TOKEN_PATTERN = /^kortix_tnl_[A-Za-z0-9_-]{32,64}$/;
@@ -138,11 +140,22 @@ export function parseDeviceAuthStatus(value: unknown): DeviceAuthOutcome | null 
   }
 }
 
-export async function requestDeviceAuthorization(apiUrl: string): Promise<DeviceAuthChallenge> {
+/**
+ * Starts pairing. `projectId` names the project the machine is being connected
+ * to, so the approval page can skip its project picker. A relay that predates
+ * the field ignores it.
+ */
+export async function requestDeviceAuthorization(
+  apiUrl: string,
+  options: { projectId?: string } = {},
+): Promise<DeviceAuthChallenge> {
   const response = await fetch(`${apiUrl}/device-auth`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ machineHostname: hostname() }),
+    body: JSON.stringify({
+      machineHostname: hostname(),
+      ...(options.projectId ? { project_id: options.projectId } : {}),
+    }),
   });
   if (!response.ok) {
     const body = await response.text().catch(() => '');

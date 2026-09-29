@@ -19,8 +19,8 @@ export const CONNECTOR_TAB_LABEL: Record<ConnectorTab, string> = {
  *
  * - The name, icon, status and connect action live in the modal header, above
  *   every tab — so there is no separate Overview tab.
- * - Every connector has Accounts. For a Computer Tunnel profile, Accounts edits its
- *   assigned machine set and links to the fleet-management surface.
+ * - Every connector has Accounts. For the computer connector, each account is
+ *   one paired machine.
  * - Tools and Settings mutate project state, so they are writer-only. Accounts
  *   stays for readers: it is how they see whether the connector works, and how
  *   they connect their own account.

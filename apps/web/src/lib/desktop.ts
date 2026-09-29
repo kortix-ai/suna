@@ -304,6 +304,58 @@ export async function setFrontendUrl(url: string): Promise<void> {
   await tauriInvoke('set_frontend_url', { url });
 }
 
+/* ─── This computer (desktop app) ─────────────────────────────────────────
+   The desktop app bundles the computer agent (@kortix/agent-tunnel) and runs
+   it as an OS service. These wrappers return null in a browser and on a
+   desktop build that predates the commands. */
+
+export interface DesktopComputerStatus {
+  /** False when the bundled agent could not run; `error` says why. */
+  available: boolean;
+  /** This machine holds a pairing credential. */
+  paired: boolean;
+  tunnelId?: string;
+  /** Live connection of the local agent, from its state file. */
+  status?: 'online' | 'offline' | 'connecting';
+  serviceInstalled: boolean;
+  /** False while computer access is paused. */
+  serviceActive: boolean;
+  error?: string;
+}
+
+export interface DesktopComputerConnectResult {
+  ok: boolean;
+  tunnelId?: string;
+  /** The machine was already paired; the saved pairing was reused. */
+  existing?: boolean;
+  error?: string;
+}
+
+async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
+  try {
+    return ((await tauriInvoke<T>(cmd, args)) ?? null) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+export const desktopComputerStatus = () => desktopCommand<DesktopComputerStatus>('computer_status');
+
+/**
+ * Pairs this machine to `projectId` and installs the background service. The
+ * desktop app opens the approval page itself and resolves once the service
+ * runs. `apiUrl` is the absolute backend URL, e.g. `https://api.kortix.com/v1`.
+ */
+export const desktopComputerConnect = (input: { apiUrl: string; projectId: string }) =>
+  desktopCommand<DesktopComputerConnectResult>('computer_connect', input);
+
+export const desktopComputerPause = () => desktopCommand<DesktopComputerStatus>('computer_pause');
+export const desktopComputerResume = () => desktopCommand<DesktopComputerStatus>('computer_resume');
+/** Removes the service and the local credential. The machine record is removed by the API. */
+export const desktopComputerDisconnect = () =>
+  desktopCommand<{ ok: boolean; status: DesktopComputerStatus }>('computer_disconnect');
+export const desktopComputerOpenLogs = () => desktopCommand<null>('computer_open_logs');
+
 export const desktopWindow = {
   minimize: () => tauri()?.window.getCurrentWindow().minimize(),
   toggleMaximize: () => tauri()?.window.getCurrentWindow().toggleMaximize(),

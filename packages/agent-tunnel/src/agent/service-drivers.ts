@@ -4,7 +4,7 @@ import { homedir, platform, userInfo } from 'os';
 import { dirname, join } from 'path';
 import { powershellQuote, shellQuote, xmlEscape } from './service-quoting';
 import type { ServicePaths } from './service-paths';
-import { SERVICE_LABEL, TERMINAL_SERVICE_EXIT_CODE, getServicePaths } from './service-paths';
+import { TERMINAL_SERVICE_EXIT_CODE, getServicePaths } from './service-paths';
 
 /**
  * One driver per supervisor.
@@ -28,6 +28,8 @@ export interface ServiceDriver {
 export interface RunnerParts {
   command: string;
   args: string[];
+  /** Extra environment for the supervised process (AGENT_TUNNEL_HOME, ELECTRON_RUN_AS_NODE). */
+  env?: Record<string, string>;
 }
 
 /**
@@ -37,7 +39,13 @@ export interface RunnerParts {
  */
 export function posixShellCommand(runner: RunnerParts): string {
   const interpreter = `"$(command -v ${shellQuote(runner.command)} 2>/dev/null || command -v node)"`;
-  return `exec ${interpreter} ${runner.args.map(shellQuote).join(' ')}`;
+  // Exported inside the command, after the login shell's profile has run, so
+  // one rendering serves launchd and systemd alike and no profile can drop it.
+  const env = Object.entries(runner.env ?? {});
+  const exports = env.length
+    ? `export ${env.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')}; `
+    : '';
+  return `${exports}exec ${interpreter} ${runner.args.map(shellQuote).join(' ')}`;
 }
 
 export interface Outcome {
@@ -89,7 +97,7 @@ export function renderLaunchdPlist(command: string, paths: ServicePaths = getSer
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>${xmlEscape(SERVICE_LABEL)}</string>
+  <string>${xmlEscape(paths.label)}</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
@@ -144,12 +152,17 @@ WantedBy=default.target
 `;
 }
 
-export function renderWindowsPowerShellScript(runner: { command: string; args: string[] }): string {
+export function renderWindowsPowerShellScript(runner: RunnerParts): string {
   const command = powershellQuote(runner.command);
   const args = runner.args.map(powershellQuote).join(' ');
+  const env = Object.entries(runner.env ?? {})
+    .map(([key, value]) => `$env:${key} = ${powershellQuote(value)}\n`)
+    .join('');
   return `$ErrorActionPreference = 'Continue'
-while ($true) {
-  & ${command}${args ? ` ${args}` : ''}
+${env}while ($true) {
+  # The pipe makes PowerShell wait for a GUI-subsystem binary (the desktop
+  # app's Kortix.exe) and set $LASTEXITCODE; a bare call returns at once.
+  & ${command}${args ? ` ${args}` : ''} | Out-Null
   # A clean exit means the agent stopped for a reason restarting cannot fix,
   # such as a missing or revoked credential. Anything else is a crash worth retrying.
   if ($LASTEXITCODE -eq ${TERMINAL_SERVICE_EXIT_CODE}) { break }
@@ -168,7 +181,7 @@ const launchd: ServiceDriver = {
     writeFileSync(paths.launchdPlist, renderLaunchdPlist(posixShellCommand(runner), paths), { mode: 0o600 });
     run('launchctl', ['bootout', launchdTarget(), paths.launchdPlist]);
     const boot = run('launchctl', ['bootstrap', launchdTarget(), paths.launchdPlist]);
-    const kick = run('launchctl', ['kickstart', '-k', `${launchdTarget()}/${SERVICE_LABEL}`]);
+    const kick = run('launchctl', ['kickstart', '-k', `${launchdTarget()}/${paths.label}`]);
     return { installed: true, active: boot.ok || kick.ok ? true : null, detail: joinDetails(boot, kick) };
   },
 
@@ -183,7 +196,7 @@ const launchd: ServiceDriver = {
     const boot = installed
       ? run('launchctl', ['bootstrap', launchdTarget(), paths.launchdPlist])
       : notInstalled('LaunchAgent');
-    const kick = run('launchctl', ['kickstart', '-k', `${launchdTarget()}/${SERVICE_LABEL}`]);
+    const kick = run('launchctl', ['kickstart', '-k', `${launchdTarget()}/${paths.label}`]);
     return { active: boot.ok || kick.ok ? true : null, detail: joinDetails(boot, kick) };
   },
 
@@ -195,7 +208,7 @@ const launchd: ServiceDriver = {
   },
 
   status(paths, installed) {
-    const status = run('launchctl', ['print', `${launchdTarget()}/${SERVICE_LABEL}`]);
+    const status = run('launchctl', ['print', `${launchdTarget()}/${paths.label}`]);
     return {
       active: status.ok,
       detail: status.detail || (installed ? readFileSync(paths.launchdPlist, 'utf8') : undefined),
@@ -210,34 +223,34 @@ const systemd: ServiceDriver = {
     mkdirSync(dirname(paths.systemdUnit), { recursive: true });
     writeFileSync(paths.systemdUnit, renderSystemdUnit(posixShellCommand(runner), paths), { mode: 0o600 });
     const reload = run('systemctl', ['--user', 'daemon-reload']);
-    const enable = run('systemctl', ['--user', 'enable', '--now', `${SERVICE_LABEL}.service`]);
+    const enable = run('systemctl', ['--user', 'enable', '--now', `${paths.label}.service`]);
     return { installed: true, active: enable.ok ? true : null, detail: joinDetails(reload, enable) };
   },
 
   uninstall(paths) {
     const existed = existsSync(paths.systemdUnit);
-    const disable = run('systemctl', ['--user', 'disable', '--now', `${SERVICE_LABEL}.service`]);
+    const disable = run('systemctl', ['--user', 'disable', '--now', `${paths.label}.service`]);
     if (existed) rmSync(paths.systemdUnit, { force: true });
     run('systemctl', ['--user', 'daemon-reload']);
     return { detail: disable.detail };
   },
 
-  start(_paths, installed) {
+  start(paths, installed) {
     const start = installed
-      ? run('systemctl', ['--user', 'start', `${SERVICE_LABEL}.service`])
+      ? run('systemctl', ['--user', 'start', `${paths.label}.service`])
       : notInstalled('systemd unit');
     return { active: start.ok ? true : null, detail: start.detail };
   },
 
-  stop(_paths, installed) {
+  stop(paths, installed) {
     const stop = installed
-      ? run('systemctl', ['--user', 'stop', `${SERVICE_LABEL}.service`])
+      ? run('systemctl', ['--user', 'stop', `${paths.label}.service`])
       : notInstalled('systemd unit');
     return { detail: stop.detail };
   },
 
-  status() {
-    const status = run('systemctl', ['--user', 'is-active', `${SERVICE_LABEL}.service`]);
+  status(paths) {
+    const status = run('systemctl', ['--user', 'is-active', `${paths.label}.service`]);
     return { active: status.ok, detail: status.detail };
   },
 };
@@ -248,38 +261,38 @@ const scheduledTask: ServiceDriver = {
   install(paths, runner) {
     writeFileSync(paths.windowsScript, renderWindowsPowerShellScript(runner), { mode: 0o600 });
     const create = run('schtasks.exe', [
-      '/Create', '/TN', SERVICE_LABEL,
+      '/Create', '/TN', paths.label,
       '/TR', `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${paths.windowsScript}"`,
       '/SC', 'ONLOGON', '/F', '/RL', 'LIMITED',
     ]);
-    const start = run('schtasks.exe', ['/Run', '/TN', SERVICE_LABEL]);
+    const start = run('schtasks.exe', ['/Run', '/TN', paths.label]);
     return { installed: create.ok, active: start.ok ? true : null, detail: joinDetails(create, start) };
   },
 
   uninstall(paths) {
     const existed = existsSync(paths.windowsScript);
-    const stop = run('schtasks.exe', ['/End', '/TN', SERVICE_LABEL]);
-    const del = run('schtasks.exe', ['/Delete', '/TN', SERVICE_LABEL, '/F']);
+    const stop = run('schtasks.exe', ['/End', '/TN', paths.label]);
+    const del = run('schtasks.exe', ['/Delete', '/TN', paths.label, '/F']);
     if (existed) rmSync(paths.windowsScript, { force: true });
     return { detail: joinDetails(stop, del) };
   },
 
-  start(_paths, installed) {
+  start(paths, installed) {
     const start = installed
-      ? run('schtasks.exe', ['/Run', '/TN', SERVICE_LABEL])
+      ? run('schtasks.exe', ['/Run', '/TN', paths.label])
       : notInstalled('Scheduled Task');
     return { active: start.ok ? true : null, detail: start.detail };
   },
 
-  stop(_paths, installed) {
+  stop(paths, installed) {
     const stop = installed
-      ? run('schtasks.exe', ['/End', '/TN', SERVICE_LABEL])
+      ? run('schtasks.exe', ['/End', '/TN', paths.label])
       : notInstalled('Scheduled Task');
     return { detail: stop.detail };
   },
 
   status(paths, installed) {
-    const status = run('schtasks.exe', ['/Query', '/TN', SERVICE_LABEL, '/FO', 'LIST', '/V']);
+    const status = run('schtasks.exe', ['/Query', '/TN', paths.label, '/FO', 'LIST', '/V']);
     const detail = status.detail || (installed ? readFileSync(paths.windowsScript, 'utf8') : undefined);
     return { active: status.ok ? /Status:\s*Running/i.test(detail ?? '') : false, detail };
   },

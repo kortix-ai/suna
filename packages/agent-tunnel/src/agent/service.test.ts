@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { posixShellCommand } from './service-drivers';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
   SERVICE_LABEL,
+  agentTunnelHome,
   buildServiceShellCommand,
   getServicePaths,
+  runnerPartsFor,
+  serviceLabelFor,
   isEphemeralRunnerPath,
   renderLaunchdPlist,
   renderSystemdUnit,
@@ -109,5 +114,114 @@ describe('agent tunnel service definitions', () => {
     expect(paths.launchdPlist).toContain(`${SERVICE_LABEL}.plist`);
     expect(paths.systemdUnit).toContain(`${SERVICE_LABEL}.service`);
     expect(paths.windowsScript).toContain('agent-tunnel-service.ps1');
+  });
+});
+
+describe('AGENT_TUNNEL_HOME isolation', () => {
+  const defaultHome = join(homedir(), '.agent-tunnel');
+
+  test('defaults to ~/.agent-tunnel and honours the override', () => {
+    expect(agentTunnelHome({})).toBe(defaultHome);
+    expect(agentTunnelHome({ AGENT_TUNNEL_HOME: '  ' })).toBe(defaultHome);
+    expect(agentTunnelHome({ AGENT_TUNNEL_HOME: '/tmp/kortix-dev/agent-tunnel' })).toBe(
+      '/tmp/kortix-dev/agent-tunnel',
+    );
+  });
+
+  test('the default home keeps the historical service label', () => {
+    expect(serviceLabelFor(defaultHome)).toBe(SERVICE_LABEL);
+    expect(serviceLabelFor(`${defaultHome}/`)).toBe(SERVICE_LABEL);
+  });
+
+  test('any other home gets a stable 8-hex suffix derived from its path', () => {
+    const label = serviceLabelFor('/tmp/kortix-dev/agent-tunnel');
+    expect(label).toMatch(/^ai\.kortix\.agent-tunnel\.[0-9a-f]{8}$/);
+    expect(serviceLabelFor('/tmp/kortix-dev/agent-tunnel')).toBe(label);
+    expect(serviceLabelFor('/tmp/kortix-dev/other')).not.toBe(label);
+  });
+
+  test('service files of a non-default home never touch the real service', () => {
+    const paths = getServicePaths('/tmp/kortix-dev/agent-tunnel');
+    expect(paths.label).not.toBe(SERVICE_LABEL);
+    expect(paths.configDir).toBe('/tmp/kortix-dev/agent-tunnel');
+    expect(paths.logDir).toBe('/tmp/kortix-dev/agent-tunnel/logs');
+    expect(paths.launchdPlist).toEndWith(`/LaunchAgents/${paths.label}.plist`);
+    expect(paths.systemdUnit).toEndWith(`/${paths.label}.service`);
+    expect(paths.windowsScript).toStartWith('/tmp/kortix-dev/agent-tunnel');
+    expect(renderLaunchdPlist('exec true', paths)).toContain(`<string>${paths.label}</string>`);
+  });
+});
+
+describe('service runner', () => {
+  const devPaths = getServicePaths('/tmp/kortix-dev/agent-tunnel');
+
+  test('a Node runner carries a non-default home into the service env', () => {
+    const runner = runnerPartsFor('/opt/kortix/agent-cli.js', { execPath: '/usr/local/bin/node' }, devPaths);
+    expect(runner).toEqual({
+      command: '/usr/local/bin/node',
+      args: ['/opt/kortix/agent-cli.js', 'run', '--service'],
+      env: { AGENT_TUNNEL_HOME: '/tmp/kortix-dev/agent-tunnel' },
+    });
+    expect(runnerPartsFor('/opt/kortix/agent-cli.js', { execPath: 'node' }, getServicePaths()).env).toEqual({});
+  });
+
+  test('an Electron runner sets ELECTRON_RUN_AS_NODE and is never vendored', () => {
+    // An npx-looking path would be vendored under Node; the app bundle never is.
+    const script = '/Applications/Kortix.app/Contents/Resources/agent-tunnel/agent-cli.js';
+    const runner = runnerPartsFor(
+      script,
+      { execPath: '/Applications/Kortix.app/Contents/MacOS/Kortix', electron: '39.8.1' },
+      devPaths,
+    );
+    expect(runner.command).toBe('/Applications/Kortix.app/Contents/MacOS/Kortix');
+    expect(runner.args).toEqual([script, 'run', '--service']);
+    expect(runner.env).toEqual({
+      AGENT_TUNNEL_HOME: '/tmp/kortix-dev/agent-tunnel',
+      ELECTRON_RUN_AS_NODE: '1',
+    });
+  });
+
+  test('a Linux AppImage runs the AppImage file with a vendored bundle', () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-appimage-'));
+    try {
+      const mount = join(home, '.mount_KortixAbc', 'resources', 'agent-tunnel');
+      mkdirSync(mount, { recursive: true });
+      writeFileSync(join(mount, 'agent-cli.js'), '// bundle\n');
+      const paths = getServicePaths(join(home, 'agent-home'));
+      const runner = runnerPartsFor(
+        join(mount, 'agent-cli.js'),
+        { execPath: join(home, '.mount_KortixAbc', 'kortix'), electron: '39.8.1', appImage: '/home/u/Kortix.AppImage' },
+        paths,
+      );
+      expect(runner.command).toBe('/home/u/Kortix.AppImage');
+      expect(runner.args[0]).toBe(paths.vendoredRunner);
+      expect(readFileSync(paths.vendoredRunner, 'utf8')).toBe('// bundle\n');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('launchd and systemd commands export the runner env before exec', () => {
+    const command = posixShellCommand({
+      command: '/Applications/Kortix.app/Contents/MacOS/Kortix',
+      args: ['agent-cli.js', 'run', '--service'],
+      env: { AGENT_TUNNEL_HOME: "/tmp/it's here", ELECTRON_RUN_AS_NODE: '1' },
+    });
+    expect(command).toStartWith(`export AGENT_TUNNEL_HOME='/tmp/it'\\''s here' ELECTRON_RUN_AS_NODE='1'; exec `);
+    expect(renderLaunchdPlist(command, devPaths)).toContain('ELECTRON_RUN_AS_NODE=&apos;1&apos;');
+    expect(renderSystemdUnit(command, devPaths)).toContain('ELECTRON_RUN_AS_NODE=');
+    // No env, no export: the default service definition is unchanged.
+    expect(posixShellCommand({ command: 'node', args: ['a.js'] })).toStartWith('exec ');
+  });
+
+  test('the Windows script sets the env and waits for a GUI-subsystem binary', () => {
+    const script = renderWindowsPowerShellScript({
+      command: 'C:\\Kortix\\Kortix.exe',
+      args: ['agent-cli.js', 'run', '--service'],
+      env: { AGENT_TUNNEL_HOME: 'C:\\dev\\agent-tunnel', ELECTRON_RUN_AS_NODE: '1' },
+    });
+    expect(script).toContain("$env:AGENT_TUNNEL_HOME = 'C:\\dev\\agent-tunnel'");
+    expect(script).toContain("$env:ELECTRON_RUN_AS_NODE = '1'");
+    expect(script).toContain("& 'C:\\Kortix\\Kortix.exe' 'agent-cli.js' 'run' '--service' | Out-Null");
   });
 });

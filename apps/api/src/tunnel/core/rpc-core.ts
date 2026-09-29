@@ -3,40 +3,42 @@
  *
  * Both the dedicated `POST /v1/tunnel/rpc/:tunnelId` route AND the Connector's
  * `computer` connector call go through `executeTunnelRpc`, so there is a single
- * code path for resolving a method's capability, checking the per-machine tunnel
+ * code path for resolving a method's capability, checking the machine's wire
  * permission, relaying over the WS, and writing the tunnel audit log. The route
- * translates the outcome union → HTTP status codes (unchanged contract); the
- * Connector maps it onto a CallResult.
+ * translates the outcome union → HTTP status codes; the Connector maps it onto a
+ * CallResult.
  *
- * The computer helpers (`listAccountComputers`, `executeComputerCall`) sit here
- * too. A connector profile supplies an allowlist of account-owned tunnel ids.
+ * Wire permissions (`tunnel_permissions`) are minted at pairing, one full-scope
+ * grant per approved capability, because installed agents require a synced
+ * `permissionId` on every RPC. They are not a product surface: a missing grant
+ * means the capability was not approved at pairing, and the fix is re-pairing.
+ * Human approval of risky calls is the generic connector policy
+ * (`require_approval`).
  */
-import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
+import { tunnelConnections } from '@kortix/db';
 import {
   validateFilesystemParams,
-  type TunnelCapability,
   capabilityForMethod,
-  desktopFeatureForMethod,
   operationForMethod,
   TunnelErrorCode,
   TunnelRelayError,
+  type TunnelCapability,
 } from 'agent-tunnel';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { notifyPermissionRequest } from '../routes/permission-requests';
 import { buildRequestSummary, finishAuditLog, startAuditLog } from './audit-logger';
 import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
 import { checkPermission } from './permission-checker';
 import { tunnelRateLimiter } from './rate-limiter';
-import { isValidCapability, validateScope as validateScopeInput } from './scope-validator';
+import { isValidCapability } from './scope-validator';
 
 /** Outcome of a single relayed tunnel RPC. The route + the connector each map this. */
 export type TunnelRpcOutcome =
   | { ok: true; result: unknown }
   | {
       ok: false;
-      kind: 'permission_required';
-      requestId: string;
+      kind: 'capability_not_approved';
+      capability: string;
       message: string;
     }
   | { ok: false; kind: 'rate_limited'; retryAfterMs?: number; message: string }
@@ -56,10 +58,10 @@ export function resolveCapability(method: string): TunnelCapability | null {
 
 /**
  * Run one RPC against a tunnel: rate-limit → resolve capability → check the
- * per-machine permission (creating a permission request on deny) → relay →
- * audit. Ownership of the tunnel (account scoping) is the CALLER's job — the
- * `/rpc` route enforces its ownerClause, the connector resolves the tunnel within
- * the account — so this core is purely the permission/relay/audit pipeline.
+ * machine's wire permission → relay → audit. Ownership of the tunnel is the
+ * CALLER's job — the `/rpc` route enforces its ownerClause, the connector
+ * resolves the account's machine — so this core is purely the
+ * permission/relay/audit pipeline.
  */
 export async function executeTunnelRpc(input: {
   tunnelId: string;
@@ -73,7 +75,6 @@ export async function executeTunnelRpc(input: {
   params: Record<string, unknown>;
 }): Promise<TunnelRpcOutcome> {
   const { tunnelId, accountId, method, params } = input;
-  const permissionOwnerAccountId = input.tunnelOwnerAccountId ?? accountId;
 
   const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);
   if (!rpcRateCheck.allowed) {
@@ -116,15 +117,17 @@ export async function executeTunnelRpc(input: {
     .from(tunnelConnections)
     .where(eq(tunnelConnections.tunnelId, tunnelId))
     .limit(1);
+  const notApproved = {
+    ok: false,
+    kind: 'capability_not_approved',
+    capability,
+    message: `The ${capability} capability was not approved when this computer was paired. Re-pair this computer to allow ${capability}.`,
+  } as const;
   const approvedCapabilities = Array.isArray(connection?.capabilities)
     ? connection.capabilities
     : [];
-  const registeredCapabilities = (connection?.machineInfo as Record<string, unknown> | null)
-    ?.registeredCapabilities;
-  const effectiveCapabilities = Array.isArray(registeredCapabilities)
-    ? approvedCapabilities.filter((item) => registeredCapabilities.includes(item))
-    : approvedCapabilities;
-  if (!effectiveCapabilities.includes(capability)) {
+  if (!approvedCapabilities.includes(capability)) return notApproved;
+  if (!connection || !effectiveMachineCapabilities(connection).includes(capability)) {
     return {
       ok: false,
       kind: 'bad_request',
@@ -134,40 +137,7 @@ export async function executeTunnelRpc(input: {
 
   const operation = operationForMethod(method);
   const permCheck = await checkPermission(tunnelId, capability, operation, params);
-
-  if (!permCheck.allowed) {
-    const permReqRateCheck = tunnelRateLimiter.check('permRequest', permissionOwnerAccountId);
-    if (!permReqRateCheck.allowed) {
-      return {
-        ok: false,
-        kind: 'rate_limited',
-        retryAfterMs: permReqRateCheck.retryAfterMs,
-        message: 'Too many permission requests',
-      };
-    }
-
-    const requestedScope = requestedScopeForOperation(capability, method, operation, params);
-
-    const [request] = await db
-      .insert(tunnelPermissionRequests)
-      .values({
-        tunnelId,
-        accountId: permissionOwnerAccountId,
-        capability,
-        requestedScope,
-        reason: `Agent requested ${method} — ${permCheck.reason}`,
-      })
-      .returning();
-
-    notifyPermissionRequest(permissionOwnerAccountId, request);
-
-    return {
-      ok: false,
-      kind: 'permission_required',
-      requestId: request.requestId,
-      message: permCheck.reason ?? 'Permission required',
-    };
-  }
+  if (!permCheck.allowed) return notApproved;
 
   const startTime = Date.now();
   const auditLogId = await startAuditLog({
@@ -239,42 +209,6 @@ export async function executeTunnelRpc(input: {
   return { ok: true, result };
 }
 
-function requestedScopeForOperation(
-  capability: TunnelCapability,
-  method: string,
-  operation: string,
-  params: Record<string, unknown>,
-): Record<string, unknown> {
-  let candidate: Record<string, unknown> = {};
-  if (capability === 'filesystem') {
-    candidate = {
-      operations: [operation],
-      ...(typeof params.path === 'string' && params.path.length > 0
-        ? { paths: [params.path] }
-        : {}),
-    };
-  } else if (capability === 'shell') {
-    const command = typeof params.command === 'string' ? params.command.trim() : '';
-    candidate = {
-      ...(command ? { commands: [command] } : {}),
-      ...(typeof params.cwd === 'string' && params.cwd.length > 0
-        ? { workingDir: params.cwd }
-        : {}),
-      ...(typeof params.timeout === 'number' &&
-      Number.isFinite(params.timeout) &&
-      params.timeout > 0
-        ? { maxTimeout: params.timeout }
-        : {}),
-    };
-  } else if (capability === 'desktop') {
-    const feature = desktopFeatureForMethod(method, params);
-    candidate = feature ? { features: [feature] } : {};
-  }
-
-  const validated = validateScopeInput(capability, candidate);
-  return validated.valid ? (validated.sanitized ?? {}) : {};
-}
-
 function estimateBytes(result: unknown): number {
   if (result === null || result === undefined) return 0;
   if (typeof result === 'string') return result.length;
@@ -285,176 +219,80 @@ function estimateBytes(result: unknown): number {
   }
 }
 
-// ─── Computer connector helpers ───────────────────────────────────────────────
-
-/** Profile-scoped machine-list shape exposed by `list_computers`. */
-export interface ComputerMachine {
-  id: string;
-  name: string;
-  online: boolean;
-  capabilities: string[];
-  platform: string | null;
-}
-
-interface ResolvedComputerMachine extends ComputerMachine {
-  ownerAccountId: string;
-}
-
-/** List assigned account machines with DB-backed online status. Null is legacy all-account access. */
-export async function listAccountComputers(
-  accountId: string,
-  allowedTunnelIds: readonly string[] | null = null,
-  allowedTunnelAccountIds: readonly string[] | null = null,
-): Promise<ResolvedComputerMachine[]> {
-  const allowed = allowedTunnelIds === null ? null : [...new Set(allowedTunnelIds)];
-  if (allowed?.length === 0) return [];
-  const allowedAccounts =
-    allowed === null
-      ? [accountId]
-      : [...new Set(allowedTunnelAccountIds?.length ? allowedTunnelAccountIds : [accountId])];
-  if (allowedAccounts.length === 0) return [];
-  const rows = await db
-    .select()
-    .from(tunnelConnections)
-    .where(
-      allowed
-        ? and(
-            inArray(tunnelConnections.accountId, allowedAccounts),
-            inArray(tunnelConnections.tunnelId, allowed),
-          )
-        : eq(tunnelConnections.accountId, accountId),
-    );
-  return rows.map((r) => ({
-    id: r.tunnelId,
-    ownerAccountId: r.accountId,
-    name: r.name,
-    online: isTunnelConnectionLive(r),
-    capabilities: (() => {
-      const approved = Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [];
-      const registered = (r.machineInfo as Record<string, unknown> | null)?.registeredCapabilities;
-      return Array.isArray(registered)
-        ? approved.filter((capability) => registered.includes(capability))
-        : approved;
-    })(),
-    platform:
-      ((r.machineInfo as Record<string, unknown> | null)?.platform as string | null) ?? null,
-  }));
-}
-
-type ResolveResult =
-  | { ok: true; tunnelId: string; tunnelOwnerAccountId: string }
-  | { ok: false; message: string };
-
-/** Resolve a selector inside one connector profile's already-filtered machine set. */
-async function resolveComputerTunnel(
-  machines: ResolvedComputerMachine[],
-  selector: string | null,
-): Promise<ResolveResult> {
-  if (machines.length === 0) {
-    return {
-      ok: false,
-      message: 'No machines are assigned to this Computer Tunnel connector profile.',
-    };
-  }
-  if (selector) {
-    const byId = machines.find((m) => m.id === selector);
-    if (byId) {
-      return {
-        ok: true,
-        tunnelId: byId.id,
-        tunnelOwnerAccountId: byId.ownerAccountId,
-      };
-    }
-    const byName = machines.filter((m) => m.name.toLowerCase() === selector.toLowerCase());
-    const [byNameMachine] = byName;
-    if (byNameMachine && byName.length === 1) {
-      return {
-        ok: true,
-        tunnelId: byNameMachine.id,
-        tunnelOwnerAccountId: byNameMachine.ownerAccountId,
-      };
-    }
-    if (byName.length > 1) {
-      return {
-        ok: false,
-        message: `Multiple machines are named "${selector}" — pass the id from list_computers instead.`,
-      };
-    }
-    return {
-      ok: false,
-      message: `Machine "${selector}" is not assigned to this connector profile. Available: ${machines.map((m) => m.name).join(', ')}.`,
-    };
-  }
-  const online = machines.filter((m) => m.online);
-  const [onlineMachine] = online;
-  if (onlineMachine && online.length === 1) {
-    return {
-      ok: true,
-      tunnelId: onlineMachine.id,
-      tunnelOwnerAccountId: onlineMachine.ownerAccountId,
-    };
-  }
-  if (online.length === 0) {
-    return {
-      ok: false,
-      message: `No machine is online. Connected: ${machines.map((m) => m.name).join(', ')}. Bring one online and retry.`,
-    };
-  }
-  return {
-    ok: false,
-    message: `Multiple machines are online (${online.map((m) => m.name).join(', ')}). Pass "computer" (name or id) to choose one.`,
-  };
-}
+// ─── Computer connector call ──────────────────────────────────────────────────
 
 /** Outcome of a `computer` connector call, mapped onto a CallResult by the gateway. */
 export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      kind: 'permission_required';
-      requestId: string;
+      kind: 'computer_unpaired' | 'computer_offline' | 'computer_capability_not_approved' | 'error';
       message: string;
-    }
-  | { ok: false; kind: 'no_machine'; message: string }
-  | { ok: false; kind: 'error'; message: string };
+    };
+
+/** Approved capabilities the connected agent also registered. */
+export function effectiveMachineCapabilities(row: {
+  capabilities: unknown;
+  machineInfo: unknown;
+}): string[] {
+  const approved = Array.isArray(row.capabilities) ? (row.capabilities as string[]) : [];
+  const registered = (row.machineInfo as Record<string, unknown> | null)?.registeredCapabilities;
+  return Array.isArray(registered)
+    ? approved.filter((capability) => registered.includes(capability))
+    : approved;
+}
 
 /**
- * Execute one Computer Tunnel connector action. Listing and selection use the same
- * server-side allowlist. The DB query also verifies account ownership, so a
- * stale, deleted, unassigned, or cross-account tunnel fails closed.
+ * Execute one computer connector action on the machine of the account the
+ * generic connection resolver chose. `status` is answered server-side.
  */
 export async function executeComputerCall(input: {
+  tunnelId: string;
   accountId: string;
   projectId?: string | null;
   sessionId?: string | null;
   actorUserId?: string | null;
-  /** Null is accepted only for legacy aggregate rows and means all account machines. */
-  allowedTunnelIds: string[] | null;
-  /** Verified owner accounts stored with an explicit profile. */
-  allowedTunnelAccountIds?: string[] | null;
-  selector: string | null;
   method: string;
   args: Record<string, unknown>;
 }): Promise<ComputerCallOutcome> {
-  const machines = await listAccountComputers(
-    input.accountId,
-    input.allowedTunnelIds,
-    input.allowedTunnelAccountIds,
-  );
-  if (input.method === 'list_computers') {
+  const [machine] = await db
+    .select()
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, input.tunnelId))
+    .limit(1);
+  if (!machine) {
+    return {
+      ok: false,
+      kind: 'computer_unpaired',
+      message: 'This computer was unpaired. Pair it again to use it.',
+    };
+  }
+  const online = isTunnelConnectionLive(machine);
+  const info = (machine.machineInfo ?? {}) as Record<string, unknown>;
+  if (input.method === 'status') {
     return {
       ok: true,
       data: {
-        computers: machines.map(({ ownerAccountId: _ownerAccountId, ...machine }) => machine),
+        name: machine.name,
+        online,
+        platform: typeof info.platform === 'string' ? info.platform : null,
+        hostname: typeof info.hostname === 'string' ? info.hostname : null,
+        capabilities: effectiveMachineCapabilities(machine),
+        last_heartbeat_at: machine.lastHeartbeatAt?.toISOString() ?? null,
       },
     };
   }
-  const resolved = await resolveComputerTunnel(machines, input.selector);
-  if (!resolved.ok) return { ok: false, kind: 'no_machine', message: resolved.message };
+  if (!online) {
+    return {
+      ok: false,
+      kind: 'computer_offline',
+      message: `${machine.name} is offline. Start Kortix on that computer and retry.`,
+    };
+  }
 
   const outcome = await executeTunnelRpc({
-    tunnelId: resolved.tunnelId,
-    tunnelOwnerAccountId: resolved.tunnelOwnerAccountId,
+    tunnelId: machine.tunnelId,
+    tunnelOwnerAccountId: machine.accountId,
     accountId: input.accountId,
     projectId: input.projectId,
     sessionId: input.sessionId,
@@ -464,13 +302,11 @@ export async function executeComputerCall(input: {
   });
 
   if (outcome.ok) return { ok: true, data: outcome.result };
-  if (outcome.kind === 'permission_required') {
-    return {
-      ok: false,
-      kind: 'permission_required',
-      requestId: outcome.requestId,
-      message: outcome.message,
-    };
+  if (outcome.kind === 'capability_not_approved') {
+    return { ok: false, kind: 'computer_capability_not_approved', message: outcome.message };
+  }
+  if (outcome.kind === 'error' && outcome.code === TunnelErrorCode.NOT_CONNECTED) {
+    return { ok: false, kind: 'computer_offline', message: outcome.message };
   }
   if (outcome.kind === 'rate_limited') {
     const retry = outcome.retryAfterMs

@@ -7,11 +7,12 @@
  * permission sync, event notifications, and cleanup.
  *
  * Routes:
- *   /connections/*           — CRUD for tunnel connections
- *   /permissions/*           — manage granted permissions
- *   /permission-requests/*   — real-time permission approval flow (incl. SSE)
- *   /rpc/*                   — RPC relay (sandbox → local agent)
- *   /audit/*                 — paginated audit logs
+ *   /connections/*           — the caller's paired machines (list, rename, unpair)
+ *   /device-auth/*           — pairing (device-code flow)
+ *   /rpc/*                   — RPC relay (owner → local agent)
+ *
+ * Projects reach a machine through a computer account on the `computer`
+ * connector (connectors/gateway.ts), never through these routes.
  */
 
 import {
@@ -28,10 +29,7 @@ import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
 import { createConnectionsRouter } from './routes/connections';
-import { createPermissionsRouter } from './routes/permissions';
-import { createPermissionRequestsRouter } from './routes/permission-requests';
 import { createRpcRouter } from './routes/rpc';
-import { createAuditRouter } from './routes/audit';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
 import { heartbeatManager } from './core/heartbeat';
@@ -41,7 +39,6 @@ import {
   startTunnelRpcForwarder,
   stopTunnelRpcForwarder,
 } from './core/cluster-forwarder';
-import { notifyTunnelEvent } from './routes/permission-requests';
 import { tunnelRateLimiter } from './core/rate-limiter';
 // Static imports — these MUST NOT be dynamic `await import(...)`. Under
 // `bun --hot` (local dev) a dynamic import inside the WS auth handler can wedge
@@ -50,8 +47,6 @@ import { tunnelRateLimiter } from './core/rate-limiter';
 import { fingerprintTunnelCredentialHash, isTunnelToken, verifySecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
 import { runWorkerTick } from '../shared/audit-scope';
-import { expireTunnelPermissions } from './permission-expiry';
-import { reconcileComputerConnectors } from '../connectors/sync';
 import { type AuditEventInput, recordAuditEvent } from '../shared/audit';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
@@ -92,10 +87,7 @@ tunnelApp.use(
 );
 
 tunnelApp.route('/connections', createConnectionsRouter());
-tunnelApp.route('/permissions', createPermissionsRouter());
-tunnelApp.route('/permission-requests', createPermissionRequestsRouter());
 tunnelApp.route('/rpc', createRpcRouter());
-tunnelApp.route('/audit', createAuditRouter());
 tunnelApp.route('/device-auth', createDeviceAuthRouter());
 
 // ─── Handshake audit ─────────────────────────────────────────────────────────
@@ -234,7 +226,7 @@ tunnelRelay.on('message:pong', ({ tunnelId }) => {
   heartbeatManager.recordPong(tunnelId);
 });
 
-let permissionCleanupInterval: ReturnType<typeof setInterval> | null = null;
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 async function syncActiveTunnelPermissions(
   tunnelId: string,
@@ -274,7 +266,6 @@ function startTunnelService(): void {
   // ── DB persistence via relay events ──────────────────────────────────
 
   tunnelRelay.on('agent:connect', async ({ tunnelId, metadata }) => {
-    const accountId = metadata?.accountId as string | undefined;
     const capabilities = Array.isArray(metadata?.capabilities)
       ? (metadata.capabilities as string[])
       : [];
@@ -295,38 +286,16 @@ function startTunnelService(): void {
         },
       });
 
-      if (accountId) {
-        notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
-        // The first real handshake is the materialization boundary. Device
-        // approval creates an offline row before this point and must not expose
-        // a connector for a machine that never connected.
-        void reconcileComputerConnectors(accountId);
-      }
-
       await syncActiveTunnelPermissions(tunnelId, capabilities);
     } catch (err) {
       console.warn(`[tunnel] Permission sync failed:`, err);
     }
   });
 
-  tunnelRelay.on('agent:disconnect', async ({ tunnelId, metadata }) => {
-    const accountId = metadata?.accountId as string | undefined;
-
+  tunnelRelay.on('agent:disconnect', async ({ tunnelId }) => {
     try {
       await clearTunnelRelayOwnerIfCurrent(tunnelId, { status: 'offline' });
-
-      if (accountId) {
-        notifyTunnelEvent(accountId, 'tunnel_disconnected', { tunnelId });
-      }
     } catch {}
-  });
-
-  tunnelRelay.on('connection:replaced', ({ tunnelId }) => {
-    const metadata = tunnelRelay.getAgentMetadata(tunnelId);
-    const accountId = metadata?.accountId as string | undefined;
-    if (accountId) {
-      notifyTunnelEvent(accountId, 'connection_replaced', { tunnelId });
-    }
   });
 
   tunnelRelay.on('message:pong', async ({ tunnelId, params }) => {
@@ -404,11 +373,10 @@ function startTunnelService(): void {
     }
   });
 
-  // ── Permission expiry cleanup ────────────────────────────────────────
+  // ── Rate-limiter + device-auth cleanup ───────────────────────────────
 
-  permissionCleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', async () => {
+  cleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', async () => {
     try {
-      await expireTunnelPermissions(new Date());
       tunnelRateLimiter.cleanup();
 
       // Expire pending device auth requests
@@ -437,7 +405,7 @@ function startTunnelService(): void {
         .delete(tunnelDeviceAuthRequests)
         .where(lt(tunnelDeviceAuthRequests.expiresAt, new Date(Date.now() - 24 * 60 * 60_000)));
     } catch (err) {
-      console.warn('[TUNNEL] Permission cleanup error:', err);
+      console.warn('[TUNNEL] Cleanup error:', err);
     }
   }), 5 * 60_000);
 
@@ -445,9 +413,9 @@ function startTunnelService(): void {
 }
 
 function stopTunnelService(): void {
-  if (permissionCleanupInterval) {
-    clearInterval(permissionCleanupInterval);
-    permissionCleanupInterval = null;
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
   }
   stopTunnelRpcForwarder();
   heartbeatManager.stop();

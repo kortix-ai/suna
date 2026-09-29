@@ -12,6 +12,7 @@ import {
   type ServicePaths,
   getServicePaths,
   rotateServiceLogs,
+  serviceHomeEnv,
 } from './service-paths';
 
 export {
@@ -20,7 +21,10 @@ export {
   SERVICE_LABEL,
   TERMINAL_SERVICE_EXIT_CODE,
   type ServicePaths,
+  agentTunnelHome,
   getServicePaths,
+  serviceHomeEnv,
+  serviceLabelFor,
   rotateServiceLogs,
   serviceLogFiles,
 } from './service-paths';
@@ -52,7 +56,9 @@ export function isEphemeralRunnerPath(path: string): boolean {
     normalized.includes('/_npx/') ||
     normalized.includes('/_cacache/') ||
     normalized.includes('/.pnpm-store/') ||
-    normalized.includes('/.yarn/$$virtual/')
+    normalized.includes('/.yarn/$$virtual/') ||
+    // A Linux AppImage is mounted at a new /tmp/.mount_* path on every launch.
+    normalized.includes('/.mount_')
   );
 }
 
@@ -76,11 +82,38 @@ export function vendorRunner(scriptPath: string, paths: ServicePaths = getServic
   return paths.vendoredRunner;
 }
 
+/**
+ * The command the supervisor runs: this interpreter and this bundle.
+ *
+ * Under Electron (the desktop app runs the bundle with ELECTRON_RUN_AS_NODE)
+ * the interpreter is the app binary, which must be told to act as Node again,
+ * and the bundle sits inside the app, which the updater replaces in place, so
+ * it is not vendored. A Linux AppImage is the exception: its mount path changes
+ * per launch, so the service runs the AppImage file and a vendored bundle.
+ */
+export function runnerPartsFor(
+  script: string,
+  runtime: { execPath: string; electron?: string; appImage?: string } = {
+    execPath: process.execPath,
+    electron: process.versions.electron,
+    appImage: process.env.APPIMAGE,
+  },
+  paths: ServicePaths = getServicePaths(),
+): RunnerParts {
+  const env = serviceHomeEnv(paths.configDir);
+  if (runtime.electron) {
+    return {
+      command: runtime.appImage || runtime.execPath,
+      args: [runtime.appImage ? vendorRunner(script, paths) : script, 'run', '--service'],
+      env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+    };
+  }
+  return { command: runtime.execPath, args: [vendorRunner(script, paths), 'run', '--service'], env };
+}
+
 function currentRunnerParts(): RunnerParts {
   const script = process.argv[1];
-  if (script && existsSync(script)) {
-    return { command: process.execPath, args: [vendorRunner(script), 'run', '--service'] };
-  }
+  if (script && existsSync(script)) return runnerPartsFor(script);
   throw new Error(
     'Cannot install the background service because the current Agent Tunnel executable was not found',
   );

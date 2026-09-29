@@ -7,7 +7,8 @@
  *
  * Authenticated:
  *   GET    /device-auth/:code/info    — fetch request details (browser approval page)
- *   POST   /device-auth/:code/approve — approve and create tunnel
+ *   POST   /device-auth/:code/approve — approve: pair the machine and add it to a
+ *                                       project as the approver's computer account
  *   POST   /device-auth/:code/deny    — deny request
  */
 
@@ -28,13 +29,23 @@ import { tunnelRateLimiter } from '../core/rate-limiter';
 import { config } from '../../config';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { getTunnelOwnerContext, requireUserCredential } from './auth';
+import { requireUserCredential } from './auth';
 import { isValidCapability } from '../core/scope-validator';
-import { reconcileComputerConnectors } from '../../connectors/sync';
+import { ensureComputerConnector } from '../../connectors/sync';
+import { attachComputerConnection } from '../../connectors/computers';
+import { PROJECT_ACTIONS } from '../../iam';
+import { loadProjectForUser, projectCapabilityAllowed } from '../../projects/lib/access';
+import { parseConnectorConnectOwner } from '../../projects/lib/connection-access';
 import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../shared/validate';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
-
+/**
+ * Wire permissions minted at pairing: one full-scope grant per approved
+ * capability. Installed agents (npm `@kortix/agent-tunnel@0.1.x`) require a
+ * synced `permissionId` on every RPC, so these stay; they are not a product
+ * surface. The agent's local config remains the hard ceiling.
+ */
 const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
   filesystem: [
     { scope: 'files:read', operations: ['read', 'list'] },
@@ -89,7 +100,11 @@ export function createDeviceAuthPublicRouter() {
           required: false,
           content: {
             'application/json': {
-              schema: z.object({ machineHostname: z.string().optional() }),
+              schema: z.object({
+                machineHostname: z.string().optional(),
+                /** The project the machine asks to join (`connect --project-id`). */
+                project_id: z.string().uuid().optional(),
+              }),
             },
           },
         },
@@ -105,7 +120,7 @@ export function createDeviceAuthPublicRouter() {
           }),
           'The device code + one-time secret to poll with',
         ),
-        ...errors(429),
+        ...errors(400, 429),
       },
     }),
     async (c: any) => {
@@ -120,7 +135,14 @@ export function createDeviceAuthPublicRouter() {
       }
 
       const body = await readJsonObject(c);
-      const machineHostname = (body.machineHostname as string)?.slice(0, 255) || null;
+      const machineHostname =
+        typeof body.machineHostname === 'string' ? body.machineHostname.slice(0, 255) || null : null;
+      // Untrusted hint from an unauthenticated machine: stored as-is, and
+      // checked against the approver's project access at approval.
+      const projectId = body.project_id ?? null;
+      if (projectId !== null && !isUuid(projectId)) {
+        return c.json({ error: 'project_id must be a UUID' }, 400);
+      }
 
       // Generate code + secret. The human code has a unique index, so retry
       // the rare collision instead of returning an internal error.
@@ -135,6 +157,7 @@ export function createDeviceAuthPublicRouter() {
             deviceCode,
             deviceSecretHash,
             machineHostname,
+            projectId,
             expiresAt,
           });
           break;
@@ -270,6 +293,7 @@ export function createDeviceAuthRouter() {
         .select({
           deviceCode: tunnelDeviceAuthRequests.deviceCode,
           machineHostname: tunnelDeviceAuthRequests.machineHostname,
+          projectId: tunnelDeviceAuthRequests.projectId,
           status: tunnelDeviceAuthRequests.status,
           expiresAt: tunnelDeviceAuthRequests.expiresAt,
           createdAt: tunnelDeviceAuthRequests.createdAt,
@@ -289,13 +313,15 @@ export function createDeviceAuthRouter() {
     },
   );
 
-  // POST /:code/approve — approve and create tunnel + token
+  // POST /:code/approve — pair the machine + add it to a project as an account
   router.openapi(
     createRoute({
       method: 'post',
       path: '/{code}/approve',
       tags: ['tunnel'],
-      summary: 'Approve a device-auth request (creates tunnel + grants capabilities)',
+      summary: 'Approve a device-auth request (pairs the machine and adds it to a project)',
+      description:
+        'Creates, in one transaction, the paired machine (owned by the caller), its wire permissions, and a computer account on the project\'s `computer` connector: private to the caller (`share: "me"`, default) or shared with the project (`share: "project"`, needs the connector-connections manage capability).',
       security: [{ bearerAuth: [] }],
       request: {
         params: z.object({ code: z.string() }),
@@ -306,6 +332,9 @@ export function createDeviceAuthRouter() {
               schema: z.object({
                 name: z.string().optional(),
                 capabilities: z.array(z.string()).optional(),
+                /** Required unless the machine sent one with the request. */
+                project_id: z.string().uuid().optional(),
+                share: z.enum(['me', 'project']).optional(),
               }),
             },
           },
@@ -313,10 +342,10 @@ export function createDeviceAuthRouter() {
       },
       responses: {
         200: json(
-          z.object({ success: z.boolean(), tunnelId: z.string() }),
-          'The created tunnel id',
+          z.object({ success: z.boolean(), tunnelId: z.string(), connectionId: z.string() }),
+          'The paired machine and its computer account',
         ),
-        ...errors(401, 403, 404),
+        ...errors(400, 401, 403, 404, 409, 429),
       },
     }),
     async (c: any) => {
@@ -325,7 +354,6 @@ export function createDeviceAuthRouter() {
       if (!rl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
       }
-      const { accountId } = await getTunnelOwnerContext(c);
       const code = c.req.param('code');
       const body = await readJsonObject(c);
 
@@ -343,6 +371,13 @@ export function createDeviceAuthRouter() {
       if (!row) {
         return c.json({ error: 'Device auth request not found or expired' }, 404);
       }
+
+      const requestedProject = body.project_id ?? body.projectId;
+      const projectId =
+        typeof requestedProject === 'string' && requestedProject ? requestedProject : row.projectId;
+      if (!projectId) return c.json({ error: 'project_id is required' }, 400);
+      const share = parseConnectorConnectOwner(body.share);
+      if (!share) return c.json({ error: "share must be 'me' or 'project'" }, 400);
 
       const requestedName = typeof body.name === 'string' ? body.name.trim() : '';
       const name = requestedName || row.machineHostname || 'Unnamed';
@@ -362,14 +397,41 @@ export function createDeviceAuthRouter() {
         return c.json({ error: 'capabilities must contain unique supported capabilities' }, 400);
       }
 
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Project not found' }, 404);
+      const userId = loaded.userId;
+      const accountId = loaded.row.accountId;
+      if (
+        share === 'project' &&
+        !(await projectCapabilityAllowed(
+          c,
+          userId,
+          accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+        ))
+      ) {
+        return c.json(
+          {
+            error: 'Sharing a computer with the project requires permission to manage its connections',
+            code: 'FORBIDDEN',
+          },
+          403,
+        );
+      }
+
+      // Idempotent and outside the transaction: the upsert owns its own
+      // transaction. A computer connector without accounts is harmless.
+      const connectorId = await ensureComputerConnector(projectId, accountId);
+
       // The setup token is derived and returned only during the short device
       // handoff window. Its plaintext is never persisted in Postgres.
       const setupToken = deriveDeviceSetupToken(row.deviceSecretHash, row.id);
       const setupTokenHash = hashSecretKey(setupToken);
-      const connection = await db.transaction(async (tx) => {
+      const paired = await db.transaction(async (tx) => {
         const [claimed] = await tx
           .update(tunnelDeviceAuthRequests)
-          .set({ status: 'approved', accountId, updatedAt: new Date() })
+          .set({ status: 'approved', accountId, projectId, updatedAt: new Date() })
           .where(
             and(
               eq(tunnelDeviceAuthRequests.id, row.id),
@@ -384,6 +446,7 @@ export function createDeviceAuthRouter() {
           .insert(tunnelConnections)
           .values({
             accountId,
+            ownerUserId: userId,
             name,
             capabilities,
             status: 'offline',
@@ -392,19 +455,27 @@ export function createDeviceAuthRouter() {
           .returning();
         if (!created) throw new Error('Tunnel connection insert returned no row');
 
-        if (capabilities.length > 0) {
-          const grants = capabilities.flatMap((cap) => {
-            const scopes = DEFAULT_PERMISSION_SCOPES[cap] ?? [];
-            return scopes.map((scope) => ({
-              tunnelId: created.tunnelId,
-              accountId,
-              capability: cap as 'filesystem' | 'shell' | 'desktop',
-              scope,
-              status: 'active' as const,
-            }));
-          });
-          if (grants.length > 0) await tx.insert(tunnelPermissions).values(grants);
-        }
+        const grants = capabilities.flatMap((cap) =>
+          (DEFAULT_PERMISSION_SCOPES[cap] ?? []).map((scope) => ({
+            tunnelId: created.tunnelId,
+            accountId,
+            capability: cap as 'filesystem' | 'shell' | 'desktop',
+            scope,
+            status: 'active' as const,
+          })),
+        );
+        if (grants.length > 0) await tx.insert(tunnelPermissions).values(grants);
+
+        const { connection } = await attachComputerConnection(tx, {
+          accountId,
+          projectId,
+          connectorId,
+          ownerType: share === 'project' ? 'project' : 'member',
+          ownerId: share === 'project' ? null : userId,
+          tunnelId: created.tunnelId,
+          name,
+          createdBy: userId,
+        });
 
         await tx
           .update(tunnelDeviceAuthRequests)
@@ -414,18 +485,14 @@ export function createDeviceAuthRouter() {
             updatedAt: new Date(),
           })
           .where(eq(tunnelDeviceAuthRequests.id, row.id));
-        return created;
+        return { tunnelId: created.tunnelId, connectionId: connection.connectionId };
       });
 
-      if (!connection) {
+      if (!paired) {
         return c.json({ error: 'Device auth request was already resolved' }, 409);
       }
 
-      // The WS handshake materializes this machine profile after it proves a
-      // real connection. This reconcile also repairs previously-connected rows.
-      void reconcileComputerConnectors(accountId);
-
-      return c.json({ success: true, tunnelId: connection.tunnelId });
+      return c.json({ success: true, ...paired });
     },
   );
 

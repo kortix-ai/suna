@@ -140,8 +140,7 @@ describe('handleCall — happy path', () => {
     });
   });
 
-  // No resolved connection (a public/no-auth connector, or a Computers profile
-  // keyed on tunnelIds rather than a connection row) means no account to name —
+  // No resolved connection (a public/no-auth connector) means no account to name —
   // the field must be absent, not a fabricated placeholder.
   test('ok result omits account when the connector resolved no connection', async () => {
     const { deps } = makeDeps();

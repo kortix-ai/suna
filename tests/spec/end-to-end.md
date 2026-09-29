@@ -673,26 +673,34 @@ Every BYOK route has `billingMode:'none'` and zero markup. The gateway resolves 
 `MCP-3` A registered client authorizes with `resource` = `<issuer>/v1/mcp` and no scope → the consent reports scope `kortix`, `self_registered: true`, and the redirect target; the PKCE exchange (no secret) yields a token that acts as the user. There is no feature flag: `initialize` echoes the protocol version and its `instructions` point at `list_projects`; a notification → 202; `GET` and `DELETE` → 405; `tools/list` → `list_projects`, `start_session`, `send_message`, `read_session`, `list_sessions`, `run_command`, `read_file`, `write_file`, `list_files`, `read_skill`, `search_api`, `describe_api`, `call_api`; `list_projects` names the project with its `account_id`; `search_api` finds routes but never `/v1/oauth`; `call_api` runs routes in-process as the user (`GET /accounts/me` → `auth_type: "oauth"`), fills `{projectId}` from `project_id`, is `isError` for a `{projectId}` path without one, and refuses `/v1/oauth` and `/v1/mcp`; `read_skill` lists the platform guides and returns `kortix-system` as markdown; `list_files` and `read_file` with a `project_id` read the project repository (`kortix.yaml`), and a missing file is `isError`; `list_sessions` (by `project_id`) returns a JSON array; `run_command`, `list_files` and `write_file` on a missing session are `isError` `HTTP 404`; `run_command` refuses a `job_id` that is not 16 hex characters and a call with neither `command` nor `job_id` before it reaches any sandbox; a session read by id reports the same `owner_type`/`owner_email`/`owner_name` as the list, and `read_session` finds its project from the `session_id` alone; every tool call is audited with `client_reported_source: "mcp"`; an unknown method → JSON-RPC `-32601`. The sandbox tools against a live session (`run_command` exit code and output, `write_file` then `read_file` round-trip, an image returned as MCP `image` content, a stopped sandbox woken by the call) need a cloud sandbox and run on dev.
 `MCP-4` One server per person, like the CLI: a `kortix_pat_` from `POST /accounts/tokens` opens `POST /mcp` with no OAuth; `list_projects` returns the user's personal project and a team project (two accounts, one connection), and `list_files` reads each by `project_id`. Through an outsider's own PAT, `list_projects` never lists those projects, and `list_files` on one, `read_session` on its session, and `read_session` on a missing session are all refused (`isError`, `HTTP 403` or `HTTP 404`) without naming the project. The owner's connection reads the same session by `session_id` alone and gets its `project_id` back.
 
-### Tunnel (reverse tunnel to local machines)
+### Computers (reverse tunnel to local machines)
 
-`TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
-`TUN-2` permissions `GET/POST /tunnel/permissions/:tid`, `DELETE /:tid/:permissionId`; requests `GET /tunnel/permission-requests`, `GET …/stream` (SSE), `POST /:rid/approve|deny`; approve with a non-object `scope` or a non-string `expiresAt` → 400, with or without a JSON content-type.
-`TUN-3` rpc `POST /tunnel/rpc/:tid`; audit `GET /tunnel/audit/:tid`.
-`TUN-4` device auth (public) `POST /tunnel/device-auth`, `GET …/:code/status`; (auth) `GET …/:code/info`, `POST …/:code/approve|deny`.
-`TUN-5` WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited.
+A paired machine is an ACCOUNT on the project's `computer` connector: one
+`connector_connections` row with `tunnel_id`, private to the member who paired
+it (`owner_type: member`) unless shared with the project (`owner_type:
+project`, needs `project.connector.connections.manage`). Runtime selection is
+the generic connection resolver (`--account`, session bindings, reachability):
+an unattended run reaches only project-shared computers.
 
-`TUN-6` — verified binary transfer and permission decisions
+`TUN-1` pairing + machines: `POST /tunnel/device-auth` with `project_id`, `GET …/:code/status`, `POST …/:code/approve` → the approver's private computer account in the project (`GET /projects/:id/connections` lists it with `tunnel_id` and `machine`). `GET /tunnel/connections` lists the caller's machines; `POST /tunnel/connections` → 404 (pairing is device auth only). `GET/PATCH /:tid` (rename; empty name → 400), `POST /:tid/rotate-token`, unknown → 404, ANON → 401. `DELETE /:tid` unpairs: the account becomes `revoked` with `tunnel_id: null`.
+`TUN-2` `POST /projects/:id/computers {tunnel_id, share}` adds an already-paired machine: idempotent for the owner (200, same account), another member → 404, malformed id → 400, a member sharing a pairing with the project → 403, the owner sharing with the project → 201 and every member lists that account. A machine of another account → 409.
+`TUN-3` per-machine permission, permission-request, and audit routes are removed (404).
+`TUN-4` rpc `POST /tunnel/rpc/:tid`: missing method → 400; a capability not approved at pairing → 403 `computer_capability_not_approved`; an approved capability with no live agent → 503 with `x-kortix-upstream-status: 502` and code `-32004` (not connected); unknown → 404.
+`TUN-5` device auth (public) `POST /tunnel/device-auth` (non-UUID `project_id` → 400), `GET …/:code/status`; (auth) `GET …/:code/info` echoes `projectId`, `POST …/:code/approve|deny`; unknown code → 404; ANON info → 401.
+WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited (exercised by TUN-6).
 
-Register a real filesystem agent over WebSocket. Empty `fs.write` arguments return
-400 before creating a permission request. A valid unapproved write returns 403 and
-creates no file. Denying it prevents approval of that same request (409). Concurrent
-approve/deny requests produce exactly one 200 and one 409. Grant a path-scoped write
-permission, then execute `agent-tunnel-cli fs_upload` with an XLSX source path. The
-process exits 0, stderr is empty, and stdout reports the source size and SHA-256.
-The destination bytes match the source. Repeat the write through a Computer Tunnel
-connector and assert its returned digest and persisted bytes. Same-length corrupted bytes with the source
+`TUN-6` — verified binary transfer
+
+Pair a filesystem-only machine into a project and register a real agent over
+WebSocket. Empty `fs.write` arguments return 400 and write nothing. A shell call
+returns 403 `computer_capability_not_approved`. The pairing's wire grant covers
+the write: `agent-tunnel-cli fs_upload` with an XLSX source path exits 0, stderr
+is empty, and stdout reports the source size and SHA-256. The destination bytes
+match the source. Repeat the write through the project's computer account
+(`POST /connectors/projects/:id/call`, connector `computer`) and assert its
+returned digest and persisted bytes. Same-length corrupted bytes with the source
 checksum fail without replacing the destination. Malformed base64 returns 400.
-Cleanup removes the connection and temporary files.
+Cleanup removes the machine and temporary files.
 
 ### Ops (platform admin)
 
@@ -727,7 +735,7 @@ A platform admin can open a customer's account to debug it. The capability is a 
 
 `IMP-1` `POST /v1/admin/api/impersonate {account_id,reason?}` → mint a grant → 200 `{grant_id,account_id,account_name,expires_at}`; audited `admin.impersonate.start` against the TARGET account with the real admin as actor. Non-uuid `account_id` → 400; unknown account → 404; non-admin → 403; ANON → 401.
 `DELETE /v1/admin/api/impersonate/:grantId` → revoke → 200 `{ok:true,grant_id,revoked_at}`; audited `admin.impersonate.stop`. Scoped to the caller's OWN grants — another admin's id answers 404, exactly like a nonexistent one. `GET /v1/admin/api/impersonate/active` → `{grants:[{grant_id,account_id,account_name,expires_at}]}`, the caller's unrevoked, unexpired grants.
-Presenting `X-Kortix-Impersonate: <grant_id>` on any other route makes it act on the target account: `GET /v1/accounts` returns exactly that one account at role `owner`, and writes land on it. Every NON-GET impersonated request additionally writes `admin.impersonate.action` `{method,path,grant_id,impersonator_user_id,target_account_id}` against the target account BEFORE the handler runs. Denied with **403 `{code:"impersonation_invalid"}`**, never a silent fall-back to the operator's own account: an unknown/expired/revoked grant, a grant belonging to another user, a caller who is no longer a platform admin, a non-JWT credential (PAT/API key/service account), any `/v1/admin/*` route (no nested admin, no second grant, no platform-role change), any NON-GET request to a route that would create DURABLE access outliving the grant — credentials (`/v1/accounts/tokens`, SCIM tokens, service accounts, project CLI/git tokens, gateway keys), account membership and invites (`/v1/accounts/:id/members`, `/v1/accounts/:id/invites/*`), SSO provider config (`/v1/accounts/:id/iam/sso/*`), session public shares (whose `expires_at` is optional and whose consuming route is unauthenticated), and tunnel connections. READING those same surfaces stays allowed — a GET creates nothing, and the member list is the first thing a support question needs; only `/v1/admin/*` is refused for reads too — and an explicit `account_id` naming any account other than the target. Impersonation also CONFINES: while a grant is live the operator's OWN account and every third account are inaccessible, so a stale client cannot make a write land anywhere but the account the banner names.
+Presenting `X-Kortix-Impersonate: <grant_id>` on any other route makes it act on the target account: `GET /v1/accounts` returns exactly that one account at role `owner`, and writes land on it. Every NON-GET impersonated request additionally writes `admin.impersonate.action` `{method,path,grant_id,impersonator_user_id,target_account_id}` against the target account BEFORE the handler runs. Denied with **403 `{code:"impersonation_invalid"}`**, never a silent fall-back to the operator's own account: an unknown/expired/revoked grant, a grant belonging to another user, a caller who is no longer a platform admin, a non-JWT credential (PAT/API key/service account), any `/v1/admin/*` route (no nested admin, no second grant, no platform-role change), any NON-GET request to a route that would create DURABLE access outliving the grant — credentials (`/v1/accounts/tokens`, SCIM tokens, service accounts, project CLI/git tokens, gateway keys), account membership and invites (`/v1/accounts/:id/members`, `/v1/accounts/:id/invites/*`), SSO provider config (`/v1/accounts/:id/iam/sso/*`), session public shares (whose `expires_at` is optional and whose consuming route is unauthenticated), tunnel connections, and project computer accounts (`/v1/projects/:id/computers`). READING those same surfaces stays allowed — a GET creates nothing, and the member list is the first thing a support question needs; only `/v1/admin/*` is refused for reads too — and an explicit `account_id` naming any account other than the target. Impersonation also CONFINES: while a grant is live the operator's OWN account and every third account are inaccessible, so a stale client cannot make a write land anywhere but the account the banner names.
 
 `ADM-19` `POST /v1/billing/cron/trial-expiry` — **internal-cron auth**, not `requireAdmin` (same `requireInternalCronAuth` gate as `BILL-13`/`BILL-16`: Bearer or `X-Kortix-Internal-Key` must timing-safe-equal `INTERNAL_SERVICE_KEY`) → flips `active` trials past `trial_ends_at` to `expired` → 200 `{expired:n}`; no/wrong credentials → 401; billing internals disabled → 200 `{skipped:true}`. Status hygiene only — the lazy overlay already stopped granting at the timestamp.
 
@@ -1296,9 +1304,6 @@ external. Unsafe child-window navigation schemes remain blocked.
 An authenticating HTTP proxy must receive credentials from a native prompt and
 must not reuse origin credentials. If Supabase auth does not answer within 15
 seconds, the splash must expose Retry and Sign out instead of loading forever.
-A failed tunnel permission decision must retain its error, expose Retry and
-Dismiss, and remain dismissible through Escape or the close button. Dismissed
-permission requests must not reopen when their SSE event repeats.
 Native commands trust only the configured frontend origin in the main window's
 main frame. A second window at that same origin must receive an unauthorized
 sender error. Full document navigation within the configured frontend stays in

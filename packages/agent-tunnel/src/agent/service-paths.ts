@@ -1,8 +1,40 @@
+import { createHash } from 'crypto';
 import { readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
+/** Label of the default service. A non-default AGENT_TUNNEL_HOME gets a suffixed one. */
 export const SERVICE_LABEL = 'ai.kortix.agent-tunnel';
+
+export function defaultAgentTunnelHome(): string {
+  return join(homedir(), '.agent-tunnel');
+}
+
+/**
+ * Config directory: `AGENT_TUNNEL_HOME`, else `~/.agent-tunnel`. The override
+ * lets a desktop dev build or a test pair a second identity on one machine
+ * without touching the real one.
+ */
+export function agentTunnelHome(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.AGENT_TUNNEL_HOME?.trim();
+  return override ? resolve(override) : defaultAgentTunnelHome();
+}
+
+/**
+ * The default home keeps the historical label, so existing installs keep
+ * managing the service they already have. Any other home gets a stable suffix
+ * from its path, so its service never replaces the real one.
+ */
+export function serviceLabelFor(home: string): string {
+  const dir = resolve(home);
+  if (dir === defaultAgentTunnelHome()) return SERVICE_LABEL;
+  return `${SERVICE_LABEL}.${createHash('sha256').update(dir).digest('hex').slice(0, 8)}`;
+}
+
+/** Environment the supervised process needs to find the same home again. */
+export function serviceHomeEnv(home: string = agentTunnelHome()): Record<string, string> {
+  return resolve(home) === defaultAgentTunnelHome() ? {} : { AGENT_TUNNEL_HOME: resolve(home) };
+}
 export const DEFAULT_INSTALL_BACKGROUND_SERVICE = true;
 
 /**
@@ -19,6 +51,8 @@ export const MAX_SERVICE_LOG_BYTES = 5 * 1024 * 1024;
 const RETAINED_LOG_LINES = 500;
 
 export interface ServicePaths {
+  /** launchd label, systemd unit stem, and Scheduled Task name. */
+  label: string;
   configDir: string;
   logDir: string;
   binDir: string;
@@ -28,17 +62,18 @@ export interface ServicePaths {
   windowsScript: string;
 }
 
-export function getServicePaths(): ServicePaths {
+export function getServicePaths(configDir: string = agentTunnelHome()): ServicePaths {
   const home = homedir();
-  const configDir = join(home, '.agent-tunnel');
+  const label = serviceLabelFor(configDir);
   const binDir = join(configDir, 'bin');
   return {
+    label,
     configDir,
     logDir: join(configDir, 'logs'),
     binDir,
     vendoredRunner: join(binDir, 'agent-cli.js'),
-    launchdPlist: join(home, 'Library', 'LaunchAgents', `${SERVICE_LABEL}.plist`),
-    systemdUnit: join(home, '.config', 'systemd', 'user', `${SERVICE_LABEL}.service`),
+    launchdPlist: join(home, 'Library', 'LaunchAgents', `${label}.plist`),
+    systemdUnit: join(home, '.config', 'systemd', 'user', `${label}.service`),
     windowsScript: join(configDir, 'agent-tunnel-service.ps1'),
   };
 }

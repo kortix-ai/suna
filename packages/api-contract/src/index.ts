@@ -50,7 +50,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * below are deprecated aliases kept for published-SDK compatibility.
  */
 export const FeatureFlagMapSchema = z.object({
-  agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
@@ -495,6 +494,15 @@ export const ConnectionShareSchema = z.object({
 });
 export type ConnectionShare = z.infer<typeof ConnectionShareSchema>;
 
+/** Live status of the machine behind a computer account. */
+export const ComputerMachineStatusSchema = z.object({
+  online: z.boolean(),
+  last_heartbeat_at: z.string().nullable(),
+  hostname: z.string().optional(),
+  platform: z.string().optional(),
+});
+export type ComputerMachineStatus = z.infer<typeof ComputerMachineStatusSchema>;
+
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
@@ -522,6 +530,16 @@ export const ConnectionSchema = z.object({
    * a session. Absent on older servers: treat as `true`.
    */
   usable: z.boolean().optional(),
+  /**
+   * Computer accounts only: the paired machine this account reaches. `null`
+   * when the machine was unpaired. Absent on every other connector.
+   */
+  tunnel_id: z.string().uuid().nullable().optional(),
+  /**
+   * Computer accounts only: live status of the paired machine, or `null` when
+   * it was unpaired. Absent on every other connector.
+   */
+  machine: ComputerMachineStatusSchema.nullable().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 

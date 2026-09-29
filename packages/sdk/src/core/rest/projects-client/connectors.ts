@@ -498,6 +498,23 @@ interface ConnectionFields {
    * a session. Absent on older servers, which means usable.
    */
   usable?: boolean;
+  /**
+   * The paired machine this account points at. Set only on accounts of a
+   * `computer` connector; `null` once the machine was unpaired (the account is
+   * then `revoked`). Absent on every other connector, and on older servers.
+   */
+  tunnel_id?: string | null;
+  /**
+   * Live status of the machine behind a `computer` account, for an online dot.
+   * `null` when the machine is gone. Absent on every other connector, and on
+   * older servers.
+   */
+  machine?: {
+    online: boolean;
+    last_heartbeat_at: string | null;
+    hostname?: string;
+    platform?: string;
+  } | null;
 }
 
 /** One grant naming who may use a shared account. Grant or revoke through
@@ -950,6 +967,26 @@ export async function renameConnection(projectId: string, connectionId: string, 
   );
 }
 
+/**
+ * Add a machine the caller already paired to this project, as an account of
+ * the project's `computer` connector. `share: 'me'` (the server default) makes
+ * it private to the caller; `'project'` shares it with the project and needs
+ * the connector-manage capability. Idempotent: adding the same machine for the
+ * same owner again returns the existing account. `409` when the machine
+ * belongs to another account.
+ */
+export async function addComputerToProject(
+  projectId: string,
+  input: { tunnelId: string; share?: ConnectorConnectOwner },
+) {
+  return unwrap(
+    await backendApi.post<Connection>(`/projects/${projectId}/computers`, {
+      tunnel_id: input.tunnelId,
+      ...(input.share ? { share: input.share } : {}),
+    }),
+  );
+}
+
 /** Who may use a shared account: a person, a group, or everyone in the project. */
 export interface ConnectionSharePrincipal {
   principal_type: 'user' | 'group' | 'project';
@@ -1209,7 +1246,11 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  /** Machine ids assigned to a Computers connector profile. */
+  /**
+   * @deprecated Computers are accounts of the `computer` connector now: read
+   * `Connection.tunnel_id` from `listConnections`. Servers no longer send it.
+   * Removed in the next major.
+   */
   tunnelIds?: string[];
   auth: {
     type: ConnectorRequestAuthType;
@@ -1323,7 +1364,11 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Account-owned machine ids assigned to a Computers connector profile. */
+  /**
+   * @deprecated Computers are accounts of the `computer` connector now: add one
+   * with `addComputerToProject`. The server ignores this field. Removed in the
+   * next major.
+   */
   tunnel_ids?: string[];
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05). */

@@ -45,8 +45,7 @@ import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
-import { synthesizeComputerConnectors } from './computer-materialize';
-import { COMPUTER_SLUG, computerCatalog } from './computers';
+import { COMPUTER_CONNECTOR_NAME, COMPUTER_SLUG, computerCatalog } from './computers';
 import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
 import { listMcpTools, type FetchImpl } from './call';
 import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
@@ -355,31 +354,6 @@ export async function reconcileChannelConnectors(
   }
 }
 
-/**
- * Best-effort re-materialization after a tunnel (computer) changes for an
- * ACCOUNT (machine connected / removed). Tunnels are account-scoped but
- * connectors are project-scoped, so every machine profile must be reconciled
- * across every project of the account. Each profile exists iff its tunnel has
- * completed a handshake, so this is idempotent.
- * Never throws: a sync hiccup must not fail the connect/remove request.
- */
-export async function reconcileComputerConnectors(accountId: string): Promise<void> {
-  try {
-    const rows = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(eq(projects.accountId, accountId));
-    for (const r of rows) {
-      await syncProjectConnectors(r.projectId, accountId);
-    }
-  } catch (e) {
-    console.warn('[connector] computer connector reconcile failed', {
-      accountId,
-      err: (e as Error).message,
-    });
-  }
-}
-
 export interface SyncOptions {
   /**
    * Re-fetch every connector's catalog even when its manifest hash is
@@ -489,10 +463,10 @@ async function syncProjectConnectorsFenced(
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connectors are install-driven the same way: one synthetic profile
-  // for each machine that has completed a tunnel handshake.
-  // A regular connector — no experimental opt-in — also manifest-independent.
-  const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
+  // Computer connectors are created by pairing a machine, never by kortix.yaml.
+  // Every existing one stays materialized, which also keeps its native catalog
+  // current after a code change.
+  const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 
   // A connector binding is server-side by definition. Convert legacy runtime
@@ -645,20 +619,10 @@ async function syncProjectConnectorsFenced(
         .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
         .limit(1);
       if (bound) {
-        if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
-          // Existing sessions can remain durably bound to the retired aggregate
-          // connector. DB-backed catalog and call resolution expose this row only
-          // to a session with an exact durable binding.
-          await tx
-            .update(connectors)
-            .set({ enabled: true, status: 'active', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
-        } else {
-          await tx
-            .update(connectors)
-            .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
-        }
+        await tx
+          .update(connectors)
+          .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+          .where(eq(connectors.connectorId, e.connectorId));
       } else {
         await tx.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
       }
@@ -886,9 +850,9 @@ async function upsertConnector(
     const currentId = current?.connectorId ?? null;
     const isNew = !currentId;
     let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
-    // Computer profiles are synthetic. Their sensitive flag is edited in the
-    // database, so preserve it when a lifecycle reconcile refreshes the native
-    // catalog and bound tunnel config.
+    // Computer connectors are not in kortix.yaml. Their sensitive flag is
+    // edited in the database, so preserve it when a sync refreshes the native
+    // catalog.
     if (resolvedConfig && spec.provider === 'computer' && currentId) {
       const [stored] = await tx
         .select({ config: connectors.config })
@@ -960,8 +924,8 @@ async function upsertConnector(
       }
     }
 
-    // Computer profiles have no manifest entry. Their policies are edited on the
-    // materialized connector and must survive rename/heartbeat reconciliation.
+    // Computer connectors have no manifest entry. Their policies are edited on
+    // the materialized connector and must survive every sync.
     if (spec.provider !== 'computer' || isNew) {
       await tx.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, rowId));
       const policyRows = toPolicyRows(spec);
@@ -993,29 +957,111 @@ async function upsertConnector(
     null;
 
   // After commit: the connection row references the connector, and
-  // `ensureDefaultConnection` writes through its own connection.
-  if (connectorId && spec.authorizationStrategy === 'project') {
+  // `ensureDefaultConnection` writes through its own connection. A computer
+  // account is always one paired machine, so a computer connector never gets
+  // a machine-less project default.
+  if (connectorId && spec.authorizationStrategy === 'project' && spec.provider !== 'computer') {
     await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
-/** Materialize one platform-managed Computers profile without writing kortix.yaml. */
-export async function materializeComputerConnectorProfile(input: {
-  projectId: string;
-  accountId: string;
-  spec: ConnectorSpec;
-  existingId: string | null;
-}): Promise<void> {
-  if (input.spec.provider !== 'computer') {
-    throw new Error('computer profile materialization requires provider="computer"');
+function computerConnectorSpec(input: {
+  slug: string;
+  name: string;
+  sensitive: boolean;
+}): ConnectorSpec {
+  return {
+    slug: input.slug,
+    path: `platform: computers#${input.slug}`,
+    name: input.name,
+    enabled: true,
+    provider: 'computer',
+    credentialMode: 'shared',
+    authorizationStrategy: 'project',
+    sensitive: input.sensitive,
+    app: null,
+    account: null,
+    url: null,
+    transport: null,
+    endpoint: null,
+    baseUrl: null,
+    platform: null,
+    spec: null,
+    auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    headers: {},
+    policies: [],
+  };
+}
+
+function storedSensitive(config: unknown): boolean {
+  return (config as { sensitive?: unknown } | null)?.sensitive === true;
+}
+
+async function existingComputerConnectorSpecs(
+  projectId: string,
+  declared: ConnectorSpec[],
+): Promise<ConnectorSpec[]> {
+  const declaredSlugs = new Set(declared.map((spec) => spec.slug));
+  const rows = await db
+    .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  return rows
+    .filter((row) => !declaredSlugs.has(row.slug))
+    .map((row) =>
+      computerConnectorSpec({ slug: row.slug, name: row.name, sensitive: storedSensitive(row.config) }),
+    );
+}
+
+/**
+ * The project's computer connector, created on first use. Pairing a machine
+ * and adding a paired machine to a project both call this; kortix.yaml cannot
+ * declare one (`projects/connectors.ts`). A project that already holds a
+ * computer connector under another slug keeps it. Refreshes the native catalog.
+ */
+export async function ensureComputerConnector(
+  projectId: string,
+  accountId: string,
+  requested: { slug?: string; name?: string } = {},
+): Promise<string> {
+  const find = () =>
+    db
+      .select({
+        connectorId: connectors.connectorId,
+        slug: connectors.slug,
+        name: connectors.name,
+        config: connectors.config,
+      })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.projectId, projectId),
+          eq(connectors.providerType, 'computer'),
+          ...(requested.slug ? [eq(connectors.slug, requested.slug)] : []),
+        ),
+      )
+      .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+      .limit(1);
+  const [existing] = await find();
+  try {
+    await upsertConnector(
+      projectId,
+      accountId,
+      computerConnectorSpec({
+        slug: existing?.slug ?? requested.slug ?? COMPUTER_SLUG,
+        name: requested.name || existing?.name || COMPUTER_CONNECTOR_NAME,
+        sensitive: storedSensitive(existing?.config),
+      }),
+      { actions: computerCatalog(), server: null },
+      existing?.connectorId ?? null,
+    );
+  } catch (error) {
+    // A concurrent first pairing created it; use that row.
+    if (!isUniqueViolation(error)) throw error;
   }
-  await upsertConnector(
-    input.projectId,
-    input.accountId,
-    input.spec,
-    { actions: computerCatalog(), server: null },
-    input.existingId,
-  );
+  const [row] = await find();
+  if (!row) throw new Error('computer connector was not created');
+  return row.connectorId;
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */

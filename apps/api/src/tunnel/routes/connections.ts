@@ -1,35 +1,28 @@
 /**
- * Tunnel Connections Routes — CRUD for registered tunnel connections.
+ * Tunnel Connections Routes — the caller's paired machines.
  *
- * GET    /connections                      — list connections for account
- * POST   /connections                      — register a new tunnel connection
- * GET    /connections/:tunnelId            — get a single connection
- * PATCH  /connections/:tunnelId            — update connection (name, capabilities)
- * DELETE /connections/:tunnelId            — delete connection and live permissions
+ * GET    /connections                      — machines the caller owns (+ owner-less team machines for managers)
+ * GET    /connections/:tunnelId            — get one machine
+ * PATCH  /connections/:tunnelId            — rename a machine
+ * DELETE /connections/:tunnelId            — unpair: delete the machine, revoke its computer accounts
  * POST   /connections/:tunnelId/rotate-token — rotate the setup token
+ *
+ * Pairing is device auth only (`device-auth.ts`). Capabilities are fixed at
+ * pairing; re-pair to change them.
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, notInArray } from 'drizzle-orm';
-import { tunnelConnections, tunnelPermissions } from '@kortix/db';
+import { eq, and, desc } from 'drizzle-orm';
+import { connectorConnections, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
 import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
-import { reconcileComputerConnectors } from '../../connectors/sync';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
-import { isValidCapability } from '../core/scope-validator';
-
-function validCapabilities(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) &&
-    value.length <= 3 &&
-    new Set(value).size === value.length &&
-    value.every((capability) => typeof capability === 'string' && isValidCapability(capability))
-  );
-}
+import { effectiveMachineCapabilities } from '../core/rpc-core';
+import { readJsonObject } from '../../shared/http-body';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -42,6 +35,7 @@ const ConnectionSchema = z.record(z.string(), z.any());
 const SAFE_CONNECTION_COLUMNS = {
   tunnelId: tunnelConnections.tunnelId,
   accountId: tunnelConnections.accountId,
+  ownerUserId: tunnelConnections.ownerUserId,
   sandboxId: tunnelConnections.sandboxId,
   name: tunnelConnections.name,
   status: tunnelConnections.status,
@@ -58,16 +52,10 @@ const SAFE_CONNECTION_COLUMNS = {
 
 function serializeConnection(conn: Omit<typeof tunnelConnections.$inferSelect, 'setupTokenHash'>) {
   const isLive = isTunnelConnectionLive(conn);
-  const approvedCapabilities = Array.isArray(conn.capabilities) ? conn.capabilities : [];
-  const registeredCapabilities = (conn.machineInfo as Record<string, unknown> | null)
-    ?.registeredCapabilities;
-  const capabilities = Array.isArray(registeredCapabilities)
-    ? approvedCapabilities.filter((capability) => registeredCapabilities.includes(capability))
-    : approvedCapabilities;
   return {
     ...conn,
-    approvedCapabilities,
-    capabilities,
+    approvedCapabilities: Array.isArray(conn.capabilities) ? conn.capabilities : [],
+    capabilities: effectiveMachineCapabilities(conn),
     status: isLive ? 'online' : 'offline',
     isLive,
   };
@@ -81,9 +69,9 @@ export function createConnectionsRouter() {
       method: 'get',
       path: '/',
       tags: ['tunnel'],
-      summary: 'List tunnel connections for the account',
+      summary: "List the caller's paired machines",
       description:
-        'Direct account-level fleet access. Project and service credentials must use a Computer Tunnel connector profile.',
+        'Machines the caller paired, plus the account\'s owner-less team machines for account managers. Projects reach machines through computer accounts on the `computer` connector.',
       security: [{ bearerAuth: [] }],
       responses: {
         200: json(z.array(ConnectionSchema), 'Tunnel connections (each with an isLive flag)'),
@@ -102,65 +90,6 @@ export function createConnectionsRouter() {
       const enriched = connections.map(serializeConnection);
 
       return c.json(enriched);
-    },
-  );
-
-  router.openapi(
-    createRoute({
-      method: 'post',
-      path: '/',
-      tags: ['tunnel'],
-      summary: 'Register a new tunnel connection',
-      security: [{ bearerAuth: [] }],
-      request: {
-        body: {
-          content: {
-            'application/json': {
-              schema: z.object({
-                name: z.string(),
-                capabilities: z.array(z.string()).optional(),
-              }),
-            },
-          },
-        },
-      },
-      responses: {
-        201: json(ConnectionSchema, 'The created connection, including the one-time setupToken'),
-        ...errors(400, 401, 403),
-      },
-    }),
-    async (c: any) => {
-      const { accountId } = await getTunnelOwnerContext(c);
-      const body = await c.req.json();
-
-      const { name, capabilities } = body;
-
-      if (!name || typeof name !== 'string' || !name.trim() || name.length > 255) {
-        return c.json({ error: 'name is required' }, 400);
-      }
-      if (capabilities !== undefined && !validCapabilities(capabilities)) {
-        return c.json({ error: 'capabilities must contain unique supported capabilities' }, 400);
-      }
-
-      const setupToken = generateTunnelToken();
-      const setupTokenHash = hashSecretKey(setupToken);
-
-      const [connection] = await db
-        .insert(tunnelConnections)
-        .values({
-          accountId,
-          name: name.trim(),
-          capabilities: capabilities || [],
-          status: 'offline',
-          setupTokenHash,
-        })
-        .returning(SAFE_CONNECTION_COLUMNS);
-
-      // Reconcile now for previously-connected rows; a first-time machine is
-      // materialized by the WS handshake after last_heartbeat_at is set.
-      void reconcileComputerConnectors(accountId);
-
-      return c.json({ ...connection, setupToken }, 201);
     },
   );
 
@@ -199,102 +128,38 @@ export function createConnectionsRouter() {
       method: 'patch',
       path: '/{tunnelId}',
       tags: ['tunnel'],
-      summary: 'Update a tunnel connection (name, capabilities)',
+      summary: 'Rename a paired machine',
       security: [{ bearerAuth: [] }],
       request: {
         params: z.object({ tunnelId: z.string() }),
         body: {
           content: {
             'application/json': {
-              schema: z.object({
-                name: z.string().optional(),
-                capabilities: z.array(z.string()).optional(),
-              }),
+              schema: z.object({ name: z.string() }),
             },
           },
         },
       },
       responses: {
         200: json(ConnectionSchema, 'The updated connection'),
-        ...errors(401, 403, 404),
+        ...errors(400, 401, 403, 404),
       },
     }),
     async (c: any) => {
-      const { accountId, ownerClause } = await getTunnelOwnerContext(c);
+      const { ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
-      const body = await c.req.json();
-
-      if (
-        body.name !== undefined &&
-        (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 255)
-      ) {
-        return c.json(
-          {
-            error: 'name must be a non-empty string of at most 255 characters',
-          },
-          400,
-        );
-      }
-      if (body.capabilities !== undefined && !validCapabilities(body.capabilities)) {
-        return c.json({ error: 'capabilities must contain unique supported capabilities' }, 400);
+      const body = await readJsonObject(c);
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name || name.length > 255) {
+        return c.json({ error: 'name must be a non-empty string of at most 255 characters' }, 400);
       }
 
-      const updates: Record<string, unknown> = { updatedAt: new Date() };
-      if (body.name !== undefined) updates.name = body.name.trim();
-      if (body.capabilities !== undefined) updates.capabilities = body.capabilities;
-
-      const updated = await db.transaction(async (tx) => {
-        const [connection] = await tx
-          .update(tunnelConnections)
-          .set(updates)
-          .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
-          .returning(SAFE_CONNECTION_COLUMNS);
-        if (!connection) return null;
-
-        if (body.capabilities !== undefined) {
-          const removedCapabilityClause =
-            body.capabilities.length === 0
-              ? eq(tunnelPermissions.tunnelId, tunnelId)
-              : and(
-                  eq(tunnelPermissions.tunnelId, tunnelId),
-                  notInArray(tunnelPermissions.capability, body.capabilities),
-                );
-          await tx
-            .update(tunnelPermissions)
-            .set({ status: 'revoked', updatedAt: new Date() })
-            .where(and(removedCapabilityClause, eq(tunnelPermissions.status, 'active')));
-        }
-        return connection;
-      });
-
-      if (!updated) {
-        return c.json({ error: 'Tunnel connection not found' }, 404);
-      }
-
-      // Machine names are connector profile names. Keep every project copy in
-      // sync after a rename or capability update.
-      void reconcileComputerConnectors(accountId);
-
-      if (body.capabilities !== undefined) {
-        const activePermissions = await db
-          .select({
-            permissionId: tunnelPermissions.permissionId,
-            capability: tunnelPermissions.capability,
-            scope: tunnelPermissions.scope,
-            expiresAt: tunnelPermissions.expiresAt,
-          })
-          .from(tunnelPermissions)
-          .where(
-            and(eq(tunnelPermissions.tunnelId, tunnelId), eq(tunnelPermissions.status, 'active')),
-          );
-        tunnelRelay.sendNotification(tunnelId, 'tunnel.permissions.sync', {
-          permissions: activePermissions.map((permission) => ({
-            ...permission,
-            expiresAt: permission.expiresAt?.toISOString() ?? undefined,
-          })),
-        });
-      }
-
+      const [updated] = await db
+        .update(tunnelConnections)
+        .set({ name, updatedAt: new Date() })
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
+        .returning(SAFE_CONNECTION_COLUMNS);
+      if (!updated) return c.json({ error: 'Tunnel connection not found' }, 404);
       return c.json(serializeConnection(updated));
     },
   );
@@ -352,7 +217,7 @@ export function createConnectionsRouter() {
       method: 'delete',
       path: '/{tunnelId}',
       tags: ['tunnel'],
-      summary: 'Delete a tunnel connection while preserving its audit history',
+      summary: 'Unpair a machine: delete it and revoke its computer accounts',
       security: [{ bearerAuth: [] }],
       request: { params: z.object({ tunnelId: z.string() }) },
       responses: {
@@ -361,22 +226,32 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { accountId, ownerClause } = await getTunnelOwnerContext(c);
+      const { ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
 
-      const [deleted] = await db
-        .delete(tunnelConnections)
-        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
-        .returning();
+      // The foreign key sets connector_connections.tunnel_id NULL on delete.
+      // Revoke those accounts first (and drop their default pin) so no
+      // resolver can pick a computer account that reaches nothing.
+      const deleted = await db.transaction(async (tx) => {
+        const [machine] = await tx
+          .select({ tunnelId: tunnelConnections.tunnelId })
+          .from(tunnelConnections)
+          .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
+          .for('update');
+        if (!machine) return false;
+        await tx
+          .update(connectorConnections)
+          .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
+          .where(eq(connectorConnections.tunnelId, tunnelId));
+        await tx.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
+        return true;
+      });
 
       if (!deleted) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
       tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
-
-      // Tear down this machine's connector profile across the account's projects.
-      void reconcileComputerConnectors(accountId);
 
       return c.json({ success: true });
     },

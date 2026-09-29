@@ -132,6 +132,58 @@ Plain `pnpm dev` (unpackaged `electron .`) is great for fast iteration, and your
 session persists across relaunches — but a *fresh* login won't round-trip back
 until you run the bundled build above.
 
+## This computer (local agent + tray)
+
+The app bundles the computer agent, `@kortix/agent-tunnel`
+(`packages/agent-tunnel/dist/agent-cli.js`), as
+`Resources/agent-tunnel/agent-cli.js`, with the package's `package.json` beside
+it for the version (electron-builder `extraResources`). It
+runs that file with its own binary: `process.execPath` +
+`ELECTRON_RUN_AS_NODE=1`. The installed OS service (launchd / systemd user unit
+/ Scheduled Task) does the same, so a connected computer needs no Node install.
+Dev runs load the repo build; `scripts/ensure-runtime.js` builds it with bun
+when it is missing.
+
+Pieces: `src/computer.js` (rules, NDJSON parsing, spawning; unit-tested) and
+`src/computer-tray.js` (commands, approval window, tray).
+
+| `kortix:invoke` command | Result |
+| --- | --- |
+| `computer_status` | `{ available, paired, tunnelId?, status?, serviceInstalled, serviceActive, error? }` |
+| `computer_connect { apiUrl, projectId }` | Runs `connect --json --daemon --api-url <apiUrl>/tunnel --project-id <id>`; opens the approval page in a modal window; resolves `{ ok, tunnelId, existing? }` or `{ ok: false, error }` once the service is installed. |
+| `computer_pause` / `computer_resume` | `stop` / `start` the service; returns the status. Pause lasts until Resume or the next login. |
+| `computer_disconnect` | `logout`: removes the service and the local credential. |
+| `computer_open_logs` | Opens `logs/agent-tunnel.out.log`. |
+
+Rules:
+
+- The commands pass the same trusted-sender gate as every other command: the
+  main frame of the main window, on the configured app origin.
+- `apiUrl` must be https (http only on loopback) and on the same site as the
+  loaded app (`api.kortix.com` for `kortix.com`); `projectId` must be a UUID.
+- The approval URL loads in-app only when it is this app's `/tunnel/` route;
+  anything else opens in the system browser.
+- A packaged macOS app must run from `/Applications`; a translocated copy would
+  leave the service pointing at a path that disappears.
+- **Isolation.** A packaged **stable** build uses the default `~/.agent-tunnel`
+  and service `ai.kortix.agent-tunnel`, the same identity as the npm CLI. Every
+  other run (unpackaged, or `kortixUpdateChannel` other than `stable`) sets
+  `AGENT_TUNNEL_HOME=<userData>/agent-tunnel`, which also gives it a suffixed
+  service `ai.kortix.agent-tunnel.<8 hex>`. `pnpm dev` never touches the real
+  agent.
+
+The tray (macOS menu bar template icon, Windows/Linux notification area) exists
+while a computer is paired. Its status line follows `state.json` (fs.watch plus
+a 5 s mtime poll; a full status refresh every 60 s). Items: Open Kortix,
+Pause/Resume computer access, Permissions… (reveals `config.json`), Show logs,
+Open at login (macOS and Windows), Disconnect this computer…, Quit Kortix. With
+a paired computer, closing the last window keeps the app in the tray on every
+platform. The agent is a separate OS service and stays connected after Quit.
+
+Tray icons are in `assets/tray/`: `trayTemplate.png` / `@2x` (black + alpha,
+from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
+`build/icon.png`).
+
 ## Package
 
 ```bash

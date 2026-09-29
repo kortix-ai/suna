@@ -16,6 +16,18 @@ export const AGENT_VERSION = agentTunnelVersion();
 export const AUTH_REJECTED_CLOSE_CODES: readonly number[] = [4001, 4003];
 
 /**
+ * Relays before 0.1.3 also closed with 4001 when THEY failed (auth timeout,
+ * database error during a deploy). Those reasons are retryable: treating them
+ * as a bad credential stopped the background service for good.
+ */
+const RELAY_FAULT_4001_REASONS = new Set(['auth timeout', 'authentication error', 'authentication response failed']);
+
+export function isCredentialRejection(code: number, reason = ''): boolean {
+  if (!AUTH_REJECTED_CLOSE_CODES.includes(code)) return false;
+  return !(code === 4001 && RELAY_FAULT_4001_REASONS.has(reason));
+}
+
+/**
  * The relay closes an already-registered socket with this code when a second
  * process authenticates with the same credential. Only one agent may hold a
  * tunnel, so this is terminal for the displaced process.
@@ -48,7 +60,11 @@ function log(icon: string, msg: string) {
   process.stdout.write(`  ${safeIcon} ${c.dim}${safeMsg}${c.reset}\n`);
 }
 
+export type TunnelAgentStatus = 'connecting' | 'online' | 'offline';
+
 export interface TunnelAgentHooks {
+  /** Fires on every change of connection status. */
+  onStatus?: (status: TunnelAgentStatus) => void;
   /**
    * Fires when the relay closes the connection for a reason reconnecting cannot
    * fix. The agent has already stopped retrying by this point.
@@ -70,6 +86,7 @@ export class TunnelAgent {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stableConnectionTimer: ReturnType<typeof setTimeout> | null = null;
   private isShuttingDown = false;
+  private status: TunnelAgentStatus | null = null;
   private uptime = 0;
   private uptimeInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -92,6 +109,7 @@ export class TunnelAgent {
 
     const wsUrl = this.buildWsUrl();
     log(`${c.cyan}◆${c.reset}`, `Connecting…`);
+    this.setStatus('connecting');
 
     try {
       // lgtm[js/file-access-to-http] Tunnel endpoint is intentionally loaded from trusted local config.
@@ -123,6 +141,13 @@ export class TunnelAgent {
 
     this.permissionGuard.clear();
     log(`${c.gray}○${c.reset}`, `Disconnected`);
+    this.setStatus('offline');
+  }
+
+  private setStatus(status: TunnelAgentStatus): void {
+    if (this.status === status) return;
+    this.status = status;
+    try { this.hooks.onStatus?.(status); } catch {}
   }
 
   isConnected(): boolean {
@@ -152,7 +177,12 @@ export class TunnelAgent {
       this.handleMessage(event.data as string);
     });
 
-    this.ws.addEventListener('close', (event) => {
+    // Handled once per socket: the 'close' event, or the stand-in below.
+    let closeHandled = false;
+    const onClose = (event: { code: number; reason?: string }) => {
+      if (closeHandled) return;
+      closeHandled = true;
+      this.setStatus('offline');
       if (this.uptimeInterval) {
         clearInterval(this.uptimeInterval);
         this.uptimeInterval = null;
@@ -163,7 +193,7 @@ export class TunnelAgent {
       }
 
       if (!this.isShuttingDown) {
-        if (event.code === 4001) {
+        if (event.code === 4001 && isCredentialRejection(event.code, event.reason)) {
           this.isShuttingDown = true;
           log(`${c.red}✗${c.reset}`, `Credential rejected — run \`agent-tunnel connect --reauth\` to pair again`);
           this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
@@ -187,10 +217,17 @@ export class TunnelAgent {
         log(`${c.yellow}○${c.reset}`, `Disconnected ${c.gray}(code: ${event.code})${c.reset}`);
         this.scheduleReconnect();
       }
-    });
+    };
+    this.ws.addEventListener('close', onClose);
 
     this.ws.addEventListener('error', () => {
       log(`${c.red}✗${c.reset}`, `WebSocket error`);
+      // Node's built-in WebSocket fires no 'close' after a failed handshake
+      // (relay unreachable). With nothing left pending the process then exits
+      // 0, which no supervisor restarts: a machine that booted offline stayed
+      // offline. An error only ever precedes an abnormal closure, so stand in
+      // for it with 1006 when the real event does not follow.
+      setTimeout(() => onClose({ code: 1006 }), 1_000);
     });
   }
 
@@ -221,6 +258,7 @@ export class TunnelAgent {
       } else {
         log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${capabilityNames.join(', ')})${c.reset}`);
       }
+      this.setStatus('online');
       if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
       this.stableConnectionTimer = setTimeout(() => {
         this.reconnectAttempts = 0;

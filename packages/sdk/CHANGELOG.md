@@ -6,6 +6,20 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Computers are connector accounts. `addComputerToProject(projectId,
+  { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
+  `project(id).connectors.connections.addComputer`, and
+  `useAddComputerToProject` add a machine the caller already paired to a
+  project as an account of its `computer` connector: private (`share: 'me'`,
+  the default) or shared with the project (`'project'`). `Connection` gains
+  optional `tunnel_id` and `machine` (`online`, `last_heartbeat_at`,
+  `hostname`, `platform`), set on `computer` accounts only.
+- `useApproveDeviceAuth` accepts optional `projectId` and `share`, sent as
+  `project_id` and `share`, and returns the created account's optional
+  `connectionId`; `DeviceAuthInfo` gains optional `projectId`;
+  `TunnelConnection` gains optional `ownerUserId`.
+- `useTunnelConnections` accepts an optional `{ refetchInterval }` (default
+  5 s; `false` stops polling).
 - The wire message-id clock is public: `mintWireMessageIdAbove` (mint above a
   known floor clock, with an optional `backdateMs`), `newestWireIdClock`,
   `wireIdClock`, `wireIdClockAt`, `isWireIdAheadOf`, `WIRE_MESSAGE_ID`, and the
@@ -38,6 +52,23 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Deprecated
+- The `agent_tunnel` member of `FeatureFlagKey`. Computers need no flag. It is
+  absent from `FEATURE_FLAG_KEYS`, and `useFeatureFlag(id, 'agent_tunnel')`
+  reports `enabled: true`. Removed in the next major.
+- `ConnectorConfig.tunnelIds` and `ConnectorDraftInput.tunnel_ids`. A
+  `computer` connector no longer carries a machine list; each machine is an
+  account. Servers do not send the first and ignore the second.
+- `@kortix/sdk/react` tunnel hooks whose route the API deleted. They fail at
+  once with `ENDPOINT_RETIRED` and send no request: `useCreateTunnelConnection`
+  (pairing is device auth only), `useTunnelPermissions`,
+  `useGrantTunnelPermission`, `useRevokeTunnelPermission`,
+  `useTunnelPermissionRequests`, `useApprovePermissionRequest`,
+  `useDenyPermissionRequest`, `useTunnelAuditLogs`, and the types
+  `TunnelPermission`, `TunnelPermissionRequest`, `TunnelAuditLog`,
+  `AuditLogPage`, `TunnelConnectionCreateResponse`. Human approval of a risky
+  computer call is a connector policy (`require_approval`).
+- `buildTunnelEventStreamUrl`. It builds the URL of the deleted
+  `/tunnel/permission-requests/stream` route. Removed in the next major.
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to

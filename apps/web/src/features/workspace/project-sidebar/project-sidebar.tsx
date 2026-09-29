@@ -18,6 +18,7 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
+import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
@@ -246,6 +247,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <SidebarBalanceWarning accountId={accountId} />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              <ProjectComputerNavItem projectId={projectId} />
               {/* Last (Jay, 2026-09-03). It is the only paid call to action in
                   this group, and above the nav rows it put a sell between the
                   user and the links they actually use. */}

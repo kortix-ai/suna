@@ -134,7 +134,7 @@ const CallResponseSchema = z
     reason: z.any().optional(),
     // Which connection ran the call, so the transcript can always answer
     // "whose account sent that". Absent when the connector resolved no
-    // connection (public/no-auth connector, or a Computers tunnel profile).
+    // connection (a public/no-auth connector).
     account: z
       .object({
         connection_id: z.string(),
@@ -452,7 +452,6 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
-    tunnelIds?: string[];
     auth: {
       type:
         | 'none'

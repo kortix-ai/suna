@@ -37,6 +37,7 @@ import './routes/secret-relay';
 import './routes/setup-links';
 import './routes/connections';
 import './routes/connection-actions';
+import './routes/computers';
 import './routes/triggers';
 import './routes/channel-slack';
 import './routes/channel-teams';

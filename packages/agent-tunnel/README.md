@@ -2,15 +2,24 @@
 
 `@kortix/agent-tunnel` connects a local computer to Kortix through an authenticated reverse tunnel.
 
+Each connected computer is an account of a project's **computer** connector,
+private to the person who connected it unless they share it with the project.
+The Kortix desktop app bundles this agent and connects in one click. Without
+the desktop app, use the command below.
+
 ## Connect once
 
-Run the command shown in a **Computer Tunnel** connector profile. Then approve
-the device code in your browser:
+Run the command shown under **Connect your computer** in a project. Then
+approve the device code in your browser:
 
 ```bash
 npx --yes @kortix/agent-tunnel@latest connect \
-  --api-url https://api.kortix.com/v1/tunnel
+  --api-url https://api.kortix.com/v1/tunnel \
+  --project-id <project-uuid>
 ```
+
+`--project-id` preselects the project on the approval page. Without it, the
+approval page asks for one.
 
 After approval, the interactive flow asks whether it should install a persistent background service. The default answer is yes.
 
@@ -37,6 +46,9 @@ npx --yes @kortix/agent-tunnel@latest stop
 npx --yes @kortix/agent-tunnel@latest uninstall-service
 ```
 
+`service-status --json` prints the pairing, the service, and the live
+connection state as JSON.
+
 Credentials are stored in `~/.agent-tunnel/config.json`. Agent Tunnel requires
 the file to be regular, owned by the current user, and mode `0600` on POSIX.
 Protect the operating-system account because this setup token can authenticate
@@ -45,16 +57,49 @@ the machine until you rotate or delete the connection.
 Remote API URLs must use HTTPS. Plain HTTP is accepted only for `localhost`,
 `127.0.0.1`, and `::1` development endpoints.
 
+## Files and isolation
+
+| Path (under the config directory) | Content |
+| --- | --- |
+| `config.json` | Credential and local limits, mode `0600`. |
+| `state.json` | `{ tunnelId, apiUrl, status: online\|offline\|connecting, since, agentVersion, pid }`, rewritten atomically on every connection change. No credential. |
+| `logs/` | Service output. |
+
+`AGENT_TUNNEL_HOME` replaces the config directory (default `~/.agent-tunnel`).
+A non-default directory also gets its own service,
+`ai.kortix.agent-tunnel.<first 8 hex of sha256(directory)>`, so a second
+identity never replaces the default `ai.kortix.agent-tunnel` service. The
+service definition carries `AGENT_TUNNEL_HOME` into the service environment.
+
+## Machine-readable connect
+
+`connect --json` prints newline-delimited JSON events on stdout instead of the
+terminal UI. It never prompts and never opens a browser; the caller shows the
+approval URL.
+
+```json
+{"event":"challenge","deviceCode":"ABCD-1234","verificationUrl":"https://…","expiresAt":"…"}
+{"event":"approved","tunnelId":"…","capabilities":["filesystem","shell"]}
+{"event":"service","action":"install","ok":true,"active":true,"detail":"…"}
+{"event":"error","message":"…"}
+```
+
+`approved` carries `"existing": true` when a saved pairing was still valid.
+`service` follows only with `--daemon`.
+
+Run under Electron (`ELECTRON_RUN_AS_NODE=1`), the installed service runs the
+same Electron binary with `ELECTRON_RUN_AS_NODE=1` and the bundle in place.
+
 ## Permission boundaries
 
-Kortix checks connector profile assignment, connector grants, connector tool
-policy, and the machine permission before relaying an operation. The local agent
-then checks the machine permission again.
+Kortix checks that the session may use the computer account (owner,
+sharing, and connector policies such as `require_approval`) before relaying an
+operation. The capabilities approved at pairing are fixed; pair again to change
+them. The local agent then checks the operation again.
 
-The local config is the maximum boundary. A server grant cannot widen configured
+The local config is the maximum boundary. The server cannot widen configured
 filesystem paths, blocked paths, shell commands, timeouts, file sizes, or desktop
-features. An empty permission scope is unrestricted inside those local ceilings.
-Use scoped permissions and short expiries for sensitive machines.
+features.
 
 ## Computer Use driver
 

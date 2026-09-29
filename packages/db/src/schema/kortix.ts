@@ -4353,6 +4353,9 @@ export const tunnelConnections = kortixSchema.table(
   {
     tunnelId: uuid('tunnel_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
+    /** The human who paired this machine. NULL only on machines paired before
+     *  2026-09-28 under a team account; those are managed by account managers. */
+    ownerUserId: uuid('owner_user_id'),
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
     name: varchar('name', { length: 255 }).notNull(),
     status: tunnelStatusEnum('status').default('offline').notNull(),
@@ -4369,6 +4372,7 @@ export const tunnelConnections = kortixSchema.table(
   },
   (table) => [
     index('idx_tunnel_connections_account').on(table.accountId),
+    index('idx_tunnel_connections_owner_user').on(table.ownerUserId),
     index('idx_tunnel_connections_sandbox').on(table.sandboxId),
     index('idx_tunnel_connections_status').on(table.status),
     index('idx_tunnel_connections_relay_owner').on(table.relayOwnerId),
@@ -4497,6 +4501,9 @@ export const tunnelDeviceAuthRequests = kortixSchema.table(
     status: tunnelDeviceAuthStatusEnum('status').default('pending').notNull(),
     machineHostname: varchar('machine_hostname', { length: 255 }),
     accountId: uuid('account_id'),
+    /** Project the machine asked to join (`connect --project-id`). Untrusted
+     *  until a human approves; the approver's project access is checked then. */
+    projectId: uuid('project_id'),
     tunnelId: uuid('tunnel_id').references(() => tunnelConnections.tunnelId, {
       onDelete: 'set null',
     }),
@@ -5677,6 +5684,11 @@ export const connectorConnections = kortixSchema.table(
     status: connectorConnectionStatusEnum('status').default('active').notNull(),
     isDefault: boolean('is_default').default(false).notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>().notNull(),
+    /** The paired machine this account reaches. Set only on connections of a
+     *  `computer` connector; unpairing the machine sets it NULL. */
+    tunnelId: uuid('tunnel_id').references(() => tunnelConnections.tunnelId, {
+      onDelete: 'set null',
+    }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -5724,6 +5736,7 @@ export const connectorConnections = kortixSchema.table(
       .where(sql`${table.ownerId} is null`),
     index('idx_connector_connections_project').on(table.projectId),
     index('idx_connector_connections_connector').on(table.connectorId),
+    index('idx_connector_connections_tunnel').on(table.tunnelId),
     check(
       'connector_connections_owner_check',
       sql`(${table.ownerType} = 'project' AND ${table.ownerId} IS NULL) OR (${table.ownerType} <> 'project' AND ${table.ownerId} IS NOT NULL AND btrim(${table.ownerId}) <> '')`,

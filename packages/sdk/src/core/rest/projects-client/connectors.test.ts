@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   activateConnection,
+  addComputerToProject,
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
@@ -579,36 +580,6 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
   expect(result.slug).toBe('my app/v1');
 });
 
-test('computer connector config exposes its assigned machine ids', async () => {
-  const tunnelIds = [
-    '11111111-1111-4111-8111-111111111111',
-    '22222222-2222-4222-8222-222222222222',
-  ];
-  nextResponse = {
-    status: 200,
-    body: {
-      slug: 'studio-computers',
-      name: 'Studio computers',
-      provider: 'computer',
-      platform: null,
-      credentialMode: 'shared',
-      authorizationStrategy: 'project',
-      app: null,
-      account: null,
-      url: null,
-      transport: null,
-      endpoint: null,
-      baseUrl: null,
-      spec: null,
-      tunnelIds,
-      auth: { type: 'none', in: 'header', name: null, prefix: null },
-      headers: {},
-    },
-  };
-  const result = await getConnectorConfig('P1', 'studio-computers');
-  expect(result.tunnelIds).toEqual(tunnelIds);
-});
-
 test('setConnectorName PUTs { name }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorName('P1', 'slack', 'Team Slack');
@@ -644,18 +615,66 @@ test('createConnector POSTs the draft as the raw body', async () => {
   expect(last().body).toEqual(draft);
 });
 
-test('createConnector sends a Computers profile machine allowlist', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  const draft: import('./connectors').ConnectorDraftInput = {
-    slug: 'studio-computers',
-    name: 'Studio computers',
-    provider: 'computer',
-    tunnel_ids: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
-    create_only: true,
-  };
-  await createConnector('P1', draft);
+// A paired computer is an ACCOUNT of the project's `computer` connector. The
+// connection view carries the machine it points at and its live status.
+const computerConnection: Connection = {
+  connection_id: 'connection-computer',
+  connector_alias: 'computer',
+  owner_type: 'member',
+  owner_id: 'user-1',
+  label: 'Studio Mac',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+  tunnel_id: '11111111-1111-4111-8111-111111111111',
+  machine: {
+    online: true,
+    last_heartbeat_at: '2026-09-28T10:00:00.000Z',
+    hostname: 'studio-mac',
+    platform: 'darwin',
+  },
+};
+
+test('listConnections passes a computer account through with its machine status', async () => {
+  nextResponse = { status: 200, body: { connections: [computerConnection] } };
+  const [row] = (await listConnections('P1')).connections;
+  expect(row?.tunnel_id).toBe('11111111-1111-4111-8111-111111111111');
+  expect(row?.machine).toEqual({
+    online: true,
+    last_heartbeat_at: '2026-09-28T10:00:00.000Z',
+    hostname: 'studio-mac',
+    platform: 'darwin',
+  });
+});
+
+test('addComputerToProject POSTs { tunnel_id, share } and returns the connection view', async () => {
+  nextResponse = { status: 200, body: computerConnection };
+  const result = await addComputerToProject('P1', {
+    tunnelId: '11111111-1111-4111-8111-111111111111',
+    share: 'project',
+  });
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual(draft);
+  expect(last().url).toBe('http://test.local/projects/P1/computers');
+  expect(last().body).toEqual({
+    tunnel_id: '11111111-1111-4111-8111-111111111111',
+    share: 'project',
+  });
+  expect(result.connection_id).toBe('connection-computer');
+  expect(result.machine?.online).toBe(true);
+});
+
+test('addComputerToProject omits share so the server applies its private default', async () => {
+  nextResponse = { status: 200, body: computerConnection };
+  await addComputerToProject('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
+  expect(last().body).toEqual({ tunnel_id: '11111111-1111-4111-8111-111111111111' });
+});
+
+test('addComputerToProject surfaces a refusal as an ApiError with the status', async () => {
+  nextResponse = { status: 409, body: { error: 'computer belongs to another account' } };
+  const error = await addComputerToProject('P1', {
+    tunnelId: '11111111-1111-4111-8111-111111111111',
+  }).catch((e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(409);
 });
 
 test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async () => {

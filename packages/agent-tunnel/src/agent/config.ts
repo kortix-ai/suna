@@ -3,6 +3,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { isTunnelCapability } from '../shared/permissions';
 import type { TunnelCapability } from '../shared/types';
+import { agentTunnelHome } from './service-paths';
 
 export interface TunnelConfig {
   token: string;
@@ -23,7 +24,7 @@ export interface TunnelConfig {
   enabledCapabilities?: TunnelCapability[];
 }
 
-const CONFIG_DIR = join(homedir(), '.agent-tunnel');
+const CONFIG_DIR = agentTunnelHome();
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS: Partial<TunnelConfig> = {

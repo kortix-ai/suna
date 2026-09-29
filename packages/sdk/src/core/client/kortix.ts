@@ -515,6 +515,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.renameConnection(projectId, ...a),
       share: (...a: DropFirst<Parameters<typeof P.shareConnection>>) =>
         P.shareConnection(projectId, ...a),
+      /** Add a machine the caller paired to this project as a `computer` account. */
+      addComputer: (...a: DropFirst<Parameters<typeof P.addComputerToProject>>) =>
+        P.addComputerToProject(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>

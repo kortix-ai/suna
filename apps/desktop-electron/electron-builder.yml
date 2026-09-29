@@ -29,6 +29,17 @@ files:
   - assets/**/*
   - package.json
 
+# The computer agent (@kortix/agent-tunnel), outside the asar so the OS service
+# can run it with this app's binary (ELECTRON_RUN_AS_NODE=1). Build it first:
+# `pnpm --filter @kortix/agent-tunnel build` (scripts/ensure-runtime.js does).
+extraResources:
+  - from: ../../packages/agent-tunnel/dist/agent-cli.js
+    to: agent-tunnel/agent-cli.js
+  # Beside the bundle: the agent reads its version from it, and it marks the
+  # bundle as an ES module.
+  - from: ../../packages/agent-tunnel/package.json
+    to: agent-tunnel/package.json
+
 # Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
 protocols:
   - name: Kortix

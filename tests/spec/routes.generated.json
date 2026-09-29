@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 692,
+  "count": 684,
   "routes": [
     {
       "method": "GET",
@@ -1739,6 +1739,10 @@
       "path": "/v1/projects/:projectId/commits/:sha/diff"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/computers"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/config-archives/:configTreeId"
     },
@@ -2600,14 +2604,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/tunnel/audit/:tunnelId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/connections"
-    },
-    {
-      "method": "POST",
       "path": "/v1/tunnel/connections"
     },
     {
@@ -2645,34 +2641,6 @@
     {
       "method": "GET",
       "path": "/v1/tunnel/device-auth/:code/status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/deny"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests/stream"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permissions/:tunnelId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permissions/:tunnelId"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/tunnel/permissions/:tunnelId/:permissionId"
     },
     {
       "method": "POST",

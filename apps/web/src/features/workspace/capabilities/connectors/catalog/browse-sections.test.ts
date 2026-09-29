@@ -55,7 +55,7 @@ const native: CatalogEntry = {
   source: 'computer',
   key: 'computer:computers',
   slug: 'computers',
-  name: 'Computer Tunnels',
+  name: 'Computer',
   description: null,
   icon: null,
   categories: ['developer-tools'],
@@ -136,7 +136,7 @@ test('each section is capped to its card slice', () => {
 });
 
 test('the native Computers card leads the developer-tools section without changing its count', () => {
-  // It is the only way to discover Computer Tunnels on the browse page. The
+  // It is the only way to discover Computer on the browse page. The
   // catalogue does not publish it, so it must not inflate the catalogue total.
   const page = sectionsPageFromConnect({
     provider: 'composio',
