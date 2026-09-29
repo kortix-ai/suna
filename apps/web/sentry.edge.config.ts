@@ -17,8 +17,13 @@ if (SENTRY_DSN) {
     // Sample 10% of edge transactions
     tracesSampleRate: 0.1,
 
-    beforeSend(event) {
-      if (shouldIgnoreSentryNoiseEvent(event)) {
+    beforeSend(event, hint) {
+      // The digest (e.g. the 404 `NEXT_HTTP_ERROR_FALLBACK;404` behind a React
+      // #419 boundary bailout) lives on the thrown object, never in the
+      // serialized event — without the hint the digest-based noise rules
+      // (`next-recovery-bailout`) can never match here. Same wiring as the
+      // client and server configs.
+      if (shouldIgnoreSentryNoiseEvent(event, hint)) {
         return null;
       }
       return event;
