@@ -184,7 +184,10 @@ test.describe('21 — Session access UI', () => {
       await expect(ownInventoryRow).toBeVisible();
       await expect(ownInventoryRow.locator('[data-session-shared="true"]')).toHaveCount(0);
       await expect(sharedInventoryRow).toBeVisible();
-      await expect(sharedInventoryRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      // The chip names the run's starter (the trigger's schedule icon) and its access icon.
+      const sharedChip = sharedInventoryRow.locator('[data-session-shared="true"][data-session-starter="trigger"]');
+      await expect(sharedChip).toHaveCount(1);
+      await expect(sharedChip.locator('svg')).toHaveCount(2);
       await expect(sharedInventoryRow.getByText('Shared', { exact: true })).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Search', exact: true }).click();
