@@ -180,6 +180,10 @@ approval or an email reply, a slow external job):
 4. **Remove a recurring reminder the moment its condition is met:**
    `kortix reminders rm <id>`. Every fire is a model turn.
 
+**From a Slack or Teams thread**, put the channel and thread ids into the
+reminder text: the fire is not a channel turn, so the answer must be posted
+with `slack send --channel <id> --thread <ts>` (see `kortix-slack`).
+
 `kortix reminders ls` shows this session's reminders, `pause <id>` /
 `resume <id>` turn one off and on. A reminder lives in the database, not
 `kortix.yaml`: no CR, no manifest edit, and it pauses itself if its session
