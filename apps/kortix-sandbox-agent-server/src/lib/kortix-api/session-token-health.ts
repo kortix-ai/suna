@@ -77,16 +77,32 @@ const SESSION_TOKEN_DEAD_PATTERN =
 /** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5
 
+/**
+ * While tripped, one call per window goes through as a probe. Every periodic
+ * control-plane call (config-release converge, the runtime-assets manifest)
+ * skips on the breaker, so without a probe nothing idle would ever carry the
+ * answer that clears it after a rotation. 5 min: 12 refused requests per hour
+ * per box instead of one per 60 s tick.
+ */
+export const SESSION_TOKEN_DEAD_PROBE_MS = 5 * 60_000
+
 let consecutiveDeadTokenSignals = 0
 let tripped = false
+let lastProbeAt = 0
 
 /**
  * Has the API told this box, repeatedly and without contradiction, that its
  * credential is dead? A consuming call site skips a request that cannot succeed;
- * it never acts on the credential beyond that (no restart, no shutdown).
+ * it never acts on the credential beyond that (no restart, no shutdown). Once
+ * per SESSION_TOKEN_DEAD_PROBE_MS it answers false, and that call's response
+ * either clears the breaker or keeps it tripped.
  */
 export function sessionTokenPresumedDead(): boolean {
-  return tripped
+  if (!tripped) return false
+  const now = Date.now()
+  if (now - lastProbeAt < SESSION_TOKEN_DEAD_PROBE_MS) return true
+  lastProbeAt = now
+  return false
 }
 
 /**
@@ -112,6 +128,7 @@ export function noteControlPlaneResponse(status: number, bodyText: string | null
   consecutiveDeadTokenSignals += 1
   if (consecutiveDeadTokenSignals < SESSION_TOKEN_DEAD_TRIP_THRESHOLD || tripped) return
   tripped = true
+  lastProbeAt = Date.now()
   // Loud, once. NEVER a shutdown: see the header. The daemon keeps serving and
   // keeps asking, so a rotated credential is picked up on the next call.
   logger.error('[session-token-health] control plane says this session credential is dead', {
@@ -122,4 +139,5 @@ export function noteControlPlaneResponse(status: number, bodyText: string | null
 export function resetSessionTokenHealthForTests(): void {
   consecutiveDeadTokenSignals = 0
   tripped = false
+  lastProbeAt = 0
 }
