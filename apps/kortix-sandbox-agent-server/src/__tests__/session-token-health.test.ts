@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 
 import {
+  SESSION_TOKEN_DEAD_PROBE_MS,
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
   resetSessionTokenHealthForTests,
@@ -61,12 +62,57 @@ describe('session-token-health', () => {
     expect(sessionTokenPresumedDead()).toBe(false);
   });
 
+  test('while tripped, one call per probe window goes through, so an idle box can see a rotation', () => {
+    setSystemTime(new Date('2026-09-28T00:00:00Z'));
+    try {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'Session token is not active');
+      }
+      expect(sessionTokenPresumedDead()).toBe(true);
+
+      setSystemTime(new Date(Date.now() + SESSION_TOKEN_DEAD_PROBE_MS));
+      expect(sessionTokenPresumedDead()).toBe(false); // the probe
+      expect(sessionTokenPresumedDead()).toBe(true); // everyone else still skips
+
+      noteControlPlaneResponse(401, 'Session token is not active'); // probe refused
+      expect(sessionTokenPresumedDead()).toBe(true);
+    } finally {
+      setSystemTime();
+    }
+  });
+
   test('is case-insensitive and ignores surrounding text', () => {
     for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
       noteControlPlaneResponse(401, '{"error":"SESSION TOKEN IS NOT ACTIVE","code":"token_inactive"}');
     }
 
     expect(sessionTokenPresumedDead()).toBe(true);
+  });
+
+  // The API has TWO terminal refusals for a session credential. `revokeSession
+  // ConnectorTokens` (session delete) and `revokeAllAccountTokensForUser`
+  // (offboarding) revoke the token ROW, so the API answers `PAT not found or
+  // revoked` instead of the lease refusal. A living box can meet either one;
+  // recognising only the lease refusal left the revoked one hammering the API
+  // forever — the `infra:log:a7e64945398f` warn spike in KRTX-446.
+  test('trips on the revoked-token refusal too', () => {
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD + 5; i++) {
+      noteControlPlaneResponse(
+        401,
+        '{"error":true,"message":"PAT not found or revoked","status":401}',
+      );
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(true);
+  });
+
+  test('a merely invalid or expired PAT refusal never trips it', () => {
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD + 5; i++) {
+      noteControlPlaneResponse(401, 'PAT expired');
+      noteControlPlaneResponse(401, '{"error":"Invalid PAT","status":401}');
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(false);
   });
 
   test('an unrelated 401 (bad signature, malformed context) never trips it', () => {

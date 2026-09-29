@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "Server MCP",
           "description": "Collega Claude, ChatGPT, Cursor, Codex o qualsiasi client MCP a questo progetto tramite OAuth. Il client accede a tuo nome e chiama Kortix con i tuoi permessi. Trovi l’URL in Connetti MCP, nel menu dello spazio di lavoro."
+        },
+        "reminders": {
+          "name": "Promemoria",
+          "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Promemoria, l’indicatore dei promemoria della sessione e `kortix remind`."
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Caricamento…",
-    "loadMoreSessions": "Carica altre sessioni"
+    "loadMoreSessions": "Carica altre sessioni",
+    "reminders": "Promemoria"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19238,7 +19243,8 @@
       "textb7ece0360b75": "Promemoria di sessione eliminato",
       "text9dcde51d9ff2": "Descrizione dell'agente",
       "textfa0db737cb09": "Scritta dall'agente e non verificata. Il connettore riceve i parametri qui sotto.",
-      "text2edf70730233": "Messaggio per l'agente (facoltativo)"
+      "text2edf70730233": "Messaggio per l'agente (facoltativo)",
+      "texte88286ad9739": "Promemoria del progetto elencati"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20116,8 +20122,8 @@
     "textOnly": "Solo testo",
     "zdrTitle": "Conservazione zero dei dati",
     "zdrDescription": "La conservazione zero dei dati (ZDR) significa che il fornitore elabora testi e immagini, ma non conserva input o risposte dopo la richiesta. Kortix archivia separatamente progetti e conversazioni.",
-    "usProvidersTitle": "Fornitori con sede negli USA",
-    "usProvidersDescription": "Ogni modello Kortix usa un solo fornitore di inferenza fisso con sede negli USA. Le richieste non passano mai a un altro fornitore.",
+    "usProvidersTitle": "Ospitato negli USA",
+    "usProvidersDescription": "I modelli Kortix girano in data center negli USA. Collaboriamo solo con fornitori di inferenza americani.",
     "hiddenHint": "Nascosto nel selettore. Le richieste dirette sono ancora consentite; disattivale dal menu del modello.",
     "hidden": "Nascosto nel selettore",
     "disableModel": "Disattiva modello",
@@ -20321,5 +20327,46 @@
     "unverifiedTitle": "App non verificata",
     "unverifiedBody": "{client} si è registrata da sola su Kortix. Kortix non ha verificato chi la gestisce. Consentila solo se la stai collegando tu in questo momento.",
     "redirectsTo": "Ti rimanda a"
+  },
+  "reminders": {
+    "title": "Promemoria",
+    "description": "Controlli programmati che richiamano una sessione. Gli agenti li impostano mentre lavorano; ognuno scatta finché non viene rimosso.",
+    "docs": "Come funzionano i promemoria",
+    "tabActive": "Attivi",
+    "tabPaused": "In pausa",
+    "tabDone": "Completati",
+    "emptyTitle": "Nessun promemoria",
+    "emptyDescription": "Quando un agente o una persona imposta un promemoria su una sessione, compare qui.",
+    "emptyTabDescription": "Questo elenco è vuoto.",
+    "loadFailed": "Impossibile caricare i promemoria",
+    "retry": "Riprova",
+    "sessionFilter": "Sessione: {name}",
+    "clearFilter": "Mostra tutte le sessioni",
+    "untitledSession": "Sessione senza titolo",
+    "once": "Una volta",
+    "every": "Ogni {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Prossimo {time}",
+    "firedAt": "Scattato {time}",
+    "pausedLabel": "In pausa",
+    "doneLabel": "Completato",
+    "pause": "Metti in pausa",
+    "resume": "Riprendi",
+    "remove": "Rimuovi",
+    "openSession": "Apri sessione",
+    "removeTitle": "Rimuovere questo promemoria?",
+    "removeDescription": "Smette di scattare e viene eliminato. La sessione conserva la sua cronologia.",
+    "paused": "Promemoria in pausa",
+    "resumed": "Promemoria ripreso",
+    "removed": "Promemoria rimosso",
+    "updateFailed": "Impossibile aggiornare il promemoria",
+    "chipLabel": "{count, plural, one {# promemoria attivo} other {# promemoria attivi}}",
+    "chipTitle": "Promemoria di questa sessione",
+    "manage": "Gestisci promemoria",
+    "cardLabel": "Promemoria",
+    "cardOneTime": "Una volta",
+    "cardRecurring": "Ricorrente",
+    "cardManage": "Gestisci",
+    "gateDescription": "Attiva i Promemoria per consentire ad agenti e persone di programmare controlli che richiamano una sessione."
   }
 }

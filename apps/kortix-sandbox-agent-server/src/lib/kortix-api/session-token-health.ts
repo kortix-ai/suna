@@ -51,9 +51,13 @@ import { logger } from '../log/logger'
  * So the breaker now only REPORTS. It stops the log spam (one line per trip,
  * not one per 401) and exposes the state, and it clears itself the moment the
  * control plane answers anything else — which is what a rotated credential
- * looks like from here. The volume problem it was built for is closed at its
- * source: a box whose row and VM disagree is reconciled within one sweep
- * (apps/api/src/projects/reaping/row-vm-divergence.ts).
+ * looks like from here. The state a consuming call site reads is
+ * `sessionTokenPresumedDead()`: `reconcileRuntimeAssets` uses it to skip the
+ * manifest fetch, so a box that stays up after its row is parked stops adding
+ * one `warn` 401 per 60 s tick to the API log. It never converts the dead token
+ * into a terminal state of the box. The volume problem it was built for is
+ * closed at its source: a box whose row and VM disagree is reconciled within
+ * one sweep (apps/api/src/projects/reaping/row-vm-divergence.ts).
  */
 // The terminal credential-state reasons `validateToken`
 // (apps/api/src/repositories/account-tokens.ts) answers with: row gone or
@@ -65,7 +69,7 @@ import { logger } from '../log/logger'
 // both directions: each one RESET the streak (and un-tripped), and the code
 // even logged "credential recovered" for them. Prod 2026-09-28: 6,514
 // `POST turn-stream -> 401 PAT not found or revoked` in 2h from one
-// workspace, sustained near 1/s, while the streak never grew.
+// credential class, sustained near 1/s, while the streak never grew.
 //
 // A genuine recovery still clears: the trip counts CONSECUTIVE signals, so any
 // answering response — a rotated credential, a repaired row — resets it.
@@ -75,15 +79,32 @@ const SESSION_TOKEN_DEAD_PATTERN =
 /** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5
 
+/**
+ * While tripped, one call per window goes through as a probe. Every periodic
+ * control-plane call (config-release converge, the runtime-assets manifest)
+ * skips on the breaker, so without a probe nothing idle would ever carry the
+ * answer that clears it after a rotation. 5 min: 12 refused requests per hour
+ * per box instead of one per 60 s tick.
+ */
+export const SESSION_TOKEN_DEAD_PROBE_MS = 5 * 60_000
+
 let consecutiveDeadTokenSignals = 0
 let tripped = false
+let lastProbeAt = 0
 
 /**
  * Has the API told this box, repeatedly and without contradiction, that its
- * credential is dead? Reporting only — nothing acts on it locally.
+ * credential is dead? A consuming call site skips a request that cannot succeed;
+ * it never acts on the credential beyond that (no restart, no shutdown). Once
+ * per SESSION_TOKEN_DEAD_PROBE_MS it answers false, and that call's response
+ * either clears the breaker or keeps it tripped.
  */
 export function sessionTokenPresumedDead(): boolean {
-  return tripped
+  if (!tripped) return false
+  const now = Date.now()
+  if (now - lastProbeAt < SESSION_TOKEN_DEAD_PROBE_MS) return true
+  lastProbeAt = now
+  return false
 }
 
 /**
@@ -108,6 +129,7 @@ export function noteControlPlaneResponse(status: number, bodyText: string | null
   consecutiveDeadTokenSignals += 1
   if (consecutiveDeadTokenSignals < SESSION_TOKEN_DEAD_TRIP_THRESHOLD || tripped) return
   tripped = true
+  lastProbeAt = Date.now()
   // Loud, once. NEVER a shutdown: see the header. The daemon keeps serving and
   // keeps asking, so a rotated credential is picked up on the next call.
   logger.error('[session-token-health] control plane says this session credential is dead', {
@@ -118,4 +140,5 @@ export function noteControlPlaneResponse(status: number, bodyText: string | null
 export function resetSessionTokenHealthForTests(): void {
   consecutiveDeadTokenSignals = 0
   tripped = false
+  lastProbeAt = 0
 }

@@ -59,6 +59,7 @@ export const FeatureFlagMapSchema = z.object({
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),
+  reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),

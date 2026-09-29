@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, setSystemTime } from 'bun:test';
 import { ttlMemo } from '../shared/ttl-memo';
 
 // `bun test` sets NODE_ENV=test, which normally bypasses the memo entirely —
@@ -167,5 +167,149 @@ describe('ttlMemo', () => {
     expect(await memo('u1|acct')).toBe(4); // re-loaded
     expect(await memo('u1|proj')).toBe(5); // re-loaded
     expect(await memo('u2|acct')).toBe(3); // different principal — untouched
+  });
+});
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Resolve the nth pending loader call, so the test never casts a non-null. */
+function resolvePending(resolvers: Array<(v: number) => void>, index: number, value: number) {
+  const resolve = resolvers[index];
+  if (!resolve) throw new Error(`no pending loader at index ${index}`);
+  resolve(value);
+}
+
+/**
+ * Stale-while-revalidate (2026-09-28, KRTX-620). `ttlMemo` is the shared
+ * primitive the `/projects/:id/sandbox-health` poll uses. Its 10 s TTL expires
+ * long before the client's next poll (120 s idle), so the live provider probe
+ * ran on nearly every request and the route's p95 tracked the provider's tail.
+ * SWR serves the last resolved value at once and refreshes behind it.
+ */
+describe('ttlMemo stale-while-revalidate', () => {
+  // A 10 ms TTL on the wall clock expires again between a refresh settling and
+  // the next assertion on a loaded CI runner. Tests that assert "fresh again"
+  // drive Date.now() instead, so only the explicit advance() moves time.
+  let clock = 0;
+  const freezeClock = () => setSystemTime(new Date((clock = Date.now())));
+  const advance = (ms: number) => setSystemTime(new Date((clock += ms)));
+  afterEach(() => setSystemTime());
+
+  it('serves the stale value immediately and refreshes behind the call', async () => {
+    let calls = 0;
+    const resolvers: Array<(v: number) => void> = [];
+    const memo = ttlMemo({
+      ttlMs: 10,
+      staleWhileRevalidate: true,
+      keyFn: (k: string) => k,
+      loader: (_k: string) => {
+        calls += 1;
+        return new Promise<number>((resolve) => resolvers.push(resolve));
+      },
+      enableInTests: true,
+    });
+    freezeClock();
+
+    const first = memo('a');
+    resolvePending(resolvers, 0, 1);
+    expect(await first).toBe(1);
+
+    advance(25); // TTL expires, the value is now stale
+    // The call returns the stale 1 without waiting on the refresh (which will
+    // resolve to 2) — the provider round trip is off the request path.
+    expect(await memo('a')).toBe(1);
+    expect(calls).toBe(2); // refresh started in the background
+
+    resolvePending(resolvers, 1, 2);
+    await sleep(0);
+    expect(await memo('a')).toBe(2); // fresh again
+    expect(calls).toBe(2); // no third load
+  });
+
+  it('starts at most one refresh per key while one is in flight', async () => {
+    let calls = 0;
+    const resolvers: Array<(v: number) => void> = [];
+    const memo = ttlMemo({
+      ttlMs: 5,
+      staleWhileRevalidate: true,
+      keyFn: (k: string) => k,
+      loader: (_k: string) => {
+        calls += 1;
+        return new Promise<number>((resolve) => resolvers.push(resolve));
+      },
+      enableInTests: true,
+    });
+
+    const first = memo('a');
+    resolvePending(resolvers, 0, 1);
+    expect(await first).toBe(1);
+
+    await sleep(15);
+    expect(await memo('a')).toBe(1); // refresh #2 in flight
+    await sleep(15); // TTL passed again but #2 has not settled
+    expect(await memo('a')).toBe(1); // served stale, no third load
+    expect(calls).toBe(2);
+  });
+
+  it('keeps serving the last good value when a refresh fails, then retries', async () => {
+    let calls = 0;
+    const memo = ttlMemo({
+      ttlMs: 10,
+      staleWhileRevalidate: true,
+      keyFn: (k: string) => k,
+      loader: async (_k: string) => {
+        calls += 1;
+        if (calls === 2) throw new Error('provider down');
+        return calls;
+      },
+      enableInTests: true,
+    });
+    freezeClock();
+
+    expect(await memo('a')).toBe(1);
+    advance(25);
+    expect(await memo('a')).toBe(1); // stale kept; refresh #2 rejects
+    advance(25);
+    expect(await memo('a')).toBe(1); // stale served; refresh #3 retries
+    await sleep(0); // let refresh #3 settle
+    expect(await memo('a')).toBe(3); // fresh now
+    expect(calls).toBe(3);
+  });
+
+  it('shares a still-pending load instead of starting a second one after the TTL', async () => {
+    let calls = 0;
+    const resolvers: Array<(v: number) => void> = [];
+    const memo = ttlMemo({
+      ttlMs: 5,
+      staleWhileRevalidate: true,
+      keyFn: (k: string) => k,
+      loader: (_k: string) => {
+        calls += 1;
+        return new Promise<number>((resolve) => resolvers.push(resolve));
+      },
+      enableInTests: true,
+    });
+
+    const p1 = memo('a');
+    await sleep(15); // TTL passed while the first load is still pending
+    const p2 = memo('a');
+    expect(calls).toBe(1); // one in-flight load, not two
+    resolvePending(resolvers, 0, 42);
+    expect(await p1).toBe(42);
+    expect(await p2).toBe(42);
+  });
+
+  it('without the flag an expired entry still blocks on a reload (unchanged)', async () => {
+    const c = counter((n) => n);
+    const memo = ttlMemo({
+      ttlMs: 10,
+      keyFn: (k: string) => k,
+      loader: c.loader,
+      enableInTests: true,
+    });
+    expect(await memo('a')).toBe(1);
+    await sleep(25);
+    expect(await memo('a')).toBe(2); // reloaded, not served stale
+    expect(c.calls).toBe(2);
   });
 });
