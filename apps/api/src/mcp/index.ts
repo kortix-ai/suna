@@ -805,7 +805,8 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files/content`, { query: { path, ref: optionalArg(input, 'ref') } });
         if (r.status >= 400) return apiResult(r);
         const file = JSON.parse(r.body);
-        if (file.binary) return text(`${path} is a binary file. Read it through a session (read_file with session_id) or clone the repository.`);
+        // The route returns git's stdout as a string; a NUL byte means binary, never text.
+        if (String(file.content).includes('\0')) return text(`${path} is a binary file. Read it through a session (read_file with session_id) or clone the repository.`);
         return pageLines(file.content, input);
       }
       const sandbox = await resolveSandbox(ctx, sessionId);
@@ -853,7 +854,7 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files`, { query: { path: repoPath, ref } });
         if (r.status >= 400) return apiResult(r);
         const files = JSON.parse(r.body) as { path: string }[];
-        return text(files.length ? page(files.map((f) => f.path), offset, undefined, 'entries') : `No files${repoPath ? ` under ${repoPath}` : ''} at ${ref ?? 'the default branch'}.`);
+        return text(files.length ? page(files.map((f) => f.path), offset, undefined, 'entries') : `No files${repoPath ? ` under ${repoPath}` : ''} at ${ref ? `${ref} (or that ref does not exist)` : 'the default branch'}.`);
       }
       const sandbox = await resolveSandbox(ctx, sessionId);
       if (!('session' in sandbox)) return apiResult(sandbox);

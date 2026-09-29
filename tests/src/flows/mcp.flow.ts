@@ -364,20 +364,17 @@ flow(
       const missing = await mcp(rpc(15, "tools/call", { name: "read_file", arguments: { path: "no/such/file.txt", project_id: p.id } }));
       missing.status(200).body().has("$.result.isError", true);
     });
-    await ctx.step("repository reads: a bad ref is a 404, paths and unicode names list cleanly, a binary is named, long text pages by offset, and no target says what to pass", async () => {
+    await ctx.step("repository reads: a bad ref is a 404 on read and a named empty listing, paths and unicode names list cleanly, a binary is named, long text pages by offset, and no target says what to pass", async () => {
       const fail = async (id: number, name: string, args: Record<string, unknown>) => {
         const r = await mcp(rpc(id, "tools/call", { name, arguments: args }));
         const result = r.json<any>().result;
         if (!result.isError) throw new Error(`${name} ${JSON.stringify(args)} was not an error: ${JSON.stringify(result).slice(0, 200)}`);
         return result.content[0].text as string;
       };
-      for (const [id, name, args] of [
-        [41, "read_file", { path: "kortix.yaml", project_id: p.id, ref: "nope" }],
-        [42, "list_files", { project_id: p.id, ref: "nope" }],
-      ] as const) {
-        const t = await fail(id, name, args);
-        if (!t.startsWith("HTTP 404") || !t.includes("ref not found")) throw new Error(`${name} bad ref: ${t}`);
-      }
+      const badRef = await fail(41, "read_file", { path: "kortix.yaml", project_id: p.id, ref: "nope" });
+      if (!badRef.startsWith("HTTP 404") || !badRef.includes("ref not found")) throw new Error(`read_file bad ref: ${badRef}`);
+      const badList = await toolText(42, "list_files", { project_id: p.id, ref: "nope" });
+      if (badList !== "No files at nope (or that ref does not exist).") throw new Error(`list_files bad ref: ${badList}`);
       const root = (await toolText(43, "list_files", { project_id: p.id, path: "/" })).split("\n");
       if (!root.includes("kortix.yaml")) throw new Error(`list_files path "/": ${root}`);
       const none = await toolText(44, "list_files", { project_id: p.id, path: "no-such-dir" });
