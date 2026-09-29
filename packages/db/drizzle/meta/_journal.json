@@ -652,6 +652,13 @@
       "when": 1790641152592,
       "tag": "20260929001912_provider_events_account_index",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790642780246,
+      "tag": "20260929004620_drop_audit_events_account_client_source_time_index_snapshot",
+      "breakpoints": true
     }
   ]
 }
