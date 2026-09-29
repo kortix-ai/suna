@@ -169,6 +169,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     opencode_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
+    labels: [],
     agent_name: 'default',
     status: 'running',
     error: null,
@@ -1357,4 +1358,10 @@ describe('SecretEgressPolicySchema — `inject` is optional', () => {
         .success,
     ).toBe(false);
   });
+});
+test('session create bounds labels', () => {
+  expect(SessionCreateInputSchema.parse({ labels: ['  urgent  '] }).labels).toEqual(['urgent']);
+  expect(SessionCreateInputSchema.safeParse({ labels: Array(21).fill('x') }).success).toBe(false);
+  expect(SessionCreateInputSchema.safeParse({ labels: [' '] }).success).toBe(false);
+  expect(SessionCreateInputSchema.safeParse({ labels: ['x'.repeat(65)] }).success).toBe(false);
 });

@@ -24,6 +24,9 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import {
   matchesAccessFilters,
   matchesOwnerFilters,
@@ -33,9 +36,6 @@ import {
   UNKNOWN_OWNER_KEY,
   type SessionAccessFilter,
 } from '@/features/workspace/project-sessions/session-owner-filters';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
@@ -43,8 +43,9 @@ import {
   selectAccessFilters,
   selectGroupMode,
   selectHiddenSections,
-  selectOwnerFilters,
+  selectLabelFilters,
   selectOrderMode,
+  selectOwnerFilters,
   selectSourceFilters,
   selectStatusFilters,
   useSessionFilterStore,
@@ -53,13 +54,14 @@ import {
 import type { ProjectSession } from '@kortix/sdk';
 import {
   CalendarDotsIcon as CalendarClock,
-  EnvelopeIcon as Mail,
   GlobeIcon,
   LockSimpleIcon,
+  EnvelopeIcon as Mail,
   ChatsIcon as MessagesSquare,
   UsersIcon as UsersSolid,
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
+import { matchesLabelFilters } from './session-label-filter';
 
 import {
   groupSessions,
@@ -277,6 +279,8 @@ export function SessionFilterMenu({
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, surface));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, surface));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, surface));
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId, surface));
+  const toggleLabelFilter = useSessionFilterStore((s) => s.toggleLabelFilter);
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, surface));
   const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, surface));
   const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, surface));
@@ -357,7 +361,9 @@ export function SessionFilterMenu({
   const activeAccess = pageFacets ? accessFilters : [];
   const passingOwnerAndAccess = sessions.filter(
     (session) =>
-      matchesOwnerFilters(session, activeOwners) && matchesAccessFilters(session, activeAccess),
+      matchesOwnerFilters(session, activeOwners) &&
+      matchesAccessFilters(session, activeAccess) &&
+      matchesLabelFilters(session, labelFilters),
   );
   const statusOptions = resolveStatusFacetOptions(
     passingOwnerAndAccess,
@@ -374,7 +380,8 @@ export function SessionFilterMenu({
   const passingStatusAndSource = sessions.filter(
     (session) =>
       matchesStatusFilters(session, statusFilters) &&
-      matchesSourceFilters(session, sourceFilters, tI18nComplete),
+      matchesSourceFilters(session, sourceFilters, tI18nComplete) &&
+      matchesLabelFilters(session, labelFilters),
   );
   const ownerOptions = pageFacets
     ? resolveOwnerFacetOptions(
@@ -396,12 +403,18 @@ export function SessionFilterMenu({
   const showOwnerFacet = pageFacetVisibility.owner;
   const showAccessFacet = pageFacetVisibility.access;
   const showFiltersSection =
-    statusOptions.length > 0 || sourceOptions.length > 0 || showOwnerFacet || showAccessFacet;
+    statusOptions.length > 0 ||
+    sourceOptions.length > 0 ||
+    showOwnerFacet ||
+    showAccessFacet ||
+    sessions.some((session) => session.labels?.length);
   const hasActiveFacets =
     statusFilters.length > 0 ||
     sourceFilters.length > 0 ||
     activeOwners.length > 0 ||
-    activeAccess.length > 0;
+    activeAccess.length > 0 ||
+    labelFilters.length > 0;
+  const labelOptions = [...new Set(sessions.flatMap((session) => session.labels ?? []))].sort();
   const ownerFilterSet = new Set(activeOwners);
   const accessFilterSet = new Set(activeAccess);
   const accessLabels: Record<SessionAccessFilter, string> = {
@@ -500,7 +513,6 @@ export function SessionFilterMenu({
               {t('reset')}
             </DropdownMenuItem>
           </div>
-
           {statusOptions.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -524,7 +536,6 @@ export function SessionFilterMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-
           {sourceOptions.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -552,7 +563,26 @@ export function SessionFilterMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-
+          {labelOptions.length > 0 && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="min-w-0 flex-1 truncate">Labels</span>
+                {labelFilters.length > 0 && <FacetActiveDot />}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-48 overflow-y-auto p-1">
+                {labelOptions.map((label) => (
+                  <DropdownMenuCheckboxItem
+                    key={label}
+                    checked={labelFilters.includes(label)}
+                    onCheckedChange={() => toggleLabelFilter(projectId, label, surface)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
           {showOwnerFacet && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -588,7 +618,6 @@ export function SessionFilterMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-
           {showAccessFacet && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -615,7 +644,8 @@ export function SessionFilterMenu({
                 })}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-          )}        </>
+          )}{' '}
+        </>
       )}
 
       <DropdownMenuSeparator />

@@ -955,6 +955,7 @@ export const SessionCreateInputSchema = z
     title_source: z.string().optional(),
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
+    labels: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
     session_id: z
       .string()
       .regex(
@@ -1019,6 +1020,7 @@ export const ProjectSessionSchema = z.object({
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
   custom_name: z.string().nullable(),
+  labels: z.array(z.string()),
   agent_name: z.string(),
   status: SessionStatusSchema,
   error: z.string().nullable(),

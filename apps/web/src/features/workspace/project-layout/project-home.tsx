@@ -1,29 +1,29 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { hubTarget } from '@/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
+import { hubTarget } from '@/stores/account-panel-store';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useIsMobile } from '@/hooks/utils';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
-import { useSearchParams } from 'next/navigation';
 import {
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
   type SandboxTemplate,
 } from '@kortix/sdk';
-import type { AttachmentSubmission } from '@/features/session/composer/attachment-submission';
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
+import { useSearchParams } from 'next/navigation';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { FirstChat } from './home/first-chat';
 import { MetaRuntimeIndicator } from './home/meta-runtime-indicator';
@@ -37,6 +37,7 @@ export { ProjectHomeWelcomeBody } from './home/welcome-body';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
+  labels?: string[];
 }
 
 /**
@@ -78,6 +79,7 @@ export function ProjectHome({
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [labels, setLabels] = useState('');
   const [prefill, setPrefill] = useState<{ text: string; id: number; submit?: boolean } | null>(
     null,
   );
@@ -150,6 +152,18 @@ export function ProjectHome({
         files,
         {
           ...options,
+          ...(labels.trim()
+            ? {
+                labels: [
+                  ...new Set(
+                    labels
+                      .split(',')
+                      .map((label) => label.trim())
+                      .filter(Boolean),
+                  ),
+                ].slice(0, 20),
+              }
+            : {}),
           ...(metaSelected
             ? { sandbox_slug: META_SANDBOX_SLUG }
             : selectedSlug
@@ -160,7 +174,7 @@ export function ProjectHome({
       );
       return sent;
     },
-    [metaSelected, selectedSlug, onSend],
+    [metaSelected, selectedSlug, labels, onSend],
   );
 
   const isMobile = useIsMobile();
@@ -221,45 +235,57 @@ export function ProjectHome({
       : undefined;
 
   const composer = (
-    <ComposerChatInput
-      onSend={handleSend}
-      onCommand={handleCommand}
-      projectId={projectId}
-      draftScope={draftScope}
-      // `busy` here means "create in flight" — spinner in the send slot,
-      // input locked. NOT isBusy (that renders agent-running stop-button
-      // semantics, which leave the composer with no button at all here).
-      isSending={busy}
-      disabled={busy}
-      // The home composer navigates to the new session on send — don't
-      // clear it first (that would drop the text on a gated send). The
-      // message rides across via `create.pending_prompt` and reappears
-      // as the instant shell's optimistic turn.
-      clearOnSend={false}
-      autoFocus
-      // Desktop: a hero composer floating mid-page has no column for a second
-      // rail to align to, so the attach/agent/context controls ride on the
-      // toolbar itself, ahead of the model selector, and the `/` menu opens
-      // BELOW the card, into the empty lower half, instead of shoving the
-      // heading up. Mobile: the toolbar is too narrow to hold them next to the
-      // model selector — the labels overlap — so it uses the session page's
-      // row beneath the card. The first chat docks the composer at the bottom
-      // like a session does, so it keeps a session's defaults: the row
-      // beneath, the menu above.
-      underbarPlacement={firstChat || isMobile ? 'below' : 'inline'}
-      slashMenuPlacement={firstChat ? 'above' : 'below'}
-      placeholder={
-        firstChat
-          ? tFirstChat('placeholder')
-          : tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
-            )
-      }
-      prefill={prefill}
-      onAgentSelectionChange={setSelectedAgent}
-      toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
-      sandboxSlot={sandboxSlot}
-    />
+    <>
+      <label className="text-muted-foreground mb-2 block text-xs">
+        Session labels (optional, comma-separated)
+        <input
+          className="border-border bg-background text-foreground mt-1 block w-full rounded-md border px-2 py-1"
+          value={labels}
+          onChange={(event) => setLabels(event.target.value)}
+          placeholder="e.g. research, urgent"
+          disabled={busy}
+        />
+      </label>
+      <ComposerChatInput
+        onSend={handleSend}
+        onCommand={handleCommand}
+        projectId={projectId}
+        draftScope={draftScope}
+        // `busy` here means "create in flight" — spinner in the send slot,
+        // input locked. NOT isBusy (that renders agent-running stop-button
+        // semantics, which leave the composer with no button at all here).
+        isSending={busy}
+        disabled={busy}
+        // The home composer navigates to the new session on send — don't
+        // clear it first (that would drop the text on a gated send). The
+        // message rides across via `create.pending_prompt` and reappears
+        // as the instant shell's optimistic turn.
+        clearOnSend={false}
+        autoFocus
+        // Desktop: a hero composer floating mid-page has no column for a second
+        // rail to align to, so the attach/agent/context controls ride on the
+        // toolbar itself, ahead of the model selector, and the `/` menu opens
+        // BELOW the card, into the empty lower half, instead of shoving the
+        // heading up. Mobile: the toolbar is too narrow to hold them next to the
+        // model selector — the labels overlap — so it uses the session page's
+        // row beneath the card. The first chat docks the composer at the bottom
+        // like a session does, so it keeps a session's defaults: the row
+        // beneath, the menu above.
+        underbarPlacement={firstChat || isMobile ? 'below' : 'inline'}
+        slashMenuPlacement={firstChat ? 'above' : 'below'}
+        placeholder={
+          firstChat
+            ? tFirstChat('placeholder')
+            : tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+              )
+        }
+        prefill={prefill}
+        onAgentSelectionChange={setSelectedAgent}
+        toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
+        sandboxSlot={sandboxSlot}
+      />
+    </>
   );
 
   return (

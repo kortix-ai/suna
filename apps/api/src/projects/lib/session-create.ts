@@ -1005,6 +1005,7 @@ export async function createProjectSession(input: {
         visibility,
         origin,
         secretsAllowlist,
+        labels: body.labels ?? [],
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,

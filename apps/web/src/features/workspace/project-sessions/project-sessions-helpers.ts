@@ -1,3 +1,4 @@
+import { matchesLabelFilters } from '@/features/workspace/project-sidebar/session-label-filter';
 import type { UiTranslator } from '@/i18n/translator';
 import type { ProjectSession } from '@kortix/sdk';
 
@@ -113,7 +114,11 @@ export function filterProjectSessions(
    *  and for tests; the view always passes its memoised index. */
   searchIndex?: SessionSearchIndex,
   /** The page-only facets: whose session, and who else can open it. */
-  facets: { owners?: readonly string[]; access?: readonly SessionAccessFilter[] } = {},
+  facets: {
+    owners?: readonly string[];
+    access?: readonly SessionAccessFilter[];
+    labels?: readonly string[];
+  } = {},
 ): ProjectSession[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matches = sessions.filter((session) => {
@@ -121,6 +126,7 @@ export function filterProjectSessions(
     if (!matchesSourceFilters(session, sourceFilters, tI18nComplete)) return false;
     if (!matchesOwnerFilters(session, facets.owners ?? [])) return false;
     if (!matchesAccessFilters(session, facets.access ?? [])) return false;
+    if (!matchesLabelFilters(session, facets.labels ?? [])) return false;
     if (!normalizedQuery) return true;
     const haystack =
       searchIndex?.get(session.session_id) ?? sessionSearchText(session, tI18nComplete);

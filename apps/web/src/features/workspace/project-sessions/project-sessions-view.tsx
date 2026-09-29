@@ -1,7 +1,5 @@
 'use client';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -26,15 +24,18 @@ import {
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useTranslations } from '@/i18n/use-translations';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
+  selectAccessFilters,
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
+  selectLabelFilters,
   selectOrderMode,
-  selectSourceFilters,
-  selectAccessFilters,
   selectOwnerFilters,
+  selectSourceFilters,
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
@@ -46,7 +47,7 @@ import {
 } from '@kortix/sdk';
 import { qk, removeCachedProjectSession, useProjectSessions } from '@kortix/sdk/react';
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -171,7 +172,7 @@ function SessionsSection({
           </span>
           <CaretRightIcon
             aria-hidden
-            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-normal ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+            className="duration-normal size-3 shrink-0 opacity-0 transition-[opacity,transform] ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
         </div>
       </DisclosureTrigger>
@@ -260,6 +261,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, SURFACE));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, SURFACE));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId, SURFACE));
   const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, SURFACE));
   const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, SURFACE));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
@@ -281,7 +283,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         deferredSearch,
         tI18nComplete,
         searchIndex,
-        { owners: ownerFilters, access: accessFilters },
+        { owners: ownerFilters, access: accessFilters, labels: labelFilters },
       ),
     [
       sessions,
@@ -289,6 +291,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       sourceFilters,
       ownerFilters,
       accessFilters,
+      labelFilters,
       deferredSearch,
       tI18nComplete,
       searchIndex,

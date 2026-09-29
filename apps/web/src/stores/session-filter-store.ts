@@ -4,12 +4,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
+import type { SessionAccessFilter } from '@/features/workspace/project-sessions/session-owner-filters';
 import {
   DEFAULT_SESSION_GROUP_MODE,
   type SessionGroupMode,
   type SessionOrderMode,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import type { SessionAccessFilter } from '@/features/workspace/project-sessions/session-owner-filters';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
@@ -96,6 +96,7 @@ interface State {
   orderByProject: Record<string, SessionOrderMode>;
   statusFiltersByProject: Record<string, SessionStatusFilter[]>;
   sourceFiltersByProject: Record<string, SessionSourceFilter[]>;
+  labelFiltersByProject: Record<string, string[]>;
   hiddenSectionsByProject: Record<string, string[]>;
   collapsedSectionsByProject: Record<string, string[]>;
   /** Owner facet: `created_by` ids (see `sessionOwnerKey`). Sessions page only. */
@@ -121,6 +122,7 @@ interface Actions {
     value: SessionSourceFilter,
     surface?: SessionViewSurface,
   ) => void;
+  toggleLabelFilter: (projectId: string, label: string, surface?: SessionViewSurface) => void;
   toggleOwnerFilter: (projectId: string, ownerKey: string, surface?: SessionViewSurface) => void;
   toggleAccessFilter: (
     projectId: string,
@@ -167,6 +169,11 @@ export const selectSourceFilters =
   (projectId: string, surface: SessionViewSurface = 'sidebar') =>
   (s: State): readonly SessionSourceFilter[] =>
     readScoped(s.sourceFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+
+export const selectLabelFilters =
+  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
+  (s: State): readonly string[] =>
+    readScoped(s.labelFiltersByProject, projectId, surface) ?? EMPTY_LIST;
 
 export const selectOwnerFilters =
   (projectId: string, surface: SessionViewSurface = 'sidebar') =>
@@ -239,6 +246,16 @@ export const useSessionFilterStore = create<State & Actions>()(
       },
 
       sourceFiltersByProject: {},
+      labelFiltersByProject: {},
+      toggleLabelFilter: (projectId, label, surface = 'sidebar') => {
+        const current = readScoped(get().labelFiltersByProject, projectId, surface) ?? [];
+        set({
+          labelFiltersByProject: {
+            ...get().labelFiltersByProject,
+            [scopeKey(projectId, surface)]: toggleValue(current, label),
+          },
+        });
+      },
       toggleSourceFilter: (projectId, value, surface = 'sidebar') => {
         const current = readScoped(get().sourceFiltersByProject, projectId, surface) ?? [];
         set({
@@ -276,6 +293,7 @@ export const useSessionFilterStore = create<State & Actions>()(
         set({
           statusFiltersByProject: { ...get().statusFiltersByProject, [key]: [] },
           sourceFiltersByProject: { ...get().sourceFiltersByProject, [key]: [] },
+          labelFiltersByProject: { ...get().labelFiltersByProject, [key]: [] },
           ownerFiltersByProject: { ...get().ownerFiltersByProject, [key]: [] },
           accessFiltersByProject: { ...get().accessFiltersByProject, [key]: [] },
         });
@@ -323,6 +341,7 @@ export const useSessionFilterStore = create<State & Actions>()(
         orderByProject: pruneProjects(state.orderByProject),
         statusFiltersByProject: pruneProjects(state.statusFiltersByProject),
         sourceFiltersByProject: pruneProjects(state.sourceFiltersByProject),
+        labelFiltersByProject: pruneProjects(state.labelFiltersByProject),
         hiddenSectionsByProject: pruneProjects(state.hiddenSectionsByProject),
         collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
         ownerFiltersByProject: pruneProjects(state.ownerFiltersByProject),

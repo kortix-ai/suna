@@ -177,6 +177,7 @@ export function serializeSession(
     opencode_session_id: row.opencodeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
+    labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
     status: row.status,
     error: row.error,

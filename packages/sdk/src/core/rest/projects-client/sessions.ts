@@ -68,6 +68,7 @@ export interface ProjectSession {
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
+  labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
@@ -181,6 +182,7 @@ export interface CreateProjectSessionInput {
   pending_prompt?: PendingSessionPrompt;
   opencode_model?: string;
   name?: string;
+  labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
