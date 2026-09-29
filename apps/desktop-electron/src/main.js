@@ -517,7 +517,7 @@ function createMainWindow() {
   });
 
   // did-fail-load reports failures; the rejected promise carries nothing more.
-  mainWindow.loadURL(instanceStore.appUrl()).catch(() => {});
+  mainWindow.loadURL(instanceStore.homeUrl()).catch(() => {});
 }
 
 /**
@@ -599,15 +599,15 @@ function goBackInApp() {
   else mainWindow.webContents.navigationHistory.goToIndex(index);
 }
 
-/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the configured app URL, from any page. */
+/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the app's home, from any page. */
 function goHome() {
-  navigateMainWindow(instanceStore.appUrl());
+  navigateMainWindow(instanceStore.homeUrl());
 }
 
 /** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
 function switchInstance(choice) {
   const error = instanceStore.save(choice);
-  if (!error) navigateMainWindow(instanceStore.appUrl());
+  if (!error) navigateMainWindow(instanceStore.homeUrl());
   return error;
 }
 
@@ -615,7 +615,7 @@ function switchInstance(choice) {
 async function changeInstance(mode, error = null) {
   const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   if (await openInstanceChooser({ mode, error, parent, store: instanceStore })) {
-    navigateMainWindow(instanceStore.appUrl());
+    navigateMainWindow(instanceStore.homeUrl());
   }
 }
 

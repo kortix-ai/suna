@@ -45,6 +45,17 @@ mock.module('expo-router/react-navigation', () => ({
     },
     fonts: {},
   },
+  // Bun shares one module registry across the mobile suite, so this stub is
+  // what every later importer of 'expo-router/react-navigation' links
+  // against. Export the names the app imports (inert here), or a file that
+  // loads such a module after this one fails with "Export named
+  // 'useFocusEffect' not found" (project-screen-characterization, CI).
+  ThemeProvider: ({ children }: { children?: unknown }) => children,
+  useFocusEffect: () => {},
+  useIsFocused: () => true,
+  useNavigation: () => ({}),
+  StackActions: {},
+  CommonActions: {},
 }));
 
 let THEME: (typeof import('./theme'))['THEME'];

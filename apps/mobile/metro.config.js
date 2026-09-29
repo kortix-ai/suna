@@ -79,17 +79,6 @@ config.resolver = {
         type: 'sourceFile',
       };
     }
-    // Deterministic mapping for the SDK turns subpath — does not depend on
-    // Metro's package-exports support. Points at the SDK's `./turns` export
-    // target (a framework-free re-export of `core/turns`). The v2 SDK moved
-    // the old `src/turns/index.ts` here; keep this in sync with the `exports`
-    // map in packages/sdk/package.json.
-    if (moduleName === '@kortix/sdk/turns') {
-      return {
-        filePath: path.resolve(monorepoRoot, 'packages/sdk/src/deprecated/turns.ts'),
-        type: 'sourceFile',
-      };
-    }
     // Fall back to default resolution
     return context.resolveRequest(context, moduleName, platform);
   },

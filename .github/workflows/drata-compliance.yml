@@ -118,9 +118,10 @@ jobs:
 
       - name: Drata Github Action
         id: drata
-        # Drata currently reports three documented parser/AWS-model false
-        # positives as critical. Keep the scan and findings visible while the
-        # exclusions are recreated in Drata. Checkov and Trivy remain blocking.
+        # One critical finding remains: a documented AWS-model false positive
+        # (infra/terraform/compliance-monitoring/README.md, "Drata IaC
+        # exclusions"). Remove continue-on-error once that exclusion exists in
+        # Drata. Checkov and Trivy remain blocking.
         continue-on-error: true
         uses: drata/compliance-as-code-action@v1.0.0
         env:

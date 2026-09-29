@@ -32,9 +32,9 @@ describe('desktop escape hatches', () => {
     expect(back).not.toContain('.goBack()');
   });
 
-  test('Home reloads the configured app URL', () => {
+  test('Home reloads the app home (the last project, via the site root)', () => {
     const home = main.slice(main.indexOf('function goHome('));
-    expect(home).toContain('navigateMainWindow(instanceStore.appUrl())');
+    expect(home).toContain('navigateMainWindow(instanceStore.homeUrl())');
   });
 
   test('Go ▸ Copy Current URL copies the page URL through the shared builder', () => {

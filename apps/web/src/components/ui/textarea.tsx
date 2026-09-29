@@ -1,4 +1,10 @@
 'use client';
+import {
+  inputFocusClasses,
+  inputInvalidClasses,
+  inputSurfaceClasses,
+  inputTransitionClasses,
+} from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 import { useImperativeHandle } from 'react';
@@ -94,6 +100,10 @@ export type AutosizeTextAreaRef = {
 export type AutosizeTextAreaProps = {
   maxHeight?: number;
   minHeight?: number;
+  /**
+   * @deprecated Every textarea renders the same surface as `Input`. Kept so
+   * existing callers compile; the value is ignored.
+   */
   variant?: 'default' | 'secondary' | 'outline' | 'accent';
 } & React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
@@ -105,7 +115,7 @@ export const Textarea = React.forwardRef<AutosizeTextAreaRef, AutosizeTextAreaPr
       className,
       onChange,
       value,
-      variant = 'default',
+      variant: _variant,
       ...props
     }: AutosizeTextAreaProps,
     ref: React.Ref<AutosizeTextAreaRef>,
@@ -137,12 +147,11 @@ export const Textarea = React.forwardRef<AutosizeTextAreaRef, AutosizeTextAreaPr
         value={value}
         ref={textAreaRef}
         className={cn(
-          'border-border bg-input text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex w-full rounded-lg border px-3 py-2 text-sm font-medium transition-[color] outline-none disabled:cursor-not-allowed disabled:opacity-50',
-          'focus:border-kortix-blue resize-none focus:border focus:outline-none',
-          variant === 'secondary' && 'bg-input text-secondary-foreground resize-none border-none',
-          variant === 'outline' &&
-            'border-border bg-input text-foreground resize-none border px-3 py-2 text-sm font-medium transition-[color] outline-none disabled:cursor-not-allowed disabled:opacity-50',
-          variant === 'accent' && 'bg-foreground/5 text-accent-foreground resize-none border-none',
+          inputSurfaceClasses,
+          inputFocusClasses,
+          inputInvalidClasses,
+          inputTransitionClasses,
+          'text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex w-full resize-none px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         onChange={(e) => {

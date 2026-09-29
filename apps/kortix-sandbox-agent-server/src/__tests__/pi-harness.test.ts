@@ -355,11 +355,10 @@ describe('pi harness', () => {
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_in_flight).toBe(false)
     expect(probe.turn_end).toBe('completed')
-    const observed = (await r.bearer(`/kortix/opencode/turn/${messageID}`).then((res) => res.json())) as Record<string, unknown>
-    expect(observed.in_flight).toBe(false)
-    expect(observed.end).toBe('completed')
-    const unknown = (await r.bearer(`/kortix/opencode/turn/msg_000000000000zzzzzzzzzzzzzz`).then((res) => res.json())) as Record<string, unknown>
-    expect(unknown.end).toBe('abandoned')
+    const unknown = (await r.bearer('/kortix/health?turn=1&turn_message_id=msg_000000000000zzzzzzzzzzzzzz').then((res) => res.json())) as Record<string, unknown>
+    expect(unknown.turn_in_flight).toBe(false)
+    expect(unknown.turn_end).toBe('abandoned')
+    expect(unknown.turn_orphaned_prompt).toBe(true)
 
     // A repeated delivery of the same id is deduplicated, not re-run.
     const again = await r.user(`/session/${root}/prompt_async`, {
@@ -502,14 +501,14 @@ describe('pi harness', () => {
     })
     const root = r.service.runtime()!.rootId
     // Stop on an idle root is a no-op success.
-    const idleStop = await r.bearer('/kortix/opencode/act', { method: 'POST', body: JSON.stringify({ kind: 'stop' }) })
+    const idleStop = await r.user(`/session/${root}/abort`, { method: 'POST' })
     expect(idleStop.status).toBe(200)
-    expect(await idleStop.json()).toMatchObject({ ok: true })
+    expect(await idleStop.json()).toBe(true)
     expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
     const id = r.service.runtime()!.permissions.list()[0]!.id
-    const act = await r.bearer('/kortix/opencode/act', { method: 'POST', body: JSON.stringify({ kind: 'permission', id, reply: 'reject' }) })
-    expect(act.status).toBe(200)
+    const rejected = await r.user(`/permission/${id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'reject' }) })
+    expect(rejected.status).toBe(200)
     await waitFor(() => !r.service.runtime()!.busy())
     const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!

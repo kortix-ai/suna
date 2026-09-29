@@ -26,12 +26,7 @@ describe('harness ownership boundary', () => {
     const cfg = loadConfig({ KORTIX_PROJECT_AUTO_CLONE: '0' })
     const unexpected = (): never => { throw new Error('unused operation must not run') }
     const queries: HarnessQueryService = {
-      readState: unexpected, readMessages: unexpected, readVcsDiff: unexpected,
-      readCurrentProject: unexpected, readConfiguration: unexpected,
-      readSession: unexpected, readTodo: unexpected, pinnedSessionId: unexpected,
-      replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected,
-      stopSession: unexpected, revertSession: unexpected, unrevertSession: unexpected,
-      observeTurn: unexpected,
+      readState: unexpected, readMessages: unexpected,
       events: { epoch: 'test', headSeq: 0, firstSeq: 0, subscribe: unexpected },
       attachments: { read: unexpected },
     }

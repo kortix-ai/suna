@@ -41,7 +41,7 @@ const {
   resolveAccountDisplayNames,
 } = await import('../accounts/core/app');
 
-const CALLER = { userId: 'u-caller', email: 'marko@kortix.ai' };
+const CALLER = { userId: 'u-caller', email: 'caller@gmail.com' };
 
 beforeEach(() => {
   dbResults = [];
@@ -60,10 +60,10 @@ describe('properAccountName / accountDisplayName', () => {
     expect(properAccountName('Acme Corp')).toBe('Acme Corp');
   });
 
-  test('accountDisplayName falls back to email-derived name', () => {
-    expect(accountDisplayName('Personal', 'a@b.com')).toBe("a@b.com's Account");
-    expect(accountDisplayName('Acme', 'a@b.com')).toBe('Acme');
-    expect(accountDisplayName(null, null)).toBe('Account');
+  test('accountDisplayName falls back to a suggested name, never the email (KRTX-638)', () => {
+    expect(accountDisplayName('Personal', 'ada@gmail.com')).toBe('ada');
+    expect(accountDisplayName('Acme', 'ada@gmail.com')).toBe('Acme');
+    expect(accountDisplayName(null, null)).toBe('My workspace');
   });
 });
 
@@ -76,23 +76,23 @@ describe('resolveAccountDisplayNames', () => {
     expect(names.get('a1')).toBe('Acme Corp');
   });
 
-  test("unnamed account owned by the caller → caller's email", async () => {
+  test("unnamed account owned by the caller → named from the caller's email", async () => {
     dbResults = [[{ accountId: 'a1', userId: 'u-caller' }]];
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: 'Personal' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
+    expect(names.get('a1')).toBe("caller");
   });
 
-  test("unnamed account owned by someone else → OWNER's email, not the caller's", async () => {
+  test("unnamed account owned by someone else → named from the OWNER's email, not the caller's", async () => {
     dbResults = [[{ accountId: 'a1', userId: 'u-owner' }]];
-    emailsById = { 'u-owner': 'bob@example.com' };
+    emailsById = { 'u-owner': 'bob@gmail.com' };
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: 'Personal' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("bob@example.com's Account");
+    expect(names.get('a1')).toBe("bob");
   });
 
   test('multiple owners → earliest-joined owner wins (first row)', async () => {
@@ -100,12 +100,12 @@ describe('resolveAccountDisplayNames', () => {
       { accountId: 'a1', userId: 'u-first' },
       { accountId: 'a1', userId: 'u-second' },
     ]];
-    emailsById = { 'u-first': 'first@example.com', 'u-second': 'second@example.com' };
+    emailsById = { 'u-first': 'first@gmail.com', 'u-second': 'second@gmail.com' };
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: '' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("first@example.com's Account");
+    expect(names.get('a1')).toBe("first");
   });
 
   test("no owner rows → caller's email as last resort", async () => {
@@ -114,7 +114,7 @@ describe('resolveAccountDisplayNames', () => {
       [{ accountId: 'a1', name: 'User' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
+    expect(names.get('a1')).toBe("caller");
   });
 
   test('owner whose email cannot be resolved → caller email fallback', async () => {
@@ -123,14 +123,14 @@ describe('resolveAccountDisplayNames', () => {
       [{ accountId: 'a1', name: 'Personal' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
+    expect(names.get('a1')).toBe("caller");
   });
 
   test('mixed batch resolves each account independently', async () => {
     dbResults = [[
       { accountId: 'a2', userId: 'u-owner' },
     ]];
-    emailsById = { 'u-owner': 'owner@example.com' };
+    emailsById = { 'u-owner': 'owner@gmail.com' };
     const names = await resolveAccountDisplayNames(
       [
         { accountId: 'a1', name: 'Acme Corp' },
@@ -139,6 +139,6 @@ describe('resolveAccountDisplayNames', () => {
       CALLER,
     );
     expect(names.get('a1')).toBe('Acme Corp');
-    expect(names.get('a2')).toBe("owner@example.com's Account");
+    expect(names.get('a2')).toBe("owner");
   });
 });

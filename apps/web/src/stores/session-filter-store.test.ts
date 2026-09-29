@@ -175,3 +175,24 @@ describe('owner and access facets', () => {
     expect(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
   });
 });
+
+describe('scoped selector and toggle matrix', () => {
+  test('every list inherits, toggles from inherited state, and preserves its stored reference', () => {
+    const facets = [
+      [selectStatusFilters, 'toggleStatusFilter', 'failed'],
+      [selectSourceFilters, 'toggleSourceFilter', 'slack'],
+      [selectOwnerFilters, 'toggleOwnerFilter', 'owner-1'],
+      [selectAccessFilters, 'toggleAccessFilter', 'private'],
+      [selectHiddenSections, 'toggleSectionHidden', 'older'],
+    ] as const;
+    for (const [selector, action, value] of facets) {
+      const state = useSessionFilterStore.getState();
+      (state[action] as (id: string, value: string, surface: 'sidebar' | 'page') => void)(P, value, 'sidebar');
+      expect(read(selector(P, 'page'))).toBe(read(selector(P, 'sidebar')));
+      (state[action] as (id: string, value: string, surface: 'sidebar' | 'page') => void)(P, value, 'page');
+      expect(read(selector(P, 'page'))).toBe(read(selector(P, 'page')));
+      expect(read(selector(P, 'page'))).toEqual([]);
+      expect(read(selector(P, 'sidebar'))).toEqual([value]);
+    }
+  });
+});
