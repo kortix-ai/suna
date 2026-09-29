@@ -195,10 +195,10 @@ import { persistProjectRepositoryReplacement } from './repository-replacement';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-function insertOf(table: unknown): Extract<RecordedOp, { values: unknown }> {
+function insertOf(table: unknown): RecordedOp {
   const hits = ops.filter((entry) => entry.op === 'insert' && entry.table === table);
   expect(hits.length).toBeGreaterThan(0);
-  return hits[hits.length - 1] as Extract<RecordedOp, { values: unknown }>;
+  return hits[hits.length - 1]!;
 }
 
 function flushFireAndForgetImports() {
