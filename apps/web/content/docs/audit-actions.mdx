@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 685 route actions and 64 other events.
+This page lists 690 route actions and 64 other events.
 
 ## `account.`
 
@@ -602,6 +602,7 @@ This page lists 685 route actions and 64 other events.
 | `project.onboarding.update` | Updated project onboarding | `PATCH /v1/projects/:projectId/onboarding` |
 | `project.provision` | Provisioned project | `POST /v1/projects/provision` (also `POST /v1/projects/provision-stream`) |
 | `project.read` | Viewed project | `GET /v1/projects/:projectId` |
+| `project.reminder.list` | Listed project reminders | `GET /v1/projects/:projectId/reminders` |
 | `project.repository.create` | Created project with new GitHub repository | `POST /v1/projects/create-repo` |
 | `project.repository.link` | Linked repository as project | `POST /v1/projects/link-repository` |
 | `project.resource_grant.create` | Granted resource access | `POST /v1/projects/:projectId/resource-grants` |
@@ -775,6 +776,10 @@ This page lists 685 route actions and 64 other events.
 | `session.question.create` | Submitted session question | `POST /v1/projects/:projectId/turn-question` |
 | `session.question.read` | Viewed open session question | `GET /v1/projects/:projectId/sessions/:sessionId/question` |
 | `session.read` | Viewed session | `GET /v1/projects/:projectId/sessions/:sessionId` |
+| `session.reminder.create` | Created session reminder | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.delete` | Deleted session reminder | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
+| `session.reminder.list` | Listed session reminders | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.update` | Turned session reminder on or off | `PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.restart` | Restarted session | `POST /v1/projects/:projectId/sessions/:sessionId/restart` |
 | `session.scope.read` | Viewed session scope | `GET /v1/projects/:projectId/sessions/:sessionId/scope` |
 | `session.scope.update` | Updated session scope | `PUT /v1/projects/:projectId/sessions/:sessionId/scope` |

@@ -35,6 +35,13 @@ describe('project sidebar footer ordering', () => {
     expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectFilesNavItem'));
   });
 
+  test('Reminders sits directly above Files in the permanent nav', () => {
+    // It only renders while a reminder can still fire, so it joins the nav
+    // block rather than the alerts above it; below the balance alert, above Files.
+    expect(orderOf('SidebarBalanceWarning')).toBeLessThan(orderOf('ProjectRemindersNavItem'));
+    expect(orderOf('ProjectRemindersNavItem')).toBeLessThan(orderOf('ProjectFilesNavItem'));
+  });
+
   test('the upgrade button is last in the group', () => {
     // The one deliberate exception to the rule above (Jay, 2026-09-03). Pinned
     // in its new position rather than deleted, so moving it back is also a

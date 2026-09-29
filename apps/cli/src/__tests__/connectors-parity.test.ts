@@ -123,6 +123,25 @@ function startServer(): string {
       if (url.pathname === `${ex}/connectors/gmail/config` && req.method === 'GET') {
         return Response.json({ slug: 'gmail', name: 'Gmail', provider: 'pipedream', auth: { type: 'none' } });
       }
+      if (url.pathname === `${ex}/connectors` && req.method === 'GET') {
+        return Response.json({
+          connectors: [
+            {
+              slug: 'gmail',
+              name: 'Gmail',
+              provider: 'composio',
+              status: 'active',
+              credentialMode: 'shared',
+              actions: [
+                { path: 'send', name: 'Send', description: 'Send an email', risk: 'write', inputSchema: null },
+              ],
+              authSecret: 'credential',
+              secretSet: true,
+              accounts: [],
+            },
+          ],
+        });
+      }
       if (url.pathname === `${ex}/connectors` && req.method === 'POST') {
         return Response.json({ ok: true, sync: { synced: 1, errors: [] } });
       }
@@ -253,6 +272,42 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).not.toContain('machines <slug>');
     expect(r.stdout).toContain('--account "<machine name>"');
+  });
+
+  test('ls and show opt out of action schemas; show --json still asks for them', async () => {
+    const config = writeConfig(startServer());
+
+    // The human views render name/status/action count only, so they must not
+    // pull the full per-action JSON Schema (the bulk of the route's payload).
+    const ls = await runCli(['connectors', 'ls', '--project', PROJECT], config);
+    expect(ls.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=false`,
+      body: null,
+    });
+
+    calls = [];
+    const show = await runCli(['connectors', 'show', 'gmail', '--project', PROJECT], config);
+    expect(show.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=false`,
+      body: null,
+    });
+
+    // `--json` is a scripting contract that historically included the schemas.
+    calls = [];
+    const showJson = await runCli(
+      ['connectors', 'show', 'gmail', '--project', PROJECT, '--json'],
+      config,
+    );
+    expect(showJson.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=true`,
+      body: null,
+    });
   });
 
   test('sensitive on|off PUTs the boolean', async () => {

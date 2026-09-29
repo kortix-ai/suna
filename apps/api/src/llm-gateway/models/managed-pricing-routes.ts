@@ -61,7 +61,9 @@ interface PricingFeedOptions {
 function perMillion(value: unknown): number | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed * 1_000_000 : null;
+  // Round off float noise: 0.0000033 * 1e6 is 3.3000000000000003, which failed
+  // the `max_price` 3.3 cap and dropped Kimi K3's only route from the picker.
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 1e12) / 1e6 : null;
 }
 
 /** Read only the endpoints the gateway allows; keep public table rates on feed failure. */

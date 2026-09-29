@@ -101,3 +101,12 @@ test('stop() throws — never returns silently — when the VM never confirms st
     delete process.env.PLATINUM_STOP_CONFIRM_POLL_MS;
   }
 });
+
+test('getStatus() does not report a VM stuck in stopping as stopped', async () => {
+  statesAfterAck = ['stopping', 'stopped'];
+  const { PlatinumProvider } = await import('./platinum');
+  const provider = new PlatinumProvider();
+
+  expect(await provider.getStatus('sbx_1')).toBe('unknown');
+  expect(await provider.getStatus('sbx_1')).toBe('stopped');
+});

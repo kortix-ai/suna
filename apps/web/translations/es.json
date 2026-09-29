@@ -1171,6 +1171,10 @@
         "mcp": {
           "name": "Servidor MCP",
           "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
+        },
+        "reminders": {
+          "name": "Recordatorios",
+          "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."
         }
       }
     },
@@ -1546,7 +1550,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Cargando…",
-    "loadMoreSessions": "Cargar más sesiones"
+    "loadMoreSessions": "Cargar más sesiones",
+    "reminders": "Recordatorios"
   },
   "dashboard": {
     "title": "Panel",
@@ -3900,7 +3905,7 @@
       "openRow1Title": "Código abierto",
       "openRow1Body": "Una de las plataformas abiertas de IA para el trabajo más grandes. Lea cada línea: nada es una caja negra.",
       "openRow2Title": "Cualquier modelo, tus llaves",
-      "openRow2Body": "Trae cualquier proveedor, o la suscripción de Claude, ChatGPT o Cursor que ya pagas.",
+      "openRow2Body": "Trae cualquier proveedor, o la suscripción de ChatGPT que ya pagas.",
       "openRow3Title": "Autohospeda en cualquier lugar",
       "openRow3Body": "Nube administrada, su VPC, local, incluso aislada. Nada llama a casa.",
       "openRow4Title": "Bifurcar toda una empresa",
@@ -14945,7 +14950,7 @@
       "text9d48410d14d3": "Función de Enterprise",
       "text9d4b2eae7c42": "El valor predeterminado es permisivo: una acción se ejecuta salvo que hayas indicado lo contrario. En un proyecto de ventas, lo primero es configurar las acciones salientes como Ask y las destructivas como Block. Te lo decimos en lugar de dejar que supongas que se eligió por ti la opción más segura.",
       "text9d53e28e9e39": "El acceso por proyecto aparece en la sección «Projects» de esta página.",
-      "text9d54b2fd9149": "Usa cualquier proveedor o la suscripción de ChatGPT, Claude o Cursor que ya pagas. El modelo es configuración en tu repo, no una decisión que toma un proveedor por ti.",
+      "text9d54b2fd9149": "Usa cualquier proveedor o la suscripción de ChatGPT que ya pagas. El modelo es configuración en tu repo, no una decisión que toma un proveedor por ti.",
       "text9d5adef979f7": "Concedido anteriormente",
       "text9d6304b7f8dc": "Gestión de identidad → Configuración",
       "text9d74727714db": "Descartado",
@@ -19115,6 +19120,14 @@
       "textd88c84258c7a": "Listó las apps conectadas",
       "text37698a37f9d2": "Revocó una app conectada",
       "text8c8fb214b592": "Autorizó GitHub como usuario",
+      "text4192bb1e9ee5": "Recordatorios de sesión listados",
+      "texteee2410ea3db": "Recordatorio de sesión creado",
+      "text33954223cc7e": "Recordatorio de sesión activado o desactivado",
+      "textb7ece0360b75": "Recordatorio de sesión eliminado",
+      "text9dcde51d9ff2": "Descripción del agente",
+      "textfa0db737cb09": "Escrita por el agente y sin verificar. El conector recibe los parámetros de abajo.",
+      "text2edf70730233": "Mensaje para el agente (opcional)",
+      "texte88286ad9739": "Recordatorios del proyecto listados",
       "text711edad21902": "Equipo añadido al proyecto",
       "texta3ecfa724d04": "El ordenador se desvinculó"
     },
@@ -19994,8 +20007,8 @@
     "textOnly": "Solo texto",
     "zdrTitle": "Retención cero de datos",
     "zdrDescription": "La retención cero de datos (ZDR) significa que el proveedor procesa tus textos e imágenes, pero no guarda la entrada ni la respuesta después de la solicitud. Kortix almacena tus proyectos y conversaciones por separado.",
-    "usProvidersTitle": "Proveedores en EE. UU.",
-    "usProvidersDescription": "Cada modelo de Kortix usa un único proveedor de inferencia fijo con sede en EE. UU. Las solicitudes nunca pasan a otro proveedor.",
+    "usProvidersTitle": "Alojado en EE. UU.",
+    "usProvidersDescription": "Los modelos de Kortix se ejecutan en centros de datos de EE. UU. Solo trabajamos con proveedores de inferencia estadounidenses.",
     "hiddenHint": "Oculto en el selector. Las solicitudes directas siguen permitidas; desactívalas desde el menú del modelo.",
     "hidden": "Oculto en el selector",
     "disableModel": "Desactivar modelo",
@@ -20199,6 +20212,47 @@
     "unverifiedTitle": "App no verificada",
     "unverifiedBody": "{client} se registró sola en Kortix. Kortix no ha verificado quién la gestiona. Permítela solo si la estás conectando tú mismo ahora.",
     "redirectsTo": "Te devuelve a"
+  },
+  "reminders": {
+    "title": "Recordatorios",
+    "description": "Revisiones programadas que vuelven a avisar a una sesión. Los agentes las crean mientras trabajan; cada una se activa hasta que se elimina.",
+    "docs": "Cómo funcionan los recordatorios",
+    "tabActive": "Activos",
+    "tabPaused": "En pausa",
+    "tabDone": "Completados",
+    "emptyTitle": "No hay recordatorios",
+    "emptyDescription": "Cuando un agente o una persona crea un recordatorio en una sesión, aparece aquí.",
+    "emptyTabDescription": "Esta lista está vacía.",
+    "loadFailed": "No se pudieron cargar los recordatorios",
+    "retry": "Reintentar",
+    "sessionFilter": "Sesión: {name}",
+    "clearFilter": "Mostrar todas las sesiones",
+    "untitledSession": "Sesión sin título",
+    "once": "Una vez",
+    "every": "Cada {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Próximo {time}",
+    "firedAt": "Activado {time}",
+    "pausedLabel": "En pausa",
+    "doneLabel": "Completado",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "remove": "Eliminar",
+    "openSession": "Abrir sesión",
+    "removeTitle": "¿Eliminar este recordatorio?",
+    "removeDescription": "Deja de activarse y se elimina. La sesión conserva su historial.",
+    "paused": "Recordatorio en pausa",
+    "resumed": "Recordatorio reanudado",
+    "removed": "Recordatorio eliminado",
+    "updateFailed": "No se pudo actualizar el recordatorio",
+    "chipLabel": "{count, plural, one {# recordatorio activo} other {# recordatorios activos}}",
+    "chipTitle": "Recordatorios de esta sesión",
+    "manage": "Gestionar recordatorios",
+    "cardLabel": "Recordatorio",
+    "cardOneTime": "Una vez",
+    "cardRecurring": "Recurrente",
+    "cardManage": "Gestionar",
+    "gateDescription": "Activa Recordatorios para que agentes y personas programen revisiones que vuelvan a avisar a una sesión."
   },
   "computers": {
     "connectYourComputer": "Conectar tu ordenador",

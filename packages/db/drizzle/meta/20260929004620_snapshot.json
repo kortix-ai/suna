@@ -1,6 +1,6 @@
 {
-  "id": "dc48c670-2142-4a04-925a-fa7e4912b9e2",
-  "prevId": "25683555-d09d-4b9a-a624-5fb096483381",
+  "id": "feaa2833-b849-41d3-a312-6450893c4668",
+  "prevId": "540a9b43-0214-40d4-b24c-b590c137c844",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4266,34 +4266,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_audit_events_account_client_source_time": {
-          "name": "idx_audit_events_account_client_source_time",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "client_reported_source",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"audit_events\".\"client_reported_source\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_audit_events_source_phase": {
           "name": "idx_audit_events_source_phase",
           "columns": [
@@ -7496,12 +7468,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "tunnel_id": {
-          "name": "tunnel_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
@@ -7707,72 +7673,9 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_connector_connections_tunnel": {
-          "name": "idx_connector_connections_tunnel",
-          "columns": [
-            {
-              "expression": "tunnel_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connector_connections_owner_tunnel": {
-          "name": "idx_connector_connections_owner_tunnel",
-          "columns": [
-            {
-              "expression": "connector_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "tunnel_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"connector_connections\".\"tunnel_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
-        "connector_connections_tunnel_id_tunnel_connections_tunnel_id_fk": {
-          "name": "connector_connections_tunnel_id_tunnel_connections_tunnel_id_fk",
-          "tableFrom": "connector_connections",
-          "tableTo": "tunnel_connections",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "tunnel_id"
-          ],
-          "columnsTo": [
-            "tunnel_id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "connector_connections_connector_tenant_fk": {
           "name": "connector_connections_connector_tenant_fk",
           "tableFrom": "connector_connections",
@@ -15862,6 +15765,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_provider_events_account": {
+          "name": "idx_provider_events_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -20007,12 +19925,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "sandbox_id": {
           "name": "sandbox_id",
           "type": "uuid",
@@ -20104,21 +20016,6 @@
           "columns": [
             {
               "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_tunnel_connections_owner_user": {
-          "name": "idx_tunnel_connections_owner_user",
-          "columns": [
-            {
-              "expression": "owner_user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -20236,12 +20133,6 @@
         },
         "account_id": {
           "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "project_id": {
-          "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false

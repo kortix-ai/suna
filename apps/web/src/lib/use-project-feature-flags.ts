@@ -35,6 +35,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
+  const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const piWorker = useFeatureFlag(projectId, 'pi_worker');
@@ -54,6 +55,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
       monitors: monitors.enabled,
+      reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pi_worker: piWorker.enabled,

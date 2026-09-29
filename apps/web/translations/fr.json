@@ -1171,6 +1171,10 @@
         "mcp": {
           "name": "Serveur MCP",
           "description": "Connectez Claude, ChatGPT, Cursor, Codex ou tout client MCP à ce projet via OAuth. Le client se connecte en votre nom et appelle Kortix avec vos autorisations. L’URL se trouve sous Connecter MCP dans le menu de l’espace de travail."
+        },
+        "reminders": {
+          "name": "Rappels",
+          "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."
         }
       }
     },
@@ -1546,7 +1550,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Chargement…",
-    "loadMoreSessions": "Charger plus de sessions"
+    "loadMoreSessions": "Charger plus de sessions",
+    "reminders": "Rappels"
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -3900,7 +3905,7 @@
       "openRow1Title": "Source ouverte",
       "openRow1Body": "L'une des plus grandes plateformes ouvertes d'IA pour le travail. Lisez chaque ligne – rien n’est une boîte noire.",
       "openRow2Title": "N'importe quel modèle, vos clés",
-      "openRow2Body": "Apportez n'importe quel fournisseur, ou l'abonnement Claude, ChatGPT ou Cursor que vous payez déjà.",
+      "openRow2Body": "Apportez n'importe quel fournisseur, ou l'abonnement ChatGPT que vous payez déjà.",
       "openRow3Title": "Auto-hébergez-vous n'importe où",
       "openRow3Body": "Cloud géré, votre VPC, sur site, même isolé. Rien ne téléphone à la maison.",
       "openRow4Title": "Forkez toute une entreprise",
@@ -14945,7 +14950,7 @@
       "text9d48410d14d3": "Fonctionnalité Entreprise",
       "text9d4b2eae7c42": "La valeur par défaut livrée est permissive : une action s’exécute sauf indication contraire. Pour un projet commercial, commencez par définir les actions sortantes sur Ask et les actions destructives sur Block. Nous vous le précisons plutôt que de vous laisser supposer qu’une valeur par défaut plus sûre a été choisie pour vous.",
       "text9d53e28e9e39": "Les accès projet par projet sont répertoriés dans la section Projets de cette page.",
-      "text9d54b2fd9149": "Utilisez n’importe quel fournisseur, ou l’abonnement ChatGPT, Claude ou Cursor que vous payez déjà. Le modèle est configuré dans votre dépôt, ce n’est pas un fournisseur qui décide pour vous.",
+      "text9d54b2fd9149": "Utilisez n’importe quel fournisseur, ou l’abonnement ChatGPT que vous payez déjà. Le modèle est configuré dans votre dépôt, ce n’est pas un fournisseur qui décide pour vous.",
       "text9d5adef979f7": "Conservé à titre historique",
       "text9d6304b7f8dc": "Gestion des identités → Configuration",
       "text9d74727714db": "Ignorée",
@@ -19115,6 +19120,14 @@
       "textd88c84258c7a": "A listé les apps connectées",
       "text37698a37f9d2": "A révoqué une app connectée",
       "text8c8fb214b592": "A autorisé GitHub en tant qu’utilisateur",
+      "text4192bb1e9ee5": "Rappels de session listés",
+      "texteee2410ea3db": "Rappel de session créé",
+      "text33954223cc7e": "Rappel de session activé ou désactivé",
+      "textb7ece0360b75": "Rappel de session supprimé",
+      "text9dcde51d9ff2": "Description de l’agent",
+      "textfa0db737cb09": "Rédigée par l’agent et non vérifiée. Le connecteur reçoit les paramètres ci-dessous.",
+      "text2edf70730233": "Message à l’agent (facultatif)",
+      "texte88286ad9739": "Rappels du projet listés",
       "text711edad21902": "Ordinateur ajouté au projet",
       "texta3ecfa724d04": "L'ordinateur s'est dissocié"
     },
@@ -19994,8 +20007,8 @@
     "textOnly": "Texte uniquement",
     "zdrTitle": "Conservation zéro des données",
     "zdrDescription": "La conservation zéro des données (ZDR) signifie que le fournisseur traite vos textes et images, puis ne conserve ni l'entrée ni la réponse après la requête. Kortix stocke séparément vos projets et conversations.",
-    "usProvidersTitle": "Fournisseurs basés aux États-Unis",
-    "usProvidersDescription": "Chaque modèle Kortix utilise un seul fournisseur d'inférence fixe, basé aux États-Unis. Les requêtes ne basculent jamais vers un autre fournisseur.",
+    "usProvidersTitle": "Hébergé aux États-Unis",
+    "usProvidersDescription": "Les modèles Kortix fonctionnent dans des centres de données aux États-Unis. Nous travaillons uniquement avec des fournisseurs d'inférence américains.",
     "hiddenHint": "Masqué dans le sélecteur. Les requêtes directes restent autorisées ; désactivez-les dans le menu du modèle.",
     "hidden": "Masqué dans le sélecteur",
     "disableModel": "Désactiver le modèle",
@@ -20199,6 +20212,47 @@
     "unverifiedTitle": "Application non vérifiée",
     "unverifiedBody": "{client} s’est enregistrée elle-même auprès de Kortix. Kortix n’a pas vérifié qui l’exploite. Autorisez-la uniquement si vous la connectez vous-même en ce moment.",
     "redirectsTo": "Vous renvoie vers"
+  },
+  "reminders": {
+    "title": "Rappels",
+    "description": "Des points de contrôle planifiés qui relancent une session. Les agents les créent pendant leur travail ; chacun se déclenche jusqu’à sa suppression.",
+    "docs": "Fonctionnement des rappels",
+    "tabActive": "Actifs",
+    "tabPaused": "En pause",
+    "tabDone": "Terminés",
+    "emptyTitle": "Aucun rappel",
+    "emptyDescription": "Quand un agent ou une personne crée un rappel sur une session, il apparaît ici.",
+    "emptyTabDescription": "Cette liste est vide.",
+    "loadFailed": "Impossible de charger les rappels",
+    "retry": "Réessayer",
+    "sessionFilter": "Session : {name}",
+    "clearFilter": "Afficher toutes les sessions",
+    "untitledSession": "Session sans titre",
+    "once": "Une fois",
+    "every": "Toutes les {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Prochain {time}",
+    "firedAt": "Déclenché {time}",
+    "pausedLabel": "En pause",
+    "doneLabel": "Terminé",
+    "pause": "Mettre en pause",
+    "resume": "Reprendre",
+    "remove": "Supprimer",
+    "openSession": "Ouvrir la session",
+    "removeTitle": "Supprimer ce rappel ?",
+    "removeDescription": "Il ne se déclenche plus et il est supprimé. La session garde son historique.",
+    "paused": "Rappel mis en pause",
+    "resumed": "Rappel repris",
+    "removed": "Rappel supprimé",
+    "updateFailed": "Impossible de mettre à jour le rappel",
+    "chipLabel": "{count, plural, one {# rappel actif} other {# rappels actifs}}",
+    "chipTitle": "Rappels de cette session",
+    "manage": "Gérer les rappels",
+    "cardLabel": "Rappel",
+    "cardOneTime": "Une fois",
+    "cardRecurring": "Récurrent",
+    "cardManage": "Gérer",
+    "gateDescription": "Activez les Rappels pour que les agents et les personnes planifient des points de contrôle qui relancent une session."
   },
   "computers": {
     "connectYourComputer": "Connecter votre ordinateur",

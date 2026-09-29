@@ -4,12 +4,13 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let executeError: unknown = null;
+let rpcResult: Record<string, unknown> = { success: true };
 
 mock.module('../../shared/db', () => ({
   db: {
     execute: async () => {
       if (executeError) throw executeError;
-      return [{ result: { success: true } }];
+      return [{ result: rpcResult }];
     },
     select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
   },
@@ -36,6 +37,7 @@ const lostConnection = queryError({ message: 'connection terminated' });
 
 beforeEach(() => {
   executeError = null;
+  rpcResult = { success: true };
 });
 
 describe('wallet failure branches', () => {
@@ -83,5 +85,52 @@ describe('wallet failure branches', () => {
     const renewal = { accountId: 'acct', amount: 5, description: 'x', key: { event: 'in_1' } };
     executeError = lostConnection;
     await expect(wallet.reset(renewal)).rejects.toThrow('Failed query');
+  });
+});
+
+describe('settlement overdraft logging', () => {
+  /** Capture the warn lines while one settlement runs, restored in `finally`. */
+  async function settleWithWarnCapture(
+    input: Parameters<typeof wallet.settle>[0],
+  ): Promise<string[]> {
+    const warns: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...parts: unknown[]) => warns.push(parts.map(String).join(' '));
+    try {
+      await wallet.settle(input);
+    } finally {
+      console.warn = originalWarn;
+    }
+    return warns;
+  }
+
+  const settleInput = {
+    accountId: 'acct',
+    amount: 0.6,
+    description: 'x',
+    kind: 'compute_debit' as const,
+    key: null,
+  };
+
+  // Characterization for the 2026-09-26 warn spike: a box that keeps running on
+  // a drained wallet settles every few minutes. Only the settlement that FIRST
+  // takes the balance below zero may warn; the repeats are the same state.
+  test('warns on the settlement that first drains the wallet, not on the repeats', async () => {
+    rpcResult = { success: true, amount_deducted: 0.6, new_total: -0.6, overdraft: true, transaction_id: 't1' };
+    const first = await settleWithWarnCapture(settleInput); // balance 0.00 -> -0.60: the transition
+    expect(first.filter((line) => line.includes('settlement overdraft'))).toHaveLength(1);
+
+    rpcResult = { success: true, amount_deducted: 0.6, new_total: -1.2, overdraft: true, transaction_id: 't2' };
+    const repeat = await settleWithWarnCapture(settleInput); // -0.60 -> -1.20: same state
+    expect(repeat.filter((line) => line.includes('settlement overdraft'))).toHaveLength(0);
+  });
+
+  test('warns again when the account drains a second time after a top-up', async () => {
+    rpcResult = { success: true, amount_deducted: 0.6, new_total: 0.4, overdraft: false, transaction_id: 't2' };
+    await settleWithWarnCapture(settleInput); // a top-up lands the drained wallet at 1.00 -> 0.40
+
+    rpcResult = { success: true, amount_deducted: 0.6, new_total: -0.2, overdraft: true, transaction_id: 't3' };
+    const drainedAgain = await settleWithWarnCapture(settleInput); // 0.40 -> -0.20: a new episode
+    expect(drainedAgain.filter((line) => line.includes('settlement overdraft'))).toHaveLength(1);
   });
 });

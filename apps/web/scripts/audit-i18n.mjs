@@ -140,6 +140,12 @@ const ignoredPathParts = [
   '/src/app/[locale]/(system)/debug/',
   '/src/types/',
   '/__harness__/',
+  // Unannounced, noindex launch film and /launch page (#8023, #8045): the copy
+  // is still being cut. Remove these three entries and move the copy into i18n
+  // keys when /launch is announced (the #8023 rollout step).
+  '/src/app/[locale]/presentations/film/',
+  '/src/features/marketing/launch/',
+  '/src/app/[locale]/(public)/(marketing)/launch/',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;

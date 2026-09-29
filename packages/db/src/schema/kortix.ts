@@ -2419,6 +2419,8 @@ export const providerEvents = kortixSchema.table(
     index('idx_provider_events_kind').on(table.kind),
     index('idx_provider_events_outcome').on(table.outcome),
     index('idx_provider_events_created').on(table.createdAt),
+    // `reconcileAuditEvents` filters by `account_id` alone (see the test).
+    index('idx_provider_events_account').on(table.accountId),
   ],
 );
 
@@ -3320,9 +3322,19 @@ export const auditEvents = kortixSchema.table(
     // (migration 20260909083000000): 8.6 GB, zero scans in 2.5 months, one
     // index write on every audit row. A filter on (authoritative_source, phase)
     // uses `idx_audit_events_account_time` for the account+time prefix.
-    index('idx_audit_events_account_client_source_time')
-      .on(table.accountId, table.clientReportedSource, table.occurredAt)
-      .where(sql`${table.clientReportedSource} is not null`),
+    //
+    // `idx_audit_events_account_client_source_time` (account_id,
+    // client_reported_source, occurred_at WHERE client_reported_source IS NOT
+    // NULL) was dropped 2026-09-29 (migration
+    // 20260929004450093_drop_audit_events_account_client_source_time_index):
+    // 0 scans since the last stats reset, 1.3 GB, one index write on every
+    // audit row. The only query shaped to use it (`source` filter in
+    // apps/api/src/accounts/audit-filters.ts) is an OR across
+    // authoritative_source and client_reported_source, which Postgres cannot
+    // push through a single composite index on one of those two columns --
+    // EXPLAIN on prod confirmed the planner already used
+    // `idx_audit_events_account_time` + a Filter for that OR, identically
+    // with and without this index reachable.
     uniqueIndex('idx_audit_events_source_phase')
       .on(
         table.sourceLedger,

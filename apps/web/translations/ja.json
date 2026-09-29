@@ -1171,6 +1171,10 @@
         "mcp": {
           "name": "MCP サーバー",
           "description": "Claude、ChatGPT、Cursor、Codex などの MCP クライアントを OAuth でこのプロジェクトに接続します。クライアントはあなたとしてサインインし、あなたの権限で Kortix を呼び出します。URL はワークスペースメニューの「MCP を接続」にあります。"
+        },
+        "reminders": {
+          "name": "リマインダー",
+          "description": "エージェントやユーザーがセッションのチェックインを1回または繰り返しで予定できます。実行のたびにそのセッションに再度呼びかけます。リマインダーページ、セッションのリマインダー表示、`kortix remind` が追加されます。"
         }
       }
     },
@@ -1546,7 +1550,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "読み込み中…",
-    "loadMoreSessions": "セッションをさらに読み込む"
+    "loadMoreSessions": "セッションをさらに読み込む",
+    "reminders": "リマインダー"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -3900,7 +3905,7 @@
       "openRow1Title": "オープンソース",
       "openRow1Body": "最大規模のオープン AI for Work プラットフォームの 1 つ。すべての行を読んでください。ブラックボックスは何もありません。",
       "openRow2Title": "どのモデルでもあなたのキーを",
-      "openRow2Body": "任意のプロバイダー、またはすでに支払った Claude、ChatGPT、または Cursor サブスクリプションを使用します。",
+      "openRow2Body": "任意のプロバイダー、またはすでに支払った ChatGPT サブスクリプションを使用します。",
       "openRow3Title": "どこでもセルフホスト",
       "openRow3Body": "マネージド クラウド、VPC、オンプレミス、さらにはエアギャップ。何も電話をかけられません。",
       "openRow4Title": "会社丸ごとフォークする",
@@ -14945,7 +14950,7 @@
       "text9d48410d14d3": "Enterprise機能",
       "text9d4b2eae7c42": "提供時のデフォルトは許可型です。明示的に指定しない限り、アクションは実行されます。営業プロジェクトでは、まず外部送信アクションをAskに、破壊的なアクションをBlockに設定してください。安全なデフォルトが自動的に選ばれると思い込ませないための案内です。",
       "text9d53e28e9e39": "プロジェクトごとのアクセス権は、このページのProjectsセクションに一覧表示されます。",
-      "text9d54b2fd9149": "任意のプロバイダーや、すでに契約している ChatGPT、Claude、Cursor のサブスクリプションを利用できます。モデルはリポジトリ内の設定であり、ベンダーに決められるものではありません。",
+      "text9d54b2fd9149": "任意のプロバイダーや、すでに契約している ChatGPT のサブスクリプションを利用できます。モデルはリポジトリ内の設定であり、ベンダーに決められるものではありません。",
       "text9d5adef979f7": "既存契約",
       "text9d6304b7f8dc": "ID 管理 → 設定",
       "text9d74727714db": "却下済み",
@@ -19115,6 +19120,14 @@
       "textd88c84258c7a": "連携アプリを一覧表示",
       "text37698a37f9d2": "連携アプリを取り消し",
       "text8c8fb214b592": "ユーザーとして GitHub を認可",
+      "text4192bb1e9ee5": "セッションのリマインダーを一覧表示しました",
+      "texteee2410ea3db": "セッションのリマインダーを作成しました",
+      "text33954223cc7e": "セッションのリマインダーをオンまたはオフにしました",
+      "textb7ece0360b75": "セッションのリマインダーを削除しました",
+      "text9dcde51d9ff2": "エージェントによる説明",
+      "textfa0db737cb09": "エージェントが書いた未検証の説明です。コネクターが受け取るのは下のパラメーターです。",
+      "text2edf70730233": "エージェントへのメッセージ（任意）",
+      "texte88286ad9739": "プロジェクトのリマインダーを一覧表示しました",
       "text711edad21902": "コンピュータをプロジェクトに追加しました",
       "texta3ecfa724d04": "コンピューターが自身のペアリングを解除しました"
     },
@@ -19994,8 +20007,8 @@
     "textOnly": "テキストのみ",
     "zdrTitle": "ゼロデータ保持",
     "zdrDescription": "ゼロデータ保持（ZDR）とは、モデル提供元がテキストや画像を処理した後、リクエストの入力や回答を保存しないことです。Kortix はプロジェクトと会話履歴を別に保存します。",
-    "usProvidersTitle": "米国拠点の提供元",
-    "usProvidersDescription": "各 Kortix モデルは、米国に本社を置く固定の推論提供元 1 社で動作します。リクエストが別の提供元に切り替わることはありません。",
+    "usProvidersTitle": "米国でホスト",
+    "usProvidersDescription": "Kortix のモデルは米国のデータセンターで動作します。提携する推論提供元は米国企業のみです。",
     "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
     "hidden": "選択リストで非表示",
     "disableModel": "モデルを無効にする",
@@ -20199,6 +20212,47 @@
     "unverifiedTitle": "未確認のアプリ",
     "unverifiedBody": "{client} は自分で Kortix に登録しました。Kortix は運営者を確認していません。今あなた自身が接続している場合のみ許可してください。",
     "redirectsTo": "戻り先"
+  },
+  "reminders": {
+    "title": "リマインダー",
+    "description": "セッションに再度呼びかける予定済みのチェックインです。エージェントが作業中に設定し、削除されるまで実行されます。",
+    "docs": "リマインダーの仕組み",
+    "tabActive": "有効",
+    "tabPaused": "一時停止中",
+    "tabDone": "完了",
+    "emptyTitle": "リマインダーはありません",
+    "emptyDescription": "エージェントまたはユーザーがセッションにリマインダーを設定すると、ここに表示されます。",
+    "emptyTabDescription": "このリストは空です。",
+    "loadFailed": "リマインダーを読み込めませんでした",
+    "retry": "再試行",
+    "sessionFilter": "セッション: {name}",
+    "clearFilter": "すべてのセッションを表示",
+    "untitledSession": "無題のセッション",
+    "once": "1回",
+    "every": "{period}ごと",
+    "cron": "Cron {expression}",
+    "nextFire": "次回 {time}",
+    "firedAt": "実行 {time}",
+    "pausedLabel": "一時停止中",
+    "doneLabel": "完了",
+    "pause": "一時停止",
+    "resume": "再開",
+    "remove": "削除",
+    "openSession": "セッションを開く",
+    "removeTitle": "このリマインダーを削除しますか？",
+    "removeDescription": "実行されなくなり、削除されます。セッションの履歴は残ります。",
+    "paused": "リマインダーを一時停止しました",
+    "resumed": "リマインダーを再開しました",
+    "removed": "リマインダーを削除しました",
+    "updateFailed": "リマインダーを更新できませんでした",
+    "chipLabel": "{count, plural, other {有効なリマインダー #件}}",
+    "chipTitle": "このセッションのリマインダー",
+    "manage": "リマインダーを管理",
+    "cardLabel": "リマインダー",
+    "cardOneTime": "1回",
+    "cardRecurring": "繰り返し",
+    "cardManage": "管理",
+    "gateDescription": "リマインダーを有効にすると、エージェントやユーザーがセッションに再度呼びかけるチェックインを予定できます。"
   },
   "computers": {
     "connectYourComputer": "コンピューターを接続",

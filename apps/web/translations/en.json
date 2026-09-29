@@ -997,6 +997,10 @@
         "mcp": {
           "name": "MCP server",
           "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
+        },
+        "reminders": {
+          "name": "Reminders",
+          "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
         }
       }
     },
@@ -1546,7 +1550,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Loading…",
-    "loadMoreSessions": "Load more sessions"
+    "loadMoreSessions": "Load more sessions",
+    "reminders": "Reminders"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -3629,7 +3634,7 @@
       "openRow1Title": "Open source",
       "openRow1Body": "One of the largest open AI-for-work platforms. Read every line — nothing is a black box.",
       "openRow2Title": "Any model, your keys",
-      "openRow2Body": "Bring any provider, or the Claude, ChatGPT, or Cursor subscription you already pay for.",
+      "openRow2Body": "Bring any provider, or the ChatGPT subscription you already pay for.",
       "openRow3Title": "Self-host anywhere",
       "openRow3Body": "Managed cloud, your VPC, on-prem, even air-gapped. Nothing phones home.",
       "openRow4Title": "Fork a whole company",
@@ -14958,7 +14963,7 @@
       "text9d48410d14d3": "Enterprise feature",
       "text9d4b2eae7c42": "The shipped default is permissive — an action runs unless you have said otherwise. For a sales project the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.",
       "text9d53e28e9e39": "Project-by-project access is listed in the Projects section on this page.",
-      "text9d54b2fd9149": "Bring any provider, or the ChatGPT, Claude or Cursor subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.",
+      "text9d54b2fd9149": "Bring any provider, or the ChatGPT subscription you already pay for. The model is configuration in your repo, not a decision a vendor makes for you.",
       "text9d5adef979f7": "Grandfathered",
       "text9d6304b7f8dc": "Identity Management → Configuration",
       "text9d74727714db": "Dismissed",
@@ -19128,6 +19133,14 @@
       "textd88c84258c7a": "Listed connected apps",
       "text37698a37f9d2": "Revoked a connected app",
       "text8c8fb214b592": "Authorized GitHub as a user",
+      "text4192bb1e9ee5": "Listed session reminders",
+      "texteee2410ea3db": "Created session reminder",
+      "text33954223cc7e": "Turned session reminder on or off",
+      "textb7ece0360b75": "Deleted session reminder",
+      "text9dcde51d9ff2": "Agent's description",
+      "textfa0db737cb09": "Written by the agent and not verified. The parameters below are what the connector receives.",
+      "text2edf70730233": "Message to the agent (optional)",
+      "texte88286ad9739": "Listed project reminders",
       "text711edad21902": "Added computer to project",
       "texta3ecfa724d04": "Computer unpaired itself"
     },
@@ -20007,8 +20020,8 @@
     "textOnly": "Text only",
     "zdrTitle": "Zero data retention",
     "zdrDescription": "Zero data retention (ZDR) means the model provider processes your text and images, then does not keep the input or reply after the request. Kortix stores your project and conversation history separately.",
-    "usProvidersTitle": "US-based providers",
-    "usProvidersDescription": "Each Kortix model runs on one pinned inference provider headquartered in the US. Requests never fall back to another provider.",
+    "usProvidersTitle": "Hosted in the US",
+    "usProvidersDescription": "Kortix models run in US data centers. We only partner with American inference providers.",
     "hiddenHint": "Hidden from the picker. Direct requests are still allowed; use the model menu to disable them.",
     "hidden": "Hidden from picker",
     "disableModel": "Disable model",
@@ -20199,6 +20212,47 @@
     "unverifiedTitle": "Unverified app",
     "unverifiedBody": "{client} registered itself with Kortix. Kortix has not verified who runs it. Allow it only if you are connecting it yourself right now.",
     "redirectsTo": "Sends you back to"
+  },
+  "reminders": {
+    "title": "Reminders",
+    "description": "Scheduled check-ins that re-prompt a session. Agents set them while they work; each one fires until it is removed.",
+    "docs": "How reminders work",
+    "tabActive": "Active",
+    "tabPaused": "Paused",
+    "tabDone": "Done",
+    "emptyTitle": "No reminders",
+    "emptyDescription": "When an agent or a person sets a reminder on a session, it shows up here.",
+    "emptyTabDescription": "Nothing in this list.",
+    "loadFailed": "Could not load reminders",
+    "retry": "Retry",
+    "sessionFilter": "Session: {name}",
+    "clearFilter": "Show all sessions",
+    "untitledSession": "Untitled session",
+    "once": "Once",
+    "every": "Every {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Next {time}",
+    "firedAt": "Fired {time}",
+    "pausedLabel": "Paused",
+    "doneLabel": "Done",
+    "pause": "Pause",
+    "resume": "Resume",
+    "remove": "Remove",
+    "openSession": "Open session",
+    "removeTitle": "Remove this reminder?",
+    "removeDescription": "It stops firing and is deleted. The session keeps its history.",
+    "paused": "Reminder paused",
+    "resumed": "Reminder resumed",
+    "removed": "Reminder removed",
+    "updateFailed": "Could not update the reminder",
+    "chipLabel": "{count, plural, one {# active reminder} other {# active reminders}}",
+    "chipTitle": "Reminders on this session",
+    "manage": "Manage reminders",
+    "cardLabel": "Reminder",
+    "cardOneTime": "One-time",
+    "cardRecurring": "Recurring",
+    "cardManage": "Manage",
+    "gateDescription": "Turn on Reminders to let agents and people schedule check-ins that re-prompt a session."
   },
   "computers": {
     "connectYourComputer": "Connect your computer",

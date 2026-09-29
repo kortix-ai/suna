@@ -969,6 +969,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'marketplace',
     'meta_agent',
     'monitors',
+    'reminders',
     'secrets_egress',
     'pi_worker',
       'session_transcript_history',

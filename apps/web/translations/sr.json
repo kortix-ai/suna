@@ -1171,6 +1171,10 @@
         "mcp": {
           "name": "MCP server",
           "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
+        },
+        "reminders": {
+          "name": "Подсетници",
+          "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
         }
       }
     },
@@ -1546,7 +1550,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Учитавање…",
-    "loadMoreSessions": "Учитајте још сесија"
+    "loadMoreSessions": "Учитајте још сесија",
+    "reminders": "Подсетници"
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -3616,7 +3621,7 @@
       "openRow1Title": "Отворени извор",
       "openRow1Body": "Једна од највећих отворених платформи АИ-за-рад. Прочитајте сваки ред — ништа није црна кутија.",
       "openRow2Title": "Било који модел, ваши кључеви",
-      "openRow2Body": "Понесите било ког добављача, или претплату Claude, ChatGPT или Цурсор коју већ плаћате.",
+      "openRow2Body": "Понесите било ког добављача, или претплату ChatGPT коју већ плаћате.",
       "openRow3Title": " Самостални домаћин било где",
       "openRow3Body": "Управљани облак, ваш ВПЦ, он-прем, чак и са ваздушним размаком. Ништа не телефонира кући.",
       "openRow4Title": "Развој цело друштво",
@@ -14945,7 +14950,7 @@
       "text9d48410d14d3": "Enterprise функција",
       "text9d4b2eae7c42": "Испоручена подразумевана вредност је попустљива — радња се извршава осим ако не кажете другачије. За продајни пројекат прво подесите излазне радње на „Питај“, а деструктивне на „Блокирај“. Ово вам говоримо уместо да претпоставимо да је безбеднија подразумевана вредност изабрана уместо вас.",
       "text9d53e28e9e39": "Приступ по пројектима наведен је у одељку Projects на овој страници.",
-      "text9d54b2fd9149": "Користите било ког провајдера или претплату за ChatGPT, Claude или Cursor коју већ плаћате. Модел је конфигурација у вашем репозиторијуму, а не одлука коју доноси провајдер.",
+      "text9d54b2fd9149": "Користите било ког провајдера или претплату за ChatGPT коју већ плаћате. Модел је конфигурација у вашем репозиторијуму, а не одлука коју доноси провајдер.",
       "text9d5adef979f7": "Наслеђено",
       "text9d6304b7f8dc": "Управљање идентитетом → Конфигурација",
       "text9d74727714db": "Одбачено",
@@ -19115,6 +19120,14 @@
       "textd88c84258c7a": "Prikazane povezane aplikacije",
       "text37698a37f9d2": "Opozvana povezana aplikacija",
       "text8c8fb214b592": "GitHub je autorizovan kao korisnik",
+      "text4192bb1e9ee5": "Излистани подсетници сесије",
+      "texteee2410ea3db": "Креиран подсетник сесије",
+      "text33954223cc7e": "Подсетник сесије укључен или искључен",
+      "textb7ece0360b75": "Обрисан подсетник сесије",
+      "text9dcde51d9ff2": "Опис агента",
+      "textfa0db737cb09": "Написао агент, није проверено. Конектор прима параметре испод.",
+      "text2edf70730233": "Порука агенту (опционо)",
+      "texte88286ad9739": "Излистани подсетници пројекта",
       "text711edad21902": "Рачунар додат у пројекат",
       "texta3ecfa724d04": "Računar je sam prekinuo uparivanje"
     },
@@ -19994,8 +20007,8 @@
     "textOnly": "Само текст",
     "zdrTitle": "Nulto zadržavanje podataka",
     "zdrDescription": "Nulto zadržavanje podataka (ZDR) znači da pružalac modela obrađuje vaš tekst i slike, ali ne čuva ulaz ni odgovor nakon zahteva. Kortix zasebno čuva vaše projekte i razgovore.",
-    "usProvidersTitle": "Pružaoci sa sedištem u SAD",
-    "usProvidersDescription": "Svaki Kortix model radi kod jednog fiksnog pružaoca inferencije sa sedištem u SAD. Zahtevi nikada ne prelaze na drugog pružaoca.",
+    "usProvidersTitle": "Hostovano u SAD",
+    "usProvidersDescription": "Kortix modeli rade u data centrima u SAD. Sarađujemo samo sa američkim pružaocima inferencije.",
     "hiddenHint": "Sakriven iz birača. Direktni zahtevi su i dalje dozvoljeni; onemogućite ih u meniju modela.",
     "hidden": "Sakriven iz birača",
     "disableModel": "Onemogući model",
@@ -20199,6 +20212,47 @@
     "unverifiedTitle": "Neverifikovana aplikacija",
     "unverifiedBody": "{client} se sama registrovala u Kortix-u. Kortix nije proverio ko je pokreće. Dozvoli je samo ako je upravo ti povezuješ.",
     "redirectsTo": "Vraća te na"
+  },
+  "reminders": {
+    "title": "Подсетници",
+    "description": "Заказане провере које поново покрећу сесију. Агенти их постављају током рада; сваки се активира док се не уклони.",
+    "docs": "Како функционишу подсетници",
+    "tabActive": "Активни",
+    "tabPaused": "Паузирани",
+    "tabDone": "Завршени",
+    "emptyTitle": "Нема подсетника",
+    "emptyDescription": "Када агент или особа постави подсетник на сесију, појављује се овде.",
+    "emptyTabDescription": "Ова листа је празна.",
+    "loadFailed": "Учитавање подсетника није успело",
+    "retry": "Покушај поново",
+    "sessionFilter": "Сесија: {name}",
+    "clearFilter": "Прикажи све сесије",
+    "untitledSession": "Сесија без наслова",
+    "once": "Једном",
+    "every": "Сваких {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Следећи {time}",
+    "firedAt": "Активиран {time}",
+    "pausedLabel": "Паузиран",
+    "doneLabel": "Завршен",
+    "pause": "Паузирај",
+    "resume": "Настави",
+    "remove": "Уклони",
+    "openSession": "Отвори сесију",
+    "removeTitle": "Уклонити овај подсетник?",
+    "removeDescription": "Престаје да се активира и брише се. Сесија задржава своју историју.",
+    "paused": "Подсетник је паузиран",
+    "resumed": "Подсетник је настављен",
+    "removed": "Подсетник је уклоњен",
+    "updateFailed": "Ажурирање подсетника није успело",
+    "chipLabel": "{count, plural, one {# активан подсетник} few {# активна подсетника} other {# активних подсетника}}",
+    "chipTitle": "Подсетници ове сесије",
+    "manage": "Управљај подсетницима",
+    "cardLabel": "Подсетник",
+    "cardOneTime": "Једном",
+    "cardRecurring": "Понавља се",
+    "cardManage": "Управљај",
+    "gateDescription": "Укључи подсетнике да би агенти и особе могли да закажу провере које поново покрећу сесију."
   },
   "computers": {
     "connectYourComputer": "Повежите свој рачунар",

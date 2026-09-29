@@ -714,6 +714,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors discover "<intent>"` | Search tools by natural-language intent. |
 | `kortix connectors show <connector>.<action>` | Show an action's input schema. |
 | `kortix connectors call <connector>.<action> '<json-args>'` | Run a tool. A governed call returns its authenticated `approval_url` immediately. The server resumes the session after one approve or deny decision. Pass large args as `@file.json` or `-` (stdin). |
+| `kortix connectors call <connector>.<action> '<json-args>' --reason "<text>"` | Describe what the call does for the human approver when a policy holds it. The approval card shows it as the agent's description next to the arguments. |
 | `kortix connectors call <connector>.<action> @args.json --attach <file>` | Stage a file and append its reference to the action's attachments array. The gateway writes the bytes into the provider's attachment item. `--attach` repeats; `--attach-path <a.b.c>` names the array. See [Attach files](/docs/connect/connectors#attach-files). |
 | `kortix connectors call <connector>.<action> '<json-args>' --out <file>` | Write the full JSON result to `<file>` and print only a summary: `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). See [Large results](/docs/connect/connectors#large-results). |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
@@ -766,6 +767,20 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 Live-only options — valid on `add --apply`, and on every `set`: `--model <provider/model>`, `--session-mode <fresh\|keyed\|pinned\|reuse>`, `--session-key <tmpl>` (bucket one session per key, e.g. `"{{ body.data.chat_jid }}"`; implies `keyed`), `--session-id <id>` (the session a `pinned` trigger loops; must be this project's session), `--session-access <private\|project\|members>` (default `private`), `--member <uuid>` and `--group <uuid>` (repeatable; each implies `members`), and `--filter <path=value>` (repeatable; every one must match, e.g. `--filter body.type=push`).
 
 `set` takes every live-only option plus `--name`, `--prompt`, `--cron`, `--run-at`, `--timezone`, `--secret-env`, `--agent`, and `--enabled true|false`. `--cron` and `--run-at` are exclusive: setting one clears the other. Monitor fields are add-only.
+
+### Reminders
+
+A reminder re-prompts one session later, once or on repeat. It is stored in the database, not `kortix.yaml`. Inside a session, `--session` defaults to `$KORTIX_SESSION_ID`. See [Reminders](/docs/connect/reminders).
+
+| Command | Effect |
+| --- | --- |
+| `kortix remind "<text>" [schedule]` | Create a reminder. Same as `kortix reminders add`. |
+| `kortix reminders add "<text>" [schedule]` | Create a reminder. Prints its id and next fire. |
+| `kortix reminders ls [--json]` | List the session's reminders. |
+| `kortix reminders pause <id>` / `resume <id>` | Turn one reminder off or on. `resume` re-arms from now. |
+| `kortix reminders rm <id>` | Delete a reminder. Aliases: `stop`, `delete`. |
+
+Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire once), `--every <duration>` (repeat, min `5m`), `--cron "<expr>"` with `--timezone <tz>`. Other options: `--name <label>`, `--session <id>` (a unique prefix works), `--project <id>`, `--host <name>`, `--json`.
 
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 

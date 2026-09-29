@@ -1171,6 +1171,10 @@
         "mcp": {
           "name": "MCP 服务器",
           "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
+        },
+        "reminders": {
+          "name": "提醒",
+          "description": "让代理和用户在会话上安排一次性或重复的检查。每次触发都会重新提示该会话。新增提醒页面、会话提醒标记和 `kortix remind`。"
         }
       }
     },
@@ -1546,7 +1550,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "加载中…",
-    "loadMoreSessions": "加载更多会话"
+    "loadMoreSessions": "加载更多会话",
+    "reminders": "提醒"
   },
   "dashboard": {
     "title": "仪表板",
@@ -3900,7 +3905,7 @@
       "openRow1Title": "开源",
       "openRow1Body": "最大的开放式人工智能工作平台之一。阅读每一行——没有什么是黑匣子。",
       "openRow2Title": "任何型号，你的钥匙",
-      "openRow2Body": "带上任何提供商，或者您已付费的 Claude、ChatGPT 或 Cursor 订阅。",
+      "openRow2Body": "带上任何提供商，或者您已付费的 ChatGPT 订阅。",
       "openRow3Title": "随时随地自行托管",
       "openRow3Body": "托管云、您的 VPC、本地部署，甚至是气隙式的。没有打电话回家。",
       "openRow4Title": "分叉整个公司",
@@ -14945,7 +14950,7 @@
       "text9d48410d14d3": "Enterprise 功能",
       "text9d4b2eae7c42": "产品默认设置是宽松的——除非你另行指定，否则操作会执行。对于销售项目，第一步应将外发操作设为“询问”，将破坏性操作设为“阻止”。我们明确告诉你这一点，而不是让你误以为系统已经替你选择了更安全的默认设置。",
       "text9d53e28e9e39": "按项目划分的访问权限列在此页面的“项目”部分。",
-      "text9d54b2fd9149": "接入任意 provider，或使用你已经付费的 ChatGPT、Claude 或 Cursor 订阅。模型是仓库中的配置，而不是由供应商替你决定。",
+      "text9d54b2fd9149": "接入任意 provider，或使用你已经付费的 ChatGPT 订阅。模型是仓库中的配置，而不是由供应商替你决定。",
       "text9d5adef979f7": "祖传套餐",
       "text9d6304b7f8dc": "身份管理 → 配置",
       "text9d74727714db": "已撤销",
@@ -19115,6 +19120,14 @@
       "textd88c84258c7a": "列出了已连接的应用",
       "text37698a37f9d2": "撤销了已连接的应用",
       "text8c8fb214b592": "以用户身份授权了 GitHub",
+      "text4192bb1e9ee5": "已列出会话提醒",
+      "texteee2410ea3db": "已创建会话提醒",
+      "text33954223cc7e": "已开启或关闭会话提醒",
+      "textb7ece0360b75": "已删除会话提醒",
+      "text9dcde51d9ff2": "代理的说明",
+      "textfa0db737cb09": "由代理撰写，未经验证。连接器接收的是下方参数。",
+      "text2edf70730233": "给代理的消息（可选）",
+      "texte88286ad9739": "已列出项目提醒",
       "text711edad21902": "已将电脑添加到项目",
       "texta3ecfa724d04": "计算机已自行解除配对"
     },
@@ -19994,8 +20007,8 @@
     "textOnly": "仅文本",
     "zdrTitle": "零数据保留",
     "zdrDescription": "零数据保留（ZDR）是指模型服务商处理您的文本和图片后，不会在请求结束后保存输入或回复。Kortix 会单独保存您的项目和对话记录。",
-    "usProvidersTitle": "美国服务商",
-    "usProvidersDescription": "每个 Kortix 模型固定使用一家总部位于美国的推理服务商。请求绝不会转到其他服务商。",
+    "usProvidersTitle": "美国托管",
+    "usProvidersDescription": "Kortix 模型运行在美国的数据中心。我们只与美国的推理服务商合作。",
     "hiddenHint": "已从选择器中隐藏。仍允许直接请求；请通过模型菜单禁用。",
     "hidden": "已从选择器中隐藏",
     "disableModel": "禁用模型",
@@ -20199,6 +20212,47 @@
     "unverifiedTitle": "未验证的应用",
     "unverifiedBody": "{client} 自行在 Kortix 注册。Kortix 尚未验证其运营方。仅当你正在亲自连接它时才允许。",
     "redirectsTo": "完成后返回至"
+  },
+  "reminders": {
+    "title": "提醒",
+    "description": "重新提示会话的定时检查。代理在工作时设置它们；每个提醒都会持续触发，直到被删除。",
+    "docs": "提醒如何工作",
+    "tabActive": "活跃",
+    "tabPaused": "已暂停",
+    "tabDone": "已完成",
+    "emptyTitle": "暂无提醒",
+    "emptyDescription": "当代理或用户在会话上设置提醒时，它会显示在这里。",
+    "emptyTabDescription": "此列表为空。",
+    "loadFailed": "无法加载提醒",
+    "retry": "重试",
+    "sessionFilter": "会话：{name}",
+    "clearFilter": "显示所有会话",
+    "untitledSession": "未命名会话",
+    "once": "一次",
+    "every": "每 {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "下次 {time}",
+    "firedAt": "已触发 {time}",
+    "pausedLabel": "已暂停",
+    "doneLabel": "已完成",
+    "pause": "暂停",
+    "resume": "恢复",
+    "remove": "删除",
+    "openSession": "打开会话",
+    "removeTitle": "删除此提醒？",
+    "removeDescription": "它将停止触发并被删除。会话保留其历史记录。",
+    "paused": "提醒已暂停",
+    "resumed": "提醒已恢复",
+    "removed": "提醒已删除",
+    "updateFailed": "无法更新提醒",
+    "chipLabel": "{count, plural, other {# 个活跃提醒}}",
+    "chipTitle": "此会话的提醒",
+    "manage": "管理提醒",
+    "cardLabel": "提醒",
+    "cardOneTime": "一次",
+    "cardRecurring": "重复",
+    "cardManage": "管理",
+    "gateDescription": "开启提醒后，代理和用户可以安排重新提示会话的定时检查。"
   },
   "computers": {
     "connectYourComputer": "连接你的电脑",

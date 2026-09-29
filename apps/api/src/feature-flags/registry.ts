@@ -245,6 +245,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
+    enforcement: 'routes',
+  },
+  {
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:

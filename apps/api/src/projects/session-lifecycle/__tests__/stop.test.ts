@@ -247,6 +247,10 @@ describe('stopSession', () => {
   test.each([
     ['says the box is already stopped', 'sandbox already stopped'],
     ['is still transitioning', 'sandbox state change in progress'],
+    [
+      'times out with the VM still stopping',
+      'Platinum stop for sbx_1 did not reach stopped within 10000ms (last state: stopping)',
+    ],
   ])('commits the stop when the provider %s', async (_label, message) => {
     sandboxRow = {
       sandboxId: 'sess-1',

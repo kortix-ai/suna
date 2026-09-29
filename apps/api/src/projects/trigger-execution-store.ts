@@ -1,6 +1,7 @@
 import { projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, asc, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 
@@ -56,6 +57,11 @@ function triggerPayload(input: {
  * crash cannot lose a slot between those two writes. The unique slot index
  * plus the compare-and-swap update make concurrent scheduler pods safe.
  */
+/** The flag's per-project default; a non-boolean override means "no override", as in resolveFeatureFlag. */
+function remindersDefault(): string {
+  return featureFlagDef('reminders')?.platformDefault() ? 'true' : 'false';
+}
+
 export async function claimDueScheduleSlots(input: {
   now: Date;
   limit: number;
@@ -78,6 +84,10 @@ export async function claimDueScheduleSlots(input: {
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
         sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
+        // A session reminder fires only while its project has the `reminders`
+        // flag on. Off, the row stays due and unclaimed, so turning the flag
+        // back on fires a missed slot once, like any downtime.
+        sql`(${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null or (case when jsonb_typeof(${projects.metadata} #> '{experimental,reminders}') = 'boolean' then ${projects.metadata} #>> '{experimental,reminders}' else ${remindersDefault()} end) = 'true')`,
       ),
     )
     .orderBy(asc(projectTriggerRuntime.nextFireAt), asc(projectTriggerRuntime.projectId))
@@ -96,10 +106,12 @@ export async function claimDueScheduleSlots(input: {
     // This prevents a restart from producing an unbounded execution storm.
     // Same jitter key the catalog used — the offset MUST match or the sweep
     // would disagree with the stored slot and double-fire or skip.
+    // A session reminder is one person's schedule, not a fleet-wide cron, so it
+    // fires on time instead of taking the fleet jitter.
     const nextFireAt = spec.runAt
       ? null
       : nextTriggerScheduleSlot(spec, input.now, {
-          jitterKey: `${candidate.projectId}:${candidate.slug}`,
+          jitterKey: spec.reminder ? undefined : `${candidate.projectId}:${candidate.slug}`,
         });
     return db.transaction(async (tx) => {
       // Advance first. If the manifest was reconciled or another scheduler

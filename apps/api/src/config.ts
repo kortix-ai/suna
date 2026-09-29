@@ -770,6 +770,10 @@ const envSchema = z.object({
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: optInt(120),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
+  // Per-credential bound on the LLM gateway mount (/v1/llm and its
+  // /v1/llm-gateway alias). Defence-in-depth at the boundary, not a quota:
+  // 600/min is ~10/s per credential, far above any real inference pattern.
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: optInt(600),
   KORTIX_PROXY_REQS_PER_MIN: optInt(600),
   // Proxies in front of the API that APPEND to X-Forwarded-For. The client is
   // the entry this many places from the right; everything to its left was
@@ -1471,6 +1475,7 @@ export const config = {
   KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: env.KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
+  KORTIX_LLM_GATEWAY_REQS_PER_MIN: env.KORTIX_LLM_GATEWAY_REQS_PER_MIN,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
   KORTIX_TRUSTED_PROXY_HOPS: env.KORTIX_TRUSTED_PROXY_HOPS,
   KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN: env.KORTIX_UNKNOWN_TOKEN_ATTEMPTS_PER_MIN,

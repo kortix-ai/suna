@@ -474,7 +474,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   function connectorDataPlane(projectId?: string) {
     return {
       /** Callable catalog for this project or token scope. */
-      catalog: () => P.getConnectorCatalog(projectId),
+      catalog: (options?: Parameters<typeof P.getConnectorCatalog>[1]) =>
+        P.getConnectorCatalog(projectId, options),
       /** Flattened `<connector>.<action>` tool list. */
       tools: () => P.listConnectorTools(projectId),
       /** Search callable tools by id and description. */
@@ -725,6 +726,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setProjectPolicies(projectId, ...a),
       },
 
+      /** Reminders on every session the caller can open — see `listProjectReminders`. */
+      reminders: {
+        list: () => P.listProjectReminders(projectId),
+      },
       triggers: {
         list: () => P.listProjectTriggers(projectId),
         create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) =>
@@ -1194,6 +1199,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.createSessionPublicShare(projectId, sessionId, ...a),
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
           P.revokeSessionPublicShare(projectId, sessionId, ...a),
+      },
+      /** Scheduled prompts into this session — see `CreateSessionReminderInput`. */
+      reminders: {
+        list: () => P.listSessionReminders(projectId, sessionId),
+        create: (input: Parameters<typeof P.createSessionReminder>[2]) =>
+          P.createSessionReminder(projectId, sessionId, input),
+        update: (reminderId: string, input: Parameters<typeof P.updateSessionReminder>[3]) =>
+          P.updateSessionReminder(projectId, sessionId, reminderId, input),
+        remove: (reminderId: string) => P.deleteSessionReminder(projectId, sessionId, reminderId),
       },
       /** Per-session audit trail of connector-gated agent actions. */
       audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>

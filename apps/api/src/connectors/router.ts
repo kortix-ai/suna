@@ -940,6 +940,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       actionPath,
       args,
       approvalExecutionId,
+      approvalContext: typeof body?.approval_context === 'string' ? body.approval_context : null,
     });
     switch (result.status) {
       case 'ok':
@@ -1332,6 +1333,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 /** Which account to run as — a connection label or id. Omit for
                  *  the default. See GET .../connectors/{slug}/accounts. */
                 account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },
@@ -1407,6 +1412,10 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 /** Which account to run as — a connection label or id. Omit for
                  *  the default. See GET .../connectors/{slug}/accounts. */
                 account: z.string().optional(),
+                /** Shown to the human when policy gates the call: what it does,
+                 *  in the caller's words (e.g. the draft's recipient and body
+                 *  for a `send_draft`). Never sent to the provider. */
+                approval_context: z.string().optional(),
               }),
             },
           },

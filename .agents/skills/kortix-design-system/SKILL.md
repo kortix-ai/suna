@@ -249,6 +249,22 @@ Match the customize views — consistent sizes and variants:
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
 
+## Cursor affordance
+
+**Every clickable element shows `cursor: pointer`.** Disabled elements keep
+`cursor: default`. Do not add `cursor-default` to an interactive element.
+
+- A clickable element is a `<button>`, a `<Link>`, or has a `role`. Never put
+  `onClick` on a bare `div`.
+- The base rule in `apps/web/src/app/globals.css` gives the pointer to buttons,
+  links, `label[for]`, native checkbox/radio/file inputs, selects, summaries,
+  and the `button` / `checkbox` / `link` / `menuitem` / `menuitemcheckbox` /
+  `menuitemradio` / `option` / `radio` / `switch` / `tab` / `treeitem` roles.
+  It excludes `:disabled`, `aria-disabled`, and `data-disabled`.
+- A utility class beats `@layer base`, so a stray `cursor-default` silently
+  removes the pointer. `tests/unit/cursor-affordance.test.ts` fails on a
+  `cursor-default` in `src/components/ui` without an inline reason.
+
 ## Icons — Phosphor only
 
 **The only icon library in apps/web is `@phosphor-icons/react`.** `lucide-react`,
@@ -527,6 +543,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
 - ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
 - ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.
+- ✅ Clickable elements → `cursor: pointer`; disabled keep `default`. ❌ `cursor-default` on an interactive element.
 - ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
 - ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
@@ -535,6 +552,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Keyboard-driven interactions → `transition-none`. ❌ animating arrow-key nav or focus moves.
 - ✅ Every animation ships a `prefers-reduced-motion` variant. ❌ one variant only.
 - ✅ List items appear at once. ❌ stagger in product UI.
+- ✅ Interactive elements show the pointer from the global rule. ❌ `cursor-default` on a clickable element.
 
 ## Workflow checklist
 

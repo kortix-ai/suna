@@ -247,6 +247,20 @@ export interface GatewayDeps {
     executionId: string;
     sessionId: string | null;
   }): string | null;
+  /**
+   * Post an approval card into the chat thread of the session that made a
+   * gated call (Slack). Resolves `posted: false` for sessions with no thread.
+   * Injected so the gateway stays free of channel code.
+   */
+  postApprovalCard?(input: {
+    projectId: string;
+    sessionId: string;
+    executionId: string;
+    actionPath: string;
+    risk: Risk;
+    resultSummary: Record<string, unknown>;
+    approvalUrl: string | null;
+  }): Promise<{ posted: boolean }>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -334,6 +348,10 @@ export interface CallInput {
   /** @deprecated Older clients can identify an existing pending row. The
    *  gateway never blocks or polls it. */
   approvalExecutionId?: string | null;
+  /** The agent's own words on what a gated call does ("sends draft X to Y").
+   *  Shown to the approver next to the arguments, labelled unverified. Never
+   *  sent to the provider and outside the request digest. */
+  approvalContext?: string | null;
 }
 
 /** Which account a successful call ran as — echoed on the wire (router.ts). */
@@ -366,6 +384,31 @@ export type CallResult =
       approvalInstructions?: string | null;
     }
   | { status: 'error'; reason: string };
+
+const MAX_APPROVAL_CONTEXT = 4_000;
+const CARD_POST_BUDGET_MS = 5_000;
+const CARD_POSTED_INSTRUCTIONS =
+  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn — Kortix resumes the session after approve or deny.';
+
+/** A card that is slow or fails must never fail or stall the gated call. */
+async function postCardWithin(ms: number, post: () => Promise<{ posted: boolean }>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      post().then((r) => r.posted === true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), ms);
+      }),
+    ]);
+  } catch (error) {
+    logger.warn(`[connector] approval card post failed: ${(error as Error).message}`);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+const CONTEXT_HINT =
+  ' Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.';
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
@@ -649,6 +692,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // this: <url>") is still specific about what is being approved.
     const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
     const argsPreview = argsPreviewDetails.preview;
+    const approvalContext =
+      input.approvalContext?.trim().slice(0, MAX_APPROVAL_CONTEXT) || null;
     // Keys are OMITTED when empty rather than set to null: the pending_approval
     // result is a wire shape other code compares against, and a key that carries
     // no information shouldn't change it.
@@ -668,8 +713,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ...(url
           ? {
               approvalInstructions: input.sessionId
-                ? 'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.'
-                : 'Share approval_url with a human. Retry this exact call once they approve it.',
+                ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
+                : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
             }
           : {}),
       };
@@ -774,15 +819,42 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               // with no way to see who it emails. Redacted (see args-preview.ts):
               // credential-shaped fields never reach the audit trail.
               args_preview: argsPreview,
+              // Reference args (`{draft_id}`) name a target without showing it,
+              // so the agent may describe the effect. Unverified by design.
+              ...(approvalContext ? { approval_context: approvalContext } : {}),
             },
             requestDigest,
           ));
+        const extras = approvalExtras(executionId);
+        const cardPosted =
+          !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
+            ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
+                deps.postApprovalCard!({
+                  projectId: input.projectId,
+                  sessionId: input.sessionId!,
+                  executionId,
+                  actionPath: `${input.connectorSlug}.${input.actionPath}`,
+                  risk: action.risk,
+                  resultSummary: {
+                    args_preview: argsPreview,
+                    args_preview_complete: argsPreviewDetails.complete,
+                    ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  },
+                  approvalUrl: extras.approvalUrl ?? null,
+                }),
+              )
+            : false;
         return {
           status: 'pending_approval',
           reason: 'policy_require_approval',
           executionId,
           retryable: false,
-          ...approvalExtras(executionId),
+          ...extras,
+          // The human decides on the card in their thread; a pasted link next
+          // to it would only duplicate the request.
+          ...(cardPosted
+            ? { approvalInstructions: `${CARD_POSTED_INSTRUCTIONS}${approvalContext ? '' : CONTEXT_HINT}` }
+            : {}),
         };
       }
     }

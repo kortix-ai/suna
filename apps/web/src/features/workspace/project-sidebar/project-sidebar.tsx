@@ -20,6 +20,7 @@ import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sideb
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectComputerNavItem } from '@/features/workspace/project-sidebar/footer/project-computer-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
+import { ProjectRemindersNavItem } from './footer/project-reminders-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
@@ -245,6 +246,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
+              <ProjectRemindersNavItem />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <ProjectComputerNavItem projectId={projectId} />

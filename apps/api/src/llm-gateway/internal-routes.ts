@@ -182,16 +182,16 @@ export function createInternalGatewayRoutes() {
   app.post('/trace', async (c) => {
     const { trace } = await c.req.json();
     if (!trace || typeof trace.requestId !== 'string') return c.json({ ok: false }, 400);
-    // Trace persistence is best-effort observability — never 500 the gateway's
-    // fire-and-forget trace post if the write fails.
-    try {
-      await persistGatewayTrace(trace as GatewayTrace);
-    } catch (err) {
+    // Best-effort telemetry the gateway already posts fire-and-forget. Never
+    // await it: this write fans out an audit_events row on the 2-backend audit
+    // pool, and under the per-session sequence-lock convoy it waits tens of
+    // seconds for a backend, which became this route's p95 (prod 2026-09-28).
+    // A failed write is logged, never surfaced.
+    void persistGatewayTrace(trace as GatewayTrace).catch((err) => {
       logger.warn(`[gateway] persistGatewayTrace failed for ${trace.requestId}`, {
         error: err instanceof Error ? err.message : String(err),
       });
-      return c.json({ ok: false }, 200);
-    }
+    });
     return c.json({ ok: true });
   });
 

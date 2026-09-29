@@ -100,6 +100,22 @@ describe('composerSelectableAgents', () => {
   test('nothing to offer from no roster', () => {
     expect(composerSelectableAgents(undefined)).toEqual([]);
   });
+
+  test('drops the OpenCode built-ins the runtime list carries (KRTX-642)', () => {
+    configureKortix({ ...base, featureFlags: { enableProjects: false } });
+    const runtime = [
+      agent('kortix'),
+      agent('build', { native: true }),
+      agent('plan', { native: true }),
+      agent('explore', { mode: 'subagent', native: true }),
+      agent('helper', { mode: 'subagent' }),
+    ];
+    expect(composerSelectableAgents(runtime).map((a) => a.name)).toEqual(['kortix']);
+    // Lifting the subagent check for the runtime roster must not readmit them.
+    expect(
+      composerSelectableAgents(runtime, { includeSubagents: true }).map((a) => a.name),
+    ).toEqual(['kortix', 'helper']);
+  });
 });
 
 describe('resolveComposerAgent', () => {

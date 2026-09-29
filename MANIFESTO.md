@@ -80,7 +80,7 @@ The thing runs without you. The main branch is always up. Triggers go off in the
 
 It's built to survive a security review, not slip past one. MicroVM isolation. Egress and credentials controlled at the network. A real account/user/group model where every agent, skill, file, secret, trigger, channel, and connector answers to who is allowed to touch it. Hard gates that make an agent stop and wait for a person before it does something that matters.
 
-And it's yours all the way down. Any model. Your own keys, or the ChatGPT, Claude, or Cursor subscription you already pay for. Our cloud, your servers, or fully on-prem. Everything is files, ready to walk out the door the day you want them to. The labs are paid to lock you in. We only make money if you'd stay anyway.
+And it's yours all the way down. Any model. Your own keys, or the ChatGPT subscription you already pay for. Our cloud, your servers, or fully on-prem. Everything is files, ready to walk out the door the day you want them to. The labs are paid to lock you in. We only make money if you'd stay anyway.
 
 ---
 
