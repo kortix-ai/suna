@@ -1,6 +1,4 @@
-// Side-effect entry for the gateway routes. Each focused sibling module below
-// registers its own routes on `projectsApp`; importing this module keeps the
-// existing `import './routes/gateway'` in projects/index.ts wiring all of them.
+// Side-effect entry: importing this registers every gateway route on projectsApp.
 import './gateway-logs';
 import './gateway-spend';
 import './gateway-keys';

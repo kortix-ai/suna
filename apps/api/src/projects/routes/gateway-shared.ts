@@ -1,8 +1,7 @@
 import { authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 
-// The one authorization probe the focused gateway route modules share: does the
-// caller hold `action` on this project?
+// The project-capability authorization probe the gateway route modules share.
 
 export async function canDo(
   c: any,

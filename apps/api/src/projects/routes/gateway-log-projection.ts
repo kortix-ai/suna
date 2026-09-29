@@ -1,8 +1,7 @@
 import { gatewayRequestLogs } from '@kortix/db';
 import { splitLlmSpend } from '../../shared/llm-spend';
 
-// The gateway log wire projection: the column map and row serializer the log
-// list and log detail routes share.
+// The gateway log wire projection shared by the log list and log detail routes.
 
 export const LIST_LIMIT_DEFAULT = 50;
 export const LIST_LIMIT_MAX = 100;
