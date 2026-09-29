@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "MCP サーバー",
           "description": "Claude、ChatGPT、Cursor、Codex などの MCP クライアントを OAuth でこのプロジェクトに接続します。クライアントはあなたとしてサインインし、あなたの権限で Kortix を呼び出します。URL はワークスペースメニューの「MCP を接続」にあります。"
+        },
+        "reminders": {
+          "name": "リマインダー",
+          "description": "エージェントやユーザーがセッションのチェックインを1回または繰り返しで予定できます。実行のたびにそのセッションに再度呼びかけます。リマインダーページ、セッションのリマインダー表示、`kortix remind` が追加されます。"
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "読み込み中…",
-    "loadMoreSessions": "セッションをさらに読み込む"
+    "loadMoreSessions": "セッションをさらに読み込む",
+    "reminders": "リマインダー"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -19238,7 +19243,8 @@
       "textb7ece0360b75": "セッションのリマインダーを削除しました",
       "text9dcde51d9ff2": "エージェントによる説明",
       "textfa0db737cb09": "エージェントが書いた未検証の説明です。コネクターが受け取るのは下のパラメーターです。",
-      "text2edf70730233": "エージェントへのメッセージ（任意）"
+      "text2edf70730233": "エージェントへのメッセージ（任意）",
+      "texte88286ad9739": "プロジェクトのリマインダーを一覧表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20321,5 +20327,46 @@
     "unverifiedTitle": "未確認のアプリ",
     "unverifiedBody": "{client} は自分で Kortix に登録しました。Kortix は運営者を確認していません。今あなた自身が接続している場合のみ許可してください。",
     "redirectsTo": "戻り先"
+  },
+  "reminders": {
+    "title": "リマインダー",
+    "description": "セッションに再度呼びかける予定済みのチェックインです。エージェントが作業中に設定し、削除されるまで実行されます。",
+    "docs": "リマインダーの仕組み",
+    "tabActive": "有効",
+    "tabPaused": "一時停止中",
+    "tabDone": "完了",
+    "emptyTitle": "リマインダーはありません",
+    "emptyDescription": "エージェントまたはユーザーがセッションにリマインダーを設定すると、ここに表示されます。",
+    "emptyTabDescription": "このリストは空です。",
+    "loadFailed": "リマインダーを読み込めませんでした",
+    "retry": "再試行",
+    "sessionFilter": "セッション: {name}",
+    "clearFilter": "すべてのセッションを表示",
+    "untitledSession": "無題のセッション",
+    "once": "1回",
+    "every": "{period}ごと",
+    "cron": "Cron {expression}",
+    "nextFire": "次回 {time}",
+    "firedAt": "実行 {time}",
+    "pausedLabel": "一時停止中",
+    "doneLabel": "完了",
+    "pause": "一時停止",
+    "resume": "再開",
+    "remove": "削除",
+    "openSession": "セッションを開く",
+    "removeTitle": "このリマインダーを削除しますか？",
+    "removeDescription": "実行されなくなり、削除されます。セッションの履歴は残ります。",
+    "paused": "リマインダーを一時停止しました",
+    "resumed": "リマインダーを再開しました",
+    "removed": "リマインダーを削除しました",
+    "updateFailed": "リマインダーを更新できませんでした",
+    "chipLabel": "{count, plural, other {有効なリマインダー #件}}",
+    "chipTitle": "このセッションのリマインダー",
+    "manage": "リマインダーを管理",
+    "cardLabel": "リマインダー",
+    "cardOneTime": "1回",
+    "cardRecurring": "繰り返し",
+    "cardManage": "管理",
+    "gateDescription": "リマインダーを有効にすると、エージェントやユーザーがセッションに再度呼びかけるチェックインを予定できます。"
   }
 }

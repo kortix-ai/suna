@@ -91,3 +91,16 @@ export async function deleteSessionReminder(projectId: string, sessionId: string
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}/reminders/${reminderId}`),
   );
 }
+
+/** A reminder as the project list returns it: plus its session's display name. */
+export interface ProjectReminder extends SessionReminder {
+  session_name: string | null;
+}
+
+/**
+ * Every reminder in a project on a session the caller can open, soonest
+ * active first, then paused, then done. At most 200.
+ */
+export async function listProjectReminders(projectId: string) {
+  return unwrap(await backendApi.get<{ reminders: ProjectReminder[] }>(`/projects/${projectId}/reminders`));
+}
