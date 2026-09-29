@@ -87,7 +87,7 @@ const SERVED_MODELS = RUN_MANAGED_LIVE
   ? (await import('../models/served-managed-models')).SERVED_MANAGED_MODELS
   : [];
 const UPSTREAM_IDENTITY =
-  /openrouter|morph|coreweave|wafer|together|parasail|deepinfra|baseten|phala|fireworks|z-ai\/|moonshotai\/|deepseek\/|provider_name/i;
+  /openrouter|morph|opencode|coreweave|wafer|together|parasail|deepinfra|baseten|phala|fireworks|z-ai\/|moonshotai\/|deepseek\/|provider_name/i;
 // 32×32 solid red PNG.
 const RED_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR4nO3NsQ0AAAzCMP5/un0CNkuZ41wybXsHAAAAAAAAAAAAxR4yw/wuPL6QkAAAAABJRU5ErkJggg==';
@@ -182,6 +182,33 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
     expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'openrouter' } });
     expect(recorded[0].upstreamCost).toBeGreaterThan(0);
   }, 120_000);
+
+  // Needs OPENCODE_ZEN_API_KEY. OPENCODE_ZEN_API_URL may name OpenCode Go: same wire.
+  for (const stream of [false, true]) {
+    test(`glm-5.3-flash: an OpenRouter shared-pool 429 fails over to OpenCode Zen (stream=${stream})`, async () => {
+      const { config } = await import('../../config');
+      if (!config.OPENCODE_ZEN_API_KEY) return;
+      const busy = Bun.serve({ port: 0, fetch: () => Response.json({ error: { code: 429, message: 'Provider returned error',
+        metadata: { provider_name: 'CoreWeave', limit_source: 'upstream_provider_shared_pool' } } },
+        { status: 429, headers: { 'retry-after': '5' } }) });
+      try {
+        const { gateway, recorded } = await managedGateway((candidates) => candidates.map((c) =>
+          c.provider === 'openrouter' ? { ...c, baseUrl: `http://localhost:${busy.port}` }
+            : { ...c, headers: { 'x-opencode-session': 'kortix-live-test', 'User-Agent': 'Kortix (https://kortix.com)' } }));
+        const res = await gateway.chatCompletions({
+          authorization: 'Bearer live',
+          rawBody: JSON.stringify({ model: 'glm-5.3-flash', stream, max_tokens: 2000,
+            messages: [{ role: 'user', content: 'Reply with the single word: ok' }] }),
+        });
+        const text = await res.text();
+        expect(res.status).toBe(200);
+        expect(text).not.toMatch(UPSTREAM_IDENTITY);
+        await settle();
+        expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'opencode' } });
+        expect(recorded[0].upstreamCost).toBeGreaterThan(0);
+      } finally { busy.stop(true); }
+    }, 120_000);
+  }
 
   test('glm-5.3-flash: when every provider rejects the key, the client gets a Kortix 503', async () => {
     const { gateway } = await managedGateway((candidates) => candidates.map((c) => ({ ...c, apiKey: 'sk-invalid' })));

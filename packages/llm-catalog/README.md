@@ -32,6 +32,18 @@ For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environme
 
 Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected models require `MORPH_API_KEY` or `OPENROUTER_API_KEY`.
 
+### Overflow: OpenCode Zen
+
+`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that fail over to [OpenCode Zen](https://opencode.ai/docs/zen) after the OpenRouter pool. Its default is `glm-5.3-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
+
+1. Zen states that it hosts every model in the US and that its providers keep zero data retention. The exceptions are OpenAI, Anthropic, and free models. No managed model is one of them.
+2. Zen serves the managed IDs unchanged (`glm-5.3-flash`, `kimi-k3`, `deepseek-v4.1-flash`) on `/chat/completions`.
+3. The gateway sends `x-opencode-session` (the Kortix session) and `User-Agent: Kortix (https://kortix.com)`. Zen refuses a request without the session header.
+4. Zen sends no `usage.cost`. The gateway bills the model's managed `pricing`, the same rate the picker shows.
+5. `usage_events.metadata.upstreamProvider` is `opencode` for a request that Zen served. The client sees only Kortix.
+
+Why: from 2026-09-22 to 2026-09-29, 0.7% of prod GLM requests (287 of 40,861) returned `429 model_busy`. OpenRouter reported `limit_source: upstream_provider_shared_pool`: Decart and CoreWeave serve non-BYOK traffic from a pool shared with every OpenRouter customer. The 429 rate did not rise with Kortix load (1.1% at under 20 requests per minute, 0.2% at 200 or more). `fireworks/us` returned 429 on every probe on 2026-09-29, so it adds no capacity. Zen is capacity outside that shared pool.
+
 ### OpenRouter endpoint pools
 
 Every pool member has a **confirmed US datacenter**. OpenRouter lists the provider's headquarters AND datacenters as US (`/api/v1/providers`), or the endpoint tag names the US region (`/us`). US headquarters alone does not qualify. Every member was also in OpenRouter's ZDR endpoint feed (`/api/v1/endpoints/zdr`), rechecked on 2026-09-26. The `zdr: true` request flag fails closed when an endpoint loses ZDR status. The global OpenRouter API URL does not itself guarantee that OpenRouter's gateway processing stays in the US.
