@@ -128,6 +128,8 @@
     "chooseSharedKeys": "Escolha as chaves partilhadas que esta sessão pode usar.",
     "sessionKeyPool": "Conjunto de chaves da sessão",
     "sharedSessionKeys": "Esta sessão está partilhada com o projeto, por isso aqui só funcionam as chaves partilhadas com todo o projeto. As chaves atribuídas a si funcionam nas suas sessões privadas.",
+    "promptedSessionKeys": "Outro membro escreveu nesta sessão, por isso já não age pelo seu proprietário. Aqui só funcionam chaves partilhadas com todo o projeto.",
+    "noPersonSessionKeys": "Esta sessão não age por nenhuma pessoa: começou antes de existirem chaves pessoais, ou sem supervisão. Aqui só funcionam chaves partilhadas com todo o projeto. Inicie uma nova sessão para usar as suas próprias chaves.",
     "projectDefaultShort": "Padrão do projeto",
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",

@@ -262,6 +262,16 @@ flow(
       (await ctx.client.as(member).put(poolPath, { secret_ids: ids }, { params })).status(403)
         .body().has('$.code', 'SHARED_SESSION_PERSONAL_KEY');
       (await owner.get(poolPath, { params })).status(200).body().has('$.configured', false);
+      // The pool list answers what the refusal enforces: whose own keys the
+      // session reaches, and why nobody's. The web panel lists keys from it.
+      const poolsPath = '/v1/projects/:projectId/sessions/:sessionId/provider-secret-pools';
+      (await ctx.client.as(member).get(poolsPath, { params: { projectId: project.id, sessionId: memberSession } }))
+        .status(200).body().has('$.personal_user_id', null).has('$.personal_keys_reason', 'shared');
+      const privateSession = await createDatabaseSession(ctx.env, {
+        projectId: project.id, accountId: team.id, userId: member.userId!, visibility: 'private',
+      });
+      (await ctx.client.as(member).get(poolsPath, { params: { projectId: project.id, sessionId: privateSession } }))
+        .status(200).body().has('$.personal_user_id', member.userId!).has('$.personal_keys_reason', null);
       // A model only those keys reach is refused, not accepted and then failed on every turn.
       (await owner.put('/v1/projects/:projectId/sessions/:sessionId/model', {
         opencode_model: 'anthropic/claude-sonnet-4.6',
