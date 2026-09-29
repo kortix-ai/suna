@@ -79,7 +79,7 @@ case "$mode" in
       if [[ -n "$coverage_dir" ]]; then
         coverage_args=(--coverage --coverage-reporter=lcov --coverage-reporter=text --coverage-dir="$coverage_dir/$batch_number")
       fi
-      if bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" "${coverage_args[@]}" "${batch[@]}"; then
+      if bun test --isolate --parallel="$api_test_workers" --env-file=scripts/test.env --timeout="$test_timeout" ${coverage_args[@]+"${coverage_args[@]}"} "${batch[@]}"; then
         :
       else
         failed=1
