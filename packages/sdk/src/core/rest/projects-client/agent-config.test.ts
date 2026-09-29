@@ -39,6 +39,11 @@ describe('AgentConfigBlock', () => {
     expect(block.sandbox).toBe('ml');
   });
 
+  test('carries the path of the agent .md (server-owned `file`)', () => {
+    const block: AgentConfigBlock = { file: 'agents/support.md' };
+    expect(block.file).toBe('agents/support.md');
+  });
+
   test('accepts the canonical required connector field', () => {
     const block: AgentConfigBlock = {
       connectors: ['gmail'],
@@ -59,6 +64,14 @@ describe('updateAgentConfig', () => {
       connectors_required: ['gmail'],
     });
     expect(calls[0]?.body).not.toHaveProperty('connectors_personal');
+  });
+
+  test('a GET -> PUT round trip sends the block `file` back unchanged', async () => {
+    nextBody = { agent: 'support', schema_version: 2, editable: true, block: { file: 'agents/support.md', skills: 'all' } };
+    const current = await getAgentConfig('project-1', 'support');
+    nextBody = { ok: true, agent: 'support', schema_version: 2, block: current.block };
+    await updateAgentConfig('project-1', 'support', current.block ?? {});
+    expect(calls[1]?.body).toMatchObject({ file: 'agents/support.md', skills: 'all' });
   });
 
   test('accepts matching normalized aliases', async () => {

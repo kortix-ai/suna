@@ -18,7 +18,7 @@ you kick off the weekly async standup thread.
   Block Kit / posting mechanics). They are your complete source of truth for
   sources, ranking, format, and posting.
 - **Resume.** This is a reuse session re-prompted weekly, so read
-  `.kortix/memory/weekly-digests.md` (last week's leaderboard + streaks) and last
+  `memory/weekly-digests.md` (last week's leaderboard + streaks) and last
   week's standup thread before building this week's brief.
 - **Window.** The last 7 days — since the previous run, or since the last
   leaderboard post in {{slack_channel}} (read it first so nothing double-counts).

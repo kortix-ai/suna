@@ -92,7 +92,7 @@ export function buildRegistryProjectInstallPrompt(
   lines.push(
     '',
     'Steps:',
-    "1. Read this project's current kortix.yaml and .kortix/opencode/agents/ to see what already exists.",
+    "1. Read this project's current kortix.yaml and its agent files (`agents/`; older projects also `.kortix/opencode/agents/`) to see what already exists.",
     '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
     "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
     '4. Install the marketplace skills listed above.',
@@ -136,7 +136,7 @@ export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: stri
   ];
   if (depIds.length) {
     steps.push(
-      `Install its parts — ${depIds.map((d) => `\`${d}\``).join(', ')} — from the marketplace: \`kortix marketplace show <part-id> --json\` lists its \`.files[].target\`, and each file's content comes from \`GET $KORTIX_API_URL/marketplace/items/<part-id>/file?path=<target>\` (the \`.content\` field). Write each file to its conventional path (\`@agents/x.md\` → \`.kortix/opencode/agents/x.md\`, \`@skills/y\` → \`.kortix/opencode/skills/y\`), rendering \`{{projectName}}\` to this project's name.`,
+      `Install its parts — ${depIds.map((d) => `\`${d}\``).join(', ')} — from the marketplace: \`kortix marketplace show <part-id> --json\` lists its \`.files[].target\`, and each file's content comes from \`GET $KORTIX_API_URL/marketplace/items/<part-id>/file?path=<target>\` (the \`.content\` field). Write each file to its conventional path (\`@agents/x.md\` → \`agents/x.md\`, \`@skills/y\` → \`skills/y\`), rendering \`{{projectName}}\` to this project's name.`,
     );
   }
   steps.push(

@@ -10,6 +10,11 @@
  * where things live and how their metadata is read.
  */
 
+/**
+ * The OpenCode config dir of a manifest that names none: the pre-2026-09
+ * layout. New projects state `opencode.config_dir: harnesses/opencode`, so
+ * this text-only reader never has to guess between the two.
+ */
 export const DEFAULT_OPENCODE_CONFIG_DIR = '.kortix/opencode';
 
 /**
@@ -49,13 +54,18 @@ function readSectionScalar(manifestRaw: string, section: string, key: string): s
   return null;
 }
 
-export function resolveOpencodeDir(manifestRaw: string | null | undefined): string {
-  if (!manifestRaw) return DEFAULT_OPENCODE_CONFIG_DIR;
+/** The manifest's own `opencode.config_dir`, or null when it names none (or an unsafe one). */
+export function manifestOpencodeDir(manifestRaw: string | null | undefined): string | null {
+  if (!manifestRaw) return null;
   const value = readSectionScalar(manifestRaw, 'opencode', 'config_dir');
   if (value && !value.startsWith('/') && !value.split('/').includes('..')) {
     return value.replace(/\/+$/, '');
   }
-  return DEFAULT_OPENCODE_CONFIG_DIR;
+  return null;
+}
+
+export function resolveOpencodeDir(manifestRaw: string | null | undefined): string {
+  return manifestOpencodeDir(manifestRaw) ?? DEFAULT_OPENCODE_CONFIG_DIR;
 }
 
 export function projectNameFromManifest(manifestRaw: string | null | undefined): string | null {
