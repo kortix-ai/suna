@@ -22,7 +22,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('<SidebarToggle />');
     const toggleAt = source.indexOf('<SidebarToggle />');
     expect(toggleAt).toBeGreaterThan(-1);
-    expect(toggleAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
+    expect(toggleAt).toBeLessThan(source.indexOf('{titleButton}'));
   });
 
   // `sidebarState` survives for the title-bar indent (`sidebarHidden`), not
@@ -42,7 +42,7 @@ describe('SessionSiteHeader session title', () => {
   test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
     const homeButtonIndex = source.indexOf('<Home ');
     expect(homeButtonIndex).toBeGreaterThan(-1);
-    const titleIndex = source.indexOf('>{headerTitle}</span>');
+    const titleIndex = source.indexOf('{titleButton}');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
     expect(titleIndex).toBeGreaterThan(homeButtonIndex);
@@ -124,6 +124,11 @@ describe('SessionSiteHeader session title', () => {
  * name, a slash, then the subsession's own name control. The parent link used
  * to sit above the composer; it lives only here now.
  */
+const cardSource = readFileSync(
+  fileURLToPath(new URL('./subagent-hover-card.tsx', import.meta.url)),
+  'utf8',
+);
+
 describe('SessionSiteHeader subsession breadcrumb', () => {
   const composerSource = readFileSync(
     fileURLToPath(new URL('../composer/composer.tsx', import.meta.url)),
@@ -133,7 +138,7 @@ describe('SessionSiteHeader subsession breadcrumb', () => {
   test('the parent crumb renders after the sidebar toggle and before the session name', () => {
     const crumbAt = source.indexOf('onClick={parent.onOpen}');
     expect(crumbAt).toBeGreaterThan(source.indexOf('<SidebarToggle />'));
-    expect(crumbAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
+    expect(crumbAt).toBeLessThan(source.indexOf('{titleButton}'));
     const crumb = source.slice(crumbAt, source.indexOf('</Button>', crumbAt));
     // The custom filled house mark, not the Phosphor outline.
     expect(crumb).toContain('<Home ');
@@ -156,7 +161,8 @@ describe('SessionSiteHeader subsession breadcrumb', () => {
   });
 
   test('the subagent suffix is stripped from the subsession title', () => {
-    const pattern = source.match(/sessionTitle\.replace\((\/.*\/), ''\)/)?.[1];
+    expect(source).toContain('? subagentTitle(sessionTitle)');
+    const pattern = cardSource.match(/title\.replace\((\/.*\/), ''\)/)?.[1];
     expect(pattern).toBeTruthy();
     const re = new Function(`return ${pattern}`)() as RegExp;
     expect('Research the topic (@general subagent)'.replace(re, '')).toBe('Research the topic');
@@ -166,6 +172,36 @@ describe('SessionSiteHeader subsession breadcrumb', () => {
   test('the composer no longer carries a back-to-parent control', () => {
     expect(composerSource).not.toContain('threadContext');
     expect(composerSource).not.toContain('onBackToParent');
+  });
+});
+
+/**
+ * A parent session's name, on hover, lists the subagents it spawned. Only on a
+ * root session with children: a subsession has its own crumb, and a session
+ * with no children keeps the plain "Rename" hint.
+ */
+describe('SessionSiteHeader subagent hover card', () => {
+  test('wraps the name only on a root session that has subsessions', () => {
+    expect(source).toContain(
+      'const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];',
+    );
+    const cardAt = source.indexOf('<SubagentHoverCard');
+    expect(source.lastIndexOf('canRename && subsessions.length > 0 ? (', cardAt)).toBeGreaterThan(-1);
+    expect(source.slice(cardAt, source.indexOf('</SubagentHoverCard>'))).toContain('{titleButton}');
+    // The Rename hint still wraps the same button when there are no children.
+    const cardEnd = source.indexOf('</SubagentHoverCard>');
+    const hintAt = source.indexOf('{titleButton}', cardEnd);
+    expect(source.lastIndexOf('<Hint', hintAt)).toBeGreaterThan(cardEnd);
+  });
+
+  test('the card uses the HoverCard primitive and links each row to its ?oc= route', () => {
+    expect(cardSource).toContain("from '@/components/ui/hover-card'");
+    expect(cardSource).toContain('?oc=${encodeURIComponent(child.id)}');
+    expect(cardSource).toContain('<HoverPrefetchLink');
+    expect(cardSource).toContain("menuRow('sm', 'default'");
+    // A row click closes the card before the route changes under it.
+    expect(cardSource).toContain('onClick={() => setOpen(false)}');
+    expect(cardSource).toContain('animated={false}');
   });
 });
 

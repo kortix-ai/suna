@@ -27,6 +27,8 @@ import {
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
+import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
+import { directSubsessions } from '@/components/projects/session-label';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
@@ -171,14 +173,26 @@ export function SessionSiteHeader({
   // the parent's. It shows its own OpenCode title, minus the
   // "(@general subagent)" suffix, and is not renamable from here.
   const headerTitle = parent
-    ? sessionTitle.replace(/\s*\(@[^)]*subagent\)$/, '')
+    ? subagentTitle(sessionTitle)
     : projectTitle;
 
   const renameMutation = useRenameSession(projectId ?? '', projectSessionId ?? null);
   const canRename = isProjectSession && !!projectSession && !parent;
+  const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];
   const startRename = () => {
     if (canRename) setIsRenaming(true);
   };
+
+  const titleButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={startRename}
+      className="text-foreground h-7 min-w-0 shrink justify-start rounded-md px-2.5 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
+    >
+      <span className="min-w-0 truncate">{headerTitle}</span>
+    </Button>
+  );
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId!, projectSessionId!),
@@ -383,6 +397,17 @@ export function SessionSiteHeader({
                 // No name yet: `SavedSessionSkeleton` renders this header
                 // before the session row has answered.
                 <Skeleton className="mx-2.5 h-3.5 w-24 py-0 motion-reduce:animate-none" />
+              ) : canRename && subsessions.length > 0 ? (
+                // A parent session: hovering its name lists the subagents it
+                // spawned. The card replaces the "Rename" hint — two floating
+                // surfaces on one hover is one too many; a click still renames.
+                <SubagentHoverCard
+                  projectId={projectId!}
+                  projectSessionId={projectSessionId!}
+                  subsessions={subsessions}
+                >
+                  {titleButton}
+                </SubagentHoverCard>
               ) : canRename ? (
                 <Hint
                   side="bottom"
@@ -392,14 +417,7 @@ export function SessionSiteHeader({
                     'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx265e123d',
                   )}
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={startRename}
-                    className="text-foreground h-7 min-w-0 shrink justify-start rounded-md px-2.5 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
-                  >
-                    <span className="min-w-0 truncate">{headerTitle}</span>
-                  </Button>
+                  {titleButton}
                 </Hint>
               ) : (
                 // Share viewer and instant shell: no project session row, so
