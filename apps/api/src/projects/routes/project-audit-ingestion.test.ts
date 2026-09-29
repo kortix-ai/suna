@@ -5,6 +5,7 @@
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { auditEvents, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { MAX_BATCH_SIZE } from '../../shared/opencode-audit-ingestion';
 import { runWithContext } from '../../lib/request-context';
 import { attachInboundAuditScope } from '../../shared/audit-scope';
 import {
@@ -98,7 +99,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-await import('./project-audit');
+const { auditIngestChunkSize } = await import('./project-audit');
 
 function hostileEvent() {
   return {
@@ -218,13 +219,25 @@ describe('relay batch ceiling', () => {
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   }
 
-  test('accepts a full 200-event relay batch and writes it in 25-row chunks', async () => {
+  test('accepts a full 200-event relay batch and writes it as one statement', async () => {
     insertStatements.length = 0;
     const accepted = await post(200);
     expect(accepted.status).toBe(200);
     expect(accepted.body).toMatchObject({ accepted: 200, inserted: 200 });
-    // Eight bounded statements, never one 200-row lock hold.
-    expect(insertStatements.map((batch) => batch.length)).toEqual([25, 25, 25, 25, 25, 25, 25, 25]);
+    // One bounded statement per accepted batch: every extra statement is one
+    // more lock acquisition and round trip a concurrent writer for the same
+    // session can interleave at. See `auditIngestChunkSize`.
+    expect(insertStatements.map((batch) => batch.length)).toEqual([200]);
+  });
+
+  test('the default chunk equals the route batch ceiling so a batch is one statement', () => {
+    // Fails while the default still splits a batch (prod 2026-09-29: hot
+    // sessions posted full 200-event batches, 8 statements each, and the
+    // interleaved lock acquisitions drove audit/events past the request
+    // deadline). The route reads the ceiling through `auditIngestChunkSize`.
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+    expect(auditIngestChunkSize()).toBe(MAX_BATCH_SIZE);
+    expect(MAX_BATCH_SIZE).toBe(200);
   });
 
   test('rejects one event past the ceiling', async () => {
@@ -326,13 +339,15 @@ describe('per-session ingest ceiling', () => {
 });
 
 /**
- * The SampleCo convoy (2026-08-26): `kortix.audit_prepare_event` locks this
+ * The 2026-08-26 convoy: `kortix.audit_prepare_event` locks this
  * session's `audit_session_sequences` row for every row inserted, and
- * PostgreSQL holds that lock until COMMIT. One 200-row statement therefore
- * pinned the session for its whole duration, and a rollback threw away all 200
- * rows' work — which the relay then re-sent in full, every second, for 3 hours.
+ * PostgreSQL holds that lock until COMMIT. One long statement pinned the
+ * session for its whole duration, and a rollback threw away the whole batch's
+ * work — which the relay then re-sent in full, every second, for 3 hours.
  *
- * These fixtures use the production default chunk size (25 rows/statement).
+ * These fixtures pin the operator-override shape
+ * (`KORTIX_AUDIT_INGEST_CHUNK=25`) so the multi-statement loop stays covered
+ * even though the default writes one statement per accepted batch.
  */
 describe('audit ingest contention', () => {
   const CHUNK = 25;
@@ -368,9 +383,14 @@ describe('audit ingest contention', () => {
 
   beforeEach(() => {
     __resetAuditRateGuardForTest();
+    // Route down to 25-row statements so the bounded multi-statement loop and
+    // the keep-committed-rows property stay exercised at the small-chunk
+    // setting an operator can still choose.
+    process.env.KORTIX_AUDIT_INGEST_CHUNK = String(CHUNK);
   });
 
   afterAll(() => {
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
     __resetAuditRateGuardForTest();
   });
 
@@ -448,6 +468,14 @@ describe('audit ingest contention', () => {
  * and answers with the same controlled contended 503 the lock path returns.
  */
 describe('audit ingest request-deadline budget', () => {
+  beforeEach(() => {
+    process.env.KORTIX_AUDIT_INGEST_CHUNK = '25';
+  });
+
+  afterAll(() => {
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK;
+  });
+
   function event(n: number) {
     return {
       event_id: n.toString(16).padStart(64, '0'),

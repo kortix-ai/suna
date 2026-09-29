@@ -78,7 +78,9 @@ describe('every isSandboxAuthored call site resolves the session id safely', () 
 describe('the fire-and-forget deadline wirings are actually wired', () => {
   for (const [file, call] of [
     ['platform/services/session-sandbox.ts', 'grantWarmPoolLifetime('],
-    ['projects/routes/turn-stream.ts', 'completeSandboxTurn('],
+    // The token-scoped completion moved with the `end`/`turn_end` handler out
+    // of the turn-stream route sleeve (KRTX-280); the wiring must still exist.
+    ['projects/routes/turn-stream-handlers.ts', 'completeSandboxTurn('],
   ] as const) {
     test(`${file} still calls ${call})`, async () => {
       const source = await Bun.file(join(API_SRC, file)).text();

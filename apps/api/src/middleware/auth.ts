@@ -26,6 +26,35 @@ import { enforceTokenProjectScope } from './auth-scope';
 export { clearSsoSyncMemo } from './auth-sso';
 export { combinedAuth } from './auth-combined';
 
+/**
+ * Stable error code the PAT auth gate returns (HTTP 401) when the credential
+ * itself can never come back: missing, revoked, expired, or its sandbox lease
+ * closed. The body keeps the global `{error, message, status}` shape and adds
+ * this `code`, so a retrying client can branch on it and stop instead of
+ * hammering the gate forever — prod 2026-09-26/27: one fleet of boxes that
+ * outlived their session credential produced ~10k 401s/h across
+ * `/v1/platform/runtime-projection`, `/turn-stream` and `/audit/events`, every
+ * one a plain untyped 401 no client could tell apart from a transient one.
+ * Mirrors the typed-error pattern of `buildDenialError` (`code:'account_mfa_required'`)
+ * and `impersonation.ts` (`code:'impersonation_invalid'`): an HTTPException
+ * built with an explicit `res` is returned verbatim by the global error
+ * handler (apps/api/src/index.ts), so the body arrives untyped nowhere.
+ * Consumers: apps/kortix-sandbox-agent-server's `session-token-health.ts`
+ * breaker classifies the body; the SDK's ApiError lifts `code` from error
+ * bodies. Keep the string in sync with that breaker.
+ */
+export const SESSION_TOKEN_REVOKED_CODE = 'session_token_revoked';
+
+export function deadCredential401(message: string): HTTPException {
+  return new HTTPException(401, {
+    message,
+    res: new Response(
+      JSON.stringify({ error: true, message, status: 401, code: SESSION_TOKEN_REVOKED_CODE }),
+      { status: 401, headers: { 'content-type': 'application/json' } },
+    ),
+  });
+}
+
 
 
 /**
@@ -184,6 +213,11 @@ async function resolvePat(c: Context, next: Next, token: string) {
     const result = await validateAccountToken(token);
     if (!result.isValid || !result.userId) {
       auditLoginFail({ c, reason: result.error ?? 'invalid_pat', authType: 'pat' });
+      // A credential that can never come back gets the typed 401 so the
+      // caller's retry loop can stop; every other refusal keeps the plain 401.
+      if (result.credentialDead) {
+        throw deadCredential401(result.error || 'Credential is no longer valid');
+      }
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
     if (result.projectId) {

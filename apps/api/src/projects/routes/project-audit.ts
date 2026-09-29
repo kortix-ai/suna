@@ -30,7 +30,7 @@ import {
 } from '../../shared/audit-query';
 import { AUDIT_READ_FLUSH_BARRIER_MS, flushAuditEvents } from '../../shared/audit';
 import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
-import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
+import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -68,13 +68,29 @@ async function ingestionOnBehalfOf(c: any, sessionId: string, accountId: string)
 /**
  * Rows per audit-ingest INSERT statement. Each statement holds this session's
  * `audit_session_sequences` row lock until it commits, so this is the knob that
- * bounds how long one ingest can block another. Overridable for an operator who
- * needs to trade lock hold time against round trips.
+ * bounds how long one ingest can block another.
+ *
+ * The default is the route's own batch ceiling (`MAX_BATCH_SIZE`): one accepted
+ * relay batch is ONE statement. Every acquisition and every round trip is a
+ * place a concurrent writer for the same session can interleave, and the lock
+ * is re-queued between statements — so a batch split into 25-row statements
+ * cost 8 acquisitions per POST and let concurrent POSTs alternate their way
+ * past the request deadline (prod 2026-09-29: hot sessions posted full
+ * 200-event batches back to back and `audit/events` burned 5,155 25 s-deadline
+ * 503s in 3 h while every other DB-bound route's p95 rose with it). The row
+ * lock is held only for the statement's own insert work, which is the same
+ * total for the batch whatever the split, so the split bought nothing but
+ * interleaving. Same-process writers already serialize on the in-process
+ * session mutex (`shared/audit-session-serial.ts`), which removed the
+ * dropped-queue-row failure the small chunk once guarded against.
+ *
+ * Read per request, not at module load, so an operator can lower it
+ * (`KORTIX_AUDIT_INGEST_CHUNK`) to trade round trips for shorter lock holds.
  */
-const AUDIT_INGEST_CHUNK = (() => {
+export function auditIngestChunkSize(): number {
   const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_CHUNK ?? '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : 25;
-})();
+  return Number.isFinite(raw) && raw > 0 ? raw : MAX_BATCH_SIZE;
+}
 
 /** Advertised backoff when the session's sequence lock is contended. */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
@@ -405,20 +421,17 @@ projectsApp.openapi(
       return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
     }
 
-    // Write in bounded chunks, never one 200-row statement.
-    //
-    // Every row's BEFORE INSERT trigger locks this session's
-    // `audit_session_sequences` row, and PostgreSQL holds that lock until the
-    // statement's transaction COMMITs. One 200-row statement therefore pinned
-    // the session for its entire duration (measured 137 ms on a warm 5.09M-row
-    // audit_events; the SampleCo box runs an order of magnitude slower), and a
-    // rollback discarded all 200 rows' work, which the relay then re-sent in
-    // full. Chunking bounds both: the lock is held per chunk, and chunks that
-    // already committed stay committed.
+    // Write the batch in bounded statements (`auditIngestChunkSize` — the
+    // default writes one statement per accepted batch; this loop exists for an
+    // operator override). Each statement's rows lock this session's
+    // `audit_session_sequences` row until its COMMIT: the lock holds only the
+    // statement's own insert work, a rejected statement rolls back only its own
+    // rows, and the relay re-sends what did not land after its backoff.
     let attempted = 0;
     let insertedCount = 0;
     let contended = false;
-    for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
+    const chunkSize = auditIngestChunkSize();
+    for (let offset = 0; offset < toInsert.length; offset += chunkSize) {
       // Stay inside the request's own 25s deadline. A multi-chunk batch under a
       // slow database spends ~N chunks x (12s lock wait + 10s statement timeout)
       // here, and the request-deadline middleware then aborts mid-batch: an
@@ -441,12 +454,12 @@ projectsApp.openapi(
           attempted,
           inserted: insertedCount,
           remaining: toInsert.length - offset,
-          chunk: AUDIT_INGEST_CHUNK,
+          chunk: chunkSize,
         });
         contended = true;
         break;
       }
-      const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
+      const chunk = toInsert.slice(offset, offset + chunkSize);
       try {
         // Hold the process-local session lock for the chunk's INSERT. The
         // request's OWN inbound audit row is enqueued for this same session and

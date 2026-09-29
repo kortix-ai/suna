@@ -565,6 +565,129 @@ export async function countLiveTransitions(db: Database): Promise<number> {
 
 // ─── Activation CAS (red-team #1/#2) ─────────────────────────────────────────
 
+type ActivationArgs = {
+  projectId: string;
+  transitionId: string;
+  targetProvider: string;
+  generation: number;
+  snapshotName: string;
+  externalTemplateId: string | null;
+  now: Date;
+  /** Lease epoch this drive acquired. When set, activation additionally
+   *  requires the row's lease_epoch to still match (zombie fencing). */
+  leaseEpoch?: number;
+};
+
+type ActivationResult = {
+  activated: boolean;
+  reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' | 'project_archived';
+};
+
+// Lease fence: a fenced-out zombie must not win activation even at a matching
+// generation. Read the row's epoch under the project lock; a mismatch means a
+// newer owner re-acquired — refuse WITHOUT flipping the pin (do not mark the
+// row superseded either; the current owner is driving it). Returns the
+// `lost_lease` result when the fence refuses the drive, null when it passes.
+async function leaseFence(tx: Queryable, args: ActivationArgs): Promise<ActivationResult | null> {
+  if (args.leaseEpoch !== undefined) {
+    const [t] = await tx
+      .select({ leaseEpoch: providerTransitions.leaseEpoch })
+      .from(providerTransitions)
+      .where(eq(providerTransitions.transitionId, args.transitionId))
+      .limit(1);
+    if (!t || (t.leaseEpoch ?? 0) !== args.leaseEpoch) {
+      return { activated: false, reason: 'lost_lease' as const };
+    }
+  }
+  return null;
+}
+
+/** FIX-J: write ONLY the pin's own keys via a SQL-side atomic merge, never the
+ *  whole object — so a concurrent metadata writer can neither revert this pin
+ *  nor be reverted by it. The generation CAS (above) + the lease-epoch fence
+ *  are UNTOUCHED; this converts the whole-object SET to a targeted merge only. */
+async function writeActivationPin(tx: Queryable, args: ActivationArgs): Promise<void> {
+  const activationPatch: Record<string, unknown> = {
+    [PIN_META_KEY]: args.targetProvider,
+    [ACTIVE_EXTERNAL_ID_META_KEY]: args.externalTemplateId,
+    // FIX-K-lite: record the active ppwarm image NAME so the GC guard can match.
+    [ACTIVE_SNAPSHOT_NAME_META_KEY]: args.snapshotName,
+    [TRANSITION_META_KEY]: {
+      status: 'activated',
+      target_provider: args.targetProvider,
+      generation: args.generation,
+      snapshot_name: args.snapshotName,
+      external_template_id: args.externalTemplateId,
+      activated_at: args.now.toISOString(),
+    },
+  };
+  await tx
+    .update(projects)
+    .set({ metadata: metadataMerge(activationPatch), updatedAt: args.now })
+    .where(eq(projects.projectId, args.projectId));
+}
+
+/**
+ * The `db.transaction` body of {@link activateWithCas}, moved verbatim. Returns
+ * the audit row on `won` for the after-commit dispatch.
+ */
+async function activateInTransaction(
+  tx: Queryable,
+  args: ActivationArgs,
+): Promise<ActivationResult & { row?: ProviderTransitionAuditRow }> {
+  const [project] = await tx
+    .select({
+      metadata: projects.metadata,
+      generation: projects.sandboxProviderGeneration,
+      status: projects.status,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, args.projectId))
+    .for('update')
+    .limit(1);
+  if (!project) return { activated: false, reason: 'project_missing' as const };
+  if (project.status === 'archived') {
+    return { activated: false, reason: 'project_archived' as const };
+  }
+
+  const fencedOut = await leaseFence(tx, args);
+  if (fencedOut) return fencedOut;
+
+  const recorded = project.generation ?? 0;
+  // Reserved-at-request semantics: the winning transition's generation EQUALS
+  // the project's current generation; a newer request would have bumped it
+  // strictly higher. canActivateGeneration(gen, recorded-1) captures "still
+  // the latest intent" — equivalently gen === recorded here.
+  if (args.generation !== recorded) {
+    await tx
+      .update(providerTransitions)
+      .set({ status: 'superseded', heartbeatAt: null, updatedAt: args.now })
+      .where(eq(providerTransitions.transitionId, args.transitionId));
+    return { activated: false, reason: 'lost_cas' as const };
+  }
+
+  await writeActivationPin(tx, args);
+  const [activatedRow] = await tx
+    .update(providerTransitions)
+    .set({ status: 'activated', activatedAt: args.now, heartbeatAt: null, lastError: null, errorClass: null, nextRetryAt: null, updatedAt: args.now })
+    .where(eq(providerTransitions.transitionId, args.transitionId))
+    .returning(TRANSITION_AUDIT_COLUMNS);
+
+  // Any lower-generation live transition can never win now.
+  await tx
+    .update(providerTransitions)
+    .set({ status: 'superseded', heartbeatAt: null, updatedAt: args.now })
+    .where(
+      and(
+        eq(providerTransitions.projectId, args.projectId),
+        inArray(providerTransitions.status, LIVE),
+        lt(providerTransitions.generation, args.generation),
+        ne(providerTransitions.transitionId, args.transitionId),
+      ),
+    );
+  return { activated: true, reason: 'won' as const, row: activatedRow };
+}
+
 /**
  * Atomic activation. Locks the project row, then flips the active pin ONLY if
  * the project's generation still equals this transition's stamped generation
@@ -585,113 +708,9 @@ export async function countLiveTransitions(db: Database): Promise<number> {
  */
 export async function activateWithCas(
   db: Database,
-  args: {
-    projectId: string;
-    transitionId: string;
-    targetProvider: string;
-    generation: number;
-    snapshotName: string;
-    externalTemplateId: string | null;
-    now: Date;
-    /** Lease epoch this drive acquired. When set, activation additionally
-     *  requires the row's lease_epoch to still match (zombie fencing). */
-    leaseEpoch?: number;
-  },
-): Promise<{
-  activated: boolean;
-  reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' | 'project_archived';
-}> {
-  const result = await db.transaction(async (tx): Promise<{
-    activated: boolean;
-    reason: 'won' | 'lost_cas' | 'lost_lease' | 'project_missing' | 'project_archived';
-    row?: ProviderTransitionAuditRow;
-  }> => {
-    const [project] = await tx
-      .select({
-        metadata: projects.metadata,
-        generation: projects.sandboxProviderGeneration,
-        status: projects.status,
-      })
-      .from(projects)
-      .where(eq(projects.projectId, args.projectId))
-      .for('update')
-      .limit(1);
-    if (!project) return { activated: false, reason: 'project_missing' as const };
-    if (project.status === 'archived') {
-      return { activated: false, reason: 'project_archived' as const };
-    }
-
-    // Lease fence: a fenced-out zombie must not win activation even at a matching
-    // generation. Read the row's epoch under the project lock; a mismatch means a
-    // newer owner re-acquired — refuse WITHOUT flipping the pin (do not mark the
-    // row superseded either; the current owner is driving it).
-    if (args.leaseEpoch !== undefined) {
-      const [t] = await tx
-        .select({ leaseEpoch: providerTransitions.leaseEpoch })
-        .from(providerTransitions)
-        .where(eq(providerTransitions.transitionId, args.transitionId))
-        .limit(1);
-      if (!t || (t.leaseEpoch ?? 0) !== args.leaseEpoch) {
-        return { activated: false, reason: 'lost_lease' as const };
-      }
-    }
-
-    const recorded = project.generation ?? 0;
-    // Reserved-at-request semantics: the winning transition's generation EQUALS
-    // the project's current generation; a newer request would have bumped it
-    // strictly higher. canActivateGeneration(gen, recorded-1) captures "still
-    // the latest intent" — equivalently gen === recorded here.
-    if (args.generation !== recorded) {
-      await tx
-        .update(providerTransitions)
-        .set({ status: 'superseded', heartbeatAt: null, updatedAt: args.now })
-        .where(eq(providerTransitions.transitionId, args.transitionId));
-      return { activated: false, reason: 'lost_cas' as const };
-    }
-
-    // FIX-J: write ONLY the pin's own keys via a SQL-side atomic merge, never the
-    // whole object — so a concurrent metadata writer can neither revert this pin
-    // nor be reverted by it. The generation CAS (above) + the lease-epoch fence
-    // are UNTOUCHED; this converts the whole-object SET to a targeted merge only.
-    const activationPatch: Record<string, unknown> = {
-      [PIN_META_KEY]: args.targetProvider,
-      [ACTIVE_EXTERNAL_ID_META_KEY]: args.externalTemplateId,
-      // FIX-K-lite: record the active ppwarm image NAME so the GC guard can match.
-      [ACTIVE_SNAPSHOT_NAME_META_KEY]: args.snapshotName,
-      [TRANSITION_META_KEY]: {
-        status: 'activated',
-        target_provider: args.targetProvider,
-        generation: args.generation,
-        snapshot_name: args.snapshotName,
-        external_template_id: args.externalTemplateId,
-        activated_at: args.now.toISOString(),
-      },
-    };
-    await tx
-      .update(projects)
-      .set({ metadata: metadataMerge(activationPatch), updatedAt: args.now })
-      .where(eq(projects.projectId, args.projectId));
-
-    const [activatedRow] = await tx
-      .update(providerTransitions)
-      .set({ status: 'activated', activatedAt: args.now, heartbeatAt: null, lastError: null, errorClass: null, nextRetryAt: null, updatedAt: args.now })
-      .where(eq(providerTransitions.transitionId, args.transitionId))
-      .returning(TRANSITION_AUDIT_COLUMNS);
-
-    // Any lower-generation live transition can never win now.
-    await tx
-      .update(providerTransitions)
-      .set({ status: 'superseded', heartbeatAt: null, updatedAt: args.now })
-      .where(
-        and(
-          eq(providerTransitions.projectId, args.projectId),
-          inArray(providerTransitions.status, LIVE),
-          lt(providerTransitions.generation, args.generation),
-          ne(providerTransitions.transitionId, args.transitionId),
-        ),
-      );
-    return { activated: true, reason: 'won' as const, row: activatedRow };
-  });
+  args: ActivationArgs,
+): Promise<ActivationResult> {
+  const result = await db.transaction((tx) => activateInTransaction(tx, args));
   // Audited after COMMIT: a rolled-back activation never produces a row.
   if (result.row) await auditProviderTransition(result.row, { outcome: 'activated' });
   return { activated: result.activated, reason: result.reason };

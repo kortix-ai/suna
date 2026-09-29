@@ -142,4 +142,39 @@ describe('session-token-health', () => {
 
     expect(sessionTokenPresumedDead()).toBe(false);
   });
+
+  // Keep this list aligned with apps/api/src/repositories/account-tokens.ts.
+  test('trips on every terminal credential reason the API emits', () => {
+    for (const reason of [
+      'PAT not found or revoked',
+      'PAT expired',
+      'PAT auto-revoked due to inactivity',
+    ]) {
+      resetSessionTokenHealthForTests();
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, reason);
+      }
+      expect(sessionTokenPresumedDead()).toBe(true);
+    }
+  });
+
+  test('the terminal reasons share one streak — mixed reasons still trip', () => {
+    noteControlPlaneResponse(401, 'Session token is not active');
+    noteControlPlaneResponse(401, 'PAT not found or revoked');
+    noteControlPlaneResponse(401, 'Session token is not active');
+    noteControlPlaneResponse(401, 'PAT expired');
+    noteControlPlaneResponse(401, 'PAT auto-revoked due to inactivity');
+
+    expect(sessionTokenPresumedDead()).toBe(true);
+  });
+
+  test('a non-terminal 401 between terminal ones still resets the streak', () => {
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD - 1; i++) {
+      noteControlPlaneResponse(401, 'PAT not found or revoked');
+    }
+    noteControlPlaneResponse(401, 'malformed user context');
+    noteControlPlaneResponse(401, 'PAT not found or revoked');
+
+    expect(sessionTokenPresumedDead()).toBe(false);
+  });
 });

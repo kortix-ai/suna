@@ -8,7 +8,12 @@ const GENERIC_DATA_PATHS = [
   'sandbox-proxy/routes/preview.ts',
   'sandbox-proxy/routes/public-share.ts',
   'projects/lib/sandbox-daemon-ready.ts',
-  'projects/lib/sandbox-env-sync.ts',
+  // The env-sync implementation is split across sibling modules (KRTX-300);
+  // `sandbox-env-sync.ts` itself is the re-export entry.
+  'projects/lib/sandbox-env-snapshot.ts',
+  'projects/lib/sandbox-env-push.ts',
+  'projects/lib/sandbox-secret-propagation.ts',
+  'projects/lib/sandbox-session-push.ts',
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
   // Egress-enforced delivery. There is ONE mechanism for every provider

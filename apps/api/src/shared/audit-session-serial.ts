@@ -13,7 +13,7 @@
  * /v1/projects/:p/sessions/:s/audit/events` is written twice by the same
  * process, at the same moment, for the same `sessionId`:
  *
- *   1. the sandbox ingest route inserts the batch in 25-row chunks, and
+ *   1. the sandbox ingest route inserts the batch in statements, and
  *   2. the audit queue flushes the request's OWN inbound audit row
  *      (`sessionIdForSnapshot` returns the path session id).
  *

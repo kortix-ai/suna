@@ -65,7 +65,7 @@ describe('the agent_name column has one writer', () => {
   });
 
   test('INC-2026-09-15 is untouched: the grant resolver still deny-alls an undeclared name', () => {
-    const agents = readFileSync(join(SRC_ROOT, 'projects/agents.ts'), 'utf8');
+    const agents = readFileSync(join(SRC_ROOT, 'projects/agents/grants.ts'), 'utf8');
     // The unlisted-agent default-deny and the launchable check are unchanged.
     // `kortix_cli` → `kortix_permissions` renamed the grant field in #7507; the
     // invariant is unchanged — an undeclared name still gets an EMPTY grant.
