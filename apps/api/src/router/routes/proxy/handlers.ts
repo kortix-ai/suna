@@ -1,30 +1,32 @@
+import { isIP } from 'node:net';
 import { HTTPException } from 'hono/http-exception';
-import { type ProxyServiceConfig } from '../../config/proxy-services';
-import { config, KORTIX_MARKUP } from '../../../config';
+import { KORTIX_MARKUP, config } from '../../../config';
+import { type ActorContext, resolveActorFromRequest } from '../../../shared/actor-context';
+import { isPrivateIp } from '../../../shared/ssrf-guard';
 import { requireModelPricing } from '../../config/models';
+import type { ProxyServiceConfig } from '../../config/proxy-services';
 import {
+  type UsageAccumulator,
   accumulateUsageChunk,
   calculateCost,
   extractUsage,
-  type UsageAccumulator,
 } from '../../services/llm';
-import { resolveActorFromRequest, type ActorContext } from '../../../shared/actor-context';
-import type { ToolCreditReservation } from './app';
 import {
+  type LlmCreditReservation,
   refundLlmReservation,
   reserveEstimatedLlmCredits,
   settleLlmReservation,
-  type LlmCreditReservation,
 } from '../../services/llm-reservation';
+import type { ToolCreditReservation } from './app';
 import {
-  matchAllowedRoute,
-  tryAuthenticate,
-  maybeNormalizeOpenAIResponsesInput,
   buildForwardHeaders,
   getRequestBody,
-  reserveToolProxyCredits,
-  refundToolReservation,
   injectApiKey,
+  matchAllowedRoute,
+  maybeNormalizeOpenAIResponsesInput,
+  refundToolReservation,
+  reserveToolProxyCredits,
+  tryAuthenticate,
 } from './helpers';
 
 function pricingProvider(service: ProxyServiceConfig, managed: boolean): string {
@@ -45,6 +47,53 @@ function usageProvider(service: ProxyServiceConfig): 'openai' | 'anthropic' {
 
 function usageRoute(service: ProxyServiceConfig, subPath: string): string {
   return `/v1/${service.name}${subPath}`;
+}
+
+// === SSRF URL guard for user-supplied fetch URLs ===
+//
+// The firecrawl proxy forwards the body's `url` to the upstream scraping
+// service. Reject before any reservation or forward step: the upstream fetcher
+// should never be pointed at a loopback, link-local (cloud metadata),
+// RFC1918/ULA or non-http(s) target. Defense in depth — it stops relying on
+// the upstream service's own egress protections and on account funding.
+//
+// ponytail: string-level check only; the upstream resolves DNS from its own
+// network, so resolving here protects their egress, not ours. Escalate to
+// shared/ssrf-guard's DNS-resolving assertSafeEgressUrl only if the upstream
+// stops guarding its own egress.
+
+/** Hostname suffixes that always mean "an internal machine". */
+const INTERNAL_HOST_SUFFIXES = ['.localhost', '.local', '.internal'];
+
+function assertProxyFetchUrl(rawUrl: unknown): void {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) return;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new HTTPException(400, { message: 'Invalid url: not a parseable URL' });
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new HTTPException(400, { message: 'Only http(s) fetch URLs are allowed' });
+  }
+  // WHATWG URL normalizes decimal/octal/hex IPv4 encodings to dotted quads and
+  // serializes IPv4-mapped IPv6 as hex, so isPrivateIp sees every literal form.
+  const host = parsed.hostname;
+  const literal = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  if (isIP(literal) !== 0) {
+    if (isPrivateIp(literal)) {
+      throw new HTTPException(400, { message: 'Fetch URL points at a private network address' });
+    }
+    return;
+  }
+  const bare = literal.replace(/\.$/, '');
+  if (
+    bare === 'localhost' ||
+    bare === 'metadata.goog' ||
+    INTERNAL_HOST_SUFFIXES.some((suffix) => bare.endsWith(suffix))
+  ) {
+    throw new HTTPException(400, { message: 'Fetch URL points at an internal host' });
+  }
 }
 
 // === Core Proxy Handler ===
@@ -68,6 +117,18 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
   const subPath = prefixIdx !== -1 ? fullPath.slice(prefixIdx + prefixStr.length) || '/' : '/';
   const queryString = new URL(c.req.url).search;
   const method = c.req.method;
+
+  if (service.name === 'firecrawl') {
+    // Parse the body's `url` the same way the allowedBodyVersions gate below
+    // parses a body: clone the raw request, ignore any non-JSON body.
+    let fetchUrl: unknown;
+    try {
+      fetchUrl = JSON.parse(await c.req.raw.clone().text())?.url;
+    } catch {
+      fetchUrl = undefined;
+    }
+    assertProxyFetchUrl(fetchUrl);
+  }
 
   const auth = await tryAuthenticate(c);
 
@@ -298,12 +359,11 @@ async function billLlmKortixProxy(
   }
   const provider = usageProvider(service);
   const usage = extractUsage(responseBody, provider);
-  let modelId = responseBody?.model || 'unknown';
+  const modelId = responseBody?.model || 'unknown';
 
   if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
     const modelConfig =
-      reservation?.modelConfig ??
-      requireModelPricing(modelId, pricingProvider(service, true));
+      reservation?.modelConfig ?? requireModelPricing(modelId, pricingProvider(service, true));
     const cost = calculateCost(
       modelConfig,
       usage.promptTokens,
