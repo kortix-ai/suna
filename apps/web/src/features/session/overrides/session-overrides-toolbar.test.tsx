@@ -10,12 +10,24 @@ let poolLoading = false;
 let poolError = false;
 let secretAllowed = true;
 let selection: Record<string, string[]> = {};
+// The scope catalog (and, for a session, its scope) has answered.
+let catalogLoaded = true;
+let providerDrafts: Record<string, string[] | null> = {};
+let control: { saveDisabled?: boolean; disabled?: boolean; onSave: () => Promise<boolean> } | null = null;
+const poolWrites: Array<{ providerId: string; secretIds: string[] | null }> = [];
+const scopeWrites: unknown[] = [];
+const toasts: string[] = [];
 
 mock.module('./session-overrides-control', () => ({
-  SessionOverridesControl: ({ rows: next }: { rows: SessionOverrideRow[] }) => {
-    rows = next;
+  SessionOverridesControl: (props: { rows: SessionOverrideRow[]; saveDisabled?: boolean; disabled?: boolean; onSave: () => Promise<boolean> }) => {
+    rows = props.rows;
+    control = props;
     return null;
   },
+}));
+mock.module('@/components/ui/toast', () => ({
+  successToast: (message: string) => { toasts.push(message); },
+  errorToast: () => {},
 }));
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string, values?: { count: number }) =>
@@ -26,11 +38,13 @@ mock.module('@/lib/use-project-can', () => ({
 }));
 mock.module('@/features/session/scope/use-session-scope', () => ({
   useSessionScope: () => ({
-    scope: sessionId ? { secrets_allowlist: [], connector_bindings: [] } : undefined,
-    catalog: { secrets: { status: 'ready', options: [] }, connector_connections: { status: 'unavailable' } },
-    saveScope: { isPending: false, mutateAsync: async () => {} },
-    isLoading: false,
-    isScopeLoading: false,
+    scope: sessionId && catalogLoaded ? { secrets_allowlist: [], connector_bindings: [] } : undefined,
+    catalog: catalogLoaded
+      ? { secrets: { status: 'ready', options: [] }, connector_connections: { status: 'unavailable' } }
+      : undefined,
+    saveScope: { isPending: false, mutateAsync: async (replacement: unknown) => { scopeWrites.push(replacement); } },
+    isLoading: !catalogLoaded,
+    isScopeLoading: Boolean(sessionId) && !catalogLoaded,
   }),
 }));
 mock.module('@kortix/sdk/react', () => ({
@@ -39,12 +53,12 @@ mock.module('@kortix/sdk/react', () => ({
     data: { pools: [], can_edit: true },
     isError: poolError,
     isLoading: poolLoading,
-    setPool: { mutateAsync: async () => {} },
+    setPool: { mutateAsync: async (write: { providerId: string; secretIds: string[] | null }) => { poolWrites.push(write); } },
   }),
 }));
 mock.module('./provider-pool-draft-context', () => ({
   useProviderPoolEditingState: () => ({
-    providerDrafts: {}, setProviderDrafts: () => {}, saveError: null, setSaveError: () => {},
+    providerDrafts, setProviderDrafts: () => {}, saveError: null, setSaveError: () => {},
     saving: false, setSaving: () => {}, savingRef: { current: false },
   }),
 }));
@@ -90,4 +104,44 @@ test('existing session retains provider loading and failure summaries', () => {
   poolError = false;
   secretAllowed = false;
   expect(render(true).map((row) => row.id)).toEqual(['provider-keys', 'sandbox']);
+});
+
+// The scope catalog (secrets, connectors, connections) can take seconds. It
+// used to lock the gear, and Save waited on it too, so provider keys could not
+// be changed before a first prompt, or saved in a session, until it answered.
+test('a new session saves at once while its secrets catalog loads', async () => {
+  poolEnabled = true;
+  secretAllowed = true;
+  catalogLoaded = false;
+  selection = { alpha: ['key-a'] };
+  providerDrafts = {};
+  toasts.length = 0;
+  expect(render()[0]).toEqual({ id: 'secrets', summary: 'secrets.loading', overridden: false });
+  // Neither the panel nor its Save button waits on the catalog.
+  expect(control?.disabled).toBe(false);
+  expect(control?.saveDisabled).toBe(false);
+  expect(await control!.onSave()).toBe(true);
+  expect(toasts).toEqual(['text2467c93661b7']);
+  catalogLoaded = true;
+});
+
+test('an existing session saves its provider keys without waiting for the scope', async () => {
+  poolEnabled = true;
+  secretAllowed = true;
+  catalogLoaded = false;
+  providerDrafts = { anthropic: ['key-a'] };
+  poolWrites.length = 0;
+  scopeWrites.length = 0;
+  toasts.length = 0;
+  render(true);
+  expect(control?.saveDisabled).toBe(false);
+  expect(await control!.onSave()).toBe(true);
+  expect(poolWrites).toEqual([{ providerId: 'anthropic', secretIds: ['key-a'] }]);
+  expect(scopeWrites).toEqual([]);
+  expect(toasts).toEqual(['textdf7987d6fd91']);
+  // Without a key change there is nothing Save can commit until the scope loads.
+  providerDrafts = {};
+  render(true);
+  expect(control?.saveDisabled).toBe(true);
+  catalogLoaded = true;
 });

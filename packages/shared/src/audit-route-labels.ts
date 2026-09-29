@@ -461,6 +461,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/channels/teams/installation': { action: 'channel.teams.installation.read', title: 'Viewed Microsoft Teams installation' },
   'GET /v1/projects/:projectId/channels/teams/manifest': { action: 'channel.teams.manifest.read', title: 'Viewed Microsoft Teams app manifest' },
   'POST /v1/projects/:projectId/channels/teams/message': { action: 'channel.teams.message.send', title: 'Sent Microsoft Teams message' },
+  'POST /v1/projects/:projectId/channels/teams/message/delete': { action: 'channel.teams.message.delete', title: 'Deleted Microsoft Teams message' },
+  'POST /v1/projects/:projectId/channels/teams/message/edit': { action: 'channel.teams.message.edit', title: 'Edited Microsoft Teams message' },
   'GET /v1/projects/:projectId/channels/teams/mode': { action: 'channel.teams.mode.read', title: 'Viewed Microsoft Teams setup options' },
   'GET /v1/projects/:projectId/cli-token': { action: 'project.cli_token.list', title: 'Listed project CLI tokens' },
   'POST /v1/projects/:projectId/cli-token': { action: 'project.cli_token.create', title: 'Created project CLI token' },

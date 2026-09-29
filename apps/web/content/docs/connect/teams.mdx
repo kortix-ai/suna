@@ -79,9 +79,17 @@ access instead of a session.
 
 The sign-in link appears only in a one-to-one chat with the bot. It links the
 person it was issued for to whoever opens it, so in a channel or group chat,
-where everyone sees the card, the bot instead asks you to open a private chat
-with it and send `/login` there. A message you sent in the channel while
-unlinked runs once you connect, if you do so within 10 minutes.
+where everyone sees the card, the bot sends the link to your private chat with
+it and says so. Teams allows that only when you have added the app for
+yourself; otherwise the card asks you to open a private chat with the bot and
+send `/login` there. A message you sent in the channel while unlinked runs once
+you connect, if you do so within 10 minutes. When you finish connecting in the
+browser, your private chat with the bot confirms which Kortix account you are
+linked as.
+
+When someone without access asks for it, every account owner and admin gets
+the request in Kortix. Those who linked Teams also get it in their private chat
+with the bot, with a **Review in Kortix** button.
 
 ## Commands
 
@@ -91,13 +99,20 @@ Type these in a chat with the bot (in a channel, `@`-mention it first):
 | --- | --- |
 | `/help` | List the commands |
 | `/login`, `/logout`, `/whoami` | Link, unlink, or show your Kortix account |
-| `/status` | The effective project, agent and model here, and the run in progress |
+| `/status` | The project, agent, model, session policy and run here, with buttons to change the model, agent or project |
+| `/sessions` | Your five most recent sessions started from Teams, each with an Open button |
 | `/stop` | Stop the run in progress here |
 | `/new [message]` | Start a new session in this chat (personal and group chats) |
 | `/models`, `/model <ref>` | Pick the model for this conversation — see [Models and keys](#models-and-keys) |
 | `/agents`, `/agent <name>` | Pick the agent for this conversation |
 | `/projects`, `/use <name>` | List connected projects, or point this one at another |
 | `/policy [open\|approval\|owner]` | Who may join sessions started here |
+| `/unbind` | Disconnect this conversation from its project; the next message picks one again |
+| `/home` | The organization's projects and what to try |
+
+On any message, **⋯ → Open in Kortix** opens the session that conversation
+belongs to. When you add the app for yourself, your private chat with the bot
+starts with the same overview as `/home`.
 
 ## Models and keys
 

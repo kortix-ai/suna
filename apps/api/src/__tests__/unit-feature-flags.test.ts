@@ -132,13 +132,15 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { monitors: false } }, 'monitors')).toBe(false);
   });
 
-  test('saved session history defaults ON platform-wide and is turned off only explicitly', () => {
+  test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
     // Saved history is how web, mobile and the CLI show a session while its
-    // computer is off, so every project keeps it unless it opts out.
-    expect(resolveFeatureFlag({}, 'session_transcript_history')).toBe(true);
-    expect(
-      resolveFeatureFlag({ experimental: { session_transcript_history: false } }, 'session_transcript_history'),
-    ).toBe(false);
+    // computer is off. Projects that stored `false` keep theirs too.
+    expect(isFeatureFlagKey('session_transcript_history')).toBe(false);
+    const metadata = { experimental: { session_transcript_history: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('session_transcript_history');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(
+      'session_transcript_history',
+    );
   });
 
   test('marketplace defaults ON platform-wide and is turned off only explicitly', () => {

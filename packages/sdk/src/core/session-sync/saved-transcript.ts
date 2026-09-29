@@ -21,6 +21,8 @@
  * rendered as a negative.
  */
 
+import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
+
 export type SavedTranscript = 'loading' | 'shown' | 'none';
 
 export interface SavedTranscriptInput {
@@ -30,8 +32,7 @@ export interface SavedTranscriptInput {
   hasMessages: boolean;
   /**
    * The saved-history read (`GET …/transcript?history=true`), which paints
-   * the copy when the project's `session_transcript_history` flag is on.
-   * `off` when the flag is off.
+   * the copy. `off` when the host does not run it.
    */
   history: 'off' | 'loading' | 'present' | 'absent';
   /**
@@ -64,6 +65,27 @@ export function resolveSavedTranscript(input: SavedTranscriptInput): SavedTransc
   if (input.root === 'pending') return 'loading';
   if (input.mirror === 'absent') return 'none';
   return 'loading';
+}
+
+/**
+ * The OpenCode root a saved window proves EMPTY, or null.
+ *
+ * The proof is the server's: a complete read of the runtime that found no
+ * messages, served as an available, complete window that counts zero. `total`
+ * must say so explicitly; an older API sends none and never answers an empty
+ * window as available.
+ */
+export function savedCopyEmptyRoot(
+  envelope: SessionTranscriptSyncEnvelope | null | undefined,
+): string | null {
+  return envelope?.available &&
+    envelope.source === 'mirror' &&
+    envelope.complete &&
+    envelope.total === 0 &&
+    envelope.messages.length === 0 &&
+    envelope.opencode_session_id
+    ? envelope.opencode_session_id
+    : null;
 }
 
 export interface EmptyConversationInput {

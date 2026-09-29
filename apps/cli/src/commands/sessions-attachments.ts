@@ -35,8 +35,7 @@ session is stopped: neither the list nor the bytes need its sandbox.
   -h, --help                   Show this help.
 
 Files come from the session's saved transcript, which is written at the end of
-every turn. A project stores them only with Session Transcript History enabled
-(Settings → Feature flags).`;
+every turn.`;
 
 /**
  * A download name that can only land inside `dir`.
