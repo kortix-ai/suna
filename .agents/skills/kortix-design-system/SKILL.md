@@ -249,6 +249,21 @@ Match the customize views — consistent sizes and variants:
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
 
+## Cursor states
+
+Every clickable element shows `cursor: pointer`. Disabled elements show
+`cursor: default`. Do not add `cursor-default` to an interactive element. A
+clickable element is a `<button>`, `<Link>`, or has a `role`. Never put
+`onClick` on a bare `div`.
+
+The global rule in `apps/web/src/app/globals.css` (`@layer base`) covers
+`button`, `summary`, `label[for]`, file/choice inputs, and ARIA roles — a
+utility class beats `@layer base`, so `cursor-default` on a clickable element
+breaks the rule. A `cursor-default` in `src/components/ui` needs a reason
+comment on its line (`tests/unit/web-cursor-default-guard.test.ts` enforces
+it). Non-clickable surfaces that bake a pointer override it deliberately, e.g.
+`CheckpointLabel` (status text on the ui `Label`, which ships `cursor-pointer`).
+
 ## Icons — Phosphor only
 
 **The only icon library in apps/web is `@phosphor-icons/react`.** `lucide-react`,
@@ -535,6 +550,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Keyboard-driven interactions → `transition-none`. ❌ animating arrow-key nav or focus moves.
 - ✅ Every animation ships a `prefers-reduced-motion` variant. ❌ one variant only.
 - ✅ List items appear at once. ❌ stagger in product UI.
+- ✅ Interactive elements show the pointer from the global rule. ❌ `cursor-default` on a clickable element.
 
 ## Workflow checklist
 

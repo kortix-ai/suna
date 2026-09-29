@@ -70,7 +70,7 @@ const SelectScrollUpButton = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.ScrollUpButton
     ref={ref}
-    className={cn('flex cursor-default items-center justify-center py-1', className)}
+    className={cn('flex cursor-default items-center justify-center py-1', className)} // scroll affordance, not a click target — keeps the default cursor
     {...props}
   >
     <ChevronUp className="size-4" />
@@ -84,7 +84,7 @@ const SelectScrollDownButton = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.ScrollDownButton
     ref={ref}
-    className={cn('flex cursor-default items-center justify-center py-1', className)}
+    className={cn('flex cursor-default items-center justify-center py-1', className)} // scroll affordance, not a click target — keeps the default cursor
     {...props}
   >
     <ChevronDown className="size-4" />

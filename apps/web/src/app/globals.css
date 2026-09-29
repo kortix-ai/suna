@@ -688,15 +688,25 @@
   }
 
   /* Tailwind v4 makes <button> default to `cursor: default`; restore the
-     pointer on genuinely interactive elements (buttons, tabs, ARIA buttons,
-     menu items, options, summaries). Disabled elements keep the default. */
+     pointer on genuinely interactive elements. Disabled elements
+     (`:disabled`, `aria-disabled="true"`) keep the default cursor. */
   button:not(:disabled),
   summary,
+  label[for],
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='file']:not(:disabled),
   [role='button']:not([aria-disabled='true']),
   [role='tab']:not([aria-disabled='true']),
   [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemcheckbox']:not([aria-disabled='true']),
   [role='menuitemradio']:not([aria-disabled='true']),
-  [role='option']:not([aria-disabled='true']) {
+  [role='option']:not([aria-disabled='true']),
+  [role='link']:not([aria-disabled='true']),
+  [role='switch']:not([aria-disabled='true']):not(:disabled),
+  [role='checkbox']:not([aria-disabled='true']):not(:disabled),
+  [role='radio']:not([aria-disabled='true']):not(:disabled),
+  [role='treeitem']:not([aria-disabled='true']) {
     cursor: pointer;
   }
 

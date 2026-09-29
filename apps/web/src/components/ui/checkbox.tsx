@@ -14,7 +14,7 @@ const checkboxControlClassName = cn(
   'peer flex aspect-square size-[18px] shrink-0 items-center justify-center rounded-sm border border-muted-foreground/60 bg-transparent',
   'transition-[color,box-shadow,border-color,background-color]',
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-  'disabled:cursor-not-allowed disabled:opacity-50',
+  'disabled:opacity-50',
   'data-[state=checked]:border-foreground data-[state=checked]:bg-kortix-blue data-[state=checked]:border-kortix-blue data-[state=checked]:border',
   'data-[state=checked]:text-background data-[state=checked]:[&_svg]:size-3',
   'aria-invalid:border-destructive',
@@ -52,7 +52,7 @@ function Checkbox({ className, label, id, ...props }: CheckboxProps) {
         'hover:bg-foreground/3',
         'has-data-[state=checked]:bg-foreground/6 has-data-[state=checked]:hover:bg-foreground/6',
         'has-focus-visible:ring-ring has-focus-visible:ring-offset-background has-focus-visible:ring-2 has-focus-visible:ring-offset-2',
-        props.disabled && 'cursor-not-allowed opacity-50',
+        props.disabled && 'cursor-default opacity-50', // disabled keeps the default cursor (AGENTS.md → States)
         className,
       )}
     >
