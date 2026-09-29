@@ -224,6 +224,14 @@ describe('renderLegacyBootstrapScript', () => {
     expect(s).toContain('npm install -g "pnpm@$want"');
     expect(s).toContain("RELAUNCH='pt-app'");
   });
+  test('pt-app re-checks OpenCode idle after the download, before the token swap and the kill', () => {
+    const s = renderLegacyBootstrapScript({ relaunch: 'pt-app' });
+    const guard = s.indexOf('"stage\\":\\"deferred_busy');
+    expect(guard).toBeGreaterThan(s.indexOf('download "$AGENT_PATH"'));
+    expect(guard).toBeLessThan(s.indexOf('if [ -n "$NEW_KORTIX_TOKEN" ]'));
+    expect(guard).toBeLessThan(s.indexOf('\nstop_runtime_chain\n'));
+    expect(s).toContain('http://127.0.0.1:4096/session/status');
+  });
   test('next-start strategy stages only', () => {
     const s = renderLegacyBootstrapScript({ relaunch: 'next-start' });
     expect(s).toContain("RELAUNCH='next-start'");
@@ -352,6 +360,31 @@ describe('bootstrapLegacyRuntime', () => {
     expect(calls.execs).toHaveLength(0);
     const unreachable = await bootstrapLegacyRuntime(input(), makeDeps({ status: null }, calls));
     expect(unreachable.outcome).toBe('skipped-busy');
+  });
+
+  test('a turn that starts during the repair defers the relaunch and spends no attempt', async () => {
+    // dev 2026-09-29: the idle gate passed, the ~110 MB agent download ran,
+    // the user's first prompt landed, and the relaunch killed it.
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    const prior = { state: 'converged', attempts: 1, manifestBuild: 1, lastAttemptAt: '2026-09-28T00:00:00.000Z', reason: 'reaper', to: { runtimeBuild: 1 } };
+    const deps = makeDeps(
+      {
+        exec: async (cmd) => {
+          calls.execs.push(cmd);
+          return { exitCode: 0, stdout: '{"ok":true,"stage":"deferred_busy","token_rotated":false}\n', stderr: '' };
+        },
+      },
+      calls,
+    );
+    const r = await bootstrapLegacyRuntime(input({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior }), deps);
+    expect(r.outcome).toBe('skipped-busy');
+    expect(calls.execs).toHaveLength(1);
+    expect(calls.patches.at(-1)).toEqual({ [LEGACY_BOOTSTRAP_METADATA_KEY]: prior });
+    expect(calls.audits).toHaveLength(0);
+
+    const fresh: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(input(), makeDeps({ exec: deps.exec }, fresh));
+    expect(fresh.patches.at(-1)).toEqual({ [LEGACY_BOOTSTRAP_METADATA_KEY]: null });
   });
 
   test('failed attempt: cooldown, then budget exhausted on the same build, fresh budget on a new build', async () => {

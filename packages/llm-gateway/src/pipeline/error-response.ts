@@ -1,3 +1,4 @@
+import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { GatewayAttemptFailure } from '../domain';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +33,21 @@ import type { GatewayAttemptFailure } from '../domain';
 // trigger list is OpenCode's and can grow (1.18.14 already added 524), so
 // keying on it would rot on the next bump.
 // ---------------------------------------------------------------------------
+
+/**
+ * The same classifier also matches WORDS in the body — `server_error`,
+ * `internal error`, `overloaded`, … (`Jd` in OpenCode 1.18.23). A provider
+ * that labels a permanent 4xx `server_error` (OpenCode Go's "requires Global
+ * regions" 400, dev 2026-09-29) was replayed five times. Below 500, 429 aside,
+ * relay the provider's message in an envelope that agrees with the status.
+ */
+export function providerClientErrorBody(status: number, raw: string): string {
+  if (status >= 500 || status === 429) return raw;
+  const { message, code } = parseUpstreamErrorBody(raw);
+  return JSON.stringify({
+    error: { message, type: 'invalid_request_error', ...(code === 'context_length_exceeded' ? { code } : {}) },
+  });
+}
 
 /** Upper bound the gateway relays for `Retry-After`, in seconds. */
 export const MAX_RELAYED_RETRY_AFTER_SECONDS = 60;

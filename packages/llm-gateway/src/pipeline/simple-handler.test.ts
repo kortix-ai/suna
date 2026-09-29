@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
-import { GatewayResolutionError } from '../errors';
+import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { rawProviderError } from './dispatch';
 import { handleChatCompletions } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
@@ -412,6 +413,36 @@ describe('simple gateway pipeline', () => {
     expect(calls).toBe(1);
     expect(response.status).toBe(400);
     expect(traces[0]).toMatchObject({ attempts: 1, candidatesTried: ['amazon-bedrock'] });
+  });
+
+  test('a provider 4xx labelled server_error reaches the client without the label OpenCode retries on', async () => {
+    // OpenCode retries any body matching /server_error|internal error|.../,
+    // whatever the status: this permanent 400 was replayed 5 times (dev 2026-09-29).
+    const upstreamBody = JSON.stringify({
+      error: { type: 'server_error', message: 'Upstream request failed: This Go model requires Global regions.' },
+    });
+    for (const stream of [false, true]) {
+      const response = await handleChatCompletions(
+        {
+          hooks: { ...hooks([], []), resolveUpstream: async () => [primary] },
+          logger: { info() {}, warn() {}, error() {} },
+          fetchImpl: async () => new Response(upstreamBody, { status: 400, headers: { 'content-type': 'application/json' } }),
+        },
+        { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream, messages: [{ role: 'user', content: 'hi' }] }) },
+      );
+      const text = await response.text();
+      expect(response.status).toBe(400);
+      expect(text).not.toMatch(/server[_ -]?error/i);
+      expect(JSON.parse(text)).toEqual({
+        error: { message: 'Upstream request failed: This Go model requires Global regions.', type: 'invalid_request_error' },
+      });
+    }
+    const raw = rawProviderError(new UpstreamHttpError(400, upstreamBody));
+    expect(await raw.text()).not.toMatch(/server[_ -]?error/i);
+    const overflow = rawProviderError(new UpstreamHttpError(400, '{"error":{"message":"prompt is too long"}}'));
+    expect((await overflow.json()).error.code).toBe('context_length_exceeded');
+    const unavailable = rawProviderError(new UpstreamHttpError(503, upstreamBody));
+    expect(await unavailable.text()).toBe(upstreamBody);
   });
 
   test('settles one successful response exactly once', async () => {
