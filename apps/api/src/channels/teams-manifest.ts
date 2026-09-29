@@ -23,6 +23,17 @@ export interface TeamsManifest {
       commands: Array<{ title: string; description: string }>;
     }>;
   }>;
+  composeExtensions?: Array<{
+    botId: string;
+    commands: Array<{
+      id: string;
+      type: 'action';
+      title: string;
+      description: string;
+      context: Array<'message' | 'compose' | 'commandBox'>;
+      fetchTask: boolean;
+    }>;
+  }>;
   permissions: string[];
   validDomains: string[];
   webApplicationInfo: { id: string; resource: string };
@@ -36,7 +47,7 @@ export interface TeamsManifest {
  * existing app only when this differs from what the catalog holds, and a Teams
  * admin has to re-consent to new resource-specific permissions on the team.
  */
-export const TEAMS_MANIFEST_VERSION = '1.5.0';
+export const TEAMS_MANIFEST_VERSION = '1.6.0';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
@@ -122,6 +133,23 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
         supportsFiles: true,
         isNotificationOnly: false,
         commandLists: [{ scopes: ['personal', 'team', 'groupchat'], commands: BOT_COMMANDS }],
+      },
+    ],
+    // "Open in Kortix" on a message's ⋯ menu, as Slack's message shortcut
+    // (teams/message-action.ts).
+    composeExtensions: [
+      {
+        botId: cfg.appId,
+        commands: [
+          {
+            id: 'openInKortix',
+            type: 'action',
+            title: 'Open in Kortix',
+            description: "Open this conversation's Kortix session",
+            context: ['message'],
+            fetchTask: true,
+          },
+        ],
       },
     ],
     permissions: ['identity', 'messageTeamMembers'],

@@ -284,6 +284,40 @@ export function buildConnectPrivatelyCard(input: {
   );
 }
 
+/** The "Open in Kortix" message action's answer. */
+export function buildOpenSessionCard(url: string): Record<string, unknown> {
+  return card(headerBlock('🔗', "This conversation's Kortix session"), [{ ...openUrlAction('Open session ↗', url), style: 'positive' }]);
+}
+
+/** The channel's answer when the sign-in link went to the person's 1:1 chat instead. */
+export function buildConnectSentPrivatelyCard(input: { botName: string; resumes?: boolean }): Record<string, unknown> {
+  const lines = [
+    `I sent you the sign-in link in your private chat with ${input.botName}, so nobody else can use it.`,
+    ...(input.resumes ? ['What you sent here runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')));
+}
+
+/** The 1:1 note after `/login` completes in the browser. Slack says "Slack connected". */
+export function buildConnectedCard(input: { email: string | null; resumed: boolean; hasAccess: boolean; projectId: string }): Record<string, unknown> {
+  const who = input.email ? `as **${input.email}**` : 'to your Kortix account';
+  if (!input.hasAccess) {
+    return card(
+      headerBlock('🔒', 'Connected', `Your Teams account is linked ${who}, but your account can't run this project yet.`),
+      [executeAction('Request access', 'teams_request_access', { projectId: input.projectId })],
+    );
+  }
+  return card(headerBlock('✅', 'Connected', `Your Teams account is linked ${who}. ${input.resumed ? 'Picking up your message now.' : 'Mention me with a task any time.'}`));
+}
+
+/** What an account admin gets in their 1:1 chat when someone asks for project access. */
+export function buildAccessRequestNoticeCard(input: { requester: string; reviewUrl: string }): Record<string, unknown> {
+  return card(
+    headerBlock('🔑', 'Access requested', `${input.requester} asked for access to a Kortix project from Teams. Approve it under Members in Kortix.`),
+    [{ ...openUrlAction('Review in Kortix', input.reviewUrl), style: 'positive' }],
+  );
+}
+
 export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
   return card(
     headerBlock('🔒', 'Request access', "You're connected, but your account can't run this project yet."),
@@ -364,6 +398,13 @@ export interface ModelPickerOption {
 /** Past this many choices, buttons stop being scannable and a searchable dropdown wins. */
 const MAX_MODEL_BUTTONS = 8;
 
+/** How a model is paid for, as Slack's model picker groups it. */
+const VIA_GROUPS: Array<{ via: ModelPickerOption['via']; label: string }> = [
+  { via: 'chatgpt', label: 'ChatGPT subscriptions' },
+  { via: 'key', label: 'API keys' },
+  { via: 'kortix', label: 'Kortix models' },
+];
+
 function viaHint(o: ModelPickerOption): string {
   if (o.via === 'chatgpt') return 'ChatGPT subscription';
   if (o.via === 'key') return `${o.providerLabel} key`;
@@ -396,18 +437,26 @@ export function buildModelPickerCard(opts: {
   ].filter(Boolean).join(' · ');
   const body: CardElement[] = [...headerBlock('🧠', 'Model', subtitle)];
   const defaultChoice = { label: 'Project default', hint: opts.defaultLabel ?? undefined, value: '' };
+  // Grouped by how each model is paid for, in Slack's order. A dropdown has no
+  // groups in Adaptive Cards, so there the order and the hint carry it.
+  const groups = VIA_GROUPS.map((g) => ({ ...g, models: opts.models.filter((m) => m.via === g.via) })).filter((g) => g.models.length);
+  const ordered = groups.flatMap((g) => g.models);
 
   if (opts.models.length + 1 <= MAX_MODEL_BUTTONS) {
-    const options: SelectOption[] = [
-      { label: defaultChoice.label, hint: defaultChoice.hint, current: !opts.current, data: { model: '' } },
-      ...opts.models.map((m) => ({
-        label: m.label,
-        hint: viaHint(m),
-        current: opts.current === m.id,
-        data: { model: m.id },
-      })),
+    const option = (m: ModelPickerOption): SelectOption => ({
+      label: m.label,
+      hint: viaHint(m),
+      current: opts.current === m.id,
+      data: { model: m.id },
+    });
+    const rows: CardElement[] = [
+      selectRow({ label: defaultChoice.label, hint: defaultChoice.hint, current: !opts.current, data: { model: '' } }, 'teams_set_model', false),
     ];
-    body.push(emphasisContainer(options.map((o, i) => selectRow(o, 'teams_set_model', i > 0))));
+    for (const group of groups) {
+      rows.push(text(group.label, { weight: 'bolder', size: 'small', isSubtle: true, spacing: 'medium', separator: true }));
+      group.models.forEach((m, i) => rows.push(selectRow(option(m), 'teams_set_model', i > 0)));
+    }
+    body.push(emphasisContainer(rows));
     body.push(text(opts.scopeNote, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
     return card(body);
   }
@@ -419,7 +468,7 @@ export function buildModelPickerCard(opts: {
     value: opts.current ?? '',
     choices: [
       { title: `Project default${opts.defaultLabel ? ` — ${opts.defaultLabel}` : ''}`, value: '' },
-      ...opts.models.map((m) => ({ title: `${m.label} · ${viaHint(m)}`, value: m.id })),
+      ...ordered.map((m) => ({ title: `${m.label} · ${viaHint(m)}`, value: m.id })),
     ],
     spacing: 'medium',
   });
@@ -502,6 +551,89 @@ export function openPanelAction(title: string, panel: TeamsPanel): CardElement {
   return executeAction(title, TEAMS_OPEN_PANEL_VERB, { panel });
 }
 
+/** A small repo preview column, or none. Teams loads the image itself: https only. */
+function imageColumn(url: string | null | undefined, alt: string): CardElement[] {
+  if (!url?.startsWith('https://')) return [];
+  return [{
+    type: 'Column',
+    width: '72px',
+    verticalContentAlignment: 'center',
+    items: [{ type: 'Image', url, altText: `${alt} repository`, width: '72px' }],
+  }];
+}
+
+export interface ProjectRow {
+  projectId: string;
+  name: string;
+  /** `owner/repo`, when the project has a GitHub repository. */
+  repo?: string | null;
+  imageUrl?: string | null;
+  /** The project in Kortix. */
+  url: string;
+  current?: boolean;
+}
+
+/** One project: preview, name and repo, Open, and (in a picker) Use. */
+function projectRow(p: ProjectRow, separator: boolean, pickVerb?: string): CardElement {
+  const buttons: CardElement[] = [openUrlAction('Open', p.url)];
+  if (pickVerb) {
+    buttons.push({
+      type: 'Action.Execute',
+      title: p.current ? '✓ In use' : 'Use',
+      verb: pickVerb,
+      data: { verb: pickVerb, projectId: p.projectId },
+      ...(p.current ? {} : { style: 'positive' }),
+    });
+  }
+  const label: CardElement[] = [
+    text(p.name, { weight: 'bolder', spacing: 'none', color: p.current ? 'good' : 'default' }),
+  ];
+  if (p.repo) label.push(text(p.repo, { isSubtle: true, size: 'small', spacing: 'none' }));
+  return {
+    type: 'ColumnSet',
+    separator,
+    spacing: 'medium',
+    columns: [
+      ...imageColumn(p.imageUrl, p.name),
+      { type: 'Column', width: 'stretch', verticalContentAlignment: 'center', items: label },
+      { type: 'Column', width: 'auto', verticalContentAlignment: 'center', items: [{ type: 'ActionSet', actions: buttons }] },
+    ],
+  };
+}
+
+/** `/projects`: every project this Teams tenant runs, as Slack's project carousel lists them. */
+export function buildProjectsCard(projects: ReadonlyArray<ProjectRow>): Record<string, unknown> {
+  return card([
+    ...headerBlock('📁', 'Connected projects', 'Pick which project this conversation runs.'),
+    emphasisContainer(projects.map((p, i) => projectRow(p, i > 0, 'teams_pick_project'))),
+  ]);
+}
+
+/**
+ * What a person sees when they add the app for themselves: Slack's App Home,
+ * as a card in their 1:1 chat. Teams has a home tab too, but it frames a web
+ * page, which Kortix does not serve inside Teams.
+ */
+export function buildHomeCard(opts: { projects: ReadonlyArray<ProjectRow> }): Record<string, unknown> {
+  const body: CardElement[] = headerBlock(
+    '👋',
+    'Kortix is ready',
+    'Send me a task right here, or @-mention me in any chat or channel I am in. An agent picks it up and replies with live progress.',
+  );
+  if (opts.projects.length) {
+    body.push(
+      text('Projects in this organization', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+      emphasisContainer(opts.projects.map((p, i) => projectRow(p, i > 0))),
+    );
+  }
+  body.push(
+    text('Try something like', { weight: 'bolder', size: 'small', spacing: 'medium' }),
+    emphasisContainer(WELCOME_EXAMPLES.map((example, i) => text(`• ${example}`, { spacing: i ? 'small' : 'none', wrap: true }))),
+    text('Type /login to connect your Kortix account, and /help for every command.', { isSubtle: true, size: 'small', spacing: 'medium', wrap: true }),
+  );
+  return card(body);
+}
+
 /** `/sessions`: the conversations' recent sessions this person may open. */
 export function buildSessionsCard(sessions: ReadonlyArray<{
   title: string;
@@ -509,6 +641,8 @@ export function buildSessionsCard(sessions: ReadonlyArray<{
   when: string;
   status?: string;
   url: string;
+  /** The project repo's preview image, as Slack shows it. */
+  imageUrl?: string | null;
 }>): Record<string, unknown> {
   const rows: CardElement[] = sessions.map((s, i) => ({
     type: 'ColumnSet',
@@ -516,6 +650,7 @@ export function buildSessionsCard(sessions: ReadonlyArray<{
     spacing: 'small',
     selectAction: openUrlAction('Open session', s.url),
     columns: [
+      ...imageColumn(s.imageUrl, s.projectName),
       {
         type: 'Column',
         width: 'stretch',
