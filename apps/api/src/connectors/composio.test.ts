@@ -677,7 +677,9 @@ test('composioCatalogPage answers any search from the catalogue, categories incl
     runtime: fakeRuntime({ created: session({}), calls }),
   });
 
-  expect('toolkits' in result && result.toolkits.map((t) => t.slug)).toEqual(['hubspot']);
+  // The wire contract is `items`, not `toolkits` — CONN-24 (gate run
+  // 36497729410) asserts this directly over REST.
+  expect('items' in result && result.items.map((t) => t.slug)).toEqual(['hubspot']);
   expect(calls).toEqual([]);
 });
 
@@ -926,34 +928,64 @@ test('composioCatalogPage searches one and two letters across every provider pag
     catalogClient,
     limit: 1,
   };
+  // The wire contract is `items` + `cursor` + `totalPages`, the same shape the
+  // unsearched page answers (CONN-24, gate run 36497729410) — not the
+  // internal `{toolkits, total, hasMore}` snapshot shape.
   const first = await composioCatalogPage({ ...input, q: ' A ' });
   expect(first).toMatchObject({
-    provider: 'composio',
-    total: 2,
-    hasMore: true,
-    toolkits: [{ slug: 'alpha' }],
+    totalPages: 2,
+    items: [{ slug: 'alpha' }],
   });
-  if (!('nextCursor' in first)) throw new Error('expected a next cursor');
-  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.nextCursor });
+  if (!('cursor' in first) || !first.cursor) throw new Error('expected a next cursor');
+  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.cursor });
   expect(second).toMatchObject({
-    total: 2,
-    hasMore: false,
-    toolkits: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
+    totalPages: 2,
+    cursor: null,
+    items: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
   });
   expect(await composioCatalogPage({ ...input, q: 'gm' })).toMatchObject({
-    total: 1,
-    hasMore: false,
-    toolkits: [{ slug: 'gmail' }],
+    totalPages: 1,
+    cursor: null,
+    items: [{ slug: 'gmail' }],
   });
   expect(await composioCatalogPage({ ...input, q: 'zz' })).toMatchObject({
-    total: 0,
-    hasMore: false,
-    toolkits: [],
+    totalPages: 0,
+    cursor: null,
+    items: [],
   });
   expect(requests).toEqual([
     { limit: 1000, sort_by: 'usage' },
     { limit: 1000, sort_by: 'usage', cursor: 'page-2' },
   ]);
+});
+
+// `totalPages` is a PAGE count, not an item count — same convention as
+// `apps/api/src/tunnel/routes/audit.ts` (`totalPages: Math.ceil(total /
+// limit)`), and distinct from the `toolkits`-shape's `total`, which IS an
+// item count (`total: toolkits.length` / `total: matches.length` elsewhere in
+// this file). `limit: 1` above makes the two units numerically identical and
+// cannot catch a regression that swaps them; this pins the conversion with a
+// limit that cannot coincide with the item count.
+test('composioCatalogPage converts a search snapshot`s item total into a PAGE count for the wire`s totalPages', async () => {
+  const catalogClient = {
+    toolkits: {
+      async list() {
+        return {
+          items: Array.from({ length: 5 }, (_, i) => ({ slug: `matchx${i}`, name: `Match X ${i}`, meta: {} })),
+        };
+      },
+    },
+  };
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    q: 'x',
+    limit: 2,
+    catalogClient,
+    runtime: fakeRuntime({ created: session({}) }),
+  });
+  if (!('items' in result)) throw new Error('expected the items wire shape');
+  expect(result.items).toHaveLength(2); // page SIZE
+  expect(result.totalPages).toBe(3); // ceil(5 matches / limit 2) — a PAGE count, not 5
 });
 
 function identityRuntime(input: {

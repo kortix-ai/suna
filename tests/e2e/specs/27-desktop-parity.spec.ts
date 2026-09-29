@@ -2270,7 +2270,7 @@ nativeBrowserTest?.(
       await expect.poll(currentZoom).toBe(0.94);
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
 
-      for (const route of ["apps", "files"] as const) {
+      for (const route of ["apps", "files", "reminders"] as const) {
         await main.goto(`${baseURL}/projects/${project.id}/${route}`);
         const row = main
           .locator(".kx-titlebar-row[data-sidebar-collapsed='true']")
