@@ -5,6 +5,7 @@ import {
   allowBrowserNavigation,
   decidePreviewNavigation,
   escapeForInlineScript,
+  isTrustedProxyUrl,
 } from './html-embed';
 
 describe('escapeForInlineScript', () => {
@@ -287,5 +288,21 @@ describe('HTML_SANITIZER_SCRIPT', () => {
     });
     sanitize(new FakeElement('body', {}, [el]));
     expect(el.attributes).toEqual([]);
+  });
+});
+
+describe('isTrustedProxyUrl', () => {
+  const BACKEND = 'https://api.kortix.com/v1';
+
+  test('accepts the sandbox-proxy origin, path and port ignored', () => {
+    expect(isTrustedProxyUrl('https://api.kortix.com/p/sbx_1/3000/', BACKEND)).toBe(true);
+    expect(isTrustedProxyUrl('https://api.kortix.com/p/sbx_1/3000/app?x=1', BACKEND)).toBe(true);
+  });
+
+  test('rejects every other host, scheme, and a malformed URL', () => {
+    expect(isTrustedProxyUrl('https://evil.example/p/sbx_1/3000/', BACKEND)).toBe(false);
+    expect(isTrustedProxyUrl('http://api.kortix.com/p/sbx_1/3000/', BACKEND)).toBe(false);
+    expect(isTrustedProxyUrl('https://api.kortix.com.evil.example/steal', BACKEND)).toBe(false);
+    expect(isTrustedProxyUrl('not a url', BACKEND)).toBe(false);
   });
 });
