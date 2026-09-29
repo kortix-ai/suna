@@ -1,4 +1,5 @@
-import { loadTeamsBotCredentials } from './install-store';
+import { config } from '../config';
+import { loadTeamsBotCredentials, loadTeamsServiceUrlForProject } from './install-store';
 import { botConnectorToken } from './teams-auth';
 import { assertValidTeamsServiceUrl } from './teams-service-url';
 import type { TeamsConversationRef } from './teams/types';
@@ -16,7 +17,7 @@ function joinUrl(base: string, path: string): string {
 }
 
 async function connectorFetch(
-  method: 'POST' | 'PUT',
+  method: 'POST' | 'PUT' | 'DELETE',
   url: string,
   body: unknown,
   projectId?: string,
@@ -47,7 +48,7 @@ async function connectorFetch(
         'Content-Type': 'application/json',
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(10_000),
     });
     const text = await res.text();
@@ -91,6 +92,45 @@ export async function updateActivity(
   );
   const r = await connectorFetch('PUT', url, activity, ref.projectId);
   return r.ok;
+}
+
+/** Delete a message the bot posted. Bot Framework refuses anyone else's. */
+export async function deleteActivity(ref: TeamsConversationRef, activityId: string): Promise<boolean> {
+  const url = joinUrl(
+    ref.serviceUrl,
+    `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities/${encodeURIComponent(activityId)}`,
+  );
+  return (await connectorFetch('DELETE', url, undefined, ref.projectId)).ok;
+}
+
+/**
+ * The one-to-one chat between the bot and a Teams user (their AAD object id),
+ * for a message that does not answer anything they sent there: an admin's
+ * access-request notice, the "connected" confirmation, a sign-in link asked
+ * for in a channel. Teams opens it only when the user has the app installed
+ * for themselves. Measured on dev 2026-09-29: otherwise `403 Bot is not
+ * installed in user's personal scope`. So null is an expected answer, and
+ * every caller keeps a fallback.
+ */
+export async function openDirectConversation(input: {
+  projectId: string;
+  tenantId: string;
+  userId: string;
+}): Promise<TeamsConversationRef | null> {
+  const serviceUrl = await loadTeamsServiceUrlForProject(input.projectId);
+  if (!serviceUrl) return null;
+  const appId = (await loadTeamsBotCredentials(input.projectId))?.appId ?? config.MICROSOFT_APP_ID;
+  if (!appId) return null;
+  const botId = `28:${appId}`;
+  const r = await connectorFetch('POST', joinUrl(serviceUrl, 'v3/conversations'), {
+    isGroup: false,
+    bot: { id: botId },
+    members: [{ id: input.userId }],
+    tenantId: input.tenantId,
+    channelData: { tenant: { id: input.tenantId } },
+  }, input.projectId);
+  if (!r.ok || !r.id) return null;
+  return { serviceUrl, conversationId: r.id, botId, tenantId: input.tenantId, projectId: input.projectId };
 }
 
 export function sendText(ref: TeamsConversationRef, text: string): Promise<string | null> {

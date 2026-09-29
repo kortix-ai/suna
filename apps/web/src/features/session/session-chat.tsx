@@ -272,7 +272,6 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-  useFeatureFlag,
   useProjectConfig,
   useRuntimeAgents,
   useRuntimeBootStalled,
@@ -2344,8 +2343,7 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
-  const transcriptHistory = useFeatureFlag(projectId, 'session_transcript_history');
-  const allowSendBeforeReady = transcriptHistory.enabled && !!projectSessionId && !runtimeReady;
+  const allowSendBeforeReady = !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.

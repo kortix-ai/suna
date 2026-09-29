@@ -61,6 +61,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Deprecated
+- The `session_transcript_history` member of `FeatureFlagKey`. Saved session
+  history graduated out of the flag system: every session saves its transcript
+  and shows it while its computer is off. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'session_transcript_history')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'session_transcript_history', …)` answers `400`.
+  `useSession` now starts its saved-history read at mount instead of after the
+  project detail answers. Removed in the next major.
 - The `agent_tunnel` member of `FeatureFlagKey`. Computers need no flag. It is
   absent from `FEATURE_FLAG_KEYS`, and `useFeatureFlag(id, 'agent_tunnel')`
   reports `enabled: true`. Removed in the next major.

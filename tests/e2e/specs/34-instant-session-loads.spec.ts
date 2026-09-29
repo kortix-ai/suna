@@ -38,6 +38,13 @@
  * The sixth arm opens a session whose saved copy proves it empty: a complete
  * read of its runtime found no messages. It opened on the boot screen for the
  * whole wake; it now opens on its composer.
+ *
+ * The seventh arm opens a session, so this device keeps its saved copy, then
+ * saves a newer turn on the server and reloads while the computer and the
+ * session-open snapshot never answer. The copy the device kept painted first,
+ * and the newer saved copy from the history read never replaced it, so the
+ * reload showed an older last message until the computer woke. The newer turn
+ * now shows at once.
  */
 import { type Page, expect, test } from '@playwright/test';
 import { loadEnv } from '../../src/core/env';
@@ -628,6 +635,115 @@ test('34 — a session proven empty opens on its composer, not the boot screen',
     expect((await firstShown(page)).bootScreen).toBeUndefined();
     await expect(page.getByText(BOOT_HEADING, { exact: true })).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath('empty-session-composer.png') });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await project?.dispose?.();
+  }
+});
+
+test("34 — a reload shows the server's newer saved copy, not only the one this device kept", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const env = loadEnv();
+  const { user, project, sessionId, root } = await setup(page, 'newer-copy');
+  const newerPrompt = 'How many tasks are in progress?';
+  const newerReply = 'Three tasks are in progress.';
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let holding = false;
+  try {
+    // The computer never comes up: the conversation can only come from a saved copy.
+    await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
+      await held;
+      await route.continue().catch(() => {});
+    });
+    // After the first open, the session-open snapshot never answers either, so
+    // only the saved-history read can bring the newer copy.
+    await page.route(`**/sessions/${sessionId}/snapshot*`, async (route) => {
+      if (holding) await held;
+      await route.continue().catch(() => {});
+    });
+
+    // First open: the device keeps the saved copy it was shown.
+    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            (key) => localStorage.getItem(key)?.includes('This reply is stored in the database.') === true,
+            `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`,
+          ),
+        { timeout: 30_000, message: 'the device keeps the saved copy' },
+      )
+      .toBe(true);
+
+    // A later turn ends while this page is closed: the server saves it.
+    const created = Date.now();
+    const turn = [
+      {
+        info: { id: 'msg_000000000000000000000003', sessionID: root, role: 'user', time: { created } },
+        parts: [{ id: 'prt_newer_user', type: 'text', text: newerPrompt }],
+      },
+      {
+        info: {
+          id: 'msg_000000000000000000000004',
+          sessionID: root,
+          parentID: 'msg_000000000000000000000003',
+          role: 'assistant',
+          time: { created: created + 1, completed: created + 2 },
+          finish: 'stop',
+        },
+        parts: [{ id: 'prt_newer_reply', type: 'text', text: newerReply }],
+      },
+    ];
+    for (const message of turn) {
+      await runDatabaseSql(
+        'INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [
+          sessionId,
+          message.info.id,
+          root,
+          message.info.role,
+          new Date(message.info.time.created),
+          JSON.stringify(message.info),
+          JSON.stringify(message.parts),
+        ],
+        env.databaseUrl ?? undefined,
+      );
+    }
+    await runDatabaseSql(
+      'UPDATE kortix.session_transcript_mirrors SET captured_at = now(), updated_at = now() WHERE session_id = $1',
+      [sessionId],
+      env.databaseUrl ?? undefined,
+    );
+
+    holding = true;
+    const history = page.waitForResponse(
+      (r) => r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
+    );
+    await page.reload({ waitUntil: 'commit' });
+    // The newer turn shows while the computer and the snapshot are still held.
+    expect((await history).status()).toBe(200);
+    await expect(page.getByText(newerReply, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(newerPrompt, { exact: true })).toBeVisible();
+    await expect(page.getByText(SAVED_REPLY, { exact: true })).toHaveCount(1);
+    await page.screenshot({ path: testInfo.outputPath('reload-newer-copy.png') });
+    // And the device keeps the newer copy for the next open.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ key, reply }) => localStorage.getItem(key)?.includes(reply) === true,
+            { key: `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`, reply: newerReply },
+          ),
+        { timeout: 15_000, message: 'the device keeps the newer copy' },
+      )
+      .toBe(true);
   } finally {
     release();
     await page.unrouteAll({ behavior: 'ignoreErrors' });

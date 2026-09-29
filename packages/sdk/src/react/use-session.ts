@@ -56,7 +56,6 @@ import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
-import { useFeatureFlag } from './use-feature-flag';
 import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
@@ -1190,8 +1189,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
-  const transcriptHistoryFlag = useFeatureFlag(startEnabled && chatEngine ? projectId : null, 'session_transcript_history');
-  const transcriptHistoryEnabled = enabled && chatEngine && transcriptHistoryFlag.enabled;
+  const transcriptHistoryEnabled = startEnabled && chatEngine;
   const transcriptHistory = useSessionTranscriptHistory(projectId, sessionId, transcriptHistoryEnabled);
   const canonicalSession = useCanonicalOpenCodeSession({
     projectId,
@@ -1241,7 +1239,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
-    mirror: transcriptHistoryEnabled ? transcriptHistory.envelope : undefined,
+    // Until the saved-history read answers with a copy, the session-open
+    // bundle's copy of the same mirror may paint (`undefined` = read it).
+    mirror: transcriptHistory.envelope ?? undefined,
     networkEnabled: switched,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
@@ -1295,9 +1295,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     enabled: startEnabled && chatEngine,
     hasMessages: sync.messages.length > 0,
     history: !transcriptHistoryEnabled
-      ? transcriptHistoryFlag.isLoading
-        ? 'loading'
-        : 'off'
+      ? 'off'
       : transcriptHistory.isLoading
         ? 'loading'
         : transcriptHistory.envelope

@@ -32,11 +32,31 @@ function sameAttachment(
   );
 }
 
+const SAVED_COPY_ATTRIBUTE = ' attachment="kortix-attachment://';
+
+/**
+ * The reference a delivery wrote. Delivery also names the file's private copy
+ * in it (` attachment="kortix-attachment://…"`), so that form counts too.
+ */
 function sameReplacement(
   runtime: LegacyRuntimeMessage['parts'][number],
   expectedText: string,
 ): boolean {
-  return runtime.type === 'text' && runtime.text === expectedText;
+  if (runtime.type !== 'text' || typeof runtime.text !== 'string') return false;
+  if (runtime.text === expectedText) return true;
+  const head = expectedText.slice(0, expectedText.indexOf('>'));
+  const tail = expectedText.slice(head.length);
+  if (!runtime.text.startsWith(head + SAVED_COPY_ATTRIBUTE) || !runtime.text.endsWith(tail)) {
+    return false;
+  }
+  // The URL, then its closing quote. `xmlAttribute` escapes every quote and
+  // bracket, so a real URL holds none.
+  const value = runtime.text.slice(
+    head.length + SAVED_COPY_ATTRIBUTE.length,
+    runtime.text.length - tail.length,
+  );
+  const url = value.slice(0, -1);
+  return value.endsWith('"') && url.length > 0 && !/["<>]/.test(url);
 }
 
 export async function repairLegacyInlineAttachments(input: {

@@ -124,6 +124,33 @@ describe('ApiClient', () => {
     });
   });
 
+  test('refreshCredential sends the login, never its token, and keeps the pool identity', async () => {
+    let sent: { path: string; body: Record<string, unknown> } | undefined;
+    const stale = {
+      provider: 'openai-codex', kind: 'openai-responses' as const, baseUrl: 'https://codex.test', apiKey: 'stale-token',
+      credentialRef: 's1', poolSecretId: 's1', refreshableCredential: true, billingMode: 'none' as const, markup: 0, resolvedModel: 'm',
+    };
+    const result = await client(async (url, init) => {
+      sent = { path: new URL(url).pathname, body: JSON.parse(String(init.body)) };
+      return jsonResponse({ descriptor: { apiKey: 'fresh-token', headers: { 'ChatGPT-Account-ID': 'acct' } } });
+    }).refreshCredential(principal, stale);
+    expect(sent?.path).toBe('/internal/gateway/refresh-credential');
+    expect(sent?.body).toMatchObject({ principal, secretId: 's1' });
+    expect(JSON.stringify(sent?.body)).not.toContain('stale-token');
+    expect(result).toMatchObject({ apiKey: 'fresh-token', credentialRef: 's1', poolSecretId: 's1', refreshableCredential: true });
+  });
+
+  test('refreshCredential is null when the login cannot be refreshed, or names no login', async () => {
+    expect(await client(async () => jsonResponse({ descriptor: null })).refreshCredential(principal, {
+      provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test', apiKey: 'x', credentialRef: 's1', billingMode: 'none', markup: 0,
+    })).toBeNull();
+    let called = false;
+    expect(await client(async () => { called = true; return jsonResponse({}); }).refreshCredential(principal, {
+      provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test', apiKey: 'x', billingMode: 'none', markup: 0,
+    })).toBeNull();
+    expect(called).toBe(false);
+  });
+
   test('assertBillingActive throws when inactive', async () => {
     const c = client(async () => jsonResponse({ active: false, reason: 'insufficient_credits', message: 'no credits' }));
     const error = await c.assertBillingActive('a1').catch((caught) => caught);

@@ -331,8 +331,20 @@ teams post --conversation "19:...@thread.tacv2" "Nightly build is green."
 teams post --conversation "19:..." --card-file /tmp/report.json
 ```
 
+`teams post` prints the posted message's `messageId`. Keep it to change the
+message later instead of posting a correction under it:
+
+```sh
+teams edit   --conversation "19:..." --message "<messageId>" "Nightly build is green (re-run)."
+teams edit   --conversation "19:..." --message "<messageId>" --card-file /tmp/report.json
+teams delete --conversation "19:..." --message "<messageId>"
+```
+
+Only a message the bot posted can be edited or deleted. Teams gives a bot no
+way to add a reaction.
+
 You can only post into a chat or channel the bot is **already in for this
-project**. Anything else returns 403 — list the targets first rather than
+project**. Anything else returns 404 — list the targets first rather than
 guessing an id.
 </posting-somewhere-else>
 

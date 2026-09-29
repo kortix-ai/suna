@@ -3,16 +3,18 @@
  * while the computer is coming up?
  *
  * Every arm holds `/start` and `/snapshot` open, so the sandbox can never
- * answer — that is the entire window `session_transcript_history` exists to
- * cover, and holding it makes the comparison deterministic instead of a race
- * against a real wake (measured 5-240s).
+ * answer — that is the entire window saved history exists to cover, and
+ * holding it makes the measurement deterministic instead of a race against a
+ * real wake (measured 5-240s). The saved transcript must paint, from
+ * PostgreSQL alone, in every arm:
  *
- *   flag ON  — the saved transcript must paint, from PostgreSQL alone.
- *   flag OFF — nothing can paint, and no saved-history read is even issued.
+ *   cold route — the dev server's first compile of the session route;
+ *   warm route — what a user with the app already open experiences;
+ *   stored off — a project an older server let turn saved history off. The
+ *                override it stored changes nothing now.
  *
- * Journey 30 asserts the ON arm renders. This one pins the CONTRAST, which is
- * the claim the feature is sold on, and reports where the time goes so the
- * read's own cost never hides inside app boot. Run it alone for numbers:
+ * It reports where the time goes, so the read's own cost never hides inside
+ * app boot. Run it alone for numbers:
  *
  *   BENCH_OUT=/tmp/bench.txt E2E_GREP='98 — ' pnpm test -- --browser-only
  */
@@ -37,16 +39,9 @@ const authOptions = {
   password: 'TranscriptHistory123!',
 };
 
-/**
- * How long the OFF arm waits before declaring "nothing visible".
- *
- * A slow machine makes this assertion MORE likely to hold, never less — the
- * claim is an absence — so this is sized for suite cost, not for headroom.
- */
-const BLIND_WINDOW_MS = 8_000;
 const SAVED_REPLY = 'This reply is stored in the database.';
 
-test('98 — saved history is what you see while the computer starts (flag ON vs OFF)', async ({
+test('98 — saved history is what you see while the computer starts', async ({
   page,
 }, testInfo) => {
   test.setTimeout(300_000);
@@ -79,7 +74,7 @@ test('98 — saved history is what you see while the computer starts (flag ON vs
     });
 
     /**
-     * One arm: fresh session, seeded history, flag as given.
+     * One arm: fresh session, seeded history.
      *
      * `visibleMs` alone would overstate the feature's cost — most of a cold
      * arm is the dev server compiling the route and the app booting, which the
@@ -88,9 +83,11 @@ test('98 — saved history is what you see while the computer starts (flag ON vs
      * saved transcript actually costs, and `afterReadMs` is what the client
      * spends turning it into pixels.
      */
-    const measure = async (
-      enabled: boolean,
-    ): Promise<{ visibleMs: number | null; readMs: number | null; afterReadMs: number | null }> => {
+    const measure = async (): Promise<{
+      visibleMs: number | null;
+      readMs: number | null;
+      afterReadMs: number | null;
+    }> => {
       const sessionId = await createDatabaseSession(env, {
         projectId: project.id,
         accountId,
@@ -102,12 +99,8 @@ test('98 — saved history is what you see while the computer starts (flag ON vs
         [sessionId],
         env.databaseUrl,
       );
-      await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
-        feature: 'session_transcript_history',
-        enabled,
-      });
 
-      // The sandbox must never come up in either arm.
+      // The sandbox must never come up in any arm.
       await page.route(`**/sessions/${sessionId}/start*`, async (route) => {
         await held;
         await route.continue().catch(() => {});
@@ -143,7 +136,7 @@ test('98 — saved history is what you see while the computer starts (flag ON vs
       try {
         await page
           .getByText(SAVED_REPLY, { exact: true })
-          .waitFor({ state: 'visible', timeout: enabled ? 60_000 : BLIND_WINDOW_MS });
+          .waitFor({ state: 'visible', timeout: 60_000 });
         const visibleAt = Date.now();
         return {
           visibleMs: visibleAt - startedAt,
@@ -164,31 +157,39 @@ test('98 — saved history is what you see while the computer starts (flag ON vs
 
     // Cold arm pays the dev server's first compile of the session route; the
     // warm arm is what a user with the app already open actually experiences.
-    const onCold = await measure(true);
-    const onWarm = await measure(true);
-    const off = await measure(false);
+    const cold = await measure();
+    const warm = await measure();
+    // What an older server stored when a project turned saved history off.
+    await runDatabaseSql(
+      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
+      [project.id],
+      env.databaseUrl,
+    );
+    const storedOff = await measure();
 
     const ms = (v: number | null, fallback: string) => (v === null ? fallback : `${v} ms`);
+    const missing = 'NOT VISIBLE within 60000ms';
     const report = [
       'time to first VISIBLE saved message, sandbox held down the whole time',
       '',
-      `  flag ON, cold route : ${ms(onCold.visibleMs, 'NOT VISIBLE within 60000ms')}`,
-      `  flag ON, warm route : ${ms(onWarm.visibleMs, 'NOT VISIBLE within 60000ms')}`,
-      `  flag OFF            : ${ms(off.visibleMs, `NOT VISIBLE within ${BLIND_WINDOW_MS}ms`)}`,
+      `  cold route : ${ms(cold.visibleMs, missing)}`,
+      `  warm route : ${ms(warm.visibleMs, missing)}`,
+      `  stored off : ${ms(storedOff.visibleMs, missing)}`,
       '',
       'where the warm-route time goes',
-      `  saved-history read (request -> response) : ${ms(onWarm.readMs, 'n/a')}`,
-      `  response -> pixels                       : ${ms(onWarm.afterReadMs, 'n/a')}`,
-      '',
-      'flag OFF has no saved-history read at all:',
-      `  read observed : ${off.readMs === null ? 'none (route is 403-gated when off)' : `${off.readMs} ms`}`,
+      `  saved-history read (request -> response) : ${ms(warm.readMs, 'n/a')}`,
+      `  response -> pixels                       : ${ms(warm.afterReadMs, 'n/a')}`,
     ].join('\n');
     await testInfo.attach('benchmark', { body: report, contentType: 'text/plain' });
     if (process.env.BENCH_OUT) writeFileSync(process.env.BENCH_OUT, `${report}\n`);
 
-    expect(onCold.visibleMs, 'flag ON must paint the saved transcript').not.toBeNull();
-    expect(onWarm.visibleMs, 'flag ON must paint the saved transcript').not.toBeNull();
-    expect(off.visibleMs, 'flag OFF must show nothing while the sandbox is down').toBeNull();
+    expect(cold.visibleMs, 'the cold route must paint the saved transcript').not.toBeNull();
+    expect(warm.visibleMs, 'the warm route must paint the saved transcript').not.toBeNull();
+    expect(
+      storedOff.visibleMs,
+      'a stored off override must not hide the saved transcript',
+    ).not.toBeNull();
+    expect(storedOff.readMs, 'the saved-history read runs despite the override').not.toBeNull();
   } finally {
     release();
     await dispose().catch(() => {});

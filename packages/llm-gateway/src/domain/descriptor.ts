@@ -38,6 +38,11 @@ export interface UpstreamDescriptor {
    */
   poolSecretId?: string;
   /**
+   * The login behind `apiKey` can be refreshed (a ChatGPT OAuth login). A 401
+   * asks the host for a fresh descriptor once and retries with it.
+   */
+  refreshableCredential?: boolean;
+  /**
    * Provider failover. When the first candidate sets this, a failed dispatch
    * (thrown error or non-2xx before any output) moves the same request to the
    * next candidate that also sets it, in order. Kortix-managed models set it on

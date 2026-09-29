@@ -885,6 +885,8 @@ flow(
     routes: [
       "GET /v1/projects/:projectId/channels/teams/conversations",
       "POST /v1/projects/:projectId/channels/teams/message",
+      "POST /v1/projects/:projectId/channels/teams/message/edit",
+      "POST /v1/projects/:projectId/channels/teams/message/delete",
       "POST /v1/projects/:projectId/channels/teams/file/upload",
     ],
   },
@@ -948,6 +950,25 @@ flow(
         .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
       r.status(404);
     });
+    // Editing or deleting a bot message is the same send primitive: the same
+    // floor, and the same conversation authorization.
+    for (const op of ["edit", "delete"] as const) {
+      const target = { conversation_id: body.conversation_id, message_id: "1789000000000", text: "changed" };
+      await ctx.step(`MEMBER without connector.write cannot ${op} a message → 403 at the floor`, async () => {
+        const r = await ctx.client.as(memberOnly).post(`/v1/projects/:projectId/channels/teams/message/${op}`, target, { params: { projectId: p.id } });
+        r.status(403);
+      });
+      await ctx.step(`EDITOR ${op} in a conversation that is not this project's → 404`, async () => {
+        const r = await ctx.client.as(editor).post(`/v1/projects/:projectId/channels/teams/message/${op}`, target, { params: { projectId: p.id } });
+        r.status(404);
+      });
+      await ctx.step(`EDITOR ${op} without a message id → 400`, async () => {
+        const r = await ctx.client
+          .as(editor)
+          .post(`/v1/projects/:projectId/channels/teams/message/${op}`, { conversation_id: body.conversation_id, text: "changed" }, { params: { projectId: p.id } });
+        r.status(400);
+      });
+    }
     await ctx.step("EDITOR with nothing to say → 400", async () => {
       const r = await ctx.client
         .as(editor)

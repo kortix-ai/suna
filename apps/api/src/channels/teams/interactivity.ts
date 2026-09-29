@@ -14,7 +14,9 @@ import {
   REVIEW_FEEDBACK_INPUT,
   TEAMS_APPROVAL_VERB,
   TEAMS_FORM_VERB,
+  TEAMS_OPEN_PANEL_VERB,
   TEAMS_STOP_VERB,
+  type TeamsPanel,
   buildNoticeCard,
   buildTeamsApprovalOutcomeCard,
 } from './cards';
@@ -86,6 +88,8 @@ export async function handleAdaptiveCardAction(
       return handleReview(activity, action.data, inbound);
     case TEAMS_APPROVAL_VERB:
       return handleApproval(activity, action.data, inbound);
+    case TEAMS_OPEN_PANEL_VERB:
+      return handleOpenPanel(activity, action.data, inbound);
     default:
       return cardResponse(buildNoticeCard("This action isn't available anymore."));
   }
@@ -180,6 +184,26 @@ async function handleSetAgent(
   const channel = teamsSettingsChannel(activity, convo.tenantId, convo.conversationId);
   const result = await changeChannelAgent(presser(activity, convo), channel, agent || null);
   return cardResponse(buildNoticeCard(teamsAgentChangeText(result, agent), result.ok ? '✅' : undefined));
+}
+
+const PANELS = new Set<TeamsPanel>(['models', 'agents', 'projects']);
+
+/** A `/status` button: the picker it names, for the person who pressed it. */
+async function handleOpenPanel(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+  inbound: TeamsInbound,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const panel = data.panel as TeamsPanel;
+  if (!convo || !PANELS.has(panel)) return cardResponse(buildNoticeCard("This action isn't available anymore."));
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁'));
+  // Loaded on press: `commands.ts` pulls the whole command surface, which no
+  // other card action needs.
+  const { buildTeamsPanel } = await import('./commands');
+  return cardResponse(await buildTeamsPanel({ panel, activity, tenantId: convo.tenantId, conversationId: convo.conversationId, projectId }));
 }
 
 /** The Teams user who pressed a card button, as a chat identity. */
@@ -449,7 +473,7 @@ async function handleApproval(
     ownThreadsOnly: inbound.kind === 'project',
   }).catch((err) => console.error('[teams-webhook] approval resume failed', err));
 
-  return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note }));
+  return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note, decidedBy: activity.from?.name || undefined }));
 }
 
 async function handleThreadJoin(
@@ -504,6 +528,7 @@ async function handleRequestAccess(
     case 'created':
     case 'pending':
       await notifyAdminsOfTeamsAccessRequest({
+        tenantId,
         projectId,
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,
