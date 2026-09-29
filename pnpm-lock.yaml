@@ -685,6 +685,9 @@ importers:
       react-native-svg:
         specifier: 15.15.4
         version: 15.15.4(react-native@0.85.3)(react@19.2.3)
+      react-native-uitextview:
+        specifier: 2.7.1
+        version: 2.7.1(react-native@0.85.3)(react@19.2.3)
       react-native-url-polyfill:
         specifier: ^3.0.0
         version: 3.0.0(react-native@0.85.3)
@@ -26999,6 +27002,16 @@ packages:
       react: 19.2.3
       react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
       warn-once: 0.1.1
+
+  /react-native-uitextview@2.7.1(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-BT4agx2Gg/idbbqUyCudg/Ml0qB7ar0pwKImgSrzspPAaYNCz6fFh9zypF0GUMGUbGrrlq1PHtXHh1oTSXCYkg==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.81.5'
+    dependencies:
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
+    dev: false
 
   /react-native-url-polyfill@3.0.0(react-native@0.85.3):
     resolution: {integrity: sha512-aA5CiuUCUb/lbrliVCJ6lZ17/RpNJzvTO/C7gC/YmDQhTUoRD5q5HlJfwLWcxz4VgAhHwXKzhxH+wUN24tAdqg==}
