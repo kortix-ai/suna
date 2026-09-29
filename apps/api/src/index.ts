@@ -101,7 +101,7 @@ import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
-  isTransientGitMirrorError,
+  transientGitMirrorCause,
   pushPolicyWarning,
 } from './projects/git/mirror';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
@@ -1215,14 +1215,15 @@ app.onError((err, c) => {
   // request-deadline). A PERMANENT failure (bad ref, real auth denial, corrupt
   // local repo) still falls through to Sentry with a meaningful `fatal:`
   // message. See projects/git/mirror.ts.
-  if (isTransientGitMirrorError(err)) {
-    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${err.kind}] ${err.message}`, {
+  const transientGitError = transientGitMirrorCause(err);
+  if (transientGitError) {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:${transientGitError.kind}] ${transientGitError.message}`, {
       method,
       path,
       errorType: 'GitOperationError',
-      gitKind: err.kind,
-      gitArgs: err.gitArgs,
-      signal: err.signal,
+      gitKind: transientGitError.kind,
+      gitArgs: transientGitError.gitArgs,
+      signal: transientGitError.signal,
     });
     c.header('Retry-After', '10');
     return c.json(
