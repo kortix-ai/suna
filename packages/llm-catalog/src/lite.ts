@@ -271,6 +271,10 @@ export interface CatalogModel {
   modalities?: CatalogModalities;
   limit?: { context?: number; input?: number; output?: number };
   cost?: CatalogCost;
+  // models.dev's per-model override of the provider's transport: a model served
+  // on another wire format (`npm`) or endpoint (`api`) than its provider's
+  // default — e.g. OpenCode Go's MiniMax on `@ai-sdk/anthropic`.
+  provider?: { npm?: string; api?: string };
 }
 
 // ─── Generation controls — capability-gated, single source of truth ────────

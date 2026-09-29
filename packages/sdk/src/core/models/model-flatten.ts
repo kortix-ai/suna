@@ -26,6 +26,8 @@ type LooseModel =
       // `FlatModel.provider` below. Absent on plain opencode `Model` values
       // (which don't carry it); present on every gateway-served model.
       provider?: string;
+      // The real provider's display name ("OpenCode Go"), served per model.
+      provider_name?: string;
       reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
       description?: string;
       open_weights?: boolean;
@@ -118,6 +120,7 @@ export function isOfferedModel(
 // `LooseModel`'s member access rules or reaching for `any`.
 type WithGatewayFields = {
   provider?: string;
+  provider_name?: string;
   reasoning_options?: Array<{ type: string; values?: string[]; min?: number; max?: number }>;
   description?: string;
   open_weights?: boolean;
@@ -182,7 +185,9 @@ export function flattenModels(
       }
       result.push({
         providerID: p.id,
-        providerName: p.name,
+        // The gateway lists every model under one synthetic `kortix` provider;
+        // a BYOK model names its real provider instead.
+        providerName: (model as WithGatewayFields).provider_name ?? p.name,
         modelID,
         modelName: (model.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,
