@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "Serveur MCP",
           "description": "Connectez Claude, ChatGPT, Cursor, Codex ou tout client MCP à ce projet via OAuth. Le client se connecte en votre nom et appelle Kortix avec vos autorisations. L’URL se trouve sous Connecter MCP dans le menu de l’espace de travail."
+        },
+        "reminders": {
+          "name": "Rappels",
+          "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Chargement…",
-    "loadMoreSessions": "Charger plus de sessions"
+    "loadMoreSessions": "Charger plus de sessions",
+    "reminders": "Rappels"
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -19238,7 +19243,8 @@
       "textb7ece0360b75": "Rappel de session supprimé",
       "text9dcde51d9ff2": "Description de l’agent",
       "textfa0db737cb09": "Rédigée par l’agent et non vérifiée. Le connecteur reçoit les paramètres ci-dessous.",
-      "text2edf70730233": "Message à l’agent (facultatif)"
+      "text2edf70730233": "Message à l’agent (facultatif)",
+      "texte88286ad9739": "Rappels du projet listés"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20321,5 +20327,46 @@
     "unverifiedTitle": "Application non vérifiée",
     "unverifiedBody": "{client} s’est enregistrée elle-même auprès de Kortix. Kortix n’a pas vérifié qui l’exploite. Autorisez-la uniquement si vous la connectez vous-même en ce moment.",
     "redirectsTo": "Vous renvoie vers"
+  },
+  "reminders": {
+    "title": "Rappels",
+    "description": "Des points de contrôle planifiés qui relancent une session. Les agents les créent pendant leur travail ; chacun se déclenche jusqu’à sa suppression.",
+    "docs": "Fonctionnement des rappels",
+    "tabActive": "Actifs",
+    "tabPaused": "En pause",
+    "tabDone": "Terminés",
+    "emptyTitle": "Aucun rappel",
+    "emptyDescription": "Quand un agent ou une personne crée un rappel sur une session, il apparaît ici.",
+    "emptyTabDescription": "Cette liste est vide.",
+    "loadFailed": "Impossible de charger les rappels",
+    "retry": "Réessayer",
+    "sessionFilter": "Session : {name}",
+    "clearFilter": "Afficher toutes les sessions",
+    "untitledSession": "Session sans titre",
+    "once": "Une fois",
+    "every": "Toutes les {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Prochain {time}",
+    "firedAt": "Déclenché {time}",
+    "pausedLabel": "En pause",
+    "doneLabel": "Terminé",
+    "pause": "Mettre en pause",
+    "resume": "Reprendre",
+    "remove": "Supprimer",
+    "openSession": "Ouvrir la session",
+    "removeTitle": "Supprimer ce rappel ?",
+    "removeDescription": "Il ne se déclenche plus et il est supprimé. La session garde son historique.",
+    "paused": "Rappel mis en pause",
+    "resumed": "Rappel repris",
+    "removed": "Rappel supprimé",
+    "updateFailed": "Impossible de mettre à jour le rappel",
+    "chipLabel": "{count, plural, one {# rappel actif} other {# rappels actifs}}",
+    "chipTitle": "Rappels de cette session",
+    "manage": "Gérer les rappels",
+    "cardLabel": "Rappel",
+    "cardOneTime": "Une fois",
+    "cardRecurring": "Récurrent",
+    "cardManage": "Gérer",
+    "gateDescription": "Activez les Rappels pour que les agents et les personnes planifient des points de contrôle qui relancent une session."
   }
 }
