@@ -1151,10 +1151,15 @@ export async function reconcileRuntimeAssets(
             // box already on the fallback (`effectiveCliPath !== cliPath`)
             // has no reason to retry the primary at all.
             if (replaced === 'failed' && effectiveCliPath === cliPath) {
-              const fallbackPath = options.cliFallbackPath ?? cliPathFallback()
-              await mkdir(dirname(fallbackPath), { recursive: true }).catch(() => {})
-              const fallbackReplaced = await replaceCli(fallbackPath, cliSha, body, { execProbe })
-              if (fallbackReplaced === 'updated') {
+              // The $HOME fallback exists for the Linux sandbox (home = /home/kortix).
+              // Never on a developer machine, where it is the user's real CLI.
+              const fallbackPath = options.cliFallbackPath ?? (process.platform === 'linux' ? cliPathFallback() : null)
+              let fallbackReplaced: Awaited<ReturnType<typeof replaceCli>> = 'failed'
+              if (fallbackPath) {
+                await mkdir(dirname(fallbackPath), { recursive: true }).catch(() => {})
+                fallbackReplaced = await replaceCli(fallbackPath, cliSha, body, { execProbe })
+              }
+              if (fallbackReplaced === 'updated' && fallbackPath) {
                 logger.warn(
                   '[runtime-assets] /usr/local/bin is not writable on this box; installed the CLI to its PATH fallback instead',
                   { path: fallbackPath },
