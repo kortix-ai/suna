@@ -468,7 +468,21 @@ describe('forwardToSandbox retry and wake', () => {
 
   test('a connection-refused GET wakes the sandbox once, then gives up with a 502 on the daemon hop', async () => {
     queueFetch(refused(), refused(), refused(), refused());
-    const res = await forward({ port: 8000, path: '/session' });
+    // The give-up must leave its per-stage timeline behind: the stage deltas
+    // (load-sandbox / ingress) are what makes a latency spike on this path
+    // attributable from the log line alone.
+    const logs: unknown[][] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logs.push(args);
+      originalLog(...args);
+    };
+    let res: Response;
+    try {
+      res = await forward({ port: 8000, path: '/session' });
+    } finally {
+      console.log = originalLog;
+    }
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({
       error: 'sandbox upstream unreachable',
@@ -484,6 +498,12 @@ describe('forwardToSandbox retry and wake', () => {
     expect(counts.invalidatePreviewLink).toBe(3);
     // A transient unreachable must never error a health-green row.
     expect(counts.markSandboxErrored).toBe(0);
+    const timeline = logs.find(
+      (args) => typeof args[0] === 'string' && args[0].includes('[provision-timeline] proxy'),
+    );
+    expect(timeline?.[0]).toContain('total=');
+    expect(timeline?.[0]).toContain('ingress=');
+    expect(timeline?.[1]).toEqual({ path: '/session', port: 8000, hop: 'daemon' });
   }, 8_000);
 
   test('a Daytona stopped-box 400 wakes once and retries; the last attempt passes the 400 through', async () => {

@@ -99,7 +99,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-const { auditIngestChunkSize } = await import('./project-audit');
+const { auditIngestChunkSize, boundChunkWrite } = await import('./project-audit');
 
 function hostileEvent() {
   return {
@@ -552,5 +552,62 @@ describe('audit ingest request-deadline budget', () => {
     expect(retryAfter).toBe('5');
     expect(body).toMatchObject({ accepted: 200, inserted: 25, retry_after_seconds: 5 });
     expect(insertStatements).toHaveLength(1);
+  });
+
+  test('a statement that never resolves answers the controlled 503 before the deadline', async () => {
+    // The wait for an audit-pool backend has no bound of its own: postgres.js
+    // has no acquire-queue timeout, and the pool is two backends shared with
+    // the audit queue's own writes. Prod 2026-09-29, hours after the budget
+    // check (KRTX-644) shipped: bursts of `…/audit/events` posts kept both
+    // backends busy and ingest requests STILL died with the uncontrolled
+    // `request exceeded the 25s server processing deadline` abort
+    // mid-acquire — KRTX-522's deadline-503 lines, 08:48–09:09 UTC. The
+    // chunk race (`boundChunkWrite`) cuts the write off at the request's
+    // remaining budget instead.
+    delete process.env.KORTIX_AUDIT_INGEST_CHUNK; // default: one statement per batch
+    // The mocked INSERT resolves after 60s — far past every budget, the
+    // shape of a statement queued behind a saturated audit pool. Without the
+    // race the route hangs past the 25s deadline; with it, the route answers
+    // the controlled contended 503 the relay already paces on.
+    insertDelayMs = 60_000;
+    const started = Date.now();
+    const { status, retryAfter, body } = await postWithStartedAt(200, 1_000);
+    const wallMs = Date.now() - started;
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({ accepted: 200, inserted: 0, retry_after_seconds: 5 });
+    // One statement was attempted, and the route answered inside the 25s
+    // deadline the request-deadline middleware would otherwise abort at.
+    expect(insertStatements).toHaveLength(1);
+    expect(wallMs).toBeLessThan(24_000);
+  }, 40_000);
+});
+
+describe('boundChunkWrite', () => {
+  test('a statement that resolves inside its bound wins the race with its value', async () => {
+    const started = Date.now();
+    const result = await boundChunkWrite(
+      Bun.sleep(20).then(() => 'landed'),
+      5_000,
+    );
+
+    expect(result).toEqual({ timedOut: false, value: 'landed' });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('a statement still pending at its bound loses the race and the caller moves on', async () => {
+    const started = Date.now();
+    const never = new Promise<never>(() => {});
+    const result = await boundChunkWrite(never, 50);
+
+    expect(result).toEqual({ timedOut: true });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  test('a statement that rejects inside its bound propagates the rejection', async () => {
+    const boom = Promise.reject(new Error('statement timeout'));
+
+    await expect(boundChunkWrite(boom, 5_000)).rejects.toThrow('statement timeout');
   });
 });

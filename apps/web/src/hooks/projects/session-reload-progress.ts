@@ -14,7 +14,7 @@ export const RELOAD_PROGRESS_STEPS: ReadonlyArray<{
   { phase: 'confirming-config', label: 'Confirming active config' },
 ];
 
-export type ReloadProgressPosition = 'complete' | 'current' | 'pending' | 'skipped';
+export type ReloadProgressPosition = 'complete' | 'current' | 'pending';
 
 export function reloadProgressText(
   phase: SessionReloadPhase | null,
@@ -31,9 +31,7 @@ export function reloadProgressText(
 export function reloadProgressPosition(
   current: SessionReloadPhase | null,
   step: SessionReloadPhase,
-  refreshRepo = true,
 ): ReloadProgressPosition {
-  if (!refreshRepo && step === 'refreshing-workspace') return 'skipped';
   if (!current) return 'pending';
 
   const currentIndex = RELOAD_PROGRESS_STEPS.findIndex((item) => item.phase === current);
