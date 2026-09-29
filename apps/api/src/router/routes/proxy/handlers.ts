@@ -1,5 +1,6 @@
 import { HTTPException } from 'hono/http-exception';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
+import { timeUpstream } from '../../../middleware/upstream-timing';
 import { config, KORTIX_MARKUP } from '../../../config';
 import { requireModelPricing } from '../../config/models';
 import {
@@ -174,13 +175,17 @@ async function handleKortixProxy(
 
   let upstream: Response;
   try {
-    upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      // @ts-ignore
-      duplex: 'half',
-    });
+    // Attribute the upstream wait to `upstream_ms` so the completion log line
+    // can split provider latency from this API's own work (auth, reservation).
+    upstream = await timeUpstream(() =>
+      fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        // @ts-ignore
+        duplex: 'half',
+      }),
+    );
   } catch (error) {
     if (service.isLlm === true) {
       await refundLlmReservation(
@@ -489,13 +494,16 @@ async function handleKortixPassthrough(
 
   let upstream: Response;
   try {
-    upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      // @ts-ignore
-      duplex: 'half',
-    });
+    // Same attribution as handleKortixProxy — see the comment there.
+    upstream = await timeUpstream(() =>
+      fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        // @ts-ignore
+        duplex: 'half',
+      }),
+    );
   } catch (error) {
     if (!isLlm) {
       await refundToolReservation(
@@ -548,13 +556,15 @@ async function handlePassthrough(
 
   console.log(`[PROXY] ${service.name} (passthrough) ${method} ${subPath}`);
 
-  const upstream = await fetch(targetUrl, {
-    method,
-    headers,
-    body,
-    // @ts-ignore
-    duplex: 'half',
-  });
+  const upstream = await timeUpstream(() =>
+    fetch(targetUrl, {
+      method,
+      headers,
+      body,
+      // @ts-ignore
+      duplex: 'half',
+    }),
+  );
 
   return new Response(upstream.body, {
     status: upstream.status,
