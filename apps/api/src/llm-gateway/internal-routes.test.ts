@@ -4,9 +4,13 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 // The internal routes the standalone gateway pod calls, through the real Hono
 // app and the real model catalog. Mocked: resolveCandidates, the servable
 // project catalog (it reads the database), and the hooks' persistence.
+const loggerWarn = mock(() => {});
+// Swapped per-test so a test can hold the trace write open and prove the route
+// does not wait for it.
+const persistGatewayTraceMock = mock<(trace: unknown) => Promise<void>>(async () => {});
 mock.module('../lib/logger', () => ({
   logger: {
-    warn: mock(() => {}),
+    warn: loggerWarn,
     info: mock(() => {}),
     error: mock(() => {}),
     debug: mock(() => {}),
@@ -27,7 +31,7 @@ mock.module('./hooks', () => ({
   ...actualHooks,
   authenticatePrincipal: async () => null,
   authorizeRequest: async () => ({ ok: true }),
-  persistGatewayTrace: async () => {},
+  persistGatewayTrace: persistGatewayTraceMock,
   recordGatewayUsage: async (event: unknown) => {
     usageEvents.push(event);
   },
@@ -217,6 +221,54 @@ describe('POST /models managedOnly', () => {
     });
 
     expect(managed).toEqual({});
+  });
+});
+
+describe('POST /trace — best-effort persistence never blocks the response', () => {
+  // Prod, 2026-09-28: the handler awaited the gateway_request_logs write on the
+  // isolated audit pool. Under the per-session sequence-lock convoy that write
+  // waited tens of seconds for one of the pool's 2 backends, so this route's
+  // p95 tracked the pool's queue depth (44 s at the peak). The gateway already
+  // posts the trace fire-and-forget, so the route must answer at once.
+  test('answers 200 while the audit-pool write is still pending', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    persistGatewayTraceMock.mockImplementationOnce(async () => {
+      await held;
+    });
+
+    const res = await Promise.race([
+      app().request('/trace', authedRequest({ trace: { requestId: 'req_held' } })),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 1_000)),
+    ]);
+    release();
+
+    expect(res).not.toBe('timeout');
+    expect((res as Response).status).toBe(200);
+    expect(await (res as Response).json()).toEqual({ ok: true });
+  });
+
+  test('a failed background write is logged and still answers 200', async () => {
+    loggerWarn.mockClear();
+    persistGatewayTraceMock.mockImplementationOnce(async () => {
+      throw new Error('55P03 canceling statement due to lock timeout');
+    });
+
+    const res = await app().request('/trace', authedRequest({ trace: { requestId: 'req_fail' } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    // Let the detached rejection handler run before asserting on it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loggerWarn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a trace without a request id is still refused', async () => {
+    const res = await app().request('/trace', authedRequest({ trace: { accountId: 'a1' } }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false });
   });
 });
 

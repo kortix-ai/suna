@@ -838,7 +838,7 @@ function DocxThumbnailSidebarList({
                   aria-setsize={pageCount}
                   data-docx-viewer-thumbnail-option={thumbnail.pageNumber}
                   className={cn(
-                    'hover:bg-sidebar-accent flex h-auto w-full cursor-default flex-col items-center gap-2 rounded-md p-2 text-xs transition-shadow outline-none select-none',
+                    'hover:bg-sidebar-accent flex h-auto w-full flex-col items-center gap-2 rounded-md p-2 text-xs transition-shadow outline-none select-none',
                     thumbnail.pageNumber === activePage && 'bg-sidebar-accent text-foreground',
                     thumbnail.pageNumber !== activePage && 'text-muted-foreground',
                     thumbnail.pageNumber === activePage && DOCX_THUMBNAIL_FOCUS_RING_CLASS,

@@ -1006,7 +1006,7 @@ function PDFViewerThumbnails({
               aria-setsize={pageCount}
               data-selected={isSelected ? '' : undefined}
               className={cn(
-                'hover:bg-sidebar-accent flex h-full w-full cursor-default flex-col items-center justify-between rounded-md px-2 py-0 text-xs transition-shadow outline-none select-none',
+                'hover:bg-sidebar-accent flex h-full w-full flex-col items-center justify-between rounded-md px-2 py-0 text-xs transition-shadow outline-none select-none',
                 isActive || isSelected
                   ? 'bg-sidebar-accent text-foreground'
                   : 'text-muted-foreground',

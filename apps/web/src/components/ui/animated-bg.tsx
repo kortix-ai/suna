@@ -8,11 +8,11 @@ type Tone = 'light' | 'medium' | 'dark';
 
 type ArcStop = { color?: number; offset?: string; opacity?: string };
 
-// [x1, y1, x2, y2, stops]: one linearGradient per entry, id `${p}${i}_${tone}_${uid}`.
+// [x1, y1, x2, y2, stops]: one linearGradient per entry, id `${prefix}${i}_${tone}_${uid}`.
 type ArcGradient = [x1: string, y1: string, x2: string, y2: string, stops: ArcStop[]];
 
 type ArcSvgCfg = {
-  // The svg id prefix ('L'/'R'): every def id and fill url is `${p}…`.
+  // The svg id prefix ('L'/'R'): every def id and fill url is `${prefix}…`.
   prefix: 'L' | 'R';
   sw: number;
   sh: number;
