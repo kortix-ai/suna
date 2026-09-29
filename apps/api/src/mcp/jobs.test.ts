@@ -34,8 +34,10 @@ describe('renderJob', () => {
 // sandbox is ubuntu:24.04, and macOS has neither setsid nor GNU timeout.
 describe.skipIf(process.platform !== 'linux')('job scripts in a real shell', () => {
   const home = mkdtempSync(join(tmpdir(), 'kmcp-'));
+  // No login shell: a runner's /etc/profile can reset HOME, and the job dirs
+  // would then land outside this test's home (the cleanup test failed on CI).
   const sh = (script: string, env: Record<string, string>, cwd = home) =>
-    spawnSync('bash', ['-lc', script], { cwd, env: { ...process.env, HOME: home, ...env }, encoding: 'utf8' }).stdout;
+    spawnSync('bash', ['--noprofile', '--norc', '-c', script], { cwd, env: { ...process.env, HOME: home, ...env }, encoding: 'utf8' }).stdout;
   const poll = (job: string) => parseJobPoll(sh(JOB_POLL, { KMCP_JOB: job, KMCP_TAIL: '1000', KMCP_SEP: SEP }), SEP);
   const waitDone = async (job: string, ms = 10_000) => {
     const until = Date.now() + ms;
