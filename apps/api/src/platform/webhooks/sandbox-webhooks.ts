@@ -26,6 +26,7 @@ import {
   reconcileSandboxRemovedByExternalId,
 } from '../../projects/sandbox-reaper';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { readStandardWebhookHeaders, verifyStandardWebhook } from '../../lib/webhooks/standard-webhooks';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
 
@@ -66,28 +67,6 @@ export function verifyHmacSha256(rawBody: string, secret: string, headerValue: s
   return candidates.some((c) => safeEqual(c.toLowerCase(), expected.toLowerCase()));
 }
 
-/**
- * Svix-style verification (Daytona). signedContent = `${id}.${timestamp}.${body}`;
- * secret is base64 after the `whsec_` prefix; signature header is one or more
- * space-separated `v1,<base64>` entries.
- */
-export function verifySvix(
-  rawBody: string,
-  secret: string,
-  parts: { id: string | undefined; timestamp: string | undefined; signature: string | undefined },
-): boolean {
-  const { id, timestamp, signature } = parts;
-  if (!id || !timestamp || !signature) return false;
-  const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
-  const signedContent = `${id}.${timestamp}.${rawBody}`;
-  const expected = createHmac('sha256', key).update(signedContent, 'utf8').digest('base64');
-  const candidates = signature
-    .split(' ')
-    .map((p) => (p.includes(',') ? p.split(',')[1] : p))
-    .filter(Boolean);
-  return candidates.some((c) => safeEqual(c, expected));
-}
-
 /** Apply the terminal outcome to billing + DB (idempotent, shared with the reaper). */
 export async function applySandboxLifecycle(
   externalId: string,
@@ -98,7 +77,7 @@ export async function applySandboxLifecycle(
     // An unsolicited observation, and `classifyLifecycle` folds the
     // TRANSITIONAL `stopping` / `archiving` into it — so while a turn is open
     // this must be confirmed by a second observation before it parks the box
-    // (incident 2026-08-17T20:40:03Z, session 0fc6897a). The reaper's poll
+    // (incident 2026-08-17T20:40:03Z, a prod session). The reaper's poll
     // supplies that second observation within one pass.
     const changed = await reconcileSandboxStoppedByExternalId(externalId, new Date(), {
       confirmMidTurnStop: true,
@@ -125,12 +104,12 @@ export async function handleDaytonaWebhook(
   const secret = config.DAYTONA_WEBHOOK_SECRET;
   if (!secret) return { status: 503, body: { error: 'daytona webhook not configured' } };
 
-  const ok = verifySvix(rawBody, secret, {
-    id: getHeader('webhook-id') ?? getHeader('svix-id'),
-    timestamp: getHeader('webhook-timestamp') ?? getHeader('svix-timestamp'),
-    signature: getHeader('webhook-signature') ?? getHeader('svix-signature'),
-  });
-  if (!ok) return { status: 401, body: { error: 'invalid signature' } };
+  // Daytona signs with Svix (Standard Webhooks). The helper also rejects a
+  // timestamp more than 5 minutes off, so a captured delivery cannot be replayed.
+  const headers = readStandardWebhookHeaders(getHeader);
+  if (!verifyStandardWebhook({ rawBody, secret, headers })) {
+    return { status: 401, body: { error: 'invalid signature' } };
+  }
   bindIntegrationPrincipal('daytona');
 
   let event: any;
@@ -145,7 +124,7 @@ export async function handleDaytonaWebhook(
   const newState: string | undefined = event?.newState ?? event?.state ?? event?.data?.state;
   if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
 
-  const dedupId = `daytona:${getHeader('webhook-id') ?? `${externalId}:${newState}:${event?.updatedAt ?? ''}`}`;
+  const dedupId = `daytona:${headers.id || `${externalId}:${newState}:${event?.updatedAt ?? ''}`}`;
   const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch(() => true);
   if (!fresh) return { status: 200, body: { ok: true, deduped: true } };
 
