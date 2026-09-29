@@ -25,7 +25,7 @@ import {
   type ScrapeResult,
 } from '@/features/session/tool/shared/web-helpers';
 import { useTranslations } from '@/i18n/use-translations';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import {
   CaretRightIcon,
