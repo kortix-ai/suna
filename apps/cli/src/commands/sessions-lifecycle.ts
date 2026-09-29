@@ -8,6 +8,8 @@
  * Stop button and the session page's open call drive, disk kept.
  */
 
+import { runtimeSupports } from '@kortix/sdk';
+
 import {
   emitJson,
   locateSessionAnywhere,
@@ -18,6 +20,7 @@ import {
 } from '../command-helpers.ts';
 import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
+import { readRuntimeCapabilities } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat } from './sessions-chat.ts';
 import { sessionPromptDefaults } from './sessions-files.ts';
@@ -113,7 +116,8 @@ const COMPACT_HELP = help`Usage: kortix sessions compact <session-id> [options]
 Summarize the conversation so far and continue from the summary — what the
 dashboard's "Compact" does. Use it when a long session starts losing the
 thread or hits its context ceiling. The model is the session's own; the
-runtime's configured default is the fallback.
+runtime's configured default is the fallback. A session whose runtime cannot
+compact on demand (a pi session) exits 1 and nothing changes.
 
 Options:
   --project <id>   Operate on this project id (default: linked).
@@ -374,6 +378,12 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   }
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions compact');
   if (!resolved) return 1;
+  if (!runtimeSupports(await readRuntimeCapabilities(resolved), 'session.compact')) {
+    process.stderr.write(
+      `${status.err("This session's runtime does not support compacting the conversation.")}\n`,
+    );
+    return 1;
+  }
 
   // The session's OWN persisted model is the right one to summarize with —
   // same split the prompt path uses. Fall back to the runtime's configured

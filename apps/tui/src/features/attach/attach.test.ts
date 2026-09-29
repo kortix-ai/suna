@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { AttachOpenCodeError } from '@kortix/cli/src/attach-opencode.ts';
+import { ATTACH_UNSUPPORTED, AttachOpenCodeError } from '@kortix/cli/src/attach-opencode.ts';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
 import { attachResultToast, attachStatusLine } from './attach-status.tsx';
@@ -7,6 +7,7 @@ import {
   type AttachSignals,
   type AttachStatus,
   FORWARDED_SIGNALS,
+  attachRefusal,
   authFromHost,
   runAttach,
 } from './attach.ts';
@@ -199,5 +200,22 @@ describe('attach status rendering', () => {
       message: 'Attach failed at proxy-ready: EADDRINUSE',
       kind: 'error',
     });
+  });
+});
+
+describe('attachRefusal', () => {
+  const PI = ['file.import', 'session.subagents'];
+
+  test('the open session on a runtime without session.attach is refused with a toast', () => {
+    const refusal = attachRefusal('ses_1', 'ses_1', PI);
+    expect(refusal).toContain(ATTACH_UNSUPPORTED);
+    expect(refusal).toContain('Alt+t');
+  });
+
+  test('capabilities not read yet, an OpenCode runtime, or another session attach', () => {
+    expect(attachRefusal('ses_1', 'ses_1', null)).toBeNull();
+    expect(attachRefusal('ses_1', 'ses_1', ['session.subagents', 'session.attach'])).toBeNull();
+    // Only the open session was read; attach refuses any other by its own read.
+    expect(attachRefusal('ses_2', 'ses_1', PI)).toBeNull();
   });
 });

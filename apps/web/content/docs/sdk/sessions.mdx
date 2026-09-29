@@ -278,6 +278,37 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 `s.ensureReady()` first, or they throw `SessionNotReadyError`. See
 [Session readiness errors](#session-readiness-errors).
 
+### What the runtime supports
+
+`health.capabilities` lists the session features the runtime serves. Read one
+with `runtimeSupports(capabilities, capability)` and hide the control when it
+returns `false`. An OpenCode session serves all nine; a pi session serves
+`session.subagents` only and answers the others with `501 feature_not_supported`.
+
+| Capability | Feature |
+| --- | --- |
+| `session.rewind` | Revert to a message, and restore it |
+| `session.compact` | Summarize the conversation on demand |
+| `session.commands` | Project slash commands |
+| `session.fork` | Fork a session at a message |
+| `session.subagents` | Subagent child sessions |
+| `session.mcp` | MCP servers the runtime connects itself |
+| `session.todo` | The runtime's todo list |
+| `session.shell` | A shell command run as a turn |
+| `session.attach` | Attach the harness's own terminal client |
+
+```ts
+import { runtimeSupports } from '@kortix/sdk';
+
+const { health } = await s.health();
+if (!runtimeSupports(health?.capabilities, 'session.compact')) hideCompact();
+```
+
+`runtimeSupports` returns `true` before a health answer arrives, and for a
+runtime that lists no `session.*` capability: a daemon built before capabilities
+existed runs OpenCode, which serves every feature. In React, use
+[`useRuntimeSupports`](/docs/sdk/react).
+
 ## Status words
 
 Every host reads one vocabulary, so one state has one word on every screen.
