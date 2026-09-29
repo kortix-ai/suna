@@ -329,7 +329,16 @@ function isNextAssetSource(filename: unknown): boolean {
 // compiled code never runs from this source — every first-party chunk is
 // `app:///_next/static/chunks/…` — and a loaded script asset carries its own
 // `.js` url as its filename, not the document url.
-const IOS_WEBVIEW_INLINE_SCRIPT_SOURCE_PATTERN = /^app:\/\/\/[^/]/;
+//
+// The BARE `app:///` origin (no path) is the same in-page document source for
+// a root document: on the open-web marketing (`/`) and auth (`/auth`) pages the
+// injected script's filename is the app origin with no route path. It is not a
+// `_next` bundle (excluded below) and carries no file extension, so it is an
+// inline-script source too. Better Stack patterns `3442ad7c…` and `b86f8fb0…`
+// (Kortix Frontend prod, application_id 2346967): the identical `Ok`/`Qk`
+// mutual recursion at one line, every frame's filename exactly `app:///`, on
+// `https://kortix.com/` and `https://kortix.com/auth`.
+const IOS_WEBVIEW_INLINE_SCRIPT_SOURCE_PATTERN = /^app:\/\/\//;
 
 // A loaded asset path ends with a file extension; a route/document path does
 // not. Keeps an `app:///assets/index-abc.js` / `app:///sw.js` asset frame out
@@ -453,10 +462,16 @@ export function isIosWebViewInjectedStackOverflowNoise(input: {
   }
   // Strong anchor when the page url is known: the inline frame's `app:///` path
   // must be THIS page's path. A different `app:///` path is another document
-  // context, not this page's injected script; keep reporting.
+  // context, not this page's injected script; keep reporting. A BARE `app:///`
+  // root (empty path) is the app origin the injected script reports on the
+  // open-web marketing/auth pages — there is no route path to compare, so it
+  // belongs to whichever page produced it.
   const pagePath = requestUrlPath(input.requestUrl);
   if (pagePath !== '') {
-    return documentSources.some((source) => iosWebViewSourcePath(source) === pagePath);
+    return documentSources.some((source) => {
+      const sourcePath = iosWebViewSourcePath(source);
+      return sourcePath === pagePath || sourcePath === '';
+    });
   }
   return true;
 }
