@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { projects, type Database } from '@kortix/db';
+import { type Database, projects } from '@kortix/db';
 import {
   ACTIVE_EXTERNAL_ID_META_KEY,
   ACTIVE_SNAPSHOT_NAME_META_KEY,
@@ -182,12 +182,18 @@ function activateHarness(script: {
       set: (patch: Record<string, unknown>) => ({
         where: () => {
           const record = () =>
-            writes.push({ table: table === projects ? 'projects' : 'transitions', status: patch.status });
+            writes.push({
+              table: table === projects ? 'projects' : 'transitions',
+              status: patch.status,
+            });
+          // A waitable handle: the store awaits update chains directly, except
+          // the activation write, which reads its row back through `.returning()`.
           return {
             returning: async () => {
               record();
               return [AUDIT_ROW];
             },
+            // biome-ignore lint/suspicious/noThenProperty: the fake where-result must be awaitable without `.returning()`
             then: (resolve: (v?: unknown) => void) => {
               record();
               resolve();
@@ -226,7 +232,10 @@ describe('activateWithCas', () => {
   });
 
   test('lost lease → refused without a write (pin untouched, row not superseded)', async () => {
-    const h = activateHarness({ project: { metadata: {}, generation: 3, status: 'active' }, leaseEpoch: 2 });
+    const h = activateHarness({
+      project: { metadata: {}, generation: 3, status: 'active' },
+      leaseEpoch: 2,
+    });
     expect(await activateWithCas(h.db, { ...CAS_ARGS, leaseEpoch: 3 })).toEqual({
       activated: false,
       reason: 'lost_lease',
@@ -235,7 +244,10 @@ describe('activateWithCas', () => {
   });
 
   test('lost CAS → the row is superseded and the pin stays untouched', async () => {
-    const h = activateHarness({ project: { metadata: {}, generation: 4, status: 'active' }, leaseEpoch: null });
+    const h = activateHarness({
+      project: { metadata: {}, generation: 4, status: 'active' },
+      leaseEpoch: null,
+    });
     expect(await activateWithCas(h.db, { ...CAS_ARGS })).toEqual({
       activated: false,
       reason: 'lost_cas',
@@ -244,7 +256,10 @@ describe('activateWithCas', () => {
   });
 
   test('won → pin merge, activation, then lower live rows superseded; audits the row after commit', async () => {
-    const h = activateHarness({ project: { metadata: {}, generation: 3, status: 'active' }, leaseEpoch: 3 });
+    const h = activateHarness({
+      project: { metadata: {}, generation: 3, status: 'active' },
+      leaseEpoch: 3,
+    });
     expect(await activateWithCas(h.db, { ...CAS_ARGS, leaseEpoch: 3 })).toEqual({
       activated: true,
       reason: 'won',
