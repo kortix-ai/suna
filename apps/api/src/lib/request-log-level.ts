@@ -1,5 +1,7 @@
-// Severity and suppression of the post-request `Request completed:` line.
-// `src/index.ts` owns the middleware that calls both.
+// Severity, suppression, and timing breakdown of the post-request
+// `Request completed:` line. `src/index.ts` owns the middleware that calls them.
+
+import { formatStageEntries, stageSnapshot } from './server-timing';
 
 /**
  * Severity of the post-request `Request completed:` line.
@@ -15,6 +17,36 @@
  */
 export function requestLogLevel(status: number): 'info' | 'warn' {
   return status >= 500 ? 'warn' : 'info';
+}
+
+/**
+ * Default duration past which a completed request logs its per-stage
+ * wall-time breakdown. Operator-tunable with `KORTIX_SLOW_REQUEST_TIMING_MS`
+ * (log volume on the slow tail is an operator concern, not a code one).
+ */
+const SLOW_REQUEST_TIMING_MS_DEFAULT = 1_000;
+
+/**
+ * The `Server-Timing` stage entries (`auth;dur=…;desc="n=…", db;dur=…, …`) for
+ * the completed log line, or an empty string on a fast success.
+ *
+ * The stages are computed on EVERY request (lib/server-timing.ts) and shipped
+ * as a response header — which reaches only the client. When a fleet-wide p95
+ * anomaly fires (KRTX-468: `GET /:id/sessions` p95 610 → 1720 ms on prod DB
+ * contention), the log line carried one opaque `duration`, and attributing it
+ * was a post-hoc ClickHouse reconstruction. Logging the breakdown on the
+ * slow-or-failed tail answers "DB stretch, IAM work, or an upstream wait" from
+ * the line itself.
+ *
+ * Slow tail and 5xx only: a healthy 200 at 30 ms gains nothing from six extra
+ * fields and the Better Stack line budget is real. This enriches the EXISTING
+ * line — no new log pattern to page on.
+ */
+export function requestTimingLogField(durationMs: number, status: number): string {
+  const raw = Number.parseInt(process.env.KORTIX_SLOW_REQUEST_TIMING_MS ?? '', 10);
+  const threshold = Number.isFinite(raw) && raw >= 0 ? raw : SLOW_REQUEST_TIMING_MS_DEFAULT;
+  if (durationMs < threshold && status < 500) return '';
+  return formatStageEntries(stageSnapshot()).join(', ');
 }
 
 /**

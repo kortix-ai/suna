@@ -20,7 +20,11 @@ import {
   setContextField,
 } from './lib/request-context';
 import { apiRegion, databaseRegion } from './lib/deployment-region';
-import { requestLogLevel, shouldSuppressRequestLog } from './lib/request-log-level';
+import {
+  requestLogLevel,
+  requestTimingLogField,
+  shouldSuppressRequestLog,
+} from './lib/request-log-level';
 import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
 import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
@@ -428,6 +432,11 @@ app.use('*', async (c, next) => {
     // one read route, none 5xx). Latency regressions stay covered by the
     // infra-sweep's p95 detector, and the line still carries `duration`.
     const level = requestLogLevel(status);
+    // On the slow or failed tail, the per-stage wall-time breakdown the
+    // `Server-Timing` header already computes (lib/server-timing.ts), so the
+    // next p95 anomaly answers "DB stretch or app-side work" from this line
+    // instead of a post-hoc reconstruction (KRTX-468).
+    const serverTiming = requestTimingLogField(duration, status);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
@@ -435,6 +444,7 @@ app.use('*', async (c, next) => {
       // makes turn-stream `kind` queryable in CloudWatch Logs Insights; the full
       // request context (which carries identity) still goes to Better Stack only.
       ...getDiagnosticFields(),
+      ...(serverTiming ? { server_timing: serverTiming } : {}),
     });
     void emitOtelSpan({
       name: `${method} ${path}`,
