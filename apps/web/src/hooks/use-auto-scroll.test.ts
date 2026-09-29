@@ -5,6 +5,7 @@ import {
   BOTTOM_GAP_PX,
   CHEVRON_PX,
   GLIDE_MIN_PX,
+  OWN_SCROLL_MS,
   TURN_TOP_OFFSET,
   chevronVisible,
   classifyScrollKey,
@@ -125,6 +126,9 @@ describe('settleMotion — one motion per change, never a cut at the end of a gl
 });
 
 describe('isAtEnd — THE RULE resumes only at the end', () => {
+  test('the compatibility import keeps the original scroll timing constant', () => {
+    expect(OWN_SCROLL_MS).toBe(80);
+  });
   test('within AT_END_PX counts as at the end (drags rarely land on the pixel)', () => {
     expect(isAtEnd(0)).toBe(true);
     expect(isAtEnd(AT_END_PX)).toBe(true);
