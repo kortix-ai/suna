@@ -2563,13 +2563,13 @@ export default function BrandPage() {
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs">
-                          Segmented
+                          {tI18nHardcoded.raw('i18nComplete.textd71a0c697cce')}
                         </p>
                         <Tabs defaultValue="segmented-managed" className="max-w-sm">
                           <TabsList variant="segmented" className="w-full">
                             <TabsTrigger value="segmented-managed">
                               <CloudIcon />
-                              Kortix managed
+                              {tI18nHardcoded.raw('i18nComplete.text9ae34cca7f2d')}
                             </TabsTrigger>
                             <TabsTrigger value="segmented-github">
                               <GithubLogoIcon />
@@ -2578,12 +2578,12 @@ export default function BrandPage() {
                           </TabsList>
                           <TabsContent value="segmented-managed">
                             <p className="text-muted-foreground mt-2 text-sm">
-                              Kortix creates and manages a private repository for this project.
+                              {tI18nHardcoded.raw('i18nComplete.textafecbae4466e')}
                             </p>
                           </TabsContent>
                           <TabsContent value="segmented-github">
                             <p className="text-muted-foreground mt-2 text-sm">
-                              Kortix creates a private repository in your GitHub account.
+                              {tI18nHardcoded.raw('i18nComplete.text6cb9b40da8a0')}
                             </p>
                           </TabsContent>
                         </Tabs>
