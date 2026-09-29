@@ -33,13 +33,8 @@ interface PreviewImageContentProps extends React.ComponentPropsWithoutRef<
   typeof DialogPrimitive.Content
 > {
   closeClassName?: string;
-  previewClassName?: string;
-  border?: boolean;
-  fileType?: string;
-  fileSrc?: string;
   fileContent?: string;
   fileName?: string;
-  file?: File | string;
   fullscreen?: boolean;
 }
 
@@ -92,22 +87,6 @@ const PreviewImageContent = React.forwardRef<
 
   const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
     setTransformOrigin(getTransformOrigin(event));
-    setZoomLevel((currentZoom) => (currentZoom > DEFAULT_ZOOM ? DEFAULT_ZOOM : MAX_ZOOM));
-  };
-
-  const zoomOut = () => {
-    setZoomLevel((currentZoom) =>
-      clamp(Number((currentZoom - ZOOM_STEP).toFixed(1)), MIN_ZOOM, MAX_ZOOM),
-    );
-  };
-
-  const zoomIn = () => {
-    setZoomLevel((currentZoom) =>
-      clamp(Number((currentZoom + ZOOM_STEP).toFixed(1)), MIN_ZOOM, MAX_ZOOM),
-    );
-  };
-
-  const toggleZoom = () => {
     setZoomLevel((currentZoom) => (currentZoom > DEFAULT_ZOOM ? DEFAULT_ZOOM : MAX_ZOOM));
   };
 
@@ -173,52 +152,11 @@ const PreviewImageContent = React.forwardRef<
 });
 PreviewImageContent.displayName = DialogPrimitive.Content.displayName;
 
-const PreviewImageHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)} {...props} />
-);
-PreviewImageHeader.displayName = 'PreviewImageHeader';
-
-const PreviewImageFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
-    {...props}
-  />
-);
-PreviewImageFooter.displayName = 'PreviewImageFooter';
-
-const PreviewImageTitle = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title
-    ref={ref}
-    className={cn('text-lg leading-none font-semibold tracking-tight', className)}
-    {...props}
-  />
-));
-PreviewImageTitle.displayName = DialogPrimitive.Title.displayName;
-
-const PreviewImageDescription = React.forwardRef<
-  React.ElementRef<typeof DialogPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description
-    ref={ref}
-    className={cn('text-muted-foreground text-sm', className)}
-    {...props}
-  />
-));
-PreviewImageDescription.displayName = DialogPrimitive.Description.displayName;
-
 export {
   PreviewImage,
   PreviewImageClose,
   PreviewImageContent,
-  PreviewImageDescription,
-  PreviewImageFooter,
-  PreviewImageHeader,
   PreviewImageOverlay,
   PreviewImagePortal,
-  PreviewImageTitle,
   PreviewImageTrigger,
 };
