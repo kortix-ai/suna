@@ -45,6 +45,7 @@ import {
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
+  isServerSuspenseBailoutNoise,
   isSignalTimeoutNoise,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -11984,7 +11985,109 @@ test('suppresses a 404-boundary React #419 through the Sentry beforeSend hint', 
     }),
     true,
   );
-  // Same event without the hint (the digest is not in the serialised event) must
-  // keep reporting so a real server-render failure is never hidden.
-  assert.equal(shouldIgnoreSentryNoiseEvent(event), false);
+  // Same event without the hint (the digest is not in the serialised event) is
+  // the digest-less abort class: a superseded client navigation left the server
+  // Suspense boundary a permanent fallback with no `data-dgst`, React threw #419
+  // and switched the boundary to client rendering. That is the
+  // `server-suspense-bailout` noise class (23 occurrences / 0 identified users
+  // in prod), so it is dropped. See `isServerSuspenseBailoutNoise`.
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), true);
+});
+
+// The digest-less React #419 class: the recoverable "the server could not
+// finish this Suspense boundary" report React raises for an abandoned
+// RSC-streamed boundary (a superseded client navigation / cut stream), which
+// Next.js does not skip because its `data-dgst` is absent. Sibling of the
+// React #412 RSC-stream-close class in `isConnectionClosedNoise`.
+const REACT_419_PROD_FRAMES = [
+  { filename: 'app:///_next/static/immutable/chunks/1lk6qtp5slimq.js', function: '?' },
+];
+
+test('classifies a digest-less React #419 from a minified React chunk as noise', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({ message: REACT_419_MESSAGE, frames: REACT_419_PROD_FRAMES }),
+    true,
+  );
+});
+
+test('classifies a frameless digest-less React #419 as noise', () => {
+  assert.equal(isServerSuspenseBailoutNoise({ message: REACT_419_MESSAGE }), true);
+});
+
+test('keeps reporting a React #419 whose stack resolves to first-party source', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: REACT_419_MESSAGE,
+      frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    }),
+    false,
+  );
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: REACT_419_MESSAGE,
+      filename: 'apps/web/src/features/session/session-chat.tsx',
+    }),
+    false,
+  );
+});
+
+test('does NOT claim a React #419 with a 404/redirect or a real error digest', () => {
+  for (const digest of [
+    'NEXT_HTTP_ERROR_FALLBACK;404',
+    'NEXT_REDIRECT;replace;/projects;307;',
+    'deadbeef01',
+    'BAILOUT_TO_CLIENT_SIDE_RENDERING',
+    'NEXT_PRERENDER_INTERRUPTED',
+  ]) {
+    assert.equal(
+      isServerSuspenseBailoutNoise({
+        message: REACT_419_MESSAGE,
+        digest,
+        frames: REACT_419_PROD_FRAMES,
+      }),
+      false,
+      `expected digest ${digest} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT claim a non-#419 React error', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: 'Minified React error #418; visit https://react.dev/errors/418',
+      frames: REACT_419_PROD_FRAMES,
+    }),
+    false,
+  );
+});
+
+test('suppresses the digest-less React #419 at both gates', () => {
+  const event = {
+    exception: {
+      values: [
+        {
+          value: REACT_419_MESSAGE,
+          mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+          stacktrace: { frames: REACT_419_PROD_FRAMES },
+        },
+      ],
+    },
+    request: { url: 'https://kortix.com/dashboard' },
+  };
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), true);
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: REACT_419_MESSAGE }), true);
+  // A first-party-resolved stack keeps the same event reporting.
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent({
+      exception: {
+        values: [
+          {
+            value: REACT_419_MESSAGE,
+            stacktrace: { frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx' }] },
+          },
+        ],
+      },
+    }),
+    false,
+  );
 });

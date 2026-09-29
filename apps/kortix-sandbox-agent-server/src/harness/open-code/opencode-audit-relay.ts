@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
+import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health';
 
 export interface OpenCodeAuditEvent {
   event_id: string;
@@ -862,7 +863,10 @@ export function createAuditRelay(
     });
 
   const schedule = (delay = flushMs) => {
-    if (stopped || timer || queue.length === 0) return;
+    // A dead credential cannot accept a batch, so do not arm a timer that would
+    // only re-POST a 401 (KRTX-446). `enqueue` also drops while dead, so this
+    // guard is defense for any batch already pending when the breaker tripped.
+    if (stopped || timer || queue.length === 0 || sessionTokenPresumedDead()) return;
     timer = setTimeout(() => {
       timer = null;
       void flush().catch(() => {});
@@ -904,6 +908,16 @@ export function createAuditRelay(
   const relay: AuditRelay = {
     enqueue(raw) {
       if (stopped) return;
+      // A credential the control plane has refused, repeatedly and without
+      // contradiction, can never accept a batch: every POST below carries that
+      // same dead token. Drop at the source (like a `dropTypes` class) so a box
+      // that outlives its session neither hammers `POST .../audit/events -> 401`
+      // (the KRTX-446 warn spike) nor grows the spool with events that cannot
+      // land. The breaker clears on the next non-dead answer, and this resumes.
+      if (sessionTokenPresumedDead()) {
+        stats.dropped += 1;
+        return;
+      }
       // Rule 1 — refused at the source, before sanitizing and before the spool
       // fsync this event would otherwise cost.
       if (typeof raw.type === 'string' && dropTypes.has(raw.type)) {
