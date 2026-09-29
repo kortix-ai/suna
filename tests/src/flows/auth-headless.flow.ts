@@ -68,10 +68,25 @@ flow(
       const rot = await ctx.client.as(ctx.P.ANON).post("/v1/auth/refresh", { refresh_token: refresh });
       rot.status(200).body().exists("$.session.access_token");
       const next = rot.json<any>().session;
-      const dead = await ctx.client.as(ctx.P.ANON).post("/v1/auth/refresh", { refresh_token: "kortix-bogus-refresh" });
-      dead.status(400);
       const out = await ctx.client.as(ctx.P.ANON).post("/v1/auth/sign-out", { scope: "global" }, { headers: { Authorization: `Bearer ${next.access_token}` } });
       out.status(200).body().has("$.ok", true);
+    });
+    await ctx.step('rotated refresh token replay after the reuse window rejects and revokes its family', async () => {
+      const signed = await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', { email, password });
+      if (signed.statusCode === 400 && signed.text().includes('not confirmed')) return;
+      signed.status(200);
+      const oldRefresh = signed.json<{ session: { refresh_token: string } }>().session.refresh_token;
+      const rot = await ctx.client.as(ctx.P.ANON).post('/v1/auth/refresh', { refresh_token: oldRefresh });
+      rot.status(200);
+      const next = rot.json<{ session: { refresh_token: string } }>().session;
+      if (next.refresh_token === oldRefresh) throw new Error('refresh token did not rotate');
+      await new Promise((resolve) => setTimeout(resolve, 31_000));
+      const replay = await ctx.client.as(ctx.P.ANON).post('/v1/auth/refresh', { refresh_token: oldRefresh });
+      replay.status([400, 401]).body().exists('$.error');
+      const family = await ctx.client.as(ctx.P.ANON).post('/v1/auth/refresh', { refresh_token: next.refresh_token });
+      family.status([400, 401]).body().exists('$.error');
+      const dead = await ctx.client.as(ctx.P.ANON).post("/v1/auth/refresh", { refresh_token: "kortix-bogus-refresh" });
+      dead.status(400);
     });
     await ctx.step("bearer routes without a session → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/auth/user");
