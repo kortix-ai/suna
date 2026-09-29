@@ -3,6 +3,7 @@ import {
   accountMembers,
   accounts,
   chatEventDedup,
+  chatInstalls,
   chatUserIdentities,
   projectAccessRequests,
   projects,
@@ -54,7 +55,7 @@ export async function lookupChatIdentity(user: ChatUser): Promise<{ userId: stri
     .from(chatUserIdentities)
     .where(linkRow(user))
     .limit(1);
-  return row ? { userId: row.userId, mfaVerified: row.mfaVerifiedAt !== null } : null;
+  return row ? { userId: row.userId, mfaVerified: Boolean(row.mfaVerifiedAt) } : null;
 }
 
 export type ChatLinkResult = { ok: true } | { ok: false; reason: 'linked_to_other' };
@@ -271,24 +272,31 @@ export async function createChatAccessRequest(user: ChatUser, projectId: string)
   const identity = await lookupChatIdentity(user);
   if (!identity) return { status: 'no-identity' };
 
+  // Only a project connected to this chat workspace. The id comes from the
+  // card or button, so without the join anyone linked could file requests
+  // against any project on the platform.
   const [project] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
+    .innerJoin(
+      chatInstalls,
+      and(
+        eq(chatInstalls.projectId, projects.projectId),
+        eq(chatInstalls.platform, user.platform),
+        eq(chatInstalls.workspaceId, user.workspaceId),
+      ),
+    )
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!project) return { status: 'no-project' };
 
   const base = { requesterUserId: identity.userId, accountId: project.accountId };
-  if (await isAccountMember(identity.userId, project.accountId)) {
-    // The same bar the message path holds (resolveChatActor): someone who can
-    // already run a session here needs no request.
-    const verdict = await authorize(
-      actorForUser(identity.userId, project.accountId),
-      PROJECT_ACTIONS.PROJECT_SESSION_START,
-      { type: 'project', id: projectId },
-    );
-    if (verdict.allowed) return { status: 'already-member', ...base };
-  }
+  // The same check the message path makes: someone who can already run a
+  // session here needs no request, and a link an MFA account cannot use
+  // needs a new sign-in, not project access.
+  const actor = await resolveChatActor(user, { projectId, accountId: project.accountId });
+  if ('userId' in actor) return { status: 'already-member', ...base };
+  if (actor.reason === 'unlinked') return { status: 'no-identity' };
 
   const [existing] = await db
     .select({ requestId: projectAccessRequests.requestId })

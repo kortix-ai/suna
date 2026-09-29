@@ -1,4 +1,5 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { changeChannelAgent, switchChannelProject } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
@@ -66,6 +67,22 @@ export async function handleAdaptiveCardAction(
   // trustworthy as its admin, so any project it names must be that project.
   if (typeof action.data.projectId === 'string' && !inboundAllowsTeamsProject(inbound, action.data.projectId)) {
     return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  }
+
+  // Turning Teams off for a project stops its cards too, not only its
+  // messages (dispatch): an Approve or Stop posted before still reached the
+  // project. The bring-your-own endpoint checks the flag before any of this.
+  if (inbound.kind === 'managed') {
+    const convo = convoOf(activity);
+    const projectId =
+      typeof action.data.projectId === 'string'
+        ? action.data.projectId
+        : convo
+          ? await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)
+          : null;
+    if (projectId && !(await projectFeatureFlagEnabled(projectId, 'teams'))) {
+      return cardResponse(buildNoticeCard('Microsoft Teams is turned off for this project.'));
+    }
   }
 
   switch (action.verb) {
@@ -199,6 +216,8 @@ async function handleOpenPanel(
   const panel = data.panel as TeamsPanel;
   if (!convo || !PANELS.has(panel)) return cardResponse(buildNoticeCard("This action isn't available anymore."));
   if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  // A per-project bot runs only its own project: it has no project list to offer.
+  if (panel === 'projects' && inbound.kind === 'project') return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
   if (!projectId) return cardResponse(buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁'));
   // Loaded on press: `commands.ts` pulls the whole command surface, which no
@@ -238,7 +257,11 @@ async function handlePickProject(
   // If this pick answered a project picker, replay the message that triggered it.
   const pendingId = typeof data.pendingId === 'string' ? data.pendingId : undefined;
   if (pendingId) {
-    const parked = await consumePendingTeamsPickerMessage({ pendingId, tenantId: convo.tenantId });
+    const parked = await consumePendingTeamsPickerMessage({
+      pendingId,
+      tenantId: convo.tenantId,
+      conversationId: convo.conversationId,
+    });
     if (parked) {
       void createOrJoinTeamsConversationSession({
         projectId,
@@ -524,7 +547,8 @@ async function handleRequestAccess(
   const outcome = await createChatAccessRequest(chatUser('teams', tenantId, userId), projectId);
   switch (outcome.status) {
     case 'created':
-    case 'pending':
+      // Admins hear about a request once, when it is filed: every press of a
+      // pending request's button used to DM them again.
       await notifyAdminsOfTeamsAccessRequest({
         tenantId,
         projectId,
@@ -532,11 +556,13 @@ async function handleRequestAccess(
         requesterUserId: outcome.requesterUserId,
       });
       return cardResponse(buildNoticeCard('Access requested. An admin will approve it in Kortix.', '✅'));
+    case 'pending':
+      return cardResponse(buildNoticeCard("You've already requested access. It's waiting for an admin in Kortix."));
     case 'already-member':
       return cardResponse(buildNoticeCard("You already have access — send your message again and I'll pick it up."));
     case 'no-identity':
       return cardResponse(buildNoticeCard('Connect your Kortix account first, then request access.'));
     case 'no-project':
-      return cardResponse(buildNoticeCard("I couldn't find that project."));
+      return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
   }
 }

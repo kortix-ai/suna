@@ -515,7 +515,9 @@ async function handleRequestAccess(
         ? "You've already requested access — it's pending an admin's review."
         : result.status === 'already-member'
           ? 'You already have access — send your message again and I’ll get on it.'
-          : 'I couldn’t request access — connect your Kortix account first, then try again.';
+          : result.status === 'no-project'
+            ? 'That project isn’t connected to this Slack workspace.'
+            : 'I couldn’t request access — connect your Kortix account first, then try again.';
   await respondViaUrl(payload.response_url, { replace_original: true, text: message });
 
   if (result.status === 'created') {

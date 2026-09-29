@@ -64,7 +64,7 @@ async function processActivity(
     }
     if (activity.name === 'fileConsent/invoke') {
       try {
-        await handleFileConsentInvoke(activity);
+        await handleFileConsentInvoke(activity, inbound);
       } catch (err) {
         console.error('[teams-webhook] file consent invoke failed', err);
       }

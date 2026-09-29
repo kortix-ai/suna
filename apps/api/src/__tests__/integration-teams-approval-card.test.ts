@@ -98,7 +98,8 @@ const press = (executionId: string, decision: 'approve' | 'deny', aad: string, n
   } as never);
 
 beforeAll(async () => {
-  project = await seedProject('teams-approval-card');
+  // Teams card actions run only for a project with the `teams` flag on.
+  project = await seedProject('teams-approval-card', { metadata: { experimental: { teams: true } } });
   await insertIntoView(db, accountMembers, { userId: MANAGER, accountId: project.account_id, accountRole: 'owner' });
   await insertIntoView(db, accountMembers, { userId: BYSTANDER, accountId: project.account_id, accountRole: 'member' });
   await insertIntoView(db, projectMembers, {

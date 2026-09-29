@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { combinedAuth } from '../../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
-import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
+import { listProjectsForWorkspace, loadTeamsAppIdForProject, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from './auth-resume';
 import { chatUser, completeChatLogin } from '../core/identity';
 import { buildDenialError } from '../../iam/denial-message';
@@ -189,11 +189,15 @@ teamsIdentityApp.openapi(
     let resumed = false;
     if (pending) {
       resumed = true;
+      // A project on its own bot resumes only into its own sessions, as its
+      // webhook would have delivered the message (ownThreadsOnly).
+      const ownBot = Boolean(await loadTeamsAppIdForProject(pending.projectId).catch(() => null));
       void createOrJoinTeamsConversationSession({
         projectId: pending.projectId,
         tenantId: payload.tenantId,
         conversationId: pending.activity.conversation?.id ?? '',
         activity: pending.activity,
+        ownThreadsOnly: ownBot,
       }).catch((err) =>
         console.error('[teams-auth] failed to resume pending Teams message after bind', err),
       );

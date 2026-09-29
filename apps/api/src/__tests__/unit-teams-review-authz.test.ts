@@ -60,6 +60,16 @@ mock.module('../channels/teams/session', () => ({
   createOrJoinTeamsConversationSession: async () => {},
 }));
 
+// The project's `teams` flag, which gates card actions as it gates messages.
+let teamsOn = true;
+const flagChecks: string[] = [];
+mock.module('../feature-flags/for-project', () => ({
+  projectFeatureFlagEnabled: async (projectId: string, key: string) => {
+    flagChecks.push(`${projectId}:${key}`);
+    return teamsOn;
+  },
+}));
+
 const activity = {
   type: 'invoke',
   id: 'act-1',
@@ -73,7 +83,9 @@ const load = async () => await import('../channels/teams/interactivity');
 beforeEach(() => {
   actorCalls.length = 0;
   verdicts.length = 0;
+  flagChecks.length = 0;
   actorResult = { userId: 'user-1' };
+  teamsOn = true;
 });
 
 afterEach(() => {
@@ -121,5 +133,19 @@ describe('a review decision is authorized on the press', () => {
     expect(actorCalls).toEqual([
       { tenantId: TENANT, uid: '29:presser', accountId: ITEM_ACCOUNT, projectId: PROJECT },
     ]);
+  });
+});
+
+describe('turning Teams off for a project stops its cards', () => {
+  test("a manager's review press changes nothing once the project's teams flag is off", async () => {
+    teamsOn = false;
+    const { handleAdaptiveCardAction } = await load();
+
+    const res = await handleAdaptiveCardAction(activity as never);
+
+    expect(flagChecks).toEqual([`${PROJECT}:teams`]);
+    expect(verdicts).toEqual([]);
+    expect(actorCalls).toEqual([]);
+    expect(JSON.stringify(res.value)).toContain('turned off');
   });
 });
