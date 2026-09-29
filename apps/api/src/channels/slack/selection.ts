@@ -184,7 +184,7 @@ export interface ProjectAgentGovernance {
   /**
    * True when the project has adopted `kortix.yaml`'s `agents:` block — the listed
    * names are ENFORCED (an undeclared name isn't a real launchable agent), not
-   * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
+   * merely discovered from agent `.md` files. Mirrors
    * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
    * validate a channel-binding's `agentName` against the catalog should only
    * reject unknown names when this is true — a legacy (undeclared) project

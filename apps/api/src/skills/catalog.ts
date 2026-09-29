@@ -25,6 +25,7 @@
  * would be listed in `KORTIX_MANAGED_SKILL_NAMES` but unresolvable here.
  */
 
+import { SKILLS_DIR } from '@kortix/manifest-schema';
 import { parseFrontmatter } from '@kortix/registry';
 import {
   getManagedSkillFiles,
@@ -33,8 +34,8 @@ import {
   isKortixManagedSkillName,
 } from '@kortix/starter';
 
-/** Where skills live inside a Kortix project (and inside the starter templates). */
-const SKILLS_PREFIX = '.kortix/opencode/skills/';
+/** Where skills live inside the starter templates (and a root-layout Kortix project). */
+const SKILLS_PREFIX = `${SKILLS_DIR}/`;
 /** The skill body every skill has; everything else under the dir is a reference. */
 const SKILL_ENTRYPOINT = 'SKILL.md';
 

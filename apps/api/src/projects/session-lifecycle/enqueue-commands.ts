@@ -52,6 +52,8 @@ export interface EnqueueContinueSessionCommandInput {
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
+  /** Enqueue HELD — see `enqueueReleasingHold`. Pass `availableAt` with it. */
+  held?: boolean;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -84,7 +86,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     sessionId: input.sessionId,
     idempotencyKey: input.idempotencyKey ?? null,
     payload: payload as unknown as Record<string, unknown>,
-    result: {},
+    result: input.held ? { held: true } : {},
     availableAt: input.availableAt ?? now,
     updatedAt: now,
   };

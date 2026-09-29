@@ -194,6 +194,7 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
+        noReply: command.noReply,
         accountId: session.accountId,
         projectId: session.projectId,
       },

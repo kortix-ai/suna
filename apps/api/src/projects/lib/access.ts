@@ -2,7 +2,7 @@ import { normalizeProjectRole } from '../../iam/roles';
 import {
   isSessionTargetVisibleToCaller,
   isProjectSessionVisibleTo,
-  isTriggerCreatedSessionMetadata,
+  isTriggerRunSession,
   loadSessionGrants,
   mayManageSessionSharing,
   resolveShareSubject,
@@ -332,7 +332,7 @@ export async function loadVisibleSession(
     !canManageProject &&
     boundCredentialSessionId === null &&
     isSessionTargetVisibleToCaller(ownership) &&
-    isTriggerCreatedSessionMetadata(row.metadata)
+    isTriggerRunSession(row)
   ) {
     canManageProject = loaded.actor
       ? (
@@ -355,7 +355,7 @@ export async function loadVisibleSession(
     grants,
     subject,
     ownership,
-    { metadata: row.metadata, canManageProject },
+    { metadata: row.metadata, initiatorType: row.initiatorType, canManageProject },
   );
   // Account session oversight: asked only when ordinary visibility refused, so
   // the common path never pays for it, and only for a human credential.
@@ -366,6 +366,7 @@ export async function loadVisibleSession(
   ) {
     visible = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
       metadata: row.metadata,
+      initiatorType: row.initiatorType,
       canManageProject,
       accountSessionOversight: true,
     });

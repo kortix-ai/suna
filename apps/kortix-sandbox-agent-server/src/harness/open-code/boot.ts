@@ -56,7 +56,7 @@ import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
-import { relayPermissionToApi } from './permission-relay'
+import { relayPermissionToApi } from '../shared/permission-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
@@ -786,7 +786,7 @@ async function startSessionRuntime(
     )
   }
   // Report only: apps/api pushes "needs your approval". The permission itself
-  // stays open for the user (permission-relay.ts).
+  // stays open for the user (shared/permission-relay.ts).
   const onPermissionAsked = (req: PermissionRequest) => {
     void relayPermissionToApi(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
@@ -1068,7 +1068,7 @@ async function runWarmSeedMode(
   // (zero-network) so opencode pays its per-directory project init (git scan +
   // file index + LSP + sqlite) ONCE here, FROZEN into the snapshot. Without this
   // every fork paid that ~3.2s init on its own hot path (the runtime-ready
-  // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
+  // wall). Resolve opencode's config from the scaffold's config dir so the
   // seed (and every fork) runs the real agents/plugins, not the baked default.
   // Project-scoped warm seed: clone the REAL project repo at base so the
   // captured snapshot already has /workspace. A fork then hits materializeRepo's

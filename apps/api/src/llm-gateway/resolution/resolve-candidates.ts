@@ -236,6 +236,20 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
 }
 
 /**
+ * OpenCode (Zen and Go) refuses a request without `x-opencode-session`
+ * (`MissingSessionID`) and routes and prompt-caches by it. It also asks clients
+ * to name themselves in User-Agent (https://opencode.ai/docs/go). The Kortix
+ * session is the stable conversation id; a gateway API key call has none.
+ */
+function opencodeHeaders(baseUrl: string, principal: AuthedPrincipal): Record<string, string> | undefined {
+  if (URL.parse(baseUrl)?.hostname !== 'opencode.ai') return undefined;
+  // ponytail: an API-key caller shares one session id across its conversations;
+  // forward the caller's own x-opencode-session if that ever costs cache hits.
+  const session = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return { 'x-opencode-session': session, 'User-Agent': 'Kortix (https://kortix.com)' };
+}
+
+/**
  * BYOK bills the provider account directly (`billingMode: 'none'`). Bedrock has
  * no static catalog baseUrl: its endpoint and AI-SDK region come from the
  * project's own AWS_REGION secret, and a wrong-geography inference-profile
@@ -260,8 +274,10 @@ async function byokDescriptors(context: Context, provider: string,
   const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
   const invokeModelId = byok.kind === 'bedrock'
     ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion) : resolvedModelId;
+  const headers = opencodeHeaders(baseUrl, principal);
   return keys.map(({ identifier, value }) => ({
     provider, kind: byok.kind, npm: byok.npm, baseUrl,
+    ...(headers ? { headers } : {}),
     ...(bedrockRegion ? { region: bedrockRegion } : {}),
     apiKey: value, credentialRef: identifier,
     ...(pooled ? { poolSecretId: identifier } : {}),
@@ -371,7 +387,7 @@ export async function resolveCandidates(
   const context = { principal, effectiveModel, personalUserId, pooledEnabled, options };
   if (provider === 'codex') return resolveCodexCandidates(context);
 
-  const byok = resolveCatalogUpstream(provider);
+  const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);
   if (byok && principal.projectId) {
     const candidates = await resolveByokCandidates(context, provider, byok);
     if (candidates.length) return candidates;

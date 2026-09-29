@@ -7,8 +7,8 @@ kortix init my-project
 ```
 
 Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
-project floor at the repo root (`kortix.yaml`, `README.md`,
-`.kortix/opencode/`, `.kortix/memory/MEMORY.md`), stages every file, and
+project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
+`skills/`, `memory/MEMORY.md`, `harnesses/opencode/`), stages every file, and
 makes an initial commit.
 
 ## Usage
@@ -48,20 +48,25 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← v2 OpenCode manifest
-└── .kortix/
-    ├── memory/MEMORY.md               ← project-wide memory for agents
-    └── opencode/                      ← OpenCode native config dir
-        ├── opencode.jsonc             ← runtime config (providers, plugins, MCP servers, …)
-        ├── agents/{kortix,harness-reflector}.md
-        └── skills/kortix-cli/SKILL.md (+ the artifact skill floor)
+├── kortix.yaml                        ← v2 manifest; `agents.<name>.file` names each agent's .md
+├── agents/{kortix,harness-reflector,session-reviewer}.md
+├── skills/kortix-cli/SKILL.md         ← (+ the artifact skill floor), every harness loads them
+├── memory/MEMORY.md                   ← project-wide memory for agents
+└── harnesses/opencode/                ← files only OpenCode reads (`opencode.config_dir`)
+    ├── opencode.jsonc                 ← runtime config (providers, plugins, MCP servers, …)
+    ├── plugins/
+    └── tools/
 ```
 
+Projects created before 2026-09 keep agents and skills under
+`.kortix/opencode/` and memory under `.kortix/memory/`. Every command reads
+both layouts.
+
 The local coding tools you wire up (`--primary`/`--agents`, default Codex)
-receive native discovery links to the canonical `.kortix/opencode` source.
-OpenCode uses `.opencode`. Claude Code uses `.claude/skills`,
-`.claude/agents`, and `.claude/commands`. Codex uses `.agents`. Pi uses
-`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+receive native discovery links to the canonical sources: `skills/`,
+`agents/`, and `harnesses/opencode/`. OpenCode uses `.opencode`. Claude Code
+uses `.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
+`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
 
 The public starter uses `kortix_version: 2`. Cloud sessions run OpenCode REST.
 
