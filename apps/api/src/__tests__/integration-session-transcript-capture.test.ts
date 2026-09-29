@@ -1,14 +1,18 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
+import {
+  TRANSCRIPT_CAPTURE_MAX_CONCURRENT,
+  TRANSCRIPT_CAPTURE_QUEUE_MAX,
+  captureSessionTranscriptMirror,
+} from '../projects/lib/session-transcript-capture';
 import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
+  type SeededProject,
   localTestDatabaseUrl,
   removeSeeded,
   seedProject,
   seedSession,
-  type SeededProject,
 } from './helpers/integration-fixtures';
 
 test('complete capture persists all pages, retries, serializes writes, and retains history when disabled', async () => {
@@ -278,10 +282,10 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_parent';
     const child = 'ses_subagent';
-    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
-      sessionId,
-      root,
-    ]);
+    await db.query(
+      'UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1',
+      [sessionId, root],
+    );
     const message = (session: string, id: string, created: number, parts: unknown[]) => ({
       info: {
         id,
@@ -325,7 +329,10 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
         },
       ]),
     ];
-    const capture = (rootPayload: unknown[], children: Array<{ payload: unknown[]; complete: boolean }>) =>
+    const capture = (
+      rootPayload: unknown[],
+      children: Array<{ payload: unknown[]; complete: boolean }>,
+    ) =>
       captureSessionTranscriptMirror(sessionId, {
         readMessages: async () => ({
           opencodeSessionId: root,
@@ -353,12 +360,18 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
     const conversation = await readSessionTranscriptMirror({ sessionId, limit: 40 });
     expect(conversation?.messages.map((m) => m.info.id)).toEqual(['msg_001u', 'msg_002a']);
     expect(conversation?.total).toBe(2);
-    const subagent = await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: child });
+    const subagent = await readSessionTranscriptMirror({
+      sessionId,
+      limit: 40,
+      opencodeSessionId: child,
+    });
     expect(subagent?.messages.map((m) => m.info.id)).toEqual(['msg_101u', 'msg_102a']);
     expect(subagent?.opencode_session_id).toBe(child);
     expect(subagent?.root_opencode_session_id).toBe(root);
     expect(subagent?.head_complete).toBe(true);
-    expect((subagent?.messages[1].parts[0].state as { input: unknown }).input).toEqual({ command: 'ls' });
+    expect((subagent?.messages[1].parts[0].state as { input: unknown }).input).toEqual({
+      command: 'ls',
+    });
 
     // A rewind of the root deletes root rows only: the sub-agent was never in
     // the root read, so it is not "gone".
@@ -389,13 +402,18 @@ test('a complete read of an empty conversation is saved and served as complete a
     });
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_empty';
-    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
-      sessionId,
-      root,
-    ]);
+    await db.query(
+      'UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1',
+      [sessionId, root],
+    );
     const capture = (headComplete: boolean) =>
       captureSessionTranscriptMirror(sessionId, {
-        readMessages: async () => ({ opencodeSessionId: root, payload: [], headComplete, complete: headComplete }),
+        readMessages: async () => ({
+          opencodeSessionId: root,
+          payload: [],
+          headComplete,
+          complete: headComplete,
+        }),
       });
 
     // Nothing captured, or a read that did not reach the head: unknown, never empty.
@@ -414,9 +432,133 @@ test('a complete read of an empty conversation is saved and served as complete a
       messages: [],
     });
     // It speaks for the conversation only: a sub-agent with no rows is not saved.
-    expect(await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: 'ses_child' })).toBeNull();
+    expect(
+      await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: 'ses_child' }),
+    ).toBeNull();
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();
   }
 }, 20_000);
+
+/**
+ * The capture gate (KRTX-643): a capture holds one shared-pool connection for
+ * its whole life, so unbounded concurrent captures pinned every DEFAULT_DB_POOL_MAX
+ * slot per task and starved the request path (prod 2026-09-28). Background
+ * captures must queue behind a small slot count; a tail capture (the awaited
+ * stop-button read) must never queue behind them.
+ *
+ * Real PostgreSQL; the runtime read is injected.
+ */
+test('background captures queue behind the slot gate and a tail capture bypasses it', async () => {
+  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-gate-test', {
+      metadata: { experimental: { session_transcript_history: true } },
+    });
+    const payload = (root: string) => ({
+      opencodeSessionId: root,
+      payload: [
+        {
+          info: {
+            id: `msg_${root}`,
+            sessionID: root,
+            role: 'assistant',
+            time: { created: 1, completed: 2 },
+          },
+          parts: [{ id: 'prt_1', type: 'text', text: 'Gated capture' }],
+        },
+      ],
+      headComplete: true,
+      complete: true,
+    });
+    const seededProject = project;
+    const pinnedSession = async (root: string) => {
+      const sessionId = await seedSession(seededProject, randomUUID());
+      await db.query(
+        'UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1',
+        [sessionId, root],
+      );
+      return sessionId;
+    };
+
+    // 1) The cap: more captures than slots, never more than the cap inside the read.
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const gated = await Promise.all(
+      [0, 1, 2, 3].map(async (index) => {
+        const root = `ses_gate_${index}`;
+        const sessionId = await pinnedSession(root);
+        return captureSessionTranscriptMirror(sessionId, {
+          readMessages: async () => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            inFlight -= 1;
+            return payload(root);
+          },
+        });
+      }),
+    );
+    // Without the gate the four concurrent captures would all overlap (4 > 2).
+    expect(maxInFlight).toBeLessThanOrEqual(TRANSCRIPT_CAPTURE_MAX_CONCURRENT);
+    expect(gated.every((result) => result !== null)).toBe(true);
+
+    // 2) The bypass: a tail capture starts while a background capture holds a slot.
+    const rootA = 'ses_gate_bg';
+    const sessionA = await pinnedSession(rootA);
+    const rootB = 'ses_gate_tail';
+    const sessionB = await pinnedSession(rootB);
+    let releaseSlow = () => {};
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const slow = captureSessionTranscriptMirror(sessionA, {
+      readMessages: async () => {
+        await slowGate;
+        return payload(rootA);
+      },
+    });
+    // Let the background capture take a slot before the tail capture starts.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    let tailStarted = false;
+    const tail = captureSessionTranscriptMirror(
+      sessionB,
+      {
+        readMessages: async () => {
+          tailStarted = true;
+          return payload(rootB);
+        },
+      },
+      { scope: 'tail' },
+    );
+    await Promise.race([tail, new Promise((resolve) => setTimeout(resolve, 500))]);
+    expect(tailStarted).toBe(true);
+    releaseSlow();
+    expect((await tail)?.head_complete).toBe(true);
+    await slow;
+
+    // 3) Queue-full backpressure: past the slots plus the whole queue, the next
+    //    capture skips (null) instead of queueing forever.
+    const burstRoots = Array.from(
+      { length: TRANSCRIPT_CAPTURE_MAX_CONCURRENT + TRANSCRIPT_CAPTURE_QUEUE_MAX + 1 },
+      (_, index) => `ses_gate_q${index}`,
+    );
+    const burst = await Promise.all(
+      burstRoots.map(async (root) =>
+        captureSessionTranscriptMirror(await pinnedSession(root), {
+          readMessages: async () => payload(root),
+        }),
+      ),
+    );
+    // At least the overflow capture skipped. Nothing ran outside the cap.
+    expect(maxInFlight).toBeLessThanOrEqual(TRANSCRIPT_CAPTURE_MAX_CONCURRENT);
+    expect(burst.some((result) => result === null)).toBe(true);
+    expect(burst.every((result) => result === null || result.captured === 1)).toBe(true);
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 60_000);

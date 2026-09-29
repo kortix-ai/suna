@@ -14,39 +14,39 @@
  */
 
 import {
-  projects,
   projectSessions,
+  projects,
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 
-import { db } from '../../shared/db';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import {
-  readTranscriptPages,
-  retryTranscriptCapture,
-  transcriptPageUrl,
-} from './session-transcript-pages';
+import { db } from '../../shared/db';
+import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
+import { sessionAttachmentStore } from './session-attachments';
 import {
   readTranscriptAttachmentBytes,
   recoverTranscriptAttachments,
 } from './session-transcript-attachments';
-import { sessionAttachmentStore } from './session-attachments';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-client';
 import {
   MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGES,
   captureScope,
   capturedMessageIndex,
+  capturedPageGate,
   childSessionReferences,
   childSessionsToCapture,
-  capturedPageGate,
   headCompleteAfterCapture,
   mirrorHoldsStrippedRows,
   mirrorRowsFromOpencodePayload,
 } from './session-transcript-mirror';
+import {
+  readTranscriptPages,
+  retryTranscriptCapture,
+  transcriptPageUrl,
+} from './session-transcript-pages';
 
 const CAPTURE_TIMEOUT_MS = 8_000;
 
@@ -222,7 +222,8 @@ const liveCaptureDeps: CaptureDeps = {
     if (options?.retainHistory) {
       const savedChildren = new Map<string, { settled: boolean }>();
       for (const row of stored) {
-        if (!row.opencodeSessionId || row.opencodeSessionId === resolved.opencodeSessionId) continue;
+        if (!row.opencodeSessionId || row.opencodeSessionId === resolved.opencodeSessionId)
+          continue;
         const entry = savedChildren.get(row.opencodeSessionId) ?? { settled: true };
         entry.settled &&= row.role !== 'assistant' || row.messageCompletedAt !== null;
         savedChildren.set(row.opencodeSessionId, entry);
@@ -688,6 +689,79 @@ export function resetTranscriptBackfillMemoForTests(): void {
   backfillAttempts.clear();
 }
 
+function intFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * How many background captures may run at once, per process.
+ *
+ * A capture spends most of its life holding ONE shared-pool connection: the
+ * stored-history read (every stored row, 1:1 payloads) and its write
+ * transaction. Prod 2026-09-28 (KRTX-643): with the mirror default-on, every
+ * turn end and wake fired one, with no bound, so concurrent captures pinned
+ * all DEFAULT_DB_POOL_MAX (5) slots of a task. Request-path queries then
+ * queued behind them: the 25 s request-deadline guard started 503ing
+ * unrelated routes, audit ingest fell from ~6k to ~150 requests/h, and every
+ * multi-query route tripled at p95.
+ *
+ * 2 mirrors the audit-write pool's cap (DEFAULT_AUDIT_POOL_MAX): up to 2
+ * background captures hold pool slots, 3 stay free for requests. It adds NO
+ * connection, so the rolling-deployment budget in
+ * `shared/database-capacity.ts` is untouched.
+ *
+ * `scope: 'tail'` bypasses the gate. That is the awaited stop-button capture:
+ * one bounded page, a user is holding Stop, and queueing behind full-history
+ * walks would stall the button for minutes.
+ */
+export const TRANSCRIPT_CAPTURE_MAX_CONCURRENT = intFromEnv('TRANSCRIPT_CAPTURE_MAX_CONCURRENT', 2);
+
+/** How many captures may wait for a slot before new ones skip. A skip loses
+ *  nothing durable: the next turn end reads the newest page again, and a wake
+ *  backfill retries on the next open. The bound keeps the waiters' memory
+ *  finite instead of queueing a burst unbounded. */
+export const TRANSCRIPT_CAPTURE_QUEUE_MAX = intFromEnv('TRANSCRIPT_CAPTURE_QUEUE_MAX', 100);
+
+let captureSlotsUsed = 0;
+const captureWaiters: Array<() => void> = [];
+
+function acquireCaptureSlot(): true | Promise<void> | false {
+  if (captureSlotsUsed < TRANSCRIPT_CAPTURE_MAX_CONCURRENT) {
+    captureSlotsUsed += 1;
+    return true;
+  }
+  if (captureWaiters.length >= TRANSCRIPT_CAPTURE_QUEUE_MAX) return false;
+  return new Promise<void>((resolve) => captureWaiters.push(resolve));
+}
+
+function releaseCaptureSlot(): void {
+  const next = captureWaiters.shift();
+  if (next)
+    next(); // the slot transfers; the count stays held
+  else captureSlotsUsed -= 1;
+}
+
+/** Run one background capture inside the gate. `null` = the queue was full
+ *  and this capture skipped. Waits happen in MEMORY, never on a pool slot —
+ *  the same rule `shared/audit-session-serial.ts` applies to audit writes. */
+async function runWithinCaptureSlot(
+  run: () => Promise<CaptureResult | null>,
+): Promise<CaptureResult | null> {
+  const slot = acquireCaptureSlot();
+  if (slot === false) return null;
+  return (async () => {
+    if (slot !== true) await slot;
+    try {
+      return await run();
+    } finally {
+      releaseCaptureSlot();
+    }
+  })();
+}
+
 const captures = new Map<string, Promise<CaptureResult | null>>();
 
 export function captureSessionTranscriptMirror(
@@ -696,7 +770,10 @@ export function captureSessionTranscriptMirror(
   options?: CaptureOptions,
 ): Promise<CaptureResult | null> {
   const previous = captures.get(sessionId) ?? Promise.resolve(null);
-  const pending = previous.then(() => captureSessionTranscript(sessionId, deps, options));
+  const run = () => captureSessionTranscript(sessionId, deps, options);
+  const pending = previous.then(() =>
+    options?.scope === 'tail' ? run() : runWithinCaptureSlot(run),
+  );
   captures.set(sessionId, pending);
   void pending.finally(() => {
     if (captures.get(sessionId) === pending) captures.delete(sessionId);
