@@ -800,7 +800,15 @@ export async function reapAndReconcileSandboxes(
         // or one org throttle across a live fleet emits an error line per box.
         // Counting it separately and logging NOTHING here keeps this page quiet
         // while the next pass still retries the renewal.
-        if (isDaytonaRateLimitError(err) || isDaytonaTransientProviderError(err)) {
+        if (
+          isDaytonaRateLimitError(err) ||
+          isDaytonaTransientProviderError(err) ||
+          (row.provider === 'platinum' &&
+            err instanceof Error &&
+            err.message.includes('Platinum lifecycle renewal failed') &&
+            err.message.includes('guest vsock') &&
+            err.message.includes('unreachable after 5s: EOF'))
+        ) {
           result.transient += 1;
         } else {
           result.errors += 1;
