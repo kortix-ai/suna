@@ -206,11 +206,12 @@ export function resolveConfigAgents(
   };
 }
 
-export async function loadProjectConfig(
-  project: GitBackedProject,
-  files?: ProjectFileEntry[],
-): Promise<ProjectConfigSummary> {
-  const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
+/**
+ * Resolve the manifest document for loadProjectConfig: the dual-format
+ * candidate resolution, the broken-import degrade to the root file, the
+ * declared agents, and the summary's manifest_raw/manifest_version fields.
+ */
+async function resolveProjectManifest(project: GitBackedProject) {
   // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
   // the matched format. Without this, a yaml-only project reads no manifest here
   // → its [[agents]] scoping silently vanishes from the config introspection.
@@ -256,6 +257,107 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
+  return {
+    manifestRaw,
+    // The root file's own text. `manifest`/`env`/agents below come from the
+    // merged document when the root declares `imports:`.
+    manifest_raw: resolved?.rootContent ?? manifestRaw,
+    // The authoritative version verdict. Computed here so no client ever has to
+    // infer a version from the raw text — and so an unreadable manifest reports
+    // `unknown` instead of being mistaken for a legacy v1.
+    manifest_version: resolveManifestVerdict({
+      raw: manifestRaw,
+      format: manifestFormat,
+      path: resolved?.path ?? null,
+    }),
+    manifest,
+    loadedAgents,
+  };
+}
+
+type OpenCodeResource = { slug: string; path: string };
+
+// Entry mapper + slug comparator shared by the skill and command scans —
+// their enriched entries are identical; the agent scan maps and sorts its own.
+const resourceEntry = (
+  { slug, path }: OpenCodeResource,
+  raw: string | null,
+  meta: Record<string, string>,
+) => ({
+  name: meta.name || slug,
+  path,
+  description: meta.description || null,
+});
+const bySlug = (a: OpenCodeResource, b: OpenCodeResource) => a.slug.localeCompare(b.slug);
+
+/**
+ * The shared OpenCode resource scan behind the agent, skill and command
+ * pipelines: match repo paths, sort, then read + frontmatter-parse each hit.
+ * The matcher may own a dedupe rule (skills dedupe by slug).
+ */
+async function scanOpenCodeResources<M extends { path: string }, T>(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  matcher: (path: string) => M | null,
+  buildEntry: (matched: M, raw: string | null, meta: Record<string, string>) => T,
+  compare: (a: M, b: M) => number,
+): Promise<T[]> {
+  const matched = repoFiles
+    .map((file) => matcher(file.path))
+    .filter((entry): entry is M => entry !== null)
+    .sort(compare);
+  return Promise.all(
+    matched.map(async (entry) => {
+      const raw = await optionalFile(project, entry.path);
+      const meta = parseFrontmatter(raw);
+      return buildEntry(entry, raw, meta);
+    }),
+  );
+}
+
+/**
+ * Assemble the ProjectConfigSummary: repo signals + resolved manifest +
+ * OpenCode config surface + the three scans' discovery.
+ */
+function buildConfigSummary(
+  resolvedManifest: Awaited<ReturnType<typeof resolveProjectManifest>>,
+  openCodeRaw: string | null,
+  discovery: Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands'>,
+): ProjectConfigSummary {
+  const { manifestRaw, manifest_raw, manifest_version, manifest, loadedAgents } = resolvedManifest;
+  const { agent_discovery, agents, skills, commands } = discovery;
+  const signals = {
+    manifest: Boolean(manifestRaw),
+    openCodeConfig: Boolean(openCodeRaw),
+    openCodeAgent: agents.length > 0,
+  };
+
+  return {
+    is_kortix_repo: Object.values(signals).some(Boolean),
+    signals,
+    manifest_raw,
+    manifest,
+    manifest_version,
+    env: envRequirements(manifest),
+    open_code_raw: openCodeRaw,
+    // v2 makes the manifest's declared default authoritative. Legacy projects
+    // keep reading OpenCode's native default_agent for backwards compatibility.
+    open_code_default_agent:
+      loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent'),
+    agent_discovery,
+    agents,
+    skills,
+    commands,
+  };
+}
+
+export async function loadProjectConfig(
+  project: GitBackedProject,
+  files?: ProjectFileEntry[],
+): Promise<ProjectConfigSummary> {
+  const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
+  const { manifestRaw, manifest_raw, manifest_version, manifest, loadedAgents } =
+    await resolveProjectManifest(project);
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -269,101 +371,56 @@ export async function loadProjectConfig(
   const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
   const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
 
-  const agentPaths = repoFiles
-    .map((file) => file.path)
-    .filter((path) => agentRe.test(path))
-    .sort();
-  const nativeAgents = await Promise.all(
-    agentPaths.map(async (path) => {
-      const raw = await optionalFile(project, path);
-      const meta = parseFrontmatter(raw);
-      return {
-        name: meta.name || meta.slug || agentNameFromPath(path),
-        path,
-        description: meta.description || null,
-        mode: meta.mode || null,
-        model: meta.model || null,
-      };
+  const nativeAgents = await scanOpenCodeResources(
+    project,
+    repoFiles,
+    (path) => (agentRe.test(path) ? { path } : null),
+    ({ path }, raw, meta) => ({
+      name: meta.name || meta.slug || agentNameFromPath(path),
+      path,
+      description: meta.description || null,
+      mode: meta.mode || null,
+      model: meta.model || null,
     }),
+    (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   );
   const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
 
+  // The skill scan dedupes by slug (first repo-order path wins; the matcher owns the rule).
   const seenSkills = new Set<string>();
-  const skillPaths = repoFiles
-    .map((file) => file.path.match(skillRe))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .filter((match) => {
-      if (seenSkills.has(match[1])) return false;
+  const skills = await scanOpenCodeResources(
+    project,
+    repoFiles,
+    (path) => {
+      const match = path.match(skillRe);
+      if (!match || seenSkills.has(match[1])) return null;
       seenSkills.add(match[1]);
-      return true;
-    })
-    .map((match) => ({ slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` }))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
-  const skills = await Promise.all(
-    skillPaths.map(async ({ slug, path }) => {
-      const raw = await optionalFile(project, path);
-      const meta = parseFrontmatter(raw);
-      return {
-        name: meta.name || slug,
-        path,
-        description: meta.description || null,
-      };
-    }),
+      return { slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` };
+    },
+    resourceEntry,
+    bySlug,
   );
 
   // OpenCode slash commands — `<opencode>/command/<slug>.md` or
   // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
   // include either if present). Frontmatter `description:` is what gets
   // surfaced in the command picker.
-  const commandPaths = repoFiles
-    .map((file) => file.path.match(commandRe))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map((match) => ({ slug: match[1], path: match.input as string }))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
-  const commands = await Promise.all(
-    commandPaths.map(async ({ slug, path }) => {
-      const raw = await optionalFile(project, path);
-      const meta = parseFrontmatter(raw);
-      return {
-        name: meta.name || slug,
-        path,
-        description: meta.description || null,
-      };
-    }),
+  const commands = await scanOpenCodeResources(
+    project,
+    repoFiles,
+    (path) => {
+      const match = path.match(commandRe);
+      return match ? { slug: match[1], path: match.input as string } : null;
+    },
+    resourceEntry,
+    bySlug,
   );
 
-  const signals = {
-    manifest: Boolean(manifestRaw),
-    openCodeConfig: Boolean(openCodeRaw),
-    openCodeAgent: agents.length > 0,
-  };
-
-  return {
-    is_kortix_repo: Object.values(signals).some(Boolean),
-    signals,
-    // The root file's own text. `manifest`/`env`/agents below come from the
-    // merged document when the root declares `imports:`.
-    manifest_raw: resolved?.rootContent ?? manifestRaw,
-    manifest,
-    // The authoritative version verdict. Computed here so no client ever has to
-    // infer a version from the raw text — and so an unreadable manifest reports
-    // `unknown` instead of being mistaken for a legacy v1.
-    manifest_version: resolveManifestVerdict({
-      raw: manifestRaw,
-      format: manifestFormat,
-      path: resolved?.path ?? null,
-    }),
-    env: envRequirements(manifest),
-    open_code_raw: openCodeRaw,
-    // v2 makes the manifest's declared default authoritative. Legacy projects
-    // keep reading OpenCode's native default_agent for backwards compatibility.
-    open_code_default_agent:
-      loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent'),
-    agent_discovery,
-    agents,
-    skills,
-    commands,
-  };
+  return buildConfigSummary(
+    { manifestRaw, manifest_raw, manifest_version, manifest, loadedAgents },
+    openCodeRaw,
+    { agent_discovery, agents, skills, commands },
+  );
 }
 
 /**
