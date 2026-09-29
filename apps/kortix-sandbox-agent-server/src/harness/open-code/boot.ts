@@ -96,10 +96,21 @@ const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
 ])
 
 let claimedInitialTurn: InitialTurnClaim | null = null
+let claimedRootPin: string | null = null
 
 /** Test seam: a daemon process claims at most one initial turn. */
 export function resetClaimedInitialTurnForTests(): void {
   claimedInitialTurn = null
+  claimedRootPin = null
+}
+
+/**
+ * The OpenCode root the control plane has pinned for this session, as the
+ * initial-turn claim reported it. Null before the claim or from an API that
+ * predates the field.
+ */
+export function durableOpenCodeRootPin(): string | null {
+  return claimedRootPin
 }
 
 
@@ -1508,7 +1519,13 @@ async function maybeCreateInitialOpencodeSession(
   const resolved = await resolveExistingRoot(
     baseUrl,
     workspace,
-    priorPin,
+    // The local pin file is missing on a box whose home was rebuilt or
+    // converged from a legacy runtime. The control plane's pin then decides:
+    // resolveExistingRoot resumes it, or defers when OpenCode is slow, instead
+    // of creating an empty root that the relay below writes over the durable
+    // pin (prod 2026-09-23). The local pin still wins: it is this box's own
+    // record. Delivery bookkeeping keeps using the local pin only.
+    priorPin ?? durableOpenCodeRootPin(),
     rootListDeadlineMs,
     onListening,
   )
@@ -2378,7 +2395,10 @@ export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null
   }
   const body = (await response.json()) as {
     initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+    opencode_session_id?: unknown
   }
+  const pin = typeof body.opencode_session_id === 'string' ? body.opencode_session_id.trim() : ''
+  claimedRootPin = pin || null
   const turn = body.initial_turn
   if (
     !turn ||
