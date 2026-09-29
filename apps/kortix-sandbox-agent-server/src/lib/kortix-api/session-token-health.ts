@@ -55,7 +55,22 @@ import { logger } from '../log/logger'
  * source: a box whose row and VM disagree is reconciled within one sweep
  * (apps/api/src/projects/reaping/row-vm-divergence.ts).
  */
-const SESSION_TOKEN_DEAD_PATTERN = /session token is not active/i
+// The terminal credential-state reasons `validateToken`
+// (apps/api/src/repositories/account-tokens.ts) answers with: row gone or
+// revoked, expired, idle-auto-revoked, or the row found but its sandbox lease
+// closed. A credential in any of these states cannot authenticate again as-is,
+// so all four are the one "the API can never take this back" class.
+//
+// Counting only `Session token is not active` made the other three harmful in
+// both directions: each one RESET the streak (and un-tripped), and the code
+// even logged "credential recovered" for them. Prod 2026-09-28: 6,514
+// `POST turn-stream -> 401 PAT not found or revoked` in 2h from one
+// workspace, sustained near 1/s, while the streak never grew.
+//
+// A genuine recovery still clears: the trip counts CONSECUTIVE signals, so any
+// answering response — a rotated credential, a repaired row — resets it.
+const SESSION_TOKEN_DEAD_PATTERN =
+  /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity/i
 
 /** Consecutive dead-token signals before the breaker reports the credential dead. */
 export const SESSION_TOKEN_DEAD_TRIP_THRESHOLD = 5
@@ -73,10 +88,10 @@ export function sessionTokenPresumedDead(): boolean {
 
 /**
  * Report one control-plane HTTP response. Called from every daemon->API call
- * site that can receive the "Session token is not active" 401 — never trust
- * a single occurrence (a genuinely transient 401 during token rotation reads
- * identically for one call), but never let it keep retrying past the
- * threshold either.
+ * site that can receive a terminal-credential 401 (any reason
+ * `SESSION_TOKEN_DEAD_PATTERN` names) — never trust a single occurrence (a
+ * genuinely transient 401 during token rotation reads identically for one
+ * call), but never let it keep retrying past the threshold either.
  */
 export function noteControlPlaneResponse(status: number, bodyText: string | null | undefined): void {
   const isDeadToken = status === 401 && SESSION_TOKEN_DEAD_PATTERN.test(bodyText ?? '')
