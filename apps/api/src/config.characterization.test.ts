@@ -83,9 +83,19 @@ describe('config module boot characterization', () => {
   });
 
   test('billing enabled turns missing provider and Stripe keys into fatal errors', () => {
-    const result = load({ KORTIX_BILLING_INTERNAL_ENABLED: 'true', ALLOWED_SANDBOX_PROVIDERS: 'daytona,e2b' });
+    const result = load({
+      KORTIX_BILLING_INTERNAL_ENABLED: 'true',
+      ALLOWED_SANDBOX_PROVIDERS: 'daytona,e2b',
+    });
     expect(result.exitCode).toBe(1);
-    for (const key of ['DAYTONA_API_KEY', 'DAYTONA_SERVER_URL', 'DAYTONA_TARGET', 'E2B_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']) {
+    for (const key of [
+      'DAYTONA_API_KEY',
+      'DAYTONA_SERVER_URL',
+      'DAYTONA_TARGET',
+      'E2B_API_KEY',
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+    ]) {
       expect(result.stderr).toContain(key);
     }
   });
