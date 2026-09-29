@@ -919,10 +919,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
           accounts: ConnectorAccountRow[];
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/accounts`);
         const accounts = response.accounts ?? [];
-        const note = `Nothing is connected to "${slug}" yet. Run 'kortix connectors connect ${slug} --owner me'.`;
+        // A computer is paired on the machine itself, never through `connect`.
+        const isComputer = slug === 'computer';
+        const note = isComputer
+          ? 'No computer is connected. Connect one from the Kortix desktop app, or run `npx @kortix/agent-tunnel connect` on the computer.'
+          : `Nothing is connected to "${slug}" yet. Run 'kortix connectors connect ${slug} --owner me'.`;
         if (json) {
           // Byte-identical to the gateway face agents already parse.
           emitJson({ connector: slug, accounts, ...(accounts.length === 0 ? { note } : {}) });
+          return 0;
+        }
+        if (accounts.length === 0 && isComputer) {
+          process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
           return 0;
         }
         if (accounts.length === 0) {

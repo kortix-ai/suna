@@ -35,18 +35,22 @@ describe('agent tunnel service definitions', () => {
     const plist = renderLaunchdPlist('exec /bin/echo tunnel');
     expect(plist).toContain(`<string>${SERVICE_LABEL}</string>`);
     expect(plist).toContain('<key>RunAtLoad</key>');
-    expect(plist).toContain('<key>KeepAlive</key>');
+    // R3: the service runs forever. launchd restarts it on ANY exit, at most every 10 s.
+    expect(plist).toContain('<key>KeepAlive</key>\n  <true/>');
+    expect(plist).toContain('<key>ThrottleInterval</key>\n  <integer>10</integer>');
+    expect(plist).not.toContain('SuccessfulExit');
     expect(plist).toContain('<key>Umask</key>');
     expect(plist).toContain('agent-tunnel.out.log');
     expect(plist).toContain('agent-tunnel.err.log');
   });
 
-  test('systemd unit restarts on failure but not after a terminal exit', () => {
+  test('systemd unit restarts on any exit (R3)', () => {
     const unit = renderSystemdUnit('exec /bin/echo tunnel');
     expect(unit).toContain('Description=Kortix Agent Tunnel');
-    // Restart=always respawned the agent forever when the credential was
-    // missing or revoked, which no restart can fix.
-    expect(unit).toContain('Restart=on-failure');
+    // The agent itself never exits for a bad credential any more (it waits in
+    // `rejected`), so any exit is a crash worth restarting.
+    expect(unit).toContain('Restart=always');
+    expect(unit).toContain('RestartSec=5');
     expect(unit).toContain('UMask=0077');
     expect(unit).toContain('WantedBy=default.target');
     expect(unit).toContain('agent-tunnel.out.log');
@@ -62,6 +66,7 @@ describe('agent tunnel service definitions', () => {
     expect(script).toContain('while ($true)');
     expect(script).toContain("& 'node' 'agent-tunnel.js' 'run' '--service'");
     expect(script).toContain('Start-Sleep -Seconds 5');
+    expect(script).not.toContain('break');
   });
 
   test('treats package-manager caches as ephemeral runner locations', () => {
@@ -97,6 +102,8 @@ describe('agent tunnel service definitions', () => {
       const copied = vendorRunner(cached, paths);
       expect(copied).toBe(paths.vendoredRunner);
       expect(readFileSync(copied, 'utf8')).toBe('// cached bundle\n');
+      // The copy reports the same version as the CLI that installed it (R5).
+      expect(JSON.parse(readFileSync(join(home, 'bin', 'package.json'), 'utf8'))).toMatchObject({ name: '@kortix/agent-tunnel' });
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

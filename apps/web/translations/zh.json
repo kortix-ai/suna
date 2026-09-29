@@ -7651,31 +7651,6 @@
       "line117JsxTextKeepMine": "保留我的版本",
       "line144JsxTextUnsavedChanges": "未保存的更改"
     },
-    "componentsTunnelScopeEditorsNetworkScopeEditor": {
-      "line93JsxAttrPlaceholderEG30008080": "例如 3000、8080",
-      "line123JsxAttrPlaceholderEGLocalhost127001": "例如 localhost、127.0.0.1"
-    },
-    "componentsTunnelTunnelDetail": {
-      "line35JsxTextTunnelConnectionNotFound": "未找到隧道连接。",
-      "line38JsxTextBackToTunnels": "返回隧道",
-      "line79JsxTextMiddot": "·",
-      "line100JsxTextAuditLog": "审计日志"
-    },
-    "componentsTunnelTunnelOverview": {
-      "line126JsxTextDeleteConnection": "删除连接？",
-      "line128JsxTextThisWillPermanentlyDelete": "这将永久删除",
-      "line128JsxTextAndRemoveAllItsPermissionsAndAuditLogs": "并移除其所有权限和审计日志。此操作无法撤销。",
-      "line169JsxTextAddConnection": "添加连接",
-      "line181JsxTextConnectAMachine": "连接一台机器",
-      "line183JsxTextRunThisCommandOnTheMachineYouWant": "在要连接的机器上运行此命令。",
-      "line234JsxTextConnectYourMachine": "连接你的机器",
-      "line236JsxTextRunThisCommandOnAnyMachineToConnect": "在任意机器上运行此命令，将其连接到 Kortix。你将在浏览器中批准该连接。",
-      "line255JsxTextText1RunTheCommand": "1. 运行命令",
-      "line257JsxTextText2ApproveInBrowser": "2. 在浏览器中批准",
-      "line259JsxTextText3Connected": "3. 已连接",
-      "line362JsxTextNoConnectionsMatchingLdquo": "没有与 “ 匹配的连接",
-      "line362JsxTextRdquo": "”"
-    },
     "componentsUpdateChangelogPreview": {
       "line102JsxTextMoreChanges": "更多更改"
     },
@@ -16038,7 +16013,6 @@
       "textbbeb1185a5ff": "引用",
       "textbc06bb3d377c": "同一个平台，服务其他团队",
       "textbc18f7068971": "markdown",
-      "textbc25c1f595c9": "设备正在连接。你可以关闭此标签页。",
       "textbc298b920f14": "多值参数",
       "textbc29a1f71de0": "每日会话、活跃账户和信用消耗。",
       "textbc346bfb5269": "代理是一个主体，不是漏洞。",
@@ -19141,7 +19115,8 @@
       "textd88c84258c7a": "列出了已连接的应用",
       "text37698a37f9d2": "撤销了已连接的应用",
       "text8c8fb214b592": "以用户身份授权了 GitHub",
-      "text711edad21902": "已将电脑添加到项目"
+      "text711edad21902": "已将电脑添加到项目",
+      "texta3ecfa724d04": "计算机已自行解除配对"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20232,12 +20207,10 @@
     "connected": "电脑已连接",
     "connectFailed": "无法连接电脑，请重试。",
     "desktopUnavailable": "请更新 Kortix 桌面应用以连接这台电脑。",
-    "useHere": "在此使用",
     "online": "在线",
     "offline": "离线",
     "connectTitle": "连接你的电脑",
-    "connectDescription": "让此项目中的代理处理你电脑上的文件、命令和应用。除非你共享，否则只有你可以使用。",
-    "yourComputers": "你的电脑",
+    "connectDescription": "让 Kortix 智能体使用你电脑上的文件、命令和应用。它在每个项目中都属于你，除非你共享，否则只有你能使用。",
     "downloadDesktop": "下载 Kortix 桌面版",
     "downloadHint": "桌面应用可一键连接这台电脑，并在后台保持连接。",
     "runCommand": "在电脑上运行此命令",
@@ -20245,13 +20218,9 @@
     "copyFailed": "复制失败",
     "copyCommand": "复制命令",
     "authorizeCodeHint": "请确认此代码与你电脑上显示的代码一致。",
-    "projectLabel": "项目",
-    "projectPlaceholder": "选择项目",
-    "noProjects": "你还没有项目。请先创建项目，然后重新连接。",
     "whoCanUse": "谁可以使用这台电脑",
-    "onlyYouDescription": "只有你可以在自己的私有会话中使用。",
+    "onlyYouDescription": "只有你，在每个项目的私人会话中。",
     "everyoneDescription": "项目中的所有人都可以使用，包括自动化。",
-    "approvedInProject": "你的电脑现在是 {project} 中的一个账户。你可以关闭此标签页。",
     "promoLine": "让 Kortix 处理你的本地文件并控制你的电脑。",
     "dismissPromo": "关闭",
     "useCliInstead": "改用 CLI",
@@ -20259,12 +20228,9 @@
     "localComputerTitle": "你的电脑",
     "localComputerDescription": "这台电脑与 Kortix 的连接。关闭应用后它仍在后台运行。",
     "thisComputer": "这台电脑",
-    "serviceRunning": "运行中",
-    "servicePaused": "已暂停",
-    "useInThisProject": "在此项目中使用",
-    "pauseAccess": "暂停访问",
-    "resumeAccess": "恢复访问",
-    "manageAccess": "管理访问",
+    "pauseAccess": "暂停连接",
+    "resumeAccess": "恢复连接",
+    "manageAccess": "共享",
     "showLogs": "显示日志",
     "disconnectTitle": "断开这台电脑",
     "disconnectDescription": "将这台电脑从所有项目中移除，并停止后台服务。重新连接后才能使用。",
@@ -20276,8 +20242,31 @@
       "online": "在线",
       "connecting": "正在连接…",
       "offline": "离线",
-      "stopped": "未运行"
+      "paused": "已暂停",
+      "needsReconnect": "需要重新连接"
     },
-    "startAccess": "启动"
+    "needsReconnectHint": "这台电脑已与 Kortix 断开连接。请重新连接后再使用。",
+    "actionFailed": "出了点问题，请重试。",
+    "groupYours": "你的（所有项目）",
+    "groupShared": "与此项目共享",
+    "sharedWithProject": "已与项目共享电脑",
+    "alsoShareWith": "同时与 {project} 共享",
+    "approvedEverywhere": "你的电脑已连接。你可以在每个项目的私人会话中使用它。可以关闭此标签页。",
+    "approvedShared": "你的电脑已连接并与 {project} 共享。可以关闭此标签页。",
+    "access": {
+      "title": "访问",
+      "ask": "每次询问",
+      "askDescription": "智能体使用前，Kortix 会在这台电脑上询问你。每次最多允许 24 小时。",
+      "always": "始终允许",
+      "alwaysDescription": "能访问这台电脑的智能体无需询问即可使用。",
+      "off": "关闭",
+      "offDescription": "在你更改此设置前，所有请求都会被拒绝。",
+      "allowedUntil": "允许至 {time}",
+      "revokeNow": "立即撤销",
+      "keepAwake": "接通电源时保持电脑唤醒",
+      "keepAwakeDescription": "接通电源时电脑不会睡眠，智能体可以访问它。",
+      "keepAwakeUnsupported": "Windows 上暂不可用。"
+    },
+    "unpairDescription": "从 Kortix 和所有项目中移除这台电脑。在你重新连接之前，它不会再连接。"
   }
 }

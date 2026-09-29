@@ -1476,7 +1476,7 @@
       "account": "Налог",
       "loadError": "Учитавање пројеката није успело",
       "createIn": "Направи пројекат у {account}",
-      "localComputer": "Vaš računar"
+      "localComputer": "Ваш рачунар"
     },
     "manifestUpgrade": {
       "title": "Надогради на v2",
@@ -7650,31 +7650,6 @@
       "line109JsxTextLoadExternal": "Учитавање екстерно",
       "line117JsxTextKeepMine": "Задржи моје",
       "line144JsxTextUnsavedChanges": "Несачуване промене"
-    },
-    "componentsTunnelScopeEditorsNetworkScopeEditor": {
-      "line93JsxAttrPlaceholderEG30008080": "нпр. 3000, 8080",
-      "line123JsxAttrPlaceholderEGLocalhost127001": "нпр. локални хост, 127.0.0.1"
-    },
-    "componentsTunnelTunnelDetail": {
-      "line35JsxTextTunnelConnectionNotFound": "Веза за тунел није пронађена.",
-      "line38JsxTextBackToTunnels": "Назад на тунеле",
-      "line79JsxTextMiddot": "·",
-      "line100JsxTextAuditLog": "Евиденција ревизије"
-    },
-    "componentsTunnelTunnelOverview": {
-      "line126JsxTextDeleteConnection": "Избрисати везу?",
-      "line128JsxTextThisWillPermanentlyDelete": "Ово ће трајно избрисати",
-      "line128JsxTextAndRemoveAllItsPermissionsAndAuditLogs": "и уклоните све његове дозволе и евиденције ревизије. Ова радња се не може опозвати.",
-      "line169JsxTextAddConnection": "Додај везу",
-      "line181JsxTextConnectAMachine": "Прикључите машину",
-      "line183JsxTextRunThisCommandOnTheMachineYouWant": "Покрените ову команду на машини коју желите да повежете.",
-      "line234JsxTextConnectYourMachine": "Повежите своју машину",
-      "line236JsxTextRunThisCommandOnAnyMachineToConnect": "Покрените ову команду на било којој машини да бисте је повезали са Kortix. Одобрићете везу у свом претраживачу.",
-      "line255JsxTextText1RunTheCommand": "1. Покрените команду",
-      "line257JsxTextText2ApproveInBrowser": "2. Одобри у претраживачу",
-      "line259JsxTextText3Connected": "3. Повезано",
-      "line362JsxTextNoConnectionsMatchingLdquo": "Нема веза које одговарају “",
-      "line362JsxTextRdquo": "”"
     },
     "componentsUpdateChangelogPreview": {
       "line102JsxTextMoreChanges": "још измена"
@@ -16038,7 +16013,6 @@
       "textbbeb1185a5ff": "Наводи извор",
       "textbc06bb3d377c": "Иста платформа, остали тимови",
       "textbc18f7068971": "markdown",
-      "textbc25c1f595c9": "Уређај се сада повезује. Можете затворити ову картицу.",
       "textbc298b920f14": "Параметар са више вредности",
       "textbc29a1f71de0": "Дневне сесије, активни налози и спаљивање кредита.",
       "textbc346bfb5269": "Агент је принципал, а не заобилазно решење.",
@@ -19141,7 +19115,8 @@
       "textd88c84258c7a": "Prikazane povezane aplikacije",
       "text37698a37f9d2": "Opozvana povezana aplikacija",
       "text8c8fb214b592": "GitHub je autorizovan kao korisnik",
-      "text711edad21902": "Рачунар додат у пројекат"
+      "text711edad21902": "Рачунар додат у пројекат",
+      "texta3ecfa724d04": "Računar je sam prekinuo uparivanje"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20232,12 +20207,10 @@
     "connected": "Рачунар је повезан",
     "connectFailed": "Повезивање рачунара није успело. Покушајте поново.",
     "desktopUnavailable": "Ажурирајте Kortix апликацију за рачунар да бисте повезали овај рачунар.",
-    "useHere": "Користи овде",
     "online": "На мрежи",
     "offline": "Ван мреже",
     "connectTitle": "Повежите свој рачунар",
-    "connectDescription": "Дозволите агентима у овом пројекту да раде са датотекама, командама и апликацијама на вашем рачунару. Само ви можете да га користите док га не поделите.",
-    "yourComputers": "Ваши рачунари",
+    "connectDescription": "Дозволите Kortix агентима да раде са датотекама, командама и апликацијама на вашем рачунару. Ваш је у сваком пројекту и само ви можете да га користите док га не поделите.",
     "downloadDesktop": "Преузмите Kortix за рачунар",
     "downloadHint": "Апликација за рачунар повезује овај рачунар једним кликом и одржава га повезаним у позадини.",
     "runCommand": "Покрените ову команду на рачунару",
@@ -20245,26 +20218,19 @@
     "copyFailed": "Копирање није успело",
     "copyCommand": "Копирај команду",
     "authorizeCodeHint": "Проверите да ли се овај код поклапа са оним приказаним на вашем рачунару.",
-    "projectLabel": "Пројекат",
-    "projectPlaceholder": "Изаберите пројекат",
-    "noProjects": "Још немате пројекте. Направите пројекат, па се поново повежите.",
     "whoCanUse": "Ко може да користи овај рачунар",
-    "onlyYouDescription": "Само ви можете да га користите, у својим приватним сесијама.",
+    "onlyYouDescription": "Само ви, у сваком пројекту, у својим приватним сесијама.",
     "everyoneDescription": "Сви у пројекту могу да га користе, укључујући аутоматизације.",
-    "approvedInProject": "Ваш рачунар је сада налог у пројекту {project}. Можете да затворите ову картицу.",
     "promoLine": "Дозволите Kortix-у да ради са вашим локалним датотекама и управља вашим рачунаром.",
     "dismissPromo": "Одбаци",
     "useCliInstead": "Користи CLI уместо тога",
     "cliHint": "Команда приказује код и отвара страницу на којој одобравате овај уређај. Затим ради у позадини.",
-    "localComputerTitle": "Vaš računar",
+    "localComputerTitle": "Ваш рачунар",
     "localComputerDescription": "Веза овог рачунара са Kortix-ом. Наставља да ради у позадини када је апликација затворена.",
     "thisComputer": "Овај рачунар",
-    "serviceRunning": "Ради",
-    "servicePaused": "Паузирано",
-    "useInThisProject": "Користи у овом пројекту",
-    "pauseAccess": "Паузирај приступ",
-    "resumeAccess": "Настави приступ",
-    "manageAccess": "Управљај приступом",
+    "pauseAccess": "Паузирај везу",
+    "resumeAccess": "Настави везу",
+    "manageAccess": "Дељење",
     "showLogs": "Прикажи дневнике",
     "disconnectTitle": "Прекини везу са овим рачунаром",
     "disconnectDescription": "Уклања овај рачунар из свих пројеката и зауставља услугу у позадини. Поново га повежите да бисте га користили.",
@@ -20273,11 +20239,34 @@
     "disconnected": "Веза са рачунаром је прекинута",
     "disconnectFailed": "Није могуће прекинути везу са рачунаром. Покушајте поново.",
     "state": {
-      "online": "Na mreži",
-      "connecting": "Povezivanje…",
-      "offline": "Van mreže",
-      "stopped": "Ne radi"
+      "online": "На мрежи",
+      "connecting": "Повезивање…",
+      "offline": "Ван мреже",
+      "paused": "Паузирано",
+      "needsReconnect": "Потребно поновно повезивање"
     },
-    "startAccess": "Pokreni"
+    "needsReconnectHint": "Овај рачунар је искључен из Kortix-а. Повежите га поново да бисте га користили.",
+    "actionFailed": "Нешто није у реду. Покушајте поново.",
+    "groupYours": "Ваши (сваки пројекат)",
+    "groupShared": "Подељени са овим пројектом",
+    "sharedWithProject": "Рачунар је подељен са пројектом",
+    "alsoShareWith": "Подели и са пројектом {project}",
+    "approvedEverywhere": "Ваш рачунар је повезан. Можете да га користите у сваком пројекту, у својим приватним сесијама. Можете да затворите ову картицу.",
+    "approvedShared": "Ваш рачунар је повезан и подељен са пројектом {project}. Можете да затворите ову картицу.",
+    "access": {
+      "title": "Приступ",
+      "ask": "Питај сваки пут",
+      "askDescription": "Kortix пита на овом рачунару пре него што га агент користи. Дозвољавате највише 24 сата.",
+      "always": "Увек дозвољено",
+      "alwaysDescription": "Агенти који могу да дођу до овог рачунара користе га без питања.",
+      "off": "Искључено",
+      "offDescription": "Сваки захтев се одбија док ово не промените.",
+      "allowedUntil": "Дозвољено до {time}",
+      "revokeNow": "Опозови сада",
+      "keepAwake": "Не дозволи спавање док је рачунар на струји",
+      "keepAwakeDescription": "Рачунар не прелази у стање спавања док је на струји, па агенти могу да дођу до њега.",
+      "keepAwakeUnsupported": "Још није доступно на Windows-у."
+    },
+    "unpairDescription": "Уклања овај рачунар из Kortix-а и из сваког пројекта. Не повезује се док га поново не повежете."
   }
 }

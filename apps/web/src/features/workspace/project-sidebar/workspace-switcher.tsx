@@ -391,10 +391,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   );
 }
 
-/** Desktop app only: mounted only there, so a browser never polls machine status. */
+/**
+ * Desktop app only: mounted only there, so a browser never polls machine
+ * status. Hidden on a deployment with computers disabled, like the promo.
+ */
 function YourComputerMenuItem({ onSelect }: { onSelect: () => void }) {
   const t = useI18nTranslations('sidebar');
-  const { state } = useThisComputerState();
+  const { state, computersEnabled } = useThisComputerState();
+  if (!computersEnabled) return null;
   return (
     <DropdownMenuItem onSelect={onSelect} size="sm">
       <MonitorIcon />

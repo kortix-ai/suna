@@ -687,6 +687,7 @@ an unattended run reaches only project-shared computers.
 `TUN-3` per-machine permission, permission-request, and audit routes are removed (404).
 `TUN-4` rpc `POST /tunnel/rpc/:tid`: missing method → 400; a capability not approved at pairing → 403 `computer_capability_not_approved`; an approved capability with no live agent → 503 with `x-kortix-upstream-status: 502` and code `-32004` (not connected); unknown → 404.
 `TUN-5` device auth (public) `POST /tunnel/device-auth` (non-UUID `project_id` → 400), `GET …/:code/status`; (auth) `GET …/:code/info` echoes `projectId`, `POST …/:code/approve|deny`; unknown code → 404; ANON info → 401.
+`TUN-7` the computer follows its owner: `POST …/:code/approve` without a project pairs the machine to the approver (`connectionId: null`); `GET /projects/:id/connections` on any project the owner opens lists the machine as their private account (label = machine name, `machine.access: null` until the agent reports one). `DELETE /tunnel/self` with the machine's own token (`Authorization: Bearer kortix_tnl_…`, `X-Tunnel-Id`) unpairs it (200, the account becomes `revoked`); a wrong token → 401.
 WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited (exercised by TUN-6).
 
 `TUN-6` — verified binary transfer

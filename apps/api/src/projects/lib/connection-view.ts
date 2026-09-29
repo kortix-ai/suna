@@ -5,6 +5,7 @@ import { inArray } from 'drizzle-orm';
 import { connectedAsOf } from '../../connectors/connection-identity';
 import { db } from '../../shared/db';
 import { isTunnelConnectionLive } from '../../tunnel/core/cluster-forwarder';
+import { machineAccess } from '../../tunnel/core/rpc-core';
 
 // Keep the existing OpenAPI component id for generated-client compatibility.
 export const ConnectionViewSchema = ConnectionSchema.openapi('Connection');
@@ -59,6 +60,7 @@ export async function loadComputerMachines(
           last_heartbeat_at: row.lastHeartbeatAt?.toISOString() ?? null,
           ...(typeof info.hostname === 'string' ? { hostname: info.hostname } : {}),
           ...(typeof info.platform === 'string' ? { platform: info.platform } : {}),
+          access: machineAccess(info),
         },
       ];
     }),

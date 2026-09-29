@@ -647,6 +647,31 @@ test('listConnections passes a computer account through with its machine status'
   });
 });
 
+// The owner decides on the machine who may use it (Ask each time / Always /
+// Off). The view reports that choice so a UI or an agent can say "waiting for
+// you to allow access".
+test('listConnections passes the machine access state through', async () => {
+  const asking: Connection = {
+    ...computerConnection,
+    machine: {
+      ...computerConnection.machine!,
+      access: { mode: 'ask', granted_until: '2026-09-28T12:00:00.000Z' },
+    },
+  };
+  const off: Connection = {
+    ...computerConnection,
+    connection_id: 'connection-off',
+    machine: { ...computerConnection.machine!, access: { mode: 'off', granted_until: null } },
+  };
+  nextResponse = { status: 200, body: { connections: [asking, off] } };
+  const [first, second] = (await listConnections('P1')).connections;
+  expect(first?.machine?.access).toEqual({ mode: 'ask', granted_until: '2026-09-28T12:00:00.000Z' });
+  expect(second?.machine?.access?.mode).toBe('off');
+  // An agent that never reported its access state (npm 0.1.x) reads as null.
+  const legacy: NonNullable<Connection['machine']>['access'] = null;
+  expect(legacy).toBeNull();
+});
+
 test('addComputerToProject POSTs { tunnel_id, share } and returns the connection view', async () => {
   nextResponse = { status: 200, body: computerConnection };
   const result = await addComputerToProject('P1', {

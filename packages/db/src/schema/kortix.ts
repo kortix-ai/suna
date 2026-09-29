@@ -5737,6 +5737,11 @@ export const connectorConnections = kortixSchema.table(
     index('idx_connector_connections_project').on(table.projectId),
     index('idx_connector_connections_connector').on(table.connectorId),
     index('idx_connector_connections_tunnel').on(table.tunnelId),
+    // One computer account per (connector, owner, machine). The lazy
+    // per-project ensure upserts on it (connectors/sync.ts ensureProjectComputer).
+    uniqueIndex('idx_connector_connections_owner_tunnel')
+      .on(table.connectorId, table.ownerType, table.ownerId, table.tunnelId)
+      .where(sql`${table.tunnelId} is not null`),
     check(
       'connector_connections_owner_check',
       sql`(${table.ownerType} = 'project' AND ${table.ownerId} IS NULL) OR (${table.ownerType} <> 'project' AND ${table.ownerId} IS NOT NULL AND btrim(${table.ownerId}) <> '')`,

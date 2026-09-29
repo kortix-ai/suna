@@ -29,10 +29,12 @@ projectsApp.openapi(
     summary: 'Add a paired computer to this project',
     description:
       "Makes a machine the caller already paired an account on the project's `computer` connector. " +
-      '`share: "me"` (default) keeps it private to the caller; `share: "project"` shares it with the ' +
-      "project and needs the connector-connections manage capability. Account managers may also share " +
-      "the account's owner-less team machines. Idempotent per (connector, owner, machine). The machine " +
-      "must belong to the project's account (409 otherwise).",
+      '`share: "project"` shares it with the project and needs the connector-connections manage ' +
+      'capability. `share: "me"` (default) creates the private account every project already gets ' +
+      "automatically when its owner opens it. Account managers may also share " +
+      "the account's owner-less team machines. Idempotent per (connector, owner, machine). A shared " +
+      "account or a team machine must belong to the project's account (409 otherwise). Agent session " +
+      'tokens get 403.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -56,6 +58,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
+    // Refuses session and agent tokens: attaching a machine is its owner's act.
     requireUserCredential(c);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -106,7 +109,14 @@ projectsApp.openapi(
           machine.ownerUserId === null &&
           isAccountManagerRole(await accountRoleFor(machine.accountId, userId))));
     if (!machine || !reachable) return c.json({ error: 'Computer not found' }, 404);
-    if (machine.accountId !== accountId) {
+    // The owner's own machine joins any project they can read as a private
+    // account: relay auth keys on the machine's account, not the project's.
+    // Team machines stay inside the machine's account. A private machine lives
+    // in its owner's personal account (id = user id); its owner may share it
+    // with any project they manage. The machine stays where it is: the relay
+    // binds a connected agent to the account it authenticated under.
+    const personal = machine.ownerUserId === userId && machine.accountId === userId;
+    if (machine.accountId !== accountId && !personal && (share === 'project' || machine.ownerUserId !== userId)) {
       return c.json(
         {
           error: 'This computer belongs to another account. Pair it again from this project.',

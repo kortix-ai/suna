@@ -14,6 +14,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -290,10 +291,11 @@ function ConnectorModalBody({
   //             credential. Two or more accounts have their own row menus.
   //
   // A computer is different: every member pairs their OWN machine, so the CTA
-  // needs no write access and shows until the caller has a computer here.
-  const hasOwnComputer = accounts.some((account) => account.owner_type === 'member');
+  // needs no write access and shows until the caller can use a computer here
+  // (their own or a project-shared one; `accounts` holds only those).
+  const hasComputer = accounts.some((account) => Boolean(account.tunnel_id));
   const headerCta: 'connect' | 'finish' | 'replace' | null = isComputer
-    ? hasOwnComputer
+    ? hasComputer
       ? null
       : 'connect'
     : !canWrite || isChannel || !(isManagedProvider || Boolean(connector.authSecret))
@@ -339,6 +341,11 @@ function ConnectorModalBody({
               onChanged={onChanged}
             />
             <ConnectorStatusBadge connector={connector} />
+            {isComputer ? (
+              <Badge variant="outline" size="xs">
+                {tI18nComplete.raw('text1f43948106d1')}
+              </Badge>
+            ) : null}
           </div>
           {appDescription ? (
             <p className="text-muted-foreground text-sm text-pretty">{appDescription}</p>

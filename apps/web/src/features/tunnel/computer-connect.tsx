@@ -1,7 +1,6 @@
 'use client';
 
 import { listConnections, type Connection } from '@kortix/sdk';
-import { useProjectAccountId } from '@kortix/sdk/react';
 import { DownloadSimpleIcon, MonitorIcon, TerminalWindowIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -19,11 +18,7 @@ import {
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
-import {
-  tunnelKeys,
-  useAddComputerToProject,
-  useTunnelConnections,
-} from '@/hooks/tunnel/use-tunnel';
+import { tunnelKeys, useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   desktopComputerConnect,
@@ -33,9 +28,7 @@ import {
   startDownload,
   type DesktopComputerStatus,
 } from '@/lib/desktop';
-import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
-import { absoluteBackendUrl } from './tunnel-connect-command';
 import { ConnectCommandPanel } from './tunnel-connect-panel';
 
 /**
@@ -61,8 +54,11 @@ export function isComputerConnection(connection: Connection): boolean {
   return Boolean(connection.tunnel_id);
 }
 
-/** The caller's own active computer accounts in this project. */
-export function myComputerAccounts(
+/**
+ * The active computer accounts in this project the caller can use: their own
+ * (which follow them into every project) and the project-shared ones.
+ */
+export function projectComputerAccounts(
   connections: readonly Connection[] | undefined,
   userId: string | null | undefined,
 ): Connection[] {
@@ -70,51 +66,66 @@ export function myComputerAccounts(
   return (connections ?? []).filter(
     (connection) =>
       isComputerConnection(connection) &&
-      connection.owner_type === 'member' &&
-      connection.owner_id === userId &&
-      connection.status === 'active',
+      connection.status === 'active' &&
+      (connection.owner_type === 'project' ||
+        (connection.owner_type === 'member' && connection.owner_id === userId)),
   );
 }
 
-export function useMyComputerAccounts(projectId: string, options?: { refetchInterval?: number }) {
+export function useProjectComputerAccounts(
+  projectId: string,
+  options?: { refetchInterval?: number },
+) {
   const { user } = useAuth();
   const query = useQuery({
     ...connectionsQueryOptions(projectId),
     refetchInterval: options?.refetchInterval,
   });
+  const connections = query.data?.connections;
   return {
     query,
-    accounts: myComputerAccounts(query.data?.connections, user?.id),
+    accounts: projectComputerAccounts(connections, user?.id),
+    /** The project's computer connector slug, whatever an older project named it. */
+    connectorAlias: connections?.find(isComputerConnection)?.connector_alias ?? 'computer',
+    connections,
   };
 }
 
 /** True once the caller owns a paired machine, in any project. Polls once a
- *  minute: the sidebar promo mounts it for every signed-in user, and the
+ *  minute until they do: the sidebar promo mounts it for every signed-in user
+ *  and hides for good once they own one, so polling then would be waste. The
  *  connect dialog's own 5 s observer takes over while it is open. */
 export function useOwnsPairedComputer(): { isSuccess: boolean; owns: boolean } {
   const { user } = useAuth();
-  const machines = useTunnelConnections({ refetchInterval: 60_000 });
-  return {
-    isSuccess: machines.isSuccess,
-    owns: Boolean(user && machines.data?.some((machine) => machine.ownerUserId === user.id)),
-  };
+  const queryClient = useQueryClient();
+  const ownsAny = (machines: readonly { ownerUserId?: string | null }[] | undefined) =>
+    Boolean(user && machines?.some((machine) => machine.ownerUserId === user.id));
+  const known = ownsAny(queryClient.getQueryData(tunnelKeys.connections()));
+  const machines = useTunnelConnections({ refetchInterval: known ? false : 60_000 });
+  return { isSuccess: machines.isSuccess, owns: ownsAny(machines.data) };
 }
 
 /**
  * The desktop app's local tunnel agent. `null` in a browser, and on a desktop
  * build that predates the computer commands. Resolved client-side only, so the
  * server render and the first client render agree.
+ *
+ * Read once per mount; `poll` refreshes it every 5 s, only while the "Your
+ * computer" dialog is open. Every read asks the desktop app for its status.
  */
-export function useDesktopComputer() {
+export function useDesktopComputer({ poll = false }: { poll?: boolean } = {}) {
   return useQuery({
     queryKey: DESKTOP_STATUS_KEY,
     queryFn: async () => (isDesktop() ? ((await desktopComputerStatus()) ?? null) : null),
     staleTime: 10_000,
-    refetchInterval: (query) => (query.state.data ? 10_000 : false),
+    refetchInterval: (query) => (poll && query.state.data ? 5_000 : false),
   });
 }
 
-/** One-click pairing through the desktop app. Resolves once the service runs. */
+/**
+ * One-click pairing through the desktop app. Resolves once the service runs.
+ * `reauth` drops a stale local pairing first (see `useThisComputerState`).
+ */
 export function useConnectDesktopComputer(projectId: string) {
   const t = useTranslations('computers');
   const queryClient = useQueryClient();
@@ -122,20 +133,20 @@ export function useConnectDesktopComputer(projectId: string) {
     // Never retried: a failure is usually the person closing the approval
     // window, and a retry would open it again.
     retry: false,
-    mutationFn: async () => {
+    mutationFn: async (options?: { reauth?: boolean }) => {
+      // The desktop app derives the backend from its own instance (X6).
       const result = await desktopComputerConnect({
-        apiUrl: absoluteBackendUrl({
-          backendUrl: getEnv().BACKEND_URL || '',
-          origin: window.location.origin,
-        }),
         projectId,
+        reauth: options?.reauth === true,
       });
       if (!result) throw new Error(t('desktopUnavailable'));
+      // Closing the approval window is the person's choice, not an error.
+      if (!result.ok && result.error === 'cancelled') return result;
       if (!result.ok) throw new Error(result.error || t('connectFailed'));
       return result;
     },
-    onSuccess: () => {
-      successToast(t('connected'));
+    onSuccess: (result) => {
+      if (result.ok) successToast(t('connected'));
     },
     onError: (error: Error) => errorToast(error.message || t('connectFailed')),
     onSettled: () => {
@@ -146,40 +157,62 @@ export function useConnectDesktopComputer(projectId: string) {
   });
 }
 
-export type ComputerState = 'online' | 'connecting' | 'offline' | 'stopped';
+export type ComputerState = 'online' | 'connecting' | 'offline' | 'paused' | 'needsReconnect';
 
 /**
  * One status for this machine, from both sides: the desktop service (local)
  * and the relay heartbeat (server). The server wins when it has an answer,
  * because it is what a cloud session sees.
+ *
+ * - `paused`: the owner paused computer access (it stays paused across a
+ *   restart). A stopped service that is not paused reads offline: the desktop
+ *   app repairs it.
+ * - `needsReconnect`: the API refused the machine's credential (`rejected`):
+ *   it was disconnected elsewhere. Connecting again pairs it afresh.
  */
 export function computerState(
   local: DesktopComputerStatus | null | undefined,
   serverLive: boolean | undefined,
 ): ComputerState {
-  if (!local?.serviceActive) return 'stopped';
+  if (local?.paused) return 'paused';
+  if (local?.state === 'rejected') return 'needsReconnect';
   if (serverLive) return 'online';
-  if (local.status === 'connecting' || local.status === 'online') return 'connecting';
+  const live = local?.state;
+  if (live === 'connecting' || live === 'online' || live === 'standby') return 'connecting';
   return 'offline';
 }
 
-/** This desktop's paired machine and its combined state. `null` outside the desktop app. */
-export function useThisComputerState() {
-  const desktop = useDesktopComputer();
+/**
+ * This desktop's paired machine and its combined state. `null` outside the
+ * desktop app.
+ *
+ * `stale`: the desktop holds a pairing this backend does not list for the
+ * signed-in user (unpaired elsewhere, another person's, another backend's).
+ * It is treated as unpaired, and connecting again re-pairs (`reauth`).
+ */
+export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) {
+  const desktop = useDesktopComputer({ poll });
   const status = desktop.data;
-  const tunnelId = status?.paired ? status.tunnelId : undefined;
-  const machines = useTunnelConnections({ refetchInterval: tunnelId ? 10_000 : false });
-  const machine = machines.data?.find((candidate) => candidate.tunnelId === tunnelId);
+  const localTunnelId = status?.paired ? status.tunnelId : undefined;
+  const machines = useTunnelConnections({ refetchInterval: poll && localTunnelId ? 10_000 : false });
+  const machine = machines.data?.find((candidate) => candidate.tunnelId === localTunnelId);
+  const stale = Boolean(localTunnelId && machines.isSuccess && !machine);
+  const tunnelId = stale ? undefined : localTunnelId;
   return {
     desktop,
     status,
     tunnelId,
     machine,
+    /** False where the deployment has computers disabled (`/tunnel/connections` answers 503). */
+    computersEnabled: machines.isSuccess,
+    stale,
+    /** The desktop app can pair this machine in one click. */
+    oneClick: Boolean(status?.available && !tunnelId),
     state: tunnelId ? computerState(status, machine?.isLive) : null,
   };
 }
 
-/** Status dot + label, e.g. in the workspace menu and the "Your computer" dialog. */
+/** Status dot, e.g. in the workspace menu, the "Your computer" dialog, account rows. */
 export function ComputerStateDot({ state, className }: { state: ComputerState; className?: string }) {
   const t = useTranslations('computers');
   return (
@@ -188,30 +221,12 @@ export function ComputerStateDot({ state, className }: { state: ComputerState; c
       aria-label={t(`state.${state}`)}
       className={cn(
         'inline-block size-2 shrink-0 rounded-full',
-        state === 'online' ? 'bg-kortix-green' : 'bg-muted-foreground',
-        state === 'stopped' && 'bg-transparent ring-1 ring-muted-foreground',
-        className,
-      )}
-    />
-  );
-}
-
-/** Online/offline dot for a machine. `null` = status unknown. */
-export function MachineDot({
-  online,
-  className,
-}: {
-  online: boolean | null | undefined;
-  className?: string;
-}) {
-  const t = useTranslations('computers');
-  return (
-    <span
-      role="img"
-      aria-label={online ? t('online') : t('offline')}
-      className={cn(
-        'inline-block size-2 shrink-0 rounded-full',
-        online ? 'bg-kortix-green' : 'bg-muted-foreground',
+        state === 'online'
+          ? 'bg-kortix-green'
+          : state === 'needsReconnect'
+            ? 'bg-kortix-orange'
+            : 'bg-muted-foreground',
+        state === 'paused' && 'ring-muted-foreground bg-transparent ring-1',
         className,
       )}
     />
@@ -219,13 +234,13 @@ export function MachineDot({
 }
 
 /**
- * "Connect your computer": every way to add a computer account to this project.
+ * "Connect your computer": every way to pair a machine.
  *
- * 1. A machine the caller already paired, not yet in this project → Use here.
- * 2. The desktop app, this machine unpaired → one click.
- * 3. A browser → download the desktop app; the npx command is one click away.
+ * 1. The desktop app, this machine unpaired → one click.
+ * 2. A browser → download the desktop app; the npx command is one click away.
  *
- * Closes itself when a new computer account of the caller's appears.
+ * A paired machine follows its owner into every project, so there is no
+ * per-project step. Closes itself when a new computer account appears here.
  */
 export function ComputerConnectModal({
   projectId,
@@ -270,15 +285,11 @@ function ComputerConnectOptions({
   onConnected: (connection: Connection) => void;
 }) {
   const t = useTranslations('computers');
-  const { user } = useAuth();
-  const accountId = useProjectAccountId(projectId);
   // Polls while open: pairing finishes on another page (the approval page) or
   // in the desktop app, and this dialog closes itself when the account lands.
-  const { query, accounts } = useMyComputerAccounts(projectId, { refetchInterval: 5_000 });
-  const machines = useTunnelConnections();
-  const desktop = useDesktopComputer();
+  const { query, accounts } = useProjectComputerAccounts(projectId, { refetchInterval: 5_000 });
+  const { desktop, oneClick, stale } = useThisComputerState();
   const connectDesktop = useConnectDesktopComputer(projectId);
-  const addComputer = useAddComputerToProject();
 
   // The accounts that existed when the dialog opened. Adjusted during render:
   // the first loaded list is the baseline, and a later new one is the result.
@@ -296,70 +307,19 @@ function ComputerConnectOptions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addedId]);
 
-  const linked = new Set(accounts.map((account) => account.tunnel_id));
-  const candidates = (machines.data ?? []).filter(
-    (machine) =>
-      machine.accountId === accountId &&
-      !linked.has(machine.tunnelId) &&
-      (machine.ownerUserId == null || machine.ownerUserId === user?.id),
-  );
-  const desktopStatus = desktop.data;
-  const desktopUnpaired = Boolean(desktopStatus?.available && !desktopStatus.paired);
-  const inBrowser = desktop.isSuccess && !desktopStatus && !isDesktop();
+  const inBrowser = desktop.isSuccess && !desktop.data && !isDesktop();
   // The CLI is the fallback: shown on request, or when nothing else applies
-  // (a desktop build without the bundled agent).
+  // (this desktop is already paired, or its build lacks the bundled agent).
   const [cliOpen, setCliOpen] = useState(false);
-  const showCli =
-    cliOpen || (desktop.isSuccess && !inBrowser && !desktopUnpaired && candidates.length === 0);
+  const showCli = cliOpen || (desktop.isSuccess && !inBrowser && !oneClick);
 
   return (
     <>
-      {candidates.length > 0 ? (
-        <section className="space-y-2">
-          <Label>{t('yourComputers')}</Label>
-          <ul className="space-y-2">
-            {candidates.map((machine) => {
-              const pending =
-                addComputer.isPending && addComputer.variables?.tunnelId === machine.tunnelId;
-              return (
-                <li
-                  key={machine.tunnelId}
-                  className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2"
-                >
-                  <MonitorIcon className="text-muted-foreground size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {machine.name}
-                  </span>
-                  <MachineDot online={machine.isLive} />
-                  <Button
-                    size="sm"
-                    disabled={addComputer.isPending}
-                    onClick={() =>
-                      addComputer.mutate(
-                        { projectId, tunnelId: machine.tunnelId, share: 'me' },
-                        {
-                          onSuccess: () => successToast(t('connected')),
-                          onError: (error: Error) =>
-                            errorToast(error.message || t('connectFailed')),
-                        },
-                      )
-                    }
-                  >
-                    {pending ? <Loading className="size-4 shrink-0" /> : null}
-                    {t('useHere')}
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
-      {desktopUnpaired ? (
+      {oneClick ? (
         <Button
           className="w-full"
           disabled={connectDesktop.isPending}
-          onClick={() => connectDesktop.mutate()}
+          onClick={() => connectDesktop.mutate({ reauth: stale })}
         >
           {connectDesktop.isPending ? (
             <Loading className="size-4 shrink-0" />

@@ -23,7 +23,7 @@ import {
 } from 'agent-tunnel';
 import { randomBytes } from 'node:crypto';
 import { bodyLimit } from 'hono/body-limit';
-import { eq, and, isNotNull, lt } from 'drizzle-orm';
+import { eq, and, isNotNull, lt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '@kortix/db';
 import { config } from '../config';
 import type { AppEnv } from '../types';
@@ -209,6 +209,7 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
         capabilities,
         approvedCapabilities: tunnel.capabilities || [],
         agentVersion,
+        reportsAccess: auth.reportsAccess === true,
         machineInfo: tunnel.machineInfo ?? {},
         credentialFingerprint,
       },
@@ -227,6 +228,31 @@ tunnelRelay.on('message:pong', ({ tunnelId }) => {
 });
 
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+/** A merge into `machine_info` that never drops keys written concurrently. */
+function mergeMachineInfo(patch: Record<string, unknown>, drop: string[] = []) {
+  const base = drop.reduce(
+    (current, key) => sql`${current} - ${key}::text`,
+    sql`coalesce(${tunnelConnections.machineInfo}, '{}'::jsonb)`,
+  );
+  return sql`${base} || ${JSON.stringify(patch)}::jsonb`;
+}
+
+/**
+ * v2 X2: the agent's access mode (`tunnel.access.state`, signed), stored at
+ * `machine_info.access`. Null for anything malformed; old agents never send it.
+ */
+export function parseAccessState(
+  params: unknown,
+): { mode: 'ask' | 'always' | 'off'; grantedUntil: string | null } | null {
+  if (!params || typeof params !== 'object') return null;
+  const { mode, grantedUntil } = params as Record<string, unknown>;
+  if (mode !== 'ask' && mode !== 'always' && mode !== 'off') return null;
+  if (grantedUntil === null || grantedUntil === undefined) return { mode, grantedUntil: null };
+  if (typeof grantedUntil !== 'string' || grantedUntil.length > 64) return null;
+  const at = new Date(grantedUntil);
+  return Number.isNaN(at.getTime()) ? null : { mode, grantedUntil: at.toISOString() };
+}
 
 async function syncActiveTunnelPermissions(
   tunnelId: string,
@@ -275,15 +301,23 @@ function startTunnelService(): void {
         : {};
 
     try {
+      // `access` is the agent's own report (tunnel.access.state), which may
+      // land before this write; the auth-time snapshot must not replace it.
+      // An agent that never reports it (npm 0.1.x) enforces no access mode,
+      // so a mode stored by an earlier agent is dropped, not shown as live.
+      const { access: _staleAccess, ...snapshot } = machineInfo;
       await markTunnelRelayOwner(tunnelId, {
         status: 'online',
-        machineInfo: {
-          ...machineInfo,
-          registeredCapabilities: capabilities,
-          ...(typeof metadata?.agentVersion === 'string'
-            ? { agentVersion: metadata.agentVersion }
-            : {}),
-        },
+        machineInfo: mergeMachineInfo(
+          {
+            ...snapshot,
+            registeredCapabilities: capabilities,
+            ...(typeof metadata?.agentVersion === 'string'
+              ? { agentVersion: metadata.agentVersion }
+              : {}),
+          },
+          metadata?.reportsAccess === true ? [] : ['access'],
+        ) as unknown as Record<string, unknown>,
       });
 
       await syncActiveTunnelPermissions(tunnelId, capabilities);
@@ -340,14 +374,11 @@ function startTunnelService(): void {
         params?.machineInfo && typeof params.machineInfo === 'object'
           ? (params.machineInfo as Record<string, unknown>)
           : {};
+      const { access: _reportedElsewhere, ...reported } = mi;
       await db
         .update(tunnelConnections)
         .set({
-          machineInfo: {
-            ...((connection.machineInfo as Record<string, unknown> | null) ?? {}),
-            ...mi,
-            registeredCapabilities: capabilities,
-          },
+          machineInfo: mergeMachineInfo({ ...reported, registeredCapabilities: capabilities }),
           status: 'online',
           updatedAt: new Date(),
         })
@@ -361,6 +392,21 @@ function startTunnelService(): void {
       }
     } catch (error) {
       console.warn(`[tunnel-heartbeat] Capability update failed for ${tunnelId}:`, error);
+    }
+  });
+
+  tunnelRelay.on('message:raw', async ({ tunnelId, message }) => {
+    const msg = message as { method?: unknown; params?: unknown };
+    if (msg.method !== 'tunnel.access.state') return;
+    const access = parseAccessState(msg.params);
+    if (!access) return;
+    try {
+      await db
+        .update(tunnelConnections)
+        .set({ machineInfo: mergeMachineInfo({ access }), updatedAt: new Date() })
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+    } catch (error) {
+      console.warn(`[tunnel] access state update failed for ${tunnelId}:`, error);
     }
   });
 

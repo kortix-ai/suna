@@ -157,8 +157,24 @@ export interface GatewayDeps {
     projectId: string,
     slug: string,
   ): Promise<
-    'connector_not_found' | 'connector_not_connected' | 'connector_disabled' | 'account_required'
+    | 'connector_not_found'
+    | 'connector_not_connected'
+    | 'connector_disabled'
+    | 'account_required'
+    | 'computer_unpaired'
   >;
+  /**
+   * v2 X7: the retired `computer` call argument named a machine. Resolves it
+   * (an account label or the machine's tunnel id) to one of the caller's
+   * reachable computer accounts on `slug`. `not_computer` when `slug` is not a
+   * computer connector (the argument then belongs to that connector); null
+   * when nothing the caller may use matches.
+   */
+  selectComputerAccount?(
+    projectId: string,
+    slug: string,
+    selector: unknown,
+  ): Promise<GatewayConnector | null | 'not_computer'>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
@@ -287,9 +303,18 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`
-       *  or `error` for a failure on the machine or in the relay. */
-      kind: 'computer_unpaired' | 'computer_offline' | 'computer_capability_not_approved' | 'error';
+      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+       *  an access refusal on the machine (`computer_access_pending` |
+       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  failure on the machine or in the relay. */
+      kind:
+        | 'computer_unpaired'
+        | 'computer_offline'
+        | 'computer_capability_not_approved'
+        | 'computer_access_pending'
+        | 'computer_access_denied'
+        | 'computer_access_off'
+        | 'error';
       message: string;
     };
 
@@ -543,7 +568,23 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
 
-  const connector = resolved.connector;
+  let connector = resolved.connector;
+  // v2 X7: older agents select a machine with a `computer` argument. Map it to
+  // that account and strip it; relaying it would run the call on the default
+  // machine instead. An unknown name is refused, never ignored.
+  if (input.args && Object.hasOwn(input.args, 'computer') && deps.selectComputerAccount) {
+    const { computer: selector, ...args } = input.args;
+    const selected = await deps.selectComputerAccount(input.projectId, resolved.slug, selector);
+    if (selected !== 'not_computer') {
+      input = { ...input, args };
+      if (!selected) {
+        const reason = `account_not_found: no computer account you can use matches "${String(selector).slice(0, 120)}". Select the computer with --account "<name>".`;
+        await audit(deps, input, null, 'denied', null, { reason: 'account_not_found' });
+        return { status: 'denied', reason };
+      }
+      connector = selected;
+    }
+  }
   if (!connector || !connector.enabled) {
     const reason = !connector
       ? deps.explainMissingConnector

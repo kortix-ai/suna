@@ -514,6 +514,17 @@ interface ConnectionFields {
     last_heartbeat_at: string | null;
     hostname?: string;
     platform?: string;
+    /**
+     * Who may use the machine, decided by its owner on the machine itself:
+     * `ask` = the owner approves each new agent session on the computer
+     * (`granted_until` is the end of the current approval, `null` when none),
+     * `always` = no prompt, `off` = every call is refused. `null` (or
+     * absent) when the machine's agent never reported it, e.g. npm 0.1.x.
+     */
+    access?: {
+      mode: 'ask' | 'always' | 'off';
+      granted_until: string | null;
+    } | null;
   } | null;
 }
 
@@ -968,12 +979,13 @@ export async function renameConnection(projectId: string, connectionId: string, 
 }
 
 /**
- * Add a machine the caller already paired to this project, as an account of
- * the project's `computer` connector. `share: 'me'` (the server default) makes
- * it private to the caller; `'project'` shares it with the project and needs
- * the connector-manage capability. Idempotent: adding the same machine for the
- * same owner again returns the existing account. `409` when the machine
- * belongs to another account.
+ * Share a machine the caller paired with this project, as a shared account of
+ * the project's `computer` connector (`share: 'project'`, needs the
+ * connector-manage capability). The caller's own private account needs no
+ * call: it follows them into every project they belong to. `share: 'me'` (the
+ * server default) stays accepted. Idempotent: the same machine for the same
+ * owner returns the existing account. `409` when the machine cannot join this
+ * project's account.
  */
 export async function addComputerToProject(
   projectId: string,

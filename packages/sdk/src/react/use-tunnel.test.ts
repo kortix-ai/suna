@@ -112,6 +112,13 @@ test('useApproveDeviceAuth returns the computer account the approval created', a
   expect(result.connectionId).toBe('connection-1');
 });
 
+test('useApproveDeviceAuth types connectionId as null when the approval named no project', () => {
+  type ApproveResult = Awaited<ReturnType<ReturnType<typeof tunnel.useApproveDeviceAuth>['mutateAsync']>>;
+  // The server answers `connectionId: null` for an approval without a project.
+  const noProject: ApproveResult = { success: true, tunnelId: 'tunnel-1', connectionId: null };
+  expect(noProject.connectionId).toBeNull();
+});
+
 test('useApproveDeviceAuth leaves project_id and share out when the caller omits them', async () => {
   const config = tunnel.useApproveDeviceAuth() as unknown as Config;
   await config.mutationFn!({ code: 'ABCD-1234', capabilities: ['filesystem'] });

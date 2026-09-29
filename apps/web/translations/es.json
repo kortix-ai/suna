@@ -7651,31 +7651,6 @@
       "line117JsxTextKeepMine": "Conservar lo mío",
       "line144JsxTextUnsavedChanges": "Cambios sin guardar"
     },
-    "componentsTunnelScopeEditorsNetworkScopeEditor": {
-      "line93JsxAttrPlaceholderEG30008080": "p. ej., 3000, 8080",
-      "line123JsxAttrPlaceholderEGLocalhost127001": "p. ej., localhost, 127.0.0.1"
-    },
-    "componentsTunnelTunnelDetail": {
-      "line35JsxTextTunnelConnectionNotFound": "No se encontró la conexión del túnel.",
-      "line38JsxTextBackToTunnels": "Volver a túneles",
-      "line79JsxTextMiddot": "·",
-      "line100JsxTextAuditLog": "Registro de auditoría"
-    },
-    "componentsTunnelTunnelOverview": {
-      "line126JsxTextDeleteConnection": "¿Eliminar conexión?",
-      "line128JsxTextThisWillPermanentlyDelete": "Esto eliminará de forma permanente",
-      "line128JsxTextAndRemoveAllItsPermissionsAndAuditLogs": "y eliminará todos sus permisos y registros de auditoría. Esta acción no se puede deshacer.",
-      "line169JsxTextAddConnection": "Agregar conexión",
-      "line181JsxTextConnectAMachine": "Conectar una máquina",
-      "line183JsxTextRunThisCommandOnTheMachineYouWant": "Ejecuta este comando en la máquina que quieres conectar.",
-      "line234JsxTextConnectYourMachine": "Conecta tu máquina",
-      "line236JsxTextRunThisCommandOnAnyMachineToConnect": "Ejecuta este comando en cualquier máquina para conectarla a Kortix. Aprobarás la conexión en tu navegador.",
-      "line255JsxTextText1RunTheCommand": "1. Ejecuta el comando",
-      "line257JsxTextText2ApproveInBrowser": "2. Aprueba en el navegador",
-      "line259JsxTextText3Connected": "3. Conectado",
-      "line362JsxTextNoConnectionsMatchingLdquo": "No hay conexiones que coincidan con “",
-      "line362JsxTextRdquo": "”"
-    },
     "componentsUpdateChangelogPreview": {
       "line102JsxTextMoreChanges": "más cambios"
     },
@@ -16038,7 +16013,6 @@
       "textbbeb1185a5ff": "Cita",
       "textbc06bb3d377c": "La misma plataforma, los otros equipos",
       "textbc18f7068971": "markdown",
-      "textbc25c1f595c9": "El dispositivo se está conectando. Puedes cerrar esta pestaña.",
       "textbc298b920f14": "Parámetro multivalor",
       "textbc29a1f71de0": "Sesiones diarias, cuentas activas y quema de crédito.",
       "textbc346bfb5269": "Un agente es un principal, no una escapatoria.",
@@ -19141,7 +19115,8 @@
       "textd88c84258c7a": "Listó las apps conectadas",
       "text37698a37f9d2": "Revocó una app conectada",
       "text8c8fb214b592": "Autorizó GitHub como usuario",
-      "text711edad21902": "Equipo añadido al proyecto"
+      "text711edad21902": "Equipo añadido al proyecto",
+      "texta3ecfa724d04": "El ordenador se desvinculó"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20232,12 +20207,10 @@
     "connected": "Ordenador conectado",
     "connectFailed": "No se pudo conectar el ordenador. Inténtalo de nuevo.",
     "desktopUnavailable": "Actualiza la app de escritorio de Kortix para conectar este ordenador.",
-    "useHere": "Usar aquí",
     "online": "En línea",
     "offline": "Sin conexión",
     "connectTitle": "Conectar tu ordenador",
-    "connectDescription": "Permite que los agentes de este proyecto trabajen con archivos, comandos y apps de tu ordenador. Solo tú puedes usarlo a menos que lo compartas.",
-    "yourComputers": "Tus ordenadores",
+    "connectDescription": "Permite que los agentes de Kortix trabajen con archivos, comandos y aplicaciones de tu ordenador. Es tuyo en todos los proyectos y solo tú puedes usarlo, salvo que lo compartas.",
     "downloadDesktop": "Descargar Kortix para escritorio",
     "downloadHint": "La app de escritorio conecta este ordenador con un clic y lo mantiene conectado en segundo plano.",
     "runCommand": "Ejecuta este comando en el ordenador",
@@ -20245,13 +20218,9 @@
     "copyFailed": "No se pudo copiar",
     "copyCommand": "Copiar comando",
     "authorizeCodeHint": "Comprueba que este código coincide con el que aparece en tu ordenador.",
-    "projectLabel": "Proyecto",
-    "projectPlaceholder": "Elige un proyecto",
-    "noProjects": "Aún no tienes proyectos. Crea un proyecto y vuelve a conectar.",
     "whoCanUse": "Quién puede usar este ordenador",
-    "onlyYouDescription": "Solo tú puedes usarlo, en tus sesiones privadas.",
+    "onlyYouDescription": "Solo tú, en todos los proyectos, en tus sesiones privadas.",
     "everyoneDescription": "Todos en el proyecto pueden usarlo, incluidas las automatizaciones.",
-    "approvedInProject": "Tu ordenador ya es una cuenta en {project}. Puedes cerrar esta pestaña.",
     "promoLine": "Deja que Kortix trabaje con tus archivos locales y controle tu ordenador.",
     "dismissPromo": "Descartar",
     "useCliInstead": "Usar la CLI en su lugar",
@@ -20259,12 +20228,9 @@
     "localComputerTitle": "Tu ordenador",
     "localComputerDescription": "La conexión de este ordenador con Kortix. Sigue funcionando en segundo plano cuando la app está cerrada.",
     "thisComputer": "Este ordenador",
-    "serviceRunning": "En ejecución",
-    "servicePaused": "En pausa",
-    "useInThisProject": "Usar en este proyecto",
-    "pauseAccess": "Pausar acceso",
-    "resumeAccess": "Reanudar acceso",
-    "manageAccess": "Gestionar acceso",
+    "pauseAccess": "Pausar conexión",
+    "resumeAccess": "Reanudar conexión",
+    "manageAccess": "Compartir",
     "showLogs": "Ver registros",
     "disconnectTitle": "Desconectar este ordenador",
     "disconnectDescription": "Quita este ordenador de todos los proyectos y detiene el servicio en segundo plano. Vuelve a conectarlo para usarlo.",
@@ -20276,8 +20242,31 @@
       "online": "En línea",
       "connecting": "Conectando…",
       "offline": "Sin conexión",
-      "stopped": "No se está ejecutando"
+      "paused": "En pausa",
+      "needsReconnect": "Hay que reconectar"
     },
-    "startAccess": "Iniciar"
+    "needsReconnectHint": "Este ordenador se desconectó de Kortix. Vuelve a conectarlo para usarlo.",
+    "actionFailed": "Algo salió mal. Inténtalo de nuevo.",
+    "groupYours": "Tuyos (todos los proyectos)",
+    "groupShared": "Compartidos con este proyecto",
+    "sharedWithProject": "Ordenador compartido con el proyecto",
+    "alsoShareWith": "Compartir también con {project}",
+    "approvedEverywhere": "Tu ordenador está conectado. Puedes usarlo en todos los proyectos, en tus sesiones privadas. Puedes cerrar esta pestaña.",
+    "approvedShared": "Tu ordenador está conectado y compartido con {project}. Puedes cerrar esta pestaña.",
+    "access": {
+      "title": "Acceso",
+      "ask": "Preguntar cada vez",
+      "askDescription": "Kortix pregunta en este ordenador antes de que un agente lo use. Lo permites durante un máximo de 24 horas.",
+      "always": "Siempre permitido",
+      "alwaysDescription": "Los agentes que pueden llegar a este ordenador lo usan sin preguntar.",
+      "off": "Desactivado",
+      "offDescription": "Se rechaza toda solicitud hasta que cambies esto.",
+      "allowedUntil": "Permitido hasta las {time}",
+      "revokeNow": "Revocar ahora",
+      "keepAwake": "Mantener este ordenador activo mientras esté enchufado",
+      "keepAwakeDescription": "El ordenador no entra en reposo mientras está conectado a la corriente, así los agentes pueden llegar a él.",
+      "keepAwakeUnsupported": "Aún no está disponible en Windows."
+    },
+    "unpairDescription": "Quita este ordenador de Kortix y de todos los proyectos. Deja de conectarse hasta que lo vuelvas a conectar."
   }
 }

@@ -6,6 +6,7 @@
 // module only spawns it, parses its NDJSON events, and reads its files.
 
 const { execFile, execFileSync, spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -30,14 +31,42 @@ function ensureDevAgentCli() {
   return cli;
 }
 
+/** The only backend whose machines use the default ~/.agent-tunnel identity. */
+const CANONICAL_API_ORIGIN = 'https://api.kortix.com';
+
+const sha8 = (text) => crypto.createHash('sha256').update(text).digest('hex').slice(0, 8);
+
+/** Origin of the relay a config dir is paired with, or null. */
+function pairedOrigin(dir) {
+  try {
+    return new URL(JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).apiUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Config directory for the agent. A packaged stable build uses the default
- * (~/.agent-tunnel, service `ai.kortix.agent-tunnel`), the same machine
- * identity the npm CLI uses. Every other build gets its own directory under
- * userData, and so its own suffixed service, and never touches the real one.
+ * X6: config directory for the agent, per backend, so a saved token is never
+ * sent to another relay. `null` = the default ~/.agent-tunnel (the identity
+ * the npm CLI uses): only a packaged stable build, and only when that
+ * directory is paired with this backend, or is unpaired and this is the
+ * canonical API. A default home paired with another backend is never used.
+ * Everything else lives under userData: the pre-v2 `agent-tunnel` dir while it
+ * still pairs this backend, else `agent-tunnel/<sha8(apiOrigin)>`.
  */
-function agentHome({ isPackaged, channel, userData }) {
-  return isPackaged && channel === 'stable' ? null : path.join(userData, 'agent-tunnel');
+function agentHome({ isPackaged, channel, userData, apiOrigin, defaultHome = path.join(os.homedir(), '.agent-tunnel') }) {
+  const defaultPairedWith = pairedOrigin(defaultHome);
+  if (
+    isPackaged &&
+    channel === 'stable' &&
+    (defaultPairedWith === apiOrigin || (defaultPairedWith === null && apiOrigin === CANONICAL_API_ORIGIN))
+  ) {
+    return null;
+  }
+  // ponytail: the pre-v2 home keeps an existing dev pairing working; delete
+  // this branch once no desktop build before v2 remains paired.
+  const legacy = path.join(userData, 'agent-tunnel');
+  return pairedOrigin(legacy) === apiOrigin ? legacy : path.join(legacy, sha8(apiOrigin));
 }
 
 function effectiveHome(home) {
@@ -55,39 +84,45 @@ function isLoopbackHost(host) {
   return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
 }
 
-// ponytail: last two DNS labels approximate the registrable domain; a public
-// suffix list is the upgrade if a self-host on a two-label public suffix needs it.
-function siteOf(host) {
-  return host.split('.').slice(-2).join('.');
-}
-
 /**
- * The relay URL for `connect --api-url`, from the backend URL the web app
- * passes. The backend must be https (http only on loopback) and belong to the
- * same site as the loaded app, so a page cannot pair this machine to a relay
- * of its choosing.
+ * X6: the backend URL from the instance's own `/api/runtime-config` script,
+ * fetched by the main process. The page never chooses the relay.
  */
-function tunnelApiUrl(apiUrl, appUrl) {
-  let api;
-  let app;
+function backendFromRuntimeConfig(script, appOrigin) {
+  const match = /__KORTIX_RUNTIME_CONFIG=(\{.*?\});/s.exec(String(script || ''));
+  let raw;
   try {
-    api = new URL(String(apiUrl || ''));
-    app = new URL(appUrl);
+    raw = match && JSON.parse(match[1]).BACKEND_URL;
   } catch {
-    return { ok: false, error: 'apiUrl must be an absolute URL' };
+    raw = null;
+  }
+  if (typeof raw !== 'string' || !raw) return { ok: false, error: 'The Kortix instance does not publish its backend URL.' };
+  let api;
+  try {
+    api = new URL(raw, appOrigin);
+  } catch {
+    return { ok: false, error: 'The Kortix instance publishes an invalid backend URL.' };
   }
   if (api.username || api.password || api.search || api.hash) {
-    return { ok: false, error: 'apiUrl must not carry credentials, a query, or a fragment' };
+    return { ok: false, error: 'The backend URL must not carry credentials, a query, or a fragment.' };
   }
-  const loopback = isLoopbackHost(api.hostname);
-  if (api.protocol !== 'https:' && !(api.protocol === 'http:' && loopback)) {
-    return { ok: false, error: 'apiUrl must use https (http only on localhost)' };
+  if (api.protocol !== 'https:' && !(api.protocol === 'http:' && isLoopbackHost(api.hostname))) {
+    return { ok: false, error: 'The backend URL must use https (http only on localhost).' };
   }
-  const sameSite = loopback
-    ? isLoopbackHost(app.hostname)
-    : siteOf(api.hostname) === siteOf(app.hostname);
-  if (!sameSite) return { ok: false, error: `apiUrl ${api.origin} is not the backend of ${app.origin}` };
-  return { ok: true, url: `${api.origin}${api.pathname.replace(/\/+$/, '')}/tunnel` };
+  return { ok: true, url: `${api.origin}${api.pathname.replace(/\/+$/, '')}` };
+}
+
+/** A page may still pass `apiUrl` (older web builds): it must name exactly the derived backend. */
+function checkPageApiUrl(given, backendUrl) {
+  if (given === undefined || given === null || given === '') return null;
+  try {
+    const page = new URL(String(given));
+    const derived = new URL(backendUrl);
+    if (page.origin === derived.origin && page.pathname.replace(/\/+$/, '') === derived.pathname.replace(/\/+$/, '')) return null;
+  } catch {
+    /* fall through */
+  }
+  return `apiUrl is not the backend of this Kortix instance (${backendUrl})`;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -136,17 +171,220 @@ function readAgentState(home) {
   }
 }
 
-/** The `computer_status` answer, from `service-status --json` plus state.json. */
+/* ─── Access control (contract v2 §A) ───────────────────────────────────
+   Same file and rules as packages/agent-tunnel/src/agent/access.ts: the app
+   writes the owner's answers, the agent enforces them. */
+
+const ACCESS_MODES = ['ask', 'always', 'off'];
+const MAX_GRANT_MINUTES = 24 * 60;
+const DENY_MS = 10 * 60_000;
+/** A request older than this is stale: its call has long returned. */
+const REQUEST_FRESH_MS = 60_000;
+const isoOrNull = (value) => (typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null);
+
+function readAccess(home) {
+  let raw;
+  try {
+    raw = fs.readFileSync(path.join(effectiveHome(home), 'access.json'), 'utf8');
+  } catch {
+    return { mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: false };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      mode: ACCESS_MODES.includes(parsed.mode) ? parsed.mode : 'ask',
+      grantedUntil: isoOrNull(parsed.grantedUntil),
+      deniedUntil: isoOrNull(parsed.deniedUntil),
+      keepAwake: parsed.keepAwake === true,
+    };
+  } catch {
+    return { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
+  }
+}
+
+function writePrivateJson(home, name, value) {
+  const dir = effectiveHome(home);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, name);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+const writeAccess = (home, state) => writePrivateJson(home, 'access.json', state);
+
+/** `computer_access_set` input applied to the current state. Throws on bad input. */
+function nextAccess(current, input = {}, now = Date.now()) {
+  const next = { ...current };
+  if (input.mode !== undefined) {
+    if (!ACCESS_MODES.includes(input.mode)) throw new Error(`mode must be one of ${ACCESS_MODES.join(', ')}`);
+    // A grant or denial belongs to the mode it was given in: switching back
+    // to "Ask each time" must ask again.
+    if (input.mode !== current.mode) {
+      next.grantedUntil = null;
+      next.deniedUntil = null;
+    }
+    next.mode = input.mode;
+  }
+  if (input.grantMinutes !== undefined) {
+    const minutes = Number(input.grantMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) throw new Error('grantMinutes must be a positive number');
+    next.grantedUntil = new Date(now + Math.min(minutes, MAX_GRANT_MINUTES) * 60_000).toISOString();
+    next.deniedUntil = null;
+  }
+  if (input.revoke === true) next.grantedUntil = null;
+  if (input.keepAwake !== undefined) next.keepAwake = input.keepAwake === true;
+  return next;
+}
+
+/** Same rule as the agent's decideAccess: 'run', 'off', 'denied', or 'ask'. */
+function decideAccess(state, now = Date.now()) {
+  if (state.mode === 'always') return 'run';
+  if (state.mode === 'off') return 'off';
+  if (state.deniedUntil && Date.parse(state.deniedUntil) > now) return 'denied';
+  const granted = state.grantedUntil ? Date.parse(state.grantedUntil) : 0;
+  return granted > now && granted - now <= MAX_GRANT_MINUTES * 60_000 ? 'run' : 'ask';
+}
+
+/**
+ * True when `next` lets calls run that `current` does not: `always` from
+ * another mode, or a grant that reaches further. Only the owner may do that,
+ * in a native dialog; the page may only narrow access.
+ */
+function accessWidens(current, next, now = Date.now()) {
+  if (next.mode === 'always') return current.mode !== 'always';
+  if (next.mode !== 'ask') return false;
+  const reach = (state) => (state.mode === 'ask' && decideAccess(state, now) === 'run' ? Date.parse(state.grantedUntil) : 0);
+  return reach(next) > reach(current);
+}
+
+function readAccessRequest(home) {
+  try {
+    const request = JSON.parse(fs.readFileSync(path.join(effectiveHome(home), 'access-request.json'), 'utf8'));
+    return typeof request?.id === 'string' ? request : null;
+  } catch {
+    return null;
+  }
+}
+
+function freshRequest(home, now = Date.now()) {
+  const request = readAccessRequest(home);
+  return request && now - Date.parse(request.requestedAt) < REQUEST_FRESH_MS ? request : null;
+}
+
+function clearAccessRequest(home, id) {
+  if (readAccessRequest(home)?.id === id) fs.rmSync(path.join(effectiveHome(home), 'access-request.json'), { force: true });
+}
+
+/** An answer covers every call that asked before it, not only the prompted one. */
+function clearAccessRequestsUntil(home, answeredAt = Date.now()) {
+  const request = readAccessRequest(home);
+  if (request && !(Date.parse(request.requestedAt) > answeredAt)) {
+    fs.rmSync(path.join(effectiveHome(home), 'access-request.json'), { force: true });
+  }
+}
+
+const keepAwakeSupported = (platform) => platform === 'darwin' || platform === 'linux';
+
+/** X5 `computer_access_get`. */
+function accessView(home, platform = process.platform, now = Date.now()) {
+  const request = freshRequest(home, now);
+  return {
+    ...readAccess(home),
+    keepAwakeSupported: keepAwakeSupported(platform),
+    pendingRequest: request ? { id: request.id, capability: request.capability, requestedAt: request.requestedAt } : null,
+  };
+}
+
+const CAPABILITY_WORDS = { filesystem: 'files', shell: 'the shell', desktop: 'the screen and keyboard' };
+
+/**
+ * A4: the native prompt. Button index 0 = 24 h, 1 = 1 h (default), 2 = deny.
+ * One grant covers every capability this computer approved and every agent
+ * that can reach it, so the prompt says so, and the shorter grant is the
+ * default. ponytail: per-capability grants replace this if owners need them.
+ */
+function accessPrompt(request, machineName) {
+  const title = `Allow Kortix to use ${machineName}?`;
+  return {
+    type: 'question',
+    title,
+    message: title,
+    detail:
+      `An agent wants to use ${CAPABILITY_WORDS[request.capability] || 'this computer'}. ` +
+      'Allowing lets any Kortix agent that can reach this computer use its files, the shell, and the screen and keyboard until the time runs out. ' +
+      'You can revoke access at any time from the menu bar.',
+    buttons: ['Allow for 24 hours', 'Allow for 1 hour', 'Deny'],
+    defaultId: 1,
+    cancelId: 2,
+  };
+}
+
+/** The owner's confirmation when the page asks to widen access (computer_access_set). */
+function widenPrompt(next, machineName) {
+  const what =
+    next.mode === 'always'
+      ? 'every agent call without asking you first'
+      : `every agent call until ${clock(next.grantedUntil)} without asking you first`;
+  return {
+    type: 'warning',
+    title: `Allow Kortix to use ${machineName}?`,
+    message: `Allow Kortix to use ${machineName}?`,
+    detail: `This allows ${what}: files, the shell, and the screen and keyboard. You can revoke access at any time from the menu bar.`,
+    buttons: ['Allow', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+  };
+}
+
+function answerAccess(current, response, now = Date.now()) {
+  if (response === 0) return nextAccess(current, { grantMinutes: MAX_GRANT_MINUTES }, now);
+  if (response === 1) return nextAccess(current, { grantMinutes: 60 }, now);
+  return { ...current, grantedUntil: null, deniedUntil: new Date(now + DENY_MS).toISOString() };
+}
+
+/** `<home>/desktop-app.json`: how the agent starts this app to show a prompt (A3). */
+function desktopAppRecord({ execPath, defaultApp, argv, env, pid, cwd = process.cwd() }) {
+  // `electron .` (dev) needs the app path; a packaged app is its own binary.
+  const args = defaultApp && argv[1] ? [path.resolve(cwd, argv[1])] : [];
+  const keep = env.KORTIX_DESKTOP_URL ? { KORTIX_DESKTOP_URL: env.KORTIX_DESKTOP_URL } : {};
+  // A Linux AppImage runs from a /tmp/.mount_* path that is gone once it quits;
+  // the AppImage file itself is what starts it again.
+  return { command: env.APPIMAGE || execPath, args, pid, env: keep };
+}
+
+/**
+ * The `computer_status` answer (X5), from `service-status --json` plus
+ * state.json. `needsRepair` (R5): paired, not paused, and the service is
+ * missing, stopped, stale, or runs another agent version than this app bundles.
+ */
 function computerStatusFrom(serviceStatus, state) {
   const paired = serviceStatus?.paired === true;
   const service = serviceStatus?.service || {};
-  const status = paired ? (state && state.tunnelId === serviceStatus.tunnelId ? state.status : 'offline') : undefined;
+  // Paused = disabled in the supervisor. Installed, enabled and not running is
+  // "stopped", which repair fixes.
+  const paused = service.installed === true && service.enabled === false;
+  const live = paired && state && state.tunnelId === serviceStatus.tunnelId ? state : null;
+  const current = paired ? (live ? live.status : 'offline') : undefined;
+  // A live agent while the service is not running is a foreground
+  // `agent-tunnel connect`: starting the service would displace it (4004).
+  const heldInForeground = service.active !== true && Boolean(live) && ['online', 'connecting', 'standby'].includes(live.status);
+  const needsRepair =
+    paired &&
+    !paused &&
+    !heldInForeground &&
+    (service.installed !== true ||
+      service.active !== true ||
+      service.upToDate === false ||
+      Boolean(live?.agentVersion && serviceStatus.version && live.agentVersion !== serviceStatus.version));
   return {
     available: true,
     paired,
-    ...(paired ? { tunnelId: serviceStatus.tunnelId, status } : {}),
+    ...(paired ? { tunnelId: serviceStatus.tunnelId, apiUrl: serviceStatus.apiUrl, status: current, state: current } : {}),
+    paused,
     serviceInstalled: service.installed === true,
     serviceActive: service.active === true,
+    needsRepair,
   };
 }
 
@@ -175,7 +413,7 @@ async function computerStatus(options) {
 
 /** One shape for every computer_status answer, so callers never branch on it. */
 function unavailable(error) {
-  return { available: false, paired: false, serviceInstalled: false, serviceActive: false, error };
+  return { available: false, paired: false, paused: false, serviceInstalled: false, serviceActive: false, needsRepair: false, error };
 }
 
 /**
@@ -184,13 +422,12 @@ function unavailable(error) {
  * `{ ok: false, error }` otherwise. `onChallenge(url)` shows the approval page.
  * Aborting `signal` stops the agent and resolves `cancelled`.
  */
-function connectComputer({ cli, home, apiUrl, projectId, onChallenge, onApproved, signal, execPath = process.execPath }) {
+function connectComputer({ cli, home, apiUrl, projectId, reauth, onChallenge, onApproved, signal, execPath = process.execPath }) {
   return new Promise((resolve) => {
-    const child = spawn(
-      execPath,
-      [cli, 'connect', '--json', '--daemon', '--api-url', apiUrl, '--project-id', projectId],
-      { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal },
-    );
+    const args = [cli, 'connect', '--json', '--daemon', '--api-url', apiUrl];
+    if (projectId) args.push('--project-id', projectId);
+    if (reauth) args.push('--reauth');
+    const child = spawn(execPath, args, { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal });
     let settled = false;
     let approved = null;
     let stderr = '';
@@ -236,29 +473,52 @@ function connectComputer({ cli, home, apiUrl, projectId, onChallenge, onApproved
 /** Tray status line. */
 function statusLabel(status) {
   if (!status?.paired) return 'Computer not connected';
-  if (!status.serviceActive) return 'Computer access paused';
-  if (status.status === 'online') return 'Computer connected';
-  if (status.status === 'connecting') return 'Computer connecting…';
+  if (status.paused) return 'Computer access paused';
+  if (status.state === 'online') return 'Computer connected';
+  if (!status.serviceActive) return 'Computer service stopped';
+  if (status.state === 'connecting') return 'Computer connecting…';
+  if (status.state === 'rejected') return 'Computer needs to reconnect';
+  if (status.state === 'standby') return 'Computer in use by another Kortix app or terminal';
   return 'Computer offline';
 }
 
+function clock(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 /**
- * Tray menu. `actions` are the click handlers; this stays a plain template so
- * the item list is tested without Electron.
+ * Tray menu (A5). `actions` are the click handlers; this stays a plain
+ * template so the item list is tested without Electron.
  */
-function trayMenuTemplate(status, { openAtLogin, loginItemSupported }, actions) {
-  const paused = status?.paired && !status.serviceActive;
+function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, now = Date.now() }, actions) {
+  const paused = Boolean(status?.paired && status.paused);
+  const granted = access.mode === 'ask' && access.grantedUntil && Date.parse(access.grantedUntil) > now;
+  const mode = (id, label) => ({ label, type: 'radio', checked: access.mode === id, click: () => actions.setMode(id) });
   return [
     { id: 'status', label: statusLabel(status), enabled: false },
     { type: 'separator' },
     { id: 'open', label: 'Open Kortix', click: actions.open },
+    { type: 'separator' },
+    {
+      id: 'access',
+      label: 'Access',
+      submenu: [mode('ask', 'Ask each time'), mode('always', 'Always allowed'), mode('off', 'Off')],
+    },
+    ...(granted
+      ? [
+          { id: 'grant', label: `Allowed until ${clock(access.grantedUntil)}`, enabled: false },
+          { id: 'revoke', label: 'Revoke now', click: actions.revoke },
+        ]
+      : []),
+    canKeepAwake
+      ? { id: 'keepAwake', label: 'Keep this computer awake while plugged in', type: 'checkbox', checked: access.keepAwake, click: actions.toggleKeepAwake }
+      : { id: 'keepAwake', label: 'Keep awake: not available on Windows yet', enabled: false },
     {
       id: 'pause',
       label: paused ? 'Resume computer access' : 'Pause computer access',
       enabled: Boolean(status?.paired),
       click: paused ? actions.resume : actions.pause,
     },
-    { id: 'permissions', label: 'Permissions…', click: actions.permissions },
     { id: 'logs', label: 'Show logs', click: actions.logs },
     { type: 'separator' },
     ...(loginItemSupported
@@ -268,7 +528,7 @@ function trayMenuTemplate(status, { openAtLogin, loginItemSupported }, actions) 
     { type: 'separator' },
     {
       id: 'quit',
-      label: status?.paired && status.serviceActive ? 'Quit Kortix (your computer stays connected)' : 'Quit Kortix',
+      label: status?.paired && !paused ? 'Quit Kortix (your computer stays connected)' : 'Quit Kortix',
       click: actions.quit,
     },
   ];
@@ -280,21 +540,38 @@ function keepRunningInTray(status) {
 }
 
 module.exports = {
+  accessPrompt,
+  accessView,
   agentCliPath,
   agentEnv,
   agentHome,
+  answerAccess,
+  backendFromRuntimeConfig,
+  checkPageApiUrl,
+  accessWidens,
+  clearAccessRequest,
+  clearAccessRequestsUntil,
   computerStatus,
   computerStatusFrom,
   connectComputer,
+  decideAccess,
+  desktopAppRecord,
   effectiveHome,
   ensureDevAgentCli,
+  freshRequest,
   isProjectId,
+  keepAwakeSupported,
   keepRunningInTray,
   ndjsonParser,
+  nextAccess,
+  readAccess,
   readAgentState,
   runAgent,
+  sha8,
   statusLabel,
   trayMenuTemplate,
-  tunnelApiUrl,
   unavailable,
+  widenPrompt,
+  writeAccess,
+  writePrivateJson,
 };

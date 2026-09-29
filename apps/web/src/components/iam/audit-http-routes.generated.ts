@@ -663,6 +663,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|tunnel|device-auth|:code|info",
   "GET|v1|tunnel|device-auth|:code|status",
   "POST|v1|tunnel|rpc|:tunnelId",
+  "DELETE|v1|tunnel|self",
   "GET|v1|usage",
   "GET|v1|usage|cost-by-project",
   "GET|v1|usage|cost-summary",

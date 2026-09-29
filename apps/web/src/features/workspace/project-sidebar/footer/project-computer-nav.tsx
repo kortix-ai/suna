@@ -13,8 +13,8 @@ import {
 import {
   ComputerConnectModal,
   useConnectDesktopComputer,
-  useDesktopComputer,
   useOwnsPairedComputer,
+  useThisComputerState,
 } from '@/features/tunnel/computer-connect';
 import { useIsMobile } from '@/hooks/utils';
 import { useTranslations } from '@/i18n/use-translations';
@@ -31,8 +31,10 @@ function readDismissed(): boolean {
 
 /**
  * "Connect your computer": an advertisement, not a status widget. It shows
- * until the caller owns a paired machine or dismisses it. The controls for a
- * paired machine live in the workspace menu's "Local computer" (desktop app).
+ * until the caller owns a paired machine or dismisses it, and never on a
+ * deployment with computers disabled (the machine list answers 503). The
+ * controls for a paired machine live in the workspace menu's "Your computer"
+ * (desktop app).
  *
  * - Desktop app: one click pairs this machine (`desktopComputerConnect`).
  * - Browser: opens the download / CLI dialog.
@@ -61,26 +63,25 @@ function ComputerPromo({ projectId, onDismiss }: { projectId: string; onDismiss:
   const { setOpenMobile } = useSidebar();
   const [open, setOpen] = useState(false);
   const paired = useOwnsPairedComputer();
-  const desktop = useDesktopComputer();
+  // `oneClick` is false when the bundled agent cannot run; the dialog offers
+  // the CLI. A local pairing this backend does not list is re-paired (`stale`).
+  const { desktop, oneClick, stale } = useThisComputerState();
   const connectDesktop = useConnectDesktopComputer(projectId);
 
   if (!paired.isSuccess || paired.owns || desktop.isPending) return null;
 
-  // `available: false` = the bundled agent cannot run; the dialog offers the CLI.
-  const oneClick = Boolean(desktop.data?.available && !desktop.data.paired);
   const title = oneClick ? t('connectThisComputer') : t('connectYourComputer');
 
   return (
     <>
       <SidebarMenuItem>
         <SidebarMenuButton
-          tooltip={title}
           className="text-sidebar-foreground h-auto items-start"
           disabled={connectDesktop.isPending}
           aria-busy={connectDesktop.isPending}
           onClick={() => {
             if (oneClick) {
-              connectDesktop.mutate();
+              connectDesktop.mutate({ reauth: stale });
               return;
             }
             setOpen(true);

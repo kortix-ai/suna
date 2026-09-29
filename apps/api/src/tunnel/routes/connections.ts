@@ -12,17 +12,26 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNull, ne, type SQL } from 'drizzle-orm';
 import { connectorConnections, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
-import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
+import {
+  generateTunnelToken,
+  hashSecretKey,
+  isTunnelToken,
+  verifySecretKey,
+} from '../../shared/crypto';
+import { requestClientKey } from '../../shared/client-ip';
+import { isUuid } from '../../shared/validate';
+import { tunnelRateLimiter } from '../core/rate-limiter';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../core/rpc-core';
 import { readJsonObject } from '../../shared/http-body';
+import { uniqueComputerLabel } from '../../connectors/computers';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -59,6 +68,62 @@ function serializeConnection(conn: Omit<typeof tunnelConnections.$inferSelect, '
     status: isLive ? 'online' : 'offline',
     isLive,
   };
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** A computer account's label follows its machine's name, deduped per owner. */
+async function relabelComputerAccounts(tx: Tx, tunnelId: string, name: string): Promise<void> {
+  const accounts = await tx
+    .select()
+    .from(connectorConnections)
+    .where(eq(connectorConnections.tunnelId, tunnelId));
+  for (const account of accounts) {
+    const siblings = await tx
+      .select({ label: connectorConnections.label })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, account.connectorId),
+          eq(connectorConnections.ownerType, account.ownerType),
+          account.ownerId === null
+            ? isNull(connectorConnections.ownerId)
+            : eq(connectorConnections.ownerId, account.ownerId),
+          ne(connectorConnections.connectionId, account.connectionId),
+        ),
+      );
+    const label = uniqueComputerLabel(name, new Set(siblings.map((row) => row.label)));
+    if (label === account.label) continue;
+    await tx
+      .update(connectorConnections)
+      .set({ label, updatedAt: new Date() })
+      .where(eq(connectorConnections.connectionId, account.connectionId));
+  }
+}
+
+/**
+ * Unpair one machine: revoke its computer accounts (and drop their default
+ * pin) so no resolver picks an account that reaches nothing, delete it (the
+ * foreign key then sets their tunnel_id NULL), and drop its live socket.
+ * False when no machine matches `tunnelId` and `where`.
+ */
+export async function unpairMachine(tunnelId: string, where?: SQL): Promise<boolean> {
+  const deleted = await db.transaction(async (tx) => {
+    const [machine] = await tx
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.tunnelId, tunnelId), where))
+      .for('update');
+    if (!machine) return false;
+    await tx
+      .update(connectorConnections)
+      .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
+      .where(eq(connectorConnections.tunnelId, tunnelId));
+    await tx.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
+    return true;
+  });
+  if (deleted) tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
+  return deleted;
 }
 
 export function createConnectionsRouter() {
@@ -154,11 +219,15 @@ export function createConnectionsRouter() {
         return c.json({ error: 'name must be a non-empty string of at most 255 characters' }, 400);
       }
 
-      const [updated] = await db
-        .update(tunnelConnections)
-        .set({ name, updatedAt: new Date() })
-        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
-        .returning(SAFE_CONNECTION_COLUMNS);
+      const updated = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(tunnelConnections)
+          .set({ name, updatedAt: new Date() })
+          .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
+          .returning(SAFE_CONNECTION_COLUMNS);
+        if (row) await relabelComputerAccounts(tx, tunnelId, name);
+        return row;
+      });
       if (!updated) return c.json({ error: 'Tunnel connection not found' }, 404);
       return c.json(serializeConnection(updated));
     },
@@ -229,33 +298,70 @@ export function createConnectionsRouter() {
       const { ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
 
-      // The foreign key sets connector_connections.tunnel_id NULL on delete.
-      // Revoke those accounts first (and drop their default pin) so no
-      // resolver can pick a computer account that reaches nothing.
-      const deleted = await db.transaction(async (tx) => {
-        const [machine] = await tx
-          .select({ tunnelId: tunnelConnections.tunnelId })
-          .from(tunnelConnections)
-          .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
-          .for('update');
-        if (!machine) return false;
-        await tx
-          .update(connectorConnections)
-          .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
-          .where(eq(connectorConnections.tunnelId, tunnelId));
-        await tx.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
-        return true;
-      });
-
-      if (!deleted) {
+      if (!(await unpairMachine(tunnelId, ownerClause))) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
-
-      tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
-
       return c.json({ success: true });
     },
   );
 
+  return router;
+}
+
+/**
+ * `DELETE /v1/tunnel/self` — a machine unpairs itself (v2 X4). Mounted before
+ * user auth: the ONLY credential is the machine's own setup token
+ * (`Authorization: Bearer kortix_tnl_…` + `X-Tunnel-Id`), verified exactly
+ * like the WebSocket handshake. The agent's `logout` calls it before it clears
+ * its local credential, so a local disconnect never leaves the machine and its
+ * accounts live on the server.
+ */
+export function createTunnelSelfRouter() {
+  const router = makeOpenApiApp<AppEnv>();
+  router.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/',
+      tags: ['tunnel'],
+      summary: 'A machine unpairs itself with its own credential',
+      description:
+        "Deletes the calling machine and revokes its computer accounts, exactly like `DELETE /v1/tunnel/connections/{tunnelId}`. Authenticated only by the machine's setup token (`Authorization: Bearer kortix_tnl_…`) and `X-Tunnel-Id`. Rate-limited per client.",
+      request: {
+        headers: z.object({ 'x-tunnel-id': z.string().uuid() }),
+      },
+      responses: {
+        200: json(z.object({ success: z.boolean() }), 'The machine was unpaired'),
+        ...errors(400, 401, 429),
+      },
+    }),
+    async (c: any) => {
+      const limited = tunnelRateLimiter.check('selfUnpair', requestClientKey(c));
+      if (!limited.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: limited.retryAfterMs }, 429);
+      }
+      const tunnelId = c.req.header('x-tunnel-id') ?? '';
+      const header = c.req.header('authorization') ?? '';
+      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
+      // Look the machine up before the costly verifier, as the WS handshake does.
+      const [machine] = isTunnelToken(token)
+        ? await db
+            .select({ setupTokenHash: tunnelConnections.setupTokenHash })
+            .from(tunnelConnections)
+            .where(eq(tunnelConnections.tunnelId, tunnelId))
+            .limit(1)
+        : [];
+      if (!machine?.setupTokenHash || !verifySecretKey(token, machine.setupTokenHash)) {
+        return c.json({ error: 'Invalid machine credential' }, 401);
+      }
+      // A token rotated after the check above no longer matches this hash.
+      const unpaired = await unpairMachine(
+        tunnelId,
+        eq(tunnelConnections.setupTokenHash, machine.setupTokenHash),
+      );
+      if (!unpaired) return c.json({ error: 'Invalid machine credential' }, 401);
+      return c.json({ success: true });
+    },
+  );
   return router;
 }

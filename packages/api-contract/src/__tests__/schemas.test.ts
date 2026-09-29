@@ -82,6 +82,14 @@ describe('connection terminology', () => {
       machine: { online: true, last_heartbeat_at: '2026-09-28T00:00:00.000Z', platform: 'darwin' },
     };
     expect(ConnectionSchema.parse(computer)).toEqual(computer);
+    const asking = {
+      ...computer,
+      machine: { ...computer.machine, access: { mode: 'ask' as const, granted_until: null } },
+    };
+    expect(ConnectionSchema.parse(asking)).toEqual(asking);
+    expect(() =>
+      ConnectionSchema.parse({ ...computer, machine: { ...computer.machine, access: { mode: 'sometimes' } } }),
+    ).toThrow();
     expect(ConnectionSchema.parse({ ...computer, tunnel_id: null, machine: null })).toMatchObject({
       tunnel_id: null,
       machine: null,

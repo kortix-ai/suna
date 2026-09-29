@@ -3,6 +3,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { ConnectionMetadataSchema, ReconcileConnectionInputSchema } from '@kortix/api-contract';
 import { connectorConnections, connectors, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
+import { ensureProjectComputer } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -165,6 +166,8 @@ projectsApp.openapi(
       isServiceAccount: c.get('authType') === 'service_account',
       agentPrincipal: await requestAgentPrincipalReach(c, loaded.actor),
     };
+    // The caller's paired machines are their private accounts in every project.
+    await ensureProjectComputer(projectId, actor.isServiceAccount ? null : actor.userId);
     // A sandbox connector token is bound to ONE session. Load what that session was
     // actually GIVEN so the enumeration below can be narrowed to it. null for
     // every non-session caller, which leaves the operator's view unchanged.

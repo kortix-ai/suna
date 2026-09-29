@@ -8,6 +8,7 @@ import {
   connectorSyncFences,
   projectSessionConnectorBindings,
   projects,
+  tunnelConnections,
 } from '@kortix/db';
 /**
  * Connector materialization sweep — read `connectors:` from kortix.yaml,
@@ -18,7 +19,8 @@ import {
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
+import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
@@ -45,7 +47,12 @@ import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
-import { COMPUTER_CONNECTOR_NAME, COMPUTER_SLUG, computerCatalog } from './computers';
+import {
+  COMPUTER_CONNECTOR_NAME,
+  COMPUTER_SLUG,
+  attachComputerConnection,
+  computerCatalog,
+} from './computers';
 import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
 import { listMcpTools, type FetchImpl } from './call';
 import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
@@ -606,10 +613,13 @@ async function syncProjectConnectorsFenced(
   // desiredSlugs, so they're kept). When the manifest is UNREADABLE we must not
   // touch manifest-declared connectors (could be a transient git error) — only
   // reconcile CHANNEL rows whose install is gone, so a disconnect still cleans up.
+  // Computer connectors are never removed here: pairing creates them outside
+  // any fence, so one created after `computerSpecs` was read is not desired yet.
   const removed = existing.filter(
     (e) =>
+      e.providerType !== 'computer' &&
       !desiredSlugs.has(e.slug) &&
-      (manifest || e.providerType === 'channel' || e.providerType === 'computer'),
+      (manifest || e.providerType === 'channel'),
   );
   for (const e of removed) {
     await withConnectorSyncWrite(fence, connectorScope(e.slug), async (tx) => {
@@ -850,18 +860,29 @@ async function upsertConnector(
     const currentId = current?.connectorId ?? null;
     const isNew = !currentId;
     let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
-    // Computer connectors are not in kortix.yaml. Their sensitive flag is
-    // edited in the database, so preserve it when a sync refreshes the native
-    // catalog.
-    if (resolvedConfig && spec.provider === 'computer' && currentId) {
-      const [stored] = await tx
-        .select({ config: connectors.config })
-        .from(connectors)
-        .where(eq(connectors.connectorId, currentId))
-        .limit(1);
-      if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
-        resolvedConfig = { ...resolvedConfig, sensitive: true };
-      }
+    // Computer connectors are not in kortix.yaml. A sync refreshes their native
+    // catalog but must keep every stored key: `sensitive` is edited in the
+    // database, and the legacy keys (tunnel_ids, tunnel_account_ids,
+    // computer_profile, computer_accounts_backfilled) keep the previous API
+    // image correct during a rolling deploy or a rollback until the contract
+    // migration drops them.
+    if (resolvedConfig && spec.provider === 'computer') {
+      const [stored] = currentId
+        ? await tx
+            .select({ config: connectors.config })
+            .from(connectors)
+            .where(eq(connectors.connectorId, currentId))
+            .limit(1)
+        : [];
+      resolvedConfig = {
+        // A new connector is an explicit profile with no machines to the
+        // previous API: its gateway denies calls, its sync neither folds it
+        // into the account-wide aggregate nor deletes it.
+        ...(currentId ? {} : LEGACY_EMPTY_COMPUTER_PROFILE),
+        ...((stored?.config as Record<string, unknown> | null) ?? {}),
+        ...resolvedConfig,
+        ...((stored?.config as { sensitive?: unknown } | null)?.sensitive === true ? { sensitive: true } : {}),
+      };
     }
 
     let id = currentId;
@@ -965,6 +986,16 @@ async function upsertConnector(
   }
 }
 
+/**
+ * Config keys the previous API image reads (computer-materialize.ts). Remove
+ * with the contract migration that drops them.
+ */
+const LEGACY_EMPTY_COMPUTER_PROFILE = {
+  computer_profile: true,
+  tunnel_ids: [],
+  computer_accounts_backfilled: true,
+} as const;
+
 function computerConnectorSpec(input: {
   slug: string;
   name: string;
@@ -1043,6 +1074,9 @@ export async function ensureComputerConnector(
       .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
       .limit(1);
   const [existing] = await find();
+  // The catalog is served from code (withComputerCatalog), so an existing
+  // connector needs no rewrite unless the caller renames or re-slugs it.
+  if (existing && !requested.slug && !requested.name) return existing.connectorId;
   try {
     await upsertConnector(
       projectId,
@@ -1062,6 +1096,89 @@ export async function ensureComputerConnector(
   const [row] = await find();
   if (!row) throw new Error('computer connector was not created');
   return row.connectorId;
+}
+
+/**
+ * v2 F1+F2: every project holds the built-in computer connector, and every
+ * machine a person paired is their private account in it. Runs on connection
+ * and connector listing and when a call or catalog resolves `computer`.
+ *
+ * Idempotent and cheap when nothing is missing (two indexed reads). A missing
+ * account is created through `attachComputerConnection` under the connector
+ * row lock; the unique index (connector, owner, machine) backs it. An account
+ * that exists in any state is left alone, so an account the owner revoked in
+ * this project, or one revoked by unpairing, never comes back by itself.
+ * `userId` null (API keys, service accounts) ensures only the connector.
+ */
+export async function ensureProjectComputer(projectId: string, userId: string | null): Promise<void> {
+  // An operator acting as a customer (impersonation) must never write their
+  // own machines, or anything else, into the customer's project: the grant
+  // allows reads, and the rows would outlive it.
+  if (!config.TUNNEL_ENABLED || getImpersonationContext()) return;
+  const [project] = await db
+    .select({ accountId: projects.accountId, existing: connectors.connectorId })
+    .from(projects)
+    .leftJoin(
+      connectors,
+      and(eq(connectors.projectId, projects.projectId), eq(connectors.providerType, 'computer')),
+    )
+    .where(eq(projects.projectId, projectId))
+    .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+    .limit(1);
+  if (!project) return;
+  const connectorId = project.existing ?? (await ensureComputerConnector(projectId, project.accountId));
+  if (!userId) return;
+
+  type Reader = Pick<typeof db, 'select'>;
+  // Held: the owner's own account in any state (a revoked one stays revoked),
+  // or any active account for the machine, such as the project-shared one. A
+  // second, private account for a shared machine would give the owner two
+  // pinned accounts for one computer, and every unnamed call would answer
+  // account_required.
+  const held = (reader: Reader, tunnelId: typeof tunnelConnections.tunnelId) =>
+    reader
+      .select({ one: sql`1` })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connectorId),
+          eq(connectorConnections.tunnelId, tunnelId),
+          or(
+            and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, userId)),
+            eq(connectorConnections.status, 'active'),
+          ),
+        ),
+      );
+  const missing = (reader: Reader) =>
+    reader
+      .select({ tunnelId: tunnelConnections.tunnelId, name: tunnelConnections.name })
+      .from(tunnelConnections)
+      .where(
+        and(eq(tunnelConnections.ownerUserId, userId), notExists(held(reader, tunnelConnections.tunnelId))),
+      )
+      .orderBy(tunnelConnections.createdAt);
+  if ((await missing(db)).length === 0) return;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ connectorId: connectors.connectorId })
+      .from(connectors)
+      .where(eq(connectors.connectorId, connectorId))
+      .for('update');
+    // Re-read under the lock: a concurrent ensure may have created them.
+    for (const machine of await missing(tx)) {
+      await attachComputerConnection(tx, {
+        accountId: project.accountId,
+        projectId,
+        connectorId,
+        ownerType: 'member',
+        ownerId: userId,
+        tunnelId: machine.tunnelId,
+        name: machine.name,
+        createdBy: userId,
+      });
+    }
+  });
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */

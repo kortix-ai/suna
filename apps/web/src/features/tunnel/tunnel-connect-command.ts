@@ -18,8 +18,8 @@ export function absoluteBackendUrl({ backendUrl, origin }: BackendUrlArgs): stri
  *
  * The local agent appends its own endpoint paths under `--api-url`, so the value
  * must point at the absolute tunnel API root: `.../v1/tunnel`. `--project-id`
- * preselects the project on the approval page. Agents that predate the flag
- * ignore it, and the approval page then asks for the project.
+ * lets the approval page offer "Also share with <project>"; the machine is its
+ * owner's in every project either way. Agents that predate the flag ignore it.
  */
 export function buildTunnelConnectCommand({
   backendUrl,

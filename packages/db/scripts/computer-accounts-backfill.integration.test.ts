@@ -34,6 +34,9 @@ const FOREIGN = crypto.randomUUID();
 const PROFILE_SLOT = crypto.randomUUID();
 const AGGREGATE_SLOT = crypto.randomUUID();
 const HTTP_DEFAULT = crypto.randomUUID();
+const OWNER_SESSION = `backfill-owner-${crypto.randomUUID()}`;
+const UNATTENDED_SESSION = `backfill-cron-${crypto.randomUUID()}`;
+const AGGREGATE_SESSION = `backfill-aggregate-${crypto.randomUUID()}`;
 
 let client: pg.Client;
 
@@ -77,8 +80,8 @@ describe.skipIf(!databaseUrl)('computer_accounts backfill — migrated PostgreSQ
       [PROJECT, TEAM, OTHER_PROJECT],
     );
     await client.query(
-      `insert into kortix.tunnel_connections (tunnel_id, account_id, name) values
-         ($1, $4, 'Mac'), ($2, $4, 'mac'), ($3, $5, 'Server'), ($6, $7, 'Foreign')`,
+      `insert into kortix.tunnel_connections (tunnel_id, account_id, name, capabilities) values
+         ($1, $4, 'Mac', '["shell"]'), ($2, $4, 'mac', '[]'), ($3, $5, 'Server', '["shell"]'), ($6, $7, 'Foreign', '[]')`,
       [MAC, MAC_TWIN, SERVER, PERSON, TEAM, FOREIGN, FOREIGN_TEAM],
     );
     const auth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -112,6 +115,43 @@ describe.skipIf(!databaseUrl)('computer_accounts backfill — migrated PostgreSQ
          ($2, $4, $6, $8, 'project', null, 'Computer Tunnel', true),
          ($3, $4, $5, $9, 'project', null, 'CRM', true)`,
       [PROFILE_SLOT, AGGREGATE_SLOT, HTTP_DEFAULT, TEAM, PROJECT, OTHER_PROJECT, PROFILE, AGGREGATE, HTTP],
+    );
+    // An expired grant does not satisfy the one-active-grant-per-scope rule.
+    await client.query(
+      `insert into kortix.tunnel_permissions (tunnel_id, account_id, capability, scope, status, expires_at)
+       values ($1, $2, 'shell', '{"scope":"shell:exec"}', 'active', now() - interval '1 day')`,
+      [MAC, PERSON],
+    );
+    // Neither does a time-limited one: nothing mints grants after pairing, so
+    // the capability would be lost for good when it runs out.
+    await client.query(
+      `insert into kortix.tunnel_permissions (tunnel_id, account_id, capability, scope, status, expires_at)
+       values ($1, $2, 'shell', '{"scope":"shell:exec"}', 'active', now() + interval '3 days')`,
+      [SERVER, TEAM],
+    );
+    await client.query(
+      `insert into kortix.project_sessions (session_id, account_id, project_id, branch_name, created_by) values
+         ($1, $4, $5, 'backfill-owner', $7), ($2, $4, $5, 'backfill-cron', null), ($3, $4, $6, 'backfill-aggregate', null)`,
+      [OWNER_SESSION, UNATTENDED_SESSION, AGGREGATE_SESSION, TEAM, PROJECT, OTHER_PROJECT, PERSON],
+    );
+    await client.query(
+      `insert into kortix.project_session_connector_bindings
+         (session_id, account_id, project_id, connector_alias, connector_id, connection_id, created_by) values
+         ($1, $4, $5, 'computer', $7, $9, $10), ($2, $4, $5, 'computer', $7, $9, null),
+         ($3, $4, $6, 'computer', $8, $11, null)`,
+      [
+        OWNER_SESSION,
+        UNATTENDED_SESSION,
+        AGGREGATE_SESSION,
+        TEAM,
+        PROJECT,
+        OTHER_PROJECT,
+        PROFILE,
+        AGGREGATE,
+        PROFILE_SLOT,
+        PERSON,
+        AGGREGATE_SLOT,
+      ],
     );
   });
 
@@ -160,10 +200,39 @@ describe.skipIf(!databaseUrl)('computer_accounts backfill — migrated PostgreSQ
       `select config from kortix.connectors where connector_id = $1`,
       [PROFILE],
     );
-    expect(profile[0].config).toEqual({
-      auth: { type: 'none', in: 'header', name: null, prefix: null },
-      sensitive: true,
+    // Expand only: the previous API still routes by the legacy keys.
+    expect(profile[0].config).toMatchObject({
+      tunnel_ids: [MAC, MAC_TWIN, SERVER, GONE, FOREIGN],
+      computer_profile: true,
+      computer_accounts_backfilled: true,
     });
+
+    const { rows: names } = await client.query(
+      `select distinct name from kortix.connectors where connector_id = any($1::uuid[])`,
+      [[PROFILE, AGGREGATE]],
+    );
+    expect(names).toEqual([{ name: 'Computers' }]);
+
+    const { rows: bindings } = await client.query(
+      `select b.session_id, x.tunnel_id::text
+         from kortix.project_session_connector_bindings b
+         join kortix.connector_connections x on x.connection_id = b.connection_id
+        where b.session_id = any($1::text[])`,
+      [[OWNER_SESSION, UNATTENDED_SESSION, AGGREGATE_SESSION]],
+    );
+    expect(Object.fromEntries(bindings.map((row) => [row.session_id, row.tunnel_id]))).toEqual({
+      [OWNER_SESSION]: MAC,
+      [UNATTENDED_SESSION]: SERVER,
+    });
+
+    const { rows: grants } = await client.query(
+      `select tunnel_id::text, capability::text, scope from kortix.tunnel_permissions
+        where tunnel_id = any($1::uuid[]) and status = 'active' and expires_at is null`,
+      [[MAC, MAC_TWIN, SERVER, FOREIGN]],
+    );
+    expect(grants).toHaveLength(2);
+    expect(grants).toContainEqual({ tunnel_id: MAC, capability: 'shell', scope: { scope: 'shell:exec' } });
+    expect(grants).toContainEqual({ tunnel_id: SERVER, capability: 'shell', scope: { scope: 'shell:exec' } });
 
     expect(await connectionsOf(AGGREGATE)).toEqual([
       {
@@ -181,5 +250,10 @@ describe.skipIf(!databaseUrl)('computer_accounts backfill — migrated PostgreSQ
 
     await runBackfill();
     expect(await connectionsOf(PROFILE)).toEqual(expected);
+    const { rows: grantCount } = await client.query(
+      `select count(*)::int as n from kortix.tunnel_permissions where tunnel_id = $1`,
+      [MAC],
+    );
+    expect(grantCount[0].n).toBe(2);
   });
 });

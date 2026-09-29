@@ -24,7 +24,7 @@ describe('buildTunnelConnectCommand', () => {
     );
   });
 
-  test('preselects the project on the approval page', () => {
+  test('offers "Also share with <project>" on the approval page', () => {
     expect(
       buildTunnelConnectCommand({
         backendUrl: 'https://dev-api.kortix.com/v1',

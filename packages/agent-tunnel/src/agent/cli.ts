@@ -1,9 +1,10 @@
 import '../node-ws-polyfill';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { join } from 'path';
 
 import { TunnelAgent } from './agent';
+import { accessFilePath, accessRequestPath, desktopAppPath, readAccess, writeAccess } from './access';
 import { printStartupBanner } from './banner';
 import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
 import { loadConfig, type TunnelConfig } from './config';
@@ -20,7 +21,6 @@ import { collapseRepeatedLines, isShellStartupNoise } from './log-format';
 import { anyFlag, isInteractiveTerminal, isTruthyFlag, promptYesNo } from './prompts';
 import {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
-  TERMINAL_SERVICE_EXIT_CODE,
   agentTunnelHome,
   getServicePaths,
   getServiceStatus,
@@ -109,16 +109,19 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
     });
   }
 
-  const agent = new TunnelAgent(config, registry, {
-    onStatus: (status) => writeAgentState(status, config),
-    onTerminalClose: ({ reason }) => {
-      if (!options.service) return;
-      // Staying alive would leave a supervised process connected to nothing that
-      // the supervisor never restarts. Exit cleanly so the service stops.
-      process.stdout.write(`[agent-tunnel] stopping service: ${reason}\n`);
-      process.exit(TERMINAL_SERVICE_EXIT_CODE);
+  // A service never stops on its own (R2): a refused credential waits in
+  // `rejected` and re-reads config.json, so pairing again heals it.
+  const agent = new TunnelAgent(
+    config,
+    registry,
+    // The agent passes the credential it uses NOW: a re-pair picked up by a
+    // `rejected` service has a new tunnelId, and state.json must name it.
+    { onStatus: (status, current) => writeAgentState(status, current) },
+    {
+      persistent: options.service === true,
+      reloadConfig: () => loadConfig({ apiUrl: config.apiUrl }),
     },
-  });
+  );
   agent.connect();
 
   const shutdown = () => {
@@ -157,8 +160,10 @@ async function launch(config: TunnelConfig, flags: Flags, lease?: { serviceWasAc
     // Return instead of process.exit(): an exit can cut off a piped stdout.
     try {
       const status = SERVICE_ACTIONS.install.run();
-      emit('service', { action: 'install', ok: status.installed, active: status.active, detail: status.detail ?? '' });
-      if (!status.installed) process.exitCode = 1;
+      // Installed is not enough: a job launchd did not load keeps the computer offline.
+      const ok = status.installed && status.active === true;
+      emit('service', { action: 'install', ok, active: status.active, detail: status.detail ?? '' });
+      if (!ok) process.exitCode = 1;
     } catch (error) {
       emit('service', { action: 'install', ok: false, detail: error instanceof Error ? error.message : String(error) });
       process.exitCode = 1;
@@ -173,7 +178,7 @@ async function launch(config: TunnelConfig, flags: Flags, lease?: { serviceWasAc
   startAgent(config);
 }
 
-async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
+async function pairThisMachine(apiUrl: string, flags: Flags, lease?: { serviceWasActive: boolean }): Promise<void> {
   if (!jsonMode) {
     blankLine();
     console.log(`  ${glyph.mark} ${c.bold}Device Authorization${c.reset}`);
@@ -243,6 +248,17 @@ async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
   }
 
   saveCredentials(outcome.tunnelId, outcome.token, apiUrl, outcome.capabilities);
+  // A1: a pairing made from the desktop app asks before each use; the app is
+  // what answers. A CLI-only machine has nobody to answer a prompt, so it is
+  // always allowed (a documented deviation from A1). A new pairing never
+  // inherits a grant or an `always` from the previous one; keep awake is a
+  // machine setting and stays.
+  writeAccess({
+    mode: existsSync(desktopAppPath()) ? 'ask' : 'always',
+    grantedUntil: null,
+    deniedUntil: null,
+    keepAwake: readAccess().keepAwake,
+  });
   if (jsonMode) {
     emit('approved', { tunnelId: outcome.tunnelId, capabilities: outcome.capabilities });
   } else {
@@ -252,7 +268,7 @@ async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
     blankLine();
   }
 
-  await launch(loadConfig({ apiUrl }), flags);
+  await launch(loadConfig({ apiUrl }), flags, lease);
 }
 
 async function commandConnect(flags: Flags): Promise<void> {
@@ -272,20 +288,28 @@ async function commandConnect(flags: Flags): Promise<void> {
     fail('--project-id must be a project UUID');
   }
 
-  if (!config.token) {
-    await pairThisMachine(config.apiUrl, flags);
+  // X6: a credential saved for another backend is never sent to this one. Pair
+  // afresh; the other pairing stays on disk until this one succeeds.
+  const savedForOtherBackend =
+    Boolean(config.token) && !explicitCredentials && Boolean(flags['api-url']) &&
+    new URL(loadConfig().apiUrl).origin !== new URL(config.apiUrl).origin;
+
+  // Take the credential from the background service before probing or pairing:
+  // the relay allows one connection, and a waiting or `rejected` service picks
+  // up a new pairing within seconds and would displace this process.
+  const lease = acquireTunnelLease();
+
+  if (!config.token || savedForOtherBackend) {
+    await pairThisMachine(config.apiUrl, flags, lease);
     return;
   }
 
   if (isTruthyFlag(flags.reauth) && !explicitCredentials) {
     clearSavedCredentials();
-    await pairThisMachine(config.apiUrl, flags);
+    await pairThisMachine(config.apiUrl, flags, lease);
     return;
   }
 
-  // Take the credential from the background service before probing, so the two
-  // never race for the single connection the relay allows.
-  const lease = acquireTunnelLease();
   if (!jsonMode) {
     blankLine();
     console.log(`  ${glyph.mark} ${c.dim}Checking saved credentials…${c.reset}`);
@@ -311,7 +335,7 @@ async function commandConnect(flags: Flags): Promise<void> {
     if (explicitCredentials) fail('The supplied --token was rejected for this tunnel.');
     if (!jsonMode) console.log(`  ${glyph.warn} ${c.dim}Saved token rejected — re-authorizing${c.reset}`);
     clearSavedCredentials();
-    await pairThisMachine(config.apiUrl, flags);
+    await pairThisMachine(config.apiUrl, flags, lease);
     return;
   }
 
@@ -333,10 +357,21 @@ function commandRun(flags: Flags): void {
   const asService = flags.service === 'true';
 
   if (!config.token || !config.tunnelId) {
-    console.error(`  ${glyph.bad} No saved tunnel credentials found. Run \`agent-tunnel connect\` first.`);
-    // Restarting cannot conjure a credential. Under a supervisor this exits
-    // cleanly so the service stops instead of respawning forever.
-    process.exit(asService ? TERMINAL_SERVICE_EXIT_CODE : 1);
+    if (!asService) {
+      console.error(`  ${glyph.bad} No saved tunnel credentials found. Run \`agent-tunnel connect\` first.`);
+      process.exit(1);
+    }
+    // R2: the supervisor restarts on every exit, so exiting would only spin.
+    // Wait for a pairing to write the credential instead.
+    process.stdout.write('[agent-tunnel] no saved credential — waiting for a credential (pair this computer to start)\n');
+    const wait = setInterval(() => {
+      const next = loadConfig({ apiUrl: flags['api-url'] });
+      if (!next.token || !next.tunnelId) return;
+      clearInterval(wait);
+      rotateServiceLogs();
+      startAgent(next, { service: true });
+    }, 60_000);
+    return;
   }
 
   if (asService) rotateServiceLogs();
@@ -373,6 +408,7 @@ function commandStatus(flags: Flags): void {
       serviceLabel: getServicePaths().label,
       service,
       state: readAgentState(),
+      access: readAccess(),
       lastActivity: lastServiceActivity(),
     }, null, 2));
     return;
@@ -412,12 +448,49 @@ function commandStatus(flags: Flags): void {
   blankLine();
 }
 
-function commandLogout(flags: Flags): void {
+/**
+ * X4: `DELETE /v1/tunnel/self`, authenticated by this machine's own credential,
+ * removes the machine and its accounts on the server. Best effort: a failure
+ * never blocks the local sign-out.
+ */
+async function unpairOnServer(): Promise<boolean> {
+  let config: TunnelConfig;
+  try {
+    config = loadConfig();
+  } catch {
+    return false;
+  }
+  if (!config.token || !config.tunnelId) return false;
+  try {
+    const response = await fetch(`${config.apiUrl}/self`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${config.token}`, 'X-Tunnel-Id': config.tunnelId },
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function commandLogout(flags: Flags): Promise<void> {
+  const serverUnpaired = await unpairOnServer();
   const removed = clearSavedCredentials();
+  // The access answer belongs to this pairing; the next one starts fresh.
+  rmSync(accessFilePath(), { force: true });
+  rmSync(accessRequestPath(), { force: true });
   const keepService = isTruthyFlag(flags['keep-service']);
   if (!keepService) SERVICE_ACTIONS.uninstall.run();
 
+  if (isTruthyFlag(flags.json)) {
+    console.log(JSON.stringify({ ok: true, serverUnpaired, credentialsCleared: removed, serviceRemoved: !keepService }));
+    return;
+  }
+
   blankLine();
+  console.log(serverUnpaired
+    ? `  ${glyph.on} ${c.dim}Removed this computer from Kortix${c.reset}`
+    : `  ${glyph.warn} ${c.dim}Could not reach Kortix — remove this computer from its settings${c.reset}`);
   console.log(removed
     ? `  ${glyph.on} ${c.bold}Signed out${c.reset} ${c.dim}(credentials cleared from ${CONFIG_FILE})${c.reset}`
     : `  ${glyph.off} ${c.dim}No saved credentials to clear${c.reset}`);
@@ -509,11 +582,15 @@ const COMMANDS: Record<string, Command> = {
   },
   status: { summary: 'Show pairing, capabilities, and service state (--json)', run: commandStatus },
   logs: { summary: 'Show recent service logs (--lines <n>, --all, --clear)', run: commandLogs },
-  start: { summary: 'Start the background service', run: (f) => commandServiceAction('start', f) },
+  start: {
+    summary: 'Start the background service (resumes a paused one)',
+    run: (f) => commandServiceAction('start', f),
+    aliases: ['resume'],
+  },
   stop: {
-    summary: 'Stop the background service (keeps it installed)',
+    summary: 'Pause the background service; it stays stopped after restart until `start`',
     run: (f) => commandServiceAction('stop', f),
-    aliases: ['disable'],
+    aliases: ['disable', 'pause'],
   },
   restart: { summary: 'Restart the background service', run: (f) => commandServiceAction('restart', f) },
   'install-service': {
@@ -528,7 +605,7 @@ const COMMANDS: Record<string, Command> = {
     summary: 'Show the background service state (same view as status, --json)',
     run: commandStatus,
   },
-  logout: { summary: 'Clear saved credentials and remove the service', run: commandLogout },
+  logout: { summary: 'Remove this computer from Kortix, clear credentials, remove the service', run: commandLogout },
   run: { summary: 'Run using saved credentials (used by the service)', run: commandRun },
   'start-service': { summary: '', run: (f) => commandServiceAction('start', f), hidden: true },
   'stop-service': { summary: '', run: (f) => commandServiceAction('stop', f), hidden: true },
@@ -542,8 +619,8 @@ const OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ['--token <token> --tunnel-id <id>', 'Skip device auth and use an explicit credential'],
   ['--reauth', 'With connect: discard the saved credential and pair again'],
   ['--daemon / --foreground', 'With connect: skip the prompt and choose the mode'],
-  ['--project-id <uuid>', 'With connect: the project to connect this computer to'],
-  ['--json', 'With connect: NDJSON events, no prompts. With status: machine-readable output'],
+  ['--project-id <uuid>', 'With connect: offer "Also share with <project>" on the approval page; the computer is yours in every project either way'],
+  ['--json', 'With connect: NDJSON events, no prompts. With status and logout: machine-readable output'],
   ['--keep-service', 'With logout: keep the background service installed'],
 ];
 

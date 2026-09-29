@@ -189,7 +189,7 @@ Each API route has exactly one action. A request's row keeps the route template 
 
 Filter by an action prefix: `?action=iam.` on `GET /v1/accounts/:accountId/audit`, `kortix audit ls --action iam.`, or an audit webhook's `--action-prefix`. [Audit log actions](/docs/audit-actions) lists every action and its title. Rows written before 2026-09-24 carry `METHOD /template` as their action and show the same titles.
 
-Kortix background jobs act without a request: they expire grants and tunnel permissions, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
+Kortix background jobs act without a request: they expire grants, delete expired session branches, activate App deployments, and move projects between sandbox providers. Their rows have `source: worker`, and `metadata.auth.worker` names the job, for example `tunnel-cleanup` or `app-deployments`. An App deployment's row also names the member who started the deployment as its initiator.
 
 An anonymous request that names one of your projects is written to your log. Select these rows with `actor_type=anonymous`. Anonymous rows are rate-limited on each API process, so a flood of them cannot displace attributed rows. Health probes, CORS preflights, and anonymous traffic to a deployed App are not recorded.
 

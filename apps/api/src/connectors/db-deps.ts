@@ -138,7 +138,7 @@ import type {
   ConnectorRouterDeps,
   ListCatalogOptions,
 } from './router';
-import { withComputerCatalog } from './computers';
+import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { resolveShareSubject } from './share';
 import {
   connectorCatalogSections,
@@ -148,6 +148,7 @@ import {
 import {
   discoverDraftConnectorAuth,
   ensureComputerConnector,
+  ensureProjectComputer,
   setMaterializedComputerConnectorPolicies,
   syncProjectConnectors,
 } from './sync';
@@ -551,6 +552,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Spec 2026-09-22 §2.5: an agent session calling a same-project Kortix App.
     appAuthorizationFor: (input) => appAuthorizationForConnectorCall(input),
     loadConnectorBySlug: async (projectId, slug) => {
+      if (canonicalConnectorAlias(slug) === COMPUTER_SLUG) {
+        await ensureProjectComputer(projectId, principal.userId);
+      }
       const [row] = await db
         .select()
         .from(connectors)
@@ -569,6 +573,46 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         connector.connectionTunnelId = machine?.tunnelId ?? null;
       }
       return connector;
+    },
+    selectComputerAccount: async (projectId, slug, selector) => {
+      const [row] = await db
+        .select({ connectorId: connectors.connectorId, providerType: connectors.providerType })
+        .from(connectors)
+        .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+        .limit(1);
+      if (row?.providerType !== 'computer') return 'not_computer';
+      const name = typeof selector === 'string' ? selector.trim() : '';
+      if (!name) return null;
+      // A tunnel id names the machine; its account ids go first. The name
+      // itself is tried last as an account label or connection id.
+      const byMachine = isUuid(name)
+        ? await db
+            .select({ connectionId: connectorConnections.connectionId })
+            .from(connectorConnections)
+            .where(
+              and(
+                eq(connectorConnections.connectorId, row.connectorId),
+                eq(connectorConnections.tunnelId, name),
+                eq(connectorConnections.status, 'active'),
+              ),
+            )
+        : [];
+      const named = principal.requestedConnectorAccount
+        ? await makeDbGatewayDeps(principal).loadConnectorBySlug(projectId, slug)
+        : null;
+      for (const account of [...byMachine.map((match) => match.connectionId), name]) {
+        const selected = await makeDbGatewayDeps({
+          ...principal,
+          requestedConnectorAccount: account,
+        }).loadConnectorBySlug(projectId, slug);
+        if (!selected) continue;
+        // --account and the legacy argument must agree.
+        if (principal.requestedConnectorAccount && named?.connectionId !== selected.connectionId) {
+          return null;
+        }
+        return selected;
+      }
+      return null;
     },
     explainMissingConnector: async (projectId, slug) => {
       const [row] = await db
@@ -1201,6 +1245,7 @@ async function listCatalog(
   options: ListCatalogOptions = {},
 ): Promise<CatalogConnector[]> {
   const wantedSlug = options.slug ? canonicalConnectorAlias(options.slug) : null;
+  if (!wantedSlug || wantedSlug === COMPUTER_SLUG) await ensureProjectComputer(p.projectId, p.userId);
   const allConns = hideSupersededSlack(
     await db
       .select()
@@ -1428,15 +1473,21 @@ async function resolveSecretReader(
  * checks below still apply either way.
  */
 /**
- * A computer connector that never held a machine (the legacy aggregate the old
- * sync created in every project) or whose machines were all unpaired is not
- * shown: it has nothing to manage, and adding a computer recreates the view.
+ * The built-in computer connector (the one `ensureProjectComputer` picks) is
+ * always shown. Any other computer connector (a legacy per-machine profile)
+ * that holds no machine is hidden: it has nothing to manage.
  */
-async function hideMachinelessComputers<T extends { connectorId: string; providerType: string }>(
+async function hideMachinelessComputers<
+  T extends { connectorId: string; providerType: string; slug: string; createdAt: Date },
+>(
   rows: T[],
 ): Promise<T[]> {
-  const computerIds = rows.filter((row) => row.providerType === 'computer').map((row) => row.connectorId);
-  if (computerIds.length === 0) return rows;
+  const computers = rows.filter((row) => row.providerType === 'computer');
+  if (computers.length === 0) return rows;
+  const builtIn =
+    computers.find((row) => row.slug === COMPUTER_SLUG) ??
+    [...computers].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0]!;
+  const computerIds = computers.map((row) => row.connectorId);
   const withMachine = new Set(
     (
       await db
@@ -1450,7 +1501,9 @@ async function hideMachinelessComputers<T extends { connectorId: string; provide
         )
     ).map((row) => row.connectorId),
   );
-  return rows.filter((row) => row.providerType !== 'computer' || withMachine.has(row.connectorId));
+  return rows.filter(
+    (row) => row.providerType !== 'computer' || row === builtIn || withMachine.has(row.connectorId),
+  );
 }
 
 async function listConnectors(
@@ -1458,6 +1511,7 @@ async function listConnectors(
   actingUserId?: string | null,
   options: { includeSchemas?: boolean } = {},
 ): Promise<AdminConnectorView[]> {
+  await ensureProjectComputer(projectId, actingUserId ?? null);
   const conns = await hideMachinelessComputers(
     hideSupersededSlack(
       await db.select().from(connectors).where(eq(connectors.projectId, projectId)),
@@ -1787,6 +1841,7 @@ async function getConnectorPolicies(
       .select({
         connectorId: connectors.connectorId,
         config: connectors.config,
+        providerType: connectors.providerType,
       })
       .from(connectors)
       .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
@@ -2021,6 +2076,27 @@ async function deleteComputerConnectorProfile(
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row || row.providerType !== 'computer') return null;
+  // F1: the built-in computer connector (the one ensureProjectComputer picks)
+  // is never removable. Deleting it cascades to every account on it, and the
+  // project-shared ones would never come back. A legacy extra profile goes
+  // only while no machine is attached to it.
+  const [builtIn] = await db
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')))
+    .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+    .limit(1);
+  if (builtIn?.connectorId === row.connectorId) {
+    return { ok: false, error: 'The built-in computer connector cannot be removed. Unpair or revoke a computer instead.', status: 409 };
+  }
+  const [attached] = await db
+    .select({ one: sql`1` })
+    .from(connectorConnections)
+    .where(and(eq(connectorConnections.connectorId, row.connectorId), isNotNull(connectorConnections.tunnelId)))
+    .limit(1);
+  if (attached) {
+    return { ok: false, error: 'This computer connector still has computers attached. Unpair or revoke them first.', status: 409 };
+  }
   await db.transaction(async (tx) => {
     await tx
       .delete(projectSessionConnectorBindings)

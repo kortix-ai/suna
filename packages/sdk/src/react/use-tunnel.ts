@@ -243,9 +243,11 @@ export function useDenyPermissionRequest() {
 // ─── Project Hooks ───────────────────────────────────────────────────────────
 
 /**
- * Add a machine the caller already paired to a project, as an account of the
- * project's `computer` connector. `share: 'me'` (default) keeps it private;
- * `'project'` shares it and needs the connector-manage capability.
+ * Share a machine the caller paired with a project (`share: 'project'`, needs
+ * the connector-manage capability): everyone in the project can use it,
+ * including unattended runs. A private account is not needed: the owner's own
+ * account follows them into every project they belong to. `share: 'me'`
+ * (the server default) stays accepted and is idempotent.
  */
 export function useAddComputerToProject() {
   const queryClient = useQueryClient();
@@ -267,8 +269,9 @@ export function useAddComputerToProject() {
 export interface DeviceAuthInfo {
   deviceCode: string;
   machineHostname: string | null;
-  /** The project the machine asked to join (`connect --project-id`). `null`
-   *  when it named none; absent on older servers. */
+  /** The project the machine named (`connect --project-id`): approving with
+   *  `share: 'project'` also shares the machine with it. `null` when it named
+   *  none; absent on older servers. */
   projectId?: string | null;
   status: 'pending' | 'approved' | 'denied' | 'expired';
   expiresAt: string;
@@ -293,11 +296,12 @@ export function useDeviceAuthInfo(code: string) {
 }
 
 /**
- * Approve a pairing request. The server creates the machine and adds it to
- * `projectId` as an account of the `computer` connector: private to the
- * caller (`share: 'me'`, the default) or shared with the project
- * (`share: 'project'`, needs the connector-manage capability). `projectId` may
- * be omitted only when the machine named one (`DeviceAuthInfo.projectId`).
+ * Approve a pairing request. The machine belongs to the caller and is theirs
+ * in every project they are a member of, in their private sessions
+ * (`share: 'me'`, the default). `share: 'project'` also shares it with a
+ * project (needs the connector-manage capability there): `projectId`, or the
+ * project the machine named (`DeviceAuthInfo.projectId`) when it is omitted.
+ * Older servers need a project for every approval.
  */
 export function useApproveDeviceAuth() {
   const queryClient = useQueryClient();
@@ -309,9 +313,9 @@ export function useApproveDeviceAuth() {
       projectId?: string;
       share?: ConnectorConnectOwner;
     }) => {
-      // `connectionId` is the computer account created on the project; absent
-      // on older servers.
-      const res = await backendApi.post<{ success: boolean; tunnelId: string; connectionId?: string }>(
+      // `connectionId` is the computer account created on the project: `null`
+      // when the approval named no project, absent on older servers.
+      const res = await backendApi.post<{ success: boolean; tunnelId: string; connectionId?: string | null }>(
         `/tunnel/device-auth/${code}/approve`,
         {
           ...data,

@@ -315,13 +315,20 @@ export interface DesktopComputerStatus {
   /** This machine holds a pairing credential. */
   paired: boolean;
   tunnelId?: string;
+  /** Relay the local pairing belongs to, e.g. `https://api.kortix.com/v1/tunnel`. */
+  apiUrl?: string;
   /** Live connection of the local agent, from its state file. */
-  status?: 'online' | 'offline' | 'connecting';
+  state?: DesktopComputerState;
+  /** Paused by the owner: stays stopped across restarts until resumed. */
+  paused?: boolean;
   serviceInstalled: boolean;
-  /** False while computer access is paused. */
+  /** False while computer access is paused or the service is down. */
   serviceActive: boolean;
   error?: string;
 }
+
+/** `rejected` = the credential was refused (reconnect); `standby` = another process holds it. */
+export type DesktopComputerState = 'online' | 'connecting' | 'offline' | 'rejected' | 'standby';
 
 export interface DesktopComputerConnectResult {
   ok: boolean;
@@ -329,6 +336,33 @@ export interface DesktopComputerConnectResult {
   /** The machine was already paired; the saved pairing was reused. */
   existing?: boolean;
   error?: string;
+}
+
+export interface DesktopComputerDisconnectResult {
+  ok: boolean;
+  /** The machine removed itself from Kortix. False: the server still lists it. */
+  serverUnpaired?: boolean;
+  status: DesktopComputerStatus;
+  error?: string;
+}
+
+/** Access control enforced on this machine (the owner answers a native prompt). */
+export interface DesktopComputerAccess {
+  mode: 'ask' | 'always' | 'off';
+  grantedUntil: string | null;
+  deniedUntil: string | null;
+  keepAwake: boolean;
+  keepAwakeSupported: boolean;
+  pendingRequest: { id: string; capability: string; requestedAt: string } | null;
+}
+
+export interface DesktopComputerAccessInput {
+  mode?: DesktopComputerAccess['mode'];
+  /** Allow for this many minutes (max 24 h). */
+  grantMinutes?: number;
+  /** End the current grant now. */
+  revoke?: boolean;
+  keepAwake?: boolean;
 }
 
 async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
@@ -339,22 +373,58 @@ async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): P
   }
 }
 
+/**
+ * Like `desktopCommand`, but a failure the desktop app reports rejects with its
+ * message instead of reading as "not the desktop app". `null` = not desktop.
+ */
+async function desktopAction<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
+  const pending = tauriInvoke<T>(cmd, args);
+  if (!pending) return null;
+  try {
+    return ((await pending) ?? null) as T | null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+  }
+}
+
+/** Pause/resume answer `{ ok, error?, status }` (X5). */
+async function desktopServiceVerb(cmd: string): Promise<DesktopComputerStatus | null> {
+  const result = await desktopAction<{ ok: boolean; error?: string; status: DesktopComputerStatus }>(cmd);
+  if (!result) return null;
+  if (!result.ok) throw new Error(result.error || 'The desktop app could not change computer access.');
+  return result.status;
+}
+
 export const desktopComputerStatus = () => desktopCommand<DesktopComputerStatus>('computer_status');
 
 /**
- * Pairs this machine to `projectId` and installs the background service. The
- * desktop app opens the approval page itself and resolves once the service
- * runs. `apiUrl` is the absolute backend URL, e.g. `https://api.kortix.com/v1`.
+ * Pairs this machine and installs the background service. The desktop app
+ * derives the backend from its own instance and opens the approval page
+ * itself; it resolves once the service runs. `projectId` is optional (F3).
+ * `{ ok: false, error: 'cancelled' }`: the person closed the approval window.
  */
-export const desktopComputerConnect = (input: { apiUrl: string; projectId: string }) =>
-  desktopCommand<DesktopComputerConnectResult>('computer_connect', input);
+export const desktopComputerConnect = (input: {
+  projectId?: string;
+  /** Drop the local pairing first: this backend does not know it. */
+  reauth?: boolean;
+}) => desktopCommand<DesktopComputerConnectResult>('computer_connect', input);
 
-export const desktopComputerPause = () => desktopCommand<DesktopComputerStatus>('computer_pause');
-export const desktopComputerResume = () => desktopCommand<DesktopComputerStatus>('computer_resume');
-/** Removes the service and the local credential. The machine record is removed by the API. */
+/** Pause survives a restart or a new login; Resume reverses it. Rejects on failure. */
+export const desktopComputerPause = () => desktopServiceVerb('computer_pause');
+export const desktopComputerResume = () => desktopServiceVerb('computer_resume');
+/**
+ * Removes this machine from Kortix with its own credential, then the local
+ * credential and the service. `serverUnpaired: false` = Kortix was not
+ * reachable; the machine record must be removed through the API.
+ */
 export const desktopComputerDisconnect = () =>
-  desktopCommand<{ ok: boolean; status: DesktopComputerStatus }>('computer_disconnect');
-export const desktopComputerOpenLogs = () => desktopCommand<null>('computer_open_logs');
+  desktopCommand<DesktopComputerDisconnectResult>('computer_disconnect');
+export const desktopComputerOpenLogs = () => desktopAction<null>('computer_open_logs');
+export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAccess>('computer_access_get');
+/** Rejects with the desktop app's message on invalid input. */
+export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
+  desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
 
 export const desktopWindow = {
   minimize: () => tauri()?.window.getCurrentWindow().minimize(),

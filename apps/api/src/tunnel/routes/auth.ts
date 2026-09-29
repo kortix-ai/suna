@@ -6,6 +6,7 @@ import {
   isImpersonationBlockedAccount,
 } from '../../shared/impersonation';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
 
 /**
@@ -25,10 +26,14 @@ import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
  * non-human principal.
  */
 
-/** Allow only human credentials — used to fence off tunnel management. */
+/**
+ * Allow only human credentials — used to fence off tunnel management. A
+ * session or agent token carries its creator's user id; accepting it would
+ * let an agent pair, share, or unpair that human's computer.
+ */
 export function requireUserCredential(c: any): void {
   const authType = c.get('authType');
-  if (authType !== 'supabase' && authType !== 'pat') {
+  if ((authType !== 'supabase' && authType !== 'pat') || isProjectSessionPrincipal(c)) {
     throw new HTTPException(403, {
       message: 'User credentials are required for tunnel management',
     });

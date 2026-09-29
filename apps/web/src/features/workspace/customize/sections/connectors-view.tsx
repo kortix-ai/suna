@@ -21,7 +21,7 @@ import {
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
@@ -81,6 +81,7 @@ import {
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
 import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
+import { useAddComputerToProject, useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -121,7 +122,7 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ComputerConnectModal, MachineDot } from '@/features/tunnel/computer-connect';
+import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
@@ -307,7 +308,7 @@ function ConnectionRow({
               label={connection.machine?.online ? tComputers('online') : tComputers('offline')}
             >
               <span className="inline-flex p-1">
-                <MachineDot online={connection.machine?.online} />
+                <ComputerStateDot state={connection.machine?.online ? 'online' : 'offline'} />
               </span>
             </Hint>
           ) : null}
@@ -494,6 +495,7 @@ export function ConnectionsList({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
+  const tComputers = useTranslations('computers');
   // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
   // creates the account and this then opens `SetCredentialModal` for it. A
   // managed provider (Composio/Pipedream) runs hosted OAuth through
@@ -608,6 +610,12 @@ export function ConnectionsList({
     },
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
   });
+  // A computer is shared by sharing the MACHINE with the project: a shared
+  // account appears beside the owner's own, which keeps following them.
+  const shareComputer = useAddComputerToProject();
+  // Your own computer row follows you into every project, so its Disconnect
+  // removes the machine from Kortix (every project), not one account.
+  const unpairComputer = useDeleteTunnelConnection();
   const disconnect = useMutation({
     mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
     onSuccess: () => {
@@ -673,6 +681,64 @@ export function ConnectionsList({
         })
     : undefined;
 
+  // A member's computer account follows them into every project, so it is
+  // never removed from one project: Disconnect unpairs the machine.
+  const ownComputer = (connection: Connection) => isComputer && connection.owner_type === 'member';
+  const sharedMachine = (connection: Connection) =>
+    rows.some(
+      (row) =>
+        row.owner_type === 'project' &&
+        row.status === 'active' &&
+        row.tunnel_id === connection.tunnel_id,
+    );
+  const shareMachine = (connection: Connection) => {
+    if (!connection.tunnel_id) return;
+    shareComputer.mutate(
+      { projectId, tunnelId: connection.tunnel_id, share: 'project' },
+      {
+        onSuccess: () => {
+          successToast(tComputers('sharedWithProject'));
+          refresh();
+        },
+        onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('texta2cf78785484')),
+      },
+    );
+  };
+  const renderRow = (connection: Connection) => {
+    const mine = ownComputer(connection);
+    return (
+      <ConnectionRow
+        key={connection.connection_id}
+        connection={connection}
+        viewerId={viewerId}
+        isMine={connection.owner_type === 'member'}
+        canManage={canManageConnections}
+        pending={
+          pendingConnectionId === connection.connection_id ||
+          (shareComputer.isPending && shareComputer.variables?.tunnelId === connection.tunnel_id)
+        }
+        disabled={disabled}
+        onSetDefault={() => setDefault.mutate(connection.connection_id)}
+        onDisconnect={() => setConfirmDisconnect(connection)}
+        onRename={() => openRename(connection)}
+        onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
+        onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+        onShare={
+          mine
+            ? !connection.tunnel_id || sharedMachine(connection)
+              ? undefined
+              : () => shareMachine(connection)
+            : accountId
+              ? () => {
+                  setShareTarget(connection);
+                  setShareOpen(true);
+                }
+              : undefined
+        }
+      />
+    );
+  };
+
   return (
     <div className="space-y-6">
       <section className="space-y-4">
@@ -695,33 +761,10 @@ export function ConnectionsList({
             title={tSharing('noAccountsTitle')}
             description={tSharing('noAccountsDescription', { connector: displayName })}
           />
+        ) : isComputer ? (
+          <ComputerAccountGroups rows={rows} renderRow={renderRow} />
         ) : (
-          <ul className="space-y-2">
-            {rows.map((connection) => (
-              <ConnectionRow
-                key={connection.connection_id}
-                connection={connection}
-                viewerId={viewerId}
-                isMine={connection.owner_type === 'member'}
-                canManage={canManageConnections}
-                pending={pendingConnectionId === connection.connection_id}
-                disabled={disabled}
-                onSetDefault={() => setDefault.mutate(connection.connection_id)}
-                onDisconnect={() => setConfirmDisconnect(connection)}
-                onRename={() => openRename(connection)}
-                onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
-                onSetCredential={setCredential ? () => setCredential(connection) : undefined}
-                onShare={
-                  accountId
-                    ? () => {
-                        setShareTarget(connection);
-                        setShareOpen(true);
-                      }
-                    : undefined
-                }
-              />
-            ))}
-          </ul>
+          <ul className="space-y-2">{rows.map(renderRow)}</ul>
         )}
       </section>
 
@@ -858,14 +901,30 @@ export function ConnectionsList({
         onOpenChange={(open) => !open && setConfirmDisconnect(null)}
         title={tI18nComplete('text13716a578591', { value0: confirmDisconnect?.label ?? '' })}
         description={
-          confirmDisconnect?.owner_type === 'project'
-            ? tI18nComplete.raw('texte2cbafcec553')
-            : tI18nComplete.raw('text64db32d83da9')
+          confirmDisconnect && ownComputer(confirmDisconnect)
+            ? tComputers('unpairDescription')
+            : confirmDisconnect?.owner_type === 'project'
+              ? tI18nComplete.raw('texte2cbafcec553')
+              : tI18nComplete.raw('text64db32d83da9')
         }
         confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
-        isPending={disconnect.isPending}
-        onConfirm={() => confirmDisconnect && disconnect.mutate(confirmDisconnect.connection_id)}
+        isPending={disconnect.isPending || unpairComputer.isPending}
+        onConfirm={() => {
+          if (!confirmDisconnect) return;
+          if (ownComputer(confirmDisconnect) && confirmDisconnect.tunnel_id) {
+            unpairComputer.mutate(confirmDisconnect.tunnel_id, {
+              onSuccess: () => {
+                successToast(tComputers('disconnected'));
+                setConfirmDisconnect(null);
+                refresh();
+              },
+              onError: (e: Error) => errorToast(e.message || tComputers('disconnectFailed')),
+            });
+            return;
+          }
+          disconnect.mutate(confirmDisconnect.connection_id);
+        }}
       />
 
       {isComputer ? (
@@ -893,6 +952,34 @@ export function ConnectionsList({
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A computer's accounts in two groups: the caller's own machines, which follow
+ * them into every project, and the machines shared with this project.
+ */
+function ComputerAccountGroups({
+  rows,
+  renderRow,
+}: {
+  rows: readonly Connection[];
+  renderRow: (connection: Connection) => ReactNode;
+}) {
+  const t = useTranslations('computers');
+  const groups = [
+    { key: 'yours', label: t('groupYours'), rows: rows.filter((row) => row.owner_type === 'member') },
+    { key: 'shared', label: t('groupShared'), rows: rows.filter((row) => row.owner_type !== 'member') },
+  ].filter((group) => group.rows.length > 0);
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <div key={group.key} className="space-y-2">
+          <p className="text-muted-foreground text-xs">{group.label}</p>
+          <ul className="space-y-2">{group.rows.map(renderRow)}</ul>
+        </div>
+      ))}
     </div>
   );
 }

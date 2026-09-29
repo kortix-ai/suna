@@ -77,9 +77,10 @@ function startServer(): string {
           requestId: 'auth_1',
         });
       }
-      if (url.pathname === `${ex}/connectors/gmail/accounts` && req.method === 'GET') {
+      const accountsSlug = /\/connectors\/(gmail|computer)\/accounts$/.exec(url.pathname)?.[1];
+      if (accountsSlug && url.pathname.startsWith(ex) && req.method === 'GET') {
         return Response.json({
-          connector: 'gmail',
+          connector: accountsSlug,
           accounts: connectorAccounts,
         });
       }
@@ -485,6 +486,26 @@ describe('kortix connectors — capability-page parity', () => {
       connector: 'gmail',
       accounts: [],
       note: `Nothing is connected to "gmail" yet. Run 'kortix connectors connect gmail --owner me'.`,
+    });
+  });
+
+  // A computer is paired, not connected with a credential: `connect computer`
+  // cannot add one, so the remedy names the desktop app and the pairing command.
+  test('accounts with no computer connected names pairing, not connect, in both faces', async () => {
+    connectorAccounts = [];
+    const config = writeConfig(startServer());
+    const human = await runCli(['connectors', 'accounts', 'computer', '--project', PROJECT], config);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('No computer is connected.');
+    expect(human.stdout).toContain('npx @kortix/agent-tunnel connect');
+    expect(human.stdout).not.toContain('connectors connect computer');
+
+    const json = await runCli(['connectors', 'accounts', 'computer', '--project', PROJECT, '--json'], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({
+      connector: 'computer',
+      accounts: [],
+      note: 'No computer is connected. Connect one from the Kortix desktop app, or run `npx @kortix/agent-tunnel connect` on the computer.',
     });
   });
 

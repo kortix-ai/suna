@@ -15,7 +15,12 @@
  *   • the gateway maps machine state to `computer_offline`,
  *     `computer_unpaired`, `computer_capability_not_approved`, and answers
  *     `status` server-side;
- *   • unpairing revokes every account of the machine.
+ *   • unpairing revokes every account of the machine;
+ *   • v2: approve needs no project, every project the owner opens gets their
+ *     machines as private accounts (never resurrecting a revoked one), labels
+ *     follow renames, the agent's access mode is stored and shown, access
+ *     refusals map to typed errors, the legacy `computer` argument selects an
+ *     account, and a machine can unpair itself with its own token.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
@@ -29,14 +34,18 @@ import {
   projectMembers,
   projectSessions,
   projects,
+  sessionSandboxes,
   tunnelConnections,
   tunnelDeviceAuthRequests,
   tunnelPermissions,
 } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { ensureDefaultConnection } from '../connectors/credentials';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
-import { syncProjectConnectors } from '../connectors/sync';
+import { ensureProjectComputer, syncProjectConnectors } from '../connectors/sync';
+import { runWithContext } from '../lib/request-context';
+import { setImpersonationContext } from '../shared/impersonation';
 import { handleCall } from '../connectors/gateway';
 import type { ConnectorPrincipal } from '../connectors/router';
 import { app } from '../index';
@@ -48,10 +57,14 @@ import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
 import { createConnectionsRouter } from '../tunnel/routes/connections';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
+import { generateTunnelToken, hashSecretKey } from '../shared/crypto';
+import { parseAccessState } from '../tunnel';
+import { computerAccessErrorKind, machineAccess } from '../tunnel/core/rpc-core';
 
 const ACCOUNT = crypto.randomUUID();
 const OTHER_ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
+const PROJECT_TWO = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const ALICE = crypto.randomUUID();
@@ -122,6 +135,15 @@ beforeAll(async () => {
       visibility: 'project',
     },
   ]);
+  // A session token is valid only while its sandbox is live.
+  await db.insert(sessionSandboxes).values({
+    sandboxId: SHARED_SESSION,
+    sessionId: SHARED_SESSION,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    externalId: `computer-accounts-${SHARED_SESSION}`,
+    status: 'active',
+  });
 });
 
 afterAll(async () => {
@@ -131,13 +153,23 @@ afterAll(async () => {
       sql`, `,
     )})`,
   );
+  // The sandbox identity guard allows the delete once the session is deleted.
+  await db.execute(sql`
+    update kortix.project_sessions
+       set metadata = coalesce(metadata, '{}'::jsonb) || '{"deletedAt":"cleanup"}'::jsonb
+     where project_id = ${PROJECT}::uuid`);
+  await db.delete(sessionSandboxes).where(eq(sessionSandboxes.projectId, PROJECT));
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
-  await db.delete(connectorConnections).where(eq(connectorConnections.projectId, PROJECT));
-  await db.delete(connectors).where(eq(connectors.projectId, PROJECT));
+  await db
+    .delete(connectorConnections)
+    .where(inArray(connectorConnections.projectId, [PROJECT, PROJECT_TWO]));
+  await db.delete(connectors).where(inArray(connectors.projectId, [PROJECT, PROJECT_TWO]));
   await db
     .delete(tunnelConnections)
-    .where(inArray(tunnelConnections.accountId, [ACCOUNT, OTHER_ACCOUNT]));
-  await db.delete(projects).where(eq(projects.projectId, PROJECT));
+    // Private machines live in their owner's personal account (id = user id).
+    .where(inArray(tunnelConnections.accountId, [ACCOUNT, OTHER_ACCOUNT, OWNER, MANAGER, ALICE, BOB]));
+  await deleteFromView(db, projectMembers, eq(projectMembers.projectId, PROJECT_TWO));
+  await db.delete(projects).where(inArray(projects.projectId, [PROJECT, PROJECT_TWO]));
   await deleteFromView(db, accountMembers, eq(accountMembers.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
@@ -243,7 +275,9 @@ describe('pairing a computer creates a private computer account', () => {
       .select()
       .from(tunnelConnections)
       .where(eq(tunnelConnections.tunnelId, aliceTunnel));
-    expect(machine).toMatchObject({ accountId: ACCOUNT, ownerUserId: ALICE, name: 'Alice Mac' });
+    // A private machine lives in its owner's personal account, where the
+    // previous API image never shows it to the team's owners and admins.
+    expect(machine).toMatchObject({ accountId: ALICE, ownerUserId: ALICE, name: 'Alice Mac' });
     const grants = await db
       .select({ capability: tunnelPermissions.capability })
       .from(tunnelPermissions)
@@ -269,11 +303,46 @@ describe('pairing a computer creates a private computer account', () => {
     expect(connector).toEqual({ slug: 'computer', providerType: 'computer' });
   });
 
-  test('approve without a project (none sent by the machine) is refused', async () => {
+  test('approve without a project pairs the machine to the caller alone; sharing still needs one', async () => {
     const pairing = await startPairing({ machineHostname: 'no-project.local' });
-    const response = await approve(ALICE, pairing.deviceCode, { capabilities: [] });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: 'project_id is required' });
+    const response = await approve(ALICE, pairing.deviceCode, { name: 'Alice Travel', capabilities: [] });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { tunnelId: string; connectionId: string | null };
+    expect(body.connectionId).toBeNull();
+    const [machine] = await db
+      .select()
+      .from(tunnelConnections)
+      .where(eq(tunnelConnections.tunnelId, body.tunnelId));
+    expect(machine).toMatchObject({ accountId: ALICE, ownerUserId: ALICE, name: 'Alice Travel' });
+    const accounts = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.tunnelId, body.tunnelId));
+    expect(accounts).toEqual([]);
+
+    const unshared = await startPairing({ machineHostname: 'no-project-shared.local' });
+    const refused = await approve(MANAGER, unshared.deviceCode, { capabilities: [], share: 'project' });
+    expect(refused.status).toBe(400);
+  });
+
+  test('an agent session token cannot approve a pairing', async () => {
+    const sessionToken = await createAccountToken({
+      accountId: ACCOUNT,
+      userId: ALICE,
+      name: 'computer-accounts-approve-session',
+      projectId: PROJECT,
+      sessionId: SHARED_SESSION,
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
+    });
+    minted.push(sessionToken.tokenId);
+    const pairing = await startPairing({ machineHostname: 'agent.local' });
+    const response = await request(
+      'POST',
+      `/v1/tunnel/device-auth/${pairing.deviceCode}/approve`,
+      sessionToken.secretKey,
+      { capabilities: [] },
+    );
+    expect(response.status).toBe(403);
   });
 
   test('approve into a project the caller cannot read is 404, and the request stays pending', async () => {
@@ -304,6 +373,8 @@ describe('pairing a computer creates a private computer account', () => {
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as { tunnelId: string; connectionId: string };
     sharedTunnel = body.tunnelId;
+    const [machine] = await db.select().from(tunnelConnections).where(eq(tunnelConnections.tunnelId, sharedTunnel));
+    expect(machine?.accountId).toBe(ACCOUNT);
     expect(await computerConnection(body.connectionId)).toMatchObject({
       ownerType: 'project',
       ownerId: null,
@@ -333,8 +404,9 @@ describe('a private computer stays private', () => {
 
   test('the direct machine list shows only the caller-owned machines', async () => {
     const aliceList = await tunnelAppFor(ALICE).request('/connections');
-    const aliceIds = ((await aliceList.json()) as Array<{ tunnelId: string }>).map((r) => r.tunnelId);
-    expect(aliceIds).toEqual([aliceTunnel]);
+    const aliceRows = (await aliceList.json()) as Array<{ tunnelId: string; ownerUserId: string }>;
+    expect(aliceRows.map((r) => r.tunnelId)).toContain(aliceTunnel);
+    expect(aliceRows.every((r) => r.ownerUserId === ALICE)).toBe(true);
     const bobList = await tunnelAppFor(BOB).request('/connections');
     const bobIds = ((await bobList.json()) as Array<{ tunnelId: string }>).map((r) => r.tunnelId);
     expect(bobIds).not.toContain(aliceTunnel);
@@ -401,6 +473,15 @@ describe('the gateway maps machine state onto typed errors', () => {
     const res = await call(principal(), 'fs.read', { path: '/etc/hosts' });
     expect(res.status).toBe('error');
     if (res.status === 'error') expect(res.reason).toStartWith('computer_offline: ');
+  });
+
+  test('the legacy `computer` argument naming nothing the caller may use is refused, never relayed', async () => {
+    const res = await call(principal(), 'fs.read', { computer: 'Some Other Machine', path: '/etc/hosts' });
+    expect(res.status).toBe('denied');
+    if (res.status === 'denied') {
+      expect(res.reason).toStartWith('account_not_found: ');
+      expect(res.reason).toContain('--account');
+    }
   });
 
   test('a capability not approved at pairing → computer_capability_not_approved', async () => {
@@ -478,7 +559,14 @@ describe('the computer connector is a regular connector', () => {
       .select({ connectorId: connectors.connectorId, config: connectors.config })
       .from(connectors)
       .where(and(eq(connectors.projectId, PROJECT), eq(connectors.slug, 'computer')));
-    expect(connector?.config).toEqual({ auth: { type: 'none', in: 'header', name: null, prefix: null } });
+    // The legacy keys make the previous API image read a new connector as an
+    // explicit profile with no machines (deny, never fold, never delete).
+    expect(connector?.config).toEqual({
+      auth: { type: 'none', in: 'header', name: null, prefix: null },
+      computer_profile: true,
+      tunnel_ids: [],
+      computer_accounts_backfilled: true,
+    });
     const actions = await db
       .select({ path: connectorActions.path })
       .from(connectorActions)
@@ -514,6 +602,7 @@ describe('POST /projects/:id/computers adds an already-paired computer', () => {
   let laptop = '';
   let teamMachine = '';
   let foreignMachine = '';
+  let managerForeignMachine = '';
 
   beforeAll(async () => {
     const rows = await db
@@ -522,11 +611,13 @@ describe('POST /projects/:id/computers adds an already-paired computer', () => {
         { accountId: ACCOUNT, ownerUserId: ALICE, name: 'Alice Laptop', capabilities: ['filesystem'] },
         { accountId: ACCOUNT, ownerUserId: null, name: 'Team Server', capabilities: ['shell'] },
         { accountId: OTHER_ACCOUNT, ownerUserId: ALICE, name: 'Alice Elsewhere', capabilities: [] },
+        { accountId: OTHER_ACCOUNT, ownerUserId: MANAGER, name: 'Manager Elsewhere', capabilities: [] },
       ])
       .returning({ tunnelId: tunnelConnections.tunnelId, name: tunnelConnections.name });
     laptop = rows.find((row) => row.name === 'Alice Laptop')!.tunnelId;
     teamMachine = rows.find((row) => row.name === 'Team Server')!.tunnelId;
     foreignMachine = rows.find((row) => row.name === 'Alice Elsewhere')!.tunnelId;
+    managerForeignMachine = rows.find((row) => row.name === 'Manager Elsewhere')!.tunnelId;
   });
 
   const add = (userId: string, body: Record<string, unknown>) =>
@@ -563,10 +654,32 @@ describe('POST /projects/:id/computers adds an already-paired computer', () => {
     expect((await add(ALICE, { tunnel_id: laptop, share: 'project' })).status).toBe(403);
   });
 
-  test("a machine in another account is 409", async () => {
-    const response = await add(ALICE, { tunnel_id: foreignMachine });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: 'COMPUTER_ACCOUNT_MISMATCH' });
+  test("the owner's machine from another account joins privately; sharing it is 409", async () => {
+    const privately = await add(ALICE, { tunnel_id: foreignMachine });
+    expect(privately.status).toBe(201);
+    expect(await privately.json()).toMatchObject({ owner_type: 'member', owner_id: ALICE, tunnel_id: foreignMachine });
+    const shared = await add(MANAGER, { tunnel_id: managerForeignMachine, share: 'project' });
+    expect(shared.status).toBe(409);
+    expect(await shared.json()).toMatchObject({ code: 'COMPUTER_ACCOUNT_MISMATCH' });
+  });
+
+  test('an agent session token cannot add or share its creator\'s computer', async () => {
+    const sessionToken = await createAccountToken({
+      accountId: ACCOUNT,
+      userId: ALICE,
+      name: 'computer-accounts-session',
+      projectId: PROJECT,
+      sessionId: SHARED_SESSION,
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
+    });
+    minted.push(sessionToken.tokenId);
+    for (const share of ['me', 'project']) {
+      const response = await request('POST', `/v1/projects/${PROJECT}/computers`, sessionToken.secretKey, {
+        tunnel_id: laptop,
+        share,
+      });
+      expect(response.status).toBe(403);
+    }
   });
 
   test('an owner-less team machine: only an account manager may share it, never privately', async () => {
@@ -599,6 +712,7 @@ describe('unpairing revokes the computer accounts', () => {
     });
     const mine = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Mac' }), 'status');
     expect(mine.status).toBe('denied');
+    if (mine.status === 'denied') expect(mine.reason).toContain('computer_unpaired');
   });
 
   test('another member cannot unpair a machine they do not own', async () => {
@@ -606,5 +720,319 @@ describe('unpairing revokes the computer accounts', () => {
       method: 'DELETE',
     });
     expect(response.status).toBe(404);
+  });
+});
+
+describe('v2: the computer follows its owner into every project', () => {
+  let travel = '';
+
+  beforeAll(async () => {
+    await db.insert(projects).values({
+      projectId: PROJECT_TWO,
+      accountId: ACCOUNT,
+      name: 'computer-accounts-http-two',
+      repoUrl: 'https://example.invalid/computer-accounts-two.git',
+      metadata: {},
+    });
+    await insertIntoView(db, projectMembers, [
+      { accountId: ACCOUNT, projectId: PROJECT_TWO, userId: ALICE, projectRole: 'member' },
+      { accountId: ACCOUNT, projectId: PROJECT_TWO, userId: BOB, projectRole: 'member' },
+    ]);
+    const [row] = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Travel')));
+    travel = row!.tunnelId;
+  });
+
+  const listIn = async (userId: string) => {
+    const response = await request('GET', `/v1/projects/${PROJECT_TWO}/connections`, tokens[userId]!);
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { connections: Array<Record<string, any>> }).connections;
+  };
+
+  test("listing a second project creates the owner's private accounts once, one default", async () => {
+    const first = await listIn(ALICE);
+    const mine = first.filter((row) => row.connector_alias === 'computer');
+    expect(mine.every((row) => row.owner_type === 'member' && row.owner_id === ALICE)).toBe(true);
+    expect(new Set(mine.map((row) => row.label))).toEqual(
+      new Set(['Alice Laptop', 'Alice Elsewhere', 'Alice Travel']),
+    );
+    expect(mine.filter((row) => row.is_default)).toHaveLength(1);
+    const again = await listIn(ALICE);
+    expect(again.filter((row) => row.connector_alias === 'computer')).toHaveLength(mine.length);
+    // Bob owns no machine: the built-in connector exists, with no account of his.
+    expect((await listIn(BOB)).filter((row) => row.connector_alias === 'computer')).toEqual([]);
+    const listed = await request('GET', `/v1/connectors/projects/${PROJECT_TWO}/connectors`, tokens[OWNER]!);
+    expect(listed.status).toBe(200);
+    const connectorList = ((await listed.json()) as { connectors: Array<Record<string, any>> }).connectors;
+    expect(connectorList.map((row) => row.slug)).toContain('computer');
+  });
+
+  test('an account the owner revoked in this project is not recreated', async () => {
+    const [account] = await db
+      .select()
+      .from(connectorConnections)
+      .where(and(eq(connectorConnections.projectId, PROJECT_TWO), eq(connectorConnections.tunnelId, travel)));
+    await db
+      .update(connectorConnections)
+      .set({ status: 'revoked', isDefault: false })
+      .where(eq(connectorConnections.connectionId, account!.connectionId));
+    await listIn(ALICE);
+    const rows = await db
+      .select({ status: connectorConnections.status })
+      .from(connectorConnections)
+      .where(and(eq(connectorConnections.projectId, PROJECT_TWO), eq(connectorConnections.tunnelId, travel)));
+    expect(rows).toEqual([{ status: 'revoked' }]);
+  });
+
+  test("renaming the machine relabels its accounts in every project", async () => {
+    const renamed = await tunnelAppFor(ALICE).request(`/connections/${travel}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Alice Road Mac' }),
+    });
+    expect(renamed.status).toBe(200);
+    const labels = await db
+      .select({ label: connectorConnections.label })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.tunnelId, travel));
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels.every((row) => row.label === 'Alice Road Mac')).toBe(true);
+  });
+
+  test('a session on behalf of the owner resolves the computer and gets its accounts', async () => {
+    const res = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Laptop' }), 'status');
+    expect(res).toMatchObject({ status: 'ok', data: { name: 'Alice Laptop' } });
+  });
+});
+
+describe('v2: access mode on the machine', () => {
+  test('tunnel.access.state params are validated', () => {
+    expect(parseAccessState({ mode: 'ask', grantedUntil: '2026-09-29T14:32:00Z' })).toEqual({
+      mode: 'ask',
+      grantedUntil: '2026-09-29T14:32:00.000Z',
+    });
+    expect(parseAccessState({ mode: 'always', grantedUntil: null })).toEqual({ mode: 'always', grantedUntil: null });
+    expect(parseAccessState({ mode: 'sometimes' })).toBeNull();
+    expect(parseAccessState({ mode: 'ask', grantedUntil: 'soon' })).toBeNull();
+    expect(parseAccessState(null)).toBeNull();
+  });
+
+  test('the stored access shows on the connection view and in `status`', async () => {
+    const [laptop] = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Laptop')));
+    await db
+      .update(tunnelConnections)
+      .set({ machineInfo: { access: { mode: 'ask', grantedUntil: '2026-09-29T14:32:00.000Z' } } })
+      .where(eq(tunnelConnections.tunnelId, laptop!.tunnelId));
+    const listed = await listedConnections(ALICE);
+    expect(listed.find((row) => row.tunnel_id === laptop!.tunnelId)?.machine).toMatchObject({
+      access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' },
+    });
+    const status = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Laptop' }), 'status');
+    expect(status).toMatchObject({
+      status: 'ok',
+      data: { access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' } },
+    });
+  });
+
+  test('agent access refusals map by code, then by message prefix', () => {
+    expect(computerAccessErrorKind(-32010, 'x')).toBe('computer_access_pending');
+    expect(computerAccessErrorKind(-32011, 'x')).toBe('computer_access_denied');
+    expect(computerAccessErrorKind(-32012, 'x')).toBe('computer_access_off');
+    expect(computerAccessErrorKind(-32603, 'computer_access_off: turned off')).toBe('computer_access_off');
+    expect(computerAccessErrorKind(-32603, 'boom')).toBeNull();
+  });
+});
+
+describe('v2: the legacy `computer` argument selects an account', () => {
+  test('by label and by machine id for the owner; never for another member', async () => {
+    const [laptop] = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Laptop')));
+    const byLabel = await call(principal({ userId: ALICE }), 'status', { computer: 'Alice Laptop' });
+    expect(byLabel).toMatchObject({ status: 'ok', data: { name: 'Alice Laptop' } });
+    const byId = await call(principal({ userId: ALICE }), 'status', { computer: laptop!.tunnelId });
+    expect(byId).toMatchObject({ status: 'ok', data: { name: 'Alice Laptop' } });
+    const conflicting = await call(
+      principal({ userId: ALICE, requestedConnectorAccount: 'Alice Elsewhere' }),
+      'status',
+      { computer: 'Alice Laptop' },
+    );
+    expect(conflicting.status).toBe('denied');
+    const bob = await call(principal({ userId: BOB }), 'status', { computer: 'Alice Laptop' });
+    expect(bob.status).toBe('denied');
+    if (bob.status === 'denied') expect(bob.reason).toStartWith('account_not_found: ');
+  });
+});
+
+describe('v2: DELETE /v1/tunnel/self — a machine unpairs itself', () => {
+  test('only its own token works; it deletes the machine and revokes its accounts', async () => {
+    const token = generateTunnelToken();
+    const [machine] = await db
+      .insert(tunnelConnections)
+      .values({
+        accountId: ACCOUNT,
+        ownerUserId: ALICE,
+        name: 'Alice Throwaway',
+        capabilities: [],
+        setupTokenHash: hashSecretKey(token),
+      })
+      .returning({ tunnelId: tunnelConnections.tunnelId });
+    const tunnelId = machine!.tunnelId;
+    await listedConnections(ALICE);
+    const [account] = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.tunnelId, tunnelId));
+    expect(account).toBeDefined();
+
+    const unpair = (headers: Record<string, string>) =>
+      app.request('/v1/tunnel/self', {
+        method: 'DELETE',
+        headers: { 'x-forwarded-for': `203.0.113.${(ipCounter += 1) % 250}`, ...headers },
+      });
+    expect((await unpair({ 'x-tunnel-id': tunnelId, authorization: `Bearer ${generateTunnelToken()}` })).status).toBe(401);
+    expect((await unpair({ 'x-tunnel-id': tunnelId, authorization: `Bearer ${tokens[ALICE]}` })).status).toBe(401);
+    const ok = await unpair({ 'x-tunnel-id': tunnelId, authorization: `Bearer ${token}` });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ success: true });
+    expect(await db.select().from(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId))).toEqual([]);
+    expect(await computerConnection(account!.connectionId)).toMatchObject({ status: 'revoked', tunnelId: null });
+    expect((await unpair({ 'x-tunnel-id': tunnelId, authorization: `Bearer ${token}` })).status).toBe(401);
+  });
+});
+
+describe('a computer account is always one paired machine', () => {
+  test('the project-default slot every credential write targets is never created on the computer connector', async () => {
+    const [computer] = await db
+      .select({ connectorId: connectors.connectorId })
+      .from(connectors)
+      .where(and(eq(connectors.projectId, PROJECT_TWO), eq(connectors.slug, 'computer')));
+    const machineless = () =>
+      db
+        .select({ connectionId: connectorConnections.connectionId })
+        .from(connectorConnections)
+        .where(and(eq(connectorConnections.connectorId, computer!.connectorId), isNull(connectorConnections.tunnelId)));
+    const before = await machineless();
+    await expect(ensureDefaultConnection({ projectId: PROJECT_TWO, connectorId: computer!.connectorId })).rejects.toThrow(
+      /pair/i,
+    );
+    expect(await machineless()).toEqual(before);
+  });
+});
+
+describe('contract v2 review fixes', () => {
+  test('approving "Only you" ignores a project the machine named that the approver cannot read', async () => {
+    const pairing = await startPairing({ machineHostname: 'stale-project.local', project_id: crypto.randomUUID() });
+    const response = await approve(ALICE, pairing.deviceCode, { capabilities: [] });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { tunnelId: string; connectionId: string | null };
+    expect(body.connectionId).toBeNull();
+    const [machine] = await db.select().from(tunnelConnections).where(eq(tunnelConnections.tunnelId, body.tunnelId));
+    expect(machine).toMatchObject({ accountId: ALICE, ownerUserId: ALICE });
+  });
+
+  test("a machine shared with the project gives its owner no second, private account", async () => {
+    await listedConnections(MANAGER);
+    const rows = await db
+      .select({ ownerType: connectorConnections.ownerType })
+      .from(connectorConnections)
+      .where(and(eq(connectorConnections.projectId, PROJECT), eq(connectorConnections.tunnelId, sharedTunnel)));
+    expect(rows).toEqual([{ ownerType: 'project' }]);
+  });
+
+  test('an impersonating operator never writes computer accounts into the project', async () => {
+    const before = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(and(eq(connectorConnections.projectId, PROJECT_TWO), eq(connectorConnections.ownerId, MANAGER)));
+    await runWithContext('GET', `/v1/projects/${PROJECT_TWO}/connections`, () => {
+      expect(
+        setImpersonationContext({ grantId: crypto.randomUUID(), targetAccountId: ACCOUNT, impersonatorUserId: MANAGER }),
+      ).toBe(true);
+      return ensureProjectComputer(PROJECT_TWO, MANAGER);
+    });
+    const after = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(and(eq(connectorConnections.projectId, PROJECT_TWO), eq(connectorConnections.ownerId, MANAGER)));
+    expect(after).toEqual(before);
+    // Without impersonation the same call does attach the manager's machine.
+    await ensureProjectComputer(PROJECT_TWO, MANAGER);
+    const own = await db
+      .select({ tunnelId: connectorConnections.tunnelId })
+      .from(connectorConnections)
+      .where(and(eq(connectorConnections.projectId, PROJECT_TWO), eq(connectorConnections.ownerId, MANAGER)));
+    expect(own.map((row) => row.tunnelId)).toContain(sharedTunnel);
+  });
+
+  test('the generic share route refuses a computer account', async () => {
+    const [account] = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.projectId, PROJECT),
+          eq(connectorConnections.ownerId, ALICE),
+          eq(connectorConnections.label, 'Alice Laptop'),
+        ),
+      );
+    const response = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${account!.connectionId}/share`,
+      tokens[ALICE]!,
+      { principals: [] },
+    );
+    expect(response.status).toBe(409);
+    expect((await computerConnection(account!.connectionId))?.ownerType).toBe('member');
+  });
+
+  test('the built-in computer connector cannot be deleted', async () => {
+    const result = await dbConnectorRouterDeps.deleteConnector!(PROJECT, 'computer');
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    const rows = await db
+      .select({ connectorId: connectors.connectorId })
+      .from(connectors)
+      .where(and(eq(connectors.projectId, PROJECT), eq(connectors.slug, 'computer')));
+    expect(rows).toHaveLength(1);
+  });
+
+  test("a sync keeps the previous API's computer config keys", async () => {
+    const legacy = { tunnel_ids: [sharedTunnel], tunnel_account_ids: [ACCOUNT], computer_profile: true };
+    await db
+      .update(connectors)
+      .set({ config: sql`${connectors.config} || ${JSON.stringify(legacy)}::jsonb` })
+      .where(and(eq(connectors.projectId, PROJECT), eq(connectors.slug, 'computer')));
+    await syncProjectConnectors(PROJECT, ACCOUNT);
+    const [row] = await db
+      .select({ config: connectors.config })
+      .from(connectors)
+      .where(and(eq(connectors.projectId, PROJECT), eq(connectors.slug, 'computer')));
+    expect(row?.config).toMatchObject({ ...legacy, computer_accounts_backfilled: true });
+  });
+
+  test('the owner may share a private (personal-account) machine with a project they manage', async () => {
+    const [machine] = await db
+      .insert(tunnelConnections)
+      .values({ accountId: MANAGER, ownerUserId: MANAGER, name: 'Manager Laptop', capabilities: [] })
+      .returning({ tunnelId: tunnelConnections.tunnelId });
+    const response = await request('POST', `/v1/projects/${PROJECT}/computers`, tokens[MANAGER]!, {
+      tunnel_id: machine!.tunnelId,
+      share: 'project',
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ owner_type: 'project', tunnel_id: machine!.tunnelId });
+  });
+
+  test('a lapsed grant is shown as no grant', () => {
+    expect(machineAccess({ access: { mode: 'ask', grantedUntil: '2020-01-01T00:00:00.000Z' } })).toEqual({
+      mode: 'ask',
+      granted_until: null,
+    });
   });
 });

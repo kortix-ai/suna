@@ -25,6 +25,7 @@ import {
   type TunnelCapability,
 } from 'agent-tunnel';
 import { eq } from 'drizzle-orm';
+import { config } from '../../config';
 import { db } from '../../shared/db';
 import { buildRequestSummary, finishAuditLog, startAuditLog } from './audit-logger';
 import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
@@ -47,7 +48,7 @@ export type TunnelRpcOutcome =
       ok: false;
       kind: 'error';
       code: number;
-      httpStatus: 500 | 502 | 504;
+      httpStatus: 403 | 500 | 502 | 504;
       message: string;
     };
 
@@ -161,6 +162,10 @@ export async function executeTunnelRpc(input: {
         ...params,
         permissionId: permCheck.permissionId,
       },
+      // In `ask` mode the machine holds a call up to ACCESS_HOLD_MS for its
+      // owner before it runs. That hold must not eat the call's own budget: a
+      // late approval would run the call while the caller already got a timeout.
+      timeoutMs: config.TUNNEL_RPC_TIMEOUT_MS + (machineAccess(connection?.machineInfo)?.mode === 'ask' ? ACCESS_HOLD_MS : 0),
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -178,8 +183,10 @@ export async function executeTunnelRpc(input: {
       console.error('[tunnel-audit] failed to persist terminal failure', auditError);
     }
 
-    const httpStatus: 500 | 502 | 504 =
-      errorCode === TunnelErrorCode.NOT_CONNECTED
+    // The owner's access decision on the machine (X1) is a refusal, not a fault.
+    const httpStatus: 403 | 500 | 502 | 504 = computerAccessErrorKind(errorCode, errorMessage)
+      ? 403
+      : errorCode === TunnelErrorCode.NOT_CONNECTED
         ? 502
         : errorCode === TunnelErrorCode.TIMEOUT
           ? 504
@@ -226,9 +233,65 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      kind: 'computer_unpaired' | 'computer_offline' | 'computer_capability_not_approved' | 'error';
+      kind:
+        | 'computer_unpaired'
+        | 'computer_offline'
+        | 'computer_capability_not_approved'
+        | ComputerAccessErrorKind
+        | 'error';
       message: string;
     };
+
+/** How long an `ask`-mode machine holds a call for its owner (agent-tunnel ACCESS_HOLD_MS). */
+const ACCESS_HOLD_MS = 20_000;
+
+/**
+ * v2 X1: the agent refuses a call on the machine itself (access.json). Codes
+ * are binding across the agent and the API; the message prefix is the
+ * fallback for a relay that lost the code.
+ */
+const ACCESS_ERRORS = {
+  [-32010]: 'computer_access_pending',
+  [-32011]: 'computer_access_denied',
+  [-32012]: 'computer_access_off',
+} as const;
+export type ComputerAccessErrorKind = (typeof ACCESS_ERRORS)[keyof typeof ACCESS_ERRORS];
+
+export function computerAccessErrorKind(code: number, message: string): ComputerAccessErrorKind | null {
+  const byCode = ACCESS_ERRORS[code as keyof typeof ACCESS_ERRORS];
+  if (byCode) return byCode;
+  return Object.values(ACCESS_ERRORS).find((kind) => message.startsWith(`${kind}:`)) ?? null;
+}
+
+/** What the agent should tell the user, per access refusal. Never loop-retry. */
+function computerAccessMessage(kind: ComputerAccessErrorKind, machine: string): string {
+  switch (kind) {
+    case 'computer_access_pending':
+      return `${machine} is asking its owner to allow access. Tell the user to approve the prompt on that computer, then retry once they confirm. Do not retry before that.`;
+    case 'computer_access_denied':
+      return `The owner of ${machine} denied access. It stays denied for 10 minutes. Ask the user before retrying.`;
+    case 'computer_access_off':
+      return `Access to ${machine} is turned off on that computer. Ask the user to allow access from the Kortix menu on that computer.`;
+  }
+}
+
+/** The machine's last reported access mode (`tunnel.access.state`), or null. A lapsed grant is no grant. */
+export function machineAccess(
+  machineInfo: unknown,
+  now = Date.now(),
+): { mode: 'ask' | 'always' | 'off'; granted_until: string | null } | null {
+  const access = (machineInfo as Record<string, unknown> | null)?.access as
+    | { mode?: unknown; grantedUntil?: unknown }
+    | undefined;
+  if (!access || (access.mode !== 'ask' && access.mode !== 'always' && access.mode !== 'off')) {
+    return null;
+  }
+  return {
+    mode: access.mode,
+    granted_until:
+      typeof access.grantedUntil === 'string' && Date.parse(access.grantedUntil) > now ? access.grantedUntil : null,
+  };
+}
 
 /** Approved capabilities the connected agent also registered. */
 export function effectiveMachineCapabilities(row: {
@@ -283,6 +346,7 @@ export async function executeComputerCall(input: {
           : null,
         capabilities: effectiveMachineCapabilities(machine),
         last_heartbeat_at: machine.lastHeartbeatAt?.toISOString() ?? null,
+        access: machineAccess(machine.machineInfo),
       },
     };
   }
@@ -312,6 +376,8 @@ export async function executeComputerCall(input: {
   if (outcome.kind === 'error' && outcome.code === TunnelErrorCode.NOT_CONNECTED) {
     return { ok: false, kind: 'computer_offline', message: outcome.message };
   }
+  const access = outcome.kind === 'error' ? computerAccessErrorKind(outcome.code, outcome.message) : null;
+  if (access) return { ok: false, kind: access, message: computerAccessMessage(access, machine.name) };
   if (outcome.kind === 'rate_limited') {
     const retry = outcome.retryAfterMs
       ? ` (retry in ${Math.ceil(outcome.retryAfterMs / 1000)}s)`

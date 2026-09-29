@@ -719,6 +719,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/tunnel/device-auth/:code/info': { action: 'tunnel.device_auth.read', title: 'Viewed computer tunnel device authorization' },
   'GET /v1/tunnel/device-auth/:code/status': { action: 'tunnel.device_auth.check', title: 'Polled computer tunnel device authorization' },
   'POST /v1/tunnel/rpc/:tunnelId': { action: 'tunnel.rpc.send', title: 'Sent operation to computer tunnel' },
+  'DELETE /v1/tunnel/self': { action: 'tunnel.connection.self_delete', title: 'Computer unpaired itself' },
   'GET /v1/usage': { action: 'usage.rollup.read', title: 'Viewed account usage rollup' },
   'GET /v1/usage/cost-by-project': { action: 'usage.project_cost.list', title: 'Viewed project cost rollup' },
   'GET /v1/usage/cost-summary': { action: 'usage.cost_summary.read', title: 'Viewed cost summary' },

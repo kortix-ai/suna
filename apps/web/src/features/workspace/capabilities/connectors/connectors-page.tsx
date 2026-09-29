@@ -57,6 +57,7 @@ import {
 import { providerLabel } from './provider-label';
 
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
+import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
@@ -492,10 +493,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const focusCategory =
     catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
+  // The machine list answers 503 on a deployment with computers disabled, so
+  // the Computer card shows only where a computer can be connected.
+  const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
     discoverEnabled,
     focusCategory,
+    computers: computersEnabled,
   });
 
   // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
@@ -790,8 +795,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         onAdded={onCatalogAdded}
       />
       {/* Computers are accounts, not profiles: the card pairs the caller's own
-          machine. The API creates the project's `computer` connector with the
-          first account, so there is no connector form to fill in. */}
+          machine. The `computer` connector is built into every project, so
+          the card opens it when listed and pairs a machine otherwise. */}
       <ComputerConnectModal
         projectId={projectId}
         open={catalogTarget?.source === 'computer'}

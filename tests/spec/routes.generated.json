@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 684,
+  "count": 685,
   "routes": [
     {
       "method": "GET",
@@ -2645,6 +2645,10 @@
     {
       "method": "POST",
       "path": "/v1/tunnel/rpc/:tunnelId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/tunnel/self"
     },
     {
       "method": "GET",

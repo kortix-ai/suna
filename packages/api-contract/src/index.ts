@@ -500,6 +500,19 @@ export const ComputerMachineStatusSchema = z.object({
   last_heartbeat_at: z.string().nullable(),
   hostname: z.string().optional(),
   platform: z.string().optional(),
+  /**
+   * The access mode the machine last reported (`tunnel.access.state`):
+   * `ask` needs its owner to allow each grant on the computer, `always` runs,
+   * `off` refuses every call. `granted_until` is the end of the current `ask`
+   * grant. `null` or absent: the agent never reported one (treat as `always`).
+   */
+  access: z
+    .object({
+      mode: z.enum(['ask', 'always', 'off']),
+      granted_until: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type ComputerMachineStatus = z.infer<typeof ComputerMachineStatusSchema>;
 

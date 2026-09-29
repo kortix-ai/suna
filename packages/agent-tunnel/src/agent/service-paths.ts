@@ -38,11 +38,8 @@ export function serviceHomeEnv(home: string = agentTunnelHome()): Record<string,
 export const DEFAULT_INSTALL_BACKGROUND_SERVICE = true;
 
 /**
- * Exit code for conditions that restarting cannot fix: no saved credential, or
- * a credential the relay refuses. Every supervisor is configured to restart on
- * failure only, so a terminal condition ends the service instead of spinning.
- * Without this, a revoked token produces an endless respawn loop whose only
- * trace is a log file nobody reads.
+ * Kept for 0.1.x importers only. Since contract v2 (R2) a service never exits
+ * on its own and every supervisor restarts on any exit, so nothing uses it.
  */
 export const TERMINAL_SERVICE_EXIT_CODE = 0;
 

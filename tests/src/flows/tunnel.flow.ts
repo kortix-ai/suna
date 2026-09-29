@@ -60,7 +60,7 @@ flow(
       assert.equal(account.connector_alias, "computer");
       assert.equal(account.owner_type, "member");
       assert.equal(account.tunnel_id, machine.tunnelId);
-      assert.deepEqual(account.machine, { online: false, last_heartbeat_at: null });
+      assert.deepEqual(account.machine, { online: false, last_heartbeat_at: null, access: null });
     });
 
     await ctx.step("OWNER lists own machines; ANON → 401", async () => {
@@ -369,6 +369,74 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/tunnel/device-auth/:code/info", { params: { code: "NOPECODE" } });
       r.status(401);
+    });
+  },
+);
+
+flow(
+  "TUN-7",
+  {
+    domain: "tunnel",
+    timeoutMs: 180_000,
+    serial: true,
+    routes: [
+      "POST /v1/tunnel/device-auth",
+      "GET /v1/tunnel/device-auth/:code/status",
+      "POST /v1/tunnel/device-auth/:code/approve",
+      "GET /v1/projects/:projectId/connections",
+      "DELETE /v1/tunnel/self",
+    ],
+  },
+  async (ctx) => {
+    const anon = ctx.client.as(ctx.P.ANON);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const project = await ctx.fixtures.project();
+    const name = ctx.fixtures.name("follows");
+    let tunnelId = "";
+    let token = "";
+
+    await ctx.step("OWNER approves a pairing with no project: the machine is paired, no account yet", async () => {
+      const created = await startPairing(anon, { machineHostname: `${name}.local` });
+      created.status(201);
+      const { deviceCode, deviceSecret } = created.json<any>();
+      const approved = await owner.post(
+        "/v1/tunnel/device-auth/:code/approve",
+        { name, capabilities: [] },
+        { params: { code: deviceCode } },
+      );
+      approved.status(200).body().has("$.connectionId", null);
+      tunnelId = approved.json<any>().tunnelId;
+      ctx.track("tunnelConnection", tunnelId);
+      const poll = await anon
+        .withBearer(deviceSecret)
+        .get("/v1/tunnel/device-auth/:code/status", { params: { code: deviceCode } });
+      poll.status(200).body().has("$.status", "approved");
+      token = poll.json<any>().token;
+      assert.match(token, /^kortix_tnl_/);
+    });
+
+    await ctx.step("listing any project's connections gives OWNER the machine as a private account", async () => {
+      const r = await owner.get("/v1/projects/:projectId/connections", { params: { projectId: project.id } });
+      r.status(200);
+      const account = r.json<any>().connections.find((c: any) => c.tunnel_id === tunnelId);
+      assert.ok(account, "the owner's machine is an account in the project without any setup");
+      assert.equal(account.owner_type, "member");
+      assert.equal(account.label, name);
+      assert.equal(account.machine.access, null);
+    });
+
+    await ctx.step("the machine unpairs itself with its own token; a wrong token → 401", async () => {
+      (await anon.withBearer(`kortix_tnl_${"x".repeat(40)}`).del("/v1/tunnel/self", { headers: { "x-tunnel-id": tunnelId } }))
+        .status(401);
+      (await anon.withBearer(token).del("/v1/tunnel/self", { headers: { "x-tunnel-id": tunnelId } }))
+        .status(200)
+        .body()
+        .has("$.success", true);
+      const r = await owner.get("/v1/projects/:projectId/connections", { params: { projectId: project.id } });
+      r.status(200);
+      const account = r.json<any>().connections.find((c: any) => c.label === name);
+      assert.equal(account?.status, "revoked");
+      assert.equal(account?.tunnel_id, null);
     });
   },
 );

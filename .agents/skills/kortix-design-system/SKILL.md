@@ -97,7 +97,7 @@ relative to `apps/web/src/features/workspace/` unless given in full.
 | **`shared/access/access-row.tsx`** | Entity rows, `UserAvatar`, `InlineMeta` — the single row used by every access surface |
 | **`customize/sections/view/changes-view.tsx`** | Tinted `size-9` icon tiles, `Badge variant="kortix" size="xs"`, row inline actions, `TabsListCompact` |
 | **`customize/sections/view/channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
-| **`apps/web/src/features/tunnel/computer-connect.tsx`** | Connect-an-account modal: owned-resource rows with inline `Use here`, primary one-click action, download + copyable command fallback |
+| **`apps/web/src/features/tunnel/computer-connect.tsx`** | Connect-an-account modal: primary one-click action (desktop), download button, CLI command fallback |
 
 **Shells:** `capabilities/index/customize-index-page.tsx` (the customize index)
 and `capabilities/shared/capability-page-shell.tsx` (`CapabilityPageShell`) — the

@@ -7651,31 +7651,6 @@
       "line117JsxTextKeepMine": "自分のものを保持",
       "line144JsxTextUnsavedChanges": "未保存の変更"
     },
-    "componentsTunnelScopeEditorsNetworkScopeEditor": {
-      "line93JsxAttrPlaceholderEG30008080": "例: 3000、8080",
-      "line123JsxAttrPlaceholderEGLocalhost127001": "例: localhost、127.0.0.1"
-    },
-    "componentsTunnelTunnelDetail": {
-      "line35JsxTextTunnelConnectionNotFound": "トンネル接続が見つかりません。",
-      "line38JsxTextBackToTunnels": "トンネルに戻る",
-      "line79JsxTextMiddot": "·",
-      "line100JsxTextAuditLog": "監査ログ"
-    },
-    "componentsTunnelTunnelOverview": {
-      "line126JsxTextDeleteConnection": "接続を削除しますか？",
-      "line128JsxTextThisWillPermanentlyDelete": "これにより完全に削除されます",
-      "line128JsxTextAndRemoveAllItsPermissionsAndAuditLogs": "し、関連するすべての権限と監査ログを削除します。この操作は元に戻せません。",
-      "line169JsxTextAddConnection": "接続を追加",
-      "line181JsxTextConnectAMachine": "マシンを接続",
-      "line183JsxTextRunThisCommandOnTheMachineYouWant": "接続したいマシンでこのコマンドを実行してください。",
-      "line234JsxTextConnectYourMachine": "マシンを接続",
-      "line236JsxTextRunThisCommandOnAnyMachineToConnect": "任意のマシンでこのコマンドを実行して Kortix に接続します。ブラウザで接続を承認します。",
-      "line255JsxTextText1RunTheCommand": "1. コマンドを実行",
-      "line257JsxTextText2ApproveInBrowser": "2. ブラウザで承認",
-      "line259JsxTextText3Connected": "3. 接続済み",
-      "line362JsxTextNoConnectionsMatchingLdquo": "“ に一致する接続はありません",
-      "line362JsxTextRdquo": "」"
-    },
     "componentsUpdateChangelogPreview": {
       "line102JsxTextMoreChanges": "追加の変更"
     },
@@ -16038,7 +16013,6 @@
       "textbbeb1185a5ff": "引用するもの",
       "textbc06bb3d377c": "同じプラットフォーム、他のチーム",
       "textbc18f7068971": "markdown",
-      "textbc25c1f595c9": "デバイスが接続中です。このタブは閉じても構いません。",
       "textbc298b920f14": "複数値パラメーター",
       "textbc29a1f71de0": "毎日のセッション、アクティブなアカウント、クレジットバーン。",
       "textbc346bfb5269": "エージェントはプリンシパルであり、抜け道ではありません。",
@@ -19141,7 +19115,8 @@
       "textd88c84258c7a": "連携アプリを一覧表示",
       "text37698a37f9d2": "連携アプリを取り消し",
       "text8c8fb214b592": "ユーザーとして GitHub を認可",
-      "text711edad21902": "コンピュータをプロジェクトに追加しました"
+      "text711edad21902": "コンピュータをプロジェクトに追加しました",
+      "texta3ecfa724d04": "コンピューターが自身のペアリングを解除しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20232,12 +20207,10 @@
     "connected": "コンピューターを接続しました",
     "connectFailed": "コンピューターを接続できませんでした。もう一度お試しください。",
     "desktopUnavailable": "このコンピューターを接続するには Kortix デスクトップアプリを更新してください。",
-    "useHere": "ここで使う",
     "online": "オンライン",
     "offline": "オフライン",
     "connectTitle": "コンピューターを接続",
-    "connectDescription": "このプロジェクトのエージェントが、あなたのコンピューター上のファイル、コマンド、アプリを扱えるようにします。共有しない限り、使えるのはあなただけです。",
-    "yourComputers": "あなたのコンピューター",
+    "connectDescription": "Kortix のエージェントがあなたのコンピューターのファイル、コマンド、アプリを使えるようにします。すべてのプロジェクトであなたのものとして使え、共有しない限りあなただけが使えます。",
     "downloadDesktop": "Kortix デスクトップ版をダウンロード",
     "downloadHint": "デスクトップアプリなら、ワンクリックでこのコンピューターを接続し、バックグラウンドで接続を維持します。",
     "runCommand": "このコマンドをコンピューターで実行",
@@ -20245,13 +20218,9 @@
     "copyFailed": "コピーに失敗しました",
     "copyCommand": "コマンドをコピー",
     "authorizeCodeHint": "このコードがコンピューターに表示されているコードと一致することを確認してください。",
-    "projectLabel": "プロジェクト",
-    "projectPlaceholder": "プロジェクトを選択",
-    "noProjects": "まだプロジェクトがありません。プロジェクトを作成してから、もう一度接続してください。",
     "whoCanUse": "このコンピューターを使える人",
-    "onlyYouDescription": "あなただけが、プライベートセッションで使えます。",
+    "onlyYouDescription": "あなただけ。すべてのプロジェクトの、あなたのプライベートセッションで使えます。",
     "everyoneDescription": "プロジェクトの全員が使えます。自動化も含みます。",
-    "approvedInProject": "あなたのコンピューターは {project} のアカウントになりました。このタブは閉じてかまいません。",
     "promoLine": "Kortix がローカルファイルを扱い、コンピューターを操作できるようにします。",
     "dismissPromo": "閉じる",
     "useCliInstead": "代わりに CLI を使う",
@@ -20259,12 +20228,9 @@
     "localComputerTitle": "あなたのコンピューター",
     "localComputerDescription": "このコンピューターと Kortix の接続です。アプリを閉じてもバックグラウンドで動作し続けます。",
     "thisComputer": "このコンピューター",
-    "serviceRunning": "実行中",
-    "servicePaused": "一時停止中",
-    "useInThisProject": "このプロジェクトで使う",
-    "pauseAccess": "アクセスを一時停止",
-    "resumeAccess": "アクセスを再開",
-    "manageAccess": "アクセスを管理",
+    "pauseAccess": "接続を一時停止",
+    "resumeAccess": "接続を再開",
+    "manageAccess": "共有",
     "showLogs": "ログを表示",
     "disconnectTitle": "このコンピューターの接続を解除",
     "disconnectDescription": "このコンピューターをすべてのプロジェクトから外し、バックグラウンドサービスを停止します。使うには再接続してください。",
@@ -20276,8 +20242,31 @@
       "online": "オンライン",
       "connecting": "接続中…",
       "offline": "オフライン",
-      "stopped": "停止中"
+      "paused": "一時停止中",
+      "needsReconnect": "再接続が必要"
     },
-    "startAccess": "開始"
+    "needsReconnectHint": "このコンピューターは Kortix から切断されました。使うにはもう一度接続してください。",
+    "actionFailed": "問題が発生しました。もう一度お試しください。",
+    "groupYours": "あなたのもの (すべてのプロジェクト)",
+    "groupShared": "このプロジェクトと共有",
+    "sharedWithProject": "コンピューターをプロジェクトと共有しました",
+    "alsoShareWith": "{project} とも共有する",
+    "approvedEverywhere": "コンピューターを接続しました。すべてのプロジェクトの、あなたのプライベートセッションで使えます。このタブは閉じてかまいません。",
+    "approvedShared": "コンピューターを接続し、{project} と共有しました。このタブは閉じてかまいません。",
+    "access": {
+      "title": "アクセス",
+      "ask": "毎回確認する",
+      "askDescription": "エージェントが使う前に、Kortix がこのコンピューター上で確認します。許可は最長 24 時間です。",
+      "always": "常に許可",
+      "alwaysDescription": "このコンピューターに届くエージェントは、確認なしで使います。",
+      "off": "オフ",
+      "offDescription": "この設定を変えるまで、すべてのリクエストを拒否します。",
+      "allowedUntil": "{time} まで許可",
+      "revokeNow": "今すぐ取り消す",
+      "keepAwake": "電源接続中はこのコンピューターをスリープさせない",
+      "keepAwakeDescription": "電源に接続している間はスリープしないので、エージェントが接続できます。",
+      "keepAwakeUnsupported": "Windows ではまだ利用できません。"
+    },
+    "unpairDescription": "このコンピューターを Kortix とすべてのプロジェクトから削除します。もう一度接続するまで接続しません。"
   }
 }

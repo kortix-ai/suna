@@ -9,16 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen, AuthStatusScreen } from '@/features/auth/auth-consent';
 import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@/features/auth/auth-primitives';
@@ -45,9 +35,11 @@ export default function DeviceAuthorizePage() {
 }
 
 /**
- * Approving a device pairs the machine AND adds it as an account of the chosen
- * project's `computer` connector — private to the approver unless they share
- * it with everyone in the project, which needs connection-manage rights.
+ * Approving a device pairs the machine to the approver. It is theirs in every
+ * project they belong to, in their private sessions. When the machine named a
+ * project (`connect --project-id`, or the desktop app's connect button), the
+ * approver may also share it with that project, which needs connection-manage
+ * rights there. The server reads the project from the request itself.
  */
 function DeviceAuthorize() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -62,26 +54,26 @@ function DeviceAuthorize() {
   const { data: info, isLoading, error } = useDeviceAuthInfo(code);
   const approve = useApproveDeviceAuth();
   const deny = useDenyDeviceAuth();
-  const { sections, listsLoading } = useProjectSelectorData();
+  const { sections } = useProjectSelectorData();
 
   // `null` until the user types: the machine's hostname is the default name.
   const [typedName, setName] = useState<string | null>(null);
   const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set());
-  const [pickedProjectId, setPickedProjectId] = useState('');
   const [share, setShare] = useState<Share>('me');
   const [done, setDone] = useState<'approved' | 'denied' | null>(null);
 
-  const projects = useMemo(() => sections.flatMap((section) => section.projects), [sections]);
-  // The machine named its project (`connect --project-id`, or the desktop
-  // app's connect button). Fall back to the most recent project otherwise.
-  const requestedProjectId = info?.projectId ?? null;
-  const requestedProject = projects.find((project) => project.project_id === requestedProjectId);
-  const projectId = requestedProject
-    ? requestedProject.project_id
-    : pickedProjectId || projects[0]?.project_id || '';
-  const project = projects.find((candidate) => candidate.project_id === projectId);
+  // Only a project the machine named can be shared with; its name comes from
+  // the caller's project list (absent while it loads, or without access).
+  const projectId = info?.projectId ?? undefined;
+  const project = useMemo(
+    () =>
+      sections
+        .flatMap((section) => section.projects)
+        .find((candidate) => candidate.project_id === projectId),
+    [sections, projectId],
+  );
   const canShare =
-    useProjectCan(projectId || undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)
+    useProjectCan(project ? projectId : undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE)
       .allowed === true;
   const effectiveShare: Share = canShare ? share : 'me';
 
@@ -120,7 +112,6 @@ function DeviceAuthorize() {
       code,
       name: name || info?.machineHostname || 'Unnamed',
       capabilities: Array.from(selectedCaps),
-      projectId,
       share: effectiveShare,
     });
     setDone('approved');
@@ -162,9 +153,9 @@ function DeviceAuthorize() {
         }
         description={
           isApproved
-            ? project
-              ? t('approvedInProject', { project: project.name })
-              : tI18nComplete.raw('textbc25c1f595c9')
+            ? effectiveShare === 'project' && project
+              ? t('approvedShared', { project: project.name })
+              : t('approvedEverywhere')
             : tI18nComplete.raw('textf711673979b5')
         }
       />
@@ -208,44 +199,6 @@ function DeviceAuthorize() {
           </div>
 
           <div className="space-y-3">
-            <FieldLabel htmlFor="connection-project">{t('projectLabel')}</FieldLabel>
-            {requestedProject ? (
-              <p
-                id="connection-project"
-                className="text-foreground rounded-md border px-3.5 py-2.5 text-sm"
-              >
-                {requestedProject.name}
-              </p>
-            ) : listsLoading ? (
-              <Skeleton className="h-9 w-full rounded-lg" />
-            ) : projects.length === 0 ? (
-              <p className="text-muted-foreground text-xs">{t('noProjects')}</p>
-            ) : (
-              <Select value={projectId} onValueChange={setPickedProjectId}>
-                <SelectTrigger id="connection-project" className="w-full">
-                  <SelectValue placeholder={t('projectPlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {sections
-                    .filter((section) => section.projects.length > 0)
-                    .map((section) => (
-                      <SelectGroup key={section.accountId}>
-                        {sections.length > 1 ? (
-                          <SelectLabel>{section.accountName}</SelectLabel>
-                        ) : null}
-                        {section.projects.map((candidate) => (
-                          <SelectItem key={candidate.project_id} value={candidate.project_id}>
-                            {candidate.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          <div className="space-y-3">
             <p className="text-muted-foreground text-sm font-medium">{t('whoCanUse')}</p>
             <RadioGroup value={effectiveShare} onValueChange={(value) => setShare(value as Share)}>
               <RadioGroupItem
@@ -254,15 +207,15 @@ function DeviceAuthorize() {
                 label={tSharing('onlyYou')}
                 description={t('onlyYouDescription')}
               />
-              <RadioGroupItem
-                value="project"
-                variant="outline"
-                disabled={!canShare}
-                label={
-                  project ? tSharing('everyone', { project: project.name }) : tSharing('visibilityEveryone')
-                }
-                description={canShare ? t('everyoneDescription') : tSharing('shareRequiresManage')}
-              />
+              {project ? (
+                <RadioGroupItem
+                  value="project"
+                  variant="outline"
+                  disabled={!canShare}
+                  label={t('alsoShareWith', { project: project.name })}
+                  description={canShare ? t('everyoneDescription') : tSharing('shareRequiresManage')}
+                />
+              ) : null}
             </RadioGroup>
           </div>
 
@@ -334,7 +287,7 @@ function DeviceAuthorize() {
               size="lg"
               className="w-full"
               onClick={() => void handleApprove().catch(() => undefined)}
-              disabled={busy || selectedCaps.size === 0 || !projectId}
+              disabled={busy || selectedCaps.size === 0}
             >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
               {tI18nComplete.raw('textf4da86da1210')}

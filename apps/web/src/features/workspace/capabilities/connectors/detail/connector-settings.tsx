@@ -83,7 +83,7 @@ export function ConnectorSettings({
           form (`ChannelConnectionSection`), so they get no Remove row here.
           The row stays neutral — `variant="destructive"` belongs on the confirm
           button inside `ConfirmDialog`, not on the panel. */}
-      {!isChannel ? (
+      {!isChannel && !isComputer ? (
         <div className="bg-popover rounded-md border px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">

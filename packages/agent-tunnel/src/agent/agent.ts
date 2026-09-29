@@ -1,5 +1,19 @@
+import { spawn, type ChildProcess } from 'child_process';
 import { hostname, platform, arch, release } from 'os';
 import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
+import {
+  ACCESS_HOLD_MS,
+  clearAccessRequest,
+  decideAccess,
+  keepAwakeCommand,
+  readAccess,
+  readAccessRequest,
+  wakeDesktopApp,
+  writeAccessRequest,
+} from './access';
+import { agentTunnelHome } from './service-paths';
+import { capabilityForMethod } from '../shared/permissions';
+import { TunnelErrorCode } from '../shared/types';
 import { agentTunnelVersion } from './version';
 import { c } from './terminal';
 import { CapabilityRegistry } from './capabilities/index';
@@ -60,11 +74,69 @@ function log(icon: string, msg: string) {
   process.stdout.write(`  ${safeIcon} ${c.dim}${safeMsg}${c.reset}\n`);
 }
 
-export type TunnelAgentStatus = 'connecting' | 'online' | 'offline';
+/**
+ * `rejected` and `standby` exist only in service mode: the credential was
+ * refused, or another process holds the tunnel. The agent keeps retrying.
+ */
+export type TunnelAgentStatus = 'connecting' | 'online' | 'offline' | 'rejected' | 'standby';
+
+export interface TunnelAgentOptions {
+  /** Service mode (R2): never stop on a refused credential or on being replaced. */
+  persistent?: boolean;
+  /** Re-read the credential before a retry, so a re-pair heals a `rejected` agent. */
+  reloadConfig?: () => TunnelConfig;
+  /** Config directory holding access.json. */
+  home?: string;
+  livenessTimeoutMs?: number;
+  watchdogIntervalMs?: number;
+  rejectedRetryMs?: number;
+  standbyRetryMs?: number;
+  connectDeadlineMs?: number;
+  accessHoldMs?: number;
+  now?: () => number;
+}
+
+/** The relay pings every 30 s; 75 s of silence means the socket is dead (R1). */
+const LIVENESS_TIMEOUT_MS = 75_000;
+const WATCHDOG_INTERVAL_MS = 5_000;
+/** A tick that arrives this much later than scheduled means the machine slept. */
+const CLOCK_JUMP_MS = 30_000;
+const REJECTED_RETRY_MS = 5 * 60_000;
+/** Standby backs off from this, doubling, so two holders of one credential stop trading the socket. */
+const STANDBY_RETRY_MS = 60_000;
+const MAX_STANDBY_RETRY_MS = 30 * 60_000;
+/** A handshake that has not reached auth_ok by now is dead (frozen relay, dropped Wi-Fi). */
+const CONNECT_DEADLINE_MS = 20_000;
+/** A keep-awake helper that exits sooner than this could not take the lock. */
+const KEEP_AWAKE_MIN_LIFETIME_MS = 5_000;
+const REJECTED_LOG_EVERY_MS = 3_600_000;
+const BASE_RECONNECT_DELAY_MS = 1_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+
+/** R4: exponential from 1 s, ±20 % jitter, never above 30 s. */
+export function reconnectDelay(attempt: number, random = Math.random()): number {
+  const raw = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** Math.min(attempt - 1, 30), MAX_RECONNECT_DELAY_MS);
+  return Math.round(Math.min(raw * (0.8 + 0.4 * random), MAX_RECONNECT_DELAY_MS));
+}
+
+const ACCESS_ERRORS = {
+  pending: {
+    code: TunnelErrorCode.ACCESS_PENDING,
+    message: 'computer_access_pending: The owner has not allowed access yet. Ask them to approve the prompt on their computer, then try again.',
+  },
+  denied: {
+    code: TunnelErrorCode.ACCESS_DENIED,
+    message: 'computer_access_denied: The owner denied access on their computer. Try again later.',
+  },
+  off: {
+    code: TunnelErrorCode.ACCESS_OFF,
+    message: 'computer_access_off: The owner turned off access to this computer.',
+  },
+} as const;
 
 export interface TunnelAgentHooks {
-  /** Fires on every change of connection status. */
-  onStatus?: (status: TunnelAgentStatus) => void;
+  /** Fires on every change of connection status, with the credential in use now. */
+  onStatus?: (status: TunnelAgentStatus, config: TunnelConfig) => void;
   /**
    * Fires when the relay closes the connection for a reason reconnecting cannot
    * fix. The agent has already stopped retrying by this point.
@@ -76,13 +148,24 @@ export type TerminalCloseReason = 'credential-rejected' | 'replaced';
 
 export class TunnelAgent {
   private hooks: TunnelAgentHooks;
+  private options: TunnelAgentOptions;
+  private home: string;
+  private now: () => number;
   private ws: WebSocket | null = null;
   private registry: CapabilityRegistry;
   private permissionGuard: PermissionGuard;
   private config: TunnelConfig;
   private reconnectAttempts = 0;
-  private maxReconnectDelay = 30_000;
-  private baseReconnectDelay = 1_000;
+  private closeCurrentSocket: ((event: { code: number; reason?: string }) => void) | null = null;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+  private lastTick = 0;
+  private lastPingAt = 0;
+  private connectStartedAt = 0;
+  private standbyAttempts = 0;
+  private lastRejectedLogAt = 0;
+  private sentAccessKey: string | null = null;
+  private keepAwake: ChildProcess | null = null;
+  private keepAwakeFailed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stableConnectionTimer: ReturnType<typeof setTimeout> | null = null;
   private isShuttingDown = false;
@@ -95,20 +178,30 @@ export class TunnelAgent {
   private lastNonce = 0;
   private responseNonce = 0;
 
-  constructor(config: TunnelConfig, registry: CapabilityRegistry, hooks: TunnelAgentHooks = {}) {
+  constructor(
+    config: TunnelConfig,
+    registry: CapabilityRegistry,
+    hooks: TunnelAgentHooks = {},
+    options: TunnelAgentOptions = {},
+  ) {
     this.config = config;
     this.registry = registry;
     this.permissionGuard = new PermissionGuard();
     this.hooks = hooks;
+    this.options = options;
+    this.home = options.home ?? agentTunnelHome();
+    this.now = options.now ?? Date.now;
   }
 
   connect(): void {
     if (this.ws) {
       this.ws.close();
     }
+    this.startWatchdog();
 
     const wsUrl = this.buildWsUrl();
     log(`${c.cyan}◆${c.reset}`, `Connecting…`);
+    this.connectStartedAt = this.now();
     this.setStatus('connecting');
 
     try {
@@ -133,6 +226,11 @@ export class TunnelAgent {
       clearInterval(this.uptimeInterval);
       this.uptimeInterval = null;
     }
+    if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = null;
+    }
+    this.syncKeepAwake(false);
 
     if (this.ws) {
       try { this.ws.close(1000, 'client shutdown'); } catch {}
@@ -147,7 +245,7 @@ export class TunnelAgent {
   private setStatus(status: TunnelAgentStatus): void {
     if (this.status === status) return;
     this.status = status;
-    try { this.hooks.onStatus?.(status); } catch {}
+    try { this.hooks.onStatus?.(status, this.config); } catch {}
   }
 
   isConnected(): boolean {
@@ -170,6 +268,7 @@ export class TunnelAgent {
         token: trustedCredential(this.config.token, 'token'),
         capabilities: this.registry.getCapabilityNames(),
         agentVersion: AGENT_VERSION,
+        reportsAccess: true,
       });
     });
 
@@ -193,6 +292,22 @@ export class TunnelAgent {
       }
 
       if (!this.isShuttingDown) {
+        if (this.options.persistent && isCredentialRejection(event.code, event.reason)) {
+          this.setStatus('rejected');
+          if (this.now() - this.lastRejectedLogAt >= REJECTED_LOG_EVERY_MS) {
+            this.lastRejectedLogAt = this.now();
+            log(`${c.red}✗${c.reset}`, `Credential rejected — waiting for this computer to be paired again (retrying every 5 min)`);
+          }
+          this.retryAfter(this.options.rejectedRetryMs ?? REJECTED_RETRY_MS);
+          return;
+        }
+        if (this.options.persistent && event.code === AGENT_REPLACED_CLOSE_CODE) {
+          this.setStatus('standby');
+          const wait = Math.min((this.options.standbyRetryMs ?? STANDBY_RETRY_MS) * 2 ** this.standbyAttempts++, MAX_STANDBY_RETRY_MS);
+          log(`${c.yellow}○${c.reset}`, `Another Agent Tunnel process holds this computer — standing by, next try in ${Math.round(wait / 1000)}s`);
+          this.retryAfter(wait);
+          return;
+        }
         if (event.code === 4001 && isCredentialRejection(event.code, event.reason)) {
           this.isShuttingDown = true;
           log(`${c.red}✗${c.reset}`, `Credential rejected — run \`agent-tunnel connect --reauth\` to pair again`);
@@ -219,6 +334,7 @@ export class TunnelAgent {
       }
     };
     this.ws.addEventListener('close', onClose);
+    this.closeCurrentSocket = onClose;
 
     this.ws.addEventListener('error', () => {
       log(`${c.red}✗${c.reset}`, `WebSocket error`);
@@ -258,7 +374,11 @@ export class TunnelAgent {
       } else {
         log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${capabilityNames.join(', ')})${c.reset}`);
       }
+      this.lastPingAt = this.now();
+      this.sentAccessKey = null;
+      this.standbyAttempts = 0;
       this.setStatus('online');
+      this.reportAccess();
       if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
       this.stableConnectionTimer = setTimeout(() => {
         this.reconnectAttempts = 0;
@@ -281,6 +401,7 @@ export class TunnelAgent {
 
     // ── Heartbeat ping (signature verified above) ────────────────────
     if ('method' in msg && msg.method === 'tunnel.ping') {
+      this.lastPingAt = this.now();
       this.sendPong();
       return;
     }
@@ -371,6 +492,12 @@ export class TunnelAgent {
       return;
     }
 
+    const refusal = await this.awaitAccess(method);
+    if (refusal) {
+      this.sendSignedError(id, refusal.code, refusal.message);
+      return;
+    }
+
     try {
       const result = await handler({
         ...params,
@@ -458,18 +585,168 @@ export class TunnelAgent {
     });
   }
 
+  /**
+   * A2/A3: the owner's standing answer in access.json decides. `ask` without a
+   * grant writes access-request.json, wakes the desktop app, and holds the call
+   * until the owner answers or the hold runs out.
+   */
+  private async awaitAccess(method: string): Promise<(typeof ACCESS_ERRORS)[keyof typeof ACCESS_ERRORS] | null> {
+    const first = decideAccess(readAccess(this.home));
+    if (first === 'run') return null;
+    if (first !== 'ask') return ACCESS_ERRORS[first];
+
+    const hold = this.options.accessHoldMs ?? ACCESS_HOLD_MS;
+    let requestId: string | null = null;
+    try {
+      // Concurrent calls share one pending request: one prompt, one app launch.
+      const pending = readAccessRequest(this.home);
+      if (pending && Date.now() - Date.parse(pending.requestedAt) < hold) {
+        requestId = pending.id;
+      } else {
+        requestId = writeAccessRequest({ capability: capabilityForMethod(method) ?? method, method }, this.home).id;
+        wakeDesktopApp(this.home);
+      }
+    } catch {
+      // Without a request file nobody can answer; the hold simply runs out.
+    }
+    const deadline = Date.now() + hold;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, hold / 4)));
+      const decision = decideAccess(readAccess(this.home));
+      if (decision === 'ask') continue;
+      if (requestId) clearAccessRequest(requestId, this.home);
+      return decision === 'run' ? null : ACCESS_ERRORS[decision];
+    }
+    // The request stays: a late answer still applies to the next call.
+    return ACCESS_ERRORS.pending;
+  }
+
+  /** X2: optional signed notification; relays that do not know it ignore it. */
+  private reportAccess(): void {
+    const access = readAccess(this.home);
+    const { mode } = access;
+    // A lapsed grant is no grant: the watchdog reports again when it expires.
+    const grantedUntil = access.grantedUntil && Date.parse(access.grantedUntil) > this.now() ? access.grantedUntil : null;
+    const key = `${mode}|${grantedUntil}`;
+    if (key === this.sentAccessKey || this.status !== 'online') return;
+    this.sentAccessKey = key;
+    this.sendSigned({ jsonrpc: '2.0', method: 'tunnel.access.state', params: { mode, grantedUntil } });
+  }
+
+  /** R6: hold a sleep blocker while access.json asks for it. */
+  private syncKeepAwake(want: boolean): void {
+    if (!want) {
+      this.keepAwake?.kill();
+      this.keepAwake = null;
+      // Toggling keep awake off and on again is the owner's retry.
+      this.keepAwakeFailed = false;
+      return;
+    }
+    if (this.keepAwake || this.keepAwakeFailed) return;
+    const blocker = keepAwakeCommand(platform(), process.pid);
+    if (!blocker) return;
+    const child = spawn(blocker.command, blocker.args, { stdio: 'ignore' });
+    child.on('error', () => {
+      this.keepAwakeFailed = true;
+      log(`${c.yellow}!${c.reset}`, `Keep awake is unavailable: ${blocker.command} could not start`);
+    });
+    const startedAt = this.now();
+    child.on('exit', (code) => {
+      if (this.keepAwake !== child) return; // we killed it
+      this.keepAwake = null;
+      // e.g. polkit refused systemd-inhibit: respawning every 5 s would never help.
+      if (code !== 0 || this.now() - startedAt < KEEP_AWAKE_MIN_LIFETIME_MS) {
+        this.keepAwakeFailed = true;
+        log(`${c.yellow}!${c.reset}`, `Keep awake is unavailable: ${blocker.command} exited (code ${code})`);
+      }
+    });
+    this.keepAwake = child;
+  }
+
+  /** R1: liveness, wake-from-sleep, and access.json changes, every 5 s. */
+  private startWatchdog(): void {
+    if (this.watchdog) return;
+    const interval = this.options.watchdogIntervalMs ?? WATCHDOG_INTERVAL_MS;
+    this.lastTick = this.now();
+    this.watchdog = setInterval(() => {
+      const now = this.now();
+      const slept = now - this.lastTick > interval + CLOCK_JUMP_MS;
+      this.lastTick = now;
+      if (slept) {
+        // A wake is a fresh start: backoff built up before the sleep must not delay it.
+        this.reconnectAttempts = 0;
+        this.forceReconnect('clock jump');
+      }
+      else if (this.status === 'online' && now - this.lastPingAt > (this.options.livenessTimeoutMs ?? LIVENESS_TIMEOUT_MS)) {
+        this.forceReconnect('liveness timeout');
+      } else if (this.status === 'connecting' && this.ws && now - this.connectStartedAt > (this.options.connectDeadlineMs ?? CONNECT_DEADLINE_MS)) {
+        this.forceReconnect('handshake timeout');
+      } else if (this.status === 'rejected' && this.credentialChanged()) {
+        this.forceReconnect('new credential');
+      }
+      try {
+        const access = readAccess(this.home);
+        this.syncKeepAwake(access.keepAwake);
+        this.reportAccess();
+      } catch {}
+    }, interval);
+    this.watchdog.unref?.();
+  }
+
+  /** R2: a re-pair wrote a new credential; a `rejected` agent uses it at once. */
+  private credentialChanged(): boolean {
+    try {
+      const next = this.options.reloadConfig?.();
+      if (!next || (next.token === this.config.token && next.tunnelId === this.config.tunnelId)) return false;
+      this.config = next;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Drops a socket that may be half-open and reconnects without waiting for its close. */
+  private forceReconnect(reason: string): void {
+    if (this.isShuttingDown) return;
+    if (!this.ws) {
+      // Waiting out a backoff: after a sleep, try at once.
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+        this.connect();
+      }
+      return;
+    }
+    log(`${c.yellow}○${c.reset}`, `Reconnecting (${reason})`);
+    try { this.ws.close(4000, reason); } catch {}
+    this.ws = null;
+    this.closeCurrentSocket?.({ code: 4000, reason });
+  }
+
+  private retryAfter(ms: number): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.ws = null;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      try {
+        if (this.options.reloadConfig) this.config = this.options.reloadConfig();
+      } catch {}
+      this.connect();
+    }, ms);
+  }
+
   private scheduleReconnect(): void {
     if (this.isShuttingDown) return;
 
     this.reconnectAttempts++;
-    const delay = Math.min(
-      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
-      this.maxReconnectDelay,
-    );
+    const delay = reconnectDelay(this.reconnectAttempts);
+    this.ws = null;
 
     log(`${c.cyan}◆${c.reset}`, `Reconnecting in ${c.reset}${c.white}${(delay / 1000).toFixed(1)}s${c.dim} (attempt ${this.reconnectAttempts})`);
 
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.connect();
     }, delay);
   }

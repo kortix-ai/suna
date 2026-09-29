@@ -14,6 +14,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the default) or shared with the project (`'project'`). `Connection` gains
   optional `tunnel_id` and `machine` (`online`, `last_heartbeat_at`,
   `hostname`, `platform`), set on `computer` accounts only.
+- `Connection.machine` gains optional `access` (`{ mode: 'ask' | 'always' |
+  'off', granted_until }` or `null`): who may use the machine, as its owner
+  set it on the computer. `null` or absent for agents that never report it.
+- A paired computer follows its owner: their private account exists in every
+  project they belong to without a call. `addComputerToProject` with
+  `share: 'me'` stays accepted but is no longer needed; `share: 'project'` is
+  how a machine is shared with a project. `useApproveDeviceAuth` needs no
+  `projectId` on current servers, and its `connectionId` is `null` when the
+  approval named no project.
 - `useApproveDeviceAuth` accepts optional `projectId` and `share`, sent as
   `project_id` and `share`, and returns the created account's optional
   `connectionId`; `DeviceAuthInfo` gains optional `projectId`;

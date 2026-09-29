@@ -24,6 +24,8 @@ export const CONNECTOR_TAB_LABEL: Record<ConnectorTab, string> = {
  * - Tools and Settings mutate project state, so they are writer-only. Accounts
  *   stays for readers: it is how they see whether the connector works, and how
  *   they connect their own account.
+ * - The computer connector is built in: nothing to configure and it cannot be
+ *   removed, so it has no Settings.
  */
 export function connectorTabs(
   connector: AdminConnector,
@@ -32,6 +34,6 @@ export function connectorTabs(
   const present = new Set<ConnectorTab>();
   present.add('accounts');
   if (caps.canWrite) present.add('tools');
-  if (caps.canWrite) present.add('settings');
+  if (caps.canWrite && connector.provider !== 'computer') present.add('settings');
   return CONNECTOR_TABS.filter((tab) => present.has(tab));
 }

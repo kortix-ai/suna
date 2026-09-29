@@ -95,6 +95,13 @@ jobs:
         shell: bash
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
+      # The bundled agent reads its version from the package.json shipped next
+      # to it. The checked-in value is inert, so stamp the release: the app
+      # restarts a service that runs another version (v2 R5).
+      - name: Stamp the bundled agent version
+        shell: bash
+        run: node -e "const f='packages/agent-tunnel/package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8'));p.version=process.argv[1];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')" "${{ steps.ver.outputs.version }}"
+
       # Signing material lives in kortix-ci-env. Every key is optional: a build
       # never hard-fails on missing certs. The read is skipped on Windows,
       # where no signing material has ever been stored (WINDOWS_CERTIFICATE*

@@ -91,6 +91,16 @@ projectsApp.openapi(
     if (connection.ownerType !== 'member' || connection.ownerId !== loaded.userId) {
       return c.json({ error: 'Not found' }, 404);
     }
+    // A computer account follows its owner into every project, including
+    // projects of other workspaces. Sharing one goes through the computers
+    // route, which checks the machine's workspace and refuses session and
+    // agent tokens; this generic route checks neither.
+    if (connection.providerType === 'computer') {
+      return c.json(
+        { error: "Share a computer with POST /projects/{projectId}/computers { tunnel_id, share: 'project' }" },
+        409,
+      );
+    }
     if (!mutable.mayManageSystemConnections) {
       return c.json(
         { error: "Sharing an account needs permission to manage the project's connections" },
