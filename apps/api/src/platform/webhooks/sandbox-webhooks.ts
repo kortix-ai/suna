@@ -124,7 +124,7 @@ export async function handleDaytonaWebhook(
   const newState: string | undefined = event?.newState ?? event?.state ?? event?.data?.state;
   if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
 
-  const dedupId = `daytona:${headers.id || `${externalId}:${newState}:${event?.updatedAt ?? ''}`}`;
+  const dedupId = `daytona:${getHeader('webhook-id') ?? `${externalId}:${newState}:${event?.updatedAt ?? ''}`}`;
   const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch(() => true);
   if (!fresh) return { status: 200, body: { ok: true, deduped: true } };
 
