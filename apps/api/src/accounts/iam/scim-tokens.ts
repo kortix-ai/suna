@@ -16,6 +16,7 @@ import {
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
 import { auditIam, requireEntitlement } from './helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { isUuid } from '../../shared/validate';
 
 iamRouter.openapi(
   createRoute({
@@ -33,6 +34,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const tokens = await listScimTokens(accountId);
@@ -67,6 +69,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const denied = await requireEntitlement(c, accountId, 'scim');
   if (denied) return denied;
@@ -140,12 +143,13 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), tokenId: z.string() }) },
     responses: {
       200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
-      ...errors(401, 403, 404),
+      ...errors(401, 403),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   const tokenId = c.req.param('tokenId');
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   // Revocation must never 402 — a lapsed/downgraded entitlement can't be the

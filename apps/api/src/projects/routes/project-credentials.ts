@@ -85,6 +85,10 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
+  // A connected app's revocable `kortix_oat_` token must not mint a durable one.
+  if (c.get('authType') === 'oauth') {
+    return c.json({ error: 'Connected apps cannot mint project tokens.' }, 403);
+  }
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'credentials');
   if (!loaded) return c.json({ error: 'Not found' }, 404);

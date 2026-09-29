@@ -168,6 +168,18 @@ app.get('/.well-known/oauth-protected-resource/v1/mcp', (c) => {
     'cache-control': 'public, max-age=3600',
   });
 });
+// Root form of the same document, and the OIDC discovery path some clients
+// probe first: both answer with the documents above.
+app.get('/.well-known/oauth-protected-resource', (c) => {
+  return c.json(mcpProtectedResourceMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+app.get('/.well-known/openid-configuration', (c) => {
+  return c.json(oauthAuthorizationServerMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
 
 app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {

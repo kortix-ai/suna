@@ -808,13 +808,22 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
  * from the request (learnings 2026-08-19).
  */
 function challengeUnauthorized(c: Context, next: Next) {
+  const metadata = `resource_metadata="${mcpResourceMetadataUrl(new URL(c.req.url).origin)}"`;
+  const sent = Boolean(c.req.header('Authorization')?.startsWith('Bearer '));
+  // RFC 6750 3.1: a token that was sent and refused names `invalid_token`.
   const challenge = () =>
     c.json({ error: 'unauthorized', error_description: 'Sign in with OAuth, or send a kortix_pat_ token, to use the Kortix MCP server.' }, 401, {
-      'WWW-Authenticate': `Bearer resource_metadata="${mcpResourceMetadataUrl(new URL(c.req.url).origin)}", scope="${OAUTH_SCOPE_KORTIX}"`,
+      'WWW-Authenticate': `Bearer ${sent ? 'error="invalid_token", ' : ''}${metadata}, scope="${OAUTH_SCOPE_KORTIX}"`,
     });
-  if (!c.req.header('Authorization')?.startsWith('Bearer ')) return challenge();
+  if (!sent) return challenge();
   return supabaseAuth(c, next).catch((err) => {
     if (err instanceof HTTPException && err.status === 401) return challenge();
+    // A token without the `kortix` scope: tell the client which scope to ask for.
+    if (err instanceof HTTPException && err.status === 403 && err.message.startsWith('insufficient_scope')) {
+      return c.json({ error: 'insufficient_scope', error_description: err.message }, 403, {
+        'WWW-Authenticate': `Bearer error="insufficient_scope", scope="${OAUTH_SCOPE_KORTIX}", ${metadata}`,
+      });
+    }
     throw err;
   });
 }

@@ -14332,7 +14332,7 @@
       "text8cd003e6301b": "⌘S",
       "text8cd05146050d": "Gère tout le cycle : découverte, cadrage, construction, transfert, extension.",
       "text8cd1f7bcdc71": "Étape 1 sur 2 : collez le manifeste dans Slack et installez l’application.",
-      "text8ce16e33b27d": "Vous pouvez révoquer l’accès à tout moment dans les paramètres de votre compte.",
+      "text8ce16e33b27d": "Vous pouvez révoquer l’accès à tout moment dans Paramètres → Clés d’accès personnelles → Applications connectées.",
       "text8ce429d50e7c": "Dans « API Connection » : collez l’URL du tenant dans « SCIM Base URL » et le secret dans « SCIM Bearer Token », puis cliquez sur le bouton « Enable » (enregistrez d’abord l’application si vous y êtes invité). OneLogin valide le point de terminaison, puis « API Status » affiche un « Enabled » vert — ce champ est un indicateur en lecture seule, et non un contrôle à configurer.",
       "text8cea8af247c2": "Impossible de mettre votre message en file d’attente",
       "text8d0218f233bb": "Aperçu :{value0}",

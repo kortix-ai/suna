@@ -31,6 +31,12 @@ flow(
       "POST /v1/mcp",
       "GET /.well-known/oauth-protected-resource/v1/mcp",
       "GET /.well-known/oauth-authorization-server",
+      "GET /.well-known/openid-configuration",
+      "GET /.well-known/oauth-protected-resource",
+      "POST /v1/oauth/register",
+      "GET /v1/oauth/authorize",
+      "POST /v1/oauth/authorize/consent",
+      "POST /v1/oauth/token",
     ],
   },
   async (ctx) => {
@@ -51,13 +57,45 @@ flow(
       metadataUrl = /resource_metadata="([^"]+)"/.exec(challenge)?.[1] ?? "";
       if (metadataUrl !== `${issuer}/.well-known/oauth-protected-resource/v1/mcp`) throw new Error(`challenge: ${challenge}`);
       if (!challenge.includes('scope="kortix"')) throw new Error(`scope missing: ${challenge}`);
+      if (challenge.includes("invalid_token")) throw new Error(`no token sent, yet invalid_token: ${challenge}`);
     });
     await ctx.step("a bad token → the same 401 challenge, not a bare error", async () => {
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(1, "initialize"), {
         headers: { Authorization: "Bearer kortix_oat_not-a-real-token" },
       });
       r.status(401);
-      if (!r.header("www-authenticate")?.includes("resource_metadata=")) throw new Error("no challenge on a bad token");
+      const challenge = r.header("www-authenticate") ?? "";
+      if (!challenge.includes("resource_metadata=")) throw new Error("no challenge on a bad token");
+      // RFC 6750 3.1: a token that was sent and refused is `invalid_token`.
+      if (!challenge.includes('error="invalid_token"')) throw new Error(`invalid_token missing: ${challenge}`);
+    });
+    await ctx.step("a token without the kortix scope → 403 insufficient_scope whose challenge names the scope to ask for", async () => {
+      const redirectUri = "http://127.0.0.1:33417/callback";
+      const reg = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { client_name: "Flow profile-only", redirect_uris: [redirectUri], scope: "profile" });
+      reg.status(201).body().has("$.scope", "profile");
+      const clientId = reg.json<any>().client_id;
+      const { verifier, challenge: pkce } = await pkcePair();
+      const authz = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile", code_challenge: pkce, code_challenge_method: "S256" },
+      });
+      authz.status(302);
+      const requestId = new URL(authz.header("location")!).searchParams.get("request_id")!;
+      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: requestId, approved: true });
+      const code = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+      const tok = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "authorization_code", client_id: clientId, code, redirect_uri: redirectUri, code_verifier: verifier }));
+      tok.status(200);
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(1, "initialize"), { headers: { Authorization: `Bearer ${tok.json<any>().access_token}` } });
+      r.status(403);
+      const challenge = r.header("www-authenticate") ?? "";
+      if (!challenge.includes('error="insufficient_scope"') || !challenge.includes('scope="kortix"') || !challenge.includes("resource_metadata=")) {
+        throw new Error(`403 challenge: ${challenge}`);
+      }
+    });
+    await ctx.step("OIDC discovery path serves the authorization-server document; the root protected-resource path serves the MCP resource", async () => {
+      const oidc = await ctx.client.as(ctx.P.ANON).get("/.well-known/openid-configuration");
+      oidc.status(200).body().has("$.issuer", issuer).has("$.registration_endpoint", `${issuer}/v1/oauth/register`);
+      const root = await ctx.client.as(ctx.P.ANON).get("/.well-known/oauth-protected-resource");
+      root.status(200).body().has("$.resource", `${issuer}/v1/mcp`).has("$.authorization_servers[0]", issuer);
     });
     await ctx.step("RFC 9728 metadata names the MCP URL as the resource and Kortix as its authorization server", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/.well-known/oauth-protected-resource/v1/mcp");
@@ -89,9 +127,11 @@ flow("MCP-2", { domain: "mcp", routes: ["POST /v1/oauth/register"] }, async (ctx
     const none = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { client_name: "x" });
     none.status(400);
   });
-  await ctx.step("an unknown scope is refused", async () => {
-    const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { redirect_uris: ["http://localhost:1/cb"], scope: "admin" });
-    r.status(400).body().has("$.error", "invalid_client_metadata");
+  await ctx.step("unknown scopes (openid, offline_access, mcp:tools, admin) are ignored: known ones stay, none left → kortix", async () => {
+    const some = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { redirect_uris: ["http://localhost:1/cb"], scope: "openid profile offline_access" });
+    some.status(201).body().has("$.scope", "profile");
+    const none = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/register", { redirect_uris: ["http://localhost:1/cb"], scope: "mcp:tools admin" });
+    none.status(201).body().has("$.scope", "kortix");
   });
 });
 
@@ -172,6 +212,34 @@ flow(
       r.status(302);
       requestId = new URL(r.header("location")!).searchParams.get("request_id") ?? "";
       if (!requestId) throw new Error("no request_id");
+    });
+    await ctx.step("authorize edge cases: no scope and no resource → the registered scope; offline_access ignored; a foreign resource → error=invalid_target on the redirect; a known unregistered scope → error=invalid_scope", async () => {
+      const authz = (extra: Record<string, string>) =>
+        ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+          query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", state: "st", code_challenge: challenge, code_challenge_method: "S256", ...extra },
+        });
+      const scopeOf = async (extra: Record<string, string>) => {
+        const r = await authz(extra);
+        r.status(302);
+        const rid = new URL(r.header("location")!).searchParams.get("request_id") ?? "";
+        if (!rid) throw new Error(`no request_id: ${r.header("location")}`);
+        const meta = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/authorize/consent/:requestId", { params: { requestId: rid } });
+        meta.status(200);
+        return meta.json<any>().scope as string;
+      };
+      if ((await scopeOf({})) !== "kortix") throw new Error("no scope, no resource: not kortix");
+      if ((await scopeOf({ scope: "offline_access openid kortix" })) !== "kortix") throw new Error("unknown scopes not ignored");
+      for (const [extra, error] of [
+        [{ resource: "https://evil.example.test/mcp" }, "invalid_target"],
+        [{ scope: "email" }, "invalid_scope"],
+      ] as const) {
+        const r = await authz(extra);
+        r.status(302);
+        const back = new URL(r.header("location")!);
+        if (back.origin + back.pathname !== redirectUri || back.searchParams.get("error") !== error || back.searchParams.get("state") !== "st") {
+          throw new Error(`expected error=${error} on the redirect: ${back}`);
+        }
+      }
     });
     let code = "";
     await ctx.step("consent shows the kortix scope, self_registered, and the loopback target; approve → code", async () => {
