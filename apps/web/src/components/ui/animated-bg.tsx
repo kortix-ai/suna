@@ -6,39 +6,46 @@ import { useEffect, useId, useMemo, useState } from 'react';
 
 type Tone = 'light' | 'medium' | 'dark';
 
-export const LeftArc = ({
-  size,
-  tone,
-  opacity,
-  style,
-  className,
-  blurAmount,
-}: {
+type ArcStop = { color?: number; offset?: string; opacity?: string };
+
+// [x1, y1, x2, y2, stops]: one linearGradient per entry, id `${p}${i}_${tone}_${uid}`.
+type ArcGradient = [x1: string, y1: string, x2: string, y2: string, stops: ArcStop[]];
+
+type ArcSvgCfg = {
+  // The svg id prefix ('L'/'R'): every def id and fill url is `${p}…`.
+  prefix: 'L' | 'R';
+  sw: number;
+  sh: number;
+  d: string;
+  gradients: ArcGradient[];
+};
+
+// Per-tone gradient stop colors, indexed by ArcStop.color (Right's c = column 0).
+const TONE_COLORS: Record<Tone, string[]> = {
+  light: ['#D9D9D9', '#DEDEDE', '#3B3B3B'],
+  medium: ['#C9C9C9', '#D4D4D4', '#2F2F2F'],
+  dark: ['#B9B9B9', '#C8C8C8', '#232323'],
+};
+
+type ArcSvgProps = {
   size: number;
   tone: Tone;
   opacity: number; // 0.22–0.38
   style?: React.CSSProperties;
   className?: string;
   blurAmount?: number;
-}) => {
+  cfg: ArcSvgCfg;
+};
+
+const ArcSvg = ({ size, tone, opacity, style, className, blurAmount, cfg }: ArcSvgProps) => {
   const uid = useId();
-  const sw = 542;
-  const sh = 520;
-
-  const { c1, c2, c3 } = {
-    light: { c1: '#D9D9D9', c2: '#DEDEDE', c3: '#3B3B3B' },
-    medium: { c1: '#C9C9C9', c2: '#D4D4D4', c3: '#2F2F2F' },
-    dark: { c1: '#B9B9B9', c2: '#C8C8C8', c3: '#232323' },
-  }[tone];
-
-  const d =
-    'M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z';
+  const { d, sw, sh, prefix: p } = cfg;
 
   return (
     <svg
       width={size}
       height={size * (sh / sw)}
-      viewBox="-50 -50 642 620"
+      viewBox={`-50 -50 ${sw + 100} ${sh + 100}`}
       fill="none"
       className={className}
       style={{
@@ -48,40 +55,40 @@ export const LeftArc = ({
       }}
     >
       <defs>
-        <linearGradient
-          id={`L0_${tone}_${uid}`}
-          x1="201.497"
-          y1="0.0386"
-          x2="201.497"
-          y2="680.043"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor={c1} />
-          <stop offset="1" stopOpacity="0" />
-        </linearGradient>
-        <linearGradient
-          id={`L1_${tone}_${uid}`}
-          x1="541.499"
-          y1="401.469"
-          x2="-138.506"
-          y2="401.469"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor={c2} />
-          <stop offset="1" stopColor={c3} />
-        </linearGradient>
+        {cfg.gradients.map(([x1, y1, x2, y2, stops], i) => (
+          <linearGradient
+            // biome-ignore lint/suspicious/noArrayIndexKey: static config, stable order
+            key={i}
+            id={`${p}${i}_${tone}_${uid}`}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            gradientUnits="userSpaceOnUse"
+          >
+            {stops.map((s, j) => (
+              <stop
+                // biome-ignore lint/suspicious/noArrayIndexKey: static config, stable order
+                key={j}
+                offset={s.offset}
+                stopColor={s.color === undefined ? undefined : TONE_COLORS[tone][s.color]}
+                stopOpacity={s.opacity}
+              />
+            ))}
+          </linearGradient>
+        ))}
 
-        <filter id={`Ledge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
+        <filter id={`${p}edge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" />
         </filter>
 
-        <mask id={`Lmask_${uid}`} maskUnits="userSpaceOnUse">
-          <g filter={`url(#Ledge_${uid})`}>
+        <mask id={`${p}mask_${uid}`} maskUnits="userSpaceOnUse">
+          <g filter={`url(#${p}edge_${uid})`}>
             <path d={d} fill="#fff" />
           </g>
         </mask>
 
-        <pattern id={`Lgrain_${uid}`} patternUnits="userSpaceOnUse" width="100" height="100">
+        <pattern id={`${p}grain_${uid}`} patternUnits="userSpaceOnUse" width="100" height="100">
           <image
             href="/grain-texture.png"
             x="0"
@@ -99,116 +106,48 @@ export const LeftArc = ({
             filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined,
           }}
         >
-          <path d={d} fill={`url(#L0_${tone}_${uid})`} />
-          <path d={d} fill={`url(#L1_${tone}_${uid})`} />
+          {cfg.gradients.map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static config, stable order
+            <path key={i} d={d} fill={`url(#${p}${i}_${tone}_${uid})`} />
+          ))}
         </g>
 
         <g
-          mask={`url(#Lmask_${uid})`}
+          mask={`url(#${p}mask_${uid})`}
           style={{ mixBlendMode: 'overlay' }}
           opacity={0.6}
           pointerEvents="none"
         >
-          <rect x="0" y="0" width="120%" height="120%" fill={`url(#Lgrain_${uid})`} />
+          <rect x="0" y="0" width="120%" height="120%" fill={`url(#${p}grain_${uid})`} />
         </g>
       </g>
     </svg>
   );
 };
 
-export const RightArc = ({
-  size,
-  tone,
-  opacity,
-  style,
-  className,
-  blurAmount,
-}: {
-  size: number;
-  tone: Tone;
-  opacity: number; // 0.22–0.38
-  style?: React.CSSProperties;
-  className?: string;
-  blurAmount?: number;
-}) => {
-  const uid = useId();
-  const sw = 532;
-  const sh = 657;
-  const c = { light: '#D9D9D9', medium: '#C9C9C9', dark: '#B9B9B9' }[tone];
-
-  const d =
-    'M3.50098 155.457C378.985 155.457 683.375 459.847 683.375 835.331H834.934C834.934 376.144 462.688 3.89844 3.50098 3.89844V155.457Z';
-
-  return (
-    <svg
-      width={size}
-      height={size * (sh / sw)}
-      viewBox="-50 -50 632 757"
-      fill="none"
-      className={className}
-      style={{
-        overflow: 'visible',
-        transform: 'translate3d(0, 0, 0)',
-        ...style,
-      }}
-    >
-      <defs>
-        <linearGradient
-          id={`R0_${tone}_${uid}`}
-          x1="419.217"
-          y1="3.89844"
-          x2="419.217"
-          y2="835.331"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor={c} />
-          <stop offset="1" stopOpacity="0" />
-        </linearGradient>
-
-        <filter id={`Redge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="3" />
-        </filter>
-
-        <mask id={`Rmask_${uid}`} maskUnits="userSpaceOnUse">
-          <g filter={`url(#Redge_${uid})`}>
-            <path d={d} fill="#fff" />
-          </g>
-        </mask>
-
-        <pattern id={`Rgrain_${uid}`} patternUnits="userSpaceOnUse" width="100" height="100">
-          <image
-            href="/grain-texture.png"
-            x="0"
-            y="0"
-            width="100"
-            height="100"
-            preserveAspectRatio="none"
-          />
-        </pattern>
-      </defs>
-
-      <g opacity={opacity}>
-        <g
-          style={{
-            filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined,
-          }}
-        >
-          <path d={d} fill={`url(#R0_${tone}_${uid})`} />
-        </g>
-
-        <g
-          mask={`url(#Rmask_${uid})`}
-          style={{ mixBlendMode: 'overlay' }}
-          opacity={0.6}
-          pointerEvents="none"
-        >
-          <rect x="0" y="0" width="120%" height="120%" fill={`url(#Rgrain_${uid})`} />
-        </g>
-      </g>
-    </svg>
-  );
+const LEFT_CFG: ArcSvgCfg = {
+  prefix: 'L',
+  sw: 542,
+  sh: 520,
+  d: 'M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z',
+  gradients: [
+    ['201.497', '0.0386', '201.497', '680.043', [{ color: 0 }, { offset: '1', opacity: '0' }]],
+    ['541.499', '401.469', '-138.506', '401.469', [{ color: 1 }, { offset: '1', color: 2 }]],
+  ],
 };
 
+const RIGHT_CFG: ArcSvgCfg = {
+  prefix: 'R',
+  sw: 532,
+  sh: 657,
+  d: 'M3.50098 155.457C378.985 155.457 683.375 459.847 683.375 835.331H834.934C834.934 376.144 462.688 3.89844 3.50098 3.89844V155.457Z',
+  gradients: [
+    ['419.217', '3.89844', '419.217', '835.331', [{ color: 0 }, { offset: '1', opacity: '0' }]],
+  ],
+};
+
+export const LeftArc = (props: Omit<ArcSvgProps, 'cfg'>) => <ArcSvg {...props} cfg={LEFT_CFG} />;
+export const RightArc = (props: Omit<ArcSvgProps, 'cfg'>) => <ArcSvg {...props} cfg={RIGHT_CFG} />;
 type ArcCfg = {
   pos: { left?: number; right?: number; top: number };
   size: number;
