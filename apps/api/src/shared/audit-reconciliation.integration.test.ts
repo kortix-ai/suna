@@ -201,8 +201,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
     expect(sessionAttribution.rows[0]).toMatchObject({
       actor_type: 'agent',
       authoritative_source: 'agent',
-      // Legacy metadata still holds "cli"; the client-reported field is no longer read.
-      client_reported_source: null,
+      client_reported_source: 'cli',
       initiator_actor_type: 'human',
       initiator_actor_id: ACTOR,
       delegation_depth: 1,

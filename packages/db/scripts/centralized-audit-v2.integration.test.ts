@@ -378,8 +378,7 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
     expect(result.rows[0]).toMatchObject({
       actor_type: 'agent',
       authoritative_source: 'agent',
-      // Legacy session metadata still says "cli"; reconciliation no longer reads it.
-      client_reported_source: null,
+      client_reported_source: 'cli',
       initiator_actor_type: 'agent',
       initiator_actor_id: 'parent-session',
       delegation_depth: 1,
