@@ -12,6 +12,7 @@ import { sessionHoldsLiveTurn } from '../../projects/session-lifecycle/inbox-adm
 import { currentChannelSelection } from '../slack/selection';
 import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
 import { buildAgentUnavailableCard } from './agent-picker';
+import { userMayLaunchAgent } from '../scoped-agents';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
@@ -537,6 +538,18 @@ export async function createOrJoinTeamsConversationSession(input: {
   await ensureTeamsConversationBinding({ projectId, tenantId, conversationId, ...describeTeamsConversation(activity) });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
 
+  // Per-resource scoping, as the web and Slack apply it: a person scoped out
+  // of the conversation's agent cannot start a session on it from Teams.
+  if (!(await userMayLaunchAgent({ projectId, accountId: project.accountId }, userId, selection?.agentName))) {
+    if (claimKey) await releaseThreadCreate(claimKey);
+    if (handle) {
+      await finalizeTurn(handle, {
+        error: `You don't have access to the \`${selection?.agentName}\` agent in this project. Ask a project manager to grant it, or pick another agent with /agents.`,
+      });
+    }
+    return;
+  }
+
   // A conversation that OPENS with an image has to start on a model that can
   // read one, and a `/model` pick that has since been retired has to be
   // replaced — the session pin is what every later turn inherits. A pick that
@@ -552,6 +565,8 @@ export async function createOrJoinTeamsConversationSession(input: {
     agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
   });
   const createModel = start.model;
+  // Frozen at start: a later `/policy` change applies to NEW sessions only.
+  const conversationPolicy = normalizeConversationPolicy(selection?.conversationPolicy);
 
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
@@ -587,7 +602,14 @@ export async function createOrJoinTeamsConversationSession(input: {
       tenantId && conversationId
         ? [{ type: 'bind_chat_thread', platform: 'teams', workspaceId: tenantId, threadId: conversationId }]
         : undefined,
-    visibility: teamsSessionIsPersonal(activity) ? 'private' : 'project',
+    // As Slack: an owner-only or approval conversation's session is not
+    // visible to the whole project on the web either. Its owner and each
+    // approved joiner hold a session grant (participants.ts).
+    visibility: teamsSessionIsPersonal(activity)
+      ? 'private'
+      : conversationPolicy === 'project_open'
+        ? 'project'
+        : 'restricted',
     metadata: {
       source: 'teams',
       teams: {
@@ -595,8 +617,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         conversation_id: conversationId,
         user: activity.from?.id,
         activity_id: activity.id,
-        // Frozen at start: a later `/policy` change applies to NEW sessions only.
-        conversation_policy: normalizeConversationPolicy(selection?.conversationPolicy),
+        conversation_policy: conversationPolicy,
         // The team a channel conversation lives in. Each turn gets it as
         // MS_TEAMS_TEAM_GROUP_ID for that turn only; this is the durable
         // record, so a channel session can be traced back to its team (Graph
