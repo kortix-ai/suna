@@ -8,7 +8,6 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
 import { projectSessions, projectSessionConnectorBindings, serviceAccounts } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { config } from '../../config';
@@ -287,23 +286,18 @@ projectsApp.openapi(
   },
 );
 
+// The route's handlers take `(c: any)` — this file bypasses hono's per-route
+// response typing, and the wire shapes are pinned by
+// session-scope-characterization.test.ts. The helpers keep the same
+// convention, so a helper's c.json returns flow back into the handler the way
+// the inline code did.
 type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
-type VisibleSession = Awaited<ReturnType<typeof loadVisibleSession>>;
+type VisibleSession = NonNullable<Awaited<ReturnType<typeof loadVisibleSession>>>;
 type SessionAgentGrant = Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
 type SessionScopeBody = z.infer<typeof SessionScopeInputSchema>;
 type EffectiveSessionBindings = Awaited<
   ReturnType<typeof resolveEffectiveSessionConnectorBindings>
 >;
-type ScopeBindingRow = {
-  sessionId: string;
-  projectId: string;
-  accountId: string;
-  connectorAlias: string;
-  connectorId: string;
-  connectionId: string;
-  source: 'request';
-  createdBy: string;
-};
 
 /**
  * The PUT scope handler's prologue: authorize the caller, parse the body,
@@ -311,7 +305,7 @@ type ScopeBindingRow = {
  * 400/403/404/409 response, or the decision inputs the handler threads
  * through the helpers below.
  */
-async function authorizeSessionRescope(c: Context) {
+async function authorizeSessionRescope(c: any) {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -442,22 +436,14 @@ async function readCurrentBindings(input: {
  * the fields the handler threads into the write and the response.
  */
 export async function decideSecretsRescope(input: {
-  c: Context;
+  c: any;
   loaded: LoadedProject;
   visible: VisibleSession;
   projectId: string;
   grant: SessionAgentGrant;
   body: SessionScopeBody;
   wantsSecrets: boolean;
-}): Promise<
-  Response | {
-    nextAllowlist: string[] | null;
-    droppedSecrets: string[];
-    addedSecrets: string[];
-    narrowedSecrets: boolean;
-    canReadSecretNames: boolean;
-  }
-> {
+}) {
   const { c, loaded, visible, projectId, grant, body, wantsSecrets } = input;
   let nextAllowlist = visible.row.secretsAllowlist ?? null;
   let droppedSecrets: string[] = [];
@@ -548,7 +534,7 @@ export async function decideSecretsRescope(input: {
  * the rows.
  */
 export async function decideBindingsRescope(input: {
-  c: Context;
+  c: any;
   loaded: LoadedProject;
   visible: VisibleSession;
   projectId: string;
@@ -559,7 +545,7 @@ export async function decideBindingsRescope(input: {
   clearsBindings: boolean;
   currentDurableBindings: Record<string, string>;
   currentEffectiveBindingIds: Record<string, string>;
-}): Promise<Response | { bindingRows: ScopeBindingRow[] }> {
+}) {
   const {
     c,
     loaded,
@@ -733,7 +719,7 @@ export function scopeResponseDetail(input: {
  * inline before the split.
  */
 function scopeResponse(input: {
-  c: Context;
+  c: any;
   nextAllowlist: string[] | null;
   effectiveBindings: EffectiveSessionBindings;
   canReadSecretNames: boolean;
@@ -748,7 +734,7 @@ function scopeResponse(input: {
   scopePushFailed: boolean;
   scopePushReason: string | undefined;
   scopeSecretsChanged: boolean;
-}): Response {
+}) {
   const {
     c,
     nextAllowlist,
