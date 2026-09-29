@@ -143,11 +143,7 @@ describe('session-token-health', () => {
     expect(sessionTokenPresumedDead()).toBe(false);
   });
 
-  // The API emits four terminal credential-state reasons
-  // (apps/api/src/repositories/account-tokens.ts). Prod 2026-09-28: 6,514
-  // `POST turn-stream -> 401 PAT not found or revoked` in 2h from one
-  // workspace, sustained near 1/s — the breaker never tripped on that class,
-  // and every such response reset the streak the base reason had built.
+  // Keep this list aligned with apps/api/src/repositories/account-tokens.ts.
   test('trips on every terminal credential reason the API emits', () => {
     for (const reason of [
       'PAT not found or revoked',

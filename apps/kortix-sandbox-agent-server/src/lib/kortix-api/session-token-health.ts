@@ -59,20 +59,8 @@ import { logger } from '../log/logger'
  * closed at its source: a box whose row and VM disagree is reconciled within
  * one sweep (apps/api/src/projects/reaping/row-vm-divergence.ts).
  */
-// The terminal credential-state reasons `validateToken`
-// (apps/api/src/repositories/account-tokens.ts) answers with: row gone or
-// revoked, expired, idle-auto-revoked, or the row found but its sandbox lease
-// closed. A credential in any of these states cannot authenticate again as-is,
-// so all four are the one "the API can never take this back" class.
-//
-// Counting only `Session token is not active` made the other three harmful in
-// both directions: each one RESET the streak (and un-tripped), and the code
-// even logged "credential recovered" for them. Prod 2026-09-28: 6,514
-// `POST turn-stream -> 401 PAT not found or revoked` in 2h from one
-// credential class, sustained near 1/s, while the streak never grew.
-//
-// A genuine recovery still clears: the trip counts CONSECUTIVE signals, so any
-// answering response — a rotated credential, a repaired row — resets it.
+// Keep terminal credential-state reasons aligned with validateToken in
+// apps/api/src/repositories/account-tokens.ts. Other responses reset the streak.
 const SESSION_TOKEN_DEAD_PATTERN =
   /session token is not active|pat not found or revoked|pat expired|pat auto-revoked due to inactivity/i
 
