@@ -117,9 +117,7 @@ describe('stopExpiredBox — pre-stop abort', () => {
     const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
     expect(outcome).toBe('stopped');
-    expect(stopClaimCalls).toEqual([
-      { sandboxId: 'sb-1', token: expect.any(String) },
-    ]);
+    expect(stopClaimCalls).toEqual([{ sandboxId: 'sb-1', token: expect.any(String) }]);
     expect(abortFetchCalls).toHaveLength(1);
     expect(abortFetchCalls[0]?.url).toBe('https://daemon.example.test/kortix/abort');
     expect(abortFetchCalls[0]?.init.method).toBe('POST');
@@ -228,8 +226,49 @@ describe('stopExpiredBox — pre-stop abort', () => {
 
     expect(abortFetchCalls).toHaveLength(1);
     expect(applyStoppedCalls).toEqual([]);
-    expect(stopClaimReleaseCalls).toEqual([
-      { sandboxId: 'sb-1', token: stopClaimCalls[0]?.token },
-    ]);
+    expect(stopClaimReleaseCalls).toEqual([{ sandboxId: 'sb-1', token: stopClaimCalls[0]?.token }]);
+  });
+
+  // KRTX-667: Platinum's own `stopping` transition outlasts stop()'s 10s
+  // confirm bound. The stop was accepted and the VM is on its way down, so this
+  // is the lifecycle transition, not a failure: release the claim, retry next
+  // pass, and do NOT page an error per box in an idle-reap cohort.
+  test('a Platinum stop-confirm timeout while still stopping is a transition, not an error', async () => {
+    providerStopError = new Error(
+      'Platinum stop for sbx_1 did not reach stopped within 10000ms (last state: stopping)',
+    );
+    const errorSpy = mock(() => {});
+    const origError = console.error;
+    console.error = errorSpy as unknown as typeof console.error;
+    try {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+      expect(outcome).toBe('skipped');
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      console.error = origError;
+    }
+
+    expect(applyStoppedCalls).toEqual([]);
+    expect(stopClaimReleaseCalls).toEqual([{ sandboxId: 'sb-1', token: stopClaimCalls[0]?.token }]);
+  });
+
+  // A last state of `running` means the stop did not take. That is a real
+  // failure, so the classifier must not swallow it.
+  test('a Platinum stop-confirm timeout with the VM still running stays an error', async () => {
+    providerStopError = new Error(
+      'Platinum stop for sbx_1 did not reach stopped within 10000ms (last state: running)',
+    );
+    const errorSpy = mock(() => {});
+    const origError = console.error;
+    console.error = errorSpy as unknown as typeof console.error;
+    try {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+      expect(outcome).toBe('errors');
+    } finally {
+      console.error = origError;
+    }
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(applyStoppedCalls).toEqual([]);
   });
 });
