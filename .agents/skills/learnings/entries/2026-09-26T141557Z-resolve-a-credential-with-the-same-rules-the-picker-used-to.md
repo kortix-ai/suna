@@ -35,8 +35,11 @@ account. Fixed in branch `gateway-shared-codex-fallback`.
 red on the old code) and the real-PostgreSQL cases in
 `apps/api/src/__tests__/integration-usable-gateway-secrets.test.ts`
 (`resolveProjectSharedProviderSecrets`: agent principal, non-creator member,
-restricted account not granted, outsider, cooldown). Not yet enforced: a parity
-test that asserts every model `servableProjectCatalog` lists for a principal
-also resolves in `resolveCandidates` for that principal. The same gap is open
-for BYOK providers: a session without a pool reads only legacy project secrets,
-never a project-shared account key.
+restricted account not granted, outsider, cooldown). Enforced since 2026-09-29 by `apps/api/src/llm-gateway/servable-catalog-parity.test.ts`
+(KRTX-431): for each principal class, every model `servableProjectCatalog`
+lists runs in `resolveCandidates` — directly (the shared-account fallback) or
+through the session-admission key selection (`usableProviderKeys`). The BYOK
+analog is settled by design: session admission selects pooled keys at create /
+model change / sharing change, and a resolver-level BYOK fallback was rejected
+(#7779) because it let sessions main deliberately keeps off pooled keys reach
+them at run time.
