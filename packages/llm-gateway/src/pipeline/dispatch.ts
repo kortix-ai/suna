@@ -70,6 +70,8 @@ export interface DispatchContext {
   /** Resolves a fallback model's candidates. Called only when the plan reaches that model. */
   resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (secretId: string, seconds: number) => Promise<void>;
+  /** `GatewayHooks.refreshCredential`, bound to the request's principal. */
+  refreshCredential?: (descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
   /**
    * Whether the account can pay for a Kortix-billed fallback of a BYOK request.
    * The caller's wallet gate ran for the BYOK model alone, which bills nothing.
@@ -159,9 +161,11 @@ export function rawProviderError(error: UpstreamHttpError): Response {
 const MAX_FALLBACK_MODELS = 8;
 
 // 4xx statuses that mean "this upstream will not serve you now" rather than
-// "the request is wrong". A `transient` fallback chain moves past these, every
+// "the request is wrong": the model is unavailable (404 — OpenAI's
+// `model_not_found`, Anthropic's `not_found_error`), the key or endpoint is
+// limited (402, 403, 429). A `transient` fallback chain moves past these, every
 // 5xx, and every failure without an HTTP status (network, timeout).
-const LIMIT_STATUSES = new Set([402, 403, 429]);
+const LIMIT_STATUSES = new Set([402, 403, 404, 429]);
 
 // Cross-region inference profile prefixes to try, best first. `global.` serves
 // every commercial region; `us.` is the widest regional profile.
@@ -214,10 +218,16 @@ function isPoolPeer(head: UpstreamDescriptor, candidate: UpstreamDescriptor): bo
 }
 
 // Whether `candidate`, a later candidate of the same model, takes over after
-// `failure`. Failover candidates take any failure; pool keys take a 429.
+// `failure`. Failover candidates take any failure; pool keys take a 429, and
+// a 401 from a login that stayed refused after its refresh.
 function peerTakesOver(head: UpstreamDescriptor, candidate: UpstreamDescriptor, failure: Failure): boolean {
   if (head.failover && candidate.failover) return true;
-  return isPoolPeer(head, candidate) && failure.status === 429;
+  if (!isPoolPeer(head, candidate)) return false;
+  return failure.status === 429 || (failure.status === 401 && Boolean(failure.attempt.descriptor.refreshableCredential));
+}
+
+function refreshable(descriptor: UpstreamDescriptor, ctx: DispatchContext): boolean {
+  return Boolean(descriptor.refreshableCredential && ctx.refreshCredential);
 }
 
 /** Whether a fallback chain retrying on `on` moves past a failure with this status. */
@@ -308,6 +318,7 @@ export async function dispatch(
   // provider does not pin a multi-MB multimodal body for the whole prefill.
   const retained: Record<string, unknown> | null =
     fallbackModels.length > 0 ||
+    refreshable(primary, ctx) ||
     bedrockBareModelId(primary) !== null ||
     (isBedrock(primary) && typeof firstBody.reasoning_effort === 'string') ||
     plan.candidates
@@ -434,8 +445,25 @@ export async function dispatch(
       requestId,
     });
 
+  // One refresh per request: a login refused again after it is final.
+  let refreshTried = false;
+  const refreshedAttempt = async (failure: Failure): Promise<Attempt | null> => {
+    const { attempt } = failure;
+    if (failure.status !== 401 || refreshTried || !refreshable(attempt.descriptor, ctx)) return null;
+    refreshTried = true;
+    try {
+      const fresh = await ctx.refreshCredential!(attempt.descriptor);
+      return fresh ? { ...attempt, descriptor: fresh } : null;
+    } catch (error) {
+      logger.warn(`[gateway] ${requestId}: login refresh failed: ${errorText(error).slice(0, 300)}`);
+      return null;
+    }
+  };
+
   const nextAttempt = async (failure: Failure): Promise<Attempt | null> => {
     if (!retained) return null;
+    const refreshed = await refreshedAttempt(failure);
+    if (refreshed) return refreshed;
     const variant = variantAfter(failure);
     if (variant) return variant;
     const head = candidates[0]!;

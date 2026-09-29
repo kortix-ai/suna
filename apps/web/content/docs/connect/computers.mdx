@@ -1,79 +1,200 @@
 ---
-title: Computer Tunnel
-description: Connect your machine through the permissioned Kortix Agent Tunnel.
+title: Computers
+description: Connect your own machine so agents can work with its files, commands, and apps.
 ---
 
 A computer is your own machine — laptop, desktop, or server — connected to
-Kortix through a permissioned reverse tunnel. A computer is not a sandbox. A
-sandbox is a disposable cloud machine that Kortix creates for a
-[session](/docs/work/sessions). A computer is a machine you already own, and
-it stays connected across sessions.
+Kortix. A computer is not a sandbox. A sandbox is a disposable cloud machine
+that Kortix creates for a [session](/docs/work/sessions). A computer is a
+machine you already own, and it stays connected across sessions.
 
-## Connect a machine
+A connected computer is an **account** of the `computer`
+[connector](/docs/connect/connectors), in the same way a personal Gmail
+mailbox is an account of the Gmail connector. Every project has the `computer`
+connector built in; you never add or remove it. Every member connects their
+own computer, and it **follows them**: it is an account in every project they
+belong to, in every workspace, with nothing to set up per project.
 
-1. Add **Computer Tunnel** from the project's connector catalog.
-2. Run the pairing command shown in the profile, for example
-   `npx --yes @kortix/agent-tunnel@latest connect --api-url <url>`.
-3. Approve the connection in your browser.
-4. Select the paired machine for the profile.
+## Connect your computer
 
-## Grant access
+A **Connect your computer** card sits in the project sidebar until you have a
+connected computer. Close it with **×** if you do not need it; it stays hidden
+in that browser. The card does not show on a deployment with computers turned
+off.
 
-You grant access per capability: filesystem, shell, or desktop. You can scope
-each capability to allowed paths, commands, or desktop features. A capability
-grant is a per-resource setting on one machine, not a Kortix role. It grants no
-permission the role verdict denies — see
-[Accounts & access](/docs/accounts#per-feature-access-settings). The agent
-gets only what you grant. A call to an ungranted capability creates a
-permission request. Open the machine inside its Computer Tunnel profile to
-approve or deny the request.
+**With the desktop app.** Click **Connect this computer** on the card. Approve
+the request in the window that opens. The app installs a background service
+that keeps the computer connected while the app is closed, and brings it back
+after sleep, a network change, or a restart. The menu bar (macOS) or
+notification-area (Windows, Linux) icon shows the status and holds the same
+controls as **Your computer** below.
 
-An unrestricted shell grant can run any executable available to your user.
-An unrestricted filesystem grant can access any path allowed by the local
-Agent Tunnel config. Grant the smallest path, command, feature, and expiry that
-the task needs.
+**In a browser.** Click **Connect your computer** on the card. The dialog
+offers **Download Kortix for desktop**, which then connects the computer in
+one click. To connect without the app, choose **Use the CLI instead** and run
+the command it shows on the computer:
 
-## How the agent reaches a computer
-
-Pairing adds a machine to your account fleet. It writes no assignment, so it
-grants no project access.
-Add **Computer Tunnel** from the project's [connector](/docs/connect/connectors)
-catalog, then select one or more paired machines for that profile.
-
-One profile can contain one machine or a set of machines. A machine set is not an
-account group — an account group is a principal in the role model, and these are
-machines. You can create multiple profiles with different or overlapping machine
-sets. Each profile has independent agent grants
-and tool policies.
-
-The `list_computers` tool returns only machines assigned to the active profile.
-Other tools accept an optional `computer` name or id from that result. The
-selector is optional when exactly one assigned machine is online.
-
-```bash
-kortix connectors call studio-computers.list_computers '{}'
-
-kortix connectors call studio-computers.fs.read \
-  '{"computer":"MacBook-Pro-9.local","path":"/etc/hosts"}'
+```sh
+npx --yes @kortix/agent-tunnel@latest connect --api-url <api-url>/tunnel --project-id <project-id>
 ```
 
-A computer authenticates with a machine-specific setup token stored locally.
-The API stores only its hash. Remote connections require HTTPS/WSS. Project
-credentials cannot call the raw tunnel API; they must pass the selected
-Computer Tunnel profile, connector grant, and tool policy.
+The command prints a code and opens the approval page. On the approval page:
 
-Per-machine filesystem, shell, and desktop access also lives in the tunnel
-permission layer. The connector policy and tunnel permission must both allow a
-call. The local agent enforces each tunnel permission again. Its configured
-allowed paths and commands are maximum access boundaries that a server grant
-cannot widen.
+1. Check that the code matches the one on the computer.
+2. Name the computer. The name becomes the account label.
+3. Choose **Who can use this computer**: **Only you** (the default: every
+   project, your private sessions) or **Also share with** the project the
+   command named. Sharing needs permission to manage that project's
+   connections.
+4. Select what agents may do: **Filesystem**, **Shell**, **Computer Use**.
 
-Computer Use requires a separately installed local `cua-driver`. Agent Tunnel
+The computer then shows under **Customize → Connectors → Computer →
+Accounts** in every project you belong to. Each row has an online dot.
+
+## Your computer (desktop app)
+
+Open the workspace menu (the project name at the top of the sidebar) and
+choose **Your computer**. The dot next to it is the computer's status. The
+dialog shows the computer's name and one status: **Online**, **Connecting**,
+**Offline**, **Paused**, or **Needs reconnect** (the computer was disconnected
+elsewhere; **Connect this computer** pairs it again). From there you can:
+
+- **Pause connection** / **Resume connection**: stop or restart the
+  background service. A paused computer is offline to agents
+  (`computer_offline`) and stays paused after a restart.
+- **Access**: whether agents may use the computer while it is connected. See
+  [Access on the computer](#access-on-the-computer).
+- **Keep this computer awake while plugged in** (macOS and Linux): the
+  computer does not sleep on power, so agents can reach it. Off by default.
+  On Windows the row shows that it is not available yet.
+- **Sharing**: open the computer connector's Accounts tab, where you share
+  the computer with the project.
+- **Show logs**: open the agent's log file.
+- **Disconnect**: remove the computer from Kortix and from every project, and
+  stop the background service.
+
+## Access on the computer
+
+The computer itself decides whether an agent may use it, whatever the
+project allows. You set it in **Your computer → Access** or from the menu-bar
+icon:
+
+- **Ask each time** (the default for a computer connected in the desktop
+  app): the first call from an agent shows a prompt on the computer: **Allow
+  for 24 hours**, **Allow for 1 hour** (the default button), or **Deny**. An
+  approval covers files, the shell, and the screen and keyboard, for every
+  agent that can reach the computer, until it runs out. While an approval
+  runs, the dialog shows **Allowed until 14:32** and **Revoke now**. After
+  **Deny**, calls fail at once for 10 minutes without a new prompt. Changing
+  the mode ends the current approval or denial.
+- **Always allowed**: no prompt. This is the default for a computer connected
+  with the CLI alone, because nothing on that computer can show a prompt.
+  Computers connected before this setting existed also behave this way until
+  you change it.
+- **Off**: every call is refused.
+
+Only you, on the computer, can widen access. When the Kortix page asks for
+**Always allowed** or a new approval, the desktop app shows a native dialog
+first and applies the change only when you click **Allow**. Every new pairing
+starts from the default again, and **Disconnect** removes the setting.
+
+The setting lives on the computer (`~/.agent-tunnel/access.json`). The
+account row and the `status` tool report it, so an agent can tell you it is
+waiting for your approval.
+
+## Who can use a computer
+
+A computer follows the same rules as every other connector account:
+
+- A **private** computer (the default) runs only in the owner's own private
+  sessions, in every project the owner belongs to. Another member cannot see
+  or use it. The Accounts tab lists it under **Yours (every project)**.
+- A **shared** computer runs for everyone in the project, including
+  unattended runs: triggers, schedules, and Slack messages without a linked
+  user. An unattended run can reach only shared computers. The Accounts tab
+  lists it under **Shared with this project**.
+- To share your computer with a project, choose **Share** on its row under
+  **Yours**. This needs permission to manage the project's connections. Your
+  private account stays. To stop sharing, disconnect the shared row.
+- Your own row follows you, so it is not removed from one project alone.
+  **Disconnect** on it removes the computer from Kortix and every project. To
+  keep it connected but unused, set its access to **Off** on the computer.
+
+To gate risky calls behind a human, set a
+[connector policy](/docs/connect/connectors) on the computer connector's
+**Tools** tab (for example, **Ask** for `shell.exec`). The request then
+appears in the project's approvals.
+
+## What the computer allows
+
+You choose the capabilities once, when you approve the computer. To allow a
+capability later, connect the computer again and select it.
+
+The local agent config is the hard ceiling on every call, whatever Kortix
+allows. It lives in `~/.agent-tunnel/config.json` on the computer:
+
+| Field | Default | Effect |
+|---|---|---|
+| `enabledCapabilities` | the capabilities you approved | Capabilities the machine accepts at all. |
+| `allowedPaths` | your home directory | Paths filesystem calls may touch. |
+| `blockedPaths` | `/etc/shadow`, `/etc/ssh`, `/proc`, … | Paths no call may touch. |
+| `allowedCommands` | empty (any command) | When set, the only executables `shell.exec` may run. |
+| `blockedCommands` | empty | Executables `shell.exec` never runs. |
+
+An unrestricted shell can run any executable available to your user. Narrow
+`allowedPaths` and `allowedCommands` to what the work needs.
+
+Computer Use requires a separately installed local `cua-driver`. The agent
 does not download, install, or update that executable.
 
-You configure Computer Tunnel profiles from the dashboard, not from
-`kortix.yaml`. Use the profile's Accounts tab to pair, select, inspect, rename,
-and remove machines. Use its Tools tab to configure connector policy.
+## How an agent uses a computer
+
+An agent calls the computer connector like any other connector, and picks the
+computer with `--account`:
+
+```sh
+kortix connectors accounts computer
+kortix connectors call computer status '{}' --account "Studio Mac"
+kortix connectors call computer fs.read '{"path":"/Users/me/notes.md"}' --account "Studio Mac"
+kortix connectors call computer shell.exec '{"command":"git","args":["status"]}' --account me
+```
+
+The tools are `status`, `fs.read`, `fs.write`, `fs.list`, `fs.stat`,
+`fs.delete`, `shell.exec`, and the `desktop.cua.*` Computer Use tools.
+`status` returns the selected computer's name, online state, platform,
+capabilities, and access setting.
+
+A call fails with a named reason instead of guessing:
+
+| Reason | Meaning | Fix |
+|---|---|---|
+| `account_required` | Several computers are reachable and none was named or pinned. | Pass `--account`, or pin a default on the Accounts tab. |
+| `computer_offline` | The computer is paired but not connected right now. | Wake the computer, or resume access in the desktop app. |
+| `computer_unpaired` | The account points at a machine that was disconnected. | Connect the computer again. |
+| `computer_capability_not_approved` | The computer was approved without this capability. | Connect the computer again and select the capability. |
+| `computer_access_pending` | The owner has not answered the prompt on the computer yet. | Answer the prompt on the computer, then ask the agent to continue. |
+| `computer_access_denied` | The owner chose **Deny**. | Allow access from the menu-bar icon or **Your computer**. |
+| `computer_access_off` | The owner set access to **Off**. | Change **Access** on the computer. |
+| `account_not_found` | `--account`, or a legacy `computer` argument, names no reachable computer. | Use a label from `kortix connectors accounts computer`. |
+
+## Disconnect a computer
+
+- **In the desktop app:** open **Your computer** in the workspace menu, or
+  the menu-bar icon, and choose **Disconnect**. Kortix removes the machine, and
+  every project account that pointed at it shows as disconnected.
+- **With the CLI:** run `npx --yes @kortix/agent-tunnel@latest logout` on the
+  computer. It removes the machine from Kortix with its own token, then
+  deletes the local credential. Offline, it deletes only the local credential.
+- **From anywhere else**, for example for a lost laptop: on **Customize →
+  Connectors → Computer → Accounts**, open the computer's row under **Yours**
+  and choose **Disconnect**. A desktop app still running on that computer shows
+  **Needs reconnect**.
+- **A shared row, from one project:** open it on the Accounts tab and choose
+  **Disconnect**. Your own row stays.
+
+A computer authenticates with a machine-specific token stored on the
+computer. The API stores only its hash. Remote connections require
+HTTPS/WSS. You configure computers from the dashboard, not from `kortix.yaml`.
 
 ## Deliver binary files safely
 
@@ -88,9 +209,8 @@ On the machine or sandbox holding the source, configure `TUNNEL_API_URL`,
 agent-tunnel-cli fs_upload '{"source":"/tmp/report.xlsx","path":"/Users/me/Desktop/report.xlsx"}'
 ```
 
-The command supports files up to 3 MiB and requires filesystem write permission.
+The command supports files up to 3 MiB and requires the filesystem capability.
 It computes SHA-256 from the source and checks the destination's returned hash.
-A pending approval exits with code 1; approve the request before retrying.
 Update the connected agent if its response has no `sha256` field.
 
 For larger files, generate the artifact on the destination. Validate the source

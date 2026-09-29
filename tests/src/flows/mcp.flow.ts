@@ -5,6 +5,7 @@
  * token the MCP endpoint accepts. One endpoint per person, bound to the token
  * like the CLI, never to a project. Maps to spec MCP-*.
  */
+import { subscribe } from "../fixtures/billing";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
 
@@ -127,6 +128,17 @@ flow(
     // Seeded: a real git repository, so list_files / read_file have a tree to read.
     // Enterprise: reading the audit trail back needs the auditAccess entitlement.
     const team = await ctx.fixtures.team({ enterprise: true });
+    // A freshly created team account starts on no_subscription/0 credits: the
+    // `read_session` tool step below creates a real session, which 503s with
+    // `insufficient_credits` on an unfunded account (gate run 36497729410,
+    // api shard 4, MCP-3). Fund it the same way every other flow that creates
+    // a session under a fresh `ctx.fixtures.team()` does (secrets.flow.ts
+    // SEC-POOL-4, config-releases.flow.ts, llm-gateway.flow.ts).
+    if (ctx.env.target !== "local") {
+      await ctx.step("fund the isolated account so its session can be created", async () => {
+        await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+      });
+    }
     const p = await team.project({ seed: true });
     const redirectUri = "http://127.0.0.1:33419/callback";
     const { verifier, challenge } = await pkcePair();
@@ -210,8 +222,10 @@ flow(
       if (doc.path !== "/v1/projects/{projectId}/secrets") throw new Error(`describe: ${JSON.stringify(doc).slice(0, 200)}`);
     });
     await ctx.step("list_projects names the project; call_api runs as the user and fills {projectId} from project_id", async () => {
-      const projects = JSON.parse(await toolText(30, "list_projects", {})) as Array<{ project_id: string; account_id: string }>;
-      if (!projects.some((x) => x.project_id === p.id && x.account_id === team.id)) throw new Error(`list_projects: ${JSON.stringify(projects)}`);
+      const projects = JSON.parse(await toolText(30, "list_projects", {})) as Array<{ project_id: string; account_id: string; role: string | null }>;
+      const listed = projects.find((x) => x.project_id === p.id && x.account_id === team.id);
+      if (!listed) throw new Error(`list_projects: ${JSON.stringify(projects)}`);
+      if (listed.role !== "manager") throw new Error(`list_projects role for the owner: ${JSON.stringify(listed.role)}`);
       const me = await mcp(rpc(5, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/accounts/me" } }));
       const text: string = me.json<any>().result.content[0].text;
       if (!text.startsWith("HTTP 200") || !text.includes('"auth_type":"oauth"')) throw new Error(`me: ${JSON.stringify(text.slice(0, 400))}`);

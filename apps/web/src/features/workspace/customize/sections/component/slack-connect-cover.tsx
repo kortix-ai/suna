@@ -17,8 +17,7 @@
  * theme-aware, already used by `post-card.tsx` and the blog post page.
  *
  * So the cover is now the shipped component, and this module is the thin
- * wrapper holding the Slack-specific configuration — the same shape
- * `computers-view.tsx` uses to delegate to `TunnelOverview`.
+ * wrapper holding the Slack-specific configuration.
  *
  * ## Two things this required upstream
  *

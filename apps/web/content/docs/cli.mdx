@@ -409,10 +409,8 @@ sandbox restart. It needs `project.members.manage`, or being the human who
 launched the session. An agent may never resolve its own approval.
 
 `sessions attachments` reads the session's private file store, not its
-workspace. Files land there while the project has **Session Transcript History**
-on (the default; Settings → Feature flags): uploads at send time, and every file
-the agent showed at the end of the turn. Files stored while the flag was on stay
-downloadable after it is turned off.
+workspace. Files land there at send time, and every file the agent showed lands
+there at the end of the turn.
 
 `sessions files` reads the working tree the agent is editing right now, before
 anything is committed; `kortix files` reads the committed repo instead. Paths
@@ -631,7 +629,6 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors catalog show <id> [--json]` | Show one catalogue record's surfaces. |
 | `kortix connectors sensitive <slug> on\|off` | Gate this connector's reads too — every call then needs approval. Applies now. |
 | `kortix connectors owner <slug> project\|user` | Who authorizes: one project connection, or each member's own. Applies now. |
-| `kortix connectors machines <slug> [--show] [--add <id>] [--rm <id>]` | Which paired computers a `computer` connector may target. Applies now. |
 | `kortix connectors authorize <slug> [--status] [--scope "<a b>"] [--client-id <id>] [--client-secret <s>] [--success-redirect <url>] [--error-redirect <url>] [--json]` | OAuth 2.1 a connector end to end: discover the server's authorization metadata, register Kortix as a client (RFC 7591) where the server supports it, and print the URL to approve. `--status` reports the result instead. |
 | `kortix connectors authorize <slug> --device` | Same, using the OAuth 2.0 device flow (RFC 8628): print a code and a URL, then poll until it is approved, denied, or expired. |
 | `kortix connectors policy ls [--json]` | Show project-wide execution policy. Alias: `show`. |

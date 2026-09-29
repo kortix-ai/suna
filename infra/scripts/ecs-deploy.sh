@@ -426,6 +426,16 @@ wait_for_stable_rollout() {
 
     now="$(date +%s)"
     if [ "$now" -ge "$deadline" ]; then
+      # The mismatch check above read the clock before describe-services
+      # returned, so a slow call can cross the deadline between the two reads.
+      # Name the revision the PRIMARY runs whenever it is not ours.
+      if [ -n "$primary_td" ] && [ "$primary_td" != "$expected_td" ]; then
+        echo "✖ rollout of $expected_td did not take: the PRIMARY deployment runs $primary_td (rolloutState=$rollout); the deployment of $expected_td is ${expected_state:--} (${expected_reason:--}). ECS rolled back or another roll superseded this one." >&2
+        [ -z "${GITHUB_ACTIONS:-}" ] \
+          || echo "::error title=ECS rollout rolled back::$SERVICE is not on $expected_td; it runs $primary_td. ${expected_reason:-}" >&2
+        print_rollout_diagnostics "$service_json" "$expected_td"
+        return 1
+      fi
       echo "✖ rollout did not stabilize within ${budget}s (rolloutState=${rollout:-unknown} running=${running:-?} desired=${desired:-?} pending=${pending:-?})" >&2
       print_rollout_diagnostics "$service_json" "$expected_td"
       return 1

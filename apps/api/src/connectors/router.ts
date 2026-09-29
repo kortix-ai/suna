@@ -134,7 +134,7 @@ const CallResponseSchema = z
     reason: z.any().optional(),
     // Which connection ran the call, so the transcript can always answer
     // "whose account sent that". Absent when the connector resolved no
-    // connection (public/no-auth connector, or a Computers tunnel profile).
+    // connection (a public/no-auth connector).
     account: z
       .object({
         connection_id: z.string(),
@@ -452,7 +452,6 @@ export interface ConnectorRouterDeps {
     endpoint: string | null;
     baseUrl: string | null;
     spec: string | null;
-    tunnelIds?: string[];
     auth: {
       type:
         | 'none'
@@ -836,6 +835,21 @@ const CatalogQuerySchema = z.object({
   include_schemas: z.enum(['true', 'false']).optional(),
 });
 
+const COMPUTER_REFUSALS = ['computer_access_pending', 'computer_access_denied', 'computer_access_off', 'computer_capability_not_approved'];
+const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
+
+/**
+ * HTTP status for a gateway `error`. Computer states the owner controls are
+ * expected outcomes, not server faults: a 5xx invites a retry, and each retry
+ * re-prompts the owner. 500, not 502, for the rest (Cloudflare eats 502 bodies).
+ */
+export function connectorErrorHttpStatus(reason: string): 403 | 409 | 500 {
+  const kind = reason.split(':', 1)[0];
+  if (COMPUTER_REFUSALS.includes(kind)) return 403;
+  if (COMPUTER_STATES.includes(kind)) return 409;
+  return 500;
+}
+
 function isConnectorDenialReason(reason: string): reason is ConnectorDenialReason {
   return CONNECTOR_DENIAL_REASONS.has(reason);
 }
@@ -1016,8 +1030,7 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
         );
       }
       default:
-        // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
-        return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
+        return c.json({ ok: false, status: 'error', reason: result.reason }, connectorErrorHttpStatus(result.reason));
     }
   };
 

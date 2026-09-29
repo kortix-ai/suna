@@ -4,19 +4,20 @@
  * `text-part.tsx` renders one whenever an assistant message mentions a
  * `localhost:PORT` URL. It is the transcript's own row (`ResultRow`; Jay,
  * 2026-09-22): a screen glyph — **never a globe** — "App preview", the port
- * under it, a chevron, and the whole row opens the Browser tab. It replaced a
- * bordered card whose title was the raw URL and whose only obvious control was
- * a small "Open" pill on the right.
+ * under it, a chevron, and the whole row opens the in-session preview sheet
+ * (`SandboxPreviewSheet`, KRTX-602) over the session. It replaced a bordered
+ * card whose title was the raw URL and whose only obvious control was a small
+ * "Open" pill on the right.
  */
 
 import * as Haptics from 'expo-haptics';
 import React, { useCallback } from 'react';
 
 import { ResultRow } from '@/components/session/tool/shared/result-row';
+import { useToolNavigation } from '@/components/session/tool/shared/navigation';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { MonitorIcon } from '@/lib/icons';
 import { getSandboxPortUrl } from '@/lib/platform/client';
-import { useTabStore } from '@/stores/tab-store';
 
 interface SandboxPreviewCardProps {
   /** The port number to preview */
@@ -31,17 +32,16 @@ interface SandboxPreviewCardProps {
 
 export function SandboxPreviewCard({ port, title, description, path }: SandboxPreviewCardProps) {
   const { sandboxId } = useSandboxContext();
+  const { openPreview } = useToolNavigation();
 
   const handleOpen = useCallback(() => {
     if (!sandboxId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const url = getSandboxPortUrl(sandboxId, String(port)) + (path || '');
-    useTabStore.getState().navigateToPage('page:browser');
-    useTabStore.getState().setTabState('page:browser', {
-      savedUrl: url,
-      savedDisplay: `localhost:${port}${path || ''}`,
-    });
-  }, [sandboxId, port, path]);
+    openPreview(
+      getSandboxPortUrl(sandboxId, String(port)) + (path || ''),
+      title || `localhost:${port}${path || ''}`,
+    );
+  }, [openPreview, sandboxId, port, path, title]);
 
   const where = `localhost:${port}${path || ''}`;
 

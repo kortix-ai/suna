@@ -134,10 +134,11 @@ describe('Sidebar motion contract', () => {
 
   test('a keyboard-initiated collapse zeroes the slide', () => {
     const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const context = readFileSync(new URL('./sidebar-context.tsx', import.meta.url), 'utf8');
     // ⌘B sets the flag...
     expect(source).toContain('toggleSidebar({ instant: true })');
     // ...an Enter/Space click on a toggle button sets it via `detail === 0`...
-    expect(source).toContain('options?.instant ?? options?.detail === 0');
+    expect(context).toContain('options?.instant ?? options?.detail === 0');
     // ...and the flag wins the twMerge duration group.
     expect(source).toContain("instantToggle && 'duration-0'");
     // The undocking window is skipped too, so nothing is left mid-slide.
@@ -164,11 +165,12 @@ describe('Sidebar motion contract', () => {
   });
 
   test('the undock timer outlasts the transform it covers', () => {
-    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
-    const declared = source.match(/const SIDEBAR_UNDOCK_MS = (\d+);/)?.[1];
+    const context = readFileSync(new URL('./sidebar-context.tsx', import.meta.url), 'utf8');
+    const declared = context.match(/const SIDEBAR_UNDOCK_MS = (\d+);/)?.[1];
     expect(declared).toBe('240');
     // Same number, in the class the timer has to outlive. If one moves without
     // the other, the flyout card lands while the panel is still on screen.
+    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
     expect(source).toContain("undocking ? 'duration-[240ms]' : 'duration-[200ms]'");
   });
 

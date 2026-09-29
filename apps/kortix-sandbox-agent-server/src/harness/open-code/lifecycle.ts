@@ -639,6 +639,7 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
   // reconcile diffs the live managed set against it to decide whether one
   // controlled restart is warranted.
   lastConfiguredProviderModelIds = new Set(Object.keys(catalog))
+  lastConfiguredCapabilities = new Map(Object.entries(catalog).map(([id, model]) => [id, capabilityKey(model)]))
   const models = Object.fromEntries(
     Object.entries(catalog).map(([id, model]) => {
       // The gateway catalog's string `provider` is UI metadata describing the
@@ -991,6 +992,13 @@ let managedCacheAt = 0
 /** The kortix-provider model ids the most recently WRITTEN config registers.
  *  Written on every spawn, so it is what the running OpenCode holds. */
 let lastConfiguredProviderModelIds: Set<string> | null = null
+let lastConfiguredCapabilities: Map<string, string> | null = null
+
+// The fields OpenCode turns into image input and thinking variants. A box that
+// booted on the baked catalog keeps stale values here until it restarts.
+function capabilityKey(model: KortixGatewayModel): string {
+  return JSON.stringify([model.attachment ?? null, model.modalities ?? null, model.reasoning_options ?? null])
+}
 
 /**
  * Why the most recent LIVE managed fetch (`fetchManagedModels`) did not
@@ -1192,17 +1200,22 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
 }
 
 /**
- * Managed ids the live gateway serves that the running OpenCode does NOT have.
+ * Managed ids the live gateway serves that the running OpenCode does NOT have,
+ * or has with stale image/thinking capabilities.
  *
- * Each one is a model the picker offers and the runtime answers `ModelNotFound`
- * for — the 2026-08-19 outage, exactly. An empty result means the boot config
+ * A missing id is a model the picker offers and the runtime answers
+ * `ModelNotFound` for — the 2026-08-19 outage, exactly. A stale id is a model
+ * whose `modalities` changed: OpenCode replaces every image with "Cannot read
+ * image" until it restarts (2026-09-29). An empty result means the boot config
  * was already complete and nothing has to be restarted.
  */
 export function missingManagedModelIds(live: Record<string, KortixGatewayModel> | null): string[] {
   if (!live) return []
   const configured = lastConfiguredProviderModelIds
   if (!configured) return []
-  return Object.keys(live).filter((id) => !configured.has(id))
+  return Object.keys(live).filter(
+    (id) => !configured.has(id) || lastConfiguredCapabilities?.get(id) !== capabilityKey(live[id]!),
+  )
 }
 
 /**
@@ -1241,6 +1254,7 @@ export function resetManagedModelsStateForTests(): void {
   managedCache = null
   managedCacheAt = 0
   lastConfiguredProviderModelIds = null
+  lastConfiguredCapabilities = null
   lastManagedFetchFailureReason = null
 }
 

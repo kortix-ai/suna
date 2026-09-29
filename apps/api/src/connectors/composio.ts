@@ -8,6 +8,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { ExecResult } from './call';
 import {
   composioHiddenToolkits,
+  NATIVE_TOOLKITS,
   composioRestClient,
   customAuthConfigIds,
   searchComposioCatalog,
@@ -493,14 +494,28 @@ export async function composioCatalogPage(input: {
       nextCursor?: string;
       hasMore: boolean;
     }
+  | {
+      items: Array<{
+        slug: string;
+        name: string;
+        logo: string | null;
+        description: string | null;
+        categories: string[];
+        isNoAuth: boolean;
+        connected: boolean;
+      }>;
+      cursor: string | null;
+      totalPages: number;
+    }
 > {
   const runtime = input.runtime ?? getComposioRuntime();
   // The hidden set is read from the REST catalogue snapshot. A caller that
-  // injects a runtime without a REST client has no snapshot, so hides nothing.
+  // injects a runtime without a REST client has no snapshot, so hides only the
+  // toolkits Kortix provides natively.
   const hiddenToolkits =
     input.catalogClient || !input.runtime
       ? composioHiddenToolkits(input.catalogClient ?? composioRestClient())
-      : Promise.resolve(new Set<string>());
+      : Promise.resolve(new Set<string>(NATIVE_TOOLKITS));
   const category = input.category?.trim();
   if (category) {
     if (!runtime.toolkits) throw new Error('Composio toolkit catalogue is unavailable');
@@ -545,7 +560,29 @@ export async function composioCatalogPage(input: {
   // provider's session search matches names only.
   const query = input.q?.trim();
   if (query) {
-    return searchComposioCatalog({ ...input, q: query });
+    const searched = await searchComposioCatalog({ ...input, q: query });
+    // Wire contract: `items` + `cursor` (+ `totalPages`), exactly like the
+    // unsearched page below — `EnrichedToolkitConnectionsPage`. Before the
+    // "no three-character floor" fix, only a 1-2 char query reached
+    // `searchComposioCatalog`; every longer query fell through to the
+    // unsearched branch and answered `items`. Reusing that snapshot's
+    // `toolkits` shape here for EVERY query broke the endpoint's own
+    // contract (CONN-24, gate run 36497729410: "body $.items exists —
+    // expected <defined>, got undefined"). Normalize here so a direct REST
+    // caller sees one shape regardless of which branch answered — the SDK
+    // (`packages/sdk/src/core/rest/projects-client/connectors.ts`
+    // `listConnectToolkits`) already treats `items` as the canonical page
+    // and `toolkits` as a legacy shape kept only for rolling deploys.
+    // `totalPages` is a PAGE count (same convention as
+    // `apps/api/src/tunnel/routes/audit.ts`: `Math.ceil(total / limit)`),
+    // never an item count — `searched.total` (the snapshot's match count) is
+    // the item count and must be converted, not passed through.
+    const limit = Math.min(Math.max(input.limit ?? 48, 1), 100);
+    return {
+      items: searched.toolkits,
+      cursor: searched.nextCursor ?? null,
+      totalPages: Math.ceil(searched.total / limit),
+    };
   }
   // The discovery identity never connects anything, so a page is the same for
   // every project and is cached deployment-wide (see `cachedCatalogCall`).

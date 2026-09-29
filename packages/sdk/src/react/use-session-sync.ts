@@ -251,7 +251,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
-    if (sessionId in useSyncStore.getState().messages) return;
+    // An earlier SAVED copy is not a live read. The host's copy arrives in a
+    // later run (`mirror` goes from null to the envelope) and reconciles
+    // into it; returning here kept a reload on the device's older copy until
+    // the computer woke.
+    const overSavedCopy = hasOnlyCacheSourcedMessages(sessionId);
+    if (sessionId in useSyncStore.getState().messages && !overSavedCopy) return;
     const abort = new AbortController();
     const scope = parseKortixSessionScope(kortixSessionScope);
     // A sub-agent keeps nothing on the device: the scope's slot is the
@@ -281,13 +286,15 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     };
 
     // 1. The saved copy this device kept from the last open. Synchronous on
-    //    web, so it paints in this very commit.
+    //    web, so it paints in this very commit. Not read again over a saved
+    //    copy already on screen: that one is this copy or newer.
     let local: SessionTranscriptSyncEnvelope | null = null;
     const applyLocal = (envelope: SessionTranscriptSyncEnvelope | null) => {
       if (abort.signal.aborted || !envelope) return;
       if (paint(envelope, false)) local = envelope;
     };
-    const kept = saved && scope ? saved.read(scope.projectId, scope.sessionId) : null;
+    const kept =
+      saved && scope && !overSavedCopy ? saved.read(scope.projectId, scope.sessionId) : null;
     const localRead: Promise<void> =
       kept && typeof (kept as Promise<unknown>).then === 'function'
         ? (kept as Promise<SessionTranscriptSyncEnvelope | null>).then(applyLocal, () => undefined)
@@ -317,7 +324,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
         !!envelope.captured_at &&
         !!(local as SessionTranscriptSyncEnvelope).captured_at &&
         Date.parse(envelope.captured_at) < Date.parse((local as SessionTranscriptSyncEnvelope).captured_at as string);
-      if (olderThanLocal || !paint(envelope, local !== null)) {
+      if (olderThanLocal || !paint(envelope, overSavedCopy || local !== null)) {
         if (!local) setMirrorAbsentFor(mirrorKey);
       }
     });

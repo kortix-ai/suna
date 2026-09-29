@@ -140,8 +140,10 @@ export async function listConnectorTools(projectId?: string): Promise<ConnectorT
   const tools: ConnectorTool[] = [];
   // Neither this nor any caller of it (search, discover) reads `inputSchema` —
   // only `describeConnectorTool` below does, and it fetches its own schema
-  // directly instead of going through this bulk listing.
-  for (const connector of await getConnectorCatalog(projectId)) {
+  // directly instead of going through this bulk listing. The API includes each
+  // action's JSON Schema by default (439KB on prod), so opt out or this summary
+  // pays the whole payload for nothing.
+  for (const connector of await getConnectorCatalog(projectId, { includeSchemas: false })) {
     for (const action of connector.actions) {
       tools.push({
         tool: `${connector.slug}.${action.path}`,
@@ -512,6 +514,34 @@ interface ConnectionFields {
    * a session. Absent on older servers, which means usable.
    */
   usable?: boolean;
+  /**
+   * The paired machine this account points at. Set only on accounts of a
+   * `computer` connector; `null` once the machine was unpaired (the account is
+   * then `revoked`). Absent on every other connector, and on older servers.
+   */
+  tunnel_id?: string | null;
+  /**
+   * Live status of the machine behind a `computer` account, for an online dot.
+   * `null` when the machine is gone. Absent on every other connector, and on
+   * older servers.
+   */
+  machine?: {
+    online: boolean;
+    last_heartbeat_at: string | null;
+    hostname?: string;
+    platform?: string;
+    /**
+     * Who may use the machine, decided by its owner on the machine itself:
+     * `ask` = the owner approves each new agent session on the computer
+     * (`granted_until` is the end of the current approval, `null` when none),
+     * `always` = no prompt, `off` = every call is refused. `null` (or
+     * absent) when the machine's agent never reported it, e.g. npm 0.1.x.
+     */
+    access?: {
+      mode: 'ask' | 'always' | 'off';
+      granted_until: string | null;
+    } | null;
+  } | null;
 }
 
 /** One grant naming who may use a shared account. Grant or revoke through
@@ -964,6 +994,27 @@ export async function renameConnection(projectId: string, connectionId: string, 
   );
 }
 
+/**
+ * Share a machine the caller paired with this project, as a shared account of
+ * the project's `computer` connector (`share: 'project'`, needs the
+ * connector-manage capability). The caller's own private account needs no
+ * call: it follows them into every project they belong to. `share: 'me'` (the
+ * server default) stays accepted. Idempotent: the same machine for the same
+ * owner returns the existing account. `409` when the machine cannot join this
+ * project's account.
+ */
+export async function addComputerToProject(
+  projectId: string,
+  input: { tunnelId: string; share?: ConnectorConnectOwner },
+) {
+  return unwrap(
+    await backendApi.post<Connection>(`/projects/${projectId}/computers`, {
+      tunnel_id: input.tunnelId,
+      ...(input.share ? { share: input.share } : {}),
+    }),
+  );
+}
+
 /** Who may use a shared account: a person, a group, or everyone in the project. */
 export interface ConnectionSharePrincipal {
   principal_type: 'user' | 'group' | 'project';
@@ -1223,7 +1274,11 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  /** Machine ids assigned to a Computers connector profile. */
+  /**
+   * @deprecated Computers are accounts of the `computer` connector now: read
+   * `Connection.tunnel_id` from `listConnections`. Servers no longer send it.
+   * Removed in the next major.
+   */
   tunnelIds?: string[];
   auth: {
     type: ConnectorRequestAuthType;
@@ -1337,7 +1392,11 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Account-owned machine ids assigned to a Computers connector profile. */
+  /**
+   * @deprecated Computers are accounts of the `computer` connector now: add one
+   * with `addComputerToProject`. The server ignores this field. Removed in the
+   * next major.
+   */
   tunnel_ids?: string[];
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05). */

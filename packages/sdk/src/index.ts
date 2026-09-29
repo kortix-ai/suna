@@ -514,6 +514,11 @@ export {
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
 export * from './core/session-sync/saved-copy-store';
+export {
+  type EmptyConversationInput,
+  isEmptyConversation,
+  savedCopyEmptyRoot,
+} from './core/session-sync/saved-transcript';
 export * from './core/session/url';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';

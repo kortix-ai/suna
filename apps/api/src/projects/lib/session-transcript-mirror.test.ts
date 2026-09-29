@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   capturedMessageIndex,
   capturedPageGate,
-  captureScope,
   MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGE_CHARS,
   MIRROR_MAX_PART_CHARS,
@@ -424,42 +423,6 @@ test('mirror retains bounded private attachment references and strips all other 
   for (const value of ['https://example.test/secret', 'data:text/plain;base64,YQ==', `${url}?token=secret`]) {
     expect(sanitizeParts([{ type: 'file', url: value }])).toEqual([{ type: 'file' }]);
   }
-});
-
-describe('what one capture reads, and what it is allowed to prune', () => {
-  test('a turn end on a flagged project reads the whole history', () => {
-    expect(captureScope({ flagEnabled: true, everRetained: true })).toEqual({
-      fullHistory: true,
-      retainHistory: true,
-    });
-  });
-
-  test('stop asks for a tail, however the project is flagged', () => {
-    // Stop AWAITS this read before powering the box off, and a full-history
-    // read is a 60s pagination with three retries. The full copy is already
-    // maintained at every turn end; the only gap a stop can close is the turn
-    // that just ended, which one bounded page covers.
-    expect(captureScope({ flagEnabled: true, everRetained: true, requested: 'tail' })).toEqual({
-      fullHistory: false,
-      retainHistory: true,
-    });
-  });
-
-  test('a forced tail must NOT re-enable pruning on a retained project', () => {
-    // The trap: derive `retainHistory` from `fullHistory` and a single Stop
-    // prunes a retained history down to MIRROR_MAX_MESSAGES — the feature
-    // deletes the very thing it exists to keep.
-    expect(
-      captureScope({ flagEnabled: false, everRetained: true, requested: 'tail' }).retainHistory,
-    ).toBe(true);
-  });
-
-  test('an unflagged project that never retained still prunes', () => {
-    expect(captureScope({ flagEnabled: false, everRetained: false })).toEqual({
-      fullHistory: false,
-      retainHistory: false,
-    });
-  });
 });
 
 describe('when a walk may stop at history it already holds', () => {

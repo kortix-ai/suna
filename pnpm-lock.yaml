@@ -685,6 +685,9 @@ importers:
       react-native-svg:
         specifier: 15.15.4
         version: 15.15.4(react-native@0.85.3)(react@19.2.3)
+      react-native-uitextview:
+        specifier: 2.7.1
+        version: 2.7.1(react-native@0.85.3)(react@19.2.3)
       react-native-url-polyfill:
         specifier: ^3.0.0
         version: 3.0.0(react-native@0.85.3)
@@ -737,6 +740,9 @@ importers:
       '@types/react':
         specifier: 19.2.18
         version: 19.2.18
+      '@types/react-test-renderer':
+        specifier: 19.1.0
+        version: 19.1.0
       babel-preset-expo:
         specifier: ~56.0.20
         version: 56.0.20(@babel/core@7.29.7)(expo@56.0.22)(react-refresh@0.19.0)
@@ -758,6 +764,9 @@ importers:
       react-native-svg-transformer:
         specifier: ^1.5.1
         version: 1.5.3(react-native-svg@15.15.4)(react-native@0.85.3)(typescript@5.9.3)
+      react-test-renderer:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
       sharp:
         specifier: ^0.35.4
         version: 0.35.4(@types/node@20.19.43)
@@ -13964,10 +13973,16 @@ packages:
       '@types/react': 19.2.18
     dev: false
 
+  /@types/react-test-renderer@19.1.0:
+    resolution: {integrity: sha512-XD0WZrHqjNrxA/MaR9O22w/RNidWR9YZmBdRGI7wcnWGrv/3dA8wKCJ8m63Sn+tLJhcjmuhOi629N66W6kgWzQ==}
+    dependencies:
+      '@types/react': 19.2.18
+
   /@types/react-test-renderer@19.3.0:
     resolution: {integrity: sha512-TX4p2D4Z2oigM3SXU7+QyLSUnSR0vR1S1Pfxm/qFL9nHQ3jclgi6ioGoWQmlIr1DeKRVmPJrmNlhgM0JlWlLUg==}
     dependencies:
       '@types/react': 19.2.18
+    dev: true
 
   /@types/react@19.2.18:
     resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
@@ -26821,7 +26836,7 @@ packages:
       react-native: '*'
     dependencies:
       '@egjs/hammerjs': 2.0.17
-      '@types/react-test-renderer': 19.3.0
+      '@types/react-test-renderer': 19.1.0
       hoist-non-react-statics: 3.3.2
       invariant: 2.2.4
       react: 19.2.3
@@ -26987,6 +27002,16 @@ packages:
       react: 19.2.3
       react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
       warn-once: 0.1.1
+
+  /react-native-uitextview@2.7.1(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-BT4agx2Gg/idbbqUyCudg/Ml0qB7ar0pwKImgSrzspPAaYNCz6fFh9zypF0GUMGUbGrrlq1PHtXHh1oTSXCYkg==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.81.5'
+    dependencies:
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
+    dev: false
 
   /react-native-url-polyfill@3.0.0(react-native@0.85.3):
     resolution: {integrity: sha512-aA5CiuUCUb/lbrliVCJ6lZ17/RpNJzvTO/C7gC/YmDQhTUoRD5q5HlJfwLWcxz4VgAhHwXKzhxH+wUN24tAdqg==}
@@ -27334,6 +27359,16 @@ packages:
       react: 19.3.0
       tslib: 2.8.1
     dev: false
+
+  /react-test-renderer@19.2.3(react@19.2.3):
+    resolution: {integrity: sha512-TMR1LnSFiWZMJkCgNf5ATSvAheTT2NvKIwiVwdBPHxjBI7n/JbWd4gaZ16DVd9foAXdvDz+sB5yxZTwMjPRxpw==}
+    peerDependencies:
+      react: ^19.2.3
+    dependencies:
+      react: 19.2.3
+      react-is: 19.3.0
+      scheduler: 0.27.0
+    dev: true
 
   /react-test-renderer@19.3.0(react@19.3.0):
     resolution: {integrity: sha512-AUxgv+hRbqjRgx4xVwiWL6cvDDKPAva1VWLXQIMoevqQn9us//C5TX9LEnBGH47D0zvJpjwjxb1umzgOMvE8Wg==}

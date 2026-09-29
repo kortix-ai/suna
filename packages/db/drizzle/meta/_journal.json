@@ -645,6 +645,27 @@
       "when": 1790622019414,
       "tag": "20260928190000_audit_reconciliation_account_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790641152592,
+      "tag": "20260929001912_provider_events_account_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1790642780246,
+      "tag": "20260929004620_drop_audit_events_account_client_source_time_index_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790656129079,
+      "tag": "20260929042849_computer_accounts_lineage",
+      "breakpoints": true
     }
   ]
 }

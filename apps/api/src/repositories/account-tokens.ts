@@ -36,6 +36,14 @@ export interface AccountTokenValidationResult {
    *  on every request (this query is not memoized). */
   onBehalfOfUserId?: string | null;
   error?: string;
+  /** True = the credential itself can never come back (missing, revoked,
+   *  expired, or its sandbox lease closed). The auth middleware turns this
+   *  into a typed 401 (`code:'session_token_revoked'`) so a retrying client
+   *  can stop: a revoked session credential that keeps retrying hammers the
+   *  gate forever (prod 2026-09-26/27: ~10k 401s/h across runtime-projection,
+   *  turn-stream and audit/events from boxes that outlived their token).
+   *  Absent on success and on 'Validation error' (a DB failure IS transient). */
+  credentialDead?: boolean;
 }
 
 export interface CreateAccountTokenParams {
@@ -494,11 +502,11 @@ async function validateAccountTokenMatching(
       .limit(1);
 
     if (!row) {
-      return { isValid: false, error: 'PAT not found or revoked' };
+      return { isValid: false, error: 'PAT not found or revoked', credentialDead: true };
     }
 
     if (row.expiresAt && row.expiresAt < new Date()) {
-      return { isValid: false, error: 'PAT expired' };
+      return { isValid: false, error: 'PAT expired', credentialDead: true };
     }
 
     // A session credential is authority for one live sandbox, not a durable
@@ -518,7 +526,8 @@ async function validateAccountTokenMatching(
           ),
         )
         .limit(1);
-      if (!lease) return { isValid: false, error: SESSION_LEASE_REFUSAL };
+      if (!lease)
+        return { isValid: false, error: SESSION_LEASE_REFUSAL, credentialDead: true };
     }
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
@@ -537,7 +546,11 @@ async function validateAccountTokenMatching(
           .catch((err) => {
             console.warn('PAT idle auto-revoke failed:', err);
           });
-        return { isValid: false, error: 'PAT auto-revoked due to inactivity' };
+        return {
+          isValid: false,
+          error: 'PAT auto-revoked due to inactivity',
+          credentialDead: true,
+        };
       }
     }
 

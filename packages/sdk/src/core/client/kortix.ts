@@ -474,7 +474,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   function connectorDataPlane(projectId?: string) {
     return {
       /** Callable catalog for this project or token scope. */
-      catalog: () => P.getConnectorCatalog(projectId),
+      catalog: (options?: Parameters<typeof P.getConnectorCatalog>[1]) =>
+        P.getConnectorCatalog(projectId, options),
       /** Flattened `<connector>.<action>` tool list. */
       tools: () => P.listConnectorTools(projectId),
       /** Search callable tools by id and description. */
@@ -515,6 +516,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.renameConnection(projectId, ...a),
       share: (...a: DropFirst<Parameters<typeof P.shareConnection>>) =>
         P.shareConnection(projectId, ...a),
+      /** Add a machine the caller paired to this project as a `computer` account. */
+      addComputer: (...a: DropFirst<Parameters<typeof P.addComputerToProject>>) =>
+        P.addComputerToProject(projectId, ...a),
       pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
@@ -722,6 +726,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setProjectPolicies(projectId, ...a),
       },
 
+      /** Reminders on every session the caller can open — see `listProjectReminders`. */
+      reminders: {
+        list: () => P.listProjectReminders(projectId),
+      },
       triggers: {
         list: () => P.listProjectTriggers(projectId),
         create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) =>

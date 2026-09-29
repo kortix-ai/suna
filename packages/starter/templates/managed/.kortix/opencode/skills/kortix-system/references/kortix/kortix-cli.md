@@ -333,6 +333,9 @@ the same state.
 A reminder re-prompts ONE session later or on repeat. It is a trigger
 scoped to that session and stored in the database — no `kortix.yaml`
 edit. Inside a sandbox `--session` defaults to `$KORTIX_SESSION_ID`.
+Behind the per-project `reminders` feature flag (off by default): a
+project without it answers `feature_disabled`; `kortix projects features
+enable reminders` turns it on (the user's decision).
 
 | Command | What it does |
 | --- | --- |

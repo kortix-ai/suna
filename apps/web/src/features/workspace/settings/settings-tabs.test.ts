@@ -248,8 +248,8 @@ describe('legacySectionRedirect', () => {
   });
 
   test('computers graduated to Connectors — a bookmark must not 404', () => {
-    // `main` (#6313) deleted `computers-view.tsx` and made the computer a
-    // connector (`ComputerTunnelManager`). Both the legacy `/customize/
+    // `main` (#6313) deleted `computers-view.tsx`; a paired computer is an
+    // account of the `computer` connector. Both the legacy `/customize/
     // computers` and the settings-era `/settings/computers` deep links resolve
     // through this map, so neither can land on a tab that no longer exists.
     expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/customize/connectors');

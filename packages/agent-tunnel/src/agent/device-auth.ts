@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { hostname, platform } from 'os';
 import { isTunnelCapability } from '../shared/permissions';
 import type { TunnelCapability } from '../shared/types';
@@ -10,6 +10,8 @@ import type { TunnelCapability } from '../shared/types';
  * rules below can be read — and tested — without a CLI around them.
  */
 
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TUNNEL_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SETUP_TOKEN_PATTERN = /^kortix_tnl_[A-Za-z0-9_-]{32,64}$/;
@@ -138,11 +140,51 @@ export function parseDeviceAuthStatus(value: unknown): DeviceAuthOutcome | null 
   }
 }
 
-export async function requestDeviceAuthorization(apiUrl: string): Promise<DeviceAuthChallenge> {
+/**
+ * The name a person gave this machine, e.g. "Ada's MacBook Pro" instead of
+ * `MacBook-Pro-9.local`. macOS: System Settings' Computer Name; Windows:
+ * COMPUTERNAME; elsewhere, and whenever those are unavailable, the hostname
+ * without a trailing `.local`.
+ */
+export function machineDisplayName({
+  os = platform(),
+  host = hostname(),
+  env = process.env,
+  run = (command: string, args: string[]) =>
+    execFileSync(command, args, { encoding: 'utf8', timeout: 1_000, stdio: ['ignore', 'pipe', 'ignore'] }),
+}: {
+  os?: string;
+  host?: string;
+  env?: Record<string, string | undefined>;
+  run?: (command: string, args: string[]) => string;
+} = {}): string {
+  const fallback = host.replace(/\.local$/i, '') || host;
+  try {
+    const name =
+      os === 'darwin' ? run('scutil', ['--get', 'ComputerName']) : os === 'win32' ? env.COMPUTERNAME : '';
+    return name?.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Starts pairing. `projectId` names the project the machine is being connected
+ * to, so the approval page can skip its project picker. A relay that predates
+ * the field ignores it.
+ */
+export async function requestDeviceAuthorization(
+  apiUrl: string,
+  options: { projectId?: string } = {},
+): Promise<DeviceAuthChallenge> {
   const response = await fetch(`${apiUrl}/device-auth`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ machineHostname: hostname() }),
+    body: JSON.stringify({
+      // The default machine name on the approval page.
+      machineHostname: machineDisplayName(),
+      ...(options.projectId ? { project_id: options.projectId } : {}),
+    }),
   });
   if (!response.ok) {
     const body = await response.text().catch(() => '');

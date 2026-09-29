@@ -115,27 +115,10 @@ export interface FeatureFlagDef {
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: paired machines are selectable accounts inside a
- * regular `computer` connector profile. A profile can contain one or more
- * machines and uses the normal connector grant, policy, call, and audit paths.
- * Pairing does not auto-create project access. This flag gates the dedicated
- * fleet surface (Customize → Computers, device auth, and tunnel permissions).
- * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration.
+ * Computers need no flag: a paired machine is an account on the project's
+ * `computer` connector. The platform-wide `TUNNEL_ENABLED` env is the only gate.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
-  {
-    key: 'session_transcript_history',
-    name: 'Session Transcript History',
-    description:
-      'Save the whole chat history after each turn, tool calls and sub-agents included, and show it from the database while the session computer starts.',
-    stability: 'beta',
-    available: () => true,
-    // On by default: saved history is how web, mobile and the CLI show a
-    // session while its computer is off. A project can still turn it off.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-  },
   {
     key: 'marketplace',
     name: 'Marketplace',
@@ -146,22 +129,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // On by default for every project — no longer gated behind an opt-in toggle.
     platformDefault: () => true,
     enforcement: 'routes',
-  },
-  {
-    key: 'agent_tunnel',
-    name: 'Agent Computer Tunnel',
-    description:
-      'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
-    stability: 'experimental',
-    // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
-    // Explicit opt-in: off by default even where the service is available.
-    platformDefault: () => false,
-    enforcement: 'ui-only',
-    enforcementNote:
-      'Tunnel state is account-scoped (device auth, machines) and the computer ' +
-      'connector deliberately materializes independent of this flag — see the ' +
-      'registry header. The platform-wide TUNNEL_ENABLED env is the hard gate.',
   },
   {
     key: 'connectors_api_discover',
@@ -266,6 +233,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
+    key: 'reminders',
+    name: 'Reminders',
+    description:
+      'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
+    stability: 'beta',
+    available: () => true,
+    // Per-project opt-in while the surface settles.
+    platformDefault: () => false,
+    // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
+    // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
+    enforcement: 'routes',
+  },
+  {
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:
@@ -349,9 +329,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
     stability: 'experimental',
-    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
-    // Settings row disappears and the surface is dark for every project.
-    available: () => config.CONFIG_RELEASES_ENABLED,
+    available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
     // "its off for now, as its untested"). The behaviour it gates is the
     // intended one; the default is a rollout decision, not a design opinion.

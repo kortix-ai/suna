@@ -1,33 +1,39 @@
 import { HTTPException } from 'hono/http-exception';
-import { and, eq, or } from 'drizzle-orm';
-import { accountMembers, tunnelConnections } from '@kortix/db';
+import { and, eq, isNull, or } from 'drizzle-orm';
+import { tunnelConnections } from '@kortix/db';
 import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
 } from '../../shared/impersonation';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { db } from '../../shared/db';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { accountRoleFor, isAccountManagerRole } from '../../iam/read-models';
 
 /**
- * Tunnel auth model — two tiers:
+ * Tunnel auth model — which machines a caller may see and manage directly.
  *
- *   • READ / EXECUTE (getTunnelReadContext) — listing connections and relaying
- *     RPCs. Allowed for interactive users, account PATs, and account API keys.
- *     Project PATs, sandbox keys, and service accounts must use the Computer Tunnel
- *     connector gateway so profile assignments, grants, and tool policy apply.
+ *   • A machine belongs to the human who paired it (`owner_user_id`). Only that
+ *     human sees, renames, unpairs, or relays to it here.
+ *   • Machines paired before owners existed under a team account have no
+ *     owner; the account's managers (owner/admin) manage those.
  *
- *   • MANAGE (getTunnelOwnerContext) — create/delete/rename connections, grant/
- *     revoke permissions, approve device-auth, rotate tokens. These mutate the
- *     security posture of a real machine, so they require a USER credential
- *     (interactive session / PAT), never a long-lived non-human principal
- *     like a sandbox apiKey or service-account bearer.
+ * Projects reach machines only through computer ACCOUNTS on the `computer`
+ * connector (the connector gateway), never through these routes. Project and
+ * service credentials are refused here.
+ *
+ * Mutating routes (rename, unpair, rotate, approve a pairing) additionally
+ * require a USER credential (interactive session / PAT), never a long-lived
+ * non-human principal.
  */
 
-/** Allow only human credentials — used to fence off tunnel management. */
+/**
+ * Allow only human credentials — used to fence off tunnel management. A
+ * session or agent token carries its creator's user id; accepting it would
+ * let an agent pair, share, or unpair that human's computer.
+ */
 export function requireUserCredential(c: any): void {
   const authType = c.get('authType');
-  if (authType !== 'supabase' && authType !== 'pat') {
+  if ((authType !== 'supabase' && authType !== 'pat') || isProjectSessionPrincipal(c)) {
     throw new HTTPException(403, {
       message: 'User credentials are required for tunnel management',
     });
@@ -35,9 +41,9 @@ export function requireUserCredential(c: any): void {
 }
 
 /**
- * Resolve the account + ownership clause for direct tunnel READ / RPC access.
- * Account API keys have accountId without userId. Project and service
- * credentials fail before ownership resolution.
+ * Resolve the account + the machines this caller may reach directly.
+ * Account API keys have accountId without userId: they see the account's
+ * owner-less machines only.
  */
 export async function getTunnelReadContext(c: any) {
   const authType = c.get('authType') as string | undefined;
@@ -45,8 +51,7 @@ export async function getTunnelReadContext(c: any) {
   const isProjectPat = authType === 'pat' && Boolean(c.get('tokenProjectId'));
   if (isSandboxCredential || isProjectPat || authType === 'service_account') {
     throw new HTTPException(403, {
-      message:
-        'Project and service credentials must use a Computer Tunnel connector profile for tunnel access',
+      message: 'Project and service credentials reach computers through the computer connector',
     });
   }
 
@@ -60,53 +65,24 @@ export async function getTunnelReadContext(c: any) {
     });
   }
 
-  // ACT-AS: this resolver reads `account_members` DIRECTLY rather than through
-  // `getAccountMembership`, so it does not see the impersonation branch — the
-  // operator has no membership row in the customer's account, the probe below
-  // finds nothing, and the fall-back silently re-points the request at
-  // `accountId: userId`, the OPERATOR's own fleet. That is the one thing this
-  // feature refuses to do: a delete or a token rotation would hit the
-  // operator's own machines while the banner, the audit `accountId` and the
-  // `admin.impersonate.action` row all name the customer. Fail closed instead.
+  // ACT-AS: the operator has no membership in the customer's account, and
+  // their own machines must never appear in (or be mutated through) a request
+  // the banner attributes to the customer. Fail closed on a foreign account;
+  // on the impersonated account show only its owner-less team machines.
   if (isImpersonationBlockedAccount(userId, accountId)) {
     throw new HTTPException(403, {
       message: 'Impersonated requests cannot target another account',
     });
   }
-  const impersonatingThisAccount = isImpersonatingAccount(userId, accountId);
-
-  if (userId && userId !== accountId && !impersonatingThisAccount) {
-    const accountRole = await accountRoleFor(accountId, userId);
-
-    if (!isAccountManagerRole(accountRole)) {
-      // Raw tunnel routes bypass connector grants and tool policies. A regular
-      // member can use an assigned Computer Tunnel profile, but receives no implicit
-      // access to the organization's full machine fleet.
-      return {
-        userId,
-        accountId: userId,
-        authorizedAccountIds: [userId],
-        ownerClause: eq(tunnelConnections.accountId, userId),
-      };
-    }
+  const teamMachines = and(eq(tunnelConnections.accountId, accountId), isNull(tunnelConnections.ownerUserId));
+  if (!userId || isImpersonatingAccount(userId, accountId)) {
+    return { userId, accountId, ownerClause: teamMachines! };
   }
 
-  // Owners and admins can access the organization fleet and their personal
-  // machines. Account API keys have no userId and access only their account.
-  //
-  // The personal-machines half is dropped while acting as an account: the
-  // operator's own `userId` is their own personal account id, so ORing it in
-  // would put THEIR machines in a fleet listing the banner says belongs to the
-  // customer — and, worse, inside `authorizedAccountIds`, which the RPC relay
-  // authorizes against.
-  const includePersonal = Boolean(userId) && userId !== accountId && !impersonatingThisAccount;
-  const ownerClause = includePersonal
-    ? or(eq(tunnelConnections.accountId, accountId), eq(tunnelConnections.accountId, userId!))
-    : eq(tunnelConnections.accountId, accountId);
-
-  const authorizedAccountIds = includePersonal ? [accountId, userId!] : [accountId];
-
-  return { userId, accountId, authorizedAccountIds, ownerClause };
+  const own = eq(tunnelConnections.ownerUserId, userId);
+  const manager =
+    userId === accountId || isAccountManagerRole(await accountRoleFor(accountId, userId));
+  return { userId, accountId, ownerClause: manager ? or(own, teamMachines)! : own };
 }
 
 /**

@@ -463,11 +463,6 @@ export async function releaseInboxHold(sessionId: string): Promise<number> {
   return holdInboxPrompts(sessionId, false);
 }
 
-/** Is this row deliberately held out of the drain? */
-export function isHeldInboxRow(result: unknown): boolean {
-  return (result as { held?: unknown } | null)?.held === true;
-}
-
 /** Was this row's delivery stopped by the user AFTER it reached OpenCode?
  *  `requeueAbandonedPrompt` reads it to bring the repair back HELD. */
 export function isStopPausedInboxRow(result: unknown): boolean {

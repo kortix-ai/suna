@@ -45,6 +45,7 @@ export async function postTeamsReviewCard(
       summary: item.summary,
       risk: item.risk,
       viewUrl,
+      kind: item.kind,
     }),
   );
   if (posted) return { ok: true };

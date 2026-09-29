@@ -9,7 +9,20 @@ import {
   type TeamsInbound,
 } from './inbound';
 import { consumePendingTeamsPickerMessage } from './auth-resume';
-import { REVIEW_FEEDBACK_INPUT, TEAMS_FORM_VERB, TEAMS_STOP_VERB, buildNoticeCard } from './cards';
+import {
+  APPROVAL_NOTE_INPUT,
+  REVIEW_FEEDBACK_INPUT,
+  TEAMS_APPROVAL_VERB,
+  TEAMS_FORM_VERB,
+  TEAMS_OPEN_PANEL_VERB,
+  TEAMS_STOP_VERB,
+  type TeamsPanel,
+  buildNoticeCard,
+  buildTeamsApprovalOutcomeCard,
+} from './cards';
+import { decideChatApproval } from '../core/approval-decision';
+import { findChatThread } from '../core/threads';
+import { approvalResumeText, normalizeApprovalNote } from '../../projects/lib/connector-approval-decision';
 import { notifyAdminsOfTeamsAccessRequest, teamsUserId } from './identity';
 import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
 import { decideTeamsThreadJoin } from './participants';
@@ -73,6 +86,10 @@ export async function handleAdaptiveCardAction(
       return handleStop(activity, action.data, inbound);
     case 'teams_review':
       return handleReview(activity, action.data, inbound);
+    case TEAMS_APPROVAL_VERB:
+      return handleApproval(activity, action.data, inbound);
+    case TEAMS_OPEN_PANEL_VERB:
+      return handleOpenPanel(activity, action.data, inbound);
     default:
       return cardResponse(buildNoticeCard("This action isn't available anymore."));
   }
@@ -167,6 +184,26 @@ async function handleSetAgent(
   const channel = teamsSettingsChannel(activity, convo.tenantId, convo.conversationId);
   const result = await changeChannelAgent(presser(activity, convo), channel, agent || null);
   return cardResponse(buildNoticeCard(teamsAgentChangeText(result, agent), result.ok ? '✅' : undefined));
+}
+
+const PANELS = new Set<TeamsPanel>(['models', 'agents', 'projects']);
+
+/** A `/status` button: the picker it names, for the person who pressed it. */
+async function handleOpenPanel(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+  inbound: TeamsInbound,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const panel = data.panel as TeamsPanel;
+  if (!convo || !PANELS.has(panel)) return cardResponse(buildNoticeCard("This action isn't available anymore."));
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁'));
+  // Loaded on press: `commands.ts` pulls the whole command surface, which no
+  // other card action needs.
+  const { buildTeamsPanel } = await import('./commands');
+  return cardResponse(await buildTeamsPanel({ panel, activity, tenantId: convo.tenantId, conversationId: convo.conversationId, projectId }));
 }
 
 /** The Teams user who pressed a card button, as a chat identity. */
@@ -392,6 +429,53 @@ async function handleReview(
   return cardResponse(buildNoticeCard(ack));
 }
 
+/** A gated connector call's card: Approve / Deny, with the optional message box. */
+async function handleApproval(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+  inbound: TeamsInbound,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const executionId = typeof data.executionId === 'string' ? data.executionId : null;
+  const decision = data.decision === 'approve' || data.decision === 'deny' ? data.decision : null;
+  if (!convo || !executionId || !decision) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
+
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const thread = await findChatThread(
+    { platform: 'teams', workspaceId: convo.tenantId, threadId: convo.conversationId },
+    projectId,
+  );
+  const note = normalizeApprovalNote(data[APPROVAL_NOTE_INPUT]);
+  const result = await decideChatApproval({
+    user: chatUser('teams', convo.tenantId, teamsUserId(activity) ?? ''),
+    projectId,
+    sessionId: thread?.sessionId ?? null,
+    executionId,
+    decision,
+    note,
+  });
+  // A refusal is an answer to the presser, not the new state of the card: keep
+  // the buttons for someone who may decide.
+  if ('refusal' in result) return { statusCode: 200, type: 'application/vnd.microsoft.activity.message', value: result.refusal };
+
+  const synthetic: TeamsActivity = {
+    ...activity,
+    type: 'message',
+    text: approvalResumeText(result.row.actionPath, decision, note),
+    id: `${activity.id ?? 'approval'}:approval`,
+  };
+  void createOrJoinTeamsConversationSession({
+    projectId,
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    activity: synthetic,
+    ownThreadsOnly: inbound.kind === 'project',
+  }).catch((err) => console.error('[teams-webhook] approval resume failed', err));
+
+  return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note, decidedBy: activity.from?.name || undefined }));
+}
+
 async function handleThreadJoin(
   activity: TeamsActivity,
   data: Record<string, unknown>,
@@ -444,6 +528,7 @@ async function handleRequestAccess(
     case 'created':
     case 'pending':
       await notifyAdminsOfTeamsAccessRequest({
+        tenantId,
         projectId,
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,

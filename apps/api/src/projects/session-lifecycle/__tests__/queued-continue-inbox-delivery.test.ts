@@ -20,8 +20,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
-import { drizzle } from 'drizzle-orm/pg-proxy';
-import type { SQL } from 'drizzle-orm';
 import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
@@ -56,7 +54,6 @@ let unverifiedRequeues: Array<{ commandId: string; availableAt: Date }> = [];
 let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
 let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
-let projectMetadataExpression: SQL | undefined;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
 /** The newest id the inbox's OWN rows say this session has already delivered,
@@ -65,6 +62,8 @@ let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let quickQueueControlRequests: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+/** When set, the daemon never answers the interrupt arm — the wedged-box case. */
+let quickQueueArmFails = false;
 let capturedKeys: string[] = [];
 const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
@@ -132,7 +131,6 @@ mock.module('../../../shared/db', () => ({
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
-          if (projection?.projectMetadata) projectMetadataExpression = projection.projectMetadata as SQL;
           const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) {
               return [{ result: { held: pauseAfterPosts !== null && capturedBodies.length >= pauseAfterPosts }, payload: {} }];
@@ -405,8 +403,8 @@ mock.module('../../lib/sandbox-env-sync', () => ({
   },
 }));
 
-// The private store a staged file is copied into while the project keeps its
-// history (`session_transcript_history`, on by default).
+// The private store every staged file is also copied into, so saved history
+// can show it while the computer is off.
 let savedAttachments: Array<{ projectId: string; sessionId: string; filename: string }> = [];
 const realSessionAttachments = await import('../../lib/session-attachments');
 mock.module('../../lib/session-attachments', () => ({
@@ -494,7 +492,6 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 beforeEach(() => {
   serviceKeyAvailable = true;
   envSyncCalls = 0;
-  projectMetadataExpression = undefined;
   pauseAfterPosts = null;
   requeues = [];
   unverifiedRequeues = [];
@@ -508,10 +505,6 @@ beforeEach(() => {
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
-    // The wire tests pin the path WITHOUT saved history. The flag is on by
-    // default; its one extra step, keeping each staged file in the private
-    // store, is tested below and in prompt-attachment-materializer.test.ts.
-    projectMetadata: { experimental: { session_transcript_history: false } },
     sandboxProvider: 'daytona',
     baseRef: 'main',
     agentName: 'agent',
@@ -523,6 +516,7 @@ beforeEach(() => {
   transcript = [];
   capturedBodies = [];
   quickQueueControlRequests = [];
+  quickQueueArmFails = false;
   capturedKeys = [];
   seenKeys.clear();
   succeededCalls = [];
@@ -564,6 +558,7 @@ beforeEach(() => {
         method: init?.method ?? 'GET',
         body: JSON.parse(String(init?.body)) as Record<string, unknown>,
       });
+      if (quickQueueArmFails) return new Response(null, { status: 503 });
       return Response.json({ armed: true }, { status: 202 });
     }
     // The staged-revert guard reads the session row; the re-mint and the
@@ -621,16 +616,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(0);
   });
 
-  test('the project flag lookup correlates with the outer session under Drizzle single-table rendering', async () => {
-    expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
-    expect(projectMetadataExpression).toBeDefined();
-    const query = drizzle(async () => ({ rows: [] }))
-      .select({ projectMetadata: projectMetadataExpression! })
-      .from(projectSessions)
-      .toSQL();
-    expect(query.sql).toContain('p.project_id = "kortix"."project_sessions"."project_id"');
-  });
-
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',
@@ -649,6 +634,44 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('a runtime that will not serve the interrupt parks the row on the unreachable ladder, not the 2 s order backoff', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('queued');
+    expect(quickQueueControlRequests).toHaveLength(1);
+    expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
+    expect(requeues).toHaveLength(0);
+    expect(failedCalls).toHaveLength(0);
+    expect(capturedBodies).toHaveLength(0);
+  });
+
+  test('after the unreachable budget the interrupted row fails honestly instead of waiting for ever', async () => {
+    boxRow = {
+      status: 'active',
+      metadata: { activeTurns: {
+        't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID,
+          messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
+      } },
+    };
+    quickQueueArmFails = true;
+    parkBudgetLeft = false;
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    expect(await executeQueuedContinue(row)).toBe('failed');
+    expect(parkedCalls).toHaveLength(1);
+    expect(failedCalls.at(-1)).toMatchObject({
+      message: "the session's machine could not be reached after 3 attempts",
+      options: { retryable: false },
+    });
+    expect(requeues).toHaveLength(0);
   });
 
   test('Stop during a transient delivery failure prevents another POST', async () => {
@@ -670,8 +693,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     });
   });
 
-  test('with saved history on (the default), a staged file is also kept in the private store', async () => {
-    sessionRow = { ...sessionRow!, projectMetadata: {} };
+  test('every staged file is also kept in the private store', async () => {
     const outcome = await executeQueuedContinue(
       baseRow({
         payload: {

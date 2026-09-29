@@ -55,20 +55,17 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { abortRuntimeTurn } from './abort-runtime-turn';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
+import { resolveSessionOpencodeEndpoint, readSessionMessageTip, removeRuntimeMessage } from './runtime-client';
 import {
   type PlacementTipMessage,
-  parsePlacementTip,
   reachedPlacement,
   tipIsBusy,
 } from './forwarded-placement';
 import { INBOX_HOLD_MS, inboxScope } from './inbox-rows';
 import { withNextDeliveryAttempt } from './store';
 
-const WORKSPACE = '/workspace';
 const TIP_LIMIT = 16;
 /** How long a claimed delivery is given to land after the hold. A delivery is
  *  one proxied POST (~0.3–1.5 s); the drain's own retry budget is far longer,
@@ -160,15 +157,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
   },
   async readTip(sessionId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return null;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}&limit=${TIP_LIMIT}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return null;
-    return parsePlacementTip(await res.json().catch(() => null));
+    return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
   // This abort is part of the Stop the user pressed, and it does not pass the
   // sandbox proxy that stamps `UserStop`. It also runs before the client's own
@@ -177,14 +166,7 @@ export const liveHoldSettleDeps: HoldSettleDeps = {
   abort: (sessionId) => abortRuntimeTurn(sessionId, { requestedStop: true }),
   async removeMessage(sessionId, messageId) {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok || res.status === 404;
+    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
   },
   async holdAsQueued(commandId) {
     await db

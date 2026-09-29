@@ -59,9 +59,11 @@ Done when `scripts/index.sh --check` exits 0 and the entry is committed.
   filename. It is the time of recording, never the incident date. The incident date goes
   in `incident_date`.
 - **`MEMORY.md` is generated.** Run `scripts/index.sh` after any entry change. It merges
-  with git's `union` driver, so two branches that each add an entry do not conflict. After
-  a merge, run `index.sh` to restore the order. `tests/unit/learnings-ledger.test.ts` fails
-  on a stale index or a malformed entry.
+  with git's `union` driver, so two branches that each add an entry do not conflict. A
+  GitHub squash merge keeps a branch's index line where the branch put it, so the order
+  on `main` can drift until the next `index.sh` run. `index.sh --check` and
+  `tests/unit/learnings-ledger.test.ts` compare the lines, not their order: they fail on a
+  missing, extra, or retitled index line, or a malformed entry.
 - **Keep an entry short: about 8 to 20 lines.** Deep detail belongs in the PR body.
   Cite the PR number (`PR #1234`).
 - **An entry is self-contained.** The ledger in `entries/` is the only incident record.
