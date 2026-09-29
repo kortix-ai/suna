@@ -21,11 +21,16 @@ import {
   type RegistryJson,
 } from './schema';
 import {
+  manifestOpencodeDir,
   parseFrontmatter,
   projectNameFromManifest,
-  resolveOpencodeDir,
 } from './manifest';
-import { AGENTS_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
+import {
+  AGENTS_DIR,
+  LEGACY_OPENCODE_CONFIG_DIR,
+  OPENCODE_CONFIG_DIR,
+  SKILLS_DIR,
+} from '@kortix/manifest-schema/layout';
 import { buildTarget } from './paths';
 import { groupSkillFiles } from './skills';
 
@@ -108,7 +113,11 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
   const files = source.listFiles();
 
   const manifestRaw = readOptional(source, 'kortix.yaml') ?? readOptional(source, 'kortix.toml');
-  const configDir = resolveOpencodeDir(manifestRaw);
+  const explicitDir = manifestOpencodeDir(manifestRaw);
+  // The legacy layout kept agents/ and skills/ in the OpenCode config dir.
+  const configDir = explicitDir ?? LEGACY_OPENCODE_CONFIG_DIR;
+  // OpenCode-only commands and tools: the manifest's dir, else both defaults.
+  const opencodeDirs = explicitDir ? [explicitDir] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
   const name = opts.name ?? projectNameFromManifest(manifestRaw) ?? 'registry';
 
   const items: RegistryItem[] = [];
@@ -158,13 +167,14 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
   }
 
   // --- agents: agents/<file>.md, then the legacy <cd>/agent(s)/<file>.md
-  // --- commands (OpenCode only): <cd>/command(s)/<file>.md
+  // --- commands (OpenCode only): <opencode dir>/command(s)/<file>.md
   collectFlatMd(files, source, [AGENTS_DIR, `${configDir}/agents`, `${configDir}/agent`], 'registry:agent', name, add, 'agent', buildTarget.agent);
-  collectFlatMd(files, source, [`${configDir}/commands`, `${configDir}/command`], 'registry:command', name, add, 'command', buildTarget.command);
+  collectFlatMd(files, source, opencodeDirs.flatMap((dir) => [`${dir}/commands`, `${dir}/command`]), 'registry:command', name, add, 'command', buildTarget.command);
 
-  // --- tools: <cd>/tools/<file>.ts
+  // --- tools: <opencode dir>/tools/<file>.ts
+  const toolRe = new RegExp(`^(?:${opencodeDirs.map(escapeRe).join('|')})/tools/([^/]+)\\.ts$`);
   for (const file of files) {
-    const m = file.match(new RegExp(`^${escapeRe(configDir)}/tools/([^/]+)\\.ts$`));
+    const m = file.match(toolRe);
     if (!m) continue;
     add(
       {

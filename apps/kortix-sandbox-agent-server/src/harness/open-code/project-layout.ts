@@ -1,7 +1,9 @@
 /**
- * The project repository layout, as the daemon reads it. The daemon imports no
- * `@kortix/*` package, so this is its copy of the constants in
- * packages/manifest-schema/src/layout.ts — keep the two equal.
+ * The project repository layout, as the OpenCode adapter reads it. The daemon
+ * imports no `@kortix/*` package, so this is its copy of the constants in
+ * packages/manifest-schema/src/layout.ts — keep the two equal. It lives in the
+ * adapter because the OpenCode config dir names are OpenCode knowledge (E18);
+ * pi lists its own skill dirs (harness/pi/config.ts).
  *
  * Harness-neutral content sits at the repository root (`agents/`, `skills/`,
  * `memory/`); files one harness reads sit under `harnesses/<harness>/`.

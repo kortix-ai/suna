@@ -195,6 +195,25 @@ describe('buildRegistry', () => {
     );
   });
 
+  test('a manifest with no opencode.config_dir finds OpenCode commands and tools in harnesses/opencode', () => {
+    const { registry, counts } = buildRegistry({
+      name: 'test',
+      source: memSource({
+        'kortix.yaml': 'kortix_version: 2\n',
+        'harnesses/opencode/tools/web_search.ts': 'export const x = 1',
+        'harnesses/opencode/commands/review.md': '---\ndescription: review\n---\n',
+        '.kortix/opencode/agents/legacy.md': '---\ndescription: legacy agent\n---\n',
+      }),
+    });
+    expect(counts).toMatchObject({ agent: 1, command: 1, tool: 1 });
+    expect(registry.items!.find((i) => i.name === 'web_search')!.files![0].path).toBe(
+      'harnesses/opencode/tools/web_search.ts',
+    );
+    expect(registry.items!.find((i) => i.name === 'review')!.files![0].path).toBe(
+      'harnesses/opencode/commands/review.md',
+    );
+  });
+
   test('reads the config dir from kortix.yaml, not only kortix.toml', () => {
     const { counts } = buildRegistry({
       name: 'test',
