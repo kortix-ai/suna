@@ -4,7 +4,7 @@
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { inferAuditSource } from '../../shared/audit';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -40,7 +40,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/approvals',
     tags: ['access'],
-    summary: 'GET /:projectId/approvals',
+    summary: 'List approvals of a project',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -120,7 +120,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/approvals/needs-input',
     tags: ['access'],
-    summary: 'GET /:projectId/approvals/needs-input',
+    summary: 'List approvals waiting for input',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -231,11 +231,14 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/approvals/{executionId}',
     tags: ['access'],
-    summary: 'POST /:projectId/approvals/:executionId',
+    summary: 'Approve or deny a gated action',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), executionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          decision: z.enum(['approve,deny']).openapi({ description: 'Approve or deny exactly this gated call.' }),
+          note: z.string().optional().openapi({ description: 'Note the agent receives with the decision.' }),
+        }) } } },
     },
     responses: {
       200: json(OkSchema, 'Resolved'),

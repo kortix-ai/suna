@@ -21,10 +21,10 @@ import {
   buildRegistryProjectInstallPrompt,
   buildTemplateInstallPrompt,
 } from './marketplace-install-prompts';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { readManifestFromRepo } from '../git/files';
 import { loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -144,11 +144,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/marketplace/install-session',
     tags: ['marketplace'],
-    summary: 'POST /:projectId/marketplace/install-session',
+    summary: 'Start a session that installs a marketplace item',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          id: z.string().openapi({ description: 'Marketplace item id to install.' }),
+        }) } } },
     },
     responses: {
       201: json(z.any(), 'Session started'),

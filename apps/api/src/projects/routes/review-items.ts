@@ -10,7 +10,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -41,7 +41,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/review/items',
     tags: ['review'],
-    summary: 'GET /:projectId/review/items',
+    summary: 'List review items (approvals and change requests)',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -161,7 +161,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/review/items/{reviewItemId}',
     tags: ['review'],
-    summary: 'GET /:projectId/review/items/:reviewItemId',
+    summary: 'Get a review item',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), reviewItemId: z.string() }),
@@ -195,11 +195,19 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/review/items',
     tags: ['review'],
-    summary: 'POST /:projectId/review/items',
+    summary: 'Create a review item',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          kind: z.enum(['output,decision,batch']).openapi({ description: 'Review item kind.' }),
+          title: z.string().openapi({ description: 'Title.' }),
+          summary: z.string().optional().openapi({ description: 'Short summary.' }),
+          risk: z.string().optional().openapi({ description: 'Risk level. Default none.' }),
+          detail: z.record(z.string(), z.any()).optional().openapi({ description: 'Structured detail shown to the reviewer.' }),
+          session_id: z.string().optional().openapi({ description: 'Originating session.' }),
+          agent: z.string().optional().openapi({ description: 'Agent that raised it.' }),
+        }) } } },
     },
     responses: {
       201: json(AnyObject, 'The created review item'),
@@ -289,11 +297,14 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/review/items/{reviewItemId}/act',
     tags: ['review'],
-    summary: 'POST /:projectId/review/items/:reviewItemId/act',
+    summary: 'Approve, reject or act on a review item',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), reviewItemId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          verdict: z.enum(['approve,reject,changes,answer,dismiss']).openapi({ description: 'Decision on the item.' }),
+          feedback: z.string().optional().openapi({ description: 'Comment or answer text.' }),
+        }) } } },
     },
     responses: {
       200: json(AnyObject, 'The updated review item'),
@@ -345,11 +356,14 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/review/bulk',
     tags: ['review'],
-    summary: 'POST /:projectId/review/bulk',
+    summary: 'Act on several review items at once',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          ids: z.array(z.string()).openapi({ description: 'Review item ids. review_item_ids is accepted as an alias.' }),
+          verdict: z.enum(['approve,reject,changes,answer,dismiss']).openapi({ description: 'Decision applied to every item.' }),
+        }) } } },
     },
     responses: {
       200: json(z.object({ updated: z.number(), review_items: z.array(AnyObject) }), 'Bulk result'),

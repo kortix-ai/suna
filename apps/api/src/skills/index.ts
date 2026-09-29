@@ -71,7 +71,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/',
     tags: ['skills'],
-    summary: 'GET /skills — list the Kortix system skills',
+    summary: 'List the Kortix system skills',
     description:
       'Name + description for every kortix-managed system skill. Bodies are not ' +
       'included; fetch one with GET /v1/skills/{name}.',
@@ -95,7 +95,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/{name}/file',
     tags: ['skills'],
-    summary: "GET /skills/:name/file?path=… — one of a skill's reference files",
+    summary: 'Read a file of a Kortix system skill (?path=)',
     ...auth,
     request: {
       params: SkillNameParams,
@@ -129,7 +129,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/{name}',
     tags: ['skills'],
-    summary: 'GET /skills/:name — the full SKILL.md body',
+    summary: 'Read a Kortix system skill (full SKILL.md)',
     description:
       'The complete markdown the agent is meant to follow. `?full=1` also inlines ' +
       'every reference file (large — kortix-system is ~230 KB with references).',

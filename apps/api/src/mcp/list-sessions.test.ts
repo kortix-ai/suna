@@ -13,6 +13,9 @@ describe('list_sessions', () => {
       q: 'nightly',
     });
   });
+  test('passes the cursor of the previous page through', () => {
+    expect(listSessionsQuery({ cursor: ' v1.abc ' }).cursor).toBe('v1.abc');
+  });
   test('parent_session_id lists children', () => {
     expect(listSessionsQuery({ parent_session_id: 'abc' }).parent).toBe('abc');
   });
@@ -26,6 +29,7 @@ describe('list_sessions', () => {
       initiator: { type: 'trigger', id: 'nightly', label: 'nightly' }, child_count: 3, search_match: 'child',
     });
     expect(row).toMatchObject({ started_by: 'nightly', parent_session_id: null, child_count: 3, search_match: 'child' });
+    expect(listSessionRow({ session_id: 's3', branch_name: 'b', created_at: 'c' })).toMatchObject({ branch: 'b', created_at: 'c' });
     expect(listSessionRow({ session_id: 's2' })).toMatchObject({ started_by: null, child_count: 0 });
   });
 });

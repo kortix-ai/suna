@@ -9,14 +9,14 @@
 /* Begin PBXBuildFile section */
 		0159D307D2D3CCA8EDAA78D7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BC9374D55908288642233682 /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		203A39158FCF45D08E929F13 /* kortix_error.wav in Resources */ = {isa = PBXBuildFile; fileRef = EE0DADF67A4E4695B90F1262 /* kortix_error.wav */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		4C85B586E4EE4FF59CC29270 /* kortix_complete.wav in Resources */ = {isa = PBXBuildFile; fileRef = D974D8875D06474BAEB741C7 /* kortix_complete.wav */; };
 		7232587C652E73A4BDC6DDFA /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E63EB6BCB9E27ED3A55FF949 /* ExpoModulesProvider.swift */; };
 		AF643ED377BAE3AE61C5F647 /* Pods_Kortix.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2A2B99CD5CE8B5A42526837 /* Pods_Kortix.framework */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		4C85B586E4EE4FF59CC29270 /* kortix_complete.wav in Resources */ = {isa = PBXBuildFile; fileRef = D974D8875D06474BAEB741C7 /* kortix_complete.wav */; };
 		D24B54E56DC747BA8FCD2369 /* kortix_attention.wav in Resources */ = {isa = PBXBuildFile; fileRef = 3004F0CC0A7242E7BFD10F51 /* kortix_attention.wav */; };
-		203A39158FCF45D08E929F13 /* kortix_error.wav in Resources */ = {isa = PBXBuildFile; fileRef = EE0DADF67A4E4695B90F1262 /* kortix_error.wav */; };
+		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,18 +24,18 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Kortix/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Kortix/Info.plist; sourceTree = "<group>"; };
 		16B41CD3C941C51C7C6AC932 /* Pods-Kortix.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.release.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.release.xcconfig"; sourceTree = "<group>"; };
+		3004F0CC0A7242E7BFD10F51 /* kortix_attention.wav */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = kortix_attention.wav; path = Kortix/kortix_attention.wav; sourceTree = "<group>"; };
 		A2A2B99CD5CE8B5A42526837 /* Pods_Kortix.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Kortix.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Kortix/SplashScreen.storyboard; sourceTree = "<group>"; };
 		B3A1E95516F9201FE6DCC871 /* Pods-Kortix.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.debug.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.debug.xcconfig"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		BC9374D55908288642233682 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Kortix/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		D974D8875D06474BAEB741C7 /* kortix_complete.wav */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = kortix_complete.wav; path = Kortix/kortix_complete.wav; sourceTree = "<group>"; };
 		E63EB6BCB9E27ED3A55FF949 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Kortix/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		EE0DADF67A4E4695B90F1262 /* kortix_error.wav */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = kortix_error.wav; path = Kortix/kortix_error.wav; sourceTree = "<group>"; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
-		D974D8875D06474BAEB741C7 /* kortix_complete.wav */ = {isa = PBXFileReference; name = "kortix_complete.wav"; path = "Kortix/kortix_complete.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
-		3004F0CC0A7242E7BFD10F51 /* kortix_attention.wav */ = {isa = PBXFileReference; name = "kortix_attention.wav"; path = "Kortix/kortix_attention.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
-		EE0DADF67A4E4695B90F1262 /* kortix_error.wav */ = {isa = PBXFileReference; name = "kortix_error.wav"; path = "Kortix/kortix_error.wav"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -427,7 +427,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.kortix.app;
-				PRODUCT_NAME = "Kortix";
+				PRODUCT_NAME = Kortix;
 				SWIFT_OBJC_BRIDGING_HEADER = "Kortix/Kortix-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -460,7 +460,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.kortix.app;
-				PRODUCT_NAME = "Kortix";
+				PRODUCT_NAME = Kortix;
 				SWIFT_OBJC_BRIDGING_HEADER = "Kortix/Kortix-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

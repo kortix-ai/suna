@@ -14342,7 +14342,7 @@
       "text8cd003e6301b": "⌘S",
       "text8cd05146050d": "Executa o ciclo completo: descoberta, escopo, construção, handoff e expansão.",
       "text8cd1f7bcdc71": "Etapa 1 de 2 — cole o manifesto no Slack e instale o app.",
-      "text8ce16e33b27d": "Você pode revogar o acesso a qualquer momento nas configurações da sua conta.",
+      "text8ce16e33b27d": "Você pode revogar o acesso a qualquer momento em Configurações → Chaves de acesso pessoais → Apps conectados.",
       "text8ce429d50e7c": "Em \"API Connection\": cole a Tenant URL em \"SCIM Base URL\" e o segredo em \"SCIM Bearer Token\". Depois, clique no botão \"Enable\" (salve o aplicativo primeiro, se solicitado). O OneLogin valida o endpoint, e \"API Status\" exibe um \"Enabled\" verde — esse campo é um indicador somente leitura, não um controle que você define.",
       "text8cea8af247c2": "Não foi possível adicionar sua mensagem à fila",
       "text8d0218f233bb": "Visualização:{value0}",

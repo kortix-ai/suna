@@ -20,7 +20,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/gateway/providers/{providerId}/verify',
     tags: ['gateway'],
-    summary: 'POST /:projectId/gateway/providers/:providerId/verify',
+    summary: 'Verify a project LLM provider credential',
     ...auth,
     request: { params: z.object({ projectId: z.string(), providerId: z.string() }) },
     responses: {
