@@ -93,8 +93,8 @@ export function compactMessage(msg: RawOpencodeMessage, maxChars: number, full =
       status: p.state?.status ?? null,
       ...(full
         ? {
-            input: truncate(JSON.stringify(p.state?.input ?? {}), maxChars),
-            output: truncate(stringify(p.state?.output ?? p.state?.error ?? ''), maxChars),
+            input: truncateMarked(JSON.stringify(p.state?.input ?? {}), maxChars),
+            output: truncateMarked(stringify(p.state?.output ?? p.state?.error ?? ''), maxChars),
           }
         : {}),
     }));
@@ -110,12 +110,22 @@ export function compactMessage(msg: RawOpencodeMessage, maxChars: number, full =
     role: info.role ?? 'unknown',
     created: info.time?.created ? new Date(info.time.created).toISOString() : null,
     completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(full ? text.trim() : normalizeWhitespace(text), maxChars),
+    // `full` readers get the whole answer (up to FULL_TEXT_CHARS); `maxChars`
+    // bounds the digest and each tool call's input and output.
+    text: full ? truncateMarked(text.trim(), FULL_TEXT_CHARS) : truncate(normalizeWhitespace(text), maxChars),
     tools,
     files,
     reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
     error: info.error ?? null,
   };
+}
+
+/** The final answer of a `detail: 'full'` read is cut here, not at `chars`. */
+const FULL_TEXT_CHARS = 16_000;
+
+/** Like `truncate`, but says how much was kept and how long the whole was. */
+function truncateMarked(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max)}…[truncated: ${max} of ${s.length} chars]`;
 }
 
 function stringify(value: unknown): string {

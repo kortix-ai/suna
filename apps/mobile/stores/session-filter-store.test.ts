@@ -8,15 +8,15 @@ describe('session filter store (KRTX-250)', () => {
   beforeEach(() => get().reset());
 
   test('an unknown project has no filter', () => {
-    expect(get().byProject['p1'] ?? EMPTY_SESSION_FILTER).toEqual({ query: '', statuses: [] });
+    expect(get().byProject['p1'] ?? EMPTY_SESSION_FILTER).toEqual({ query: '', statuses: [], scope: 'all' });
   });
 
   test('query and statuses are kept per project', () => {
     get().setQuery('p1', 'login');
     get().toggleStatus('p1', 'failed');
     get().toggleStatus('p2', 'running');
-    expect(get().byProject['p1']).toEqual({ query: 'login', statuses: ['failed'] });
-    expect(get().byProject['p2']).toEqual({ query: '', statuses: ['running'] });
+    expect(get().byProject['p1']).toEqual({ query: 'login', statuses: ['failed'], scope: 'all' });
+    expect(get().byProject['p2']).toEqual({ query: '', statuses: ['running'], scope: 'all' });
   });
 
   test('toggling a picked status removes it', () => {
@@ -32,6 +32,15 @@ describe('session filter store (KRTX-250)', () => {
     get().resetProject('p1');
     expect(get().byProject['p1']).toBeUndefined();
     expect(get().byProject['p2']?.statuses).toEqual(['stopped']);
+  });
+
+  test('scope is kept per project and resetProject clears it', () => {
+    get().setScope('p1', 'automated');
+    get().setScope('p2', 'mine');
+    expect(get().byProject['p1']?.scope).toBe('automated');
+    expect(get().byProject['p2']?.scope).toBe('mine');
+    get().resetProject('p1');
+    expect(get().byProject['p1']).toBeUndefined();
   });
 
   test('reset (sign-out) clears every project', () => {

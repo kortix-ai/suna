@@ -191,6 +191,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     expect(plan).toContain('const sentAtMs = Date.now();');
     expect(send.indexOf('paintSend(send, env);')).toBeLessThan(send.indexOf('deliverDetached(send, env, post);'));
     expect(post).toContain('clientSentAtMs: sentAtMs,');
+    expect(send.indexOf('const send = planSend({')).toBeLessThan(send.indexOf('paintSend(send, env);'));
     // The failed status lives in the first-prompt preview, which SessionChat
     // also draws, so it survives the crossfade that unmounts this shell.
     expect(detachedSend).toMatch(

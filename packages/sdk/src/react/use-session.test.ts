@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 // Mock the lowest network boundary the reply/send paths go through — the
 // OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
@@ -580,6 +580,82 @@ describe('shouldPollSessionStart', () => {
     expect(shouldPollSessionStart(null, failedWake)).toBe(false);
   });
 
+  test('a cooldown answer waits out the server retry time the payload already names', () => {
+    // The wake-ladder cooldown payload (`stoppedWakeResult`'s cooling_down
+    // branch, apps/api routes/shared.ts) answers instantly with
+    // `stage: 'starting'`, `retriable: true` and a `next_retry_at` the server
+    // itself will honor. Polling faster than that cannot change the answer;
+    // the fleet poll cadence drove a sustained ~8k POST /start/hour from one
+    // workspace's wedged boxes (KRTX-385).
+    const cooldown = {
+      stage: 'starting',
+      retriable: true,
+      failure: {
+        category: 'sandbox-provider',
+        message: 'The runtime did not start (attempt 2). Retrying automatically.',
+        retryable: true,
+        evidence: {
+          check: 'runtime_wake_failed',
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: 2,
+          next_retry_at: new Date(Date.now() + 30_000).toISOString(),
+        },
+      },
+    } as never;
+    const pause = shouldPollSessionStart(null, cooldown);
+    expect(typeof pause).toBe('number');
+    expect(pause as number).toBeGreaterThan(20_000);
+    expect(pause as number).toBeLessThanOrEqual(60_000);
+  });
+
+  test('a cooldown hours away still rechecks once a minute, so an open tab notices the lapse', () => {
+    const cooldown = {
+      stage: 'starting',
+      retriable: true,
+      failure: {
+        category: 'sandbox-provider',
+        message: 'Retrying automatically.',
+        retryable: true,
+        evidence: {
+          check: 'runtime_wake_failed',
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: 1,
+          next_retry_at: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+      },
+    } as never;
+    expect(shouldPollSessionStart(null, cooldown)).toBe(60_000);
+  });
+
+  test('a lapsed cooldown returns to the normal cadence — the server is re-attempting now', () => {
+    const lapsed = {
+      stage: 'starting',
+      retriable: true,
+      failure: {
+        category: 'sandbox-provider',
+        message: 'Retrying automatically.',
+        retryable: true,
+        evidence: {
+          check: 'runtime_wake_failed',
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: 1,
+          next_retry_at: new Date(Date.now() - 5_000).toISOString(),
+        },
+      },
+    } as never;
+    expect(shouldPollSessionStart(null, lapsed)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a non-terminal answer without retry evidence keeps the fast cadence', () => {
+    // A cold boot's `provisioning`/`starting` answers carry no failure payload;
+    // the 1.5s cadence stays exactly as it was.
+    expect(shouldPollSessionStart(null, at('provisioning'))).toBe(SESSION_START_POLL_MS);
+    expect(shouldPollSessionStart(null, at('starting'))).toBe(SESSION_START_POLL_MS);
+  });
+
   test('stops on a terminal client error, which polling cannot fix', () => {
     const err = new SessionStartError('gone', { status: 403, terminal: true });
     expect(shouldPollSessionStart(err, at('provisioning'))).toBe(false);
@@ -591,12 +667,112 @@ describe('SESSION_START_POLL_OPTIONS', () => {
     expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
   });
 
-  test('a cached ready result is rechecked so an open tab wakes a parked sandbox', () => {
+  test('the live callback delegates to the injected-clock pacing', () => {
     expect(
       SESSION_START_POLL_OPTIONS.refetchInterval({
         state: { error: null, data: { stage: 'ready' } as never },
-      }),
+      } as never),
     ).toBe(60_000);
+  });
+
+});
+
+// The pace logic is the injected-clock pure function; the live callback above
+// delegates to it at Date.now(). A wedged box answers `/start` after its 8s
+// server long-poll with the SAME non-terminal `starting` payload, for days
+// (KRTX-385): the interval must grow while nothing changes, reset the moment
+// the answer changes, and stop with the poll on a terminal answer.
+describe('sessionStartRefetchIntervalMs', () => {
+  const interval = (query: Parameters<typeof SESSION_START_POLL_OPTIONS.refetchInterval>[0], now: number) => {
+    setSystemTime(now);
+    try {
+      return SESSION_START_POLL_OPTIONS.refetchInterval(query);
+    } finally {
+      setSystemTime();
+    }
+  };
+  const startingQuery = () => ({
+    state: {
+      error: null,
+      data: { stage: 'starting', retriable: true } as never,
+    },
+  });
+
+  test('an unchanged non-terminal answer stretches the poll — a wedged box stops hammering', () => {
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    expect(interval(query, 250_000)).toBe(30_000);
+    // Still inside the pace TTL: the cap holds.
+    expect(interval(query, 290_000)).toBe(30_000);
+  });
+
+  test('a pace left unpollied longer than its TTL starts fresh, not at the cap', () => {
+    // A query nobody polled for minutes (unmounted, tab closed) must not
+    // inherit a stretched interval on its next answer.
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    expect(interval(query, 400_000)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a changed answer resets the stretch back to the normal cadence', () => {
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    // The provider now reports progress (a different reason): back to fast.
+    expect(
+      interval(
+        { state: { error: null, data: { stage: 'starting', retriable: true, reason: 'runtime_waking' } as never } },
+        45_001,
+      ),
+    ).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a terminal answer forgets the pace state and stops the interval', () => {
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    const stopped = {
+      state: { error: null, data: { stage: 'stopped', retriable: false } as never },
+    };
+    expect(interval(stopped, 45_001)).toBe(false);
+    // A brand-new query object after the stop starts at the normal cadence —
+    // the pace never leaks across a fresh query's first answer.
+    expect(interval(startingQuery(), 45_002)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('the retry cooldown and the no-progress stretch take the larger pause', () => {
+    // A cooldown answer whose next_retry_at is further out than the stretch:
+    // the pause is the cooldown's. One payload, both mechanisms live.
+    const nowMs = Date.parse('2026-01-01T00:00:00.000Z');
+    const query = {
+      state: {
+        error: null,
+        data: {
+          stage: 'starting',
+          retriable: true,
+          reason: 'runtime_wake_cooldown',
+          failure: {
+            category: 'sandbox-provider',
+            message: 'Retrying automatically.',
+            retryable: true,
+            evidence: {
+              check: 'runtime_wake_failed',
+              observed_at: new Date(nowMs).toISOString(),
+              error: null,
+              attempts: 1,
+              next_retry_at: new Date(nowMs + 65_000).toISOString(),
+            },
+          } as never,
+        } as never,
+      },
+    };
+    // 65s out clamps to the 60s cap at t=0.
+    expect(interval(query, nowMs)).toBe(60_000);
+    // At 45s the stretch alone would say 5s; the server's own cooldown says
+    // "not before 65s" — the cooldown wins.
+    expect(interval(query, nowMs + 45_000)).toBe(65_000 - 45_000 + 1_000);
   });
 });
 

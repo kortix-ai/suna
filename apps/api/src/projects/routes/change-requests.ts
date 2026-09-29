@@ -1,6 +1,6 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
 import { config, type SandboxProviderName } from '../../config';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import {
@@ -30,7 +30,7 @@ import { resolveChangeRequestBase, resolveChangeRequestOrigin } from '../change-
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
+import { ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -58,7 +58,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/change-requests',
     tags: ['change-requests'],
-    summary: 'GET /:projectId/change-requests',
+    summary: 'List change requests of a project',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -117,11 +117,19 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/change-requests',
     tags: ['change-requests'],
-    summary: 'POST /:projectId/change-requests',
+    summary: 'Open a change request',
+    description:
+      'Open a change request from a branch.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          title: z.string().openapi({ description: 'Change request title.' }),
+          head_ref: z.string().openapi({ description: 'Branch with the changes.' }),
+          description: z.string().optional().openapi({ description: 'Description, markdown.' }),
+          base_ref: z.string().optional().openapi({ description: 'Branch to merge into. Defaults to the session base or the project default branch.' }),
+          session_id: z.string().optional().openapi({ description: 'Session that made the changes. Set automatically for a session token.' }),
+        }) } } },
     },
     responses: {
       201: json(ChangeRequestSchema, 'The created change request'),
@@ -294,11 +302,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/commit-push',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/commit-push',
+    summary: 'Commit and push a session\'s changes',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          message: z.string().optional().openapi({ description: 'Commit message.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'OK'),
@@ -431,7 +441,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/change-requests/{crId}',
     tags: ['change-requests'],
-    summary: 'GET /:projectId/change-requests/:crId',
+    summary: 'Get a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),
@@ -468,11 +478,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/change-requests/{crId}',
     tags: ['change-requests'],
-    summary: 'PATCH /:projectId/change-requests/:crId',
+    summary: 'Edit a change request title or description',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          title: z.string().optional().openapi({ description: 'New title.' }),
+          description: z.string().optional().openapi({ description: 'New description.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'OK'),
@@ -522,11 +535,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/change-requests/{crId}/request-changes',
     tags: ['change-requests'],
-    summary: 'POST /:projectId/change-requests/:crId/request-changes',
+    summary: 'Request changes on a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          feedback: z.string().openapi({ description: 'What must change. text is accepted as an alias.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'OK'),
@@ -612,7 +627,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/change-requests/{crId}/diff',
     tags: ['change-requests'],
-    summary: 'GET /:projectId/change-requests/:crId/diff',
+    summary: 'Get the diff of a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),
@@ -670,7 +685,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/change-requests/{crId}/merge-preview',
     tags: ['change-requests'],
-    summary: 'GET /:projectId/change-requests/:crId/merge-preview',
+    summary: 'Preview merging a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),

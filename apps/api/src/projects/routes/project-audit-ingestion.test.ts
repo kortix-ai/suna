@@ -734,7 +734,14 @@ describe('audit ingest contention fallback', () => {
     // the controlled contended 503 the relay already paces on.
     insertDelayMs = 60_000;
     const started = Date.now();
-    const { status, retryAfter, body } = await postWithStartedAt(200, 1_000);
+    const { status, retryAfter, body } = await runWithContext(
+      'POST',
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      async () => {
+        attachInboundAuditScope({ owner: 'hono', method: 'POST', startedAt: Date.now() - 1_000 });
+        return post(200);
+      },
+    );
     const wallMs = Date.now() - started;
 
     expect(status).toBe(503);

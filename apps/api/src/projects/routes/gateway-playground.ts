@@ -27,7 +27,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/gateway/playground',
     tags: ['gateway'],
-    summary: 'POST /:projectId/gateway/playground',
+    summary: 'Run a prompt in the project LLM gateway playground',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),

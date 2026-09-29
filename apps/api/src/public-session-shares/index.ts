@@ -66,7 +66,7 @@ publicSessionSharesApp.openapi(
     method: 'get',
     path: '/{shareId}',
     tags: ['public-session-shares'],
-    summary: 'GET /public/session-shares/:shareId — anonymous session view metadata',
+    summary: 'View a public session share (anonymous metadata)',
     request: { params: ShareParams },
     responses: {
       200: json(z.any(), 'Share + session metadata'),
@@ -101,7 +101,7 @@ publicSessionSharesApp.openapi(
     method: 'get',
     path: '/{shareId}/messages',
     tags: ['public-session-shares'],
-    summary: 'GET /public/session-shares/:shareId/messages — anonymous sanitized transcript',
+    summary: 'Read a public session share transcript (anonymous, sanitized)',
     request: { params: ShareParams },
     responses: {
       200: json(z.any(), 'Sanitized transcript'),

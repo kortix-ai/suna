@@ -7,8 +7,9 @@ import { dirname } from 'node:path'
  * A config release is served from a read-only directory under
  * `/opt/kortix/config`. `/workspace` is a separate, editable checkout that may
  * be behind the commit the release was built from. Without being told, an
- * agent reads `/workspace/.kortix/opencode`, sees different bytes from the
- * ones it is running, and edits files that change nothing.
+ * agent reads `/workspace/skills` or `/workspace/harnesses/opencode`, sees
+ * different bytes from the ones it is running, and edits files that change
+ * nothing.
  *
  * CHANNEL: the agent's system context, through OpenCode's `instructions`
  * array — the same mechanism `secret-capabilities.ts` uses. Chosen over
@@ -34,8 +35,12 @@ export const CONFIG_RELEASE_NOTICE_PATH = '/tmp/kortix/config-release.md'
 export interface ConfigReleaseNotice {
   /** The commit the running release was built from. */
   sourceCommit: string | null
-  /** The repo-relative config dir, e.g. `.kortix/opencode`. */
-  configDir: string | null
+  /**
+   * The repo-relative paths the release is built from, e.g. `agents`, `skills`
+   * and the harness config dir. The harness adapter names them; this service
+   * knows no harness layout.
+   */
+  sourcePaths: readonly string[]
   /** The session id, for the reload command. */
   sessionId?: string | null
   /** The read-only directory the release is served from, when it is known. */
@@ -61,7 +66,9 @@ function short(sha: string): string {
 
 export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
   const commit = notice.sourceCommit ? short(notice.sourceCommit) : null
-  const configDir = notice.configDir ?? '.kortix/opencode'
+  const paths = notice.sourcePaths.map((path) => `\`/workspace/${path}\``)
+  const editedPaths =
+    paths.length > 1 ? `${paths.slice(0, -1).join(', ')} or ${paths.at(-1)}` : (paths[0] ?? '`/workspace`')
   const reload = notice.sessionId ? `kortix sessions reload ${notice.sessionId}` : 'kortix sessions reload <session id>'
   const at = commit ? ` at commit ${commit}` : ''
   const servedFrom = notice.releaseDir ?? '/opt/kortix/config/<release>'
@@ -75,7 +82,7 @@ export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
     '',
     `- \`/workspace\` is a separate checkout and may be behind${commit ? ` commit ${commit}` : ' the base branch'}.`,
     '  Run `git pull` in `/workspace` to read the same files.',
-    `- Editing a file under \`/workspace/${configDir}\` does NOT change the config this`,
+    `- Editing a file under ${editedPaths} does NOT change the config this`,
     '  session runs. The change takes effect after it is pushed to the base branch.',
     `- Writing into \`${servedFrom}\` fails with a permission error, on purpose.`,
     '  That copy is the platform\'s; edit the project\'s files in `/workspace`.',

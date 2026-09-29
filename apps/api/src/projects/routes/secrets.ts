@@ -7,7 +7,12 @@
  */
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
+import {
+  SecretConsumerSchema,
+  SecretDeliveryStrategySchema,
+  SecretEgressPolicySchema,
+} from '@kortix/api-contract';
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
@@ -31,7 +36,7 @@ import {
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
-import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
+import { SecretSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
@@ -71,7 +76,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/secrets',
     tags: ['secrets'],
-    summary: 'GET /:projectId/secrets',
+    summary: 'List project secrets (names only, no values)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -191,11 +196,33 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secrets',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secrets',
+    summary: 'Set a project secret',
+    description:
+      'Create or update a project secret by `name` (upper-cased; A-Z, 0-9, _; max 64; KORTIX_* is reserved). The value is write-only: responses never echo it.',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: {
+          content: {
+            'application/json': {
+              schema: lenientBody({
+                name: z.string().openapi({ description: 'Env var name, e.g. OPENAI_API_KEY' }),
+                value: z.string().optional().openapi({
+                  description: 'Secret value. Required when creating; omit to change only delivery settings.',
+                }),
+                identifier: z.string().optional().openapi({
+                  description: 'Handle agents grant and the UI shows (A-Z, 0-9, _, ., -; max 128). Defaults to name.',
+                }),
+                strategy: SecretDeliveryStrategySchema.optional().openapi({
+                  description: 'Delivery mode: runtime, egress, broker, or denied.',
+                }),
+                consumer: SecretConsumerSchema.nullable().optional(),
+                egress_policy: SecretEgressPolicySchema.optional(),
+                handle_prefix: z.string().optional().openapi({ description: 'For consumer http_broker only.' }),
+              }),
+            },
+          },
+        },
       },
     responses: {
         200: json(SecretWriteResultSchema, 'The created secret'),
@@ -389,7 +416,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/secrets/{name}',
     tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:identifier',
+    summary: 'Delete a project secret',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), name: z.string() }),
