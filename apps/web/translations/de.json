@@ -1721,7 +1721,8 @@
       "unavailableTitle": "Zugriff auf Geheimnisse nicht verfügbar",
       "unavailableDescription": "Die aktuelle Auswahl der Geheimnisse bleibt unverändert.",
       "useProjectDefault": "Projektstandard verwenden",
-      "empty": "Für diesen Agenten sind keine Geheimnisse verfügbar."
+      "empty": "Für diesen Agenten sind keine Geheimnisse verfügbar.",
+      "loading": "Geheimnisse werden geladen…"
     },
     "connectors": {
       "unavailableTitle": "Zugriff auf Konnektoren nicht verfügbar",

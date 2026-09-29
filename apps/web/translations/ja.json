@@ -1721,7 +1721,8 @@
       "unavailableTitle": "シークレットにアクセスできません",
       "unavailableDescription": "現在のシークレット選択は変更されません。",
       "useProjectDefault": "プロジェクトのデフォルトを使用",
-      "empty": "このエージェントで利用できるシークレットはありません。"
+      "empty": "このエージェントで利用できるシークレットはありません。",
+      "loading": "シークレットを読み込み中…"
     },
     "connectors": {
       "unavailableTitle": "コネクタにアクセスできません",
