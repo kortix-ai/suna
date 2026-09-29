@@ -48,14 +48,12 @@ const SCIM_INGRESS_PATH = /^\/scim\/v2\/accounts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-
 // transient for retrying clients; 503 rather than 502 because Cloudflare
 // rewrites a 502/504 body into its HTML error page and this JSON must reach
 // the client. There is deliberately no x-request-id: no origin request ran.
-function originUnreachableResponse(active, isGateway, request, reason) {
+function originUnreachableResponse(isGateway, request, reason) {
   const origin = request.headers.get('Origin');
   const headers = new Headers({
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
     'Retry-After': '30',
-    'X-Backend': active,
-    'X-Backend-Service': isGateway ? 'gateway' : 'api',
     'X-Origin-Status': 'fetch-error',
   });
   if (origin) {
@@ -195,14 +193,12 @@ async function readMaintenanceConfig(env) {
   }
 }
 
-function maintenanceResponse(config, active, isGateway, request) {
+function maintenanceResponse(config, isGateway, request) {
   const origin = request.headers.get('Origin');
   const headers = new Headers({
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json',
     'Retry-After': '30',
-    'X-Backend': active,
-    'X-Backend-Service': isGateway ? 'gateway' : 'api',
     'X-Maintenance-Mode': 'blocking',
   });
   if (origin) {
@@ -240,15 +236,13 @@ function maintenanceResponse(config, active, isGateway, request) {
   );
 }
 
-function maintenanceConfigResponse(config, active, source) {
+function maintenanceConfigResponse(config, source) {
   return addSecurityHeaders(
     new Response(JSON.stringify(config), {
       status: 200,
       headers: {
         'Cache-Control': 'public, max-age=2, must-revalidate',
         'Content-Type': 'application/json',
-        'X-Backend': active,
-        'X-Backend-Service': 'router',
         'X-Maintenance-Source': source,
       },
     }),
@@ -313,7 +307,6 @@ export default {
           if (primaryConfig && MAINTENANCE_LEVELS.has(primaryConfig.level)) {
             return maintenanceConfigResponse(
               { ...DEFAULT_MAINTENANCE, ...primaryConfig },
-              active,
               'database',
             );
           }
@@ -324,7 +317,7 @@ export default {
 
       const fallback = await readMaintenanceConfig(env);
       if (fallback) {
-        return maintenanceConfigResponse(fallback, active, 'edge-config');
+        return maintenanceConfigResponse(fallback, 'edge-config');
       }
       // Both API and Edge Config are unreachable — return a safe default.
       // Prefer none to blocking so a transient API blip (deploy, GC pause)
@@ -333,7 +326,6 @@ export default {
       // path won't be reached.
       return maintenanceConfigResponse(
         { ...DEFAULT_MAINTENANCE, updatedAt: new Date().toISOString() },
-        active,
         'automatic',
       );
     }
@@ -355,7 +347,7 @@ export default {
       !isReadOnlyRequest(request) &&
       !isMaintenanceConfigWrite
     ) {
-      return maintenanceResponse(maintenance, active, isGateway, request);
+      return maintenanceResponse(maintenance, isGateway, request);
     }
 
     // `manual` so backend 3xx responses are passed straight through to the
@@ -398,7 +390,6 @@ export default {
       response = await fetch(modifiedRequest);
     } catch (error) {
       return originUnreachableResponse(
-        active,
         isGateway,
         request,
         error instanceof Error && error.message ? error.message : 'fetch failed',
@@ -411,8 +402,8 @@ export default {
     }
     if (preflightKey) await keepPreflight(preflightKey, request, response);
     const newResponse = new Response(response.body, response);
-    newResponse.headers.set('X-Backend', active);
-    newResponse.headers.set('X-Backend-Service', isGateway ? 'gateway' : 'api');
+    newResponse.headers.delete('X-Backend');
+    newResponse.headers.delete('X-Backend-Service');
     return addSecurityHeaders(newResponse);
   },
 };
