@@ -93,7 +93,7 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
     (reminder) => !sessionFilter || reminder.session_id === sessionFilter,
   );
   const rows = all.filter((reminder) => reminder.state === tab);
-  const filteredSessionName = sessionFilter && (all[0]?.session_name ?? t('untitledSession'));
+  const filteredSessionName = sessionFilter ? (all[0]?.session_name ?? t('untitledSession')) : '';
 
   const schedule = (reminder: ProjectReminder) =>
     reminder.cron

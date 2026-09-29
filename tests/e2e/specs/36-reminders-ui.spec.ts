@@ -96,7 +96,7 @@ test.describe('36 — Reminders UI', () => {
         (r) => r.url().endsWith(`${base}/${first.id}`) && r.request().method() === 'DELETE',
       );
       await page.locator(`li[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Remove' }).click();
-      await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click();
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Remove' }).click();
       expect((await removed).status()).toBe(200);
       await expect(page.locator(`li[data-reminder-id="${first.id}"]`)).toHaveCount(0);
 
