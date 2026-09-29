@@ -1436,7 +1436,7 @@
       "actions": "Azioni della sessione",
       "actionsFor": "Azioni per {title}",
       "reviewCount": "Da rivedere: {count}",
-      "expandChildren": "Mostra {count} sessioni avviate",
+      "expandChildren": "Mostra {count, plural, one {# sessione avviata} other {# sessioni avviate}}",
       "collapseChildren": "Nascondi sessioni avviate",
       "showMore": "Mostra altro",
       "brief": {

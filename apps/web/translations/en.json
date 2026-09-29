@@ -1436,7 +1436,7 @@
       "actions": "Session actions",
       "actionsFor": "Actions for {title}",
       "reviewCount": "Awaiting your review: {count}",
-      "expandChildren": "Show {count} spawned sessions",
+      "expandChildren": "Show {count, plural, one {# spawned session} other {# spawned sessions}}",
       "collapseChildren": "Hide spawned sessions",
       "showMore": "Show more",
       "brief": {

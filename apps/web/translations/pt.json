@@ -1436,7 +1436,7 @@
       "actions": "Ações da sessão",
       "actionsFor": "Ações para {title}",
       "reviewCount": "A aguardar revisão: {count}",
-      "expandChildren": "Mostrar {count} sessões iniciadas",
+      "expandChildren": "Mostrar {count, plural, one {# sessão iniciada} other {# sessões iniciadas}}",
       "collapseChildren": "Ocultar sessões iniciadas",
       "showMore": "Mostrar mais",
       "brief": {
