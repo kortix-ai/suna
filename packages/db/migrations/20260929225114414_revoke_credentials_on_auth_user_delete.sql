@@ -10,6 +10,12 @@
 --   tokens: user_id is the acting identity), oauth_access_tokens,
 --   oauth_refresh_tokens, yolo_member_tokens. Unused oauth authorization codes
 --   are deleted (a code is redeemable into a token pair).
+-- Non-auth principals: a service account (also an agent principal) has no
+--   auth.users row. Its tokens carry user_id = service_account_id. The trigger
+--   never sees that id (only real auth deletes fire it) and the backfill below
+--   excludes it. Every other writer of these user_id columns stores an auth
+--   user id (PAT/project/CLI mint, session launcher, OAuth grant, app viewer,
+--   YOLO seat).
 -- Kept (belong to the account/project, not the person; created_by is
 --   provenance only): scim_tokens, gateway_api_keys, service accounts.
 set lock_timeout = '2s';
@@ -52,22 +58,27 @@ DO $$ BEGIN
       FOR EACH ROW EXECUTE FUNCTION kortix.revoke_credentials_of_deleted_user();
   END IF;
 EXCEPTION WHEN insufficient_privilege THEN
-  RAISE NOTICE '[revoke-credentials] no privilege to create the auth.users trigger - create it manually';
+  RAISE WARNING '[revoke-credentials] NO PRIVILEGE to create the auth.users trigger: deleted users keep working credentials until it is created by a superuser. Verify: select tgname from pg_trigger where tgrelid = ''auth.users''::regclass and tgname = ''revoke_credentials_on_user_delete''';
 END $$;
 
 -- One-time idempotent backfill: credentials of users deleted before the
--- trigger existed. Touches only ACTIVE rows whose user is already gone.
+-- trigger existed. Touches only ACTIVE rows whose user is already gone and
+-- whose user_id is not a service account.
 -- backfill-safe: token tables hold at most tens of thousands of rows; only active rows of already-deleted users are written (expected a handful); no writer queues behind row locks on revoked-to-be credentials.
 DO $$ BEGIN
   IF to_regclass('auth.users') IS NOT NULL THEN
     UPDATE kortix.account_tokens t SET status = 'revoked', revoked_at = coalesce(revoked_at, now())
      WHERE t.status = 'active' AND t.revoked_at IS NULL
-       AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id);
+       AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.service_accounts s WHERE s.service_account_id = t.user_id);
     UPDATE kortix.oauth_access_tokens t SET revoked_at = now()
-     WHERE t.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id);
+     WHERE t.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.service_accounts s WHERE s.service_account_id = t.user_id);
     UPDATE kortix.oauth_refresh_tokens t SET revoked_at = now()
-     WHERE t.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id);
+     WHERE t.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.service_accounts s WHERE s.service_account_id = t.user_id);
     UPDATE kortix.yolo_member_tokens t SET revoked_at = now()
-     WHERE t.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id);
+     WHERE t.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = t.user_id)
+       AND NOT EXISTS (SELECT 1 FROM kortix.service_accounts s WHERE s.service_account_id = t.user_id);
   END IF;
 END $$;

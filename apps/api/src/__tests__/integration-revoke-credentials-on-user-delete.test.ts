@@ -16,10 +16,12 @@ import {
   projects,
   scimTokens,
 } from '@kortix/db';
+import { readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { createServiceAccount } from '../repositories/service-accounts';
 import { hashSecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
@@ -114,6 +116,13 @@ beforeAll(async () => {
   await db.execute(sql`
     insert into kortix.yolo_member_tokens (user_id, account_id, token_prefix, token_hash)
     values (${GONE}::uuid, ${TEAM}::uuid, 'yolo_gone', 'h-gone'), (${KEPT}::uuid, ${KEPT}::uuid, 'yolo_kept', 'h-kept')`);
+  // A service account is a non-auth principal: its tokens carry
+  // user_id = service_account_id, which is never in auth.users.
+  const sa = await createServiceAccount({ accountId: TEAM, name: `revoke-on-delete-${TEAM}`, createdBy: KEPT });
+  secrets.saPat = (await createAccountToken({ accountId: TEAM, userId: sa.serviceAccountId, name: 'sa', agentGrant: null })).secretKey;
+  secrets.saSession = (
+    await createAccountToken({ accountId: TEAM, userId: sa.serviceAccountId, name: 'sa-session', agentGrant: null, sessionId: `sa-${TEAM}` } as never)
+  ).secretKey;
   await db.insert(scimTokens).values({
     accountId: TEAM, name: 'scim', secretHash: `scim-${TEAM}`, publicPrefix: 'kortix_scim_x', createdBy: GONE,
   });
@@ -131,11 +140,26 @@ afterAll(async () => {
   await db.execute(sql`delete from auth.users where id in (${GONE}::uuid, ${KEPT}::uuid)`);
 });
 
+const saLive = () =>
+  db.execute(sql`select count(*) n from kortix.account_tokens t join kortix.service_accounts s on s.service_account_id = t.user_id
+    where s.account_id = ${TEAM}::uuid and t.status = 'active' and t.revoked_at is null`);
+
 describe('deleting an auth user revokes every credential acting as that user', () => {
   test('before deletion every credential is accepted', async () => {
     for (const key of ['gonePat', 'goneTeamPat', 'keptPat', 'gone_access', 'kept_access']) {
       expect((await me(secrets[key]!)).status).toBe(200);
     }
+  });
+
+  test('the migration backfill spares service-account tokens (user_id has no auth row)', async () => {
+    const sqlText = readFileSync(
+      new URL('../../../../packages/db/migrations/20260929225114414_revoke_credentials_on_auth_user_delete.sql', import.meta.url),
+      'utf8',
+    );
+    await db.execute(sql.raw(sqlText.slice(sqlText.indexOf('-- One-time idempotent backfill'))));
+    const res = (await saLive()) as unknown as Array<{ n: string }> | { rows: Array<{ n: string }> };
+    expect(Number((Array.isArray(res) ? res : res.rows)[0]!.n)).toBe(2);
+    expect((await me(secrets.saPat!)).status).not.toBe(401);
   });
 
   test('after DELETE FROM auth.users the deleted user is refused everywhere, the other user is not', async () => {
@@ -147,6 +171,9 @@ describe('deleting an auth user revokes every credential acting as that user', (
     const refused = await refreshGrant(secrets.gone_refresh!);
     expect(refused.status).toBe(400);
     expect(((await refused.json()) as { error: string }).error).toBe('invalid_grant');
+
+    // A service-account token survives an unrelated auth-user delete.
+    expect((await me(secrets.saPat!)).status).not.toBe(401);
 
     // Control: the other user's credentials still work, including refresh.
     expect((await me(secrets.keptPat!)).status).toBe(200);
