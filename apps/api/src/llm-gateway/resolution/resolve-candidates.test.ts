@@ -124,8 +124,12 @@ mock.module('./descriptors', () => ({
 }));
 
 let catalogUpstream: { baseUrl?: string; envVar: string; kind: string } | null = null;
+let catalogUpstreamCalls: unknown[][] = [];
 mock.module('../models/provider-registry', () => ({
-  resolveCatalogUpstream: () => catalogUpstream,
+  resolveCatalogUpstream: (...args: unknown[]) => {
+    catalogUpstreamCalls.push(args);
+    return catalogUpstream;
+  },
 }));
 
 mock.module('../routing', () => ({
@@ -321,6 +325,43 @@ describe('resolveCandidates — BYOK billing', () => {
     expect(candidates).toHaveLength(2);
     expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['primary', 'secondary']);
     expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['sk-primary', 'sk-secondary']);
+  });
+
+  // OpenCode Go refuses a request without `x-opencode-session` (MissingSessionID)
+  // and asks clients to name themselves in User-Agent. Routing is per model:
+  // its MiniMax/Grok models use other wire formats than its GLM models.
+  test('BYOK OpenCode: resolves each model transport and sends the session header', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_API_KEY', kind: 'anthropic' };
+    catalogUpstreamCalls = [];
+    resolvedSecret = 'sk-go';
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/minimax-m3');
+    expect(catalogUpstreamCalls[0]).toEqual(['opencode-go', 'minimax-m3']);
+    expect(candidate).toMatchObject({ kind: 'anthropic', resolvedModel: 'minimax-m3' });
+    expect(candidate?.headers?.['x-opencode-session']).toBe('ses_1');
+    expect(candidate?.headers?.['User-Agent']).toMatch(/^Kortix/);
+  });
+
+  test('BYOK OpenCode without a session keys the session header to the API key', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_API_KEY', kind: 'openai-compat' };
+    resolvedSecret = 'sk-go';
+    const p = principal({ keyId: 'key_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/glm-5.3');
+    expect(candidate?.headers?.['x-opencode-session']).toBe('key_1');
+  });
+
+  test('BYOK providers other than OpenCode get no OpenCode headers', async () => {
+    catalogUpstream = { baseUrl: 'https://api.groq.com/openai/v1', envVar: 'GROQ_API_KEY', kind: 'openai-compat' };
+    resolvedSecret = 'sk-groq';
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'groq/llama-4');
+    expect(candidate?.headers).toBeUndefined();
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {

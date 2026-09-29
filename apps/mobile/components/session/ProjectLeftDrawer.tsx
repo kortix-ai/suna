@@ -14,22 +14,23 @@
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
  *   pill while items wait). Connectors moved to project Settings → Customize
  *   (KRTX-249): a "Customize in the web app" hand-off sheet, not a drawer row.
- * - A muted "Sessions" label, then every session of the project, newest
- *   activity first (status mark · title; the session on screen is
- *   highlighted). A sub-agent session (one spawned by another session in the
- *   list, COR-162) nests directly under its coordinator, joined to it by a
- *   connector: a trunk down from the coordinator's status mark and one
- *   rounded elbow into each sub-agent's status mark, the same strokes as
- *   `SubsessionTree` and web's `SubAgentConnector`. No icon: web draws
- *   `ArrowElbowDownRightIcon` only on a sub-agent whose coordinator is NOT
- *   listed, and mobile never draws it (`flattenSessionGroups`).
+ * - Three sections of top-level sessions, by who started the run (KRTX-639):
+ *   "Sessions" (yours, open), "Shared" (other members', collapsed, no header
+ *   while empty) and "Automated" (triggers, channels, API keys; collapsed).
+ *   Each is its own paged query (`parent=root`), newest activity first
+ *   (status mark · title; the session on screen is highlighted). A parent
+ *   shows its child count and a caret, collapsed by default: a tap loads its
+ *   children 20 at a time ("Show more"). The open session's parent starts
+ *   open, and a child never renders without its parent
+ *   (`buildDrawerItems`, lib/session/session-tree.ts). Shared and Automated
+ *   rows name their starter under the title.
  *   A row whose root OpenCode session has sub-sessions (`directSubsessions`)
  *   shows their count after its title and ALWAYS lists them under its row,
  *   joined by a connector (`SubsessionTree`) — every such row, not only the
  *   session on screen. A sub-session row shows that sub-session: in place
  *   when its parent is the open thread, else it opens the parent first.
  *   Then Previous
- *   chats. Pages of 50 load as the list nears its end; a pull refreshes it.
+ *   chats. Pages load as the list nears its end; a pull refreshes it.
  *   Long press opens `SessionActionsSheet` (Rename, Share, Restart sandbox,
  *   Stop, Delete) over the drawer — the drawer stays open, the same
  *   exception the switcher row makes.
@@ -58,6 +59,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   CaretUpDownIcon,
   FoldersIcon,
+  CaretDownIcon,
+  CaretRightIcon,
   MagnifyingGlassIcon,
   NavigationArrowIcon,
   SealCheckIcon,
@@ -89,6 +92,7 @@ import {
   SubsessionTree,
   subsessionCountLabel,
 } from '@/components/session/SessionSubsessionTree';
+import { ExpandControl, SessionChildren, StarterLabel } from '@/components/session/SessionTreeParts';
 import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
@@ -104,13 +108,22 @@ import {
 } from '@/lib/session/project-stack';
 import {
   directSubsessions,
-  flattenSessionGroups,
-  recentSessions,
   sessionDisplayStatus,
   sessionDisplayTitle,
   sessionStatusLabel,
-  type SessionListRow,
 } from '@/lib/session/session-list';
+import {
+  buildDrawerItems,
+  childCountOf,
+  isParentExpanded,
+  rootRowsOnly,
+  sessionStarter,
+  type DrawerItem,
+  type DrawerSectionId,
+  type SessionStarter,
+} from '@/lib/session/session-tree';
+import { parentKey, sectionKey, useSessionTreeStore } from '@/stores/session-tree-store';
+import { useAuthContext } from '@/contexts';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
 import { useTabStore } from '@/stores/tab-store';
 import { cn } from '@/lib/utils/index';
@@ -170,10 +183,21 @@ function ProjectSessionListItem({
   nested = false,
   subsessionCount = 0,
   needsYou,
+  starter,
+  childCount = 0,
+  expanded = false,
+  onToggleChildren,
   onPress,
   onLongPress,
 }: {
   item: ProjectSession;
+  /** Who started the run, under the title: shown in Shared and Automated only
+   *  (in Sessions every row is the viewer's). */
+  starter?: SessionStarter;
+  /** Visible sub-agent sessions (`child_count`): a count and a caret toggle them. */
+  childCount?: number;
+  expanded?: boolean;
+  onToggleChildren?: () => void;
   /** What the session waits on (the Needs you group): a `needs-you` mark and a
    *  one-line reason under the title. */
   needsYou?: SessionNeedsYou;
@@ -194,6 +218,7 @@ function ProjectSessionListItem({
     sessionStatusLabel(status),
     needsYou?.reason,
     subsessionCount > 0 ? subsessionCountLabel(subsessionCount) : null,
+    starter ? `started by ${starter.label}` : null,
   ]
     .filter(Boolean)
     .join(', ');
@@ -230,12 +255,16 @@ function ProjectSessionListItem({
         />
       )}
       <SessionStatusMark status={status} />
-      {needsYou ? (
+      {needsYou || starter ? (
         <View className="min-w-0 flex-1">
           <Text numberOfLines={1}>{title}</Text>
-          <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
-            {needsYou.reason}
-          </Text>
+          {needsYou ? (
+            <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
+              {needsYou.reason}
+            </Text>
+          ) : starter ? (
+            <StarterLabel starter={starter} />
+          ) : null}
         </View>
       ) : (
         <Text className="flex-1" numberOfLines={1}>
@@ -243,6 +272,9 @@ function ProjectSessionListItem({
         </Text>
       )}
       <SubsessionCountBadge count={subsessionCount} />
+      {childCount > 0 && onToggleChildren ? (
+        <ExpandControl count={childCount} expanded={expanded} onToggle={onToggleChildren} title={title} />
+      ) : null}
     </Pressable>
   );
 }
@@ -271,11 +303,18 @@ function DrawerSessionNode({
   nested = false,
   trunkBelow = false,
   needsYou,
+  starter,
+  expanded = false,
+  onToggleChildren,
   onPress,
   onLongPress,
   onPressSubsession,
 }: {
   session: ProjectSession;
+  starter?: SessionStarter;
+  /** The parent's children show under it (`SessionChildren`). */
+  expanded?: boolean;
+  onToggleChildren?: (session: ProjectSession) => void;
   /** This is the project session on screen (thread or connecting). */
   shown: boolean;
   /** The OpenCode id the thread shows; null while no thread is on screen. */
@@ -314,6 +353,10 @@ function DrawerSessionNode({
         nested={nested}
         subsessionCount={subsessions.length}
         needsYou={needsYou}
+        starter={starter}
+        childCount={childCountOf(session)}
+        expanded={expanded}
+        onToggleChildren={onToggleChildren ? () => onToggleChildren(session) : undefined}
         onPress={onPress}
         onLongPress={onLongPress}
       />
@@ -473,6 +516,8 @@ export interface ProjectLeftDrawerProps {
    * no thread is on screen. Picks which sub-session row is highlighted.
    */
   activeOpenCodeSessionId?: string | null;
+  /** The open session's parent (`sessionParentId`): that parent opens by default (KRTX-639). */
+  activeParentSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
   reviewNeedsYouCount?: number;
   /**
@@ -513,7 +558,14 @@ export interface ProjectLeftDrawerProps {
   open: boolean;
 }
 
-const sessionRowKey = (row: SessionListRow) => row.session.session_id;
+const drawerItemKey = (item: DrawerItem) =>
+  item.kind === 'header'
+    ? `header:${item.section}`
+    : item.kind === 'more'
+      ? `more:${item.section}`
+      : `${item.kind}:${item.session.session_id}`;
+/** Automated and Shared page size: small, they load only to show a header or a first screen. */
+const SIDE_SECTION_PAGE_SIZE = 20;
 /** Shared empty map: a fresh one per render would re-derive the lists. */
 const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 
@@ -521,6 +573,7 @@ export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
   activeOpenCodeSessionId = null,
+  activeParentSessionId = null,
   reviewNeedsYouCount = 0,
   needsYouBySession = EMPTY_NEEDS_YOU,
   onNewSession,
@@ -553,59 +606,126 @@ export function ProjectLeftDrawer({
     haptics.tap();
     onOpenSwitcher();
   }, [onOpenSwitcher]);
-  // Every session of the project, a page (50) at a time: the list loads the
-  // next page as it nears its end, and a pull refetches the loaded pages.
+  // KRTX-639: three independent paged queries of top-level sessions, by who
+  // started the run. Children load per parent, on expand (`SessionChildren`).
+  const viewerId = useAuthContext().user?.id ?? null;
+  const choices = useSessionTreeStore((state) => state.choices);
+  const setChoice = useSessionTreeStore((state) => state.setChoice);
+  const sectionOpen = (id: DrawerSectionId) => choices[sectionKey(projectId, id)] ?? id === 'sessions';
+  const sharedOpen = sectionOpen('shared');
+  const automatedOpen = sectionOpen('automated');
+  const mine = useProjectSessionsPaged(projectId, { poll: isFocused, parent: 'root', startedBy: 'me' });
+  // Shared loads always (its header hides when it is empty); Automated only
+  // once opened: a project can hold hundreds of automated runs.
+  const shared = useProjectSessionsPaged(projectId, {
+    poll: false,
+    parent: 'root',
+    startedBy: 'others',
+    limit: SIDE_SECTION_PAGE_SIZE,
+  });
+  const automated = useProjectSessionsPaged(projectId, {
+    poll: false,
+    parent: 'root',
+    startedBy: 'automated',
+    limit: SIDE_SECTION_PAGE_SIZE,
+    enabled: automatedOpen,
+  });
   const {
-    sessions: projectSessions,
     isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-    refetch,
-  } = useProjectSessionsPaged(projectId, { poll: isFocused });
-  // Newest activity first, over every loaded row.
-  const recent = useMemo(
-    () => recentSessions(projectSessions, projectSessions.length),
-    [projectSessions]
-  );
-  // A sub-agent session (spawned by another session in this list, see
-  // `groupSessionsByCoordinator`) nests directly under its coordinator,
-  // flattened for this `FlatList`. A coordinator not yet loaded (its page
-  // hasn't arrived) leaves the child top-level until it does — see
-  // `groupSessionsByCoordinator`'s doc comment.
-  const rows = useMemo(
-    () => flattenSessionGroups(recent.filter((session) => !needsYouBySession.has(session.session_id))),
-    [recent, needsYouBySession]
-  );
+  } = mine;
+  const mineRoots = useMemo(() => rootRowsOnly(mine.sessions), [mine.sessions]);
+  const sharedRoots = useMemo(() => rootRowsOnly(shared.sessions), [shared.sessions]);
+  const automatedRoots = useMemo(() => rootRowsOnly(automated.sessions), [automated.sessions]);
+  const refetchAll = useCallback(async () => {
+    await Promise.all([
+      mine.refetch(),
+      shared.refetch(),
+      automatedOpen ? automated.refetch() : Promise.resolve(),
+    ]);
+  }, [mine, shared, automated, automatedOpen]);
   // Sessions that wait on the user, newest wait first: their own group above
-  // the list. A session not loaded yet (an older page) is left to the Review
-  // row's count.
+  // the list, from every loaded top-level row. A session not loaded yet (an
+  // older page, a child) is left to the Review row's count.
   const needsYouSessions = useMemo(
     () =>
-      recent
+      [...mineRoots, ...sharedRoots, ...automatedRoots]
         .filter((session) => needsYouBySession.has(session.session_id))
         .sort(
           (a, b) =>
             (needsYouBySession.get(b.session_id)?.newestAt ?? 0) -
             (needsYouBySession.get(a.session_id)?.newestAt ?? 0)
         ),
-    [recent, needsYouBySession]
+    [mineRoots, sharedRoots, automatedRoots, needsYouBySession]
+  );
+  const withoutNeedsYou = useCallback(
+    (rows: ProjectSession[]) => rows.filter((session) => !needsYouBySession.has(session.session_id)),
+    [needsYouBySession]
+  );
+  const isExpanded = useCallback(
+    (session: ProjectSession) =>
+      isParentExpanded({
+        explicit: choices[parentKey(projectId, session.session_id)],
+        isActiveParent: session.session_id === activeParentSessionId,
+        searchMatch: undefined,
+      }),
+    [choices, projectId, activeParentSessionId]
+  );
+  const items = useMemo(
+    () =>
+      buildDrawerItems(
+        [
+          {
+            id: 'sessions',
+            title: 'Sessions',
+            rows: withoutNeedsYou(mineRoots),
+            open: sectionOpen('sessions'),
+            // No bare heading over nothing: the state block below (loading,
+            // error, empty) speaks for an empty list, and Needs you for a
+            // list whose every row waits on the user.
+            hidden: withoutNeedsYou(mineRoots).length === 0,
+            hasMore: hasNextPage,
+          },
+          {
+            id: 'shared',
+            title: 'Shared',
+            rows: withoutNeedsYou(sharedRoots),
+            open: sharedOpen,
+            hidden: sharedRoots.length === 0,
+            hasMore: shared.hasNextPage,
+          },
+          {
+            id: 'automated',
+            title: 'Automated',
+            rows: withoutNeedsYou(automatedRoots),
+            open: automatedOpen,
+            hidden: false,
+            hasMore: automated.hasNextPage,
+          },
+        ],
+        isExpanded
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
+    [mineRoots, sharedRoots, automatedRoots, withoutNeedsYou, sharedOpen, automatedOpen, choices, projectId, hasNextPage, shared.hasNextPage, automated.hasNextPage, isExpanded]
   );
   // loading / error / empty / rows — shared with the Sessions page
   // (lib/session/session-pages) so a failed fetch, or a first load paused
-  // offline, never reads as "No sessions yet" (COR-146).
+  // offline, never reads as "No sessions yet" (COR-146). Judged on the
+  // viewer's own list; Shared and Automated add rows, never a verdict.
   const sessionsListState = sessionListState({
     isPending: projectSessionsPending,
     isError: projectSessionsErrored,
-    hasSessions: rows.length > 0 || needsYouSessions.length > 0,
+    hasSessions: mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0,
   });
   // Only a pull shows the refresh spinner; a background poll does not.
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    void refetch().finally(() => setRefreshing(false));
-  }, [refetch]);
+    void refetchAll().finally(() => setRefreshing(false));
+  }, [refetchAll]);
   // The drawer stays mounted while closed, so its query never remounts: each
   // open refetches the loaded pages in the background (no spinner), so a
   // session created or renamed elsewhere shows without a pull. After the
@@ -613,18 +733,20 @@ export function ProjectLeftDrawer({
   // while it moved (Jay, 2026-09-27: "not smooth").
   useEffect(() => {
     if (!open) return;
-    const timer = setTimeout(() => void refetch(), DRAWER_REFETCH_DELAY_MS);
+    const timer = setTimeout(() => void refetchAll(), DRAWER_REFETCH_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [open, refetch]);
+  }, [open, refetchAll]);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
-    void refetch();
-  }, [refetch]);
+    void refetchAll();
+  }, [refetchAll]);
   const handleEndReached = useCallback(() => {
+    if (!sectionOpen('sessions')) return;
     if (shouldLoadMoreSessions({ hasNextPage, isFetchingNextPage, isRefreshing: refreshing })) {
       void fetchNextPage();
     }
-  }, [hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
+  }, [choices, projectId, hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
   // The Account page's photo and name, so both surfaces show the same person.
   const profile = useProfileEditor();
   // The avatar's ring colour.
@@ -715,28 +837,145 @@ export function ProjectLeftDrawer({
     [onClose, onOpenSubsession]
   );
 
-  const renderSession = useCallback(
-    ({ item }: { item: SessionListRow }) => (
-      <View className="px-2 -mx-1">
-        <DrawerSessionNode
-          session={item.session}
-          shown={item.session.session_id === activeProjectSessionId}
-          activeOpenCodeId={activeOpenCodeSessionId}
-          nested={item.nested}
-          trunkBelow={item.nested && !item.last}
-          onPress={handleOpenProjectSession}
-          onLongPress={onSessionActions}
-          onPressSubsession={handleOpenSubsession}
-        />
-      </View>
+  const toggleParent = useCallback(
+    (session: ProjectSession) =>
+      setChoice(parentKey(projectId, session.session_id), !isExpanded(session)),
+    [setChoice, projectId, isExpanded]
+  );
+
+  const renderChild = useCallback(
+    (child: ProjectSession, trunkBelow: boolean) => (
+      <DrawerSessionNode
+        key={child.session_id}
+        session={child}
+        shown={child.session_id === activeProjectSessionId}
+        activeOpenCodeId={activeOpenCodeSessionId}
+        nested
+        trunkBelow={trunkBelow}
+        onPress={handleOpenProjectSession}
+        onLongPress={onSessionActions}
+        onPressSubsession={handleOpenSubsession}
+      />
     ),
     [activeProjectSessionId, activeOpenCodeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
   );
 
-  // Needs you and the Sessions heading scroll WITH the list, as its header
-  // (Jay, 2026-09-27): above it, 20 waiting sessions pushed the list off the
-  // screen and it could never be reached. The 4pt under the heading is the
-  // list's old top padding.
+  const renderItem = useCallback(
+    ({ item }: { item: DrawerItem }) => {
+      if (item.kind === 'header') {
+        return (
+          <Pressable
+            onPress={() => {
+              haptics.selection();
+              setChoice(sectionKey(projectId, item.section), !item.open);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title}, ${item.open ? 'collapse' : 'expand'}`}
+            accessibilityState={{ expanded: item.open }}
+            className="flex-row items-center gap-1 px-2 -mx-1 pb-1 pt-3">
+            <Text variant="muted" className="pl-4">
+              {item.title}
+            </Text>
+            <Icon as={item.open ? CaretDownIcon : CaretRightIcon} size={12} className="text-muted-foreground" />
+          </Pressable>
+        );
+      }
+      if (item.kind === 'more') {
+        const query = item.section === 'shared' ? shared : automated;
+        return (
+          <View className="px-2 -mx-1 items-start pl-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={query.isFetchingNextPage}
+              onPress={() => {
+                haptics.tap();
+                void query.fetchNextPage();
+              }}>
+              <Text>{query.isFetchingNextPage ? 'Loading…' : 'Show more'}</Text>
+            </Button>
+          </View>
+        );
+      }
+      if (item.kind === 'children') {
+        return (
+          <View className="px-2 -mx-1">
+            <SessionChildren
+              projectId={projectId}
+              parent={item.session}
+              renderChild={renderChild}
+              moreInset={NESTED_SESSION_INDENT}
+              showLoader={open}
+            />
+          </View>
+        );
+      }
+      return (
+        <View className="px-2 -mx-1">
+          <DrawerSessionNode
+            session={item.session}
+            shown={item.session.session_id === activeProjectSessionId}
+            activeOpenCodeId={activeOpenCodeSessionId}
+            starter={item.section === 'sessions' ? undefined : sessionStarter(item.session, viewerId)}
+            expanded={isExpanded(item.session)}
+            onToggleChildren={toggleParent}
+            onPress={handleOpenProjectSession}
+            onLongPress={onSessionActions}
+            onPressSubsession={handleOpenSubsession}
+          />
+        </View>
+      );
+    },
+    [
+      projectId,
+      open,
+      shared,
+      automated,
+      setChoice,
+      renderChild,
+      viewerId,
+      isExpanded,
+      toggleParent,
+      activeProjectSessionId,
+      activeOpenCodeSessionId,
+      handleOpenProjectSession,
+      handleOpenSubsession,
+      onSessionActions,
+    ]
+  );
+
+  // Needs you scrolls WITH the list, as its header (Jay, 2026-09-27): above
+  // it, 20 waiting sessions pushed the list off the screen and it could never
+  // be reached. The loading / error / empty state of the viewer's own list
+  // sits under it.
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const stateBlock = (
+    <View className="px-2 -mx-1">
+      {sessionsListState === 'loading' ? (
+        <View className="items-center py-8">{open ? <KortixLoader size="small" /> : null}</View>
+      ) : sessionsListState === 'error' ? (
+        // The query failed and nothing survived to show — never read this as
+        // "No sessions yet" (COR-146).
+        <View className="items-center gap-2 px-3 py-6">
+          <Text variant="small" className="leading-5">
+            Couldn&apos;t load sessions
+          </Text>
+          <Text variant="muted" className="text-center">
+            Kortix didn&apos;t respond. Your sessions are safe.
+          </Text>
+          <View className="mt-1">
+            <Button variant="secondary" size="sm" className="rounded-full" onPress={handleRetrySessions}>
+              <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Try again</Text>
+            </Button>
+          </View>
+        </View>
+      ) : sessionsListState === 'empty' ? (
+        <View className="items-center py-8" accessible accessibilityRole="image" accessibilityLabel="No sessions yet">
+          <DrawerEmptyFlower color={mutedColor} />
+        </View>
+      ) : null}
+    </View>
+  );
   const listHeader = useMemo(
     () => (
       <View>
@@ -759,20 +998,17 @@ export function ProjectLeftDrawer({
             ))}
           </View>
         ) : null}
-        {/* No bare heading when every session sits in Needs you. */}
-        {rows.length > 0 || needsYouSessions.length === 0 ? (
-          <View className="px-2 -mx-1 pb-1">
-            <Text variant="muted" className="px-4 pb-1 pt-3">
-              Sessions
-            </Text>
-          </View>
-        ) : null}
+        {sessionsListState === 'rows' ? null : stateBlock}
       </View>
     ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stateBlock is derived from the deps below
     [
-      rows.length,
       needsYouSessions,
       needsYouBySession,
+      sessionsListState,
+      open,
+      mutedColor,
+      handleRetrySessions,
       activeProjectSessionId,
       activeOpenCodeSessionId,
       handleOpenProjectSession,
@@ -796,7 +1032,6 @@ export function ProjectLeftDrawer({
 
   // LegacyChatsSection takes raw colours for its icons.
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
   // The drawer surface (bg-chrome-background), transparent → opaque, so rows
   // fade out under the bottom bar instead of stopping at a hard edge.
@@ -834,9 +1069,9 @@ export function ProjectLeftDrawer({
       <View className="flex-1">
         <Animated.FlatList
           style={{ flex: 1 }}
-          data={rows}
-          keyExtractor={sessionRowKey}
-          renderItem={renderSession}
+          data={items}
+          keyExtractor={drawerItemKey}
+          renderItem={renderItem}
           showsVerticalScrollIndicator={false}
           onScroll={onListScroll}
           scrollEventThrottle={16}
@@ -847,39 +1082,6 @@ export function ProjectLeftDrawer({
           onEndReachedThreshold={0.6}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={mutedColor} />
-          }
-          ListEmptyComponent={
-            <View className="px-2 -mx-1">
-              {sessionsListState === 'loading' ? (
-                <View className="items-center py-8">
-                  {open ? <KortixLoader size="small" /> : null}
-                </View>
-              ) : sessionsListState === 'error' ? (
-                // The query failed and nothing survived to show — never
-                // read this as "No sessions yet" (COR-146).
-                <View className="items-center gap-2 px-3 py-6">
-                  <Text variant="small" className="leading-5">
-                    Couldn&apos;t load sessions
-                  </Text>
-                  <Text variant="muted" className="text-center">
-                    Kortix didn&apos;t respond. Your sessions are safe.
-                  </Text>
-                  <View className="mt-1">
-                    <Button variant="secondary" size="sm" className="rounded-full" onPress={handleRetrySessions}>
-                      <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Try again</Text>
-                    </Button>
-                  </View>
-                </View>
-              ) : sessionsListState === 'empty' ? (
-                <View
-                  className="items-center py-8"
-                  accessible
-                  accessibilityRole="image"
-                  accessibilityLabel="No sessions yet">
-                  <DrawerEmptyFlower color={mutedColor} />
-                </View>
-              ) : null /* every session sits in the Needs you group */}
-            </View>
           }
           ListFooterComponent={
             <View>

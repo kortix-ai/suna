@@ -75,6 +75,7 @@ import {
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useDebounce } from '@/hooks/use-debounced-value';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
@@ -130,6 +131,7 @@ import {
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
+  useProjectSessions,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
@@ -889,6 +891,14 @@ export function CommandPalette() {
     [sidebarPages],
   );
   const projectSessionsList = paletteSessions ?? sidebarSessions;
+  // Search is the server's: `q` reaches every session the viewer may open, not
+  // only the newest `PROJECT_SESSION_NAME_LOOKUP_LIMIT` the lookup above holds.
+  const serverSessionQuery = useDebounce(query.trim(), 250);
+  const { sessions: serverSessionMatches } = useProjectSessions(projectId ?? '', {
+    q: serverSessionQuery,
+    limit: 20,
+    enabled: open && !!projectId && serverSessionQuery.length > 0,
+  });
   // Same query key every other project surface fetches (page.tsx,
   // project-shell.tsx) — dedupes against that cache entry. Resolves the
   // account the "Invite members" command lands on, via the same fallback
@@ -1419,11 +1429,13 @@ export function CommandPalette() {
   const filteredProjectSessionsList = useMemo(() => {
     const q = query.trim().toLowerCase();
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
-    return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(
-      0,
-      50,
-    );
-  }, [projectSessionsList, query]);
+    if (!q) return sorted.slice(0, 50);
+    // Instant local matches first, then the server's answer for the rest.
+    const local = sorted.filter((s) => sessionName(s).toLowerCase().includes(q));
+    const seen = new Set(local.map((s) => s.session_id));
+    const remote = serverSessionMatches.filter((s) => !seen.has(s.session_id));
+    return [...local, ...remote].slice(0, 50);
+  }, [projectSessionsList, query, serverSessionMatches]);
 
   const rootSessionResults = useMemo(() => {
     if (!hasQuery || !projectId) return [];
@@ -2572,7 +2584,7 @@ export function CommandPalette() {
                           <CommandItem
                             key={session.session_id}
                             value={sanitizeCmdkValue(
-                              `session ${sessionName(session)} ${session.session_id}`,
+                              `session ${sessionName(session)} ${session.initiator?.label ?? ''} ${session.session_id}`,
                             )}
                             onSelect={() => handleSelectProjectSession(session)}
                           >
@@ -2940,7 +2952,7 @@ export function CommandPalette() {
                     <CommandItem
                       key={session.session_id}
                       value={sanitizeCmdkValue(
-                        `session ${sessionName(session)} ${session.session_id}`,
+                        `session ${sessionName(session)} ${session.initiator?.label ?? ''} ${session.session_id}`,
                       )}
                       onSelect={() => handleSelectProjectSession(session)}
                     >

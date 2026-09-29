@@ -24,6 +24,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import {
   matchesAccessFilters,
   matchesOwnerFilters,
@@ -33,9 +34,6 @@ import {
   UNKNOWN_OWNER_KEY,
   type SessionAccessFilter,
 } from '@/features/workspace/project-sessions/session-owner-filters';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
@@ -52,13 +50,9 @@ import {
 } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
 import {
-  CalendarDotsIcon as CalendarClock,
-  EnvelopeIcon as Mail,
   GlobeIcon,
   LockSimpleIcon,
-  ChatsIcon as MessagesSquare,
   UsersIcon as UsersSolid,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 
 import {
@@ -215,14 +209,8 @@ export function resolveSourceFacetOptions(
 }
 
 const SOURCE_FILTER_ICONS: Record<SessionSourceFilter, ComponentType<{ className?: string }>> = {
-  mine: MessagesSquare,
   shared: UsersSolid,
-  slack: Slack,
-  telegram: Telegram,
-  teams: MicrosoftTeams,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
+  ...SOURCE_ICONS,
 };
 
 export const SESSION_ACCESS_ICONS: Record<
@@ -331,7 +319,6 @@ export function SessionFilterMenu({
     legacy: t('statusValue.legacy'),
   };
   const sourceLabels: Record<SessionSourceFilter, string> = {
-    mine: t('sourceValue.mine'),
     shared: t('sourceValue.shared'),
     slack: t('section.slack'),
     telegram: t('section.telegram'),

@@ -49,7 +49,7 @@ export function SessionRenameForm({ projectId, session, onDone }: SessionRenameF
     onMutate: async (name) => {
       // A refetch in flight would land the old name over the new one.
       await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
-      const undo = writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+      const undo = writeSessionLists(queryClient, sessionListKeys(queryClient, projectId), (cached) =>
         applyToSessionCache<ProjectSession>(cached, (rows) =>
           renameInRows(rows, session.session_id, name)
         )
@@ -58,7 +58,7 @@ export function SessionRenameForm({ projectId, session, onDone }: SessionRenameF
     },
     onSuccess: (updated) => {
       // The server's name (normalized, or the automatic title after a clear).
-      writeSessionLists(queryClient, sessionListKeys(projectId), (cached) =>
+      writeSessionLists(queryClient, sessionListKeys(queryClient, projectId), (cached) =>
         applyToSessionCache<ProjectSession>(cached, (rows) => mergeRenamed(rows, updated))
       );
       haptics.success();

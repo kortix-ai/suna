@@ -137,6 +137,14 @@ export function isPersistableQueryKey(queryKey: readonly unknown[]): boolean {
   if (queryKey.length === 4) return segment === 'summary' || segment === 'detail';
   if (segment !== 'sessions') return false;
   if (queryKey.length === 6) return queryKey[4] === 'list-paged';
+  // The session tree: a filtered top-level list (`sessionsPaged` with its
+  // filter segment) and one parent's children (`sessionChildren`). A search
+  // is never kept: its text is the user's, and its answer is momentary.
+  if (queryKey.length === 7 && queryKey[4] === 'list-paged') {
+    const filters = queryKey[6] as { q?: unknown } | null;
+    return typeof filters === 'object' && filters !== null && !filters.q;
+  }
+  if (queryKey.length === 7 && queryKey[4] === 'list-children') return queryKey[6] === '';
   // `qk.project.session(id, sessionId)`: the session row. Its siblings under
   // `sessionsScope` are the list families and the per-session children.
   return queryKey.length === 5 && queryKey[4] !== 'list' && queryKey[4] !== 'list-paged';

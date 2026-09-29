@@ -1000,6 +1000,19 @@ export const projectSessionOriginEnum = kortixSchema.enum('project_session_origi
   'system',
 ]);
 
+// Who started a session's RUN (the whole spawn tree), for attribution and the
+// session list's "mine / shared / automated" split. Server-derived at create and
+// copied from the parent for a spawned session — see session-initiator.ts.
+// Distinct from `origin` (the security policy class) and `metadata.source` (the
+// surface the create came through).
+export const projectSessionInitiatorEnum = kortixSchema.enum('project_session_initiator', [
+  'member',
+  'trigger',
+  'channel',
+  'api',
+  'system',
+]);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -1028,6 +1041,13 @@ export const projectSessions = kortixSchema.table(
     // everything else.
     origin: projectSessionOriginEnum('origin').default('user').notNull(),
     originRef: text('origin_ref'),
+    // The session whose credential created this one (a coordinator's worker).
+    // Also still written as `metadata.spawned_by_session` for older replicas.
+    parentSessionId: text('parent_session_id'),
+    // Who started the run: member user id, trigger slug, channel name, service
+    // account id, or system source. null only on rows no backfill classified.
+    initiatorType: projectSessionInitiatorEnum('initiator_type'),
+    initiatorId: text('initiator_id'),
     // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
     // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
     // at create; immutable afterward. Semantics are pure NARROWING — the injected
@@ -1075,6 +1095,10 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
+    // Children of one coordinator, for the session list's expand (parent=<id>).
+    index('idx_project_sessions_parent')
+      .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`${table.parentSessionId} is not null`),
     // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
     // origin_ref's live sessions, checked on every backend session create.
     // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in

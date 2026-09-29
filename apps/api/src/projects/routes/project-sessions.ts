@@ -44,7 +44,7 @@ import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
-import { loadProjectSessionInventory } from '../lib/session-list';
+import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
@@ -254,6 +254,12 @@ projectsApp.openapi(
           // how a caller walks it.
           limit: z.coerce.number().int().min(1).max(SESSION_PAGE_MAX_LIMIT).optional(),
           cursor: z.string().optional(),
+          // `root` = top-level sessions only (each row carries `child_count`);
+          // a session id = that session's children. Absent = the flat list.
+          parent: z.string().min(1).max(128).optional(),
+          started_by: z.enum(['me', 'others', 'automated']).optional(),
+          // Server-side search over every session the viewer may see.
+          q: z.string().trim().min(1).max(200).optional(),
         }),
       },
     responses: {
@@ -282,6 +288,7 @@ projectsApp.openapi(
     orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
+    filter: { parent: query.parent ?? null, startedBy: query.started_by ?? null, q: query.q ?? null },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
@@ -300,7 +307,8 @@ projectsApp.openapi(
   const body = inventory.items.map((item) => {
     const row = item.row;
     const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
-    return serializeSession(row, {
+    const serialized = serializeSession(row, {
+      initiatorName: row.initiatorId ? (inventory.initiatorNames.get(row.initiatorId) ?? null) : null,
       grants: inventory.grantsBySession.get(row.sessionId) ?? [],
       viewerId: loaded.userId,
       canManageProject: inventory.canManageProject,
@@ -318,6 +326,12 @@ projectsApp.openapi(
       // single-session read below still returns metadata whole.
       trimListMetadata: true,
     });
+    if (query.parent !== 'root') return serialized;
+    return {
+      ...serialized,
+      child_count: inventory.childCounts.get(row.sessionId) ?? 0,
+      ...(query.q ? { search_match: sessionRowMatchesSearch(row, query.q, [owner?.email, owner?.name].filter((v): v is string => Boolean(v))) ? 'self' : 'child' } : {}),
+    };
   });
 
   // The sidebar re-fetches this list several times per session open (six in the

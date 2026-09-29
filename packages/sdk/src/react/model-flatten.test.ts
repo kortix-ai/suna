@@ -35,6 +35,23 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
     expect(flat?.reasoningOptions).toEqual([{ type: 'effort', values: ['low', 'medium', 'high'] }]);
   });
 
+  // A BYOK provider without a hand-written label (OpenCode Go) was named after
+  // the synthetic provider: "Kortix". The gateway serves the real name.
+  test('names a BYOK model after its real provider, keeping the kortix providerID', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'opencode-go/glm-5.3': { name: 'GLM-5.3', provider: 'opencode-go', provider_name: 'OpenCode Go' },
+      }),
+    );
+    expect(flat?.providerID).toBe('kortix');
+    expect(flat?.providerName).toBe('OpenCode Go');
+  });
+
+  test('a model without `provider_name` keeps the provider list name', () => {
+    const [flat] = flattenModels(gatewayProviderList({ 'glm-5.3-flash': { name: 'GLM', provider: 'kortix' } }));
+    expect(flat?.providerName).toBe('Kortix');
+  });
+
   test('carries `provider: "kortix"` for a managed model, distinct from its providerID', () => {
     const [flat] = flattenModels(
       gatewayProviderList({
