@@ -26,6 +26,7 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     name: null,
     branch_name: null,
     metadata: null,
+    origin: 'user',
     ...overrides,
   } as unknown as ProjectSession;
 }
@@ -203,6 +204,17 @@ describe('matchesSourceFilters', () => {
 
   test('unknown ownership counts as mine so nothing is silently hidden', () => {
     expect(matchesSourceFilters(makeSession(), ['mine'], testUiTranslator)).toBe(true);
+  });
+
+  test('my chats excludes automated and spawned sessions but an empty filter reveals them', () => {
+    for (const session of [
+      makeSession({ origin: 'backend' }),
+      makeSession({ origin: 'schedule' }),
+      makeSession({ origin: 'user', metadata: { spawned_by_session: 'parent' } }),
+    ]) {
+      expect(matchesSourceFilters(session, ['mine'], testUiTranslator)).toBe(false);
+      expect(matchesSourceFilters(session, [], testUiTranslator)).toBe(true);
+    }
   });
 
   test('automation sources match their kind', () => {

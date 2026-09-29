@@ -258,9 +258,11 @@ export function matchesSourceFilters(
   if (filters.length === 0) return true;
   const kind = sessionSource(session, tI18nComplete).kind;
   return filters.some((filter) => {
-    // `is_owner` is viewer-relative and older payloads omit it — unknown
-    // ownership reads as "mine" so the default view never hides a session.
-    if (filter === 'mine') return kind === 'chat' && !sessionIsShared(session);
+    // Origin is persisted by the API at creation. A session-bound caller can
+    // still have origin=user, so exclude its server-stamped parent as well.
+    if (filter === 'mine')
+      return kind === 'chat' && session.origin === 'user' &&
+        !spawnedBySessionId(session) && !sessionIsShared(session);
     // Ownership is independent of source. A scheduled or channel session can
     // be shared with the viewer and must remain discoverable through Shared.
     if (filter === 'shared') return sessionIsShared(session);

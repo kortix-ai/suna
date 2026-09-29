@@ -44,6 +44,8 @@ describe('defaults', () => {
     expect(read(selectGroupMode(P, 'page'))).toBe('activity');
     expect(read(selectOrderMode(P, 'page'))).toBe('activity');
     expect(read(selectStatusFilters(P, 'page'))).toEqual([]);
+    expect(read(selectSourceFilters(P, 'sidebar'))).toEqual(['mine']);
+    expect(read(selectSourceFilters(P, 'page'))).toEqual(['mine']);
   });
 
   test('the surface argument defaults to the sidebar', () => {
@@ -123,12 +125,12 @@ describe('the page never writes into the sidebar', () => {
     s.collapseAllSections(P, ['today', 'week'], 'page');
     s.setOrderMode(P, 'name', 'page');
 
-    expect(read(selectSourceFilters(P, 'sidebar'))).toEqual([]);
+    expect(read(selectSourceFilters(P, 'sidebar'))).toEqual(['mine']);
     expect(read(selectHiddenSections(P, 'sidebar'))).toEqual([]);
     expect(read(selectCollapsedSections(P, 'sidebar'))).toEqual([]);
     expect(read(selectOrderMode(P, 'sidebar'))).toBe('activity');
 
-    expect(read(selectSourceFilters(P, 'page'))).toEqual(['slack']);
+    expect(read(selectSourceFilters(P, 'page'))).toEqual(['mine', 'slack']);
     expect(read(selectHiddenSections(P, 'page'))).toEqual(['older']);
     expect(read(selectCollapsedSections(P, 'page'))).toEqual(['today', 'week']);
     expect(read(selectOrderMode(P, 'page'))).toBe('name');

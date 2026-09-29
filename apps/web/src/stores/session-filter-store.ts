@@ -38,6 +38,7 @@ const STORAGE_KEY = 'kortix.project-session-view';
  * serves every list in this store.
  */
 export const EMPTY_LIST: readonly never[] = Object.freeze([]);
+const DEFAULT_SOURCE_FILTERS: readonly SessionSourceFilter[] = Object.freeze(['mine']);
 
 /**
  * The two surfaces that render a session list. They share this store's SHAPE
@@ -166,7 +167,7 @@ export const selectStatusFilters =
 export const selectSourceFilters =
   (projectId: string, surface: SessionViewSurface = 'sidebar') =>
   (s: State): readonly SessionSourceFilter[] =>
-    readScoped(s.sourceFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+    readScoped(s.sourceFiltersByProject, projectId, surface) ?? DEFAULT_SOURCE_FILTERS;
 
 export const selectOwnerFilters =
   (projectId: string, surface: SessionViewSurface = 'sidebar') =>
@@ -240,7 +241,7 @@ export const useSessionFilterStore = create<State & Actions>()(
 
       sourceFiltersByProject: {},
       toggleSourceFilter: (projectId, value, surface = 'sidebar') => {
-        const current = readScoped(get().sourceFiltersByProject, projectId, surface) ?? [];
+        const current = readScoped(get().sourceFiltersByProject, projectId, surface) ?? DEFAULT_SOURCE_FILTERS;
         set({
           sourceFiltersByProject: {
             ...get().sourceFiltersByProject,
