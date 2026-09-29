@@ -240,6 +240,11 @@ const CLOUDWATCH_SAFE_FIELDS = [
   // proxied route attributable in Logs Insights instead of a single opaque
   // duration. See middleware/upstream-timing.ts.
   'upstream_ms',
+  // Per-stage Server-Timing breakdown of a slow request, one compact string
+  // (`auth=38,db=160(n=11)`): wall milliseconds per layer and the operation
+  // count. Aggregate-only, no identity. See lib/server-timing.ts
+  // `stageLogFieldForRequest`.
+  'stages_ms',
 ] as const;
 
 /**

@@ -118,6 +118,39 @@ export function formatStageEntries(stages: Partial<Record<TimingStage, StageSnap
   return entries;
 }
 
+/**
+ * The completion log line carries the stage breakdown only for slow requests.
+ * The p50 of a healthy request is tens of milliseconds, so ~1 s is where the
+ * attribution question starts (the p95 tail the infra sweep pages on); the
+ * field is ~60 bytes, so gating it keeps it off the ~99% of lines that would
+ * only say `db=12`.
+ */
+const STAGE_LOG_MIN_DURATION_MS = 1_000;
+
+/** Render a stage snapshot as one compact log field: `auth=38,db=160(n=11)`. */
+export function formatStageLogField(stages: Partial<Record<TimingStage, StageSnapshot>>): string {
+  const parts: string[] = [];
+  for (const stage of TIMING_STAGES) {
+    const stat = stages[stage];
+    if (!stat) continue;
+    const ops = stat.count > 1 ? `(n=${stat.count})` : '';
+    parts.push(`${stage}=${Math.round(stat.wallMs)}${ops}`);
+  }
+  return parts.join(',');
+}
+
+/**
+ * The `stages_ms` field for one completed request, or null when the request
+ * was fast enough that the breakdown adds nothing. Aggregate stage durations
+ * and operation counts only — no identity — so the value is safe for the
+ * plain completion log line (request-context.ts `CLOUDWATCH_SAFE_FIELDS`).
+ */
+export function stageLogFieldForRequest(durationMs: number): string | null {
+  if (durationMs < STAGE_LOG_MIN_DURATION_MS) return null;
+  const field = formatStageLogField(stageSnapshot());
+  return field || null;
+}
+
 // ─── Turn-path stage marks (ProvisionTimeline) ─────────────────────────────
 //
 // The turn-latency spec (PR #7840) §5: `apps/api/src/platform/services/

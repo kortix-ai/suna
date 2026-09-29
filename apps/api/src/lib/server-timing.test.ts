@@ -7,9 +7,11 @@ import {
   beginStage,
   classifyOutbound,
   formatStageEntries,
+  formatStageLogField,
   formatTurnStageEntries,
   installFetchTiming,
   recordTurnStageMarks,
+  stageLogFieldForRequest,
   stageSnapshot,
   timeStage,
 } from './server-timing';
@@ -111,6 +113,40 @@ describe('stage accounting', () => {
     expect(
       formatStageEntries({ db: { count: 12, wallMs: 30.4 }, auth: { count: 1, wallMs: 4.6 } }),
     ).toEqual(['auth;dur=5;desc="n=1"', 'db;dur=30;desc="n=12"']);
+  });
+});
+
+describe('slow-request stage log field', () => {
+  test('renders fixed order, rounds, and shows the operation count only above one', () => {
+    expect(
+      formatStageLogField({ db: { count: 12, wallMs: 160.6 }, auth: { count: 1, wallMs: 38.2 } }),
+    ).toBe('auth=38,db=161(n=12)');
+  });
+
+  test('an empty snapshot renders empty', () => {
+    expect(formatStageLogField({})).toBe('');
+  });
+
+  test('a fast request carries no field', async () => {
+    const field = await runWithContext('GET', '/x', async () => {
+      await timeStage('db', () => sleep(1));
+      return stageLogFieldForRequest(60);
+    });
+    expect(field).toBeNull();
+  });
+
+  test('a slow request carries the stage breakdown from the live snapshot', async () => {
+    const field = await runWithContext('GET', '/x', async () => {
+      await timeStage('db', () => sleep(5));
+      await timeStage('db', () => sleep(5));
+      await timeStage('http', () => sleep(2));
+      return stageLogFieldForRequest(1_500);
+    });
+    expect(field).toMatch(/^db=\d+\(n=2\),http=\d+$/);
+  });
+
+  test('a slow request with no recorded stages carries no field', () => {
+    expect(stageLogFieldForRequest(5_000)).toBeNull();
   });
 });
 

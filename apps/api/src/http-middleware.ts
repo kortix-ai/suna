@@ -13,7 +13,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import { requestLogLevel, shouldSuppressRequestLog } from './lib/request-log-level';
-import { installFetchTiming } from './lib/server-timing';
+import { installFetchTiming, stageLogFieldForRequest } from './lib/server-timing';
 import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
 import { createCorsMiddleware } from './middleware/cors';
@@ -214,6 +214,15 @@ app.use('*', async (c, next) => {
     // one read route, none 5xx). Latency regressions stay covered by the
     // infra-sweep's p95 detector, and the line still carries `duration`.
     const level = requestLogLevel(status);
+    // On a slow request, break the wall time down by layer. The Server-Timing
+    // stages already compute per request (lib/server-timing.ts) but reached
+    // only the response header, so a log-only investigation of a p95 rise —
+    // KRTX-532, `GET /v1/projects/:id/sessions/:id`, 2026-09-28/29 — could not
+    // tell a queued DB wait from an upstream hop. Aggregate stage durations and
+    // operation counts carry no identity, so the field is allowlisted for the
+    // plain line (request-context.ts `CLOUDWATCH_SAFE_FIELDS`).
+    const stages = stageLogFieldForRequest(duration);
+    if (stages) setContextField('stages_ms', stages);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
