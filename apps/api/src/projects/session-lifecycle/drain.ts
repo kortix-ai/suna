@@ -245,6 +245,8 @@ async function drainSessionLifecycleQueueTick(
       // both rows reported delivered while the first answer rendered under
       // the second prompt. Remaining claimed siblings are returned to the
       // queue. Accepted delivery makes the next one due immediately.
+      // A released Stop batch still goes one POST at a time through this
+      // lane; `executeQueuedContinue` decides which of its rows go `noReply`.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
