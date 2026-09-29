@@ -946,6 +946,12 @@ export async function getConnectionOAuth2Status(
   );
 }
 
+export async function removeConnection(projectId: string, connectionId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: true }>(`/projects/${projectId}/connections/${connectionId}`),
+  );
+}
+
 export async function revokeConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(

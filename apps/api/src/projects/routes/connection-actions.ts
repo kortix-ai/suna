@@ -4,7 +4,7 @@ import {
   RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections } from '@kortix/db';
+import { connectorConnections, projectSessionConnectorBindings } from '@kortix/db';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   connectionIsEffectiveProjectDefault,
@@ -236,6 +236,46 @@ projectsApp.openapi(
       throw error;
     }
     return c.json(serializeConnection({ ...connection, label }), 200);
+  },
+);
+
+// Removing an account is distinct from revoking its authorization: a revoked
+// row remains in the account list and can be reactivated.
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/connections/{connectionId}',
+    tags: ['connectors'],
+    summary: 'Disconnect and remove a connection',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }) },
+    responses: { 200: json(z.object({ ok: z.literal(true) }), 'Removed'), ...errors(403, 404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const connectionId = c.req.param('connectionId');
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
+    if (!mutable) return c.json({ error: 'Not found' }, 404);
+    if (mutable.connection.providerType === 'computer') {
+      return c.json({ error: 'Unpair this computer using the computers route' }, 409);
+    }
+    const [binding] = await db
+      .select({ sessionId: projectSessionConnectorBindings.sessionId })
+      .from(projectSessionConnectorBindings)
+      .where(eq(projectSessionConnectorBindings.connectionId, connectionId))
+      .limit(1);
+    if (binding) {
+      return c.json({ error: 'This account is bound to a session. Remove the session binding first.' }, 409);
+    }
+    await revokeConnectionOAuth2(connectionId);
+    await db.delete(connectorConnections).where(
+      and(
+        eq(connectorConnections.connectionId, connectionId),
+        eq(connectorConnections.projectId, projectId),
+        eq(connectorConnections.accountId, mutable.loaded.row.accountId),
+      ),
+    );
+    return c.json({ ok: true });
   },
 );
 

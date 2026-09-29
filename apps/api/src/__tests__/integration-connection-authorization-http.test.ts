@@ -359,6 +359,32 @@ describe('connection owner authorization over HTTP', () => {
     );
   });
 
+  test('disconnect removes an owned account, but not another member account', async () => {
+    const id = crypto.randomUUID();
+    const token = await mint(ALICE);
+    await db.insert(connectorConnections).values({
+      connectionId: id, accountId: ACCOUNT, projectId: PROJECT,
+      connectorId: USER_CONNECTOR, ownerType: 'member', ownerId: ALICE,
+      label: 'Temporary account',
+    });
+    expect((await request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, await mint(BOB))).status).toBe(404);
+    const removed = await request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token);
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ ok: true });
+    const listed = await request('GET', `/v1/projects/${PROJECT}/connections`, token);
+    expect(listed.status).toBe(200);
+    expect(((await listed.json()) as { connections: Array<{ connection_id: string }> }).connections
+      .some((row) => row.connection_id === id)).toBe(false);
+    expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, id))).length).toBe(0);
+    expect((await request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token)).status).toBe(404);
+  });
+
+  test('disconnect refuses an account bound to a session', async () => {
+    const response = await request('DELETE', `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}`, await mint(ALICE));
+    expect(response.status).toBe(409);
+    expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, ALICE_CONNECTION))).length).toBe(1);
+  });
+
   test('managers administer system connections but cannot enumerate personal connections', async () => {
     const response = await request(
       'GET',

@@ -39,6 +39,7 @@ import {
   reconcileConnection,
   reconcileMemberConnection,
   revokeConnection,
+  removeConnection,
   setConnectionPolicies,
   setConnectorAuthorizationStrategy,
   setConnectorCredential,
@@ -287,6 +288,8 @@ test('connection methods use the canonical connection route contract', async () 
   expect(last().url).toContain('/connections/connection-1/credential');
   await revokeConnection('P1', 'connection-1');
   expect(last().url).toContain('/connections/connection-1/revoke');
+  await removeConnection('P1', 'connection-1');
+  expect(last()).toMatchObject({ method: 'DELETE', url: expect.stringContaining('/connections/connection-1') });
   await activateConnection('P1', 'connection-1');
   expect(last().url).toContain('/connections/connection-1/activate');
   await setDefaultConnection('P1', 'connection-1');
