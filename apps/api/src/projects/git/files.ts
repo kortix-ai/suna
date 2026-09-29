@@ -27,6 +27,7 @@ export async function listRepoFiles(
   project: GitBackedProject,
   ref?: string,
   path?: string | null,
+  opts?: FreshOnMiss,
 ): Promise<ProjectFileEntry[]> {
   const treeRef = validateRef(ref || project.defaultBranch);
   const treePath = normalizeTreePath(path);
@@ -53,10 +54,10 @@ export async function listRepoFiles(
       .filter((entry): entry is ProjectFileEntry => Boolean(entry));
   };
   const first = await list(await refreshMirror(project)).catch((err) => {
-    if (isMissingAtRef(err) && isExplicitBranch(project, ref)) return null;
+    if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
     throw err;
   });
-  if (first?.length || !isExplicitBranch(project, ref)) return first ?? [];
+  if (first?.length || !isExplicitBranch(project, ref, opts)) return first ?? [];
   // Empty or unresolvable at an explicit branch: a push may not be fetched yet.
   return list(await refreshMirror(project, true, { freshRef: treeRef }));
 }
@@ -131,7 +132,12 @@ export async function grepRepoFiles(
   return matches;
 }
 
-export async function readRepoFile(project: GitBackedProject, filePath: string, ref?: string): Promise<string> {
+export async function readRepoFile(
+  project: GitBackedProject,
+  filePath: string,
+  ref?: string,
+  opts?: FreshOnMiss,
+): Promise<string> {
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
@@ -142,7 +148,7 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
     // A branch that a push created or moved since the last fetch reads as
     // "not found" until the 60 s refresh interval passes. One ref-scoped fetch
     // settles it. Default-branch reads and sha reads keep the cached answer.
-    if (!(isMissingAtRef(err) && isExplicitBranch(project, ref))) throw missingFileError(err, normalized, treeRef);
+    if (!(isMissingAtRef(err) && isExplicitBranch(project, ref, opts))) throw missingFileError(err, normalized, treeRef);
     const fresh = await refreshMirror(project, true, { freshRef: treeRef });
     try {
       return await readFileAt(fresh, treeRef, normalized);
@@ -153,8 +159,10 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
 }
 
 const isMissingAtRef = (err: unknown) => isGitPathNotFoundError(err) || isGitRefNotFoundError(err);
-const isExplicitBranch = (project: GitBackedProject, ref?: string) =>
-  !!ref && ref !== project.defaultBranch && !/^[0-9a-f]{40}$/i.test(ref);
+/** User-facing reads opt in: internal probes for absent files must not pay a fetch per miss. */
+type FreshOnMiss = { freshOnMiss?: boolean };
+const isExplicitBranch = (project: GitBackedProject, ref?: string, opts?: FreshOnMiss) =>
+  !!opts?.freshOnMiss && !!ref && ref !== project.defaultBranch && !/^[0-9a-f]{40}$/i.test(ref);
 
 /** A "path does not exist" failure is an expected client condition, not a server bug. */
 function missingFileError(err: unknown, normalized: string, treeRef: string): unknown {
