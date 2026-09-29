@@ -8,20 +8,25 @@ import type { ProjectConfigSummary } from './projects';
 const PROJECT_ONLY_AGENTS = new Set(['project-manager']);
 
 /** The fields the selectable-agent rule reads. Both the project config entry
- *  and the OpenCode `Agent` shape satisfy it. */
+ *  and the OpenCode `Agent` shape satisfy it. `native` is the runtime's own
+ *  marker for its built-in agents (`build`, `plan`, …); a project config entry
+ *  never carries it. */
 export interface SelectableAgentFields {
   name: string;
   mode?: string | null;
   hidden?: boolean;
   enabled?: boolean;
+  native?: boolean | null;
 }
 
 /**
  * The one rule for "a user can pick this agent to prompt": not a subagent, not
- * hidden, not disabled, and not gated behind a feature flag. Every agent
- * picker on every host applies this rule and no other.
+ * hidden, not disabled, not an OpenCode built-in, and not gated behind a
+ * feature flag. Every agent picker on every host applies this rule and no
+ * other.
  */
 export function isSelectableAgent(agent: SelectableAgentFields): boolean {
+  if (agent.native === true) return false;
   if (agent.mode === 'subagent' || agent.hidden || agent.enabled === false) return false;
   return featureFlags.enableProjects || !PROJECT_ONLY_AGENTS.has(agent.name);
 }

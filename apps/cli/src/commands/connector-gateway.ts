@@ -178,7 +178,8 @@ async function dispatch(
     case 'connectors':
     case 'ls': {
       const connector = connectorClient(flags.project);
-      const connectors = await connector.catalog();
+      // Name/status/tool-count only — never ask for the per-action schemas.
+      const connectors = await connector.catalog({ includeSchemas: false });
       out({
         connectors: connectors.map((c) => ({
           slug: c.slug,

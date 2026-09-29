@@ -151,7 +151,7 @@ export async function cancelForwardedPrompt(
             session_id: sessionId,
             message_id: message.id,
             part_id: partId,
-            status: res.status,
+            upstream_status: res.status,
           });
           return { outcome: 'unreachable' };
         }
