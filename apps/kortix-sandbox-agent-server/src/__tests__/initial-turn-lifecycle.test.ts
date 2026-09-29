@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   claimInitialTurnFromApi,
+  durableOpenCodeRootPin,
   publishInitialOpenCodeSessionAfterPrompt,
   reconcileInitialTurnAcceptanceToApi,
   relayInitialTurnAcceptedToApi,
@@ -75,6 +76,52 @@ describe('daemon-delivered initial turn lifecycle', () => {
         authorization: 'Bearer session-token',
         body: { session_id: 'session-1', kind: 'initial_turn_claim' },
       });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // A box without a local pin file must resume the root the control plane
+  // pinned, not adopt or create another (prod 2026-09-23: a converged legacy
+  // box created an empty root and the session opened blank).
+  test('records the durable root pin even when no prompt is pending', async () => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch() {
+        return Response.json({ ok: true, initial_turn: null, opencode_session_id: 'ses_durable' });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'session-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      expect(durableOpenCodeRootPin()).toBeNull();
+      expect(await claimInitialTurnFromApi()).toBeNull();
+      expect(durableOpenCodeRootPin()).toBe('ses_durable');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('an API that predates the pin field leaves no durable pin', async () => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch() {
+        return Response.json({ ok: true, initial_turn: null });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'session-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      expect(await claimInitialTurnFromApi()).toBeNull();
+      expect(durableOpenCodeRootPin()).toBeNull();
     } finally {
       server.stop(true);
     }
