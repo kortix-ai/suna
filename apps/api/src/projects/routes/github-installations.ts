@@ -41,7 +41,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'GET /github/installation',
+    summary: 'Get the GitHub App installation of the account',
     ...auth,
     responses: {
         200: json(z.any(), 'OK'),
@@ -73,7 +73,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/github/installations',
     tags: ['github'],
-    summary: 'GET /github/installations',
+    summary: 'List GitHub App installations',
     ...auth,
     responses: {
         200: json(z.any(), 'OK'),
@@ -180,7 +180,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installations/linkable',
     tags: ['github'],
-    summary: 'POST /github/installations/linkable',
+    summary: 'List GitHub installations that can be linked',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },
@@ -251,7 +251,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installations/link',
     tags: ['github'],
-    summary: 'POST /github/installations/link',
+    summary: 'Link a GitHub installation to the account',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },
@@ -327,7 +327,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'POST /github/installation',
+    summary: 'Save a GitHub App installation',
     ...auth,
       request: {
         body: { content: { 'application/json': { schema: AnyObject } } },
@@ -413,7 +413,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'DELETE /github/installation',
+    summary: 'Remove the GitHub App installation',
     ...auth,
       request: {
         query: z.object({}).passthrough(),
@@ -453,7 +453,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/github/installations/{installationId}',
     tags: ['github'],
-    summary: 'DELETE /github/installations/:installationId',
+    summary: 'Remove a GitHub installation',
     ...auth,
       request: {
         params: z.object({ installationId: z.string() }),
@@ -495,7 +495,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/user-token',
     tags: ['github'],
-    summary: 'POST /github/user-token',
+    summary: 'Store a GitHub user token',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },

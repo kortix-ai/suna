@@ -234,6 +234,28 @@ you're done. No manifest, no bot token, no secret-intake link. Details in the
 when you need exact syntax.
 </cli>
 
+<mcp-client>
+## Connect an MCP client
+
+Kortix has one hosted MCP server: `https://api.kortix.com/v1/mcp` (on another
+deployment, `<api origin>/v1/mcp`). An MCP client (Claude, ChatGPT, Cursor,
+VS Code, Codex) that adds the URL signs the person in with OAuth and acts as
+them, with their permissions, in every project they can open. Nothing to
+install. Claude Code:
+
+```bash
+claude mcp add --transport http kortix https://api.kortix.com/v1/mcp
+```
+
+A client without OAuth sends a personal access token as
+`Authorization: Bearer kortix_pat_…` (`kortix tokens new <name>`). A person
+revokes an OAuth client with `kortix tokens apps rm <client-id>` or in
+Settings → Personal access keys → Connected apps. A connected app cannot mint
+personal access tokens, gateway keys, SCIM tokens, OAuth clients or service
+accounts. Client-by-client steps: `https://kortix.com/docs/connect/mcp`.
+`https://kortix.com/mcp` is a different server: public documentation only.
+</mcp-client>
+
 <apps>
 ## Kortix Apps — deploy a website or container
 

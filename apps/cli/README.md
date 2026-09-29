@@ -29,6 +29,18 @@ Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
 
+## Use Kortix from an MCP client
+
+Claude, ChatGPT, Cursor, VS Code and Codex reach the same projects and sessions
+as this CLI through one hosted MCP server. Nothing to install:
+
+```sh
+claude mcp add --transport http kortix https://api.kortix.com/v1/mcp
+```
+
+Setup for each client, sign-in and revocation (`kortix tokens apps ls|rm`):
+<https://kortix.com/docs/connect/mcp>.
+
 ## What gets written
 
 ```

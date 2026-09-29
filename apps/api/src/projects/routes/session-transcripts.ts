@@ -43,7 +43,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/transcript',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/transcript',
+    summary: 'Read the transcript of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
