@@ -18,13 +18,22 @@ import {
 import { parseManifestString } from './triggers';
 
 const v2 = (block: string) =>
-  parseManifestString(`kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n${block}`, 'yaml', 'kortix.yaml');
+  parseManifestString(
+    `kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n${block}`,
+    'yaml',
+    'kortix.yaml',
+  );
 
 describe('characterization — governed grant resolution pins', () => {
   test('a concrete agent resolves to its declared grant', () => {
-    const loaded = extractAgents(v2('    connectors: [github]\n    kortix_permissions: [project.read]\n'));
+    const loaded = extractAgents(
+      v2('    connectors: [github]\n    kortix_permissions: [project.read]\n'),
+    );
     expect(loaded.errors).toEqual([]);
-    const governed = resolveGovernedAgentGrant('w', loaded, { subject: true, projectDefaultAgent: null });
+    const governed = resolveGovernedAgentGrant('w', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
     expect(governed.grant).toEqual({
@@ -36,7 +45,9 @@ describe('characterization — governed grant resolution pins', () => {
   });
 
   test("the `default` sentinel resolves to the declared default agent's grant", () => {
-    const loaded = extractAgents(v2('    connectors: [github]\n    kortix_permissions: [project.read]\n'));
+    const loaded = extractAgents(
+      v2('    connectors: [github]\n    kortix_permissions: [project.read]\n'),
+    );
     const governed = resolveGovernedAgentGrant(DEFAULT_AGENT_SENTINEL, loaded, {
       subject: true,
       projectDefaultAgent: null,
@@ -52,7 +63,9 @@ describe('characterization — governed grant resolution pins', () => {
   });
 
   test('grantFromLoadedAgents canonicalizes alias spellings (existing behavior)', () => {
-    const loaded = extractAgents(v2('    connectors: [email]\n    kortix_permissions: [project.cr.open]\n'));
+    const loaded = extractAgents(
+      v2('    connectors: [email]\n    kortix_permissions: [project.cr.open]\n'),
+    );
     expect(loaded.errors).toEqual([]);
     expect(grantFromLoadedAgents('w', loaded)).toEqual({
       agent: 'w',
@@ -65,9 +78,14 @@ describe('characterization — governed grant resolution pins', () => {
 
 describe('governed grants canonicalize identically (the intended behavior change)', () => {
   test('resolveGovernedAgentGrant (subject) canonicalizes alias spellings', () => {
-    const loaded = extractAgents(v2('    connectors: [email]\n    kortix_permissions: [project.cr.open]\n'));
+    const loaded = extractAgents(
+      v2('    connectors: [email]\n    kortix_permissions: [project.cr.open]\n'),
+    );
     expect(loaded.errors).toEqual([]);
-    const governed = resolveGovernedAgentGrant('w', loaded, { subject: true, projectDefaultAgent: null });
+    const governed = resolveGovernedAgentGrant('w', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
     expect(governed.grant).toEqual({
