@@ -1175,6 +1175,10 @@
         "reminders": {
           "name": "Recordatorios",
           "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."
+        },
+        "us_region": {
+          "name": "Región de EE. UU.",
+          "description": "Ejecuta las nuevas sesiones de este proyecto en la región Este de EE. UU. Una sesión en curso conserva su región hasta que se reinicia."
         }
       }
     },

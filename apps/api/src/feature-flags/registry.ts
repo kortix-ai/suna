@@ -68,6 +68,7 @@
  * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
+import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
@@ -375,6 +376,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
       'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
       'the change-request merge governance guard.',
+  },
+  {
+    key: 'us_region',
+    name: 'US Region',
+    description:
+      "Run this project's new sessions in Platinum's US East region instead of EU West. A running session keeps its region until it restarts. The first session after a new sandbox image waits while the image is copied to the region.",
+    stability: 'experimental',
+    // Two operator gates: Platinum must be the configured provider, and the
+    // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
+    // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
+    available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
+    platformDefault: () => false,
+    // Read at provisioning (platform/services/session-sandbox.ts
+    // resolveSessionSandboxRegion) and sent as `region` on the Platinum
+    // create. Off ⇒ no region is sent and Platinum places in its home region.
+    enforcement: 'behavioral',
   },
 ];
 
