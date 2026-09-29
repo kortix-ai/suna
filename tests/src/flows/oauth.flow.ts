@@ -554,6 +554,9 @@ flow(
   {
     domain: "oauth",
     routes: [
+      "POST /v1/accounts/:accountId/iam/scim/tokens",
+      "POST /v1/accounts/:accountId/iam/oauth-clients",
+      "POST /v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret",
       "POST /v1/oauth/register",
       "GET /v1/oauth/authorize",
       "POST /v1/oauth/authorize/consent",
@@ -605,6 +608,10 @@ flow(
       const headers = { Authorization: `Bearer ${access}` };
       (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/tokens", { name: "OAU-9-oat" }, { headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/cli-token", {}, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
+      const params = { accountId: ctx.P.accountId };
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/scim/tokens", { name: "OAU-9-oat" }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients", { name: "OAU-9-oat", redirect_uris: ["https://app.example.test/cb"] }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret", {}, { params: { ...params, clientId }, headers })).status(403);
     });
 
     await ctx.step("DELETE /oauth/grants/<not-a-uuid> → 404, not a 500", async () => {

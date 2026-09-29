@@ -69,6 +69,8 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
+  // A connected app's revocable `kortix_oat_` token must not mint a durable credential.
+  if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot mint SCIM tokens.' }, 403);
   if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const denied = await requireEntitlement(c, accountId, 'scim');
