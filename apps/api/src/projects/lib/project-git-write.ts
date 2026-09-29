@@ -1,53 +1,34 @@
-/**
- * The ONE canonical shape of the project Git write data.
- *
- * `registerLinkedProject` (project-registration.ts) and
- * `persistProjectRepositoryReplacement` (repository-replacement.ts) used to
- * hand-build the same `project_git_connections` values and the same
- * `metadata.git` / `metadata.github` blocks, and the two literals had already
- * drifted (`project_grant`, `upstream_url`, the legacy `github.installation_id`
- * slot). Both now build through the builders here, and the intentional
- * differences are explicit options instead of copy-paste divergences.
- *
- * The DB writes stay at the call sites: both run inside `db.transaction`, and
- * `upsertProjectGitConnection` (projects/lib/git.ts) writes on the pooled
- * `db` handle, so it cannot join those transactions.
- */
+// The ONE canonical shape of the project Git write data. Both
+// `registerLinkedProject` (project-registration.ts) and
+// `persistProjectRepositoryReplacement` (repository-replacement.ts) hand-built
+// these literals and had drifted. The DB writes stay at the call sites: both
+// run inside `db.transaction`, and `upsertProjectGitConnection` (lib/git.ts)
+// writes on the pooled `db` handle, so it cannot join those transactions.
 import type { GitHubRepo } from '../github';
 
-/**
- * The auth both write paths resolve before persisting. App auth carries the
- * installation id it will store and the permissions it records on the row;
- * a PAT project stores a project credential row instead.
- */
+/** App auth carries the installation id it stores + the permissions it records on the row. */
 export type ProjectGitWriteAuth =
   | { method: 'github_app'; installationId: string | null; permissions: Record<string, unknown> }
   | { method: 'project_credential' };
 
 /**
- * The `project_git_connections` row values for a GitHub project. The caller
- * prepends `accountId`/`projectId` and runs the insert + onConflictDoUpdate
- * inside its transaction.
- *
- * `upstreamUrl` and `webhookId` reproduce each call site's original shape
- * exactly: LEFT OUT (undefined) the keys stay out of both the insert and the
- * conflict `set` (registration never wrote them — the columns are nullable
- * with no default, and its conflict branch is unreachable on a fresh project
- * id). Replacement passes them, so its `set` keeps resetting both columns.
+ * The `project_git_connections` row values for a GitHub project; the caller
+ * prepends `accountId`/`projectId` and runs the insert + onConflictDoUpdate.
+ * `upstreamUrl`/`webhookId` reproduce the original shapes exactly: undefined
+ * leaves the key out of both the insert and the conflict `set` (registration
+ * never wrote them; its conflict branch is unreachable on a fresh project id),
+ * replacement passes them so its `set` keeps resetting both columns.
  */
 export function buildProjectGitConnectionValues(input: {
   repo: GitHubRepo;
   defaultBranch: string;
   auth: ProjectGitWriteAuth;
-  /** Credential row id for a PAT project; null for App auth. */
   credentialRef: string | null;
-  /** True when Kortix provisioned the repo (the create-repo flow). */
+  /** True when Kortix provisioned the repo. */
   managed: boolean;
-  /** Real upstream host git URL; undefined leaves the key out (registration). */
   upstreamUrl?: string | null;
-  /** Webhook id; undefined leaves the key out (registration never wrote it). */
   webhookId?: string | null;
-  /** Repository replacement's App grant stamps the row metadata with it. */
+  /** Replacement's App grant stamps the row metadata with it. */
   projectGrant: boolean;
   now: Date;
 }) {
@@ -83,22 +64,19 @@ export function buildProjectGitConnectionValues(input: {
 }
 
 /**
- * The `metadata.git` / `metadata.github` blocks of a GitHub project. The
- * caller spreads its own prior metadata beneath them.
+ * The `metadata.git` / `metadata.github` blocks; the caller spreads its own
+ * prior metadata beneath them. `githubInstallationId` is preserved drift:
+ * registration records the legacy `github.installation_id` slot, replacement
+ * never rewrites it — so replacement passes nothing.
  */
 export function buildProjectGitMetadata(input: {
   repo: GitHubRepo;
   defaultBranch: string;
   auth: ProjectGitWriteAuth;
-  /** True when Kortix provisioned the repo (the create-repo flow). */
+  /** True when Kortix provisioned the repo. */
   managed: boolean;
-  /** Repository replacement's App grant stamps `git.auth` with it. */
+  /** Replacement's App grant stamps `git.auth` with it. */
   projectGrant: boolean;
-  /**
-   * Legacy `github.installation_id` slot. Registration records it for an App
-   * connection; repository replacement never rewrites the slot, so it passes
-   * nothing — the shapes stay exactly as they were before the dedupe.
-   */
   githubInstallationId?: string | null;
 }) {
   const owner = input.repo.full_name.split('/')[0] ?? null;
