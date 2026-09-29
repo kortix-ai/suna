@@ -1,9 +1,9 @@
 import { accountTokens, oauthClients } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { db } from './db';
+import { isUuid } from './validate';
 
 type Row = { credentialKind: string | null; credentialId: string | null };
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Display names for the credentials on a page of audit rows: the PAT's name,
@@ -14,7 +14,7 @@ export async function auditCredentialNames(rows: Row[]): Promise<Map<string, str
   const ids = (kind: string) => [
     ...new Set(
       rows
-        .filter((r) => r.credentialKind === kind && r.credentialId && UUID_RE.test(r.credentialId))
+        .filter((r) => r.credentialKind === kind && isUuid(r.credentialId))
         .map((r) => r.credentialId as string),
     ),
   ];
