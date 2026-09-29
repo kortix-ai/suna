@@ -320,16 +320,19 @@ function isNextAssetSource(filename: unknown): boolean {
 
 // The iOS WebView's in-page document/inline-script source: the `app:///`
 // origin with a DOCUMENT/route path (e.g. `app:///projects/<project_id>/
-// sessions/<session_id>`) and NO file extension — NOT a `_next/…` bundle path
-// and NOT a loaded `.js` asset. iOS WebViews (WKWebView/JSC — Safari,
-// Chrome-on-iOS, and every in-app browser, including the Google Search App) set
-// the DOCUMENT url as the `filename` of a script that runs inline in the page:
-// the WebView's own injected instrumentation, Google Translate's injected
-// translator, and Tag Manager / analytics snippets all execute this way. Our
-// compiled code never runs from this source — every first-party chunk is
+// sessions/<session_id>`), or the BARE root-document source `app:///` — the
+// document url of a page served at the site root (`https://kortix.com/`)
+// normalizes to `app:///` with nothing after the third slash — and NO file
+// extension in either shape. NOT a `_next/…` bundle path and NOT a loaded
+// `.js` asset. iOS WebViews (WKWebView/JSC — Safari, Chrome-on-iOS, and every
+// in-app browser, including the Google Search App) set the DOCUMENT url as the
+// `filename` of a script that runs inline in the page: the WebView's own
+// injected instrumentation, Google Translate's injected translator, and Tag
+// Manager / analytics snippets all execute this way. Our compiled code never
+// runs from this source — every first-party chunk is
 // `app:///_next/static/chunks/…` — and a loaded script asset carries its own
 // `.js` url as its filename, not the document url.
-const IOS_WEBVIEW_INLINE_SCRIPT_SOURCE_PATTERN = /^app:\/\/\/[^/]/;
+const IOS_WEBVIEW_INLINE_SCRIPT_SOURCE_PATTERN = /^app:\/\/\//;
 
 // A loaded asset path ends with a file extension; a route/document path does
 // not. Keeps an `app:///assets/index-abc.js` / `app:///sw.js` asset frame out
@@ -354,7 +357,8 @@ function isIosWebViewInlineScriptSource(filename: unknown): boolean {
   return !ASSET_FILE_EXTENSION_PATTERN.test(normalized.split('?')[0]);
 }
 
-// The path of an `app:///<path>` WebView source, query string removed.
+// The path of an `app:///<path>` WebView source, query string removed. The
+// bare root-document source `app:///` yields the empty path.
 function iosWebViewSourcePath(filename: unknown): string {
   const normalized = normalizeString(filename);
   if (!normalized.startsWith('app:///')) {
@@ -381,7 +385,8 @@ function requestUrlPath(requestUrl: unknown): string {
  * inline-script stack-overflow noise class: a `RangeError: Maximum call stack
  * size exceeded.` whose stack frames are ALL the iOS WebView's in-page
  * document/inline-script source (`app:///<route>`, e.g.
- * `app:///projects/<project_id>/sessions/<session_id>`) rather than a compiled
+ * `app:///projects/<project_id>/sessions/<session_id>`, or the BARE
+ * root-document source `app:///`) rather than a compiled
  * `app:///_next/static/chunks/…` bundle frame. This is the SIBLING of
  * `isUnresolvableStackOverflowNoise`: the frameless class drops the capture
  * where iOS WebKit truncated the stack to a synthetic
@@ -403,15 +408,33 @@ function requestUrlPath(requestUrl: unknown): string {
  * are the repeated `Ok`/`Qk` pair, all with filename the in-page document
  * source, and NO `_next` chunk frame and NO resolved `apps/web/src/…` frame.
  *
+ * Same class on the marketing ROOT document (Better Stack patterns `3442ad7c…`
+ * and `b86f8fb0…`, Kortix Frontend prod, application_id 2346967): `RangeError`,
+ * 5 + 1 occurrences / 0 identified users, first 2026-09-17T18:41:54Z, last
+ * 2026-09-26T20:36:01Z, three releases (`960b2ca9…`, `1cc0f5b9…`,
+ * `4349f7ed…`), anonymous iOS (iPhone) sessions in the Google Search App and
+ * Chrome 154, mechanism `auto.browser.global_handlers.onerror`, request urls
+ * `https://kortix.com/` and `https://kortix.com/auth`. There the document url
+ * `https://kortix.com/` normalizes to the BARE `app:///` filename (origin
+ * replaced, nothing after the third slash), so the anchor regex
+ * `^app:///[^/]` — which requires a path character — never matched, and the
+ * patterns kept paging. The same session also proves the root-document shape
+ * survives a client-side navigation: the document loads at `/`, the App Router
+ * navigates to `/auth`, and a later capture in the SAME document still carries
+ * bare `app:///` frames while `request.url` names `/auth` — so the root
+ * document source is accepted on every page, while a route-path inline frame
+ * (a full load of that route) keeps the page-path equality requirement.
+ *
  * Anchored on BOTH the canonical stack-overflow message AND the presence of an
- * `app:///<route>` in-document frame, with three negative guards: a resolved
- * first-party `apps/web/src/…` frame keeps reporting (our own code is the
- * recursion), any Next.js-internal source frame (`_next` chunk / `_next-live`
- * runtime file) keeps reporting, and any loaded `.js` asset frame keeps
- * reporting (a loaded script has its own url as filename, not the document
- * url). When the page url is known (the Sentry gate), the inline frame's
- * `app:///` path must additionally EQUAL the page path, so an inline frame from
- * a different document context is preserved.
+ * `app:///<route>` (or bare `app:///`) in-document frame, with three negative
+ * guards: a resolved first-party `apps/web/src/…` frame keeps reporting (our
+ * own code is the recursion), any Next.js-internal source frame (`_next` chunk
+ * / `_next-live` runtime file) keeps reporting, and any loaded `.js` asset
+ * frame keeps reporting (a loaded script has its own url as filename, not the
+ * document url). When the page url is known (the Sentry gate), a route-path
+ * inline frame must additionally EQUAL the page path, so an inline frame from
+ * a different document context is preserved; the bare root-document source is
+ * accepted on every page (see above).
  *
  * Residual trade-off, accepted and bounded: a script the app itself emits
  * INLINE into the document (the Electron desktop bootstrap, the analytics-init
@@ -451,12 +474,21 @@ export function isIosWebViewInjectedStackOverflowNoise(input: {
   if (documentSources.length === 0) {
     return false;
   }
-  // Strong anchor when the page url is known: the inline frame's `app:///` path
-  // must be THIS page's path. A different `app:///` path is another document
-  // context, not this page's injected script; keep reporting.
+  // Strong anchor when the page url is known: a route-path inline frame must
+  // be THIS page's path. The BARE root-document source (`app:///`, empty path)
+  // is accepted on every page: the root document is where every App Router
+  // journey starts, and a client-side navigation updates `window.location`
+  // without loading a new document, so the inline frames keep the entry
+  // document's root path while the request url names the navigated route
+  // (e.g. the marketing homepage document still running on `/auth`). A full
+  // load of a non-root route produces route-path inline frames instead, which
+  // keep the equality requirement; a different route-path inline frame is
+  // another document context (embed, iframe), not this page's injected script.
   const pagePath = requestUrlPath(input.requestUrl);
   if (pagePath !== '') {
-    return documentSources.some((source) => iosWebViewSourcePath(source) === pagePath);
+    return documentSources.some(
+      (source) => iosWebViewSourcePath(source) === pagePath || iosWebViewSourcePath(source) === '',
+    );
   }
   return true;
 }

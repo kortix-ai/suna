@@ -6509,6 +6509,147 @@ test('does NOT treat an unrelated message from the same in-document source as st
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document stack overflow on the marketing ROOT document
+// (Better Stack patterns
+// 3442ad7cdbfb5687bec652fb1ee20d0ea2e382f104b1b96fb995be5048057e54, 5 occ. and
+// b86f8fb06181ea3ca7626e3f22f312258899aa056173de4733b5911ce6da181a, 1 occ.,
+// Kortix Frontend prod, application_id 2346967). Same injected-script class as
+// the deep-route patterns above, but the document is the site ROOT: the
+// document url `https://kortix.com/` normalizes to the BARE `app:///`
+// filename (origin replaced, nothing after the third slash), which the
+// `^app:///[^/]` anchor regex rejected — so the class kept paging through
+// releases `960b2ca9…`/`1cc0f5b9…`/`4349f7ed…` (first 2026-09-17T18:41:54Z,
+// last 2026-09-26T20:36:01Z, anonymous iOS sessions in the Google Search App
+// and Chrome 154, mechanism `auto.browser.global_handlers.onerror`). The stack
+// is the same tight mutual recursion (`Qk`/`Ok`, cols 408/63 at one document
+// line). The same sessions also navigate client-side from `/` to `/auth`
+// (breadcrumbs `navigation from / to /auth`), and a capture taken AFTER that
+// navigation still carries bare `app:///` frames — the document is unchanged —
+// while `request.url` names `/auth`; the root-document source must therefore
+// count as this page's inline script on any request url.
+// ---------------------------------------------------------------------------
+
+// The exact production frame shape of the root-document captures (release
+// `4349f7ed…`): every frame's filename is the bare `app:///` source, the
+// minified pair `Qk`/`Ok` recursing at one line, truncated to 50 frames.
+const MARKETING_ROOT_INLINE_OVERFLOW_FRAMES = [
+  { function: 'Qk', filename: 'app:///', lineno: 226, colno: 408, in_app: true },
+  { function: 'Ok', filename: 'app:///', lineno: 226, colno: 63, in_app: true },
+];
+
+test('classifies the marketing root-document inline stack overflow (bare app:/// frames) as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: MARKETING_ROOT_INLINE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with bare root-document frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the marketing root-document stack overflow via the Sentry beforeSend gate', () => {
+  // The homepage document: `https://kortix.com/` → page path `''`, frame path
+  // `''` — equal.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: MARKETING_ROOT_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+  // A client-side navigation away from the root document: `request.url` names
+  // `/auth` while the entry document's inline frames stay bare `app:///`. The
+  // root-document source is this page's inline script on every request url.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/auth' },
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+            stacktrace: { frames: MARKETING_ROOT_INLINE_OVERFLOW_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+});
+
+test('suppresses the bare root-document stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: 'app:///',
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a stack overflow whose bare root-document frames are mixed with a bundle frame', () => {
+  const bundleFrame = {
+    function: 'e',
+    filename: 'app:///_next/static/chunks/main-abc123.js',
+    lineno: 1,
+    colno: 2,
+  };
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: [...MARKETING_ROOT_INLINE_OVERFLOW_FRAMES, bundleFrame],
+    }),
+    false,
+  );
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'Maximum call stack size exceeded.',
+            stacktrace: { frames: [...MARKETING_ROOT_INLINE_OVERFLOW_FRAMES, bundleFrame] },
+          },
+        ],
+      },
+    }),
+    false,
+  );
+});
+
+test('does NOT let the root-document acceptance swallow a route-frame from a different page path', () => {
+  // A route-path inline frame from another document context still keeps the
+  // page-path equality requirement — only the BARE root-document source is
+  // accepted on every page.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Maximum call stack size exceeded.',
+      frames: IOS_WEBVIEW_INLINE_OVERFLOW_FRAMES,
+      requestUrl: 'https://kortix.com/auth',
+    }),
+    false,
+  );
+  // An unrelated message from the bare root-document source is not this class.
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: MARKETING_ROOT_INLINE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
