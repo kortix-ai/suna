@@ -502,6 +502,30 @@ describe('post-spawn managed reconcile', () => {
     expect(await readFile(target, 'utf8').catch(() => null)).toBeNull()
   })
 
+  test('restarts once when a booted managed model has stale image capability', async () => {
+    // The box booted on a baked catalog that has the id but no `modalities`;
+    // OpenCode then replaces every image with "Cannot read image".
+    const live = { models: { 'deepseek-v4-flash': {
+      name: 'DeepSeek V4 Flash', provider: 'kortix', attachment: true,
+      modalities: { input: ['text', 'image'], output: ['text'] },
+    } } }
+    globalThis.fetch = (async () => new Response(JSON.stringify(live), { status: 200 })) as unknown as typeof fetch
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
+    await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    } as NodeJS.ProcessEnv)
+    expect(missingManagedModelIds(live.models)).toEqual(['deepseek-v4-flash'])
+
+    const restarts = { n: 0 }
+    await reconcileManagedModels(fakeOpencode(restarts), cfg, () => {}, {
+      catalogTargetFile: await targetPath(),
+      turnProbe: async () => false,
+    })
+    expect(restarts.n).toBe(1)
+  })
+
   test('never restarts across a live turn — or one it cannot read', async () => {
     for (const turnInFlight of [true, null] as const) {
       resetManagedModelsStateForTests()

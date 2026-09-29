@@ -40,6 +40,8 @@ import { type SandboxProvider, type SandboxStatus, getProvider } from '../../pla
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
+import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
+import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
 import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
@@ -88,6 +90,7 @@ export interface ReapResult {
   husksFinalized: number; // an orphaned open assistant turn we closed server-side
   turnsSettled: number; // ledger rows still open on a box that is no longer running
   errors: number;
+  transient: number; // an expected, transient provider failure (Daytona 429 / gateway blip); the next pass retries it
 }
 
 export const EMPTY_REAP_RESULT: ReapResult = {
@@ -102,6 +105,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
   husksFinalized: 0,
   turnsSettled: 0,
   errors: 0,
+  transient: 0,
 };
 
 export interface SandboxReaperDependencies {
@@ -789,10 +793,21 @@ export async function reapAndReconcileSandboxes(
             break;
         }
       } catch (err) {
-        result.errors += 1;
-        console.error(
-          `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
-        );
+        // An expected, transient provider failure — a Daytona org-wide 429
+        // (`ThrottlerException`) or a gateway blip — is the provider working as
+        // designed. Every other call site classifies it (`shared/daytona-rate-limit.ts`,
+        // `shared/daytona-transient.ts`) so it never pages; the reaper must too,
+        // or one org throttle across a live fleet emits an error line per box.
+        // Counting it separately and logging NOTHING here keeps this page quiet
+        // while the next pass still retries the renewal.
+        if (isDaytonaRateLimitError(err) || isDaytonaTransientProviderError(err)) {
+          result.transient += 1;
+        } else {
+          result.errors += 1;
+          console.error(
+            `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
+          );
+        }
       }
     }
   };
@@ -809,6 +824,13 @@ export async function reapAndReconcileSandboxes(
       matching: result.matching,
       examined: result.candidates,
       deferred: result.deferred,
+    });
+  }
+  // One aggregate line per pass instead of one error line per row: a transient
+  // provider throttle is expected, and the next pass retries it.
+  if (result.transient > 0) {
+    console.info('[reaper] provider transient errors — retrying next pass', {
+      transient: result.transient,
     });
   }
   return result;
