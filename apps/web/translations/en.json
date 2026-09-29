@@ -14345,7 +14345,7 @@
       "text8cd003e6301b": "⌘S",
       "text8cd05146050d": "Runs the full cycle: discovery, scope, build, handoff, expansion.",
       "text8cd1f7bcdc71": "Step 1 of 2 - paste the manifest into Slack and install the app.",
-      "text8ce16e33b27d": "You can revoke access at any time in your account settings.",
+      "text8ce16e33b27d": "Revoke access any time in Settings → Personal access keys → Connected apps.",
       "text8ce429d50e7c": "Under \"API Connection\": paste the Tenant URL into \"SCIM Base URL\" and the secret into \"SCIM Bearer Token\", then click the \"Enable\" button (save the app first if prompted). OneLogin validates the endpoint and \"API Status\" then shows a green \"Enabled\" — that field is a read-only indicator, not a control you set.",
       "text8cea8af247c2": "Could not queue your message",
       "text8d0218f233bb": "Preview :{value0}",

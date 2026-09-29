@@ -30,9 +30,10 @@ interface LocalConfigState {
   globalDefault: { providerID: string; modelID: string } | null;
 
   setAgent: (name: string | null) => void;
+  /** Null clears the pick: the agent follows the default again. */
   setModelForAgent: (
     agentName: string,
-    model: { providerID: string; modelID: string },
+    model: { providerID: string; modelID: string } | null,
   ) => void;
   setVariant: (modelKey: string, variant: string | null) => void;
   /** Set the global default model — clears all per-agent selections so it
@@ -51,9 +52,10 @@ export const useLocalConfigStore = create<LocalConfigState>()(
       setAgent: (name) => set({ selectedAgent: name }),
 
       setModelForAgent: (agentName, model) =>
-        set((s) => ({
-          agentModels: { ...s.agentModels, [agentName]: model },
-        })),
+        set((s) => {
+          const { [agentName]: _, ...rest } = s.agentModels;
+          return { agentModels: model ? { ...rest, [agentName]: model } : rest };
+        }),
 
       setVariant: (modelKey, variant) =>
         set((s) => {

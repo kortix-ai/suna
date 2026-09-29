@@ -48,6 +48,16 @@ export const errors = <C extends number>(...codes: C[]): { [K in C]: ReturnType<
     [K in C]: ReturnType<typeof json>;
   };
 
+/**
+ * Request body that DOCUMENTS its fields in the spec but does not validate them.
+ * For routes whose handler owns validation (its own 400 messages, aliases,
+ * coercions): the spec lists `shape` (what LLMs and SDK readers see) and runtime
+ * still accepts any JSON object with every key kept, exactly as the plain
+ * `z.record(z.string(), z.any())` body did. Non-object bodies are still rejected.
+ */
+export const lenientBody = <T extends z.ZodRawShape>(shape: T) =>
+  z.object(shape).passthrough().or(z.record(z.string(), z.any()));
+
 /** Mark an operation as requiring a bearer token. */
 export const auth: Pick<RouteConfig, 'security'> = { security: [{ bearerAuth: [] }] };
 

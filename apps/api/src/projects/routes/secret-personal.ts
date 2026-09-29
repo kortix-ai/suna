@@ -8,12 +8,12 @@ import './secret-rate-limit';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { roleAllows } from '../access';
 import { loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
@@ -34,11 +34,20 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/secrets/{name}/personal',
     tags: ['secrets'],
-    summary: 'PUT /:projectId/secrets/:name/personal',
+    summary: 'Set your personal override of a project secret',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), name: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: {
+          content: {
+            'application/json': {
+              schema: lenientBody({
+                value: z.string().optional().openapi({ description: 'Your override value.' }),
+                active: z.boolean().optional().openapi({ description: 'Turn the override on or off.' }),
+              }),
+            },
+          },
+        },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -144,7 +153,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/secrets/{name}/personal',
     tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:name/personal',
+    summary: 'Delete your personal override of a project secret',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), name: z.string() }),

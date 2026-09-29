@@ -16,8 +16,12 @@
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
  *
- * On Android the text is natively selectable; on iOS a double tap opens a
- * sheet with the raw text.
+ * Selection is native on both platforms: long press selects a range, and the
+ * handles extend it within one block (a paragraph, heading, list item, or
+ * table cell). Android uses React Native's selectable `Text`. iOS uses a
+ * `UITextView` (`react-native-uitextview`), because React Native's iOS `Text`
+ * only copies a whole paragraph. A binary built before that native view keeps
+ * the old double-tap sheet (`IOS_TEXT_VIEW`).
  *
  * Streaming: the text is split into top-level blocks (`splitMarkdown`), and
  * each block renders in its own memoized component keyed by its position.
@@ -40,8 +44,11 @@ import {
   Pressable,
   LogBox,
   Platform,
+  UIManager,
   useWindowDimensions,
+  type TextProps,
 } from 'react-native';
+import { UITextView } from 'react-native-uitextview';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
@@ -89,6 +96,33 @@ import { openLink } from '@/lib/utils/open-link';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
+
+/**
+ * The running iOS binary has `react-native-uitextview`'s native view. An OTA
+ * update can reach a binary built before it: that binary renders plain `Text`
+ * and keeps the double-tap selection sheet.
+ */
+const IOS_TEXT_VIEW = Platform.OS === 'ios' && UIManager.hasViewManagerConfig('RNUITextView');
+
+/**
+ * Every text node of the markdown. On iOS it is a `UITextView`: the outermost
+ * one is the selectable view, nested ones are its styled spans, so every text
+ * rule must use this and never `RNText`. Elsewhere it is React Native's `Text`,
+ * which reads `selectable` from the outermost node only.
+ */
+function MarkdownText(props: TextProps) {
+  return IOS_TEXT_VIEW ? <UITextView uiTextView {...props} /> : <RNText {...props} />;
+}
+
+/**
+ * Android: a selectable text node with no press handler of its own never
+ * delivers a tap to a nested link (KRTX-562). A no-op handler on the outer node
+ * restores the link's `onPress` and keeps native selection (verified on a
+ * Pixel 9 emulator, RN 0.85). `accessibilityRole="text"` keeps the handler
+ * from announcing every paragraph as a link.
+ */
+const ANDROID_LINK_TAPS: Partial<TextProps> =
+  Platform.OS === 'android' ? { onPress: noop, accessibilityRole: 'text' } : {};
 
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
@@ -241,14 +275,15 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     text: (node: AstNode, _children: unknown, _parent: unknown, styles: any, inheritedStyles: any = {}) => (
-      <RNText key={node.key} style={[inheritedStyles, styles.text]} selectable>
+      <MarkdownText key={node.key} style={[inheritedStyles, styles.text]}>
         {node.content}
-      </RNText>
+      </MarkdownText>
     ),
+    // The outermost text node: the one native selection reads `selectable` from.
     textgroup: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.textgroup}>
+      <MarkdownText key={node.key} style={styles.textgroup} selectable {...ANDROID_LINK_TAPS}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     paragraph: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
       <View key={node.key} style={styles._VIEW_SAFE_paragraph}>
@@ -256,30 +291,30 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     strong: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.strong} selectable>
+      <MarkdownText key={node.key} style={styles.strong}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     em: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.em} selectable>
+      <MarkdownText key={node.key} style={styles.em}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     s: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.s} selectable>
+      <MarkdownText key={node.key} style={styles.s}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     // Links: only http(s) and mailto open.
     link: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText
+      <MarkdownText
         key={node.key}
         style={styles.link}
         accessibilityRole="link"
         onPress={() => openExternalLink(node.attributes?.href)}
       >
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     // Images: never fetched; a placeholder instead.
     image: (node: AstNode) => (
@@ -427,21 +462,21 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
         return '\n';
       case 'strong':
         return (
-          <RNText key={i} style={{ fontFamily: FONT_FAMILY.semibold, fontWeight: '600', color: palette.strong }}>
+          <MarkdownText key={i} style={{ fontFamily: FONT_FAMILY.semibold, fontWeight: '600', color: palette.strong }}>
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       case 'em':
         return (
-          <RNText key={i} style={{ fontStyle: 'italic', color: palette.em }}>
+          <MarkdownText key={i} style={{ fontStyle: 'italic', color: palette.em }}>
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       case 's':
         return (
-          <RNText key={i} style={{ textDecorationLine: 'line-through', color: palette.muted }}>
+          <MarkdownText key={i} style={{ textDecorationLine: 'line-through', color: palette.muted }}>
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       case 'code_inline':
         return <InlineCode key={i} code={n.content ?? ''} isDark={isDark} line={TYPE.sm} />;
@@ -451,7 +486,7 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
         );
       case 'link':
         return (
-          <RNText
+          <MarkdownText
             key={i}
             accessibilityRole="link"
             style={{
@@ -464,7 +499,7 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
             onPress={() => openExternalLink(n.attributes?.href)}
           >
             {nodeText(n)}
-          </RNText>
+          </MarkdownText>
         );
       default:
         return nodeText(n);
@@ -533,7 +568,7 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                         paddingVertical: TABLE_CELL_PADDING_Y,
                       }}
                     >
-                      <RNText
+                      <MarkdownText
                         selectable
                         numberOfLines={section.isHeader ? 1 : undefined}
                         style={{
@@ -546,7 +581,7 @@ function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: Mark
                         }}
                       >
                         {renderCellContent(cell, isDark, palette)}
-                      </RNText>
+                      </MarkdownText>
                     </View>
                   ))}
                 </View>
@@ -934,7 +969,7 @@ const DOUBLE_TAP_DELAY_MS = 300;
 function noop() {}
 
 /**
- * iOS: a double tap opens the selection sheet. The sheet mounts on the first
+ * iOS binary without `RNUITextView` only: a double tap opens the selection sheet. The sheet mounts on the first
  * double tap, not with every text part, and stays mounted after dismiss.
  * `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
  * text, so it must have no press animation at all.
@@ -983,8 +1018,8 @@ function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; is
 /**
  * SelectableMarkdownText
  *
- * Renders markdown with selectable text: natively on Android, through a
- * double-tap selection sheet on iOS.
+ * Renders markdown with natively selectable text. On an iOS binary without
+ * the `UITextView` native view, a double tap opens a selection sheet instead.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
   function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming }: SelectableMarkdownTextProps) {
@@ -994,7 +1029,7 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
     // Trailing whitespace would add empty space below the last block.
     const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
 
-    if (Platform.OS === 'ios') {
+    if (Platform.OS === 'ios' && !IOS_TEXT_VIEW) {
       return <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />;
     }
     return <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />;

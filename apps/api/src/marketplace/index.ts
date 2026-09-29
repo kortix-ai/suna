@@ -49,7 +49,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/items',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/items',
+    summary: 'List marketplace items',
     request: {
       query: z.object({
         query: z.string().optional(),
@@ -101,7 +101,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/marketplaces',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/marketplaces',
+    summary: 'List marketplaces',
     responses: {
       200: json(z.any(), 'Distinct marketplaces with item counts'),
     },
@@ -116,7 +116,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/marketplaces/featured',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/marketplaces/featured',
+    summary: 'List featured marketplaces',
     responses: {
       200: json(z.any(), 'Curated featured marketplaces'),
     },
@@ -131,7 +131,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/items/{id}',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/items/:id',
+    summary: 'Get a marketplace item',
     request: {
       params: z.object({ id: z.string() }),
     },
@@ -152,7 +152,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/items/{id}/file',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/items/:id/file',
+    summary: 'Read a file of a marketplace item',
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({ path: z.string().min(1) }),
@@ -194,7 +194,7 @@ marketplaceApp.openapi(
     method: 'get',
     path: '/sources',
     tags: ['marketplace'],
-    summary: 'GET /marketplace/sources',
+    summary: 'List marketplace sources',
     ...auth,
     responses: {
       200: json(z.any(), 'Configured marketplace sources'),
@@ -211,7 +211,7 @@ marketplaceApp.openapi(
     method: 'post',
     path: '/sources',
     tags: ['marketplace'],
-    summary: 'POST /marketplace/sources',
+    summary: 'Add a marketplace source',
     ...auth,
     request: {
       body: {
@@ -261,7 +261,7 @@ marketplaceApp.openapi(
     method: 'delete',
     path: '/sources/{id}',
     tags: ['marketplace'],
-    summary: 'DELETE /marketplace/sources/:id',
+    summary: 'Remove a marketplace source',
     ...auth,
     request: {
       params: z.object({ id: z.string() }),

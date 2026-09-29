@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -66,6 +66,29 @@ describe.skipIf(process.platform !== 'linux')('job scripts in a real shell', () 
     expect(poll('j3')).toMatchObject({ state: 'done', exit: 'cancelled' });
     expect(spawnSync('pgrep', ['-x', '-f', 'sleep 30[12]']).status).toBe(1);
     expect(sh(JOB_CANCEL, { KMCP_JOB: 'j3' }).trim()).toBe('finished');
+  });
+
+  test('the launch internals do not leak into the command environment', async () => {
+    sh(JOB_LAUNCH, { KMCP_JOB: 'j4', KMCP_CMD: 'env | grep -c KMCP', KMCP_TIMEOUT: '60' });
+    expect(await waitDone('j4')).toMatchObject({ state: 'done', stdout: '0\n' });
+  });
+
+  test('a launch deletes job dirs older than 24 h and keeps recent ones', async () => {
+    const jobs = join(home, '.cache/kortix-mcp/jobs');
+    mkdirSync(join(jobs, 'old'), { recursive: true });
+    spawnSync('touch', ['-d', '2 days ago', join(jobs, 'old')]);
+    sh(JOB_LAUNCH, { KMCP_JOB: 'j5', KMCP_CMD: 'true', KMCP_TIMEOUT: '60' });
+    expect(existsSync(join(jobs, 'old'))).toBe(false);
+    expect(existsSync(join(jobs, 'j5'))).toBe(true);
+  });
+
+  test('a cut tail starts on a line boundary, or says it started mid-line', async () => {
+    sh(JOB_LAUNCH, { KMCP_JOB: 'j6', KMCP_CMD: 'for i in $(seq 1 400); do echo line$i; done; head -c 3000 /dev/zero | tr "\\0" x >&2', KMCP_TIMEOUT: '60' });
+    const done = await waitDone('j6');
+    if (done.state === 'missing') throw new Error('job missing');
+    expect(done.sizes[0]).toBeGreaterThan(1000);
+    expect(done.stdout.split('\n').filter(Boolean).every((l) => /^line\d+$/.test(l))).toBe(true);
+    expect(done.stderr).toStartWith('(started mid-line) x');
   });
 
   test('an unknown job is missing', () => {

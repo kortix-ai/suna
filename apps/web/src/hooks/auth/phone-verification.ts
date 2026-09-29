@@ -34,19 +34,6 @@ export const useVerifyChallenge = () => {
   });
 };
 
-export const useChallengeAndVerify = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: phoneVerificationService.challengeAndVerify,
-    onSuccess: () => {
-      // Invalidate all phone verification related caches after successful verification
-      queryClient.invalidateQueries({ queryKey: ['mfa-aal'] });
-      queryClient.invalidateQueries({ queryKey: ['phone-verification-factors'] });
-    },
-  });
-};
-
 export const useListFactors = () => {
   const { user } = useAuth();
 
@@ -63,19 +50,6 @@ export const useListFactors = () => {
 };
 
 export const useUnenrollFactor = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: phoneVerificationService.unenrollFactor,
-    onSuccess: () => {
-      // Invalidate caches after unenrolling
-      queryClient.invalidateQueries({ queryKey: ['phone-verification-factors'] });
-      queryClient.invalidateQueries({ queryKey: ['mfa-aal'] });
-    },
-  });
-};
-
-export const useUnenrollPhoneFactor = () => {
   const queryClient = useQueryClient();
 
   return useMutation({

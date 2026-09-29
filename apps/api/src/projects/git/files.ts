@@ -34,7 +34,8 @@ export async function listRepoFiles(
   // Keyed by the commit the ref points at now (see read-cache.ts).
   const sha = await resolveRefSha(repoPath, treeRef);
   const listTree = (at: string) => {
-    const args = ['ls-tree', '-r', at, '--'];
+    // -z: NUL-separated, unquoted paths (a unicode name is not octal-escaped).
+    const args = ['ls-tree', '-r', '-z', at, '--'];
     if (treePath) args.push(treePath);
     return runGit(args, repoPath, false).then((result) => result.stdout);
   };
@@ -43,9 +44,9 @@ export async function listRepoFiles(
     : await listTree(treeRef);
   if (!stdout.trim()) return [];
   return stdout
-    .split('\n')
+    .split('\0')
     .map<ProjectFileEntry | null>((line) => {
-      const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\t(.+)$/);
+      const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\t([\s\S]+)$/);
       if (!match || match[1] !== 'blob') return null;
       return { path: match[2] || '', type: 'file', size: null };
     })
