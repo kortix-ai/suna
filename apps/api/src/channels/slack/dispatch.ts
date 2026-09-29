@@ -53,7 +53,7 @@ export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry:
 
 // Every path that creates/rebinds a chat_channel_bindings row calls this so the
 // web Channels settings page can show the real Slack channel name instead of
-// falling back to the raw channel id (e.g. `C0AENS5MHK9`). Previously only the
+// falling back to the raw channel id (e.g. `C0A1B2C3D4E`). Previously only the
 // multi-project "which project?" picker path persisted `channel_name` — the
 // common single-project auto-bind case left it NULL forever. Cheap by design:
 // a DB read first, and the Slack API call only fires when a name isn't already
@@ -132,8 +132,8 @@ export async function ensureProjectChannelBinding(
   //
   // Any project whose Slack app merely observes a channel (both manifests
   // subscribe `message.channels`) was enough to take it. Prod 2026-08-28,
-  // workspace T07FUFNT3RV: `kortix-incident-reporter` (installed 2026-08-17)
-  // held `C0AASKRLRBR`, where `Kortix Company` had run 71 sessions through
+  // one workspace: `kortix-incident-reporter` (installed 2026-08-17)
+  // held a channel where `Kortix Company` had run 71 sessions through
   // 2026-08-14 and then went silent for 14 days.
   //
   // Re-assignment is a DELIBERATE act and has its own paths, untouched by this:
@@ -465,8 +465,8 @@ export async function classifyEvent(
   // PROD 2026-08-20. A user typed `@Kortix hey man` in a channel that also has
   // the "Incident reporter" bot in it, and Incident reporter answered:
   //
-  //   mentioned bot   U0B7QL26690  (Kortix)
-  //   bot that replied U0B5W5XN49Y  (Incident reporter)
+  //   mentioned bot   <kortix_bot_user_id>    (Kortix)
+  //   bot that replied <reporter_bot_user_id>  (Incident reporter)
   //   session created inside kortix-incident-reporter
   //
   // Two Kortix-platform apps in one workspace, each with its own BYO webhook at

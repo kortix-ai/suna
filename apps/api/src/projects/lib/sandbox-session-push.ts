@@ -28,7 +28,7 @@ import {
  * `stopped` while its VM was genuinely running — serving prompts the whole time
  * — therefore received no secret, model or scope push for HOURS, and the only
  * visible symptom was an agent that could not see a secret the UI insisted it
- * had (prod 2026-08-27, session b3848cf5). `backend.ts` deliberately refuses to
+ * had (a prod session, 2026-08-27). `backend.ts` deliberately refuses to
  * heal a row whose deadline has expired, so nothing else reconciles this and
  * nothing else reports it.
  *
@@ -155,7 +155,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // filtered form returned a bare 'no active sandbox' and the caller logged
     // nothing, so a session whose row said `stopped` while its VM was genuinely
     // running — serving prompts the whole time — silently received no secret or
-    // config push for HOURS. Prod 2026-08-27, session b3848cf5: every push
+    // config push for HOURS. A prod session, 2026-08-27: every push
     // since the secret was created was skipped this way, and the only visible
     // symptom was an agent that could not see a secret the UI said it had.
     const [row] = await db

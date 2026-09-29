@@ -203,7 +203,7 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
 });
 
 // ═══ THE MID-TURN STARVATION THIS CLOSES ═══
-// Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box
+// Incident 2026-08-17T20:40:03Z (a prod session on Daytona): the box
 // held a control-plane-minted turn record for its whole life and `deadlineGrant`
 // never left `boot_floor`. The daemon on that warm snapshot answered the turn
 // probe with nothing readable, so `observeSandboxTurn` never returned `active`,

@@ -9,7 +9,7 @@
  * repair that needs more than 90 seconds, and the platform spends 8 minutes
  * fixing a box it has already told the user is `failed`.
  *
- * Measured on dev, session 8e3d6a63, 2026-09-28:
+ * Measured on a dev session, 2026-09-28:
  *   08:17:58.513  legacyRuntimeBootstrap.lastAttemptAt   (state 'running')
  *   08:20:15.322  runtimeStartFailedAt, stopReason 'runtime_wake_failed',
  *                 runtimeParkReason 'runtime_status_unknown_timeout'
@@ -52,7 +52,7 @@ describe('the wake fence and an in-flight repair', () => {
   });
 
   test('does NOT park while a repair is running inside its budget', () => {
-    // The exact shape measured on 8e3d6a63.
+    // The exact shape measured on that dev session.
     expect(
       staleRuntimeWakeReason(
         row({

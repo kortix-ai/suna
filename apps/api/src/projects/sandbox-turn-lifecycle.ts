@@ -869,8 +869,8 @@ export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_messag
  * `activeTurns` record, and therefore no deadline grant: `GET .../turn`
  * reported idle for minutes of live streaming, the composer read "not
  * running" over a working session, and a long pty-driven work phase ran on
- * the 15-minute idle tail (live incident 2026-08-20, SampleCo session
- * d1b74954). The daemon now relays `turn_begin` when it observes the root go
+ * the 15-minute idle tail (live incident 2026-08-20, a SampleCo
+ * session). The daemon now relays `turn_begin` when it observes the root go
  * busy; this is that relay's write.
  *
  * Idempotent by construction, so the daemon may relay freely:
@@ -1198,7 +1198,7 @@ export function turnCompletionAllowsQueuePromotion(
 
 /**
  * A second end frame for a turn that is already closed may still be the only one
- * that says WHY. Session ad02e053 (2026-09-18): OpenCode's own "Aborted" frame
+ * that says WHY. A session on 2026-09-18: OpenCode's own "Aborted" frame
  * closed the turn 476 ms before the memory guard's frame named the cause. Same
  * identity match as `wasSandboxTurnAlreadyClosed`; touches `failed` rows only,
  * and only to replace a missing or abort-only error with a named cause.

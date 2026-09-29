@@ -1126,10 +1126,10 @@ test('probeComposioIdentity returns null for a toolkit without an identity sourc
 });
 
 // ── Toolkits with no Composio-managed OAuth app (X, Xero, Spotify, ...) ──────
-// Composio's exact refusal, captured from prod on 2026-09-26 (request
-// 7029e848-757a-4d92-a9f8-771856d643c7) when a user added X.
+// Composio's exact refusal, captured from prod on 2026-09-26 (one request)
+// when a user added X.
 const AUTH_CONFIG_REQUIRED =
-  '400 {"error":{"message":"The following toolkits require auth configs but none exist and cannot be auto-created: twitter. Please specify them in auth_configs.","code":4300,"slug":"ToolRouterV2_BadRequest","status":400,"request_id":"7029e848-757a-4d92-a9f8-771856d643c7","suggested_fix":""}}';
+  '400 {"error":{"message":"The following toolkits require auth configs but none exist and cannot be auto-created: twitter. Please specify them in auth_configs.","code":4300,"slug":"ToolRouterV2_BadRequest","status":400,"request_id":"5a1e0c0d-0000-4000-8000-00000000000d","suggested_fix":""}}';
 
 /** Tool Router as it behaves live: a twitter session needs `authConfigs.twitter`. */
 function routerNeedingTwitterConfig(calls: Array<Record<string, unknown>>, created = session()): ComposioRuntime {

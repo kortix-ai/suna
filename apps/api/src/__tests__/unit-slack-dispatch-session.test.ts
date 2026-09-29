@@ -651,7 +651,7 @@ describe('dispatchSlackEvent — a mention addressed to another workspace bot', 
     // Only the channel-binding query is reached; the claim is never attempted,
     // because the event is declined before it can be claimed.
     dbResults = [[]];
-    await dispatchSlackEvent('proj-1', forBot('U0B7QL26690', '300.1'));
+    await dispatchSlackEvent('proj-1', forBot('U0KORTIXBOT', '300.1'));
 
     expect(createSessionCalls, 'a session was created inside the project that was NOT mentioned').toBe(0);
     expect(deliverCalls, 'the turn was routed into a session of the wrong project').toBe(0);

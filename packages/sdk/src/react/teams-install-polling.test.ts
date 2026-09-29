@@ -3,7 +3,7 @@ import { teamsInstallRefetchInterval } from './teams-install-polling';
 import type { TeamsInstallation } from './use-teams-installations';
 
 const base: TeamsInstallation = {
-  tenantId: '36009a52-46d2-44bc-ba56-57a87e485e0a',
+  tenantId: '5a1e0c09-0000-4000-8000-000000000009',
   teamId: null,
   teamName: null,
   botId: null,

@@ -144,8 +144,8 @@ export function isPlatinumSizeCapBuildFailure(err: unknown): boolean {
  * and points at a registration-pipeline flake on Platinum's side rather than a
  * real build problem with this content. Verified empirically during a
  * 2026-07-18 dev incident: a `from-build` registration silently never
- * produced a template (stuck ~15min on `state: missing`, dev sandbox_id
- * 5771eb57-b0be-4579-8e33-93776a66f4fe), while a fresh build attempt for a
+ * produced a template (stuck ~15min on `state: missing`, on one dev
+ * sandbox), while a fresh build attempt for a
  * different content hash minutes later succeeded on its very first try — so a
  * same-process retry is a real, bounded (BUILD_ATTEMPTS) mitigation, not a
  * blind retry-forever. A build that reaches any OTHER observed state

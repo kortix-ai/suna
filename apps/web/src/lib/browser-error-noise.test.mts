@@ -5133,7 +5133,7 @@ test('does NOT suppress a near-worded message that is not a document-state looku
 // loop after its document-state-map race (see the document-state matcher
 // above), tripping React's 50-nested-update guard (#185) WITHOUT an
 // `onTileRendering` frame. All three patterns are from the SAME Safari 26.5
-// session (`be897489-…`), same release, same `0foj1ouh5ijrj.js` chunk, same
+// session, same release, same `0foj1ouh5ijrj.js` chunk, same
 // 2026-08-05 ~04:30–05:28 UTC window, 1 occurrence each, UNCAUGHT
 // (`handled:false`). The existing `isEmbedPdfTilingReactUpdateDepthNoise`
 // matcher anchors on the `onTileRendering` frame and does NOT catch these —
@@ -7272,7 +7272,7 @@ test('does NOT suppress a non-React message that happens to mention #185', () =>
 // `IntersectionObserver` threshold callback) calls `const { tile } =
 // queue.pop()` on an `undefined` pop result, and V8 throws
 // `Cannot destructure property 'tile' of 'r.pop(...)' as it is undefined.` Two
-// patterns, SAME root cause, SAME user/session (`7254bee8-…`/`bd1306e9-…`), 1
+// patterns, SAME root cause, SAME user and session, 1
 // occurrence each, 0 identified users, release
 // `470fe6f3c88460212c3b187f6f86fb4ad456c4d6` (v0.10.13), route
 // `/projects/:id/sessions/:sessionId`, Chrome 150 on Windows 10. Pattern

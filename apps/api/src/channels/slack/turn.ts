@@ -51,13 +51,13 @@ export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: str
  * were dropped, leaving the thread frozen on one stale step while the agent
  * worked on.
  *
- * PROD 2026-09-05, session e58ddd55 (Slack thread 1788612689.109129 in
- * C0BQCDKMTGX). `slack step` at 12:54:42, next at 13:19:22 — a 24m40s gap — so
+ * PROD 2026-09-05, one session (Slack thread <thread_ts> in
+ * <channel_id>). `slack step` at 12:54:42, next at 13:19:22 — a 24m40s gap — so
  * the row was reaped at 13:09:42 and the following five steps plus the answer
  * went nowhere while the agent ran two more hours. The agent noticed the silence
  * and started its own `while sleep 200; do slack step` keepalive at 13:37; by
  * then there was nothing left to keep alive. Three incident threads that week
- * (d91f2ff5, d08cccb4, 11f9e9e9) died the same way and read in Slack as
+ * died the same way and read in Slack as
  * "Kortix ignored the incident".
  *
  * The GC sweep below is the reaper, and the honest one: it is keyed on
@@ -694,7 +694,7 @@ export async function relayTurnAnswerDetailed(
 // ── Last-resort answer delivery, with no turn row left ────────────────────────
 // The row can legitimately be gone by the time the agent answers: the GC closes
 // a turn after 30 minutes with no relay, posts "Run timed out", and deletes it.
-// The RUN does not stop — prod 2026-09-04 session d08cccb4 posted three steps,
+// The RUN does not stop — a prod session on 2026-09-04 posted three steps,
 // went quiet, was closed at 30 minutes, and only finished at 09:06:28, 2h58m
 // after it started. `relayTurnAnswer` found no handle, returned false, and the
 // route answered the sandbox HTTP 200 `{ok:false}` (projects/routes/turn-stream.ts), so

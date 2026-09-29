@@ -37,7 +37,7 @@ describe('needsSlackNameBackfill', () => {
   });
 
   test('a Slack DM (channelId starts with D) never needs backfill, even with no name', () => {
-    expect(needsSlackNameBackfill({ ...base, channelId: 'D0AENS5MHK9' })).toBe(false);
+    expect(needsSlackNameBackfill({ ...base, channelId: 'D0A1B2C3D4E' })).toBe(false);
   });
 
   test('a Teams binding is never selected here regardless of name/channel shape', () => {

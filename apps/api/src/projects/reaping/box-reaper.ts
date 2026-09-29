@@ -530,7 +530,7 @@ export async function reapAndReconcileSandboxes(
                 // orphan redelivery below — so a terminal observation landing
                 // inside ORPHANED_PROMPT_MIN_AGE_MS was a one-shot race that
                 // silently swallowed the prompt: observed live 2026-08-20
-                // (SampleCo session d1b74954, prompt cleared `unknown` at age
+                // (a SampleCo session, prompt cleared `unknown` at age
                 // 27s, 3s under the floor, never answered). The next pass runs
                 // ~20s later; by then the age check passes and the redelivery
                 // fires, or the prompt got answered and the observation says
@@ -638,7 +638,7 @@ export async function reapAndReconcileSandboxes(
           }
           // A RENEWAL THAT STARVES MUST NOT BE SILENT.
           //
-          // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d):
+          // Incident 2026-08-17T20:40:03Z (a prod session on Daytona):
           // every probe of this box's turn came back `unknown` — the daemon on
           // that warm snapshot answers the turn question with neither `true`
           // nor `false` — so `renewActiveSandboxTurn` never ran and

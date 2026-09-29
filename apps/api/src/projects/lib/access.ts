@@ -222,7 +222,7 @@ export async function viewerManagerStanding(
  * inventory), so any route that loads a session by id and then acts on it must
  * ask this first — `/start` and `/restart` used to skip it, answer
  * `stage: "stopped"` / 202 on a deleted session, and leave the UI looping on a
- * Restart button that could never work (sampleco session b04a9911, 2026-08-24).
+ * Restart button that could never work (a SampleCo session, 2026-08-24).
  */
 export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;

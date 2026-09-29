@@ -67,7 +67,7 @@ describe('extractTeamsAttachments', () => {
 
   /**
    * The shape Teams ACTUALLY sends for a pasted screenshot — verified on dev
-   * 2026-09-19, session 196a99f5. The subtype is the literal `*`, so the old
+   * 2026-09-19, on a dev session. The subtype is the literal `*`, so the old
    * code named the file `image.*`, which is not a filename.
    */
   test('the wildcard image/* type produces a filename, not "image.*"', () => {
@@ -77,7 +77,7 @@ describe('extractTeamsAttachments', () => {
         {
           contentType: 'image/*',
           contentUrl:
-            'https://smba.trafficmanager.net/emea/36009a52-46d2-44bc-ba56-57a87e485e0a/v3/attachments/0-weu-d21-b7b5/views/original',
+            'https://smba.trafficmanager.net/emea/5a1e0c09-0000-4000-8000-000000000009/v3/attachments/0-weu-d21-b7b5/views/original',
         },
       ],
     });
@@ -85,7 +85,7 @@ describe('extractTeamsAttachments', () => {
       {
         name: 'image',
         downloadUrl:
-          'https://smba.trafficmanager.net/emea/36009a52-46d2-44bc-ba56-57a87e485e0a/v3/attachments/0-weu-d21-b7b5/views/original',
+          'https://smba.trafficmanager.net/emea/5a1e0c09-0000-4000-8000-000000000009/v3/attachments/0-weu-d21-b7b5/views/original',
         isImage: true,
       },
     ]);

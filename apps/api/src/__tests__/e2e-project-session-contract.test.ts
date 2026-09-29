@@ -1627,8 +1627,8 @@ describe('project session API contract', () => {
     ];
 
     // SampleCo 2026-08-26: this gate used to answer `false` for ever, so the
-    // stamp could only be cleared by a human pressing Restart (sessions
-    // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
+    // stamp could only be cleared by a human pressing Restart (two
+    // SampleCo sessions). Past the cooldown it is permission to try again.
     expect(
       await resumeStoppedSandbox({
         sandboxId: SESSION_ID,
@@ -1656,7 +1656,7 @@ describe('project session API contract', () => {
   });
 
   test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
-    // SampleCo 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // SampleCo 2026-08-26, one session on an E2B box. Attempt 1's
     // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
     // boot was judged against a 10-minute cap that had already run ~7 minutes.
     // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
@@ -2680,7 +2680,7 @@ describe('project session API contract', () => {
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): a box
   // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
   // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
   // This endpoint is polled every second and Daytona folds `stopping` and
@@ -3436,7 +3436,7 @@ describe('project session API contract', () => {
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
 
     // The park stamps a retry clock, so the immediate re-poll is a COOLDOWN,
-    // not the 10-hour `stage:"failed"` replay session 9c8749ac lived in.
+    // not the 10-hour `stage:"failed"` replay a SampleCo session lived in.
     expect(typeof parkedMetadata.runtimeStartRetryAfterAt).toBe('string');
     expect(parkedMetadata.runtimeStartFailureCount).toBe(1);
 

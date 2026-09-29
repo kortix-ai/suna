@@ -178,7 +178,7 @@ test('a confirmed working turn cannot retain a stale pending inbox presentation'
  * its own turn loop: no `session.idle` frame follows, the control plane's row
  * stays `active`, and `projectWorking` correctly keeps saying `working`. So the
  * shimmer and its clock ran while the agent was waiting for a reply — measured
- * on the local stack 2026-09-22 (session 8d807956): 12m22s on one unanswered
+ * on the local stack 2026-09-22 (one local session): 12m22s on one unanswered
  * 2-option question, the clock reading 7m55s in the screenshot.
  *
  * Source assertions because the permission half cannot be driven here at all:

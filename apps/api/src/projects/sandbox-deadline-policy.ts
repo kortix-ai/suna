@@ -98,7 +98,7 @@ export function turnAbsoluteMaxMs(): number {
  * record and its daemon ANSWERS the probe without saying anything about that
  * turn.
  *
- * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box's
+ * Incident 2026-08-17T20:40:03Z (a prod session on Daytona): the box's
  * `deadlineGrant` never left `boot_floor`. The daemon on that warm snapshot
  * answered the turn probe with neither `true` nor `false`, so
  * `observeSandboxTurn` returned `unknown` on every pass,

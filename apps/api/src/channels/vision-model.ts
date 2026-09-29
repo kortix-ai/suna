@@ -13,8 +13,8 @@ import { accountMayUseManagedModels } from '../billing/services/entitlements';
  * was given for the model. When they say no image, the agent downloads the
  * file, calls `read`, gets "Image read successfully", and still has nothing to
  * look at — then hunts for ImageMagick / tesseract / an OCR API and the turn
- * dies with no answer. Observed live on Teams 2026-09-19 (session
- * 196a99f5-8d4d-4d48-988e-cec7152e0d10, `deepseek-v4-flash`).
+ * dies with no answer. Observed live on Teams 2026-09-19 (a dev
+ * session, `deepseek-v4-flash`).
  *
  * `LLM_GATEWAY_VISION_MODEL` already encodes the platform's answer for this —
  * "route image-bearing DEFAULT-model requests to this model" — but the gateway

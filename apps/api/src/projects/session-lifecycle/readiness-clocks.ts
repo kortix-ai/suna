@@ -126,7 +126,7 @@ export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetad
  * A readiness clock older than this was written by a previous attempt on the
  * same row and is not evidence about this one.
  *
- * *Incident (2026-08-26, SampleCo, session 29861dfa / box inqwpv4a).* Attempt 1
+ * *Incident (2026-08-26, a SampleCo session on an E2B box).* Attempt 1
  * failed during a post-roll build storm at ~13:27. The automatic cooldown rung
  * re-attempted at ~13:33: the resume launched the entrypoint, the daemon booted
  * through 13:34:48.8, authenticated to the gateway at 13:34:48.5–49.1 and
@@ -227,7 +227,7 @@ export function opencodeReadyWaitPatch(
   const bootEpochMs = runtimeBootEpochMs(metadata);
   // A clock stamped before this boot attempt began belongs to the previous one.
   // Treat it as absent so the patch re-baselines it, instead of leaving the row
-  // carrying a budget it has already half spent (session 29861dfa).
+  // carrying a budget it has already half spent (the 2026-08-26 SampleCo incident).
   const firstSeenMs = parseTimestampMs(metadata.opencodeBootWaitFirstSeenAt);
   // INHERITED, not merely absent: the key exists and predates this attempt.
   const inheritedFirstSeen =

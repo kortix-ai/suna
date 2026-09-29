@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
  * posted, a command still runs, and the pick replays the parked message.
  */
 
-const TENANT = '36009a52-46d2-44bc-ba56-57a87e485e0a';
+const TENANT = '5a1e0c09-0000-4000-8000-000000000009';
 const CONV = '19:chan@thread.tacv2;messageid=1';
 
 let resolution: unknown = { kind: 'ambiguous', projects: [{ projectId: 'p1', name: 'Alpha' }, { projectId: 'p2', name: 'Beta' }] };

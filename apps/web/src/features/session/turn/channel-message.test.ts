@@ -17,8 +17,8 @@ const TURN_INSTRUCTIONS = [
 const TEAMS_FIRST = [
   "You're answering a message on Microsoft Teams as a teammate.",
   '',
-  'Tenant:        36009a52-46d2-44bc-ba56-57a87e485e0a',
-  'Conversation:  a:1FQyR2jW1pEUK_1d5ElylXF7Su1cgPbKpna',
+  'Tenant:        5a1e0c09-0000-4000-8000-000000000009',
+  'Conversation:  a:1SyntheticPersonalChat_00000000000',
   'User:          Ivan Bagaric',
   '',
   'Message:',
@@ -38,7 +38,7 @@ const TEAMS_FOLLOW_UP = [
 const TEAMS_WITH_ATTACHMENT = [
   "You're answering a message on Microsoft Teams as a teammate.",
   '',
-  'Tenant:        36009a52-46d2-44bc-ba56-57a87e485e0a',
+  'Tenant:        5a1e0c09-0000-4000-8000-000000000009',
   'Conversation:  19:abc@thread.tacv2',
   'User:          Marko',
   '',
@@ -117,7 +117,7 @@ describe('parseChannelMessage — Microsoft Teams', () => {
   test('first message: platform, sender, conversation, and the bare message text', () => {
     expect(parseChannelMessage(TEAMS_FIRST)).toEqual({
       platform: 'Teams',
-      context: 'a:1FQyR2jW1pEUK_1d5ElylXF7Su1cgPbKpna',
+      context: 'a:1SyntheticPersonalChat_00000000000',
       userName: 'Ivan Bagaric',
       messageText: 'List the files in this repo and summarize the README',
       followUp: false,

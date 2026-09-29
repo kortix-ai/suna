@@ -647,8 +647,7 @@ function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
  * The control-plane ledger is not timely about the END of a turn, and the
  * projection used to believe it was.
  *
- * MEASURED on the local stack, 2026-08-21, one ordinary composer turn
- * (session 08cf8a74, turn token 05e2a176):
+ * MEASURED on the local stack, 2026-08-21, one ordinary composer turn:
  *
  *   00:02:55.804  ledger opens the turn
  *   00:03:59.964  the RUNTIME's `session.idle` frame reaches the tab   → idle

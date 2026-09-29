@@ -42,7 +42,7 @@ const { loadTeamsInstall, setTeamsPublishState } = await import('../channels/ins
 
 beforeEach(() => {
   encrypted.length = 0;
-  secretsByName = { MS_TEAMS_TENANT_ID: '36009a52-46d2-44bc-ba56-57a87e485e0a' };
+  secretsByName = { MS_TEAMS_TENANT_ID: '5a1e0c09-0000-4000-8000-000000000009' };
 });
 
 afterAll(() => {

@@ -571,7 +571,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     // `last_ended` is omitted while a turn is running, so its read — the one
     // ordered by `ended_at` — would buy nothing and must not run.
     //
-    // CHANGED 2026-09-19 (session ad02e053): this used to pin exactly two reads,
+    // CHANGED 2026-09-19 (a memory-guard incident): this used to pin exactly two reads,
     // on the premise that every settled row is irrelevant while a turn runs. A
     // memory-guard abort disproved it: the queued prompt started 5 s later, and
     // the reason the previous turn failed was unreadable from then on. One
@@ -586,7 +586,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
   });
 
   test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {
-    // Session ad02e053: four sub-agent tasks read "failed" and the turn said
+    // The 2026-09-18 memory-guard incident: four sub-agent tasks read "failed" and the turn said
     // nothing. A failure the user cannot see is the bug.
     const at = (s: number) => new Date(`2026-08-17T00:00:0${s}.000Z`);
     const ended = (
