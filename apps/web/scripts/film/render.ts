@@ -6,7 +6,8 @@
  *   bun apps/web/scripts/film/render.ts <slug> [--url http://localhost:3000]
  *       [--scale 1.5] [--workers 6] [--step 1] [--audio-only]
  *
- * --scale  device scale on the 1280×720 stage: 1.5 = 1080p, 3 = 4K.
+ * --scale  device scale on the film's stage: on 1280×720, 1.5 = 1080p and 3 = 4K;
+ *          a 1080×1080 or 720×1280 film renders at its own size × scale.
  * --step   render every Nth frame (2 = a 30 fps draft at half the time).
  *
  * Output: output/film/<slug>/<slug>.mp4 at the repo root (gitignored), and the
@@ -48,9 +49,11 @@ function run(cmd: string, args: string[]) {
  * requestAnimationFrame, and `seek` waits on two of them — six tabs in one
  * browser rendered at ~1 fps in total.
  */
+let size = { w: 1280, h: 720 };
+
 async function open(): Promise<{ browser: Browser; page: Page }> {
   const browser = await chromium.launch({ channel: 'chrome' });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: scale });
+  const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: scale });
   const page = await context.newPage();
   await page.goto(`${url}/presentations/film/${slug}?render=1`, { timeout: 180_000 });
   await page.waitForFunction(() => !!window.__film, null, { timeout: 180_000 });
@@ -62,13 +65,17 @@ const first = lead.page;
 const meta = await first.evaluate(() => ({
   frames: window.__film!.frames,
   fps: window.__film!.fps,
+  size: window.__film!.size,
   cues: window.__film!.cues,
+  score: window.__film!.score,
 }));
+size = meta.size;
+await first.setViewportSize({ width: size.w, height: size.h });
 
 mkdirSync(OUT, { recursive: true });
-writeFileSync(join(OUT, 'cues.json'), JSON.stringify(meta.cues, null, 2));
+writeFileSync(join(OUT, 'film.json'), JSON.stringify({ cues: meta.cues, score: meta.score }, null, 2));
 const wav = join(OUT, 'audio.wav');
-run('python3', [join(HERE, 'soundtrack.py'), 'mix', join(OUT, 'cues.json'), wav]);
+run('python3', [join(HERE, 'soundtrack.py'), 'mix', join(OUT, 'film.json'), wav]);
 const publicAudio = join(ROOT, 'apps/web/public/film', `${slug}.m4a`);
 mkdirSync(join(ROOT, 'apps/web/public/film'), { recursive: true });
 run('ffmpeg', ['-v', 'error', '-y', '-i', wav, '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', publicAudio]);
@@ -80,8 +87,8 @@ if (!audioOnly) {
 
   const frames = Array.from({ length: Math.ceil(meta.frames / step) }, (_, i) => i * step);
   // Contiguous chunks: each worker seeks its footage forward, never back.
-  const size = Math.ceil(frames.length / workers);
-  const chunks = Array.from({ length: workers }, (_, w) => frames.slice(w * size, (w + 1) * size));
+  const per = Math.ceil(frames.length / workers);
+  const chunks = Array.from({ length: workers }, (_, w) => frames.slice(w * per, (w + 1) * per));
   const workersUp = [lead, ...(await Promise.all(chunks.slice(1).map(() => open())))];
 
   let done = 0;
@@ -97,7 +104,7 @@ if (!audioOnly) {
         const { data } = await cdp.send('Page.captureScreenshot', {
           format: 'jpeg',
           quality: 95,
-          clip: { x: 0, y: 0, width: 1280, height: 720, scale },
+          clip: { x: 0, y: 0, width: size.w, height: size.h, scale },
         });
         writeFileSync(join(FRAMES, `${String(f / step).padStart(5, '0')}.jpg`), Buffer.from(data, 'base64'));
         if (++done % 240 === 0) {

@@ -219,7 +219,7 @@ export function bindSandboxRequestContext(
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
 // Returns null if nothing meaningful remains (so the header can be dropped).
-function stripFrameAncestors(csp: string): string | null {
+export function stripFrameAncestors(csp: string): string | null {
   const kept = csp
     .split(';')
     .map((d) => d.trim())

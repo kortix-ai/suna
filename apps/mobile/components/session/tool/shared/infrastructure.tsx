@@ -32,8 +32,10 @@
  *   useServicePreview / ServicePreviewActions / ServicePreviewViewport /
  *   ServicePreviewUrlFallback / InlineServicePreview
  *                               `./navigation` — adapted: `useToolNavigation()`
- *                               adds `openFile(path, line?)` and
- *                               `openSession(id)`; previews open the Browser tab
+ *                               adds `openFile(path, line?)`, `openSession(id)`
+ *                               and `openPreview(url, label?)`; a sandbox
+ *                               preview opens the in-session sheet
+ *                               (`SandboxPreviewSheet`), not the Browser tab
  *                               (no iframe on mobile)
  *   ToolOutputFallback / JsonFailureOutputCard / RawOutputBlock / ToolEmptyState /
  *   StatusIcon / DiffStat / DiffChanges
@@ -162,7 +164,6 @@ export {
   useToolFilePreviewStore,
   useToolNavigation,
   type ServicePreviewState,
-  type ToolNavigationTab,
 } from './navigation';
 export {
   HighlightedCode,

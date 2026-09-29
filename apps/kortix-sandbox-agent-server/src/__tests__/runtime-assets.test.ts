@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -12,6 +12,13 @@ import {
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
+import {
+  SESSION_TOKEN_DEAD_PROBE_MS,
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
 import { resolveHarness } from '@/harness/harness'
 
 // Production registers this lookup in main.ts before anything runs.
@@ -37,7 +44,12 @@ async function workspace() {
 
 afterEach(async () => {
   resetRuntimeConvergenceForTests()
+  resetSessionTokenHealthForTests()
   while (dirs.length > 0) await rm(dirs.pop() as string, { recursive: true, force: true })
+})
+
+beforeEach(() => {
+  resetSessionTokenHealthForTests()
 })
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -134,6 +146,34 @@ describe('reconcileRuntimeAssets', () => {
     })
     expect(result).toEqual({ cli: 'skipped', skills: 'skipped', reason: 'api url or token unset' })
     expect(stub.calls).toEqual([])
+  })
+
+  test('a successful manifest fetch clears the shared dead-token breaker', async () => {
+    // KRTX-613: the breaker only ever saw failures, so it tripped and never
+    // cleared — a pause gated on it would be permanent. The manifest fetch is
+    // the control-plane call that runs every runtime-truth tick. KRTX-636 skips
+    // it while the breaker is tripped, so it goes out once per probe window,
+    // and its 2xx is the signal that the credential works again.
+    const ws = await workspace()
+    const stub = stubFetch()
+    setSystemTime(new Date('2026-09-28T00:00:00Z'))
+    try {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'Session token is not active')
+      }
+      expect(sessionTokenPresumedDead()).toBe(true)
+
+      await run(ws, stub) // inside the probe window: skipped
+      expect(stub.calls).toEqual([])
+
+      setSystemTime(new Date(Date.now() + SESSION_TOKEN_DEAD_PROBE_MS))
+      await run(ws, stub)
+    } finally {
+      setSystemTime()
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(false)
+    expect(stub.calls.some((url) => url.endsWith('/runtime-assets/manifest'))).toBe(true)
   })
 
   test('digest mismatch → binary replaced, mode 0755, overlay written', async () => {

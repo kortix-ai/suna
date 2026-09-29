@@ -688,25 +688,32 @@
   }
 
   /* Tailwind v4 makes <button> default to `cursor: default`; restore the
-     pointer on genuinely interactive elements. Disabled elements
-     (`:disabled`, `aria-disabled="true"`) keep the default cursor. */
-  button:not(:disabled),
-  summary,
-  label[for],
-  input[type='checkbox']:not(:disabled),
-  input[type='radio']:not(:disabled),
-  input[type='file']:not(:disabled),
-  [role='button']:not([aria-disabled='true']),
-  [role='tab']:not([aria-disabled='true']),
-  [role='menuitem']:not([aria-disabled='true']),
-  [role='menuitemcheckbox']:not([aria-disabled='true']),
-  [role='menuitemradio']:not([aria-disabled='true']),
-  [role='option']:not([aria-disabled='true']),
-  [role='link']:not([aria-disabled='true']),
-  [role='switch']:not([aria-disabled='true']):not(:disabled),
-  [role='checkbox']:not([aria-disabled='true']):not(:disabled),
-  [role='radio']:not([aria-disabled='true']):not(:disabled),
-  [role='treeitem']:not([aria-disabled='true']) {
+     pointer on every genuinely interactive element: buttons, links, native
+     checkboxes/radios/file inputs, labels bound to a control, selects,
+     summaries, and the ARIA roles a non-button control renders with.
+     Disabled elements keep the default cursor: :disabled, aria-disabled,
+     data-disabled. */
+  :is(
+      a[href],
+      button,
+      input[type='checkbox'],
+      input[type='file'],
+      input[type='radio'],
+      label[for],
+      select,
+      summary,
+      [role='button'],
+      [role='checkbox'],
+      [role='link'],
+      [role='menuitem'],
+      [role='menuitemcheckbox'],
+      [role='menuitemradio'],
+      [role='option'],
+      [role='radio'],
+      [role='switch'],
+      [role='tab'],
+      [role='treeitem']
+    ):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
     cursor: pointer;
   }
 
@@ -2198,6 +2205,15 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
   .ProseMirror
   p.is-editor-empty:first-child::before {
   color: var(--color-amber-400);
+}
+
+/* ── Disabled controls ──────────────────────────────────────────────────────
+   A disabled element never shows the pointer, whatever `cursor-*` utility a
+   component adds. `:where()` keeps specificity at zero so a more specific
+   `!important` rule (the sidebar drag state below) still wins; `!important`
+   is what beats a component's own utility class. */
+:where(:disabled, [aria-disabled='true'], [data-disabled]) {
+  cursor: default !important;
 }
 
 /* ── Sidebar rail drag ──────────────────────────────────────────────────────

@@ -45,6 +45,7 @@ import {
   isRuntimeNotReadyNoiseMessage,
   isSafariGenericSecurityErrorNoise,
   isServerDeadlineNoiseMessage,
+  isServerSuspenseBailoutNoise,
   isSignalTimeoutNoise,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -6509,6 +6510,102 @@ test('does NOT treat an unrelated message from the same in-document source as st
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow, BARE `app:///` root
+// (Better Stack patterns
+// 3442ad7cdbfb5687bec652fb1ee20d0ea2e382f104b1b96fb995be5048057e54 and its
+// sibling b86f8fb06181ea3ca7626e3f22f312258899aa056173de4733b5911ce6da181a,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 0 identified users, `auto.browser.global_handlers.
+// onerror`, iOS. The same `Ok`/`Qk` mutual recursion at one document line as
+// the sibling above, but on the open-web marketing (`/`) and auth (`/auth`)
+// pages EVERY frame's filename is the BARE app origin `app:///` — the route
+// path is absent, not `app:///<route>`. The in-page inline-script anchor
+// accepts the bare origin and the page-path anchor treats it as this page's
+// source.
+// ---------------------------------------------------------------------------
+
+const IOS_WEBVIEW_BARE_SOURCE = 'app:///';
+const IOS_WEBVIEW_BARE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_BARE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_BARE_SOURCE, lineno: 226, colno: 408, in_app: true },
+];
+
+test('classifies the bare app:/// root in-document stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with bare app:/// frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the bare app:/// root stack overflow via the Sentry beforeSend gate on / and /auth', () => {
+  for (const url of ['https://kortix.com/', 'https://kortix.com/auth']) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url },
+        exception: {
+          values: [
+            {
+              value: 'RangeError: Maximum call stack size exceeded.',
+              mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+              stacktrace: { frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected the bare app:/// stack overflow on ${url} to be noise`,
+    );
+  }
+});
+
+test('suppresses the bare app:/// root stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_BARE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a bare app:/// stack overflow that also carries a bundle or first-party frame', () => {
+  for (const frame of [
+    { function: 'e', filename: 'app:///_next/static/chunks/main-abc123.js', lineno: 1, colno: 2 },
+    {
+      function: 'deepRecurse',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+      lineno: 3,
+      colno: 4,
+    },
+  ]) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames: [...IOS_WEBVIEW_BARE_OVERFLOW_FRAMES, frame],
+      }),
+      false,
+      `expected real recursion with ${frame.filename} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT treat an unrelated message on the bare app:/// root as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
@@ -11984,7 +12081,109 @@ test('suppresses a 404-boundary React #419 through the Sentry beforeSend hint', 
     }),
     true,
   );
-  // Same event without the hint (the digest is not in the serialised event) must
-  // keep reporting so a real server-render failure is never hidden.
-  assert.equal(shouldIgnoreSentryNoiseEvent(event), false);
+  // Same event without the hint (the digest is not in the serialised event) is
+  // the digest-less abort class: a superseded client navigation left the server
+  // Suspense boundary a permanent fallback with no `data-dgst`, React threw #419
+  // and switched the boundary to client rendering. That is the
+  // `server-suspense-bailout` noise class (23 occurrences / 0 identified users
+  // in prod), so it is dropped. See `isServerSuspenseBailoutNoise`.
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), true);
+});
+
+// The digest-less React #419 class: the recoverable "the server could not
+// finish this Suspense boundary" report React raises for an abandoned
+// RSC-streamed boundary (a superseded client navigation / cut stream), which
+// Next.js does not skip because its `data-dgst` is absent. Sibling of the
+// React #412 RSC-stream-close class in `isConnectionClosedNoise`.
+const REACT_419_PROD_FRAMES = [
+  { filename: 'app:///_next/static/immutable/chunks/1lk6qtp5slimq.js', function: '?' },
+];
+
+test('classifies a digest-less React #419 from a minified React chunk as noise', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({ message: REACT_419_MESSAGE, frames: REACT_419_PROD_FRAMES }),
+    true,
+  );
+});
+
+test('classifies a frameless digest-less React #419 as noise', () => {
+  assert.equal(isServerSuspenseBailoutNoise({ message: REACT_419_MESSAGE }), true);
+});
+
+test('keeps reporting a React #419 whose stack resolves to first-party source', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: REACT_419_MESSAGE,
+      frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx', function: 'SessionChat' }],
+    }),
+    false,
+  );
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: REACT_419_MESSAGE,
+      filename: 'apps/web/src/features/session/session-chat.tsx',
+    }),
+    false,
+  );
+});
+
+test('does NOT claim a React #419 with a 404/redirect or a real error digest', () => {
+  for (const digest of [
+    'NEXT_HTTP_ERROR_FALLBACK;404',
+    'NEXT_REDIRECT;replace;/projects;307;',
+    'deadbeef01',
+    'BAILOUT_TO_CLIENT_SIDE_RENDERING',
+    'NEXT_PRERENDER_INTERRUPTED',
+  ]) {
+    assert.equal(
+      isServerSuspenseBailoutNoise({
+        message: REACT_419_MESSAGE,
+        digest,
+        frames: REACT_419_PROD_FRAMES,
+      }),
+      false,
+      `expected digest ${digest} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT claim a non-#419 React error', () => {
+  assert.equal(
+    isServerSuspenseBailoutNoise({
+      message: 'Minified React error #418; visit https://react.dev/errors/418',
+      frames: REACT_419_PROD_FRAMES,
+    }),
+    false,
+  );
+});
+
+test('suppresses the digest-less React #419 at both gates', () => {
+  const event = {
+    exception: {
+      values: [
+        {
+          value: REACT_419_MESSAGE,
+          mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+          stacktrace: { frames: REACT_419_PROD_FRAMES },
+        },
+      ],
+    },
+    request: { url: 'https://kortix.com/dashboard' },
+  };
+  assert.equal(shouldIgnoreSentryNoiseEvent(event), true);
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: REACT_419_MESSAGE }), true);
+  // A first-party-resolved stack keeps the same event reporting.
+  assert.equal(
+    shouldIgnoreSentryNoiseEvent({
+      exception: {
+        values: [
+          {
+            value: REACT_419_MESSAGE,
+            stacktrace: { frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx' }] },
+          },
+        ],
+      },
+    }),
+    false,
+  );
 });

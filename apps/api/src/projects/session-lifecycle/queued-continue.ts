@@ -10,6 +10,8 @@ import {
   markCommandFailed,
   markCommandSucceeded,
   requeueForAdmission,
+  MAX_RUNTIME_UNREACHABLE_RETRIES,
+  parkPromptForUnreachableRuntime,
   type QueuedContinueSessionPayload,
 } from './store';
 import { admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
@@ -19,6 +21,7 @@ import {
   queuedContinueHasStagedRevert,
   readInboxTranscriptState,
 } from './runtime-client';
+import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
 } from './inbox-placement';
@@ -41,6 +44,20 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
     return 'failed';
   }
   if (admission.admit) return 'admitted';
+  // Arm BEFORE the requeue: the arm's result picks the requeue's clock. A
+  // runtime that will not serve the interrupt cannot end the turn this row
+  // waits behind — re-arming it every 2 s is the unreachable-ladder's
+  // condition (one wedged session warned on that loop 1.8k times in 82 min,
+  // 2026-09-28), so the ladder paces the retries and then dead-letters the row
+  // with the same honest failure a delivery into a dead runtime gets.
+  if (admission.interruptAtBoundary &&
+      !(await armQuickQueueInterrupt(row, admission.interruptAtBoundary))) {
+    const parked = await parkPromptForUnreachableRuntime(row, DELIVERY_FAILURE_COPY.unreachable, { sessionId: row.sessionId });
+    if (parked.parked) return 'queued';
+    await markCommandFailed(row, `${DELIVERY_FAILURE_COPY.unreachable} after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+      { retryable: false, attempts: row.attempts, sessionId: row.sessionId });
+    return 'failed';
+  }
   try {
     await requeueForAdmission(row, admission.reason, new Date(Date.now() + admission.retryAfterMs));
   } catch (err) {
@@ -49,7 +66,6 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
     });
     return 'failed';
   }
-  if (admission.interruptAtBoundary) await armQuickQueueInterrupt(row, admission.interruptAtBoundary);
   if (admission.reason === 'turn_active') await wakeAfterAdmission(row);
   return 'queued';
 }

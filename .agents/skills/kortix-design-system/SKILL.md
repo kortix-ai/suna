@@ -249,20 +249,21 @@ Match the customize views — consistent sizes and variants:
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
 
-## Cursor states
+## Cursor affordance
 
-Every clickable element shows `cursor: pointer`. Disabled elements show
-`cursor: default`. Do not add `cursor-default` to an interactive element. A
-clickable element is a `<button>`, `<Link>`, or has a `role`. Never put
-`onClick` on a bare `div`.
+**Every clickable element shows `cursor: pointer`.** Disabled elements keep
+`cursor: default`. Do not add `cursor-default` to an interactive element.
 
-The global rule in `apps/web/src/app/globals.css` (`@layer base`) covers
-`button`, `summary`, `label[for]`, file/choice inputs, and ARIA roles — a
-utility class beats `@layer base`, so `cursor-default` on a clickable element
-breaks the rule. A `cursor-default` in `src/components/ui` needs a reason
-comment on its line (`tests/unit/web-cursor-default-guard.test.ts` enforces
-it). Non-clickable surfaces that bake a pointer override it deliberately, e.g.
-`CheckpointLabel` (status text on the ui `Label`, which ships `cursor-pointer`).
+- A clickable element is a `<button>`, a `<Link>`, or has a `role`. Never put
+  `onClick` on a bare `div`.
+- The base rule in `apps/web/src/app/globals.css` gives the pointer to buttons,
+  links, `label[for]`, native checkbox/radio/file inputs, selects, summaries,
+  and the `button` / `checkbox` / `link` / `menuitem` / `menuitemcheckbox` /
+  `menuitemradio` / `option` / `radio` / `switch` / `tab` / `treeitem` roles.
+  It excludes `:disabled`, `aria-disabled`, and `data-disabled`.
+- A utility class beats `@layer base`, so a stray `cursor-default` silently
+  removes the pointer. `tests/unit/cursor-affordance.test.ts` fails on a
+  `cursor-default` in `src/components/ui` without an inline reason.
 
 ## Icons — Phosphor only
 
@@ -542,6 +543,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
 - ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
 - ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.
+- ✅ Clickable elements → `cursor: pointer`; disabled keep `default`. ❌ `cursor-default` on an interactive element.
 - ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
 - ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.

@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import type { CreateSessionReminderInput, SessionReminder } from './session-reminders';
 import {
   createSessionReminder,
+  listProjectReminders,
   deleteSessionReminder,
   listSessionReminders,
   updateSessionReminder,
@@ -99,4 +100,14 @@ test('the session handle binds its ids into reminders.*', async () => {
   nextBody = { ok: true };
   await reminders.remove('reminder.0123456789ab');
   expect(last().method).toBe('DELETE');
+});
+
+test('listProjectReminders GETs every reminder in the project; the facade binds the project id', async () => {
+  nextBody = { reminders: [{ ...REMINDER, session_name: 'Vendor follow-up' }] };
+  const result = await listProjectReminders('p1');
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/p1/reminders' });
+  expect(result.reminders[0]?.session_name).toBe('Vendor follow-up');
+  const kortix = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  await kortix.project('p1').reminders.list();
+  expect(last().url).toBe('http://test.local/projects/p1/reminders');
 });

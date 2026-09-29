@@ -61,7 +61,7 @@ function Slider({
       onValueChange={handleValueChange}
       className={cn(
         'group/slider relative flex w-full cursor-pointer touch-none items-center select-none',
-        'data-disabled:pointer-events-none data-disabled:cursor-default data-disabled:opacity-50', // disabled keeps the default cursor
+        'data-disabled:pointer-events-none data-disabled:cursor-default data-disabled:opacity-50', // cursor-default: disabled control.
         'data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col',
         className,
       )}
@@ -111,7 +111,7 @@ function Slider({
             // Forced-colors mode strips box-shadow rings; a transparent outline is
             // repainted there as a real system-coloured focus ring.
             'focus:outline-2 focus:outline-offset-2 focus:outline-transparent focus:outline-solid',
-            'data-disabled:pointer-events-none data-disabled:cursor-default', // disabled keeps the default cursor
+            'data-disabled:pointer-events-none data-disabled:cursor-default', // cursor-default: disabled control.
           )}
         />
       ))}

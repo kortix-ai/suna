@@ -318,6 +318,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Listed project connector accounts': 'text9f0782b5f406',
   'Listed project connector policies': 'text84d5354ddfc6',
   'Listed project files': 'text9ab4c4726ae9',
+  'Listed project reminders': 'texte88286ad9739',
   'Listed project secrets': 'text7fca112dc699',
   'Listed project sessions': 'texte78a2a1962bd',
   'Listed projects': 'text9e87cf279760',
