@@ -246,6 +246,12 @@ export interface RuntimeAssetsOptions {
   cliFallbackPath?: string
   /** Test seam for `replaceCli`'s directory-unlock escalation. See `ReplaceCliDeps.unlockDir`. */
   unlockCliDir?: (dir: string) => Promise<boolean>
+  /**
+   * How long the dead-token gate skips the manifest fetch before letting one
+   * probe through. Defaults to {@link MANIFEST_PROBE_COOLDOWN_MS}; tests pass a
+   * smaller value (or `0`) to reach the probe without a real clock wait.
+   */
+  probeCooldownMs?: number
 }
 
 /** One entry of the v2 `components` map. Every field is optional by contract. */
@@ -1009,6 +1015,17 @@ async function chunkStoreSources(
   ]
 }
 
+// The dead-token gate's probe cooldown. While the shared breaker is tripped
+// (see `session-token-health.ts`), this pass skips its manifest fetch except
+// once per cooldown — the half-open probe that keeps the pause from becoming
+// permanent. 30 min: one `warn` 401 per probe per dead box (~2/h) sits under
+// the pre-KRTX-636 baseline (17.63/h), where the unguarded tick produced 60/h.
+const MANIFEST_PROBE_COOLDOWN_MS = 30 * 60_000
+/** The last time this pass actually issued the manifest fetch, stamped on every
+ *  attempt (ordinary tick or probe). Module load counts as an attempt, so a box
+ *  tripped before its first tick still waits out the cooldown. */
+let lastManifestAttemptAt = Date.now()
+
 export async function reconcileRuntimeAssets(
   options: RuntimeAssetsOptions = {},
 ): Promise<RuntimeAssetsResult> {
@@ -1020,7 +1037,20 @@ export async function reconcileRuntimeAssets(
   // this guards. The breaker clears itself on the next answer that is not the
   // dead-token 401, so the pass resumes on its own, and nothing stops the
   // process (see `session-token-health.ts`'s header).
-  if (sessionTokenPresumedDead()) {
+  //
+  // Half-open: while the breaker is tripped the pass still fetches the manifest
+  // once per cooldown window. Without that probe the pause could never end —
+  // while tripped, config-release convergence pauses too (its own gate), so
+  // NOTHING on the 60 s tick would carry a request, and a rotated or repaired
+  // credential would go unnoticed forever. The probe's answer is reported by
+  // `fetchJson` below, so a 2xx clears the breaker and the next tick resumes
+  // both passes; a dead answer keeps it tripped, and the stamp restarts the
+  // cooldown. This is the reconciliation of KRTX-636 (stop the per-tick 401)
+  // and KRTX-613 (the breaker must stay clearable).
+  if (
+    sessionTokenPresumedDead() &&
+    Date.now() - lastManifestAttemptAt < (options.probeCooldownMs ?? MANIFEST_PROBE_COOLDOWN_MS)
+  ) {
     return { cli: 'skipped', skills: 'skipped', reason: 'session credential refused by the control plane' }
   }
   const fetchImpl = options.fetchImpl ?? fetch
@@ -1044,6 +1074,9 @@ export async function reconcileRuntimeAssets(
 
   let manifest: RuntimeAssetsManifest | null
   try {
+    // Stamped before the fetch so a thrown attempt also spends the cooldown:
+    // one probe per window regardless of how the request ends.
+    lastManifestAttemptAt = Date.now()
     manifest = await fetchJson<RuntimeAssetsManifest>(
       fetchImpl,
       `${base}/manifest`,

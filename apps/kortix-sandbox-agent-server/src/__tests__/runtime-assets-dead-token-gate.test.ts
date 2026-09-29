@@ -15,6 +15,7 @@ import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
   resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
 } from '@/lib/kortix-api/session-token-health'
 import {
   reconcileRuntimeAssets,
@@ -79,5 +80,34 @@ describe('reconcileRuntimeAssets — dead control-plane credential', () => {
     const stub = countingFetch()
     await reconcileRuntimeAssets({ apiUrl: API_URL, token: 'kortix_pat_test', fetchImpl: stub.impl })
     expect(stub.calls).toEqual([MANIFEST_URL])
+  })
+
+  // KRTX-613 reconciliation: the tripped gate must not be a life sentence.
+  // While the credential stays dead the pass probes once per cooldown window
+  // (the API logs one `warn` 401 per probe — bounded, not one per 60 s tick),
+  // and a probe is the only tick-driven request that can notice a rotated or
+  // repaired credential and clear the shared breaker again.
+  test('while the credential stays dead, the pass probes at most once per cooldown', async () => {
+    tripDeadTokenBreaker()
+    const calls: string[] = []
+    const impl = (async (input: string | URL | Request) => {
+      calls.push(String(input))
+      return new Response('Session token is not active', { status: 401 })
+    }) as unknown as typeof fetch
+    const base = { apiUrl: API_URL, token: 'kortix_pat_test', fetchImpl: impl }
+
+    // Cooldown wide enough that a back-to-back call stays inside it; the first
+    // probe is forced due with `0` so the test does not depend on when the
+    // previous test's fetch stamped the window.
+    const cooldown = 50
+    await reconcileRuntimeAssets({ ...base, probeCooldownMs: 0 }) // the probe
+    await reconcileRuntimeAssets({ ...base, probeCooldownMs: cooldown }) // inside the window → skipped
+    expect(calls).toEqual([MANIFEST_URL])
+    expect(sessionTokenPresumedDead()).toBe(true) // the probe's dead answer keeps it tripped
+
+    await Bun.sleep(cooldown + 10)
+    await reconcileRuntimeAssets({ ...base, probeCooldownMs: cooldown }) // window elapsed → probe again
+    expect(calls).toEqual([MANIFEST_URL, MANIFEST_URL])
+    expect(sessionTokenPresumedDead()).toBe(true)
   })
 })

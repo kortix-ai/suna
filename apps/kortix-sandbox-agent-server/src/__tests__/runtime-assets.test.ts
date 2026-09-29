@@ -151,7 +151,9 @@ describe('reconcileRuntimeAssets', () => {
     // KRTX-613: the breaker only ever saw failures, so it tripped and never
     // cleared — a pause gated on it would be permanent. The manifest fetch is
     // the control-plane call that runs every runtime-truth tick, so its 2xx is
-    // the signal that the credential works again.
+    // the signal that the credential works again. While the breaker is tripped
+    // the dead-token gate (KRTX-636) skips the fetch except for its once-per-
+    // cooldown probe; `probeCooldownMs: 0` reaches that probe immediately.
     const ws = await workspace()
     const stub = stubFetch()
     for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
@@ -159,7 +161,7 @@ describe('reconcileRuntimeAssets', () => {
     }
     expect(sessionTokenPresumedDead()).toBe(true)
 
-    await run(ws, stub)
+    await run(ws, stub, { probeCooldownMs: 0 })
 
     expect(sessionTokenPresumedDead()).toBe(false)
     expect(stub.calls.some((url) => url.endsWith('/runtime-assets/manifest'))).toBe(true)
