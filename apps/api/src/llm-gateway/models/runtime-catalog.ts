@@ -38,6 +38,7 @@ const PASSTHROUGH_MODEL_FIELDS = [
   'modalities',
   'cost',
   'status',
+  'provider',
 ] as const;
 
 interface ModelsDevProvider {
