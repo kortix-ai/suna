@@ -6510,6 +6510,102 @@ test('does NOT treat an unrelated message from the same in-document source as st
 });
 
 // ---------------------------------------------------------------------------
+// iOS-WebView in-document inline-script stack overflow, BARE `app:///` root
+// (Better Stack patterns
+// 3442ad7cdbfb5687bec652fb1ee20d0ea2e382f104b1b96fb995be5048057e54 and its
+// sibling b86f8fb06181ea3ca7626e3f22f312258899aa056173de4733b5911ce6da181a,
+// Kortix Frontend prod, application_id 2346967). `RangeError: Maximum call
+// stack size exceeded.`, 0 identified users, `auto.browser.global_handlers.
+// onerror`, iOS. The same `Ok`/`Qk` mutual recursion at one document line as
+// the sibling above, but on the open-web marketing (`/`) and auth (`/auth`)
+// pages EVERY frame's filename is the BARE app origin `app:///` — the route
+// path is absent, not `app:///<route>`. The in-page inline-script anchor
+// accepts the bare origin and the page-path anchor treats it as this page's
+// source.
+// ---------------------------------------------------------------------------
+
+const IOS_WEBVIEW_BARE_SOURCE = 'app:///';
+const IOS_WEBVIEW_BARE_OVERFLOW_FRAMES = [
+  { function: 'Ok', filename: IOS_WEBVIEW_BARE_SOURCE, lineno: 226, colno: 63, in_app: true },
+  { function: 'Qk', filename: IOS_WEBVIEW_BARE_SOURCE, lineno: 226, colno: 408, in_app: true },
+];
+
+test('classifies the bare app:/// root in-document stack overflow as noise', () => {
+  for (const message of IOS_STACK_OVERFLOW_MESSAGES) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message,
+        frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES,
+      }),
+      true,
+      `expected "${message}" with bare app:/// frames to be noise`,
+    );
+  }
+});
+
+test('suppresses the bare app:/// root stack overflow via the Sentry beforeSend gate on / and /auth', () => {
+  for (const url of ['https://kortix.com/', 'https://kortix.com/auth']) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url },
+        exception: {
+          values: [
+            {
+              value: 'RangeError: Maximum call stack size exceeded.',
+              mechanism: { type: 'auto.browser.global_handlers.onerror', handled: false },
+              stacktrace: { frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected the bare app:/// stack overflow on ${url} to be noise`,
+    );
+  }
+});
+
+test('suppresses the bare app:/// root stack overflow via the runtime (window.onerror) gate', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Maximum call stack size exceeded.',
+      filename: IOS_WEBVIEW_BARE_SOURCE,
+    }),
+    true,
+  );
+});
+
+test('keeps reporting a bare app:/// stack overflow that also carries a bundle or first-party frame', () => {
+  for (const frame of [
+    { function: 'e', filename: 'app:///_next/static/chunks/main-abc123.js', lineno: 1, colno: 2 },
+    {
+      function: 'deepRecurse',
+      filename: 'apps/web/src/features/co-worker/recursion-loop.ts',
+      lineno: 3,
+      colno: 4,
+    },
+  ]) {
+    assert.equal(
+      isIosWebViewInjectedStackOverflowNoise({
+        message: 'Maximum call stack size exceeded.',
+        frames: [...IOS_WEBVIEW_BARE_OVERFLOW_FRAMES, frame],
+      }),
+      false,
+      `expected real recursion with ${frame.filename} to keep reporting`,
+    );
+  }
+});
+
+test('does NOT treat an unrelated message on the bare app:/// root as stack-overflow noise', () => {
+  assert.equal(
+    isIosWebViewInjectedStackOverflowNoise({
+      message: 'Minified React error #418',
+      frames: IOS_WEBVIEW_BARE_OVERFLOW_FRAMES,
+    }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // EVM-wallet-extension injected `inpage.js` stream EventEmitter noise
 // (Better Stack patterns 17a0ce67ca03dd51cfa5a9a1ac7e5140a958664a5f66ac8ec74c40604ffd772a
 // (`Cannot read properties of undefined (reading 'addListener')`, 21 occ.)
