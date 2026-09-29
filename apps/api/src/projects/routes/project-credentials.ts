@@ -1,7 +1,7 @@
 /** Project credentials: project-scoped CLI tokens and the BYO git credential. */
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   PatPolicyError,
   createAccountToken,
@@ -13,7 +13,7 @@ import {
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import {
   getProjectGitConnection,
   getProjectGitRemote,
@@ -37,7 +37,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/cli-token',
     tags: ['projects'],
-    summary: 'GET /:projectId/cli-token',
+    summary: 'List CLI tokens of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -73,11 +73,16 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/cli-token',
     tags: ['projects'],
-    summary: 'POST /:projectId/cli-token',
+    summary: 'Create a project CLI token (API key)',
+    description:
+      'Create a project-scoped API key. The token value is returned once, in the response.',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'Token label. Default "cli - <project name>".' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. Omit for a token that does not expire.' }),
+          }) } } },
       },
     responses: {
         201: json(z.any(), 'OK'),
@@ -157,7 +162,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/cli-token/{tokenId}',
     tags: ['projects'],
-    summary: 'DELETE /:projectId/cli-token/:tokenId',
+    summary: 'Revoke a project CLI token',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), tokenId: z.string() }),
@@ -196,11 +201,14 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/git-credential',
     tags: ['github'],
-    summary: 'PUT /:projectId/git-credential',
+    summary: 'Set the project Git credential',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            token: z.string().openapi({ description: 'Git access token for the repository. value is accepted as an alias.' }),
+            provider: z.string().optional().openapi({ description: 'Git provider name. Defaults from the repository remote.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),

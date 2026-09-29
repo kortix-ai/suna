@@ -1,8 +1,8 @@
 /** Server-side `kortix.toml` / `kortix.yaml` manifest validation. */
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { readJsonObject } from '../../shared/http-body';
 
@@ -27,11 +27,14 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/manifest/validate',
     tags: ['projects'],
-    summary: 'POST /:projectId/manifest/validate',
+    summary: 'Validate a project kortix.yaml manifest',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            raw: z.string().openapi({ description: 'Manifest text (kortix.yaml) to validate.' }),
+            format: z.string().optional().openapi({ description: 'yaml or toml. Defaults from the manifest path.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),

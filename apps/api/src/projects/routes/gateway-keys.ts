@@ -16,7 +16,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/keys',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/keys',
+    summary: 'List project LLM gateway API keys',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'Gateway API keys'), ...errors(403, 404) },
@@ -56,7 +56,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/gateway/keys',
     tags: ['gateway'],
-    summary: 'POST /:projectId/gateway/keys',
+    summary: 'Create a project LLM gateway API key',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -99,7 +99,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/gateway/keys/{keyId}',
     tags: ['gateway'],
-    summary: 'DELETE /:projectId/gateway/keys/:keyId',
+    summary: 'Revoke a project LLM gateway API key',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), keyId: z.string().uuid() }),
