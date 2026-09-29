@@ -425,21 +425,6 @@ export function consumeProjectWebhookManifestRefreshBudget(projectId: string): b
 }
 
 /**
- * Bucket key for the LLM gateway mount. One presented credential is one
- * principal (a gateway key or a PAT belongs to exactly one account/project),
- * so the credential is the key, hashed so no raw secret is retained in the
- * bucket Map. This avoids a per-request identity database read on the
- * inference hot path. A request without a bearer falls back to the client
- * address, so omitting the header cannot escape the limit.
- */
-function llmGatewayBucketKey(c: Context): string {
-  const bearer = /^Bearer\s+(\S+)$/i.exec((c.req.header('authorization') ?? '').trim());
-  const token = bearer?.[1];
-  if (token) return `tok:${createHash('sha256').update(token).digest('hex')}`;
-  return `ip:${requestClientKey(c)}`;
-}
-
-/**
  * Per-principal budget on the LLM gateway mount (`/v1/llm/*` and its
  * `/v1/llm-gateway/*` alias), the reverse proxy to the standalone gateway.
  * The standalone gateway meters spend and sheds on memory pressure, but
@@ -447,13 +432,24 @@ function llmGatewayBucketKey(c: Context): string {
  * not a quota: in-limit traffic keeps its exact behavior plus the standard
  * `X-RateLimit-*` headers.
  *
+ * Key: the presented credential, hashed so no raw secret is retained in the
+ * bucket Map. One gateway key or PAT belongs to exactly one account/project,
+ * so the credential is the principal — and this avoids a per-request identity
+ * database read on the inference hot path. A request without a bearer falls
+ * back to the client address, so omitting the header cannot escape the limit.
+ *
  * The proxy answers with a raw `Response` that replaces Hono's prepared one,
  * so headers set before `next()` would be dropped. They are applied again
  * after `next()`, when `c` points at the final response.
  */
 export function createLlmGatewayRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    const result = llmGatewayLimiter.check(llmGatewayBucketKey(c), {
+    const bearer = /^Bearer\s+(\S+)$/i.exec((c.req.header('authorization') ?? '').trim());
+    const token = bearer?.[1];
+    const key = token
+      ? `tok:${createHash('sha256').update(token).digest('hex')}`
+      : `ip:${requestClientKey(c)}`;
+    const result = llmGatewayLimiter.check(key, {
       limit: positiveInt((config as any).KORTIX_LLM_GATEWAY_REQS_PER_MIN, 600),
       windowMs: 60_000,
     });
