@@ -6,6 +6,7 @@ import type { KortixProject } from '@kortix/sdk';
 
 import {
   ROOT_SUGGESTION_LIMIT,
+  SEARCH_ONLY_ITEM_IDS,
   WORKSPACE_SWITCHER_ITEM_ID,
   buildRootSuggestions,
 } from '@/features/workspace/command-palette';
@@ -374,11 +375,20 @@ describe('buildRootSuggestions — the no-query root page', () => {
     const rest = items
       .filter((i) => i.group === 'actions' || i.group === 'navigation')
       .filter((i) => i.id !== WORKSPACE_SWITCHER_ITEM_ID)
+      .filter((i) => !SEARCH_ONLY_ITEM_IDS.has(i.id))
       .slice(0, ROOT_SUGGESTION_LIMIT - 1)
       .map((i) => i.id);
 
     expect(result).toHaveLength(ROOT_SUGGESTION_LIMIT);
     expect(result.slice(1).map((i) => i.id)).toEqual(rest);
+  });
+
+  test('New session and Open Audit are search-only: absent from Suggestions, still in the registry', () => {
+    const suggested = buildRootSuggestions(items).map((i) => i.id);
+    for (const id of SEARCH_ONLY_ITEM_IDS) {
+      expect(suggested).not.toContain(id);
+      expect(items.map((i) => i.id)).toContain(id);
+    }
   });
 
   test('offers only actions and navigation rows', () => {

@@ -282,6 +282,17 @@ export const ROOT_SUGGESTION_LIMIT = 8;
 export const WORKSPACE_SWITCHER_ITEM_ID = 'nav-projects';
 
 /**
+ * Registry rows kept out of the no-query Suggestions. They stay in the
+ * registry and in search ("new session", "audit"); they only stop spending a
+ * suggestion slot. New session has its own button and shortcut, and the
+ * session audit is a deep link, not a first move.
+ */
+export const SEARCH_ONLY_ITEM_IDS: ReadonlySet<string> = new Set([
+  'new-session',
+  'open-session-audit',
+]);
+
+/**
  * How many rows of one page the palette warms (see the prefetch effects in
  * `CommandPalette`). The sessions page renders up to 50 rows; firing 50 RSC
  * requests because a project has 50 sessions costs more than the cold fetch it
@@ -313,7 +324,9 @@ export function buildRootSuggestions(
   limit: number = ROOT_SUGGESTION_LIMIT,
 ): MenuItemDef[] {
   const candidates = items.filter(
-    (item) => item.group === 'actions' || item.group === 'navigation',
+    (item) =>
+      (item.group === 'actions' || item.group === 'navigation') &&
+      !SEARCH_ONLY_ITEM_IDS.has(item.id),
   );
   const switcher = candidates.find((item) => item.id === WORKSPACE_SWITCHER_ITEM_ID);
   const rest = candidates.filter((item) => item.id !== WORKSPACE_SWITCHER_ITEM_ID);
