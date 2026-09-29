@@ -118,6 +118,33 @@ describe('SessionSiteHeader session title', () => {
   });
 });
 
+/**
+ * A subsession shows its parent as the first breadcrumb: home icon and parent
+ * name, a slash, then the subsession's own name control. The parent link used
+ * to sit above the composer; it lives only here now.
+ */
+describe('SessionSiteHeader subsession breadcrumb', () => {
+  const composerSource = readFileSync(
+    fileURLToPath(new URL('../composer/composer.tsx', import.meta.url)),
+    'utf8',
+  );
+
+  test('the parent crumb renders after the sidebar toggle and before the session name', () => {
+    const crumbAt = source.indexOf('onClick={parent.onOpen}');
+    expect(crumbAt).toBeGreaterThan(source.indexOf('<SidebarToggle />'));
+    expect(crumbAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
+    const crumb = source.slice(crumbAt, source.indexOf('</Button>', crumbAt));
+    expect(crumb).toContain('<HouseIcon');
+    expect(crumb).toContain('{parent.title}');
+    expect(crumb).toContain('truncate');
+  });
+
+  test('the composer no longer carries a back-to-parent control', () => {
+    expect(composerSource).not.toContain('threadContext');
+    expect(composerSource).not.toContain('onBackToParent');
+  });
+});
+
 describe('SessionSiteHeader transcript ownership', () => {
   test('keeps the export modal on the canonical project-session cache scope', () => {
     expect(source).toContain(

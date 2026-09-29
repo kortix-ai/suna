@@ -52,6 +52,7 @@ import {
   FileArrowDownIcon as FileDown,
   FolderSimpleIcon,
   GlobeSimpleIcon,
+  HouseIcon,
   StackIcon as Layers,
   PencilSimpleIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
@@ -82,6 +83,8 @@ interface SessionSiteHeaderProps {
   sessionTitle: string;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
+  /** A subsession's parent: rendered as the first breadcrumb, before the name. */
+  parent?: { title: string; onOpen: () => void };
 }
 
 export function SessionSiteHeader({
@@ -89,6 +92,7 @@ export function SessionSiteHeader({
   sessionTitle,
   isMobileView,
   leadingAction,
+  parent,
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -324,6 +328,26 @@ export function SessionSiteHeader({
             )}
           >
             <SidebarToggle />
+
+            {/* Subsession breadcrumb: home + parent name, a slash, then this
+                session's own name control. The parent shrinks first, so a
+                long parent name never hides the name of the session you are in. */}
+            {parent && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={parent.onOpen}
+                  className="text-muted-foreground hover:text-foreground h-7 max-w-24 min-w-0 shrink-[2] justify-start gap-1.5 rounded-md px-2 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out md:max-w-48"
+                >
+                  <HouseIcon className="size-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">{parent.title}</span>
+                </Button>
+                <span aria-hidden className="text-muted-foreground shrink-0 text-sm select-none">
+                  /
+                </span>
+              </>
+            )}
 
             {/* Split control: the name renames in place, the caret opens the
                 session menu. Two buttons, not one trigger, so a click on the
