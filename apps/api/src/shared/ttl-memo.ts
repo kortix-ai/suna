@@ -20,9 +20,22 @@
  *  - TTL <= 0 disables caching entirely (loader called every time), and
  *    `bun test` (NODE_ENV=test) always bypasses so unit tests never bleed
  *    state across cases.
+ *  - `staleWhileRevalidate` serves the last resolved value the instant it is
+ *    asked for and refreshes behind the response, so a loader slower than the
+ *    TTL never lands on the caller's critical path after the first call. For a
+ *    polling read whose tail IS the loader's tail (a live provider round trip),
+ *    this is the difference between p95 tracking the provider and p95 being a
+ *    cached read.
  */
 
-type Entry<T> = { value: Promise<T>; expiresAt: number };
+type Entry<T> = {
+  value: Promise<T>;
+  expiresAt: number;
+  /** The initial load settled (resolved). A still-pending value is shared. */
+  settled: boolean;
+  /** A stale-while-revalidate refresh is in flight. */
+  refreshing?: boolean;
+};
 
 export type TtlMemo<A extends unknown[], T> = ((...args: A) => Promise<T>) & {
   /** Drop all cached entries (tests / targeted invalidation). */
@@ -44,28 +57,44 @@ export function ttlMemo<A extends unknown[], T>(opts: {
   shouldCache?: (value: T, ...args: A) => boolean;
   /** Hard cap on entries; oldest-inserted are evicted past it. Default 10k. */
   maxEntries?: number;
+  /** Serve an expired-but-resolved value immediately and refresh it behind the
+   *  response, instead of blocking the caller on a reload. Only the first call
+   *  per key ever waits on the loader; if a refresh fails the last good value
+   *  keeps serving and the next call retries. Default: false (blocking reload,
+   *  the original behavior). */
+  staleWhileRevalidate?: boolean;
   /** Caching is bypassed under `bun test` (NODE_ENV=test) so unit tests
    *  never bleed state across cases; the memo's own tests set this. */
   enableInTests?: boolean;
 }): TtlMemo<A, T> {
   const { ttlMs, keyFn, loader, shouldCache } = opts;
+  const staleWhileRevalidate = opts.staleWhileRevalidate ?? false;
   const maxEntries = opts.maxEntries ?? 10_000;
   const cache = new Map<string, Entry<T>>();
 
-  const disabled =
-    ttlMs <= 0 || (process.env.NODE_ENV === 'test' && !opts.enableInTests);
+  const disabled = ttlMs <= 0 || (process.env.NODE_ENV === 'test' && !opts.enableInTests);
 
-  const fn = (async (...args: A): Promise<T> => {
-    if (disabled) return loader(...args);
+  const evictPastCap = () => {
+    // Bounded memory: evict oldest-inserted entries past the cap. Map
+    // preserves insertion order, so the first keys are the oldest.
+    if (cache.size <= maxEntries) return;
+    const excess = cache.size - maxEntries;
+    let i = 0;
+    for (const k of cache.keys()) {
+      cache.delete(k);
+      if (++i >= excess) break;
+    }
+  };
 
-    const key = keyFn(...args);
-    const now = Date.now();
-    const hit = cache.get(key);
-    if (hit && hit.expiresAt > now) return hit.value;
-    if (hit) cache.delete(key);
-
-    const value = loader(...args).then(
+  const startLoad = (key: string, args: A): Promise<T> => {
+    const entry: Entry<T> = {
+      value: undefined as unknown as Promise<T>,
+      expiresAt: Date.now() + ttlMs,
+      settled: false,
+    };
+    entry.value = loader(...args).then(
       (resolved) => {
+        entry.settled = true;
         if (shouldCache && !shouldCache(resolved, ...args)) cache.delete(key);
         return resolved;
       },
@@ -74,21 +103,49 @@ export function ttlMemo<A extends unknown[], T>(opts: {
         throw err;
       },
     );
+    cache.set(key, entry);
+    evictPastCap();
+    return entry.value;
+  };
 
-    cache.set(key, { value, expiresAt: now + ttlMs });
+  const refresh = (entry: Entry<T>, key: string, args: A) => {
+    entry.refreshing = true;
+    entry.expiresAt = Date.now() + ttlMs;
+    // Fire-and-forget: the caller already has the last good value. A failure
+    // keeps that value and lets the next expired call retry.
+    void loader(...args).then(
+      (resolved) => {
+        entry.refreshing = false;
+        if (shouldCache && !shouldCache(resolved, ...args)) {
+          cache.delete(key);
+          return;
+        }
+        entry.value = Promise.resolve(resolved);
+        entry.settled = true;
+      },
+      () => {
+        entry.refreshing = false;
+        entry.expiresAt = 0;
+      },
+    );
+  };
 
-    // Bounded memory: evict oldest-inserted entries past the cap. Map
-    // preserves insertion order, so the first keys are the oldest.
-    if (cache.size > maxEntries) {
-      const excess = cache.size - maxEntries;
-      let i = 0;
-      for (const k of cache.keys()) {
-        cache.delete(k);
-        if (++i >= excess) break;
+  const fn = (async (...args: A): Promise<T> => {
+    if (disabled) return loader(...args);
+
+    const key = keyFn(...args);
+    const hit = cache.get(key);
+    if (hit) {
+      // Fresh within the TTL, or a load is still in flight: share it.
+      if (hit.expiresAt > Date.now() || !hit.settled) return hit.value;
+      if (staleWhileRevalidate) {
+        if (!hit.refreshing) refresh(hit, key, args);
+        return hit.value;
       }
+      cache.delete(key);
     }
 
-    return value;
+    return startLoad(key, args);
   }) as TtlMemo<A, T>;
 
   fn.clear = () => cache.clear();
