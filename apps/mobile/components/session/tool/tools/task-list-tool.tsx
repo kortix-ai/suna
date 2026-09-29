@@ -44,9 +44,6 @@ export function TaskListTool({ part, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('task_list', TaskListTool);
 ToolRegistry.register('task-list', TaskListTool);
-ToolRegistry.register('task_get', TaskListTool);
 ToolRegistry.register('task-get', TaskListTool);
-ToolRegistry.register('agent_task_get', TaskListTool);
 ToolRegistry.register('agent-task-get', TaskListTool);

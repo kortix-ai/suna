@@ -118,6 +118,7 @@ describe("buildCompiledRuntimeArtifact", () => {
     expect(artifact.size).toBeGreaterThan(0);
     expect(manifest).toEqual(artifact.manifest);
     expect(JSON.parse(manifest.agent_config)).toEqual({
+      default_agent: "kortix",
       agent: {
         kortix: {
           mode: "primary",

@@ -59,6 +59,7 @@ import { sessionChannelEnvFromMetadata } from './session-channel-env';
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
@@ -156,7 +157,8 @@ export async function buildSessionSandboxEnvVars(input: {
     ? buildPlatformMetaOpenCodeConfig()
     : null;
   // The harness the daemon boots — `selectSessionHarness`: the project's
-  // `pi_harness` flag (on ⇒ pi) OR the manifest's `runtime: pi`. The manifest
+  // `pi_harness` flag (on ⇒ pi) OR the manifest's `runtime: pi`, and only
+  // with the LLM gateway on (pi has no other model path). The manifest
   // is read off the SAME fetch that compiles the agent config, so selecting
   // pi costs no extra git round trip. Every provisioning path (create,
   // restart, resume, open/ensure) builds its env here, so a pi project stays
@@ -225,6 +227,8 @@ export async function buildSessionSandboxEnvVars(input: {
     harness = selectSessionHarness({
       piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
       runtime: manifestHarness,
+      // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
+      llmGateway: projectLlmGatewayEnabled(projectRow?.metadata),
     });
   }
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).

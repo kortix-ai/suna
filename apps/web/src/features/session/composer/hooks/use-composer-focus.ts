@@ -1,6 +1,7 @@
 'use client';
 
-import { type RefObject, useEffect, useRef } from 'react';
+import { type RefObject, useEffect } from 'react';
+import { useLatestRef } from './use-latest-ref';
 
 /**
  * True for elements the type-ahead redirect must leave alone.
@@ -72,10 +73,7 @@ export function useComposerFocus({
   // callback (the intended usage) would otherwise tear down and re-add both
   // window listeners on every render, which matters here since the composer
   // re-renders on every streamed token.
-  const onTypeAheadRef = useRef(onTypeAhead);
-  useEffect(() => {
-    onTypeAheadRef.current = onTypeAhead;
-  }, [onTypeAhead]);
+  const onTypeAheadRef = useLatestRef(onTypeAhead);
 
   // 1 — focus on mount, or when revealed.
   useEffect(() => {
@@ -162,5 +160,5 @@ export function useComposerFocus({
       window.removeEventListener('focus-session-textarea', onFocusRequest);
       window.removeEventListener('keydown', onGlobalKeyDown);
     };
-  }, [ref, disabled]);
+  }, [onTypeAheadRef, ref, disabled]);
 }

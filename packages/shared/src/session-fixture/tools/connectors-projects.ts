@@ -158,7 +158,7 @@ export const CONNECTORS_PROJECTS_TOOL_GROUP: FixtureToolGroup = {
     },
     {
       renderer: 'connector-setup-tool.tsx',
-      tool: 'oc-connector_setup',
+      tool: 'connector_setup',
       input: {
         connectors: [
           { name: 'slack', source: 'pipedream', app: 'slack', env: 'SLACK_BOT_TOKEN' },

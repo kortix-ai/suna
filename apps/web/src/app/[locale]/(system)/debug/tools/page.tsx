@@ -213,8 +213,8 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 // ---------------------------------------------------------------------------
 // Task 10 fixtures — the converted Advanced-mode views from T5-T7: get-mem,
 // memory-search (full rebuilds), agent-spawn/agent-status (bypasser family),
-// a connector call (tokens + OutputBlock), session-stats + dcp-compress (one
-// representative each), triggers' non-bracket fallback path (OutputBlock,
+// a connector call (tokens + OutputBlock), session-stats (one
+// representative), triggers' non-bracket fallback path (OutputBlock,
 // not the parsed row list), and project-delete (chrome-only, no output).
 // ---------------------------------------------------------------------------
 // NOTE: parseMemoryEntryOutput's Tool/Prompt/Session/Created regexes don't
@@ -322,10 +322,6 @@ const SESSION_STATS_OUTPUT = `## Session stats
 - Tokens: 284,102 in / 19,884 out
 - Duration: 26m 12s
 - Cost: $1.84`;
-
-const DCP_COMPRESS_OUTPUT = `Compressed 6 tool results about "pricing research" into a 3-sentence summary:
-
-Acme and Globex both gate SSO behind their top tier. Our Growth plan undercuts Acme's equivalent by $10/mo while matching seat count. Recommendation: lead with the SSO parity + price gap in the launch page hero.`;
 
 const TRIGGERS_GET_OUTPUT = JSON.stringify(
   {
@@ -798,10 +794,6 @@ const GROUPS: Group[] = [
       {
         label: 'session_stats',
         node: part('session_stats', done({}, SESSION_STATS_OUTPUT)),
-      },
-      {
-        label: 'compress (dcp)',
-        node: part('compress', done({ topic: 'pricing research' }, DCP_COMPRESS_OUTPUT)),
       },
       {
         label: 'triggers (get, fallback dump)',

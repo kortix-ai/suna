@@ -7,8 +7,6 @@
  */
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { authorize } from '../../iam';
-import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { humanMayResolveApproval } from '../../projects/lib/approval-authority';
 import {
@@ -60,13 +58,17 @@ export async function decideChatApproval(input: {
           : "You don't have access to decide on this project's approvals.",
     };
   }
-  const manager = await authorize(actorForUser(actor.userId, project.accountId), PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, {
-    type: 'project',
-    id: input.projectId,
-  });
+  // Through the chat resolver, so the check carries the second factor the
+  // link was made with: in an MFA account a bare role check denied every
+  // manager, leaving only the launcher able to decide.
+  const manager = await resolveChatActor(
+    input.user,
+    { projectId: input.projectId, accountId: project.accountId },
+    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+  );
   const target = await approvalTargetSession(input.projectId, row);
   const verdict = humanMayResolveApproval({
-    isManager: manager.allowed,
+    isManager: 'userId' in manager,
     targetSessionOrigin: target.origin,
     targetSessionCreatedBy: target.createdBy,
     callerUserId: actor.userId,

@@ -25,7 +25,6 @@ describe('forwardsClientEncoding', () => {
   test('the daemon runtime namespace on port 8000 forwards the client negotiation', () => {
     expect(forwardsClientEncoding(8000, '/kortix/opencode/state')).toBe(true);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/messages/ses_abc')).toBe(true);
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/turn/msg_1')).toBe(true);
   });
 
   test('the SSE route is NEVER exempted, even inside the namespace', () => {

@@ -1924,6 +1924,12 @@ export const chatUserIdentities = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // When the Kortix session that made this link had passed a second factor
+    // (Supabase `aal2`). An account that requires MFA accepts chat actions
+    // only through a link made that way: a chat message carries no factor of
+    // its own. Null for a link made without one, and for links older than
+    // this column.
+    mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('idx_chat_user_identities_platform_user').on(
@@ -2733,9 +2739,6 @@ export const legacySandboxMigrations = kortixSchema.table(
     mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
     plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
     rollback: jsonb('rollback').default({}).$type<Record<string, unknown>>().notNull(),
-    // base64 tar.gz of the legacy OpenCode store; source for on-open chat
-    // rehydrate (see migration 00000000000097). Large — select explicitly.
-    opencodeArchive: text('opencode_archive'),
     error: text('error'),
     // Durable runner state (see migration 00000000000096). `phase` is the current
     // step the resume worker continues from; `progress` accumulates per-step

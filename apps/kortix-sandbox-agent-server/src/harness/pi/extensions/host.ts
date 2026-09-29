@@ -141,13 +141,25 @@ class ScopedSettingsStorage {
   }
 }
 
-/** The loader, with the runtime's system prompt read live (it follows the compiled agent config). */
+/**
+ * The loader, with the runtime's system prompt and skill grant read live (both
+ * follow the compiled agent config). Every skill read in pi — the prompt's
+ * skill list and `/skill:` expansion — goes through `getSkills()`.
+ */
 class KortixResourceLoader extends DefaultResourceLoader {
-  constructor(options: ConstructorParameters<typeof DefaultResourceLoader>[0], private readonly prompt: () => string) {
+  constructor(
+    options: ConstructorParameters<typeof DefaultResourceLoader>[0],
+    private readonly prompt: () => string,
+    private readonly skillAllowed: (name: string) => boolean,
+  ) {
     super(options)
   }
   override getSystemPrompt(): string {
     return this.prompt()
+  }
+  override getSkills(): ReturnType<DefaultResourceLoader['getSkills']> {
+    const loaded = super.getSkills()
+    return { ...loaded, skills: loaded.skills.filter((skill) => this.skillAllowed(skill.name)) }
   }
 }
 
@@ -164,6 +176,8 @@ export interface PiSessionInput {
   baseTools: readonly AgentTool<any, any>[]
   extensions: readonly InlineExtension[]
   systemPrompt: () => string
+  /** The agent's skill grant (manifest `skills:`), read on every skill lookup. */
+  skillAllowed: (name: string) => boolean
   /** The provider the agent streams through; pi checks it has auth before a prompt. */
   provider: Provider | undefined
 }
@@ -309,6 +323,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
       noThemes: true,
     },
     input.systemPrompt,
+    input.skillAllowed,
   )
   await loader.reload()
 

@@ -1,9 +1,11 @@
 import { sessionLifecycleCommands } from '@kortix/db';
+import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { inboxOrderBy } from './inbox-order';
-import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
+import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
 /**
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
@@ -159,6 +161,11 @@ export async function deleteInboxPrompt(
  * (`older_prompt_pending`). An in-flight sibling still binds a promoted row
  * because two concurrent network deliveries can reverse their arrival order.
  *
+ * THE BATCH CASE (KRTX-683): when OTHER rows of the session are held by Stop,
+ * "send now" is a Stop release. The hold is released FIRST, the row joins the
+ * released batch, and it is NOT promoted: the batch goes out in queue order
+ * and is answered in one turn.
+ *
  * `payload.remintOnDelivery` is stamped because this row did NOT go out on its
  * first claim: whatever the session did in the meantime has written HIGHER wire
  * ids, and OpenCode reads a lower one as already answered. It goes in the
@@ -171,6 +178,23 @@ export async function retryInboxPrompt(
   sessionId: string,
   promptId: string,
 ): Promise<SessionLifecycleCommandRow | null> {
+  // "Send now" out of a Stop that holds OTHER rows is a RELEASE, and a released
+  // batch is answered in ONE turn, in queue order (KRTX-683). So that row is
+  // not `promoted`: promoted, it passed the order gate ahead of the older rows
+  // of its own batch, found no later sibling, and started a turn alone — the
+  // older rows then became a second turn, answered after it. Unpromoted, the
+  // batch's head goes first and the chain carries this row.
+  //
+  // And the release runs FIRST. The write below makes this row due, and the 1 s
+  // tick can claim it the same instant: the batch has to be released and
+  // stamped by then, or the row goes out alone ahead of rows still held.
+  const [otherHeld] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(and(inboxScope(sessionId), ne(sessionLifecycleCommands.commandId, promptId), holdMarked()))
+    .limit(1);
+  const releasesBatch = !!otherHeld;
+  if (releasesBatch) await releaseInboxHold(sessionId);
   const promote = {
     status: 'queued' as const,
     availableAt: new Date(),
@@ -181,7 +205,7 @@ export async function retryInboxPrompt(
     // Wholesale: this clears `admission_reason`, `admission_refusals` and
     // `held` along with the previous failure, which is exactly what "send
     // this one now" means for what the row DISPLAYS.
-    result: { promoted: true },
+    result: releasesBatch ? {} : { promoted: true },
     payload: sql`${sessionLifecycleCommands.payload} || '{"remintOnDelivery": true}'::jsonb`,
     updatedAt: new Date(),
   };
@@ -229,12 +253,29 @@ export async function retryInboxPrompt(
           ),
         )
         .returning();
-  const released = row ?? stopPaused[0];
-  if (!released) return null;
+  const sent = row ?? stopPaused[0];
+  if (!sent) {
+    if (!releasesBatch) return null;
+    // Released and made due above, then claimed by a drain before the write:
+    // it is already on its way, in batch order.
+    const [claimed] = await db
+      .select()
+      .from(sessionLifecycleCommands)
+      .where(
+        and(
+          eq(sessionLifecycleCommands.commandId, promptId),
+          inboxScope(sessionId),
+          eq(sessionLifecycleCommands.status, 'running'),
+        ),
+      )
+      .limit(1);
+    return (claimed as SessionLifecycleCommandRow | undefined) ?? null;
+  }
   // The same rule the browser queue always had: an explicit dispatch lifts the
-  // hold for the WHOLE queue, and the rest drains at the next boundary.
-  await releaseInboxHold(sessionId);
-  return released;
+  // hold for the WHOLE queue, and the rest drains at the next boundary. With
+  // no other row held this clears only this row's own marks.
+  if (!releasesBatch) await releaseInboxHold(sessionId);
+  return sent;
 }
 
 /**
@@ -334,133 +375,238 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
     return queued.length + forwarded.length + running.length;
   }
 
-  // FIRST, so nothing below can be undone by it: a delivery that lands after
-  // this clear is an ordinary forwarded row (the user released the hold), and
-  // one that landed before it is stop-paused and caught by the requeue arm at
-  // the end. The other order leaves a row marked by a hold that is over.
-  //
-  // EVERY status, not just `running`. The mark belongs to ONE delivery, and
-  // `markCommandForwarded` consumes it when that delivery lands — but a
-  // delivery that FAILS instead requeues the row with the mark still on it, and
-  // the hold that wrote it is over. Left behind, it comes back as a stop-paused
-  // row on a prompt nothing stopped: invisible to the sweep, and outside
-  // `countLiveInboxPrompts`.
-  await db
-    .update(sessionLifecycleCommands)
-    .set({
-      payload: sql`${sessionLifecycleCommands.payload} - 'stopPausedOnDelivery'`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        inboxScope(sessionId),
-        sql`COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'`,
-      ),
-    );
+  // ONE TRANSACTION. Each statement below makes rows due, and the stamp at the
+  // end is what marks them one batch (KRTX-683). Committed one at a time, a
+  // drain could claim a released row in between — due, un-held, unstamped —
+  // and send it as a turn of its own, splitting the batch in two. The 1 s tick
+  // makes that window real wherever the database is a region away.
+  return db.transaction(async (tx) => {
+    // FIRST, so nothing below can be undone by it: a delivery that lands after
+    // this clear is an ordinary forwarded row (the user released the hold), and
+    // one that landed before it is stop-paused and caught by the requeue arm at
+    // the end. The other order leaves a row marked by a hold that is over.
+    //
+    // EVERY status, not just `running`. The mark belongs to ONE delivery, and
+    // `markCommandForwarded` consumes it when that delivery lands — but a
+    // delivery that FAILS instead requeues the row with the mark still on it, and
+    // the hold that wrote it is over. Left behind, it comes back as a stop-paused
+    // row on a prompt nothing stopped: invisible to the sweep, and outside
+    // `countLiveInboxPrompts`.
+    await tx
+      .update(sessionLifecycleCommands)
+      .set({
+        payload: sql`${sessionLifecycleCommands.payload} - 'stopPausedOnDelivery'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inboxScope(sessionId),
+          sql`COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'`,
+        ),
+      );
 
-  const released = await db
-    .update(sessionLifecycleCommands)
-    .set({
-      availableAt: new Date(),
-      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'held'`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        inboxScope(sessionId),
-        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
-      ),
-    )
-    .returning({ commandId: sessionLifecycleCommands.commandId });
+    const released = await tx
+      .update(sessionLifecycleCommands)
+      .set({
+        availableAt: new Date(),
+        result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'held'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inboxScope(sessionId),
+          inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
+        ),
+      )
+      .returning({ commandId: sessionLifecycleCommands.commandId });
 
-  // A STOP-PAUSED row goes back ON THE QUEUE, not back to `forwarded`.
-  //
-  // MEASURED, against a real sandbox: after Stop the reaper does NOT reliably
-  // hand a forwarded prompt back. Its redelivery needs the daemon to report the
-  // prompt ORPHANED, and a stopped session usually does not look like that —
-  // the aborted turn leaves an assistant husk, and a shell tool the abort did
-  // not kill keeps the root busy, so two full reaper passes renewed the turns
-  // and requeued nothing. Leaving the row `forwarded` therefore left the user's
-  // released prompt in `delivering` until the sweep force-closed it: never run,
-  // then silently gone.
-  //
-  // Re-queueing is safe because the drain re-reads the transcript before it
-  // re-mints (`remintOnDelivery` was stamped by the hold above): a prompt that
-  // turns out to have been ANSWERED after all is dropped by the already-answered
-  // guard, and one that was not is sent again. So the outcome is decided by the
-  // transcript rather than by reaper cadence.
-  //
-  // What it does NOT undo is the duplicate documented above: OpenCode still
-  // holds the original persisted user message, unanswered, so the transcript
-  // shows the prompt twice.
-  //
-  // STILL FORWARDED is half the predicate, and it is load-bearing. Stop marks
-  // the row and then aborts, and the turn in front of it can end inside that
-  // window — OpenCode runs the prompt, `confirmInboxPromptConsumed` closes the
-  // row `delivered`, and the marker alone would put a message that was already
-  // answered back on the queue. The only thing left between that and a second
-  // real LLM turn is the drain's already-answered guard, which fails OPEN on an
-  // unreadable box. `forwarded` is what "OpenCode is still holding this,
-  // unanswered" means.
-  const requeued = await db
-    .update(sessionLifecycleCommands)
-    .set({
-      status: 'queued',
-      availableAt: new Date(),
-      // A fresh delivery budget: nothing has failed to answer this prompt — a
-      // person stopped it.
-      attempts: 0,
-      lockedBy: null,
-      lockedUntil: null,
-      result: {},
-      // And a FRESH IDEMPOTENCY KEY, which the budget above does not buy. This
-      // row already went out once, and the proxy's dedupe claim on that key
-      // lives for 10 minutes: re-POSTing under it is answered
-      // `200 {"deduplicated": true}`, which `postPrompt` reads as delivered.
-      // The released prompt would never reach OpenCode, and would be
-      // force-closed ten minutes later with no error. See
-      // `withNextDeliveryAttempt`.
-      payload: withNextDeliveryAttempt(sql`${sessionLifecycleCommands.payload}`),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        inboxScope(sessionId),
-        eq(sessionLifecycleCommands.status, 'succeeded'),
-        sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
-      ),
-    )
-    .returning({ commandId: sessionLifecycleCommands.commandId });
+    // A STOP-PAUSED row goes back ON THE QUEUE, not back to `forwarded`.
+    //
+    // MEASURED, against a real sandbox: after Stop the reaper does NOT reliably
+    // hand a forwarded prompt back. Its redelivery needs the daemon to report the
+    // prompt ORPHANED, and a stopped session usually does not look like that —
+    // the aborted turn leaves an assistant husk, and a shell tool the abort did
+    // not kill keeps the root busy, so two full reaper passes renewed the turns
+    // and requeued nothing. Leaving the row `forwarded` therefore left the user's
+    // released prompt in `delivering` until the sweep force-closed it: never run,
+    // then silently gone.
+    //
+    // Re-queueing is safe because the drain re-reads the transcript before it
+    // re-mints (`remintOnDelivery` was stamped by the hold above): a prompt that
+    // turns out to have been ANSWERED after all is dropped by the already-answered
+    // guard, and one that was not is sent again. So the outcome is decided by the
+    // transcript rather than by reaper cadence.
+    //
+    // What it does NOT undo is the duplicate documented above: OpenCode still
+    // holds the original persisted user message, unanswered, so the transcript
+    // shows the prompt twice.
+    //
+    // STILL FORWARDED is half the predicate, and it is load-bearing. Stop marks
+    // the row and then aborts, and the turn in front of it can end inside that
+    // window — OpenCode runs the prompt, `confirmInboxPromptConsumed` closes the
+    // row `delivered`, and the marker alone would put a message that was already
+    // answered back on the queue. The only thing left between that and a second
+    // real LLM turn is the drain's already-answered guard, which fails OPEN on an
+    // unreadable box. `forwarded` is what "OpenCode is still holding this,
+    // unanswered" means.
+    const requeued = await tx
+      .update(sessionLifecycleCommands)
+      .set({
+        status: 'queued',
+        availableAt: new Date(),
+        // A fresh delivery budget: nothing has failed to answer this prompt — a
+        // person stopped it.
+        attempts: 0,
+        lockedBy: null,
+        lockedUntil: null,
+        result: {},
+        // And a FRESH IDEMPOTENCY KEY, which the budget above does not buy. This
+        // row already went out once, and the proxy's dedupe claim on that key
+        // lives for 10 minutes: re-POSTing under it is answered
+        // `200 {"deduplicated": true}`, which `postPrompt` reads as delivered.
+        // The released prompt would never reach OpenCode, and would be
+        // force-closed ten minutes later with no error. See
+        // `withNextDeliveryAttempt`.
+        payload: withNextDeliveryAttempt(sql`${sessionLifecycleCommands.payload}`),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inboxScope(sessionId),
+          eq(sessionLifecycleCommands.status, 'succeeded'),
+          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+        ),
+      )
+      .returning({ commandId: sessionLifecycleCommands.commandId });
 
-  return released.length + requeued.length;
+    // Everything the release just made due is ONE batch: OpenCode gets each
+    // prompt as its own user message and answers them together in one turn
+    // (`noReply` on all but the last — see `executeQueuedContinue`). The stamp
+    // covers every queued, un-held row rather than only the rows released above:
+    // a send that was already queued and due when the release ran (not held,
+    // so not among `released`) belongs to the batch too. The `POST .../prompts`
+    // send itself is enqueued held by `enqueueReleasingHold`, so it IS among
+    // `released`; as the newest row it is the one that carries the one turn.
+    if (released.length + requeued.length > 0) {
+      await tx
+        .update(sessionLifecycleCommands)
+        .set({
+          // `releasedFromHold` records which rows the Stop held: they carry
+          // the hold's `remintOnDelivery`, and the send that released them
+          // does not. Every batch row re-mints its wire id at delivery anyway
+          // (`placeQueuedContinue`), so the ids ascend in delivery order.
+          payload: sql`${sessionLifecycleCommands.payload} || jsonb_build_object(
+            'releasedBatchId', ${randomUUID()}::text,
+            'releasedFromHold', COALESCE(${sessionLifecycleCommands.payload}->>'remintOnDelivery', '') = 'true'
+          )`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            inboxScope(sessionId),
+            eq(sessionLifecycleCommands.status, 'queued'),
+            sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+          ),
+        );
+    }
+
+    return released.length + requeued.length;
+  });
+}
+
+/** A row a Stop marked: held, stop-paused, or claimed with a pending stop mark. */
+function holdMarked(): SQL {
+  return sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
+    OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
+    OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`;
+}
+
+/**
+ * Does anything of this session carry a Stop mark? One read of the union of
+ * the release's predicates: without a Stop its UPDATEs match no rows at all.
+ */
+export async function sessionHasHoldMark(sessionId: string): Promise<boolean> {
+  const [marked] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(and(inboxScope(sessionId), holdMarked()))
+    .limit(1);
+  return !!marked;
 }
 
 /**
  * Release without asserting anything about whether a hold was set.
  *
- * EVERY prompt POST calls this, and without a Stop the three ordered UPDATEs it
- * runs match no rows at all — three round trips to change nothing. One read of
- * the union of their predicates answers whether any of them can touch a row;
- * when nothing is held there is nothing to release, so the writes are skipped.
- * When something IS held the original three run, in their original order.
+ * Without a Stop the release's ordered UPDATEs match no rows at all — round
+ * trips to change nothing — so one read (`sessionHasHoldMark`) decides whether
+ * they run. When something IS held they run, in their original order.
  */
 export async function releaseInboxHold(sessionId: string): Promise<number> {
-  const [marked] = await db
-    .select({ commandId: sessionLifecycleCommands.commandId })
-    .from(sessionLifecycleCommands)
-    .where(
-      and(
-        inboxScope(sessionId),
-        sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
-          OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
-          OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`,
-      ),
-    )
-    .limit(1);
-  if (!marked) return 0;
+  if (!(await sessionHasHoldMark(sessionId))) return 0;
   return holdInboxPrompts(sessionId, false);
+}
+
+/** What a send enqueued into a held session carries — see `enqueueReleasingHold`. */
+export interface HoldOnEnqueue {
+  held: true;
+  availableAt: Date;
+}
+
+/**
+ * Enqueue a NEW send, and lift the Stop hold it releases (`POST .../prompts`).
+ *
+ * Sending anything new lifts a hold the stop button left on the session's
+ * queue — the same rule the browser-local queue always had, and the reason
+ * Stop cannot wedge a session. The send joins the released batch (KRTX-683),
+ * so while a hold is in force it is enqueued HELD and made due by the release
+ * transaction, together with the stamp. Enqueued due instead, the 1 s tick
+ * could claim it before the release: `running`, the stamp skipped it,
+ * admission ignored the still-held rows, and it started a turn alone ahead of
+ * them. With no hold the send is enqueued due and nothing else is written.
+ *
+ * `enqueue` is the caller's own enqueue, given the hold fields to spread. The
+ * returned row is the send as the release left it (`result` without `held`).
+ */
+export async function enqueueReleasingHold(
+  sessionId: string,
+  enqueue: (hold: HoldOnEnqueue | null) => Promise<EnqueuedContinueSessionCommand>,
+  release: (sessionId: string) => Promise<unknown> = (id) => holdInboxPrompts(id, false),
+): Promise<EnqueuedContinueSessionCommand> {
+  // The read failing is treated as "no hold": the send still goes in, due.
+  if (!(await sessionHasHoldMark(sessionId).catch(() => false))) return enqueue(null);
+  const enqueued = await enqueue({ held: true, availableAt: new Date(Date.now() + INBOX_HOLD_MS) });
+  // A repeat POST of a send already in the inbox changes nothing — unless the
+  // first one's release failed and left that send held: the retry releases.
+  if (enqueued.deduped && (enqueued.row.result as { held?: unknown } | null)?.held !== true) return enqueued;
+  try {
+    await release(sessionId);
+  } catch (error) {
+    // The release rolled back: the Stop's rows stay held, as before this send.
+    // The send itself must not: the web client reads a held row as landed and
+    // never re-POSTs, so it would wait out the 24 h horizon unseen. Make it due
+    // on its own. It loses the batch, not the prompt.
+    logger.warn('[inbox] hold release failed; the send is delivered alone', {
+      session_id: sessionId,
+      command_id: enqueued.row.commandId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await db
+      .update(sessionLifecycleCommands)
+      .set({
+        result: sql`${sessionLifecycleCommands.result} - 'held'`,
+        availableAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionLifecycleCommands.commandId, enqueued.row.commandId),
+          eq(sessionLifecycleCommands.status, 'queued'),
+        ),
+      );
+  }
+  return { ...enqueued, row: { ...enqueued.row, result: {}, availableAt: new Date() } };
 }
 
 /** Was this row's delivery stopped by the user AFTER it reached OpenCode?

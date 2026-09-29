@@ -1,6 +1,9 @@
 'use client';
 
 /**
+ * DEPRECATED with the `./kortix-master` transport client: the sandbox daemon
+ * serves none of its routes, so every hook here ends in a 404.
+ *
  * kortix-master React Query layer — the generic (host-agnostic) hooks over
  * the `./kortix-master` transport client: query keys, caching/polling config,
  * optimistic-update/invalidation wiring, and the pure normalization/derivation
@@ -206,6 +209,7 @@ export const credentialKeys = {
   events: (pid: string, name: string) => ['kortix', 'credentials', pid, name, 'events'] as const,
 };
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCredentials(projectId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<CredentialItem[]>({
@@ -218,6 +222,7 @@ export function useCredentials(projectId?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCredentialEvents(projectId?: string, name?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<CredentialEvent[]>({
@@ -228,6 +233,7 @@ export function useCredentialEvents(projectId?: string, name?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUpsertCredential() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -244,7 +250,11 @@ export function useUpsertCredential() {
   });
 }
 
-/** Reveal returns the decrypted value. Each call is audit-logged as a read. */
+/**
+ * Reveal returns the decrypted value. Each call is audit-logged as a read.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
+ */
 export function useRevealCredential() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -258,6 +268,7 @@ export function useRevealCredential() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useDeleteCredential() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -282,6 +293,7 @@ export interface KortixProjectQueryOptions {
   enabled?: boolean;
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixProjects(
   identity: KortixMasterIdentity,
   _args?: undefined,
@@ -300,6 +312,7 @@ export function useKortixProjects(
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixProject(identity: KortixMasterIdentity, id: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject>({
@@ -315,6 +328,7 @@ export function useKortixProject(identity: KortixMasterIdentity, id: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixProjectForSession(
   identity: KortixMasterIdentity,
   sessionId: string,
@@ -340,6 +354,8 @@ export function useKortixProjectForSession(
 /**
  * Fetch sessions linked to a specific project.
  * Returns OpenCode session objects enriched with title, time, etc.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
  */
 export function useKortixProjectSessions(
   identity: KortixMasterIdentity,
@@ -362,6 +378,7 @@ export function useKortixProjectSessions(
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useDeleteProject() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -373,6 +390,7 @@ export function useDeleteProject() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function usePatchProject() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -411,7 +429,10 @@ const VALID_STATUSES: KortixTaskStatus[] = [
 /** Pure — the daemon's `status` isn't schema-validated, so this normalizes
  * raw rows (defaulting an unrecognized status to `'todo'`) before trusting
  * `KortixTask['status']`. `raw` is genuinely unvalidated wire data — duck-type
- * via `unknown` rather than assume the shape. Exported for direct unit testing. */
+ * via `unknown` rather than assume the shape. Exported for direct unit testing.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
+ */
 export function normalizeTask(raw: unknown): KortixTask {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const status = VALID_STATUSES.includes(r.status as KortixTaskStatus)
@@ -437,6 +458,7 @@ export function normalizeTask(raw: unknown): KortixTask {
   };
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixTasks(
   projectId?: string,
   status?: string,
@@ -456,6 +478,7 @@ export function useKortixTasks(
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixTask(id: string, options: KortixTaskQueryOptions = {}) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery({
@@ -471,6 +494,7 @@ export function useKortixTask(id: string, options: KortixTaskQueryOptions = {}) 
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixTaskEvents(id: string, options: KortixTaskQueryOptions = {}) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery({
@@ -486,6 +510,7 @@ export function useKortixTaskEvents(id: string, options: KortixTaskQueryOptions 
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useKortixTaskStatus(id: string, options: KortixTaskQueryOptions = {}) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery({
@@ -500,6 +525,7 @@ export function useKortixTaskStatus(id: string, options: KortixTaskQueryOptions 
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCreateKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -517,6 +543,7 @@ export function useCreateKortixTask() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUpdateKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -528,6 +555,7 @@ export function useUpdateKortixTask() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useStartKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -544,6 +572,7 @@ export function useStartKortixTask() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useApproveKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -555,6 +584,7 @@ export function useApproveKortixTask() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useDeleteKortixTask() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -581,6 +611,7 @@ export const ticketKeys = {
   agents: (pid: string) => ['kortix', 'agents', pid] as const,
 };
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useTickets(projectId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<Ticket[]>({
@@ -593,6 +624,7 @@ export function useTickets(projectId?: string, opts?: { enabled?: boolean; polli
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useTicket(id?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<Ticket>({
@@ -605,6 +637,7 @@ export function useTicket(id?: string, opts?: { enabled?: boolean; pollingEnable
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useTicketEvents(id?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketEvent[]>({
@@ -617,6 +650,7 @@ export function useTicketEvents(id?: string, opts?: { enabled?: boolean; polling
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCreateTicket(identity: KortixMasterIdentity) {
   const qc = useQueryClient();
   const handle = identity.handle;
@@ -646,6 +680,7 @@ export function useCreateTicket(identity: KortixMasterIdentity) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUpdateTicket(identity: KortixMasterIdentity) {
   const qc = useQueryClient();
   const handle = identity.handle;
@@ -661,6 +696,7 @@ export function useUpdateTicket(identity: KortixMasterIdentity) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUpdateTicketStatus(identity: KortixMasterIdentity) {
   const qc = useQueryClient();
   const handle = identity.handle;
@@ -676,6 +712,7 @@ export function useUpdateTicketStatus(identity: KortixMasterIdentity) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useAssignTicket(identity: KortixMasterIdentity) {
   const qc = useQueryClient();
   const handle = identity.handle;
@@ -691,6 +728,7 @@ export function useAssignTicket(identity: KortixMasterIdentity) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUnassignTicket(identity: KortixMasterIdentity) {
   const qc = useQueryClient();
   const handle = identity.handle;
@@ -706,6 +744,7 @@ export function useUnassignTicket(identity: KortixMasterIdentity) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCommentTicket(identity: KortixMasterIdentity) {
   const qc = useQueryClient();
   const handle = identity.handle;
@@ -720,6 +759,7 @@ export function useCommentTicket(identity: KortixMasterIdentity) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useDeleteTicket() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -731,6 +771,7 @@ export function useDeleteTicket() {
 
 // ── Columns ──────────────────────────────────────────────────────────────────
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useColumns(projectId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketColumn[]>({
@@ -741,6 +782,7 @@ export function useColumns(projectId?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useReplaceColumns() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -756,6 +798,7 @@ export function useReplaceColumns() {
 
 // ── Fields ───────────────────────────────────────────────────────────────────
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useFields(projectId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<ProjectField[]>({
@@ -766,6 +809,7 @@ export function useFields(projectId?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useReplaceFields() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -778,6 +822,7 @@ export function useReplaceFields() {
 
 // ── Templates ────────────────────────────────────────────────────────────────
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useTemplates(projectId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketTemplate[]>({
@@ -788,6 +833,7 @@ export function useTemplates(projectId?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useReplaceTemplates() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -804,6 +850,8 @@ export function useReplaceTemplates() {
  * Ensure (create-if-missing) a project-level session bound to the Project
  * Manager agent. Idempotent on the backend — first call creates + binds,
  * subsequent calls return the existing session id so the thread continues.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
  */
 export function useEnsurePmSession() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -814,6 +862,7 @@ export function useEnsurePmSession() {
 
 // ── Agents (team) ────────────────────────────────────────────────────────────
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useProjectAgents(projectId?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<ProjectAgent[]>({
@@ -824,6 +873,7 @@ export function useProjectAgents(projectId?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCreateProjectAgent() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -842,6 +892,7 @@ export function useCreateProjectAgent() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUpdateProjectAgent() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -856,6 +907,7 @@ export function useUpdateProjectAgent() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useDeleteProjectAgent() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
@@ -866,6 +918,7 @@ export function useDeleteProjectAgent() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useAgentPersona(projectId?: string, slug?: string, opts?: { enabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<{ agent: ProjectAgent; body_md: string }>({
@@ -877,6 +930,7 @@ export function useAgentPersona(projectId?: string, slug?: string, opts?: { enab
 
 // ── Project activity / notifications ─────────────────────────────────────────
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useProjectActivity(projectId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<TicketEvent[]>({
@@ -917,6 +971,8 @@ export interface ProjectNotification {
  *
  * Pure — takes `handle` as an explicit parameter rather than reading it from
  * an auth hook. Exported for direct unit testing.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
  */
 export function computeUnread(
   events: TicketEvent[] | undefined,
@@ -960,6 +1016,8 @@ export function computeUnread(
  * titles, relative times, and the comment body that caused a mention.
  *
  * Pure — same `handle`-as-parameter shape as {@link computeUnread}.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
  */
 export function computeNotifications(
   events: TicketEvent[] | undefined,
@@ -991,10 +1049,12 @@ export function computeNotifications(
 const LAST_SEEN_KEY = (projectId: string, handle: string) => `kortix:activity-last-seen:${projectId}:${handle}`;
 export const LAST_SEEN_EVENT = 'kortix:last-seen-changed';
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function readLastSeen(projectId: string, handle: string): string | null {
   if (typeof window === 'undefined') return null;
   try { return window.localStorage.getItem(LAST_SEEN_KEY(projectId, handle)); } catch { return null; }
 }
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function writeLastSeen(projectId: string, handle: string, iso: string): void {
   if (typeof window === 'undefined') return;
   try {
@@ -1007,11 +1067,13 @@ export function writeLastSeen(projectId: string, handle: string, iso: string): v
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function safeParseJsonArray(s: string | null | undefined): string[] {
   if (!s) return [];
   try { const v = JSON.parse(s); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function parseCustomFields(json: string | null | undefined): Record<string, unknown> {
   if (!json) return {};
   try { const v = JSON.parse(json); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
@@ -1027,6 +1089,7 @@ export const milestoneKeys = {
   events: (pid: string, ref: string) => ['kortix', 'milestone', pid, ref, 'events'] as const,
 };
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useMilestones(projectId?: string, statusFilter: 'open' | 'closed' | 'all' = 'all') {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<Milestone[]>({
@@ -1039,6 +1102,7 @@ export function useMilestones(projectId?: string, statusFilter: 'open' | 'closed
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useMilestone(projectId?: string, ref?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<MilestoneDetail>({
@@ -1051,6 +1115,7 @@ export function useMilestone(projectId?: string, ref?: string) {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useMilestoneEvents(projectId?: string, ref?: string) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<MilestoneEvent[]>({
@@ -1072,6 +1137,7 @@ export interface CreateMilestoneInput {
   icon?: string | null;
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCreateMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -1089,6 +1155,7 @@ export interface UpdateMilestoneInput {
   patch: Partial<Pick<Milestone, 'title' | 'description_md' | 'acceptance_md' | 'due_at' | 'color_hue' | 'icon'>>;
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useUpdateMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -1101,6 +1168,7 @@ export function useUpdateMilestone() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useCloseMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -1114,6 +1182,7 @@ export function useCloseMilestone() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useReopenMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -1126,6 +1195,7 @@ export function useReopenMilestone() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useDeleteMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -1137,7 +1207,11 @@ export function useDeleteMilestone() {
   });
 }
 
-/** Link or unlink a ticket's milestone. Goes through PATCH /kortix/tickets/:id. */
+/**
+ * Link or unlink a ticket's milestone. Goes through PATCH /kortix/tickets/:id.
+ *
+ * @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major.
+ */
 export function useSetTicketMilestone() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const qc = useQueryClient();
@@ -1168,6 +1242,7 @@ export const serviceKeys = {
   templates: (serverUrl: string) => ['sandbox-services', serverUrl, 'templates'] as const,
 };
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useSandboxServices(identity: KortixMasterIdentity, options?: { enabled?: boolean; includeAll?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
@@ -1188,6 +1263,7 @@ export function useSandboxServices(identity: KortixMasterIdentity, options?: { e
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useSandboxServiceTemplates(identity: KortixMasterIdentity, options?: { enabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
@@ -1203,6 +1279,7 @@ export function useSandboxServiceTemplates(identity: KortixMasterIdentity, optio
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useSandboxServiceLogs(identity: KortixMasterIdentity, serviceId: string | null, options?: { enabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
@@ -1222,6 +1299,7 @@ export function useSandboxServiceLogs(identity: KortixMasterIdentity, serviceId:
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useSandboxServiceAction() {
   const queryClient = useQueryClient();
 
@@ -1241,6 +1319,7 @@ export function useSandboxServiceAction() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useSandboxServiceReconcile() {
   const queryClient = useQueryClient();
 
@@ -1256,6 +1335,7 @@ export function useSandboxServiceReconcile() {
   });
 }
 
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useRegisterSandboxService() {
   const queryClient = useQueryClient();
 
@@ -1275,6 +1355,7 @@ export function useRegisterSandboxService() {
 // backing `POST /kortix/services/system/reload`) — reused directly rather
 // than duplicated here. It resolves the active runtime URL itself (the same
 // zustand state `getActiveServerUrl()` above reads).
+/** @deprecated Part of the kortix-master client. The sandbox daemon serves none of its routes: every call answers 404. Removed in the next major. */
 export function useSandboxRuntimeReload() {
   return useMutation({
     mutationFn: ({ mode }: { mode: SystemReloadMode }) => systemReload(mode),

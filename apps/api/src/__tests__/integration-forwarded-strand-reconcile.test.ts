@@ -43,6 +43,20 @@ const CLIENT_WIRE_ID = wireId(T - 5_000, 'CLIENTCLIENTCL');
 
 let deletedMessages: string[] = [];
 let drainKicks: Array<Record<string, unknown>> = [];
+/** Resolves on the next drain kick. `kickDrain` is fire-and-forget: it promotes
+ *  the row, THEN kicks, after `reconcileForwardedTurnsAtEnd` has returned. Under
+ *  full-suite load that lands after the test's assertions, or inside the next
+ *  test, unless the test waits for it. */
+let onKick: () => void = () => {};
+function nextKick(timeoutMs = 5_000): Promise<'kicked' | 'timeout'> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('timeout'), timeoutMs);
+    onKick = () => {
+      clearTimeout(timer);
+      resolve('kicked');
+    };
+  });
+}
 
 mock.module('../projects/opencode-mapping', () => ({
   ...realOpencodeMapping,
@@ -52,6 +66,7 @@ mock.module('../projects/session-lifecycle/drain', () => ({
   ...realDrain,
   drainSessionLifecycleQueue: (input: Record<string, unknown>) => {
     drainKicks.push(input);
+    onKick();
     return Promise.resolve();
   },
 }));
@@ -183,6 +198,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   deletedMessages = [];
   drainKicks = [];
+  onKick = () => {};
   await db.execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`);
   await db.execute(
     sql`DELETE FROM kortix.session_lifecycle_commands WHERE session_id = ${SESSION_ID}`,
@@ -196,6 +212,7 @@ afterAll(() => {
 
 test('a stranded prompt known only by its forwarded id is taken out of the transcript and re-queued', async () => {
   const commandId = await forwardedPrompt();
+  const kick = nextKick();
 
   const out = await reconcile();
 
@@ -205,6 +222,7 @@ test('a stranded prompt known only by its forwarded id is taken out of the trans
   expect(row.status).toBe('queued');
   expect(row.payload).toMatchObject({ redeliveries: 1, remintOnDelivery: true });
   expect(row.result).toEqual({ redelivered_from: 'stranded_placement' });
+  expect(await kick).toBe('kicked');
   expect(drainKicks).toHaveLength(1);
 });
 

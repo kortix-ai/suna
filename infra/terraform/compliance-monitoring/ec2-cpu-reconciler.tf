@@ -26,7 +26,11 @@ data "aws_iam_policy_document" "ec2_cpu_reconciler_assume_role" {
 resource "aws_iam_role" "ec2_cpu_reconciler" {
   name               = "KortixEc2CpuAlarmReconciler"
   assume_role_policy = data.aws_iam_policy_document.ec2_cpu_reconciler_assume_role.json
-  tags               = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "ec2_cpu_reconciler" {
