@@ -23,8 +23,8 @@ import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import { useDebounce } from '@/hooks/use-debounced-value';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
+import { useDebounce } from '@/hooks/use-debounced-value';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -212,7 +212,9 @@ function SessionChildrenRows({
   const children = useSessionChildren(projectId, parentId, { limit: CHILDREN_PAGE_SIZE, q });
   if (children.isError && children.sessions.length === 0) {
     return (
-      <div className="text-destructive/80 px-3 py-1 text-xs">{tSidebar('sessionList.loadError')}</div>
+      <div className="text-destructive/80 px-3 py-1 text-xs">
+        {tSidebar('sessionList.loadError')}
+      </div>
     );
   }
   if (children.data === undefined) {
@@ -344,7 +346,15 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         access: accessFilters,
         labels: labelFilters,
       }),
-    [sessions, statusFilters, sourceFilters, ownerFilters, accessFilters, labelFilters, tI18nComplete],
+    [
+      sessions,
+      statusFilters,
+      sourceFilters,
+      ownerFilters,
+      accessFilters,
+      labelFilters,
+      tI18nComplete,
+    ],
   );
 
   const grouped = useMemo(
@@ -563,8 +573,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   };
   const handleToggleChildren = (session: ProjectSession) => {
     if (searching && session.search_match === 'child') {
-      const ids =
-        closedInSearch.q === searchQuery ? closedInSearch.ids : ([] as string[]);
+      const ids = closedInSearch.q === searchQuery ? closedInSearch.ids : ([] as string[]);
       setClosedInSearch({
         q: searchQuery,
         ids: ids.includes(session.session_id)
@@ -579,7 +588,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   /** One session row. Top-level rows carry the spawned-sessions toggle and the
    *  rows beneath it; a spawned row is a plain row (no orphan, no nesting). */
   const renderRow = (session: ProjectSession, topLevel = false): ReactNode => {
-    const time = timestamps.get(session.session_id) ?? formatTimestamp(sessionLastActivityAt(session));
+    const time =
+      timestamps.get(session.session_id) ?? formatTimestamp(sessionLastActivityAt(session));
     const isOpen = expanded === session.session_id;
     const childCount = topLevel ? (session.child_count ?? 0) : 0;
     const childrenOpen = childCount > 0 && isParentOpen(session);

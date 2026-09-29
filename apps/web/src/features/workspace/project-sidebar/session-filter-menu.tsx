@@ -51,12 +51,7 @@ import {
   type SessionViewSurface,
 } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
-import {
-  GlobeIcon,
-  LockSimpleIcon,
-
-  UsersIcon as UsersSolid,
-} from '@phosphor-icons/react';
+import { GlobeIcon, LockSimpleIcon, UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { matchesLabelFilters } from './session-label-filter';
 
 import {
@@ -397,7 +392,8 @@ export function SessionFilterMenu({
     sourceOptions.length > 0 ||
     showOwnerFacet ||
     showAccessFacet ||
-    labelOptions.length > 0 || labelFilters.length > 0;
+    labelOptions.length > 0 ||
+    labelFilters.length > 0;
   const hasActiveFacets =
     statusFilters.length > 0 ||
     sourceFilters.length > 0 ||

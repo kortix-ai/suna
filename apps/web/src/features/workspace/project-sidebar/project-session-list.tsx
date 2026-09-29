@@ -30,7 +30,12 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import {
+  SessionStarterMark,
+  useSessionStarter,
+} from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionsEmptyState } from '@/features/workspace/project-sessions/sessions-empty-state';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -55,7 +60,6 @@ import {
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { matchesLabelFilters } from '@/features/workspace/project-sidebar/session-label-filter';
 import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
-import { SessionStarterMark, useSessionStarter } from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
 import { useMediaQuery } from '@/hooks/utils';
@@ -65,10 +69,7 @@ import {
   isFirstChatRequested,
   useFirstChatPending,
 } from '@/stores/first-chat-store';
-import {
-  selectExpandedIds,
-  useSessionExpandedStore,
-} from '@/stores/session-expanded-store';
+import { selectExpandedIds, useSessionExpandedStore } from '@/stores/session-expanded-store';
 import {
   selectCollapsedSections,
   selectGroupMode,
@@ -83,17 +84,12 @@ import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/sessio
 import {
   listChangeRequests,
   restartProjectSession,
-  stopProjectSession,
   sessionParentId,
+  stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import {
-  qk,
-  useProjectSession,
-  useProjectSessions,
-  useSessionChildren,
-} from '@kortix/sdk/react';
+import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -108,7 +104,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { useAuth } from '@/features/providers/auth-provider';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -420,8 +415,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onRename={(id, name) => setSessionToRename({ id, name })}
           onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
           isRestarting={
-            restartMutation.isPending &&
-            restartMutation.variables?.sessionId === session.session_id
+            restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
           }
           onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
           isStopping={
@@ -482,7 +476,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       </div>
     );
   };
-
 
   // Everything below the header — skeleton, error, empty, or the grouped list.
   // Kept as one function so the header stays mounted across all four states
@@ -613,12 +606,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         />
         {/* The first chat never leaves. It is the oldest conversation, so it
             sits at the very bottom — after the last page, never mid-list. */}
-        {firstChatPending && !hasNextPage && !sharedQuery.hasNextPage && !automatedQuery.hasNextPage && (
-          <FirstChatRow
-          projectId={projectId}
-          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
-        />
-        )}
+        {firstChatPending &&
+          !hasNextPage &&
+          !sharedQuery.hasNextPage &&
+          !automatedQuery.hasNextPage && (
+            <FirstChatRow
+              projectId={projectId}
+              isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+            />
+          )}
       </FadedScrollArea>
     );
   }
@@ -905,7 +901,10 @@ function SpawnedToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      <CaretRightIcon aria-hidden className={cn('size-3 transition-transform', open && 'rotate-90')} />
+      <CaretRightIcon
+        aria-hidden
+        className={cn('size-3 transition-transform', open && 'rotate-90')}
+      />
       {count}
     </span>
   );
@@ -1227,10 +1226,7 @@ function ProjectSessionRow({
               data-session-source="true"
               data-session-starter={starter.type}
             >
-              <Hint
-                side="top"
-                label={t('startedByLabel', { name: starter.label })}
-              >
+              <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
                 <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
                   <SessionStarterMark
                     session={session}

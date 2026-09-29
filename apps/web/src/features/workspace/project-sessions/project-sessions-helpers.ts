@@ -10,10 +10,7 @@ import {
   type SessionSourceKind,
   type SessionStatusFilter,
 } from '@/components/projects/session-label';
-import {
-  getSessionDisplayTitle,
-  sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { sortSessionsByLastActivity } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 
 import {
   matchesAccessFilters,
@@ -58,7 +55,11 @@ export function filterProjectSessions(
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
   tI18nComplete: UiTranslator,
-  facets: { owners?: readonly string[]; access?: readonly SessionAccessFilter[]; labels?: readonly string[] } = {},
+  facets: {
+    owners?: readonly string[];
+    access?: readonly SessionAccessFilter[];
+    labels?: readonly string[];
+  } = {},
 ): ProjectSession[] {
   const matches = sessions.filter(
     (session) =>
