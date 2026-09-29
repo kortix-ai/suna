@@ -72,6 +72,8 @@ let mockResolveIngressError: Error | null = null;
 /** Called on every ingress resolution; a fake clock uses it to make one slow. */
 let mockOnResolveIngress: (() => void) | null = null;
 let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
+/** The external ids the WS attach wake asked to resume (characterization). */
+let mockWsResumeCalls: string[] = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -472,13 +474,28 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   );
 }
 
+// The WebSocket attach wake is fire-and-forget inside `resolvePreviewWsUpstream`
+// (the provider start is asynchronous), so its success is invisible to the
+// caller. Capture the call to make the stopped-sandbox branch observable, and
+// spread the real module so every other route helper survives the replacement.
+const realSharedRoutes = await import('../projects/routes/shared');
+mock.module('../projects/routes/shared', () => ({
+  ...realSharedRoutes,
+  resumeStoppedSandboxByExternalId: async (externalId: string) => {
+    mockWsResumeCalls.push(externalId);
+    return true;
+  },
+}));
+
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import(
   '../shared/kortix-user-context'
 );
-const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
+const { resolvePreviewWsUpstream, forwardToSandbox } = await import(
+  '../sandbox-proxy/routes/preview'
+);
 const { invalidateSandbox } = await import('../sandbox-proxy/backend');
 const { preparePreviewWsUpgrade } = await import('../sandbox-proxy/ws-proxy');
 const { __resetPromptDedupe } = await import('../sandbox-proxy/prompt-dedupe');
@@ -550,6 +567,7 @@ beforeEach(() => {
   mockResolveIngressError = null;
   mockOnResolveIngress = null;
   mockSnapshotSyncCalls = [];
+  mockWsResumeCalls = [];
   mockTitleCalls = [];
   // The per-sandbox env-push memo (`env-sync-skip-decision.ts`) would
   // otherwise carry over from the previous test on the same TEST_SANDBOX_ID
@@ -613,6 +631,9 @@ describe('Preview proxy: websocket upstream resolution', () => {
 
     expect(upstream.ok).toBe(true);
     if (!upstream.ok) return;
+    // Every leg authenticates upstream with the sandbox's service key; the
+    // signed user context is additive, never a replacement.
+    expect(upstream.headers.Authorization).toBe(`Bearer ${TEST_SERVICE_KEY}`);
     const url = new URL(upstream.url);
     expect(`${url.origin}${url.pathname}`).toBe(row.expected);
     const queryContext = url.searchParams.get('__kortix_user_context');
@@ -658,6 +679,51 @@ describe('Preview proxy: websocket upstream resolution', () => {
     });
     expect(upstream.ok).toBe(false);
     if (!upstream.ok) expect(upstream.status).toBe(403);
+  });
+
+  test('returns 404 when the sandbox row is absent', async () => {
+    mockDbSandbox = null;
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: 'sandbox-ws-not-found-001',
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    });
+    expect(upstream.ok).toBe(false);
+    if (!upstream.ok) {
+      expect(upstream.status).toBe(404);
+      expect(upstream.message).toBe('sandbox not found');
+    }
+  });
+
+  // A terminal attach the client marked (`wake=1`) resumes a parked box; an
+  // automatic backoff dial does not. A browser never reads the refusal (it
+  // surfaces as close code 1006), so the resume attempt is the observable.
+  test('a marked PTY attach wakes a stopped box; an automatic dial does not', async () => {
+    mockDbSandbox = { ...mockDbSandbox, status: 'stopped' };
+    const request = {
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 8000,
+      userId: TEST_USER_ID,
+      remainingPath: '/kortix/pty/kpty_test/connect',
+      queryString: '',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    };
+
+    const marked = await resolvePreviewWsUpstream({ ...request, wakeRequested: true });
+    expect(marked.ok).toBe(false);
+    if (!marked.ok) expect(marked.status).toBe(503);
+    expect(mockWsResumeCalls).toEqual([TEST_SANDBOX_ID]);
+
+    mockWsResumeCalls = [];
+    const automatic = await resolvePreviewWsUpstream({ ...request });
+    expect(automatic.ok).toBe(false);
+    if (!automatic.ok) expect(automatic.status).toBe(503);
+    expect(mockWsResumeCalls).toEqual([]);
   });
 });
 
@@ -1866,5 +1932,126 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
       headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': FOREIGN_SESSION },
     });
     expect(appPort.status).toBe(200);
+  });
+});
+
+// ── Branch characterization (phase 1 of the preview.ts split) ────────────────
+//
+// Pins the status, body and headers of each refusal and rewrite branch the
+// split touches, so moving the code can prove it did not change the observable
+// contract. Each assertion is exactly what a client reads today. The pure
+// predicates behind them are unit-tested in
+// sandbox-proxy/routes/preview.test.ts and sandbox-proxy/routes/ws-wake-policy.test.ts.
+describe('Preview proxy: forwarder branch characterization', () => {
+  test('refuses the daemon env-write endpoint with a 404', async () => {
+    const res = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/env`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not found' });
+    expect(mockFetchCalls).toEqual([]);
+  });
+
+  test('refuses the destructive base=1 branch reset with its machine code', async () => {
+    const res = await createProxyTestApp().request(
+      `/v1/p/${TEST_SANDBOX_ID}/8000/kortix/refresh?base=1`,
+      { method: 'POST', headers: { Authorization: 'Bearer test' } },
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'base reset is not available through the sandbox proxy',
+      code: 'BASE_RESET_FORBIDDEN',
+    });
+    expect(mockFetchCalls).toEqual([]);
+  });
+
+  test('a browser navigation to a not-ready sandbox gets the 200 state page, not the 5xx', async () => {
+    mockDbSandbox = { ...mockDbSandbox, status: 'provisioning' };
+    const res = await createProxyTestApp().request(
+      `/v1/p/sandbox-character-not-ready/${TEST_PORT}/`,
+      { headers: { Authorization: 'Bearer test', Accept: 'text/html' } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    expect(res.headers.get('x-kortix-preview-state')).toBe('starting');
+    expect(mockFetchCalls).toEqual([]);
+  });
+
+  test('rewrites a root-relative redirect onto the proxy prefix', async () => {
+    mockFetchResponses = [{ status: 302, body: '', headers: { location: '/login' } }];
+    const res = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/app`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/login`);
+  });
+
+  test('rewrites a same-origin absolute redirect onto the proxy prefix', async () => {
+    mockFetchResponses = [
+      { status: 302, body: '', headers: { location: `${mockPreviewUrl}/after?q=1` } },
+    ];
+    const res = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/app`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe(
+      `/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/proxy-url/after?q=1`,
+    );
+  });
+});
+
+// The origin form (`handlePreviewOriginRequest` → `forwardToSandbox` with
+// `{kind:'public_share'}`) and the path form (`publicShareApp` →
+// `forwardPublicShare`) are two independent forwarders for one share. They must
+// agree on the upstream target and pass the upstream status/body through
+// unchanged. The path form's half of this contract is pinned in
+// sandbox-proxy/routes/public-share.test.ts with the same fixture values.
+describe('Preview proxy: public-share delegation', () => {
+  test('a file share forwards to the static-file target without ownership', async () => {
+    // Anonymous: both ownership gates would refuse a principal here, so a
+    // forwarded request proves the public_share branch bypasses them.
+    mockDbMembership = null;
+    mockFetchResponses = [
+      { status: 200, body: 'shared', headers: { 'content-type': 'text/html' } },
+    ];
+    const res = await forwardToSandbox(
+      TEST_SANDBOX_ID,
+      3211,
+      { kind: 'public_share' },
+      'GET',
+      '/open',
+      '?path=%2Fworkspace%2Fa.html',
+      new Headers(),
+      undefined,
+      '',
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('shared');
+    expect(mockFetchCalls).toHaveLength(1);
+    expect(mockFetchCalls[0]?.url).toBe(`${mockPreviewUrl}/open?path=%2Fworkspace%2Fa.html`);
+  });
+
+  test('a preview share forwards to the share target without ownership', async () => {
+    mockDbMembership = null;
+    mockFetchResponses = [
+      { status: 200, body: 'shared', headers: { 'content-type': 'text/html' } },
+    ];
+    const res = await forwardToSandbox(
+      TEST_SANDBOX_ID,
+      3000,
+      { kind: 'public_share' },
+      'GET',
+      '/asset.js',
+      '',
+      new Headers(),
+      undefined,
+      '',
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('shared');
+    expect(mockFetchCalls).toHaveLength(1);
+    expect(mockFetchCalls[0]?.url).toBe(`${mockPreviewUrl}/asset.js`);
   });
 });
