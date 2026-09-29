@@ -32,6 +32,8 @@ let insertedValues: Array<Record<string, unknown>> = [];
 let insertStatements: Array<Array<Record<string, unknown>>> = [];
 /** When set, the Nth (0-based) statement rejects with this error. */
 let failStatementAt: { index: number; error: unknown } | null = null;
+/** When set, the Nth (0-based) statement takes this long to settle. */
+let slowStatementAt: { index: number; delayMs: number } | null = null;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
@@ -75,6 +77,8 @@ mock.module('../../shared/db', () => ({
         return {
           onConflictDoNothing: () => ({
             returning: async () => {
+              const slow = slowStatementAt?.index === index ? slowStatementAt.delayMs : 0;
+              if (slow > 0) await new Promise((resolve) => setTimeout(resolve, slow));
               if (failStatementAt?.index === index) throw failStatementAt.error;
               return values.map((value) => ({ eventId: value.eventId }));
             },
@@ -93,7 +97,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('sandboxId', SESSION_ID);
   await next();
 });
-await import('./project-audit');
+const { __setAuditIngestBudgetMsForTest } = await import('./project-audit');
 
 function hostileEvent() {
   return {
@@ -122,6 +126,7 @@ beforeEach(() => {
   insertedValues = [];
   insertStatements = [];
   failStatementAt = null;
+  slowStatementAt = null;
 });
 
 afterAll(() => {
@@ -429,5 +434,41 @@ describe('audit ingest contention', () => {
 
     expect(response.status).toBe(500);
     expect(response.headers.get('retry-after')).toBeNull();
+  });
+
+  test('a slow chunk stops the loop at the budget, so the request never reaches the 25s deadline', async () => {
+    // KRTX-644: only each chunk used to be bounded, so several slow chunks
+    // summed past the 25 s request-deadline net and /audit/events answered an
+    // opaque deadline 503. One slow chunk now spends the whole request budget;
+    // the handler answers its own retryable 503 before the net.
+    const budgetMs = 40;
+    __setAuditIngestBudgetMsForTest(budgetMs);
+    slowStatementAt = { index: 0, delayMs: budgetMs + 30 };
+    try {
+      const { status, retryAfter, body } = await post(60);
+
+      expect(status).toBe(503);
+      expect(retryAfter).toBe('5');
+      // The 2nd and 3rd chunk were never started. Without the budget the loop
+      // issues all three statements and answers 200.
+      expect(insertStatements).toHaveLength(1);
+      expect(body).toMatchObject({
+        accepted: 60,
+        inserted: CHUNK,
+        retry_after_seconds: 5,
+      });
+    } finally {
+      __setAuditIngestBudgetMsForTest(null);
+      slowStatementAt = null;
+    }
+  });
+
+  test('a batch inside the budget still writes every chunk', async () => {
+    // The budget must not change the happy path: default 10 s, fast chunks.
+    const { status, body } = await post(60);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ accepted: 60, inserted: 60, duplicates: 0, suppressed: 0 });
+    expect(insertStatements.map((batch) => batch.length)).toEqual([CHUNK, CHUNK, 10]);
   });
 });

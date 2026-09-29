@@ -91,6 +91,32 @@ const AUDIT_INGEST_LOCK_WAIT_MS = (() => {
   return Number.isFinite(raw) && raw > 0 ? raw : 12_000;
 })();
 
+/**
+ * Wall-clock budget for the whole ingest request, from handler entry to the
+ * answer. Only each CHUNK used to be bounded (the 12 s in-process lock wait and
+ * the audit pool's 10 s statement_timeout), so a multi-chunk batch could sum
+ * past the 25 s `REQUEST_DEADLINE_MS` net: chunk 1 finishes near its own bound,
+ * chunk 2 fails on top of it, and the request dies on the GLOBAL deadline with
+ * an opaque 503 instead of this route's own typed, retryable answer. Prod
+ * 2026-09-28: `... -> 503 [HTTPException] Request exceeded the 25s server
+ * processing deadline` on /audit/events spiked 5x its baseline (KRTX-644).
+ *
+ * The budget plus the audit pool's statement_timeout must stay under
+ * `REQUEST_DEADLINE_MS` so the handler always answers before the net:
+ * 10000 + 10000 < 25000. A spent budget stops the loop and answers the same
+ * retryable 503 the relay already handles; its spool still holds the batch.
+ */
+const auditIngestBudgetMsDefault = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_BUDGET_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 10_000;
+})();
+let auditIngestBudgetMs = auditIngestBudgetMsDefault;
+
+/** Test seam: override the ingest budget; `null` restores the env-derived value. */
+export function __setAuditIngestBudgetMsForTest(ms: number | null): void {
+  auditIngestBudgetMs = ms === null ? auditIngestBudgetMsDefault : ms;
+}
+
 /** The PostgreSQL SQLSTATE behind a contention error, following `cause`. */
 function auditErrorSqlState(error: unknown): string | null {
   let current: unknown = error;
@@ -235,6 +261,10 @@ projectsApp.openapi(
   async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
+    // One budget covers the whole request, so the chunk loop below cannot sum
+    // past the 25 s request deadline. See AUDIT_INGEST_BUDGET_MS_DEFAULT.
+    const startedAt = Date.now();
+    const budgetAt = startedAt + auditIngestBudgetMs;
     if (!isSessionSandboxCredential(c)) {
       return c.json({ error: 'audit ingestion requires a sandbox token' }, 403);
     }
@@ -390,6 +420,14 @@ projectsApp.openapi(
     let insertedCount = 0;
     let contended = false;
     for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
+      // Answer on this route's own terms while the budget lasts. Starting a
+      // chunk the request cannot afford is what pushed it onto the global
+      // deadline net, which logged an opaque error and held the connection.
+      const remainingMs = budgetAt - Date.now();
+      if (remainingMs <= 0) {
+        contended = true;
+        break;
+      }
       const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
       try {
         // Hold the process-local session lock for the chunk's INSERT. The
@@ -405,7 +443,7 @@ projectsApp.openapi(
               .values(chunk)
               .onConflictDoNothing()
               .returning({ eventId: auditEvents.eventId }),
-          { timeoutMs: AUDIT_INGEST_LOCK_WAIT_MS },
+          { timeoutMs: Math.min(AUDIT_INGEST_LOCK_WAIT_MS, remainingMs) },
         );
         attempted += chunk.length;
         insertedCount += inserted.length;
@@ -452,6 +490,9 @@ projectsApp.openapi(
           inserted: insertedCount,
           remaining: toInsert.length - offset,
           chunk: chunk.length,
+          // How long this request ran before the write was rejected. A value
+          // well under the 25 s net is the budget doing its job.
+          elapsed_ms: Date.now() - startedAt,
         });
         contended = true;
         break;
