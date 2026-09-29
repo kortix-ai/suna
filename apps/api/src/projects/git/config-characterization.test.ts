@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { runGit as realRunGit } from './mirror';
+import type { GitBackedProject } from './types';
 
 // `config.ts` reaches the repo through `./files`, which imports `runGit` +
 // `refreshMirror` from `./mirror`. Mock the module so `refreshMirror`
@@ -43,7 +44,7 @@ const project = {
   repoUrl: 'https://github.com/kortix-ai/test.git',
   gitAuthToken: null,
   gitAuthHeaders: {},
-} as any;
+} as unknown as GitBackedProject;
 
 const ROOT_KORTIX_YAML = `# Demo root manifest (synthetic)
 kortix_version: 2
