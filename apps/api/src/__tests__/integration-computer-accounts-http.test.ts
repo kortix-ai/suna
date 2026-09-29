@@ -826,16 +826,16 @@ describe('v2: access mode on the machine', () => {
       .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Laptop')));
     await db
       .update(tunnelConnections)
-      .set({ machineInfo: { access: { mode: 'ask', grantedUntil: '2026-09-29T14:32:00.000Z' } } })
+      .set({ machineInfo: { access: { mode: 'ask', grantedUntil: '2099-01-01T00:00:00.000Z' } } })
       .where(eq(tunnelConnections.tunnelId, laptop!.tunnelId));
     const listed = await listedConnections(ALICE);
     expect(listed.find((row) => row.tunnel_id === laptop!.tunnelId)?.machine).toMatchObject({
-      access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' },
+      access: { mode: 'ask', granted_until: '2099-01-01T00:00:00.000Z' },
     });
     const status = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Laptop' }), 'status');
     expect(status).toMatchObject({
       status: 'ok',
-      data: { access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' } },
+      data: { access: { mode: 'ask', granted_until: '2099-01-01T00:00:00.000Z' } },
     });
   });
 
