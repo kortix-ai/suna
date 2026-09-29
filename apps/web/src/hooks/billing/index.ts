@@ -17,7 +17,6 @@ export {
   invalidateAccountState,
   // Main hook
   useAccountState,
-  useAccountStateWithStreaming,
   useCancelScheduledChange,
   useCancelSubscription,
   // Mutation hooks
@@ -29,8 +28,6 @@ export {
   useScheduleDowngrade,
   useSyncSubscription,
 
-  // Usage history (transactions ledger lives in ./use-transactions below)
-  useUsageHistory,
 } from './use-account-state';
 
 // =============================================================================

@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Modell verbinden, um den Chat zu starten",
-      "description": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
-      "upgradeDescription": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Führe ein Upgrade durch, um sofort auf die verwalteten Modelle von Kortix zuzugreifen, oder verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
       "upgrade": "Upgrade",
-      "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
       "connectModel": "Modell verbinden",
@@ -14336,7 +14332,7 @@
       "text8cd003e6301b": "⌘S",
       "text8cd05146050d": "Durchläuft den gesamten Zyklus: Discovery, Umfang, Build, Übergabe, Ausbau.",
       "text8cd1f7bcdc71": "Schritt 1 von 2 – Manifest in Slack einfügen und App installieren.",
-      "text8ce16e33b27d": "Du kannst den Zugriff jederzeit in deinen Kontoeinstellungen widerrufen.",
+      "text8ce16e33b27d": "Du kannst den Zugriff jederzeit unter Einstellungen → Persönliche Zugriffsschlüssel → Verbundene Apps widerrufen.",
       "text8ce429d50e7c": "Unter „API Connection“ die Tenant URL in „SCIM Base URL“ und das Secret in „SCIM Bearer Token“ einfügen und anschließend auf „Enable“ klicken (die App zuerst speichern, falls dazu aufgefordert). OneLogin validiert den Endpunkt. Unter „API Status“ wird dann ein grünes „Enabled“ angezeigt — dieses Feld ist eine schreibgeschützte Anzeige und keine Einstellung.",
       "text8cea8af247c2": "Nachricht konnte nicht in die Warteschlange gestellt werden",
       "text8d0218f233bb": "Vorschau:{value0}",

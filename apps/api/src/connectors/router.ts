@@ -32,7 +32,7 @@ import {
   principalMayUseConnector,
 } from './principal-access';
 import { isAllowedSourceValidationError } from '../marketplace/catalog';
-import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { auth, errors, json, makeOpenApiApp, lenientBody } from '../openapi';
 import { INVALID_SOURCE_ADDRESS_CODE } from '../marketplace/catalog';
 import { UnsafeEgressError } from '../shared/ssrf-guard';
 import {
@@ -1600,10 +1600,26 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       path: '/projects/{projectId}/connectors',
       tags: ['connector'],
       summary: 'Create or update a connector in kortix.yaml',
+      description:
+        'Add or update a connector. It is committed to kortix.yaml. Fields depend on provider.',
       ...auth,
       request: {
         params: ProjectParam,
-        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            slug: z.string().openapi({ description: 'Connector slug (its name in kortix.yaml).' }),
+            provider: z.enum(['composio,pipedream,mcp,openapi,postman,graphql,http,channel']).openapi({ description: 'Connector provider. Use composio for managed SaaS apps.' }),
+            name: z.string().optional().openapi({ description: 'Display name.' }),
+            app: z.string().optional().openapi({ description: 'Composio app slug, e.g. gmail (composio providers).' }),
+            url: z.string().optional().openapi({ description: 'MCP server URL (provider mcp).' }),
+            transport: z.enum(['http,sse']).optional().openapi({ description: 'MCP transport (provider mcp).' }),
+            endpoint: z.string().optional().openapi({ description: 'GraphQL endpoint (provider graphql).' }),
+            baseUrl: z.string().optional().openapi({ description: 'Base URL (provider http or openapi).' }),
+            spec: z.string().optional().openapi({ description: 'OpenAPI or Postman spec URL.' }),
+            authorization_strategy: z.string().optional().openapi({ description: 'Who owns connections: project or user.' }),
+            auth: z.record(z.string(), z.any()).optional().openapi({ description: 'Auth scheme: { type: none|bearer|basic|custom|api_key|..., in, name, prefix }. Discovered when omitted.' }),
+            headers: z.record(z.string(), z.any()).optional().openapi({ description: 'Static request headers (plaintext, committed to kortix.yaml).' }),
+            create_only: z.boolean().optional().openapi({ description: 'Refuse to update an existing slug.' }),
+          }) } } },
       },
       responses: {
         200: json(CrudOkSchema, 'Created/updated'),
@@ -2302,7 +2318,11 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       tags: ['connector'],
       summary: 'Start an easy-connect authorization',
       ...auth,
-      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: OpaqueSchema } } } },
+      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: lenientBody({
+          owner: z.enum(['me,project']).optional().openapi({ description: 'Whose account is connected: me or project.' }),
+          success_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after success.' }),
+          error_redirect_uri: z.string().optional().openapi({ description: 'Where to send the browser after failure.' }),
+        }) } } } },
       responses: {
         200: json(OpaqueSchema, 'Connect token / overlay info'),
         ...errors(403, 404, 501),

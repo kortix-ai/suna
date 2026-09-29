@@ -27,6 +27,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { View } from 'react-native';
 import { create } from 'zustand';
 import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 import type { SandboxFile } from '@/api/types';
 import { FilePreviewSheet, type PreviewFile } from '@/components/files/FilePreviewSheet';
 import type { SheetRef } from '@/components/kortix/sheet';
@@ -118,12 +119,6 @@ function openBrowserTab(url: string, display: string) {
   const tabs = useTabStore.getState();
   tabs.navigateToPage('page:browser');
   tabs.setTabState('page:browser', { savedUrl: url, savedDisplay: display });
-}
-
-function safeHttpUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  const trimmed = url.trim();
-  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
 }
 
 export function useToolNavigation() {

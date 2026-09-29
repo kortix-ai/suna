@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Collega un modello per iniziare a chattare",
-      "description": "Questa sessione richiede un LLM collegato prima di poter rispondere. Usa la tua chiave API di qualsiasi provider.",
-      "upgradeDescription": "Questa sessione richiede un LLM collegato prima di poter rispondere. Esegui l’upgrade per accedere subito ai modelli gestiti da Kortix oppure usa la tua chiave API di qualsiasi provider.",
       "upgrade": "Esegui l’upgrade",
-      "bringKey": "Usa la tua chiave",
       "barTitle": "Nessun modello collegato",
       "barDescription": "collegane uno per iniziare a chattare",
       "connectModel": "Collega modello",
@@ -14336,7 +14332,7 @@
       "text8cd003e6301b": "⌘S",
       "text8cd05146050d": "Gestisce l’intero ciclo: discovery, definizione dell’ambito, sviluppo, handoff, espansione.",
       "text8cd1f7bcdc71": "Passaggio 1 di 2: incolla il manifest in Slack e installa l'app.",
-      "text8ce16e33b27d": "Puoi revocare l’accesso in qualsiasi momento nelle impostazioni del tuo account.",
+      "text8ce16e33b27d": "Puoi revocare l’accesso in qualsiasi momento in Impostazioni → Chiavi di accesso personali → App connesse.",
       "text8ce429d50e7c": "In \"API Connection\": incolla l'URL del tenant in \"SCIM Base URL\" e il segreto in \"SCIM Bearer Token\", quindi fai clic sul pulsante \"Enable\" (salva prima l'app se richiesto). OneLogin convalida l'endpoint e \"API Status\" mostra quindi un \"Enabled\" verde: questo campo è un indicatore di sola lettura, non un controllo da impostare.",
       "text8cea8af247c2": "Impossibile accodare il messaggio",
       "text8d0218f233bb": "Anteprima:{value0}",

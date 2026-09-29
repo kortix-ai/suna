@@ -208,7 +208,7 @@ describe('POST /v1/oauth/token', () => {
     expect((await refused.json()).error_description).toContain('public client');
   });
 
-  test('a wrong code_verifier is invalid_grant and the code stays unused', async () => {
+  test('a wrong code_verifier is invalid_grant and the code is burned (the same code then fails with the right verifier)', async () => {
     requestedClientId = CONFIDENTIAL_ID;
     const code = seedCode(CONFIDENTIAL_ID, 'https://client.example/callback', ['profile']);
     const res = await createApp().request(
@@ -217,7 +217,26 @@ describe('POST /v1/oauth/token', () => {
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error_description).toBe('PKCE verification failed');
-    expect(codes[0].usedAt).toBeNull();
+    expect(codes[0].usedAt).toBeInstanceOf(Date);
+    const retry = await createApp().request(
+      '/v1/oauth/token',
+      form({ grant_type: 'authorization_code', client_id: CONFIDENTIAL_ID, client_secret: SECRET, code, redirect_uri: 'https://client.example/callback', code_verifier: VERIFIER }),
+    );
+    expect(retry.status).toBe(400);
+    expect(accessTokens).toHaveLength(0);
+  });
+
+  test('a code_verifier outside RFC 7636 (43-128 unreserved chars) is refused', async () => {
+    requestedClientId = CONFIDENTIAL_ID;
+    for (const bad of ['short', 'x'.repeat(129), 'x'.repeat(42) + ' ']) {
+      const code = seedCode(CONFIDENTIAL_ID, 'https://client.example/callback', ['profile']);
+      const res = await createApp().request(
+        '/v1/oauth/token',
+        form({ grant_type: 'authorization_code', client_id: CONFIDENTIAL_ID, client_secret: SECRET, code, redirect_uri: 'https://client.example/callback', code_verifier: bad }),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('invalid_grant');
+    }
   });
 
   test('refresh_token rotates: old pair revoked, new pair issued with the same scopes', async () => {
@@ -293,7 +312,29 @@ describe('discovery + userinfo', () => {
       scopes_supported: ['profile', 'email', 'kortix'],
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
+      service_documentation: 'https://app.example/docs/sdk/sign-in',
     });
+  });
+
+  test('DELETE /grants/<non-uuid> is 404, not a Postgres cast 500', async () => {
+    const res = await createApp().request('/v1/oauth/grants/not-a-uuid', { method: 'DELETE' });
+    expect(res.status).toBe(404);
+  });
+
+  test('POST /register: unknown scopes are dropped (default kortix when none left); the 429 carries Retry-After', async () => {
+    const app = createApp();
+    const register = (scope?: string) =>
+      app.request('/v1/oauth/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: ['http://127.0.0.1:1/cb'], ...(scope === undefined ? {} : { scope }) }),
+      });
+    expect(((await (await register('openid profile offline_access')).json()) as any).scope).toBe('profile');
+    expect(((await (await register('mcp:tools')).json()) as any).scope).toBe('kortix');
+    let last: Response = await register();
+    for (let i = 0; i < 40 && last.status !== 429; i++) last = await register();
+    expect(last.status).toBe(429);
+    expect(Number(last.headers.get('retry-after'))).toBeGreaterThan(0);
   });
 
   test('userinfo returns sub + email for a profile-scoped token', async () => {

@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "连接模型以开始聊天",
-      "description": "此会话需要先连接 LLM 才能响应。你可以使用任意提供商的 API 密钥。",
-      "upgradeDescription": "此会话需要先连接 LLM 才能响应。升级即可立即使用 Kortix 托管模型，也可以使用任意提供商的 API 密钥。",
       "upgrade": "升级",
-      "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
       "connectModel": "连接模型",
@@ -14336,7 +14332,7 @@
       "text8cd003e6301b": "⌘S",
       "text8cd05146050d": "覆盖完整周期：探索、范围界定、构建、交接、扩展。",
       "text8cd1f7bcdc71": "第 1 步，共 2 步 — 将清单粘贴到 Slack 并安装应用。",
-      "text8ce16e33b27d": "你可以随时在账户设置中撤销访问权限。",
+      "text8ce16e33b27d": "你可以随时在“设置 → 个人访问密钥 → 已连接的应用”中撤销访问权限。",
       "text8ce429d50e7c": "在“API Connection”下：将 Tenant URL 粘贴到“SCIM Base URL”，将密钥粘贴到“SCIM Bearer Token”，然后点击“Enable”（如有提示，请先保存应用）。OneLogin 会验证端点，随后“API Status”会显示绿色的“Enabled”——该字段是只读指示器，不是需要设置的控件。",
       "text8cea8af247c2": "无法将消息加入队列",
       "text8d0218f233bb": "预览：{value0}",

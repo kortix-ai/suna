@@ -46,6 +46,8 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'Content-Type',
       'Authorization',
       'X-Kortix-Token',
+      'Mcp-Protocol-Version',
+      'Mcp-Session-Id',
       'X-Api-Key',
       'Accept',
       'X-Kortix-Signature',

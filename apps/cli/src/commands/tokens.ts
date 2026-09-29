@@ -10,7 +10,7 @@ import {
 } from '../command-helpers.ts';
 import { iamBase } from '../iam.ts';
 import { confirm } from '../prompts.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, visibleWidth } from '../style.ts';
 
 // `kortix tokens` — the two kinds of non-interactive credential an account
 // issues, in one place:
@@ -180,7 +180,7 @@ export async function runTokens(argv: string[]): Promise<number> {
     expiresAt = iso;
   }
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host, accountOptional: sub === 'apps' });
   if (!ctx) return 1;
   const saBase = `${iamBase(ctx.accountId)}/service-accounts`;
 
@@ -268,13 +268,13 @@ export async function runTokens(argv: string[]): Promise<number> {
             process.stdout.write(`\n  ${C.dim}No connected apps.${C.reset}\n\n`);
             return 0;
           }
-          const nameW = Math.max(...grants.map((g) => g.name.length), 4);
+          const label = (g: ConnectedApp) => (g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name);
+          const nameW = Math.max(...grants.map((g) => visibleWidth(label(g))), 4);
           process.stdout.write('\n');
           process.stdout.write(`  ${C.dim}${pad('NAME', nameW)}   ${pad('SIGNS IN AT', 22)}   ${pad('LAST ACTIVE', 11)}   CLIENT ID${C.reset}\n`);
           for (const g of grants) {
-            const name = g.self_registered ? `${g.name} ${C.yellow}(unverified)${C.reset}` : g.name;
             process.stdout.write(
-              `  ${pad(name, nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
+              `  ${pad(label(g), nameW)}   ${pad(g.redirect_hosts.join(', ') || '-', 22)}   ` +
                 `${pad((g.last_active_at ?? g.granted_at ?? '-').slice(0, 10), 11)}   ${C.faded}${g.client_id}${C.reset}\n`,
             );
           }

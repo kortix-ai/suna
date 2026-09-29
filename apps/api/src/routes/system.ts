@@ -1,11 +1,8 @@
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
-import { apiRegion, databaseRegion } from '../lib/deployment-region';
 import { metricsEnabled, renderMetrics, setEventLoopLagSeconds } from '../lib/metrics';
 import { json, mountOpenApiDocs } from '../openapi';
-import { getTriggerSchedulerHealth } from '../projects';
-import { isLeader } from '../shared/leader-election';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';
 import { draining, schemaReady } from '../bootstrap';
 
@@ -24,8 +21,6 @@ const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
 // When this process booted — confirms a deploy actually rolled fresh pods.
 const STARTED_AT = new Date().toISOString();
-// Which replica answered (pod name in k8s, task/container id in ECS).
-const API_INSTANCE = process.env.HOSTNAME || 'unknown';
 
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
@@ -42,24 +37,8 @@ const HealthSchema = z
     version: z.string(),
     commit: z.string(),
     started_at: z.string(),
-    instance: z.string(),
-    scheduler_leader: z.boolean(),
-    trigger_scheduler: z.record(z.string(), z.unknown()),
-    // Best-effort deployment topology, resolved once at import time (see
-    // lib/deployment-region.ts). the turn-latency spec (PR #7840)'s own baseline
-    // turned out to be dominated by a us-west-2 API against a us-east-2
-    // database, not by the code path — this lets `pnpm test -- --latency`
-    // report WHERE the two halves live instead of just a duration. Neither
-    // field is sensitive: an AWS region name, never a host, user, or secret.
-    region: z.string().nullable(),
-    database_region: z.string().nullable(),
   })
   .openapi('Health');
-
-// Resolved once: neither AWS_REGION nor DATABASE_URL changes for the life of
-// the process, so there is no reason to re-parse it on every /health poll.
-const API_REGION = apiRegion();
-const DATABASE_REGION = databaseRegion(config.DATABASE_URL);
 
 const healthHandler = (c: any) =>
   c.json({
@@ -70,11 +49,6 @@ const healthHandler = (c: any) =>
     version: API_VERSION,
     commit: API_COMMIT,
     started_at: STARTED_AT,
-    instance: API_INSTANCE,
-    scheduler_leader: isLeader(),
-    trigger_scheduler: getTriggerSchedulerHealth(),
-    region: API_REGION,
-    database_region: DATABASE_REGION,
   });
 
 app.openapi(
@@ -191,6 +165,18 @@ app.get('/.well-known/oauth-authorization-server', (c) => {
 // server above.
 app.get('/.well-known/oauth-protected-resource/v1/mcp', (c) => {
   return c.json(mcpProtectedResourceMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+// Root form of the same document, and the OIDC discovery path some clients
+// probe first: both answer with the documents above.
+app.get('/.well-known/oauth-protected-resource', (c) => {
+  return c.json(mcpProtectedResourceMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+app.get('/.well-known/openid-configuration', (c) => {
+  return c.json(oauthAuthorizationServerMetadata(new URL(c.req.url).origin), 200, {
     'cache-control': 'public, max-age=3600',
   });
 });

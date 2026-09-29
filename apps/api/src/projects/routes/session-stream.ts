@@ -153,7 +153,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/events',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/events',
+    summary: 'Stream live events of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),

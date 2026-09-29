@@ -49,7 +49,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/llm-catalog',
     tags: ['projects'],
-    summary: 'GET /:projectId/llm-catalog',
+    summary: 'List the models available to a project',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -119,7 +119,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/model-picker',
     tags: ['projects'],
-    summary: 'GET /:projectId/model-picker',
+    summary: 'List models for the project model picker',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -233,7 +233,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/model-enablement',
     tags: ['projects'],
-    summary: 'PUT /:projectId/model-enablement',
+    summary: 'Enable or disable project models',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -314,7 +314,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/llm-catalog/providers',
     tags: ['projects'],
-    summary: 'GET /:projectId/llm-catalog/providers',
+    summary: 'List LLM providers of a project',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -358,7 +358,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/model-defaults',
     tags: ['projects'],
-    summary: 'GET /:projectId/model-defaults',
+    summary: 'Get the project default model',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -435,7 +435,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/model-defaults',
     tags: ['projects'],
-    summary: 'PUT /:projectId/model-defaults',
+    summary: 'Set the project default model',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -511,7 +511,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/model-defaults',
     tags: ['projects'],
-    summary: 'DELETE /:projectId/model-defaults',
+    summary: 'Clear the project default model',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
