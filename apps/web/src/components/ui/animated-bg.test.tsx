@@ -10,11 +10,10 @@ import { LeftArc, RightArc } from './animated-bg';
 
 const normalize = (html: string) => html.replace(/_R_\d+_/g, '<uid>');
 
-const render = (
-  Arc: typeof LeftArc,
-  tone: 'light' | 'medium' | 'dark',
-  blurAmount?: number,
-) => normalize(renderToStaticMarkup(<Arc size={400} tone={tone} opacity={0.22} blurAmount={blurAmount} />));
+const render = (Arc: typeof LeftArc, tone: 'light' | 'medium' | 'dark', blurAmount?: number) =>
+  normalize(
+    renderToStaticMarkup(<Arc size={400} tone={tone} opacity={0.22} blurAmount={blurAmount} />),
+  );
 
 const GOLD = {
   left_light: `<svg width="400" height="383.7638376383764" viewBox="-50 -50 642 620" fill="none" style="overflow:visible;transform:translate3d(0, 0, 0)"><defs><linearGradient id="L0_light_<uid>" x1="201.497" y1="0.0386" x2="201.497" y2="680.043" gradientUnits="userSpaceOnUse"><stop stop-color="#D9D9D9"></stop><stop offset="1" stop-opacity="0"></stop></linearGradient><linearGradient id="L1_light_<uid>" x1="541.499" y1="401.469" x2="-138.506" y2="401.469" gradientUnits="userSpaceOnUse"><stop stop-color="#DEDEDE"></stop><stop offset="1" stop-color="#3B3B3B"></stop></linearGradient><filter id="Ledge_<uid>" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"></feGaussianBlur></filter><mask id="Lmask_<uid>" maskUnits="userSpaceOnUse"><g filter="url(#Ledge_<uid>)"><path d="M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z" fill="#fff"></path></g></mask><pattern id="Lgrain_<uid>" patternUnits="userSpaceOnUse" width="100" height="100"><image href="/grain-texture.png" x="0" y="0" width="100" height="100" preserveAspectRatio="none"></image></pattern></defs><g opacity="0.22"><g style="filter:blur(19px)"><path d="M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z" fill="url(#L0_light_<uid>)"></path><path d="M541.499 151.597C249.646 151.597 13.0527 388.191 13.0527 680.043H-138.506C-138.506 304.487 165.943 0.0385742 541.499 0.0385742V151.597Z" fill="url(#L1_light_<uid>)"></path></g><g mask="url(#Lmask_<uid>)" style="mix-blend-mode:overlay" opacity="0.6" pointer-events="none"><rect x="0" y="0" width="120%" height="120%" fill="url(#Lgrain_<uid>)"></rect></g></g></svg>`,
