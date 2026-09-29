@@ -917,8 +917,12 @@ flow(
       JSON.parse(triggers.out.stdout);
       const skills = await cli(12, ["system-skills"]);
       if (skills.isError || !skills.out?.stdout.includes("kortix-system")) throw new Error(skills.text.slice(0, 400));
-      const bad = await cli(13, ["no-such-command"]);
+      const bad = await cli(13, ["secrets", "no-such-subcommand"]);
       if (!bad.isError || !bad.out || bad.out.exit_code === 0 || !(bad.out.stderr + bad.out.stdout).trim()) throw new Error(bad.text.slice(0, 300));
+      const unknown = await cli(29, ["no-such-command"]);
+      if (!unknown.isError || !unknown.text.includes("not a kortix command")) throw new Error(`unknown command: ${unknown.text.slice(0, 300)}`);
+      const leadingFlag = await cli(30, ["--project", p.id, "update"]);
+      if (!leadingFlag.isError || !leadingFlag.text.includes("not a kortix command")) throw new Error(`leading flag: ${leadingFlag.text.slice(0, 300)}`);
     });
     await ctx.step("refused before any process starts: --host, login, ship, token, env pull, apps deploy, chat without --prompt — each with the reason and the alternative", async () => {
       for (const [id, args, alternative] of [
