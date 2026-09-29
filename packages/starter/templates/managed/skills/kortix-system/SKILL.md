@@ -274,6 +274,17 @@ opens, then call again with the same args). `connect_connector` returns the
 link that connects an account. `upload_connector_attachment` stages a file.
 `search_connector_apps`, `add_connector` and `remove_connector` change which
 connectors the project has.
+
+The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
+`kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the
+context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `stderr`. Discover with
+`["--help"]` and `["<group>", "--help"]`. Prefer the first-class tools for
+sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
+`login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
+`connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
+(a local directory: use `run_command` in a session sandbox) and
+`connectors mcp`, with the reason and the alternative. `read_skill` with
+`project_id` lists the project's own skills.
 </mcp-client>
 
 <apps>

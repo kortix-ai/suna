@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { subscribe } from "../fixtures/billing";
 import { flow } from "../core/flow";
+import { AgentPrincipalsWorld } from "../fixtures/agent-principals";
 import { waitFor } from "../core/poll";
 
 const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
@@ -274,12 +275,12 @@ flow(
       const d = await ctx.client.as(ctx.P.ANON).del("/v1/mcp", { headers: { Authorization: `Bearer ${token}` } });
       d.status(405);
     });
-    await ctx.step("tools/list → the thirteen session/API tools and the nine connector tools", async () => {
+    await ctx.step("tools/list → the thirteen session/API tools, the nine connector tools and `kortix`", async () => {
       const r = await mcp(rpc(2, "tools/list"));
       r.status(200);
       const names = r.json<any>().result.tools.map((t: { name: string }) => t.name).sort();
       const want = [
-        "add_connector", "call_api", "call_connector", "connect_connector", "describe_api", "describe_connector_action",
+        "add_connector", "call_api", "call_connector", "connect_connector", "describe_api", "describe_connector_action", "kortix",
         "list_connectors", "list_files", "list_projects", "list_sessions", "read_file", "read_session", "read_skill",
         "remove_connector", "run_command", "search_api", "search_connector_actions", "search_connector_apps",
         "send_message", "start_session", "upload_connector_attachment", "write_file",
@@ -813,5 +814,163 @@ flow(
       await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug IN ($2, $3)`, [p.id, slug, idle]).catch(() => {});
       await db.end().catch(() => {});
     }
+  },
+);
+
+// ── MCP-6: the whole CLI through MCP ─────────────────────────────────────────
+// The `kortix` tool runs the real CLI as the token holder: exit code, stdout and
+// stderr come back, the credential is the caller's own, machine-local commands
+// are refused before anything starts, and a project's own skills are readable.
+flow(
+  "MCP-6",
+  {
+    domain: "mcp",
+    requires: ["database"],
+    timeoutMs: 180_000,
+    routes: ["POST /v1/accounts/tokens", "POST /v1/mcp", "GET /v1/projects/:projectId/detail", "GET /v1/projects/:projectId/files/content"],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ seed: true });
+    let pat = "";
+    let outsiderPat = "";
+    const call = async (id: number, name: string, args: Record<string, unknown>, token = pat) => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(id, "tools/call", { name, arguments: args }), { headers: { Authorization: `Bearer ${token}` } });
+      r.status(200);
+      const body = r.json<any>();
+      if (!body.result) throw new Error(`${name} ${JSON.stringify(args).slice(0, 80)}: JSON-RPC error ${JSON.stringify(body.error)}`);
+      const result = body.result as { isError?: boolean; content: Array<{ text: string }> };
+      return { isError: !!result.isError, text: result.content[0]!.text };
+    };
+    /** `kortix <args>`: the tool's JSON reply, or the refusal text. */
+    const cli = async (id: number, args: string[], extra: Record<string, unknown> = {}, token = pat) => {
+      const r = await call(id, "kortix", { args, ...extra }, token);
+      let out: { exit_code: number | null; stdout: string; json?: any; stderr: string; timed_out?: string; truncated?: string } | null = null;
+      try {
+        out = JSON.parse(r.text);
+      } catch {
+        // a refusal is plain text
+      }
+      return { ...r, out };
+    };
+
+    await ctx.step("mint an owner token and an outsider token", async () => {
+      for (const [who, name] of [[ctx.P.OWNER, "owner"], [ctx.P.NONMEMBER, "outsider"]] as const) {
+        const created = await ctx.client.as(who).post("/v1/accounts/tokens", { name: `MCP-6 ${name}` });
+        created.status(201);
+        if (name === "owner") pat = created.json<{ secret_key: string }>().secret_key;
+        else outsiderPat = created.json<{ secret_key: string }>().secret_key;
+      }
+    });
+    await ctx.step("commit one project skill with a reference file to the project repository (the API mirror picks it up within 60 s: later steps wait for it)", async () => {
+      const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: p.id });
+      try {
+        await world.commitToMain(
+          {
+            "skills/mcp-demo/SKILL.md": "---\nname: mcp-demo\ndescription: Demo skill for the MCP flow\n---\n# MCP demo\nUse the demo.\n",
+            "skills/mcp-demo/references/notes.md": "reference notes\n",
+          },
+          "ke2e MCP-6: a project skill",
+        );
+      } finally {
+        await world.close();
+      }
+    });
+    await ctx.step("tools/list: `kortix` takes args (required), project_id and session_id, and its description teaches discovery and the refusals", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(1, "tools/list"), { headers: { Authorization: `Bearer ${pat}` } });
+      const tool = r.json<any>().result.tools.find((t: { name: string }) => t.name === "kortix");
+      if (!tool?.title || tool.inputSchema.required?.join() !== "args" || tool.inputSchema.additionalProperties !== false) throw new Error(JSON.stringify(tool)?.slice(0, 300));
+      for (const k of ["args", "project_id", "session_id"]) if (!tool.inputSchema.properties[k]) throw new Error(`no ${k}`);
+      for (const word of ["--help", "--json", "start_session", "--host", "apps deploy"]) if (!tool.description.includes(word)) throw new Error(`description lacks ${word}`);
+      const init = await ctx.client.as(ctx.P.ANON).post("/v1/mcp", rpc(2, "initialize", { protocolVersion: "2025-06-18" }), { headers: { Authorization: `Bearer ${pat}` } });
+      if (!String(init.json<any>().result.instructions).includes("`kortix` tool")) throw new Error("instructions do not name the kortix tool");
+    });
+    await ctx.step("[\"--help\"] lists the command groups; [\"secrets\",\"--help\"] lists its subcommands", async () => {
+      const top = await cli(3, ["--help"]);
+      if (top.isError || top.out?.exit_code !== 0) throw new Error(top.text.slice(0, 300));
+      for (const group of ["secrets", "triggers", "cr", "sessions", "system-skills", "connectors", "billing"]) if (!top.out!.stdout.includes(group)) throw new Error(`--help lacks ${group}`);
+      const secrets = await cli(4, ["secrets", "--help"]);
+      if (secrets.out?.exit_code !== 0 || !secrets.out.stdout.includes("ls")) throw new Error(secrets.text.slice(0, 300));
+    });
+    await ctx.step("[\"whoami\",\"--json\"] answers as the token's user through this API", async () => {
+      const r = await cli(5, ["whoami", "--json"]);
+      if (r.isError || r.out?.exit_code !== 0) throw new Error(r.text.slice(0, 500));
+      // `--json` output arrives as a JSON value (`json`), never as a cut string, even for a user with many accounts.
+      if (r.out.json === undefined || r.out.truncated) throw new Error(`whoami --json is not whole JSON: ${r.text.slice(0, 300)}`);
+      const who = r.out.json;
+      const me = JSON.parse((await call(6, "call_api", { method: "GET", path: "/v1/accounts/me" })).text.split("\n").slice(1).join("\n"));
+      const id = who.user_id ?? who.user?.user_id ?? who.user?.id;
+      if (!id || ![me.user_id, me.id, me.user?.id, me.user?.user_id].includes(id)) throw new Error(`whoami ${JSON.stringify(who).slice(0, 300)} vs me ${JSON.stringify(me).slice(0, 300)}`);
+    });
+    await ctx.step("secrets set then ls with project_id: the key is listed, the value is in no output", async () => {
+      const value = `mcp-secret-${Date.now().toString(36)}`;
+      const set = await cli(7, ["secrets", "set", `MCP_T=${value}`], { project_id: p.id });
+      if (set.isError || set.out?.exit_code !== 0) throw new Error(set.text.slice(0, 500));
+      const ls = await cli(8, ["secrets", "ls", "--json"], { project_id: p.id });
+      if (ls.isError || !JSON.stringify(ls.out!.json ?? ls.out!.stdout).includes("MCP_T")) throw new Error(ls.text.slice(0, 500));
+      if (ls.text.includes(value) || set.text.includes(value)) throw new Error("the secret value appeared in a tool result");
+      const without = await cli(9, ["secrets", "ls", "--json"]);
+      if (JSON.stringify(without.out?.json ?? without.out?.stdout ?? "").includes("MCP_T") && without.out?.exit_code === 0) throw new Error("secrets ls without a project answered for one");
+      await cli(10, ["secrets", "rm", "MCP_T", "--yes"], { project_id: p.id });
+    });
+    await ctx.step("triggers ls, system-skills and a failing command: exit code and stderr come back, a non-zero exit is isError", async () => {
+      const triggers = await cli(11, ["triggers", "ls", "--json"], { project_id: p.id });
+      if (triggers.isError || triggers.out?.exit_code !== 0) throw new Error(triggers.text.slice(0, 400));
+      if (triggers.out.json === undefined) throw new Error(`triggers ls --json is not a JSON value: ${triggers.text.slice(0, 300)}`);
+      const skills = await cli(12, ["system-skills"]);
+      if (skills.isError || !skills.out?.stdout.includes("kortix-system")) throw new Error(skills.text.slice(0, 400));
+      const bad = await cli(13, ["secrets", "no-such-subcommand"]);
+      if (!bad.isError || !bad.out || bad.out.exit_code === 0 || !(bad.out.stderr + (bad.out.stdout ?? "")).trim()) throw new Error(bad.text.slice(0, 300));
+      const unknown = await cli(29, ["no-such-command"]);
+      if (!unknown.isError || !unknown.text.includes("not a kortix command")) throw new Error(`unknown command: ${unknown.text.slice(0, 300)}`);
+      const leadingFlag = await cli(30, ["--project", p.id, "update"]);
+      if (!leadingFlag.isError || !leadingFlag.text.includes("not a kortix command")) throw new Error(`leading flag: ${leadingFlag.text.slice(0, 300)}`);
+    });
+    await ctx.step("refused before any process starts: --host, login, ship, token, env pull, apps deploy, chat without --prompt — each with the reason and the alternative", async () => {
+      for (const [id, args, alternative] of [
+        [14, ["--host", "x", "whoami"], "already acts as you"],
+        [15, ["whoami", "--host=evil"], "already acts as you"],
+        [16, ["login"], "already signed in"],
+        [17, ["ship"], "run_command in a session sandbox"],
+        [18, ["token"], "whoami --json"],
+        [19, ["env", "pull"], "secrets"],
+        [20, ["apps", "deploy", "."], "run_command in a session sandbox"],
+        [21, ["chat"], "start_session"],
+      ] as const) {
+        const r = await cli(id, [...args]);
+        if (!r.isError || r.out || !r.text.startsWith("Refused:") || !r.text.includes(alternative)) throw new Error(`${args.join(" ")}: ${r.text.slice(0, 300)}`);
+      }
+      const bad = await call(22, "kortix", { args: "whoami" });
+      if (!bad.isError || !bad.text.includes("array")) throw new Error(`string args: ${bad.text}`);
+      const badId = await call(23, "kortix", { args: ["whoami"], project_id: "not-a-uuid" });
+      if (!badId.isError || !badId.text.includes("UUID")) throw new Error(`project_id: ${badId.text}`);
+    });
+    await ctx.step("the outsider's token reaches nothing of the owner's project through the CLI either", async () => {
+      const r = await cli(24, ["secrets", "ls", "--json"], { project_id: p.id }, outsiderPat);
+      if (!r.isError || !r.out || r.out.exit_code === 0 || r.text.includes("MCP_T")) throw new Error(r.text.slice(0, 400));
+    });
+    await ctx.step("read_skill with project_id lists the project's own skills before the guides; a name reads that skill's SKILL.md and its references", async () => {
+      // The repository listing is cached for a moment: wait for the API to see the commit.
+      await waitFor(() => call(31, "list_files", { project_id: p.id }), {
+        until: (r) => r.text.includes("skills/mcp-demo/SKILL.md"),
+        timeoutMs: 90_000,
+        intervalMs: 3_000,
+        description: "the committed skill in the repository listing",
+      });
+      const list = await call(25, "read_skill", { project_id: p.id });
+      if (list.isError || !list.text.includes("kortix-system") || !list.text.includes("Project skills (read_skill")) throw new Error(list.text.slice(0, 500));
+      const own = list.text.split("Platform guides:")[0]!.split("\n\n").map((l) => l.split(" — ")[0]!.trim()).filter((l) => /^[a-z0-9][a-z0-9._-]*$/i.test(l));
+      if (!own.includes("mcp-demo") || !list.text.includes("Demo skill for the MCP flow")) throw new Error(`the project skill is not listed: ${list.text.slice(0, 400)}`);
+      const one = await call(26, "read_skill", { project_id: p.id, name: "mcp-demo" });
+      if (one.isError || !one.text.startsWith("---\nname: mcp-demo") || !one.text.includes("- references/notes.md")) throw new Error(`SKILL.md: ${one.text.slice(0, 300)}`);
+      const ref = await call(30, "read_skill", { project_id: p.id, name: "mcp-demo", file: "references/notes.md" });
+      if (ref.isError || ref.text !== "reference notes\n") throw new Error(`reference: ${ref.text.slice(0, 200)}`);
+      const plain = await call(27, "read_skill", {});
+      if (plain.text.includes("Project skills (read_skill")) throw new Error("read_skill without project_id lists project skills");
+      const escape = await call(28, "read_skill", { project_id: p.id, name: "mcp-demo", file: "../../kortix.yaml" });
+      if (!escape.isError) throw new Error("a reference path may not leave the skill directory");
+      const outsider = await call(29, "read_skill", { project_id: p.id }, outsiderPat);
+      if (!outsider.isError) throw new Error(`an outsider listed the project's skills: ${outsider.text.slice(0, 200)}`);
+    });
   },
 );
