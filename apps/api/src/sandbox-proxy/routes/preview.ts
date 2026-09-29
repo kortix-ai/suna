@@ -1672,6 +1672,7 @@ export async function forwardToSandbox(
         // programmatic clients still get the real status + JSON via passthrough.
         if (!nonReplayableWrite && isBrowserNavigation(incomingHeaders)) {
           void markSandboxUsed(sandboxId);
+          ptl.log({ path: remainingPath, port, upstream_status: upstream.status });
           return portUnreachableResponse({
             port,
             status: upstream.status,
@@ -2005,6 +2006,10 @@ export async function forwardToSandbox(
   }
   if (promptDeliveryMaybeAccepted) await acceptTurnLifecycle();
   else await abandonTurnLifecycle();
+  // A give-up says the box was unreachable, not where the wall time went. The
+  // stage deltas are the attribution; a prompt delivery already logs this
+  // summary (KRTX-471).
+  ptl.log({ path: remainingPath, port, hop: lastAttemptHop });
   return portUnreachableResponse({
     port,
     status: 502,
