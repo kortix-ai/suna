@@ -309,7 +309,10 @@ async function applySlackApprovalDecision(input: SlackDecisionInput): Promise<vo
     team: input.teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: input.teamId, event };
-  await spawnAgentTurn(input.projectId, envelope, event, { ownThreadsOnly: input.inbound.kind === 'project' });
+  await spawnAgentTurn(input.projectId, envelope, event, {
+    ownThreadsOnly: input.inbound.kind === 'project',
+    authorizedResume: true,
+  });
 }
 
 /** A button on an approval card. */

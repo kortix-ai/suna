@@ -199,6 +199,18 @@ mock.module('../channels/teams/participants', () => ({
   normalizeConversationPolicy: (v: unknown) => (typeof v === 'string' ? v : 'project_open'),
 }));
 
+// Per-resource agent scoping at session start (scoped-agents.ts).
+let agentAllowed = true;
+const agentChecks: Array<{ userId: string; agentName: string | null | undefined }> = [];
+const realScopedAgents = await import('../channels/scoped-agents');
+mock.module('../channels/scoped-agents', () => ({
+  ...realScopedAgents,
+  userMayLaunchAgent: async (_project: unknown, userId: string, agentName: string | null | undefined) => {
+    agentChecks.push({ userId, agentName });
+    return agentAllowed;
+  },
+}));
+
 const session = await import('../channels/teams/session');
 const { createOrJoinTeamsConversationSession, setTeamsSessionLifecycleForTest, resetTeamsSessionLifecycleForTest } = session;
 
@@ -213,6 +225,8 @@ const activity = {
 };
 
 beforeEach(() => {
+  agentAllowed = true;
+  agentChecks.length = 0;
   calls.length = 0;
   created.length = 0;
   continued.length = 0;
@@ -438,6 +452,23 @@ describe('join policy on a follow-up', () => {
     expect(continued).toHaveLength(0);
     expect(saved).toHaveLength(0);
     expect(created).toHaveLength(0);
+  });
+
+  test('an authorized decision (approval, review) resumes the agent without the join gate', async () => {
+    // A manager who is not a participant approved from the card: the
+    // decision was authorized, so the owner-only policy must not strand the
+    // agent waiting for it.
+    participantVerdict = { allowed: false, notice: 'This Kortix session is owner-only.' };
+    await createOrJoinTeamsConversationSession({
+      projectId: PROJECT_ID,
+      tenantId: TENANT_ID,
+      conversationId: CONVERSATION_ID,
+      activity,
+      authorizedResume: true,
+    });
+    expect(gateCalls).toEqual([]);
+    expect(notices).toEqual([]);
+    expect(continued).toHaveLength(1);
   });
 
   test('a new session remembers its owner as the first approved participant and freezes the policy', async () => {
@@ -688,6 +719,32 @@ describe('models and keys — a chat runs what its /model picked, on the keys it
       await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat(type) });
       expect(created[0].visibility).toBe('project');
       expect(startPlans[0].scope).toMatchObject({ oneToOne: false, personalUserId: null });
+    }
+  });
+
+  test('someone scoped out of the conversation`s agent starts no session on it', async () => {
+    channelSelection = { projectId: PROJECT_ID, agentName: 'reviewer', opencodeModel: null };
+    agentAllowed = false;
+    await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('groupChat') });
+    expect(agentChecks).toEqual([{ userId: 'user-1', agentName: 'reviewer' }]);
+    expect(created).toEqual([]);
+    expect(JSON.stringify(finalized)).toContain("don't have access to the `reviewer` agent");
+  });
+
+  test('an owner-only or approval conversation starts a restricted session, as Slack does', async () => {
+    // `project` visibility showed the session to every project member on the
+    // web, whatever the conversation's join policy said.
+    for (const [policy, visibility] of [
+      ['owner_only', 'restricted'],
+      ['owner_approval', 'restricted'],
+      ['project_open', 'project'],
+    ] as const) {
+      created.length = 0;
+      selectCount = 0;
+      channelSelection = { projectId: PROJECT_ID, agentName: null, opencodeModel: null, conversationPolicy: policy };
+      await createOrJoinTeamsConversationSession({ projectId: PROJECT_ID, tenantId: TENANT_ID, conversationId: CONVERSATION_ID, activity: inChat('groupChat') });
+      expect(created[0].visibility).toBe(visibility);
+      expect((created[0].metadata as { teams: { conversation_policy: string } }).teams.conversation_policy).toBe(policy);
     }
   });
 

@@ -10,7 +10,7 @@ const CONVO = 'a:synthetic-chat';
 
 const { chatEventDedup, chatThreadParticipants, chatThreads } = await import('@kortix/db');
 
-let threadRow: { sessionId: string; status: string | null; metadata: Record<string, unknown> | null } | undefined;
+let threadRow: { sessionId: string; projectId?: string; status: string | null; metadata: Record<string, unknown> | null } | undefined;
 let participantRow: { status: string } | undefined;
 let participantThrows = false;
 const deleted: unknown[] = [];
@@ -54,6 +54,20 @@ mock.module('../config', () => ({
   },
 }));
 
+// Whether the person may run sessions in the session's project (a linked
+// account with project.session.start), and what was asked.
+let actor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
+const { chatIdentityStub } = await import('./helpers/chat-identity-stub');
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+    resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
+      actorChecks.push({ user: user.platformUserId, projectId, action });
+      return actor;
+    },
+  }),
+);
+
 let turn: Record<string, unknown> | null = null;
 const closed: string[] = [];
 const turnDeletes: string[] = [];
@@ -79,7 +93,9 @@ const fresh = (over: Partial<Parameters<typeof startFreshTeamsConversation>[0]> 
   });
 
 beforeEach(() => {
-  threadRow = { sessionId: 'sess-old', status: 'running', metadata: { teams: { conversation_policy: 'owner_only' } } };
+  threadRow = { sessionId: 'sess-old', projectId: 'proj-1', status: 'running', metadata: { teams: { conversation_policy: 'owner_only' } } };
+  actor = { userId: 'user-1' };
+  actorChecks.length = 0;
   participantRow = undefined;
   participantThrows = false;
   requireIdentity = true;
@@ -175,13 +191,29 @@ describe('who may start fresh in a group chat', () => {
     expect(deleted).toEqual([]);
   });
 
-  test('under project_open anyone may, as anyone may continue the session', async () => {
-    threadRow = { sessionId: 'sess-old', status: 'running', metadata: { teams: { conversation_policy: 'project_open' } } };
+  test('under project_open any linked project member may, as they may continue the session', async () => {
+    threadRow = { sessionId: 'sess-old', projectId: 'proj-1', status: 'running', metadata: { teams: { conversation_policy: 'project_open' } } };
     expect((await fresh({ scope: 'groupChat', teamsUserId: 'aad-anyone' })).reset).toBe(true);
+    expect(actorChecks).toEqual([{ user: 'aad-anyone', projectId: 'proj-1', action: 'project.session.start' }]);
+  });
+
+  test('under project_open someone unlinked or without project access may not', async () => {
+    threadRow = { sessionId: 'sess-old', projectId: 'proj-1', status: 'running', metadata: { teams: { conversation_policy: 'project_open' } } };
+    for (const reason of ['unlinked', 'not_member'] as const) {
+      actor = { reason };
+      expect((await fresh({ scope: 'groupChat', teamsUserId: 'aad-anyone' })).reset).toBe(false);
+    }
+    expect(deleted).toEqual([]);
+  });
+
+  test('an approved participant who lost project access may not', async () => {
+    participantRow = { status: 'approved' };
+    actor = { reason: 'not_member' };
+    expect((await fresh({ scope: 'groupChat' })).reset).toBe(false);
   });
 
   test('a session that froze no policy falls back to the conversation`s', async () => {
-    threadRow = { sessionId: 'sess-old', status: 'running', metadata: null };
+    threadRow = { sessionId: 'sess-old', projectId: 'proj-1', status: 'running', metadata: null };
 
     expect((await fresh({ scope: 'groupChat', teamsUserId: 'aad-anyone', channelPolicy: 'owner_approval' })).reset).toBe(false);
     expect((await fresh({ scope: 'groupChat', teamsUserId: 'aad-anyone', channelPolicy: 'project_open' })).reset).toBe(true);

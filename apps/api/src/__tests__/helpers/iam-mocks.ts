@@ -188,6 +188,9 @@ export function mockIamEngineAllowAll(
     clearAuthorizeCaches: () => {},
     agentEffectiveAllows: async () => false,
     agentEffectiveVerdict: async () => ({ allowed: false, reason: 'agent_scope_insufficient' }),
+    // The account MFA gate is a pure rule; chat identity linking reads it.
+    mfaGateBlocks: (rec: { accountMfaRequired: boolean }, tokenId: string | null | undefined, mfaAal: string | undefined) =>
+      rec.accountMfaRequired && !tokenId && mfaAal !== 'aal2',
   }));
 }
 
