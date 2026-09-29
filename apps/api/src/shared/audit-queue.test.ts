@@ -528,6 +528,38 @@ describe('AuditQueue never drops a contended batch', () => {
     expect(fake.batches.map((b) => b.map((r) => r.action))).toEqual([['a'], ['a']]);
   });
 
+  test('contention warnings are rate-limited to one per interval, without losing the accounting', async () => {
+    const fake = makeClient();
+    const warnings: number[] = [];
+    let clock = 1_000;
+    const q = new AuditQueue(fake.client, {
+      flushMs: 10_000,
+      retryLogIntervalMs: 60_000,
+      now: () => clock,
+      onRetry: () => warnings.push(clock),
+    });
+
+    fake.failWith(codedError('55P03', 'canceling statement due to lock timeout'));
+    for (let i = 0; i < 5; i += 1) {
+      q.enqueue(row(`r${i}`));
+      await q.flush();
+      clock += 1_000; // five contentions inside one 60 s window
+    }
+
+    // One warning for the whole window; the first contention is never hidden.
+    expect(warnings).toHaveLength(1);
+    // Rate limiting suppresses the LINE, never the accounting: every contended
+    // row is still counted and still buffered for retry.
+    expect(q.stats().contended).toBeGreaterThan(0);
+    expect(q.stats().dropped).toBe(0);
+    expect(q.stats().queued).toBeGreaterThan(0);
+
+    clock += 60_001;
+    q.enqueue(row('later'));
+    await q.flush();
+    expect(warnings).toHaveLength(2);
+  });
+
   test('every documented contention SQLSTATE is requeued, not dropped', async () => {
     for (const code of ['57014', '55P03', '40001', '40P01', '57P03', '08006', '53300']) {
       const fake = makeClient();

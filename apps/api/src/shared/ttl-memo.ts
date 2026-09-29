@@ -110,12 +110,14 @@ export function ttlMemo<A extends unknown[], T>(opts: {
 
   const refresh = (entry: Entry<T>, key: string, args: A) => {
     entry.refreshing = true;
-    entry.expiresAt = Date.now() + ttlMs;
-    // Fire-and-forget: the caller already has the last good value. A failure
-    // keeps that value and lets the next expired call retry.
+    // Fire-and-forget: the caller already has the last good value. Freshness
+    // restarts at SETTLE, not start, so a refresh slower than the TTL does not
+    // leave the entry expired when the fresh value lands. A failure keeps the
+    // last good value; the next expired call retries.
     void loader(...args).then(
       (resolved) => {
         entry.refreshing = false;
+        entry.expiresAt = Date.now() + ttlMs;
         if (shouldCache && !shouldCache(resolved, ...args)) {
           cache.delete(key);
           return;

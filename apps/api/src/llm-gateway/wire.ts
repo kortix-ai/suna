@@ -1,6 +1,7 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { createLlmGatewayRateLimitMiddleware } from '../shared/rate-limit';
 import { createInternalGatewayRoutes } from './internal-routes';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────
@@ -491,6 +492,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   };
 
   const llm = makeOpenApiApp();
+  // Per-principal bound on every inference request. Registered before the
+  // catch-all so it wraps every path; the `registerPath` calls below add
+  // OpenAPI metadata only, no middleware.
+  llm.use('*', createLlmGatewayRateLimitMiddleware());
   llm.openAPIRegistry.registerPath(chatCompletionsRoute('/chat/completions'));
   llm.openAPIRegistry.registerPath(modelsRoute('/models'));
   llm.openAPIRegistry.registerPath(messagesRoute('/messages'));
@@ -504,7 +509,8 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   app.route('/v1/llm', llm);
 
   // Temporary compatibility alias for clients configured with the old proxy
-  // prefix. New clients use /v1/llm directly.
+  // prefix. New clients use /v1/llm directly. Same per-principal bound.
+  app.use('/v1/llm-gateway/*', createLlmGatewayRateLimitMiddleware());
   app.all('/v1/llm-gateway/*', (c) => {
     const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
     return proxy(c, tail);

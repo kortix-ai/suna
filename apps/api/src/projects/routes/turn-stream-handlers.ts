@@ -1,26 +1,38 @@
-/** Per-kind handlers for `POST /:projectId/turn-stream` — the dispatch targets
- *  the route in `turn-stream.ts` extracts. The route sleeve owns auth, kind
- *  normalization and the two credential scopes, plus the `end`/`turn_end`
- *  settlement (the source-level deadline guard pins its
- *  `completeSandboxTurn` wiring to turn-stream.ts); each handler here owns
- *  one of the other `body.kind`s. Statuses, bodies and side-effect order are
- *  pinned by the characterization set in `turn-stream.test.ts`. */
+/**
+ * Per-kind handlers for `POST /:projectId/turn-stream`.
+ *
+ * The route sleeve in `turn-stream.ts` owns the two credential scopes and the
+ * `kind` normalization; every `body.kind` dispatches to one function here. The
+ * bodies are moved verbatim, so the traffic contract — statuses, response
+ * fields, and side-effect order — is unchanged.
+ */
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
 import {
   relayTurnAnswerDetailed,
+  relayTurnEnd,
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
+import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { db } from '../../shared/db';
+import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
+import { childIdleGraceMs } from '../sandbox-deadline';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
+  completeSandboxTurn,
+  recordUnidentifiedTurnCause,
+  turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
+import { drainSessionLifecycleQueue } from '../session-lifecycle';
+import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
+import { promoteNextInboxRow } from '../session-lifecycle/store';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 
-export interface TurnStreamBody {
+/** The relay request body, shape only — the route parses JSON into this. */
+export type TurnStreamBody = {
   session_id?: string;
   kind?: string;
   text?: string;
@@ -41,45 +53,48 @@ export interface TurnStreamBody {
   error_status?: number;
   error_retryable?: boolean;
   error_provider?: string;
-}
-
-/** Everything the per-kind handlers work with, resolved by the route sleeve
- *  before the dispatch. */
-export interface TurnStreamContext {
-  c: Context;
-  projectId: string;
-  sessionId: string;
-  body: TurnStreamBody;
-  authenticatedSandboxId: string | null;
-  authenticatedSandboxMetadata: unknown;
-  turnStreamSession: {
-    sessionId: string;
-    accountId: string;
-    createdBy: string | null;
-    metadata: unknown;
-  };
-  turnStreamMetadata: Record<string, unknown>;
-  childSession: boolean;
-}
-
-/** A caller that passed a sandbox-credential kind's wall: the box's own
- *  credential, already scoped to this project and session. */
-export type TurnStreamSandboxContext = TurnStreamContext & {
-  authenticatedSandboxId: string;
 };
 
-/** The sandbox-token wall every upward lifecycle kind sits behind. The four
- *  credential kinds each used to re-hand-write this 403; the dispatcher calls
- *  this once for the group. */
-export function requireSandboxCredential(ctx: TurnStreamContext): Response | null {
-  if (ctx.authenticatedSandboxId) return null;
-  return ctx.c.json({ error: `${ctx.body.kind} requires a sandbox token` }, 403);
+/** The only surface these handlers use from the Hono context. */
+export interface RelayResponder {
+  json: (body: unknown, status?: number) => Response;
+}
+
+/** What the `end` / `turn_end` handler needs from the sleeve. */
+export interface TurnEndContext {
+  projectId: string;
+  sessionId: string;
+  /** Coordinator-spawned worker: its idle tail is minutes, not the default grace. */
+  childSession: boolean;
+  turnStreamMetadata: Record<string, unknown>;
+  turnStreamSession: { accountId: string; createdBy: string | null };
+}
+
+/**
+ * The upward-lifecycle kinds require the session sandbox's own credential —
+ * a project/session PAT cannot promote a token-bound turn record. One guard
+ * returns the 403 wall each kind used to hand-write, or null when the caller
+ * presented the sandbox credential.
+ */
+export function requireSandboxCredential(
+  c: RelayResponder,
+  authenticatedSandboxId: string | null,
+  kind: string,
+): Response | null {
+  if (authenticatedSandboxId) return null;
+  return c.json({ error: `${kind} requires a sandbox token` }, 403);
 }
 
 // The daemon claims its first prompt through the session-bound credential.
 // No prompt or turn-ledger identifier belongs in the VM environment.
-export function claimInitialTurn(ctx: TurnStreamSandboxContext) {
-  const { c, body, authenticatedSandboxMetadata, turnStreamMetadata } = ctx;
+export function claimInitialTurn(
+  c: RelayResponder,
+  authenticatedSandboxId: string | null,
+  authenticatedSandboxMetadata: unknown,
+  turnStreamMetadata: Record<string, unknown>,
+): Response {
+  const denial = requireSandboxCredential(c, authenticatedSandboxId, 'initial_turn_claim');
+  if (denial) return denial;
   const sandboxMetadata = (authenticatedSandboxMetadata ?? {}) as Record<string, unknown>;
   const activeTurns =
     sandboxMetadata.activeTurns &&
@@ -115,8 +130,14 @@ export function claimInitialTurn(ctx: TurnStreamSandboxContext) {
 // never delivered because it reused a root with older messages. Remove only
 // that token-bound `delivering` record. The sandbox cannot clear an active
 // record through this operation.
-export async function abandonTurn(ctx: TurnStreamSandboxContext) {
-  const { c, body, authenticatedSandboxId } = ctx;
+export async function abandonTurn(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  authenticatedSandboxId: string | null,
+): Promise<Response | null> {
+  if (!authenticatedSandboxId) {
+    return requireSandboxCredential(c, authenticatedSandboxId, 'turn_abandoned');
+  }
   const turnToken = body.turn_token?.trim();
   if (!turnToken) return c.json({ error: 'turn_token is required' }, 400);
   const ok = await abandonSandboxTurn({ sandboxId: authenticatedSandboxId }, turnToken);
@@ -128,8 +149,14 @@ export async function abandonTurn(ctx: TurnStreamSandboxContext) {
 // accepts the boot prompt. It cannot create a record or revive one removed
 // by terminal evidence. Require the sandbox credential for this upward
 // lifecycle transition; a project/session PAT is not sufficient.
-export async function acceptTurn(ctx: TurnStreamSandboxContext) {
-  const { c, body, authenticatedSandboxId } = ctx;
+export async function acceptTurn(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  authenticatedSandboxId: string | null,
+): Promise<Response | null> {
+  if (!authenticatedSandboxId) {
+    return requireSandboxCredential(c, authenticatedSandboxId, 'turn_accepted');
+  }
   const turnToken = body.turn_token?.trim();
   const opencodeSessionId = body.opencode_session_id?.trim();
   const messageId = body.turn_message_id?.trim();
@@ -154,8 +181,14 @@ export async function acceptTurn(ctx: TurnStreamSandboxContext) {
 // reports the running turn and the deadline grant covers it. Idempotent —
 // see adoptRuntimeSandboxTurn; requires the sandbox credential like every
 // upward lifecycle transition.
-export async function beginTurn(ctx: TurnStreamSandboxContext) {
-  const { c, body, authenticatedSandboxId } = ctx;
+export async function beginTurn(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  authenticatedSandboxId: string | null,
+): Promise<Response | null> {
+  if (!authenticatedSandboxId) {
+    return requireSandboxCredential(c, authenticatedSandboxId, 'turn_begin');
+  }
   const opencodeSessionId = body.opencode_session_id?.trim();
   const messageId = body.turn_message_id?.trim();
   if (!opencodeSessionId || !messageId) {
@@ -168,6 +201,251 @@ export async function beginTurn(ctx: TurnStreamSandboxContext) {
   return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
 }
 
+/** The durable half of a turn end: settle the ledger and attach a bare cause. */
+async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSession: boolean) {
+  const status: 'idle' | 'error' = body.status === 'error' ? 'error' : 'idle';
+  const errorInfo =
+    body.error_name || body.error_message || typeof body.error_status === 'number'
+      ? {
+          name: typeof body.error_name === 'string' ? body.error_name : undefined,
+          message: typeof body.error_message === 'string' ? body.error_message : undefined,
+          statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
+          isRetryable: typeof body.error_retryable === 'boolean' ? body.error_retryable : undefined,
+          providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
+        }
+      : undefined;
+  // SANDBOX-REPORTED turn end. `shortenSandboxDeadline` is LEAST-only, so
+  // it is structurally incapable of EXTENDING the box's life — which is
+  // exactly why it is safe to trust a payload the sandbox authored, and
+  // why it needs no auth gate of its own. This is the "die 15 minutes
+  // after the last turn ended" half of the model.
+  //
+  // But ONLY for a turn that genuinely ended. `session.error` also fires
+  // while opencode is RETRYING (a 429 backoff, a transient upstream 5xx),
+  // and pulling the deadline in to 15 minutes there killed the box mid-turn
+  // on any backoff longer than that — the exact state the deleted execution
+  // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
+  // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
+  // cannot be re-wired here without it.
+  // A 2xx acknowledges that terminal lifecycle evidence is durable. The
+  // daemon retries network/5xx failures and periodically reconciles a lost
+  // event. Returning before this write finished made a transient DB failure
+  // look successful, so the daemon deduped the event and the active record
+  // survived until reaper reconciliation.
+  const turnCompletion = await completeSandboxTurn(
+    sessionId,
+    status,
+    {
+      opencodeSessionId:
+        typeof body.opencode_session_id === 'string' ? body.opencode_session_id : undefined,
+      messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
+    },
+    errorInfo,
+    childSession ? childIdleGraceMs() : undefined,
+  );
+  // The memory guard reports its cause in a frame of its own, after the
+  // abort. A daemon built before 2026-09-21 sends it with no
+  // `turn_message_id` and `error_retryable: true`, which settles nothing
+  // above. Attach the cause to the turn it stopped, or the UI says "No
+  // reason was reported" under a turn the sandbox killed on purpose.
+  if (
+    status === 'error' &&
+    body.error_name === 'SandboxMemoryGuard' &&
+    typeof body.turn_message_id !== 'string' &&
+    turnCompletion.outcome !== 'closed'
+  ) {
+    const causeOutcome = await recordUnidentifiedTurnCause(
+      sessionId,
+      typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+      {
+        name: body.error_name,
+        message: typeof body.error_message === 'string' ? body.error_message : null,
+      },
+    );
+    console.info('[turn-stream] unidentified turn cause', {
+      sessionId,
+      name: body.error_name,
+      outcome: causeOutcome,
+    });
+  }
+  return { status, errorInfo, turnCompletion };
+}
+
+/**
+ * The post-settlement fan-out: reconcile forwarded turns, mirror the finished
+ * transcript, then admit the session's next queued prompt. Fire-and-forget
+ * except the durable promotion, which the ack must wait for.
+ */
+async function promoteAfterTurnEnd(
+  ctx: TurnEndContext,
+  body: TurnStreamBody,
+  settled: Awaited<ReturnType<typeof settleTurnLedger>>,
+): Promise<string | null> {
+  const { sessionId, childSession } = ctx;
+  const { turnCompletion } = settled;
+  // Prompts forwarded INTO the turn that just ended: close the ones the
+  // step answered (older than the ended message), and re-queue any that
+  // the loop stranded below a newer assistant — see
+  // forwarded-strand-reconcile.ts. Fire-and-forget: it reads the box once
+  // and must not hold the daemon's relay.
+  if (!childSession) {
+    void reconcileForwardedTurnsAtEnd({
+      sessionId,
+      opencodeSessionId:
+        typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+      endedMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+    }).catch((err) =>
+      console.warn(
+        `[forwarded-turns] reconcile failed for session ${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    );
+  }
+  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL — mirror it.
+  //
+  // This is the one instant the deleted client-side mirror could not
+  // observe (its freshness test read the transcript's SHAPE, and a STOP
+  // moves none of that), which is why the SERVER writes the copy here
+  // rather than the browser writing it on a timer. The box is definitionally
+  // reachable — it just relayed — and both halves of the turn are settled.
+  // Fire-and-forget beside the reconcile above: a mirror write must never be
+  // able to fail a turn-end report, and `captureSessionTranscriptMirror`
+  // never throws.
+  if (!childSession) {
+    void captureSessionTranscriptMirror(sessionId);
+  }
+  // THE TURN ENDED — the session's next queued prompt is admissible NOW.
+  // Await the durable promotion before acknowledging the terminal relay.
+  // The targeted drain remains asynchronous and re-runs admission itself;
+  // a lost kick falls back to the scheduler tick.
+  // This is what makes the queue "send between every turn" without a
+  // clock: the daemon's idle relay is the trigger.
+  let promotedPromptId: string | null = null;
+  if (!childSession) {
+    if (turnCompletionAllowsQueuePromotion(turnCompletion)) {
+      promotedPromptId = await promoteNextInboxRow(sessionId);
+      if (promotedPromptId) {
+        void drainSessionLifecycleQueue({
+          idempotencyKey: promotedPromptId,
+          coalesce: false,
+        }).catch((error) =>
+          console.warn('[turn-stream] targeted queue drain failed', {
+            sessionId,
+            promptId: promotedPromptId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    }
+    console.info('[turn-stream] terminal turn settlement', {
+      sessionId,
+      opencodeSessionId:
+        typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+      turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+      outcome: turnCompletion.outcome,
+      activeTurnCount: turnCompletion.activeTurnCount,
+      closedTurnCount: turnCompletion.closedTurnCount,
+      queuePromoted: promotedPromptId !== null,
+      promotedPromptId,
+    });
+  }
+  return promotedPromptId;
+}
+
+/** Push, auto-title retry, the relay gate, and the terminal response. */
+async function publishTurnEnd(
+  c: RelayResponder,
+  ctx: TurnEndContext,
+  body: TurnStreamBody,
+  settled: Awaited<ReturnType<typeof settleTurnLedger>>,
+  promotedPromptId: string | null,
+): Promise<Response> {
+  const { projectId, sessionId, childSession, turnStreamMetadata, turnStreamSession } = ctx;
+  const { status, errorInfo, turnCompletion } = settled;
+  // Push the session creator's devices. Only an end that closed a turn in
+  // THIS call notifies (see turnEndPushType); replays and aborts do not,
+  // and a promoted queued prompt means the session is still running, so
+  // it gets no completion push. Fire-and-forget: a push must never delay
+  // or fail the relay.
+  const pushType = turnEndPushType({
+    outcome: turnCompletion.outcome,
+    status,
+    errorName: errorInfo?.name,
+    childSession,
+    promoted: promotedPromptId !== null,
+  });
+  if (pushType) {
+    void notifySessionEvent({ type: pushType, sessionId, projectId }).catch((err) =>
+      console.warn('[push] turn-end notification failed', err instanceof Error ? err.message : err),
+    );
+  }
+  // Second-chance auto-title: create-time generation is a single in-memory
+  // best-effort call, and a session whose only prompt was baked in-guest
+  // (the server-claimed initial prompt) never crosses a titling hook again. Turn end
+  // is the natural retry point — the generator is idempotent (needsTitle +
+  // CAS) so an already-titled session is a cheap no-op. The stored
+  // `title_source` outranks the supplied text inside the generator.
+  const titleRetrySource = [
+    turnStreamMetadata.title_source,
+    turnStreamMetadata.initial_prompt,
+  ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  if (titleRetrySource && turnStreamSession.createdBy) {
+    void generateSessionTitleFromFirstPrompt({
+      projectId,
+      sessionId,
+      accountId: turnStreamSession.accountId,
+      userId: turnStreamSession.createdBy,
+      firstPromptText: titleRetrySource,
+    }).catch((err) =>
+      console.warn(
+        `[title-generate] turn-end retry failed for session ${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    );
+  }
+  // An end whose identity does not match the ledger's active turn is a
+  // replay of some OTHER turn (a runtime waking for a follow-up re-emits
+  // the previous turn's idle). Relaying it closed and deleted the Slack
+  // turn row of the run that had just started
+  // (INC-2026-09-08-CONNECTOR-GATEWAY, S2/S3). The ledger already refused
+  // to close its own turn for this; the channel relay now agrees.
+  const relayEnd = turnCompletion.outcome !== 'identity_mismatch';
+  if (!relayEnd) {
+    console.warn('[turn-stream] turn-end relay skipped — identity mismatch with the active turn', {
+      sessionId,
+      status,
+      turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+      activeTurnCount: turnCompletion.activeTurnCount,
+    });
+  }
+  const ok = relayEnd ? await relayTurnEnd(sessionId, status, errorInfo) : false;
+  return c.json({
+    ok,
+    turn_completion: {
+      outcome: turnCompletion.outcome,
+      active_turn_count: turnCompletion.activeTurnCount,
+      closed_turn_count: turnCompletion.closedTurnCount,
+    },
+    queue_promoted: promotedPromptId !== null,
+    promoted_prompt_id: promotedPromptId,
+  });
+}
+
+// `end` / `turn_end` carry no text — the sandbox observed the opencode turn
+// finish (idle) or die (error) without the agent closing its Slack message;
+// finalize it gracefully instead of letting it rot into a timeout failure.
+// (`turn_end` is the alias newer sandboxes send, with status + the opencode
+// session id for the server-side root-session guard.)
+export async function settleTurnEnd(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  ctx: TurnEndContext,
+): Promise<Response> {
+  const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
+  const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
+  return publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+}
+
 // `opencode_session` carries the canonical opencode ROOT id the sandbox just
 // bootstrapped (or reused after a restart). Persist it as the durable pin so
 // the Kortix session resolves to the LIVE root with NO dependency on a browser
@@ -175,22 +453,28 @@ export async function beginTurn(ctx: TurnStreamSandboxContext) {
 // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
 // is already scoped to this project (checked above); the daemon only ever
 // reports its own pin-file root, never a subagent.
-export async function pinOpencodeSession(ctx: TurnStreamContext) {
-  const { c, body, sessionId, projectId } = ctx;
+export async function pinOpencodeSession(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  projectId: string,
+  sessionId: string,
+): Promise<Response> {
   const ocId = body.opencode_session_id?.trim();
   if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
   const updated = await db
     .update(projectSessions)
     .set({ opencodeSessionId: ocId, updatedAt: new Date() })
-    .where(
-      and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
-    )
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
     .returning({ sessionId: projectSessions.sessionId });
   return c.json({ ok: updated.length > 0 });
 }
 
-export async function relayContent(ctx: TurnStreamContext) {
-  const { c, body, sessionId } = ctx;
+/** The content-bearing `step` / `answer` relay, and the deny-by-default fall-through. */
+export async function relayContent(
+  c: RelayResponder,
+  body: TurnStreamBody,
+  sessionId: string,
+): Promise<Response> {
   const text = (body.text ?? '').trim();
   if (!text) {
     return c.json({ error: 'text is required' }, 400);
@@ -220,7 +504,11 @@ export async function relayContent(ctx: TurnStreamContext) {
       : undefined;
   if (formSpec && !card) {
     return c.json(
-      { ok: false, reason: 'invalid_form', error: 'the form needs at least one field with an id and a label' },
+      {
+        ok: false,
+        reason: 'invalid_form',
+        error: 'the form needs at least one field with an id and a label',
+      },
       400,
     );
   }

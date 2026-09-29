@@ -299,6 +299,45 @@ describe('ttlMemo stale-while-revalidate', () => {
     expect(await p2).toBe(42);
   });
 
+  it('a refresh that settles after its own TTL still buys a full window', async () => {
+    // The 5f2ae97 runner failure: freshness was reset at refresh START, so a
+    // refresh slower than the TTL left the entry expired the moment its fresh
+    // value landed and the next call started another background load.
+    // Freshness restarts at SETTLE, so the late refresh must buy a full TTL.
+    let calls = 0;
+    const resolvers: Array<(v: number) => void> = [];
+    const memo = ttlMemo({
+      ttlMs: 10,
+      staleWhileRevalidate: true,
+      keyFn: (k: string) => k,
+      loader: (_k: string) => {
+        calls += 1;
+        return new Promise<number>((resolve) => resolvers.push(resolve));
+      },
+      enableInTests: true,
+    });
+    freezeClock();
+
+    const first = memo('a');
+    resolvePending(resolvers, 0, 1);
+    expect(await first).toBe(1);
+
+    advance(25); // TTL expires; refresh #2 starts
+    expect(await memo('a')).toBe(1);
+    expect(calls).toBe(2);
+
+    advance(15); // refresh #2 is now overdue (slower than the TTL) ...
+    resolvePending(resolvers, 1, 2); // ... and settles late
+    await sleep(0);
+    advance(5); // inside the fresh window measured from SETTLE
+    expect(await memo('a')).toBe(2); // no extra load for the overdue refresh
+    expect(calls).toBe(2);
+
+    advance(10); // a full TTL passes after settle
+    expect(await memo('a')).toBe(2); // the next SWR refresh starts
+    expect(calls).toBe(3);
+  });
+
   it('without the flag an expired entry still blocks on a reload (unchanged)', async () => {
     const c = counter((n) => n);
     const memo = ttlMemo({
