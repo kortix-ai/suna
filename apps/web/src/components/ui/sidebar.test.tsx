@@ -5,6 +5,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Sidebar, SidebarEdgePeek, SidebarProvider, SidebarRail } from './sidebar';
 import { SIDEBAR_MAX_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, SIDEBAR_WIDTH_PX } from './sidebar-width';
 
+/**
+ * The context kernel (the `SIDEBAR_*` constants, `resolveInstant`) lives in
+ * `sidebar-context.tsx` after phase 1 of `code-spec:split-sidebar-tsx`. The
+ * source assertions below pin code on both sides of that boundary, so they
+ * read both modules.
+ */
+const sidebarSource = () =>
+  readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8') +
+  readFileSync(new URL('./sidebar-context.tsx', import.meta.url), 'utf8');
+
 function renderShell(defaultOpen: boolean) {
   return renderToStaticMarkup(
     <SidebarProvider defaultOpen={defaultOpen}>
@@ -133,7 +143,7 @@ describe('Sidebar motion contract', () => {
   });
 
   test('a keyboard-initiated collapse zeroes the slide', () => {
-    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const source = sidebarSource();
     // ⌘B sets the flag...
     expect(source).toContain('toggleSidebar({ instant: true })');
     // ...an Enter/Space click on a toggle button sets it via `detail === 0`...
@@ -164,7 +174,7 @@ describe('Sidebar motion contract', () => {
   });
 
   test('the undock timer outlasts the transform it covers', () => {
-    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const source = sidebarSource();
     const declared = source.match(/const SIDEBAR_UNDOCK_MS = (\d+);/)?.[1];
     expect(declared).toBe('240');
     // Same number, in the class the timer has to outlive. If one moves without
