@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 691,
+  "count": 693,
   "routes": [
     {
       "method": "GET",
@@ -1709,6 +1709,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/teams/message"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/edit"
     },
     {
       "method": "GET",

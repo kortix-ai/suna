@@ -1,8 +1,10 @@
 import { config } from '../../config';
-import { formatRelativeTime, sessionWebUrl } from '../slack/util';
+import { formatRelativeTime, repoOgImage, sessionWebUrl } from '../slack/util';
+import { projectRows } from './project-rows';
+import { buildTeamsHomeCard } from './home';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { currentChannelSelection } from '../slack/selection';
-import { type SettingsChannel, changeChannelAgent, changeChannelPolicy, switchChannelProject } from '../core/settings';
+import { type SettingsChannel, changeChannelAgent, changeChannelPolicy, switchChannelProject, unbindChannel } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { buildAgentsPicker } from './agent-picker';
@@ -17,10 +19,9 @@ import {
   buildHelpCard,
   buildNoticeCard,
   buildPanelCard,
-  buildSelectCard,
+  buildProjectsCard as buildProjectsPickerCard,
   buildSessionsCard,
   openPanelAction,
-  type SelectOption,
 } from './cards';
 import { listVisibleChatSessions } from '../core/sessions';
 import {
@@ -81,7 +82,7 @@ export async function handleTeamsCommand(input: {
       case 'connect': {
         // The sign-in link only in a one-to-one chat (login-card.ts).
         if (userId) {
-          await post(await teamsLoginCard({ activity: input.activity, tenantId: input.tenantId, teamsUserId: userId }));
+          await post(await teamsLoginCard({ activity: input.activity, tenantId: input.tenantId, teamsUserId: userId, projectId: input.projectId }));
         }
         return true;
       }
@@ -169,6 +170,24 @@ export async function handleTeamsCommand(input: {
       case 'sessions':
         await post(await buildRecentSessionsCard(actor, sessionProjectId));
         return true;
+      case 'home':
+        await post(await buildTeamsHomeCard(input.tenantId, sessionProjectId));
+        return true;
+      case 'unbind': {
+        // A per-project bot runs its own project in every conversation: there
+        // is no binding to remove.
+        if (sessionProjectId) {
+          await post(buildNoticeCard('This bot always runs its own project, so there is nothing to unbind.'));
+          return true;
+        }
+        const result = await unbindChannel(actor, settings);
+        await post(
+          result.ok
+            ? buildNoticeCard('Unbound. The next message here picks the project again.', '✅')
+            : buildNoticeCard(teamsSettingsRefusal(result.reason, '')),
+        );
+        return true;
+      }
       case 'models':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
         await post(await buildTeamsModelsCard(input.activity, input.tenantId, conversationId));
@@ -238,6 +257,8 @@ function helpCard() {
     { cmd: '/stop', desc: 'stop the run in progress here' },
     { cmd: '/new [message]', desc: 'start a new session in this chat' },
     { cmd: '/policy', desc: 'who may join sessions started here: open, owner, approval' },
+    { cmd: '/unbind', desc: 'disconnect this conversation from its project' },
+    { cmd: '/home', desc: 'your projects and what to try' },
   ]);
 }
 
@@ -323,6 +344,7 @@ async function buildRecentSessionsCard(actor: ChatUser, projectId?: string) {
     status: SESSION_STATUS[r.status]?.label,
     when: formatRelativeTime(r.lastMessageAt),
     url: sessionWebUrl(config.FRONTEND_URL, r.projectId, r.sessionId),
+    imageUrl: r.repoUrl ? repoOgImage(r.repoUrl) : null,
   })));
 }
 
@@ -368,7 +390,7 @@ async function buildWhoamiCard(
   projectId: string,
 ) {
   const identity = userId ? await lookupChatIdentity(chatUser('teams', tenantId, userId)) : null;
-  if (!identity) return teamsLoginCard({ activity, tenantId, teamsUserId: userId ?? '' });
+  if (!identity) return teamsLoginCard({ activity, tenantId, teamsUserId: userId ?? '', projectId });
   const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
   return buildPanelCard({
     emoji: '👤',
@@ -428,19 +450,9 @@ async function buildProjectsCard(tenantId: string, currentProjectId: string) {
   if (projects.length === 0) {
     return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.', '📁');
   }
-  const options: SelectOption[] = projects.slice(0, 8).map((p) => ({
-    label: p.name,
-    current: p.projectId === currentProjectId,
-    data: { projectId: p.projectId },
-  }));
-  return buildSelectCard({
-    emoji: '📁',
-    title: 'Connected projects',
-    subtitle: 'Pick which project this conversation runs.',
-    verb: 'teams_pick_project',
-    options,
-  });
+  return buildProjectsPickerCard(projectRows(projects, currentProjectId));
 }
+
 
 async function switchProject(user: ChatUser, channel: SettingsChannel, arg: string) {
   const tenantId = channel.teamId;

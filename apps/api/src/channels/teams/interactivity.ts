@@ -528,6 +528,7 @@ async function handleRequestAccess(
     case 'created':
     case 'pending':
       await notifyAdminsOfTeamsAccessRequest({
+        tenantId,
         projectId,
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,

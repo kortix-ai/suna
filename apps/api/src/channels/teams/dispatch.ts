@@ -5,15 +5,16 @@ import { config } from '../../config';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
-import { resolveConversationProjectDetailed } from './binding';
+import { listTenantProjects, resolveConversationProjectDetailed } from './binding';
 import { buildProjectPickerCard, buildWelcomeCard } from './cards';
 import { createPendingTeamsPickerMessage } from './auth-resume';
 import { sendCard as sendTeamsCard } from '../teams-api';
 import { handleTeamsCommand, parseTeamsCommand } from './commands';
+import { buildTeamsHomeCard } from './home';
 import { createOrJoinTeamsConversationSession, hasConversationSession } from './session';
 import { MANAGED_TEAMS_INBOUND, conversationProjectFor, type TeamsInbound } from './inbound';
 import type { TeamsActivity } from './types';
-import { conversationScope, isBotMentioned } from './util';
+import { conversationScope, isBotMentioned, isPersonalChat } from './util';
 
 export function tenantOf(activity: TeamsActivity): string | null {
   return activity.conversation?.tenantId ?? activity.channelData?.tenant?.id ?? null;
@@ -59,7 +60,14 @@ export async function handleTeamsConversationUpdate(
   if (!tenantId || !conversationId || !activity.serviceUrl) return;
   if (await alreadyHandled(`welcome:${conversationId}`)) return;
 
-  const projectId = await conversationProjectFor(inbound, tenantId, conversationId);
+  // A 1:1 chat in an organization with several projects has no project until
+  // the first message picks one; the home card lists them all, so any
+  // installed project's bot and service URL can send it.
+  const projectId =
+    (await conversationProjectFor(inbound, tenantId, conversationId)) ??
+    (isPersonalChat(activity) && inbound.kind === 'managed'
+      ? ((await listTenantProjects(tenantId).catch(() => []))[0]?.projectId ?? null)
+      : null);
   if (!projectId) return;
   if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
@@ -73,7 +81,11 @@ export async function handleTeamsConversationUpdate(
       tenantId,
       projectId,
     },
-    buildWelcomeCard({ projectUrl }),
+    // Someone who added the app for themselves gets Slack's App Home as a card:
+    // the organization's projects and what to try. A team or chat gets the intro.
+    isPersonalChat(activity)
+      ? await buildTeamsHomeCard(tenantId, inbound.kind === 'project' ? inbound.projectId : undefined)
+      : buildWelcomeCard({ projectUrl }),
   );
 }
 
