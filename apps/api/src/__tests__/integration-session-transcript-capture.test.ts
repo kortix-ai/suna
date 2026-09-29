@@ -11,14 +11,12 @@ import {
   type SeededProject,
 } from './helpers/integration-fixtures';
 
-test('complete capture persists all pages, retries, serializes writes, and retains history when disabled', async () => {
+test('complete capture persists all pages, retries, serializes writes, and keeps history whatever the project stored', async () => {
   const db = new Client({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-test', {
-      metadata: { experimental: { session_transcript_history: true } },
-    });
+    project = await seedProject('transcript-capture-test');
     const projectId = project.project_id;
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_capture';
@@ -52,7 +50,7 @@ test('complete capture persists all pages, retries, serializes writes, and retai
       },
     });
     expect(attempts).toBe(3);
-    expect(result).toEqual({ captured: 620, head_complete: true, pruned: 0 });
+    expect(result).toEqual({ captured: 620, head_complete: true });
     const count = async () =>
       Number(
         (
@@ -120,23 +118,34 @@ test('complete capture persists all pages, retries, serializes writes, and retai
       ).rows[0].parts[0].text,
     ).toBe('Second');
 
+    // Saved history graduated out of the flag system. A project that stored
+    // the old `false` override still reads the whole history at turn end.
     await db.query(
-      "UPDATE kortix.projects SET metadata = jsonb_set(metadata, '{experimental,session_transcript_history}', 'false'::jsonb) WHERE project_id=$1",
+      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id=$1`,
       [projectId],
     );
-    const disabled = await captureSessionTranscriptMirror(sessionId, {
+    const overridden = await captureSessionTranscriptMirror(sessionId, {
       readMessages: async (_id, options) => {
-        expect(options?.fullHistory).toBe(false);
+        expect(options?.fullHistory).toBe(true);
         return { opencodeSessionId: root, payload: messages(622).slice(-80), headComplete: false };
       },
     });
-    expect(disabled?.pruned).toBe(0);
+    expect(overridden?.captured).toBe(80);
+    expect(await count()).toBe(622);
+    // A Stop reads one page and deletes nothing: 80 rows read, 622 kept.
+    const tail = await captureSessionTranscriptMirror(
+      sessionId,
+      {
+        readMessages: async (_id, options) => {
+          expect(options?.fullHistory).toBe(false);
+          return { opencodeSessionId: root, payload: messages(622).slice(-80), headComplete: false };
+        },
+      },
+      { scope: 'tail' },
+    );
+    expect(tail).toEqual({ captured: 80, head_complete: true });
     expect(await count()).toBe(622);
 
-    await db.query(
-      "UPDATE kortix.projects SET metadata = jsonb_set(metadata, '{experimental,session_transcript_history}', 'true'::jsonb) WHERE project_id=$1",
-      [projectId],
-    );
     const stale = await captureSessionTranscriptMirror(sessionId, {
       readMessages: async () => ({
         opencodeSessionId: 'ses_replaced',
@@ -155,7 +164,7 @@ test('complete capture persists all pages, retries, serializes writes, and retai
         complete: true,
       }),
     });
-    expect(empty).toEqual({ captured: 0, head_complete: true, pruned: 0 });
+    expect(empty).toEqual({ captured: 0, head_complete: true });
     expect(await count()).toBe(0);
   } finally {
     if (project) await removeSeeded([project]);
@@ -168,9 +177,7 @@ test('a turn writes only what changed, and only what vanished is deleted', async
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-delta-test', {
-      metadata: { experimental: { session_transcript_history: true } },
-    });
+    project = await seedProject('transcript-capture-delta-test');
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_delta';
     await db.query(
@@ -272,9 +279,7 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-children-test', {
-      metadata: { experimental: { session_transcript_history: true } },
-    });
+    project = await seedProject('transcript-capture-children-test');
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_parent';
     const child = 'ses_subagent';
@@ -384,9 +389,7 @@ test('a complete read of an empty conversation is saved and served as complete a
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-empty-test', {
-      metadata: { experimental: { session_transcript_history: true } },
-    });
+    project = await seedProject('transcript-capture-empty-test');
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_empty';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [

@@ -307,10 +307,9 @@ describe('stopSession', () => {
       // Ordering: the abort call happens strictly before provider.stop().
       expect(callOrder).toEqual(['abort', 'capture:sess-1', 'provider.stop']);
       // And it asks for a TAIL. This capture is AWAITED with the user holding
-      // the Stop button; on a project with `session_transcript_history` the
-      // default scope is a 60s pagination with three retries. The whole copy is
-      // maintained at every turn end, so the only gap a stop can close is the
-      // turn that just ended. The authenticated stopper may be different from
+      // the Stop button; the default scope is a 60s pagination with three
+      // retries. The whole copy is maintained at every turn end, so the only
+      // gap a stop can close is the turn that just ended. The authenticated stopper may be different from
       // the session creator (who may no longer belong to this account).
       expect(captureOptions).toEqual([{ scope: 'tail', actorUserId: 'user-1' }]);
     });

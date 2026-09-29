@@ -1144,10 +1144,6 @@
           "name": "Secretos protegidos por la red",
           "description": "Controla qué herramientas y destinos pueden recibir los secretos del proyecto."
         },
-        "session_transcript_history": {
-          "name": "Historial de la sesión",
-          "description": "Guarda el historial del chat después de cada turno y muéstralo mientras se inicia el equipo de la sesión."
-        },
         "pooled_provider_secrets": {
           "name": "Secretos de proveedor compartidos",
           "description": "Los miembros conectan sus propias suscripciones de ChatGPT y claves de proveedor, las comparten cuando hace falta y eligen cuáles usa cada sesión."
@@ -18678,6 +18674,7 @@
       "text7ca079c260d4": "Créditos descontados por ejecución del agente",
       "text2fa5960eb241": "Kortix App eliminada",
       "text8a18f907f571": "Presupuesto de la pasarela de LLM eliminado",
+      "text3fb4073453fc": "Mensaje de Microsoft Teams eliminado",
       "texta5022956d571": "Túnel de equipo eliminado",
       "text5be61028cb32": "Conector eliminado",
       "textc3ab70838004": "Política de enrutamiento de la pasarela eliminada",
@@ -18703,6 +18700,7 @@
       "text46bf87f15165": "Paquete Git de arranque rápido descargado",
       "text3f83682cacbc": "Archivo adjunto de la sesión descargado",
       "text21d6e0d7c87a": "Punto de entrada del sandbox descargado",
+      "textda0af072ec8c": "Mensaje de Microsoft Teams editado",
       "textf2b760a63dfe": "Segundo factor registrado",
       "text32c94e9eb5f4": "Rol caducado",
       "text7bc76ea5ba38": "Permiso del túnel de equipo caducado",
@@ -18856,6 +18854,7 @@
       "textd7e9422246ca": "Evento de ejecución del agente registrado",
       "text24bd93cb9282": "Cronología de arranque del sandbox registrada",
       "text8124518133b5": "Creación de la sesión registrada",
+      "text6882f8a71aff": "Inicio de sesión de ChatGPT renovado tras un rechazo",
       "text5b075f5d4491": "Sesión de acceso renovada",
       "text7e2c4b63962f": "Credencial del secreto renovada",
       "textaa64846a875f": "Identificador de secreto rechazado",

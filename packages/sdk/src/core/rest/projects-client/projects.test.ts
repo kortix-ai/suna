@@ -972,7 +972,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'reminders',
     'secrets_egress',
     'pi_worker',
-      'session_transcript_history',
     'pooled_provider_secrets',
     'pi_harness',
     'agent_principal',
@@ -1005,6 +1004,13 @@ test('agent_tunnel graduated: computers need no flag, the key still typechecks',
   // A paired computer is an account of the `computer` connector, gated only by
   // the platform's TUNNEL_ENABLED. The API no longer serves `agent_tunnel`.
   const graduated: FeatureFlagKey = 'agent_tunnel';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('session_transcript_history graduated: saved history is always on, the key still typechecks', () => {
+  // Every session saves its transcript and shows it while its computer is off.
+  // The API no longer serves `session_transcript_history`.
+  const graduated: FeatureFlagKey = 'session_transcript_history';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 

@@ -1,5 +1,5 @@
 // Severity, suppression, and timing breakdown of the post-request
-// `Request completed:` line. `src/index.ts` owns the middleware that calls them.
+// `Request completed:` line. `src/http-middleware.ts` owns the middleware that calls them.
 
 import { formatStageEntries, stageSnapshot } from './server-timing';
 

@@ -53,6 +53,7 @@ mock.module('../channels/teams/identity', () => ({
 
 const posted: Array<Record<string, unknown>> = [];
 mock.module('../channels/teams-api', () => ({
+  openDirectConversation: async () => null,
   sendCard: async (_ref: unknown, card: Record<string, unknown>) => {
     posted.push(card);
     return 'card-1';
