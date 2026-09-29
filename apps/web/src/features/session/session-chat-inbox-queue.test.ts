@@ -541,9 +541,9 @@ describe('the boot shell never swallows what the user typed', () => {
     // second message simply POSTs. AWAITED and thrown on failure, so the
     // composer's own recovery restores the draft for a message the server
     // never got.
-    expect(shell).toContain('useInstantSessionSend({');
-    expect(shellSend).toContain('await startSessionWithPrompt(projectId, sessionId');
-    expect(shellSend).toContain('promptFileParts(files, attachmentParts)');
+    const send = between(shellSend, 'function buildPost(', 'function deliverDetached(');
+    expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
+    expect(send).toContain('promptFileParts(files, attachmentParts)');
     expect(shellSend).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
     expect(shell).not.toContain('carryDraft(');
@@ -557,7 +557,8 @@ describe('the boot shell never swallows what the user typed', () => {
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {
-    expect(shellSend).toContain("prompt: ''");
+    const send = between(shellSend, 'function paintSend(', 'function buildPost(');
+    expect(send).toContain("prompt: ''");
     // And the shell paints the durable rows, so the bubble survives a reload.
     expect(shell).toContain('useSessionPrompts(projectId, sessionId');
   });
