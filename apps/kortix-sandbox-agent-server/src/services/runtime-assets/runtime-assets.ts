@@ -13,7 +13,7 @@ import {
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import type { Config } from '@/lib/config/config'
-import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
+import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type {
   HarnessAssetOutcome,
   HarnessAssetsCompatibilityResult,
@@ -928,6 +928,11 @@ async function fetchJson<T>(
     logger.warn('[runtime-assets] non-ok response', { url, status: res.status })
     return null
   }
+  // A 2xx is proof the control plane answers this box again — a rotated
+  // credential, or a repaired sandbox row. Clear the shared dead-token breaker
+  // so the surfaces gated on it (config-release convergence) resume. Reporting
+  // only failures would leave the breaker tripped forever.
+  noteControlPlaneResponse(res.status, null)
   return (await res.json()) as T
 }
 
@@ -1007,6 +1012,17 @@ async function chunkStoreSources(
 export async function reconcileRuntimeAssets(
   options: RuntimeAssetsOptions = {},
 ): Promise<RuntimeAssetsResult> {
+  // A credential the control plane has refused, repeatedly and without
+  // contradiction, cannot be fixed by asking again: every request below carries
+  // that same dead token. The runtime-truth ticker runs this every 60 s, so a
+  // box that stays up after its session row is parked fetches the manifest
+  // forever and the API logs one `warn` 401 per fetch — the `infra:log` spike
+  // this guards. The breaker clears itself on the next answer that is not the
+  // dead-token 401, so the pass resumes on its own, and nothing stops the
+  // process (see `session-token-health.ts`'s header).
+  if (sessionTokenPresumedDead()) {
+    return { cli: 'skipped', skills: 'skipped', reason: 'session credential refused by the control plane' }
+  }
   const fetchImpl = options.fetchImpl ?? fetch
   const cliPath = options.cliPath ?? DEFAULT_CLI_PATH
   const skillsDir = options.managedSkillsDir ?? DEFAULT_MANAGED_SKILLS_DIR
@@ -1135,10 +1151,15 @@ export async function reconcileRuntimeAssets(
             // box already on the fallback (`effectiveCliPath !== cliPath`)
             // has no reason to retry the primary at all.
             if (replaced === 'failed' && effectiveCliPath === cliPath) {
-              const fallbackPath = options.cliFallbackPath ?? cliPathFallback()
-              await mkdir(dirname(fallbackPath), { recursive: true }).catch(() => {})
-              const fallbackReplaced = await replaceCli(fallbackPath, cliSha, body, { execProbe })
-              if (fallbackReplaced === 'updated') {
+              // The $HOME fallback exists for the Linux sandbox (home = /home/kortix).
+              // Never on a developer machine, where it is the user's real CLI.
+              const fallbackPath = options.cliFallbackPath ?? (process.platform === 'linux' ? cliPathFallback() : null)
+              let fallbackReplaced: Awaited<ReturnType<typeof replaceCli>> = 'failed'
+              if (fallbackPath) {
+                await mkdir(dirname(fallbackPath), { recursive: true }).catch(() => {})
+                fallbackReplaced = await replaceCli(fallbackPath, cliSha, body, { execProbe })
+              }
+              if (fallbackReplaced === 'updated' && fallbackPath) {
                 logger.warn(
                   '[runtime-assets] /usr/local/bin is not writable on this box; installed the CLI to its PATH fallback instead',
                   { path: fallbackPath },

@@ -6,10 +6,9 @@ import { isPrivateIp } from '../../../shared/ssrf-guard';
 import { requireModelPricing } from '../../config/models';
 import type { ProxyServiceConfig } from '../../config/proxy-services';
 import {
-  type UsageAccumulator,
-  accumulateUsageChunk,
   calculateCost,
   extractUsage,
+  settleStreamUsage,
 } from '../../services/llm';
 import {
   type LlmCreditReservation,
@@ -325,14 +324,25 @@ async function billLlmKortixProxy(
     const [clientStream, billingStream] = upstreamBody.tee();
 
     // Fire-and-forget: extract usage from billing stream
-    extractUsageFromKortixProxyStream(
-      billingStream,
-      service,
-      subPath,
+    settleStreamUsage({
+      stream: billingStream,
+      provider: usageProvider(service),
       accountId,
       actor,
       reservation,
-    );
+      pricingProvider: pricingProvider(service, true),
+      route: usageRoute(service, subPath),
+      logPrefix: 'LLM kortix stream billing',
+      noUsageWarning: `[PROXY] LLM kortix stream (${service.name}): no usage data — billing skipped`,
+      noUsageRefund: `LLM reservation refund after missing stream usage: ${service.name}`,
+      zeroTokensWarning: `[PROXY] LLM kortix stream (${service.name}): zero tokens — billing skipped`,
+      zeroTokensRefund: `LLM reservation refund after zero stream usage: ${service.name}`,
+      errorRefund: `LLM reservation refund after stream usage error: ${service.name}`,
+      scanErrorLog: '[PROXY] Error extracting usage from kortix proxy stream:',
+      refundFailedLog: '[PROXY] LLM reservation refund failed:',
+      successLog: (modelId, usage, cost) =>
+        `[PROXY] LLM kortix stream ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`,
+    });
 
     return new Response(clientStream, {
       status: upstream.status,
@@ -406,111 +416,6 @@ async function billLlmKortixProxy(
     status: upstream.status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-/**
- * Extract usage from an SSE stream and bill at KORTIX_MARKUP.
- * Handles both OpenAI-compatible and Anthropic-native SSE formats.
- * Runs in background (fire-and-forget).
- */
-async function extractUsageFromKortixProxyStream(
-  stream: ReadableStream<Uint8Array>,
-  service: ProxyServiceConfig,
-  subPath: string,
-  accountId: string,
-  actor: ActorContext | null,
-  reservation: LlmCreditReservation | null,
-) {
-  let settlementStarted = false;
-  try {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let detectedModel = 'unknown';
-    const provider = usageProvider(service);
-    let usageState: UsageAccumulator | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-        try {
-          const chunk = JSON.parse(line.slice(6));
-          usageState = accumulateUsageChunk(usageState, chunk, provider);
-          detectedModel = usageState?.model ?? detectedModel;
-        } catch {
-          // Not valid JSON — skip
-        }
-      }
-    }
-
-    if (!usageState) {
-      console.warn(`[PROXY] LLM kortix stream (${service.name}): no usage data — billing skipped`);
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after missing stream usage: ${service.name}`,
-      );
-      return;
-    }
-
-    const { promptTokens, completionTokens, cachedTokens, cacheWriteTokens, upstreamCost } =
-      usageState.usage;
-    if (promptTokens > 0 || completionTokens > 0) {
-      const modelConfig =
-        reservation?.modelConfig ??
-        requireModelPricing(detectedModel, pricingProvider(service, true));
-      const cost = calculateCost(
-        modelConfig,
-        promptTokens,
-        completionTokens,
-        cachedTokens,
-        cacheWriteTokens,
-        KORTIX_MARKUP,
-        upstreamCost,
-      );
-      settlementStarted = true;
-      await settleLlmReservation({
-        accountId,
-        modelId: detectedModel,
-        promptTokens,
-        completionTokens,
-        actualCost: cost,
-        reservation,
-        actor,
-        logPrefix: 'LLM kortix stream billing',
-        provider: pricingProvider(service, true),
-        route: usageRoute(service, subPath),
-        cachedTokens,
-        cacheWriteTokens,
-        upstreamCost,
-        streaming: true,
-        upstreamStatus: 200,
-      });
-      console.log(
-        `[PROXY] LLM kortix stream ${detectedModel}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`,
-      );
-    } else {
-      console.warn(`[PROXY] LLM kortix stream (${service.name}): zero tokens — billing skipped`);
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after zero stream usage: ${service.name}`,
-      );
-    }
-  } catch (err) {
-    console.error(`[PROXY] Error extracting usage from kortix proxy stream:`, err);
-    if (!settlementStarted) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after stream usage error: ${service.name}`,
-      ).catch((refundErr) => console.error('[PROXY] LLM reservation refund failed:', refundErr));
-    }
-  }
 }
 
 // === Kortix user with own key: passthrough with no Kortix LLM charge ===

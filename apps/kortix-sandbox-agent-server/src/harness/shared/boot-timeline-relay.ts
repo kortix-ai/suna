@@ -1,6 +1,7 @@
 import { logger } from '@/lib/log/logger'
 import type { BootMark } from '../contract/boot-state'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
+import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 
 /**
  * Relays the in-guest boot timeline to the control plane, once, when a
@@ -64,9 +65,13 @@ async function doRelay(timeline: BootMark[]): Promise<void> {
       signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) {
+      // Feed the shared dead-session-credential breaker (KRTX-446): a terminal
+      // 401 here is one more signal on the streak; any other answer clears it.
+      noteControlPlaneResponse(res.status, await res.text().catch(() => ''))
       logger.warn('[boot] boot-timeline relay non-ok', { status: res.status })
       return
     }
+    noteControlPlaneResponse(res.status, null)
     logger.info('[boot] boot timeline relayed to api', { marks: timeline.length })
   } catch (err) {
     logger.warn('[boot] boot-timeline relay failed', { err: (err as Error).message })
