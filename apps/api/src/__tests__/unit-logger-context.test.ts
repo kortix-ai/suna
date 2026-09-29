@@ -43,7 +43,7 @@ process.env.BETTERSTACK_API_LOG_HOST = 'logs.example.test';
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.SANDBOX_VERSION = 'test-version';
 
-const { logger } = await import('../lib/logger');
+const { logger, requestCompletionLogLevel } = await import('../lib/logger');
 const {
   runWithContext,
   setContextField,
@@ -92,5 +92,16 @@ describe('managed structured logger', () => {
     expect(logCalls[0].context.trace_id).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     expect(logCalls[0].context.span_id).toMatch(/^[0-9a-f]{16}$/);
     expect(logCalls[0].context.parent_span_id).toBe('bbbbbbbbbbbbbbbb');
+  });
+});
+
+describe('requestCompletionLogLevel', () => {
+  test('warn is for 5xx only — a slow 2xx never escalates (KRTX-641)', () => {
+    expect(requestCompletionLogLevel(500)).toBe('warn');
+    expect(requestCompletionLogLevel(503)).toBe('warn');
+    expect(requestCompletionLogLevel(499)).toBe('info');
+    expect(requestCompletionLogLevel(404)).toBe('info');
+    expect(requestCompletionLogLevel(200)).toBe('info');
+    expect(requestCompletionLogLevel(201)).toBe('info');
   });
 });

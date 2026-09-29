@@ -73,6 +73,21 @@ export function isLoggingTransportError(message: string): boolean {
 }
 
 /**
+ * Log level for a request-completion line. Warn is for failures (5xx) only.
+ *
+ * A slow-but-successful request stays info: its `duration` is already in the
+ * log payload and the OTEL span, and the sweep's p95-per-route latency
+ * detector owns latency anomalies. The old `duration > 5000 → warn`
+ * escalation turned every inherently-slow route — LLM gateway calls, session
+ * start, connector calls, all 2xx — into ~19,000 warn lines a day, and every
+ * route that crossed 5 s for the first time paged as a "new warn pattern"
+ * (KRTX-641: PUT connector policies, 4–7.4 s by design).
+ */
+export function requestCompletionLogLevel(status: number): 'warn' | 'info' {
+  return status >= 500 ? 'warn' : 'info';
+}
+
+/**
  * Fire-and-forget a Better Stack send while GUARANTEEING its failure can never
  * surface as an unhandled rejection. @logtail's throttle throws synchronously on
  * a full queue and the returned promise rejects on a failed sync; either way we

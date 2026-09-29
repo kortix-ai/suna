@@ -3,7 +3,11 @@ import './environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
-import { logger as appLogger, isLoggingTransportError } from './lib/logger';
+import {
+  logger as appLogger,
+  isLoggingTransportError,
+  requestCompletionLogLevel,
+} from './lib/logger';
 import {
   decInFlight,
   incInFlight,
@@ -434,7 +438,7 @@ app.use('*', async (c, next) => {
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
-    const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
+    const level = requestCompletionLogLevel(status);
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
       duration,
