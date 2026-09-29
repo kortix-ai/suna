@@ -1227,7 +1227,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 9
+      "count": 10
     },
     "no-restricted-properties": {
       "count": 3
@@ -2266,7 +2266,7 @@
   },
   "src/projects/routes/shared.ts": {
     "no-console": {
-      "count": 17
+      "count": 18
     },
     "no-restricted-imports": {
       "count": 2
