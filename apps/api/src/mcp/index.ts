@@ -186,7 +186,10 @@ function projectArg(input: Record<string, unknown>): string {
  * A session's API path, `/v1/projects/<project>/sessions/<session>`. The
  * project comes from the session row. That is a lookup, not an authorization:
  * the project route it names still decides whether the caller may read the
- * session, and answers 404 for one they cannot see, exactly as for a missing one.
+ * session. An unknown session is a 404 here; a session in another account
+ * reaches that route and gets its 403 (the API answers 403 for a foreign
+ * account everywhere), so an outsider can tell the two apart. That is the
+ * API's rule, not one this tool adds.
  */
 async function sessionPath(sessionId: string): Promise<string> {
   if (!isUuid(sessionId)) throw new ToolInputError('session_id must be a UUID');
@@ -379,7 +382,8 @@ async function sessionActivity(ctx: ToolContext, path: string) {
       project_id: s.project_id,
       name: s.name ?? null,
       status: s.status,
-      turn: BOOTING.has(s.status) ? 'booting' : turns.length > 0 ? 'running' : 'idle',
+      // `queued`: nothing runs, prompts wait. Only `idle` means the agent is done.
+      turn: BOOTING.has(s.status) ? 'booting' : turns.length > 0 ? 'running' : queued > 0 ? 'queued' : 'idle',
       queued_prompts: queued,
       branch: s.branch_name,
       agent: s.agent_name,
@@ -387,6 +391,15 @@ async function sessionActivity(ctx: ToolContext, path: string) {
     },
     busy,
   } as const;
+}
+
+/** A count argument: default when absent, clamped to 1..max, an error when it is not a number. */
+function limitArg(input: Record<string, unknown>, key: string, fallback: number, max: number): number {
+  const value = input[key];
+  if (value === undefined || value === null) return fallback;
+  const n = typeof value === 'string' && value.trim() ? Number(value) : value;
+  if (typeof n !== 'number' || !Number.isFinite(n)) throw new ToolInputError(`${key} must be a number`);
+  return Math.min(Math.max(Math.trunc(n), 1), max);
 }
 
 // ─── Tools ──────────────────────────────────────────────────────────────────
@@ -397,12 +410,14 @@ const PROJECT_ID = { type: 'string', description: 'The project_id (UUID), from l
 const TOOLS = [
   {
     name: 'list_projects',
+    title: 'List projects',
     description: 'List every project you can open, across all your accounts: project_id, name, account, repository, your role. Start here: the other tools take a project_id or a session_id.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'start_session',
+    title: 'Start a session',
     description:
       'Start a Kortix session in a project with a first prompt. An agent runs it in its own cloud sandbox on its own git branch. Returns the session_id. Follow it with read_session and wait_seconds (the first turn needs ~10–60 s while the sandbox boots).',
     inputSchema: {
@@ -416,10 +431,11 @@ const TOOLS = [
       required: ['project_id', 'prompt'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
   {
     name: 'send_message',
+    title: 'Send a message to a session',
     description:
       "Send a message to a session's agent. It waits in the session's inbox until the current turn ends, and a stopped session is started. Read the reply with read_session and wait_seconds.",
     inputSchema: {
@@ -428,34 +444,41 @@ const TOOLS = [
       required: ['session_id', 'text'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
   {
     name: 'read_session',
+    title: 'Read a session',
     description:
-      "Read a session: its status, whether a turn is running, and the latest messages with each tool call's input and output. wait_seconds blocks until the agent is idle (up to 45 s); call again while `turn` is still `running`.",
+      "Read a session: its status, whether a turn is running, and the latest messages with each tool call's input and output. wait_seconds blocks until the agent is idle (up to 45 s); call again while `turn` is not `idle` (`booting`, `running` or `queued`). Tool inputs and outputs are cut per part (marked `[truncated: N of M chars]`); when the messages do not fit, the oldest are dropped (`omitted_older`). `last_turn_error` names a failed turn. Older history: call_api on the session's transcript route with shape=sync.",
     inputSchema: {
       type: 'object',
       properties: {
         session_id: SESSION_ID,
-        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100).' },
+        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` says how many exist.' },
         wait_seconds: { type: 'number', description: 'Wait up to this long (max 45) for the running turn to end before reading.' },
       },
       required: ['session_id'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'list_sessions',
-    description: 'List the sessions you can see in a project, newest first: id, title, status, agent, owner.',
+    title: 'List sessions',
+    description:
+      "List the sessions you can see in a project, in the project's list order (most recent activity first, or newest created first per its session_list_order setting): id, title, status, agent, owner, branch, created_at, updated_at. `next_cursor` is set when more exist: pass it back as `cursor`.",
     inputSchema: {
       type: 'object',
-      properties: { project_id: PROJECT_ID, limit: { type: 'number', description: 'Max sessions (default 20, max 200).' } },
+      properties: {
+        project_id: PROJECT_ID,
+        limit: { type: 'number', description: 'Max sessions (default 20, max 200).' },
+        cursor: { type: 'string', description: 'The next_cursor of the previous page.' },
+      },
       required: ['project_id'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'run_command',
@@ -535,6 +558,7 @@ const TOOLS = [
   },
   {
     name: 'read_skill',
+    title: 'Read Kortix guides',
     description:
       "Read the Kortix platform guides (skills): how projects, sessions, agents, kortix.yaml, triggers, connectors, secrets, Apps, change requests and the CLI work. No name lists them; a name returns the guide and its reference file paths; file reads one reference. The project's own skills are repository files under .kortix/ — read them with read_file.",
     inputSchema: {
@@ -545,10 +569,11 @@ const TOOLS = [
       },
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'search_api',
+    title: 'Search the Kortix API',
     description:
       'Search the Kortix API — the routes the web app and the kortix CLI use: accounts, projects, sessions, files, secrets, connectors, triggers, agents, models, change requests, Apps, access, billing, audit. Returns METHOD /path — summary lines. Follow with describe_api, then call_api.',
     inputSchema: {
@@ -560,10 +585,11 @@ const TOOLS = [
       required: ['query'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'describe_api',
+    title: 'Describe an API route',
     description: "Show one API route's parameters, request body schema and success response schema.",
     inputSchema: {
       type: 'object',
@@ -574,20 +600,21 @@ const TOOLS = [
       required: ['method', 'path'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'call_api',
+    title: 'Call the Kortix API',
     description:
-      'Call any Kortix API route as the signed-in user, with their permissions. {projectId} in the path is replaced with project_id. Returns the HTTP status and the response body.',
+      'Call any Kortix API route as the signed-in user, with their permissions. {projectId} in the path is replaced with project_id; replace every other {placeholder} yourself, e.g. /v1/projects/{projectId}/secrets/MY_KEY. Returns `METHOD path → HTTP status` and the response body.',
     inputSchema: {
       type: 'object',
       properties: {
         method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
         project_id: { type: 'string', description: 'Fills {projectId} in the path.' },
         path: { type: 'string', description: 'Starts with /v1/, e.g. /v1/projects/{projectId}/sessions.' },
-        query: { type: 'object', description: 'Query-string parameters.' },
-        body: { description: 'JSON request body.' },
+        query: { type: 'object', description: 'Query-string parameters; an array value repeats the parameter.' },
+        body: { type: 'object', additionalProperties: true, description: 'JSON request body (an object; a JSON string is parsed).' },
       },
       required: ['method', 'path'],
       additionalProperties: false,
@@ -653,6 +680,7 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
     }
     case 'send_message': {
       const sessionId = arg(input, 'session_id');
+      const message = arg(input, 'text');
       const path = await sessionPath(sessionId);
       const found = await callApi(ctx, 'GET', path);
       if (found.status >= 400) return apiResult(found);
@@ -664,49 +692,50 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         ...(session.agent_name ? { agent: session.agent_name } : {}),
         ...(slash > 0 ? { model: { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) } } : {}),
       };
+      const clientMessageId = crypto.randomUUID();
+      const messageId = mintWireMessageId();
       const queued = await callApi(ctx, 'POST', `${path}/prompts`, {
         body: {
-          client_message_id: crypto.randomUUID(),
-          message_id: mintWireMessageId(),
-          parts: [{ type: 'text', text: arg(input, 'text') }],
+          client_message_id: clientMessageId,
+          message_id: messageId,
+          parts: [{ type: 'text', text: message }],
           client_sent_at_ms: Date.now(),
           remint_on_delivery: true,
           ...(Object.keys(overrides).length ? { overrides } : {}),
         },
       });
       if (queued.status >= 400) return apiResult(queued);
-      await callApi(ctx, 'POST', `${path}/start`, { body: {} });
-      return text(JSON.stringify({ queued: true, session_id: sessionId }, null, 2));
+      // Start after the prompt is queued: start drains the inbox of a stopped session.
+      const start = await callApi(ctx, 'POST', `${path}/start`, { body: {} });
+      return text(
+        JSON.stringify({ queued: true, started: start.status < 400, session_id: sessionId, message_id: messageId, client_message_id: clientMessageId }, null, 2),
+      );
     }
     case 'read_session': {
       const path = await sessionPath(arg(input, 'session_id'));
-      const limit = bounded(input.limit, 10, 100);
-      const wait = Number(input.wait_seconds) > 0 ? bounded(input.wait_seconds, 1, 45) * 1000 : 0;
-      // Leave the transcript read ~8 s of the request budget.
-      const deadline = Math.min(Date.now() + wait, ctx.deadline - 8_000);
+      const limit = limitArg(input, 'limit', 10, 100);
+      const wait = input.wait_seconds === undefined ? 0 : limitArg(input, 'wait_seconds', 1, 45) * 1000;
+      // The activity poll and the transcript read must both end inside the request budget.
+      const deadline = Math.min(Date.now() + wait, ctx.deadline - 12_000);
       let activity = await sessionActivity(ctx, path);
-      while (!('error' in activity) && activity.busy && Date.now() < deadline) {
+      while (!('error' in activity) && activity.busy && Date.now() + 2_000 < deadline) {
         await sleep(2_000);
         activity = await sessionActivity(ctx, path);
       }
       if ('error' in activity) return apiResult(activity.error!);
-      const transcript = await callApi(ctx, 'GET', `${path}/transcript`, {
-        query: { limit, chars: 4000, detail: 'full' },
-      });
-      if (transcript.status >= 400) {
-        return text(`${JSON.stringify(activity.summary, null, 2)}\n\ntranscript: HTTP ${transcript.status} ${transcript.body}`);
-      }
-      const t = JSON.parse(transcript.body);
-      return text(
-        JSON.stringify(
-          { ...activity.summary, transcript_source: t.source, transcript_note: t.reason ?? undefined, messages: t.messages },
-          null,
-          2,
-        ),
-      );
+      const late = Symbol('late');
+      const transcript = await Promise.race([
+        callApi(ctx, 'GET', `${path}/transcript`, { query: { limit, chars: 1500, detail: 'full' } }),
+        sleep(Math.max(ctx.deadline - Date.now() - 2_000, 0)).then(() => late),
+      ]);
+      const note = typeof transcript === 'symbol' ? 'transcript: not read inside the request budget; call again' : transcript.status >= 400 ? `transcript: HTTP ${transcript.status} ${transcript.body}` : null;
+      if (note) return text(`${JSON.stringify(activity.summary, null, 2)}\n\n${note}`);
+      return text(shapeTranscript(activity.summary, JSON.parse((transcript as ApiReply).body)));
     }
     case 'list_sessions': {
-      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, { query: { limit: bounded(input.limit, 20, 200) } });
+      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, {
+        query: { limit: limitArg(input, 'limit', 20, 200), cursor: optionalArg(input, 'cursor') },
+      });
       if (r.status >= 400) return apiResult(r);
       const rows = (JSON.parse(r.body) as any[]).map((s) => ({
         session_id: s.session_id,
@@ -715,9 +744,11 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         agent: s.agent_name,
         owner: s.owner_name ?? s.owner_email ?? null,
         origin: s.origin,
+        branch: s.branch_name ?? null,
+        created_at: s.created_at,
         updated_at: s.updated_at,
       }));
-      return text(JSON.stringify(rows, null, 2));
+      return text(JSON.stringify({ sessions: rows, next_cursor: r.nextCursor ?? null }, null, 2));
     }
     case 'run_command': {
       const started = Date.now();
@@ -856,7 +887,7 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
     }
     case 'search_api': {
       const { ops } = await loadCatalog(ctx);
-      const hits = searchOperations(ops, arg(input, 'query'), bounded(input.limit, 20, 100));
+      const hits = searchOperations(ops, arg(input, 'query'), limitArg(input, 'limit', 20, 100));
       if (hits.length === 0) return text('No matching routes. Try broader keywords.');
       return text(hits.map((op) => `${op.method} ${op.path}${op.summary && !op.summary.startsWith(op.method) ? ` — ${op.summary}` : ''}`).join('\n'));
     }
@@ -877,7 +908,7 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
               summary: op.summary,
               description: op.description || undefined,
               parameters: op.spec.parameters,
-              requestBody: op.spec.requestBody?.content?.['application/json']?.schema,
+              requestBody: requestBodyShape(resolveRefs(op.spec.requestBody, doc)),
               response: success?.content?.['application/json']?.schema,
             },
             doc,
@@ -895,12 +926,17 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         path = path.replaceAll('{projectId}', projectId).replaceAll(':projectId', projectId);
       }
       if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new ToolInputError(`method ${method} is not allowed`);
-      if (!path.startsWith('/v1/') || blockedPath(path)) throw new ToolInputError('path must start with /v1/ and not target /v1/oauth or an MCP endpoint');
+      if (!path.startsWith('/v1/')) throw new ToolInputError('path must start with /v1/ and not target /v1/oauth or an MCP endpoint');
+      const open = /\{[^}/]+\}/.exec(path.split('?')[0]!)?.[0];
+      if (open) throw new ToolInputError(`path still has ${open}: replace it with the real value, e.g. /v1/projects/{projectId}/secrets/MY_KEY`);
       const query = input.query && typeof input.query === 'object' ? (input.query as Record<string, unknown>) : undefined;
-      return apiResult(await callApi(ctx, method, path, { query, body: input.body }));
+      let body = input.body;
+      // A client that types `body` as a string sends JSON text: parse it, never double-encode it.
+      if (typeof body === 'string') body = (() => { try { return JSON.parse(body as string); } catch { return body; } })();
+      return apiResult(await callApi(ctx, method, path, { query, body, summarizeBinary: true }), `${method} ${path}`);
     }
     default:
-      throw new ToolInputError(`unknown tool ${name}`);
+      throw Object.assign(new Error(`Unknown tool: ${name}`), { rpcCode: -32602 });
   }
 }
 
@@ -922,7 +958,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
     case 'initialize': {
       const requested = String(params.protocolVersion ?? '');
       return {
-        protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[1],
+        protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0]!,
         serverInfo: { name: 'kortix', title: 'Kortix', version: process.env.KORTIX_VERSION ?? 'dev' },
         capabilities: { tools: {} },
         instructions: instructions(),
@@ -933,8 +969,9 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
     case 'tools/list':
       return { tools: TOOLS };
     case 'tools/call': {
+      if (typeof params.name !== 'string') throw Object.assign(new Error('Invalid params: name must be a tool name'), { rpcCode: -32602 });
       try {
-        return await runTool(ctx, String(params.name ?? ''), (params.arguments as Record<string, unknown>) ?? {});
+        return await runTool(ctx, params.name, (params.arguments as Record<string, unknown>) ?? {});
       } catch (err) {
         if (err instanceof ToolInputError) return text(err.message, true);
         throw err;
@@ -971,15 +1008,26 @@ function challengeUnauthorized(c: Context, next: Next) {
   });
 }
 
+const PARSE_ERROR = Symbol('parse error');
+
 export function createMcpApp(dispatch: Dispatch) {
   const app = new Hono();
 
   app.post('/', challengeUnauthorized, async (c) => {
-    const message = await c.req.json().catch(() => undefined);
-    if (!message || typeof message !== 'object' || Array.isArray(message) || typeof message.method !== 'string') {
-      return c.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request' } }, 400);
+    const reject = (id: unknown, code: number, message: string) => c.json({ jsonrpc: '2.0', id: id ?? null, error: { code, message } }, 400);
+    const message = await c.req.json().catch(() => PARSE_ERROR);
+    if (message === PARSE_ERROR) return reject(null, -32700, 'Parse error');
+    if (Array.isArray(message)) return reject(null, -32600, 'Invalid Request: batches are not supported; send one message per request');
+    if (!message || typeof message !== 'object' || message.jsonrpc !== '2.0') return reject(null, -32600, 'Invalid Request: jsonrpc must be "2.0"');
+    // A response from the client (the server sends no requests): accepted, nothing to answer.
+    if (typeof message.method !== 'string') {
+      return 'result' in message || 'error' in message ? c.body(null, 202) : reject(message.id, -32600, 'Invalid Request: method is required');
     }
-    // A notification or a response from the client: accepted, nothing to answer.
+    const version = c.req.header('MCP-Protocol-Version');
+    if (version !== undefined && message.method !== 'initialize' && !SUPPORTED_PROTOCOL_VERSIONS.includes(version)) {
+      return reject(message.id, -32600, `Unsupported MCP-Protocol-Version ${version}; supported: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`);
+    }
+    // A notification: accepted, nothing to answer.
     if (message.id === undefined || message.id === null) return c.body(null, 202);
 
     const ctx: ToolContext = {
