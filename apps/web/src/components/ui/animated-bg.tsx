@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 
 type Tone = 'light' | 'medium' | 'dark';
 
-const LeftArc = ({
+export const LeftArc = ({
   size,
   tone,
   opacity,
@@ -116,7 +116,7 @@ const LeftArc = ({
   );
 };
 
-const RightArc = ({
+export const RightArc = ({
   size,
   tone,
   opacity,
