@@ -202,6 +202,11 @@ export function refetchKortixSessionMirrors(
     queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'],
     type: 'active',
   });
+  // Expanded parents' children: a new child appears without waiting for a poll.
+  void queryClient.refetchQueries({
+    queryKey: [...qk.project.sessionsScope(projectId), 'list-children'],
+    type: 'active',
+  });
 }
 
 // Same placeholder predicate the API serializer applies (`lib/opencode-title.ts`)

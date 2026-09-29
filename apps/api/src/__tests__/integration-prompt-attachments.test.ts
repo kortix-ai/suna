@@ -193,7 +193,7 @@ test('command payload and reference commit together; retries do not add referenc
   expect(second.row.commandId).toBe(first.row.commandId);
   expect(second.deduped).toBe(true);
   expect(first.row.payload.parts).toEqual([
-    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'text/plain' },
+    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'application/octet-stream' },
   ]);
   const refs = await db
     .select()
@@ -366,7 +366,8 @@ test('runtime descriptor requires the live sandbox and exact running command par
     attachment_id: id,
     part_index: 0,
     filename: 'proof.txt',
-    mime: 'text/plain',
+    // KRTX-778: a declared type outside the model-native allowlist is stored as binary.
+    mime: 'application/octet-stream',
     size_bytes: 3,
     target_path: `/workspace/uploads/.kortix-inbox/${command.row.commandId}/0-proof.txt`,
   });
@@ -508,7 +509,7 @@ test('removing an expired queued command gives Undo a fresh owner-scoped attachm
   await cleanupExpiredPromptAttachments();
   const restored = await enqueue(id);
   expect(restored.row.payload.parts).toEqual([
-    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'text/plain' },
+    { type: 'file', attachment_id: id, filename: 'proof.txt', mime: 'application/octet-stream' },
   ]);
 });
 

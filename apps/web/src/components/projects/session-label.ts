@@ -77,13 +77,6 @@ export function isMetaCoordinatorSession(session: ProjectSession): boolean {
   return session.agent_name === 'meta';
 }
 
-/** The coordinator session that spawned this one (stamped at create from the
- *  caller's session-bound token), or null for sessions users started. */
-export function spawnedBySessionId(session: ProjectSession): string | null {
-  const meta = (session.metadata ?? {}) as Record<string, unknown>;
-  return typeof meta.spawned_by_session === 'string' ? meta.spawned_by_session : null;
-}
-
 /**
  * Viewer-relative ownership marker.
  *
@@ -207,7 +200,6 @@ export function sessionDisplayStatus(
  * alongside arrays would allow `['all', 'running']`, which has no meaning.
  */
 export type SessionSourceFilter =
-  | 'mine'
   | 'shared'
   | 'slack'
   | 'telegram'
@@ -218,7 +210,6 @@ export type SessionSourceFilter =
 export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
-  { value: 'mine', label: 'My chats' },
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
   { value: 'telegram', label: 'Telegram' },
@@ -258,9 +249,6 @@ export function matchesSourceFilters(
   if (filters.length === 0) return true;
   const kind = sessionSource(session, tI18nComplete).kind;
   return filters.some((filter) => {
-    // `is_owner` is viewer-relative and older payloads omit it — unknown
-    // ownership reads as "mine" so the default view never hides a session.
-    if (filter === 'mine') return kind === 'chat' && !sessionIsShared(session);
     // Ownership is independent of source. A scheduled or channel session can
     // be shared with the viewer and must remain discoverable through Shared.
     if (filter === 'shared') return sessionIsShared(session);

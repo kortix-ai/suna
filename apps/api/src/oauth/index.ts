@@ -31,11 +31,11 @@ import {
   accountMembers,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
-import { isMcpResource, oauthAuthorizationServerMetadata } from './discovery';
-import { createOAuthClient, normalizeRedirectUris, normalizeScopes, OAuthClientInputError } from '../repositories/oauth-clients';
+import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
+import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { requestClientKey } from '../shared/client-ip';
-import { isOAuthAccessToken, isOAuthRefreshToken, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
@@ -396,37 +396,45 @@ oauthApp.openapi(
     const codeChallenge = c.req.query('code_challenge');
     const codeChallengeMethod = c.req.query('code_challenge_method') ?? 'S256';
 
-    if (!clientId || !redirectUri || responseType !== 'code' || !codeChallenge) {
-      return c.json(
-        {
-          error: 'invalid_request',
-          error_description: 'Missing required parameters: client_id, redirect_uri, response_type=code, code_challenge',
-        },
-        400,
-      );
+    if (!clientId || !redirectUri) {
+      return c.json({ error: 'invalid_request', error_description: 'Missing required parameters: client_id, redirect_uri' }, 400);
     }
-    if (codeChallengeMethod !== 'S256') {
-      return c.json({ error: 'invalid_request', error_description: 'Only code_challenge_method=S256 is supported' }, 400);
-    }
-
     const client = await loadActiveClient(clientId);
     if (!client) {
       return c.json({ error: 'invalid_client', error_description: 'Client not found or inactive' }, 400);
     }
-
     const allowedUris = client.redirectUris ?? [];
-    if (!parseRedirectUri(redirectUri) || !allowedUris.includes(redirectUri)) {
+    const back = parseRedirectUri(redirectUri);
+    if (!back || !allowedUris.includes(redirectUri)) {
       return c.json({ error: 'invalid_request', error_description: 'redirect_uri not in allowed list' }, 400);
     }
-    // An MCP client names the resource (RFC 8707) and often no scope: access to
-    // a Kortix MCP endpoint IS the `kortix` scope, so that is the default.
-    const resource = c.req.query('resource');
-    const requested = parseScopeList(scope);
-    if (requested.length === 0 && resource && isMcpResource(resource, new URL(c.req.url).origin)) {
-      requested.push(OAUTH_SCOPE_KORTIX);
+    // The redirect_uri is registered: every later failure goes back to the
+    // client as `?error=` (RFC 6749 4.1.2.1), never as JSON in the browser.
+    const fail = (error: string, description: string) => {
+      back.searchParams.set('error', error);
+      back.searchParams.set('error_description', description);
+      if (state) back.searchParams.set('state', state);
+      return c.redirect(back.toString());
+    };
+    if (responseType !== 'code' || !codeChallenge) {
+      return fail('invalid_request', 'Missing required parameters: response_type=code, code_challenge');
     }
-    const scopes = validateRequestedScopes(requested, client.scopes);
-    if (!scopes) return c.json({ error: 'invalid_scope' }, 400);
+    if (codeChallengeMethod !== 'S256') {
+      return fail('invalid_request', 'Only code_challenge_method=S256 is supported');
+    }
+    // RFC 8707 `resource`: the MCP URL or the API origin. A token is not
+    // audience-bound, so any other target is refused rather than ignored.
+    const resource = c.req.query('resource');
+    const origin = new URL(c.req.url).origin;
+    if (resource && !isMcpResource(resource, origin) && resource.replace(/\/+$/, '') !== oauthIssuer(origin)) {
+      return fail('invalid_target', 'resource must be the Kortix MCP URL or the API origin');
+    }
+    // Unknown scopes (openid, offline_access, mcp:tools…) are ignored. None left
+    // means the client's registered scopes: for an MCP client, `kortix`.
+    const known = parseScopeList(scope).filter(isOAuthScope);
+    const registered = parseScopeList(client.scopes);
+    const scopes = validateRequestedScopes(known.length ? known : registered, client.scopes);
+    if (!scopes) return fail('invalid_scope', 'The client is not registered for a requested scope');
 
     const requestId = await createAuthorizationRequest({
       clientId,
@@ -611,7 +619,9 @@ oauthApp.openapi(
   async (c: any) => {
     const limit = registerLimiter.check(requestClientKey(c), REGISTER_POLICY);
     if (!limit.allowed) {
-      return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many registrations' }, 429);
+      return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many registrations' }, 429, {
+        'Retry-After': String(Math.ceil(limit.resetMs / 1000)),
+      });
     }
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== 'object') {
@@ -623,7 +633,9 @@ oauthApp.openapi(
     let scopes: string[];
     try {
       redirectUris = normalizeRedirectUris(body.redirect_uris, { native: true });
-      scopes = normalizeScopes(body.scope ?? OAUTH_SCOPE_KORTIX);
+      // Unknown scopes (openid, offline_access, mcp:tools…) are ignored; none left → kortix.
+      scopes = [...new Set(parseScopeList(body.scope).filter(isOAuthScope))];
+      if (scopes.length === 0) scopes = [OAUTH_SCOPE_KORTIX];
     } catch (err) {
       if (err instanceof OAuthClientInputError) {
         const error = /redirect_uri/.test(err.message) ? 'invalid_redirect_uri' : 'invalid_client_metadata';
@@ -735,18 +747,21 @@ async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any
   if (authCode.expiresAt < new Date()) return c.json({ error: 'invalid_grant', error_description: 'Authorization code expired' }, 400);
   if (authCode.redirectUri !== redirectUri) return c.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' }, 400);
 
-  const computedBuf = Buffer.from(computeCodeChallenge(codeVerifier));
-  const storedBuf = Buffer.from(authCode.codeChallenge);
-  if (computedBuf.length !== storedBuf.length || !timingSafeEqual(computedBuf, storedBuf)) {
-    return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
-  }
-
+  // Burn the code before the PKCE compare: a wrong verifier spends the code, so
+  // a guesser gets one try per code.
   const [consumedCode] = await db
     .update(oauthAuthorizationCodes)
     .set({ usedAt: new Date() })
     .where(and(eq(oauthAuthorizationCodes.id, authCode.id), isNull(oauthAuthorizationCodes.usedAt)))
     .returning();
   if (!consumedCode) return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+
+  // RFC 7636 4.1: 43-128 unreserved characters.
+  const computedBuf = Buffer.from(computeCodeChallenge(codeVerifier));
+  const storedBuf = Buffer.from(authCode.codeChallenge);
+  if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(codeVerifier) || computedBuf.length !== storedBuf.length || !timingSafeEqual(computedBuf, storedBuf)) {
+    return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
+  }
 
   return c.json(
     await issueTokenPair({
@@ -984,10 +999,11 @@ oauthApp.openapi(
     },
   }),
   async (c: any) => {
+    const clientId = c.req.param('clientId');
+    if (!isUuid(clientId)) return c.json({ error: 'No connected app with that client_id' }, 404);
     const denied = await requireFullIdentity(c);
     if (denied) return denied;
     const userId = c.get('userId') as string;
-    const clientId = c.req.param('clientId');
     const now = new Date();
     // Every row is filtered by the caller's own user id: a client id alone
     // never reaches another person's grant.

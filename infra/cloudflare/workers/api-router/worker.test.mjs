@@ -317,8 +317,19 @@ describe('api-router worker', () => {
       'max-age=31536000',
     );
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('api');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
+  });
+
+  test('strips backend-identifying headers supplied by an origin', async () => {
+    globalThis.fetch = async () => new Response('ok', {
+      headers: { 'X-Backend': 'internal', 'X-Backend-Service': 'internal' },
+    });
+    const response = await worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
+    expect(response.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
   test.each([
@@ -455,8 +466,8 @@ describe('api-router worker', () => {
 
     // API is on eks, but the gateway is on ecs-fargate → the gateway origin wins.
     expect(proxiedUrl).toBe('https://gateway-fargate.kortix.com/health/live');
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
   });
 
   test('routes API and gateway requests to the prepared us-east-2 origins', async () => {
@@ -484,8 +495,8 @@ describe('api-router worker', () => {
       'https://api-use2-shadow.kortix.com/v1/health',
       'https://gateway-use2-shadow.kortix.com/health/live',
     ]);
-    expect(apiResponse.headers.get('X-Backend')).toBe('us-east-2');
-    expect(gatewayResponse.headers.get('X-Backend')).toBe('us-east-2');
+    expect(apiResponse.headers.get('X-Backend')).toBeNull();
+    expect(gatewayResponse.headers.get('X-Backend')).toBeNull();
   });
 
   test('serves the independent maintenance state without contacting the API origin', async () => {
@@ -864,8 +875,8 @@ describe('api-router worker', () => {
     expect(response.headers.get('x-request-id')).toBe('req-abc123');
     expect(response.headers.get('content-type')).toBe('application/json');
     expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('api');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
@@ -878,7 +889,7 @@ describe('api-router worker', () => {
       );
       expect(response.status).toBe(status);
       expect(await response.text()).toBe('origin body');
-      expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+      expect(response.headers.get('X-Backend-Service')).toBeNull();
       expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
     }
   });

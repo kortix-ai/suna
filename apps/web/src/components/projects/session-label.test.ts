@@ -175,16 +175,13 @@ describe('matchesSourceFilters', () => {
     ).toBe(true);
   });
 
-  test('mine and shared split chats by ownership', () => {
-    expect(matchesSourceFilters(makeSession({ is_owner: true }), ['mine'], testUiTranslator)).toBe(
-      true,
-    );
-    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['mine'], testUiTranslator)).toBe(
-      false,
-    );
+  test('shared matches sessions the viewer does not own', () => {
     expect(
       matchesSourceFilters(makeSession({ is_owner: false }), ['shared'], testUiTranslator),
     ).toBe(true);
+    expect(
+      matchesSourceFilters(makeSession({ is_owner: true }), ['shared'], testUiTranslator),
+    ).toBe(false);
   });
 
   test('shared ownership is independent of the session source', () => {
@@ -201,15 +198,11 @@ describe('matchesSourceFilters', () => {
     expect(sessionIsShared(makeSession())).toBe(false);
   });
 
-  test('unknown ownership counts as mine so nothing is silently hidden', () => {
-    expect(matchesSourceFilters(makeSession(), ['mine'], testUiTranslator)).toBe(true);
-  });
-
   test('automation sources match their kind', () => {
     const slack = makeSession({ metadata: { source: 'slack' } });
     expect(matchesSourceFilters(slack, ['slack'], testUiTranslator)).toBe(true);
     expect(matchesSourceFilters(slack, ['email'], testUiTranslator)).toBe(false);
-    expect(matchesSourceFilters(slack, ['mine', 'slack'], testUiTranslator)).toBe(true);
+    expect(matchesSourceFilters(slack, ['slack'], testUiTranslator)).toBe(true);
   });
 
   test('telegram matches its own kind only', () => {
@@ -220,7 +213,7 @@ describe('matchesSourceFilters', () => {
 
   // A Teams session (apps/api/src/channels/teams/session.ts stamps
   // `metadata.source = 'teams'`) used to fall through to the plain `chat` kind:
-  // no glyph in the sidebar, no "Teams" facet, and it counted as "My chats".
+  // no glyph in the sidebar, no "Teams" facet.
   test('teams is its own kind with its own label, like slack and telegram', () => {
     const teams = makeSession({ metadata: { source: 'teams' } });
     expect(sessionSource(teams, testUiTranslator)).toMatchObject({ kind: 'teams', triggerSlug: null });
@@ -229,7 +222,6 @@ describe('matchesSourceFilters', () => {
     );
     expect(matchesSourceFilters(teams, ['teams'], testUiTranslator)).toBe(true);
     expect(matchesSourceFilters(teams, ['slack'], testUiTranslator)).toBe(false);
-    expect(matchesSourceFilters(teams, ['mine'], testUiTranslator)).toBe(false);
   });
 });
 

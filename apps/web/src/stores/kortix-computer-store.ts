@@ -5,13 +5,9 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-const HIDE_BROWSER_TAB = true;
-
 /** How long a quick-view request stays honorable. Long enough for a mount +
  *  paint on a slow machine, far too short to replay on a later visit. */
 export const QUICK_VIEW_TTL_MS = 10_000;
-
-export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 
 export type ReadyChipOutcome = 'ready' | 'failed' | 'stopped' | 'needs_input';
 
@@ -47,9 +43,6 @@ export interface QuickViewTarget {
 }
 
 interface KortixComputerState {
-  // Main view state
-  activeView: ViewType;
-
   // Panel state. NOT per-session: every session change lands with both right
   // surfaces closed — see `setActiveSession`.
   shouldOpenPanel: boolean;
@@ -169,8 +162,6 @@ interface KortixComputerState {
 
   // === ACTIONS ===
 
-  setActiveView: (view: ViewType) => void;
-
   // For external triggers (clicking file in chat) — delegates to useFilesStore + opens panel
   openFileInComputer: (filePath: string, filePathList?: string[], targetLine?: number) => void;
 
@@ -285,7 +276,8 @@ interface KortixComputerState {
 }
 
 const initialState = {
-  activeView: 'tools' as ViewType,
+  // Panel and one-shot state is transient: restoring it on load reopened a
+  // blank panel before its session provider mounted. No preference remains.
   shouldOpenPanel: false,
   isSidePanelOpen: false,
   isActionPanelOpen: false,
@@ -321,21 +313,25 @@ const initialState = {
   } | null,
 };
 
+function clearSessionChip(
+  update: Partial<KortixComputerState>,
+  chip: ReadyChipState | null,
+  sessionId: string | null,
+) {
+  if (chip?.sessionId === sessionId) update.readyChip = null;
+}
+
+const CLOSED_PANEL_PATCH = Object.freeze({
+  isSidePanelOpen: false,
+  isExpanded: false,
+  panelSplit: null,
+  panelAspect: null,
+});
+
 export const useKortixComputerStore = create<KortixComputerState>()(
   devtools(
     (set, get) => ({
       ...initialState,
-
-      setActiveView: (view: ViewType) => {
-        // If browser tab is hidden and trying to set browser view, default to tools
-        const effectiveView = HIDE_BROWSER_TAB && view === 'browser' ? 'tools' : view;
-        // Terminal and Desktop are now in the right sidebar - redirect to tools
-        const finalView =
-          effectiveView === 'terminal' || effectiveView === 'desktop' || effectiveView === 'changes'
-            ? 'tools'
-            : effectiveView;
-        set({ activeView: finalView });
-      },
 
       openFileInComputer: (filePath: string, _filePathList?: string[], targetLine?: number) => {
         // Open the file in the global preview dialog (same as clicking a file
@@ -348,14 +344,12 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         useFilesStore.getState().navigateToPath('.');
 
         set({
-          activeView: 'tools',
           shouldOpenPanel: true,
         });
       },
 
       navigateToToolCall: (toolIndex: number) => {
         set({
-          activeView: 'tools',
           pendingToolNavIndex: toolIndex,
           shouldOpenPanel: true,
         });
@@ -369,12 +363,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = {
           focusedToolCallId: callId,
-          activeView: 'tools',
           isSidePanelOpen: true,
         };
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
-        if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        clearSessionChip(update, get().readyChip, sessionId);
         set(update);
       },
 
@@ -391,7 +384,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const update: Partial<KortixComputerState> = { isSidePanelOpen: open };
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
-        if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        if (open) clearSessionChip(update, get().readyChip, sessionId);
         // Every REAL close path routes through here (the detail's own close
         // button/Escape, mobile drawer dismiss) — reset the width states or a stale
         // `panelSplit`/`isExpanded` survives into the next open. Snap, not
@@ -419,7 +412,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // seen it. Only THIS session's announcement — session B opening its
         // panel must not destroy session A's unseen chip (same rule as
         // `setIsSidePanelOpen`/`focusToolCall`/`openSidePanel`).
-        if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        if (open) clearSessionChip(update, get().readyChip, sessionId);
         // No width state touched on close, unlike `setIsSidePanelOpen`:
         // `panelSplit`/`panelAspect`/`isExpanded`/`detailOpen` belong to the
         // detail panel's split, which this overlay is not part of. Clearing
@@ -446,11 +439,8 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           // touched: this is a minimise, not a discard. The provider keeps the
           // detail, and that is what the next press brings back.
           set({
-            isSidePanelOpen: false,
+            ...CLOSED_PANEL_PATCH,
             isActionPanelOpen: false,
-            isExpanded: false,
-            panelSplit: null,
-            panelAspect: null,
             skipNextExpandAnimation: true,
           });
           return;
@@ -549,11 +539,8 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           _activeProjectSessionId: nextProjectSessionId,
           _activeIsTransient: nextIsTransient,
           _bootQuickView: null,
-          isSidePanelOpen: false,
+          ...CLOSED_PANEL_PATCH,
           isActionPanelOpen: false,
-          isExpanded: false,
-          panelSplit: null,
-          panelAspect: null,
           detailOpen: false,
           // Snap. The outgoing session's width must not glide away under the
           // incoming one's first paint.
@@ -634,16 +621,13 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
-        if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        clearSessionChip(update, get().readyChip, sessionId);
         set(update);
       },
 
       closeSidePanel: () => {
         set({
-          isSidePanelOpen: false,
-          isExpanded: false,
-          panelSplit: null,
-          panelAspect: null,
+          ...CLOSED_PANEL_PATCH,
           detailOpen: false,
         });
       },
@@ -697,7 +681,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
         // Only clear THIS session's own announcement — same rule every other
         // panel-opening action follows (see `focusToolCall`/`openSidePanel`).
-        if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
+        clearSessionChip(update, get().readyChip, sessionId);
         if (sessionId) {
           update.pendingQuickView = { sessionId, view, requestedAt: Date.now(), target };
         }
@@ -738,51 +722,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         set(initialState);
       },
     }),
-    {
-      name: 'kortix-computer-store',
-      /**
-       * Persist the ONE durable preference and nothing else.
-       *
-       * There was no `partialize`, so zustand wrote the whole state to
-       * localStorage — including `detailOpen`, `isSidePanelOpen`,
-       * `_activeSessionId`, `_detailContentBySession`, `focusedToolCallId`
-       * and the one-shot flags. On the next load the panel reopened against a
-       * session whose provider had not mounted yet and had nothing to show:
-       * an open, blank panel, restored from disk.
-       *
-       * None of it deserved persisting. `setActiveSession` already resets
-       * `panelSplit`, `panelAspect`, `isExpanded` and `detailOpen` on every
-       * session change, so persisting them could only ever restore a value
-       * that the next session change throws away. The `_`-prefixed fields are
-       * internal bookkeeping about what is mounted RIGHT NOW, which is the
-       * one kind of state that must never survive the process that observed
-       * it. `pendingQuickView`, `readyChip`, `pendingToolNavIndex`,
-       * `focusedToolCallId` and `skipNextExpandAnimation` are one-shot
-       * intents; a stale one firing on load is a request the user made in
-       * another session, possibly days ago.
-       *
-       * `activeView` survives because it is a genuine preference — which tab
-       * of the panel you like — and it is content-independent: it decides
-       * what the panel shows once something opens it, never whether anything
-       * opens.
-       */
-      partialize: (state: KortixComputerState) => ({ activeView: state.activeView }),
-    },
+    { name: 'kortix-computer-store' },
   ),
 );
 
 // === SELECTOR HOOKS ===
-
-// Main view state
-export const useKortixComputerActiveView = () =>
-  useKortixComputerStore((state) => state.activeView);
-
-// Individual selectors for pending tool navigation (stable primitives)
-export const useKortixComputerPendingToolNavIndex = () =>
-  useKortixComputerStore((state) => state.pendingToolNavIndex);
-
-export const useKortixComputerClearPendingToolNav = () =>
-  useKortixComputerStore((state) => state.clearPendingToolNav);
 
 // Side-panel Actions focus (clicking a tool call in chat)
 export const useFocusedToolCallId = () =>
@@ -793,9 +737,6 @@ export const useClearFocusedToolCall = () =>
 
 // Side panel state selectors
 export const useIsSidePanelOpen = () => useKortixComputerStore((state) => state.isSidePanelOpen);
-
-export const useSetIsSidePanelOpen = () =>
-  useKortixComputerStore((state) => state.setIsSidePanelOpen);
 
 // Floating action panel (the cards over the chat) — deliberately its own pair
 // of hooks, so a component reaching for one surface can never accidentally
@@ -815,5 +756,3 @@ export const useToggleExpanded = () => useKortixComputerStore((state) => state.t
 
 // Ready chip state selectors
 export const useReadyChip = () => useKortixComputerStore((state) => state.readyChip);
-
-export const useClearReadyChip = () => useKortixComputerStore((state) => state.clearReadyChip);

@@ -97,7 +97,8 @@ import rules, and where new code goes; `bun run lint` enforces them.
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
-5. Inject managed system skills into `.kortix/opencode/skills`.
+5. Inject managed system skills into the project's skills dir: root `skills/`
+   (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
 6. Resolve `OPENCODE_CONFIG_DIR`.
 7. Start the OpenCode REST supervisor in the project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).

@@ -10,12 +10,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { serializeSession } from '../lib/serializers';
@@ -84,7 +84,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/reminders',
     tags: ['sessions'],
-    summary: 'GET /:projectId/reminders',
+    summary: 'List reminders of a project',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -131,7 +131,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/reminders',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/reminders',
+    summary: 'List reminders of a session',
     ...auth,
     request: { params: sessionParams },
     responses: {
@@ -154,11 +154,19 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/reminders',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/reminders',
+    summary: 'Create a session reminder',
     ...auth,
     request: {
       params: sessionParams,
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          prompt: z.string().openapi({ description: 'Text the session receives when the reminder fires.' }),
+          name: z.string().optional().openapi({ description: 'Reminder name.' }),
+          at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off reminder. Give exactly one of at, in, every, cron.' }),
+          in: z.string().optional().openapi({ description: 'Delay such as 30m, 24h, 2d.' }),
+          every: z.string().optional().openapi({ description: 'Repeat interval such as 1h. Minimum applies.' }),
+          cron: z.string().optional().openapi({ description: 'Cron expression for a repeating reminder.' }),
+          timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
+        }) } } },
     },
     responses: {
       201: json(ReminderSchema, 'The created reminder'),
@@ -222,11 +230,13 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}',
     tags: ['sessions'],
-    summary: 'PATCH /:projectId/sessions/:sessionId/reminders/:reminderId',
+    summary: 'Update a session reminder',
     ...auth,
     request: {
       params: reminderParams,
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          enabled: z.boolean().openapi({ description: 'true resumes the reminder; false pauses it.' }),
+        }) } } },
     },
     responses: {
       200: json(ReminderSchema, 'The updated reminder'),
@@ -264,7 +274,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId/reminders/:reminderId',
+    summary: 'Delete a session reminder',
     ...auth,
     request: { params: reminderParams },
     responses: {

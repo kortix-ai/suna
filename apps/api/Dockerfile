@@ -257,6 +257,9 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
 COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
 COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
+# starter and registry import @kortix/manifest-schema/layout. pnpm links it in
+# the package's own node_modules; the root node_modules hoists no @kortix package.
+COPY --from=deps /app/packages/starter/node_modules ./packages/starter/node_modules
 # Project-scaffold templates read at runtime: packages/starter/src/index.ts
 # resolves BASE_TEMPLATE_DIR = join(import.meta.dir,'..','templates','base').
 # Without this the "Create project" seed path throws
@@ -271,6 +274,7 @@ COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contrac
 COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
+COPY --from=deps /app/packages/registry/node_modules ./packages/registry/node_modules
 
 # Migrations are NOT bundled into the image: deployed ensureSchema() is warn-only
 # (it never applies at boot), and migrations run in the deploy pipeline's
