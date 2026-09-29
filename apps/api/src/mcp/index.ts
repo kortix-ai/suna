@@ -202,61 +202,149 @@ function daemonPath(url: unknown): string | null {
   return id ? `/v1/p/${id}/8000` : null;
 }
 
+/** A session's daemon, resolved once per tool call: the API path of the session and its proxy base. */
+export type Sandbox = { session: string; base: string | null };
+
+/** The session lookup (DB read + session GET) that every sandbox call needs first. */
+async function resolveSandbox(ctx: ToolContext, sessionId: string): Promise<Sandbox | { status: number; body: string }> {
+  const session = await sessionPath(sessionId);
+  const found = await callApi(ctx, 'GET', session);
+  if (found.status >= 400) return found;
+  return { session, base: daemonPath(JSON.parse(found.body).sandbox_url) };
+}
+
 /**
  * One call to a session's sandbox daemon through the API's per-session proxy —
  * the path the web file panel and terminal use, so access is exactly theirs. A
- * stopped sandbox is started, then the call is retried until it answers.
+ * stopped sandbox is started, then the call is retried until it answers. Pass a
+ * resolved `Sandbox` to skip the session lookup (a tool that makes several
+ * calls resolves once and reuses it for the length of that one tool call).
  */
-async function callSandbox(
+export async function callSandbox(
   ctx: ToolContext,
-  sessionId: string,
+  target: string | Sandbox,
   method: string,
   path: string,
   /** `body` may be a function: it is built per attempt, after a wake used some of the budget. */
   opts: { query?: Record<string, unknown>; body?: unknown | (() => unknown) } = {},
 ): Promise<{ status: number; body: string }> {
-  const session = await sessionPath(sessionId);
-  const found = await callApi(ctx, 'GET', session);
-  if (found.status >= 400) return found;
-  let base = daemonPath(JSON.parse(found.body).sandbox_url);
+  const sandbox = typeof target === 'string' ? await resolveSandbox(ctx, target) : target;
+  if (!('session' in sandbox)) return sandbox;
   const deadline = ctx.deadline - 5_000;
   let started = false;
+  let reason = '';
   for (;;) {
-    if (base) {
+    if (sandbox.base) {
       const body = typeof opts.body === 'function' ? opts.body() : opts.body;
-      const r = await callApi(ctx, method, `${base}${path}`, { query: opts.query, body });
+      const r = await callApi(ctx, method, `${sandbox.base}${path}`, { query: opts.query, body });
       // The proxy answers 502/503 with `retry: true` only when the request
       // never reached the daemon (not ready, waking), so a retry is safe.
-      const notReady = (r.status === 502 || r.status === 503) && /"retry":\s*true/.test(r.body);
-      if (!notReady || Date.now() > deadline) return r;
+      if (!((r.status === 502 || r.status === 503) && /"retry":\s*true/.test(r.body))) return r;
+    }
+    if (Date.now() > deadline) {
+      return { status: 504, body: `The sandbox is still starting${reason ? ` (reason ${reason})` : ''}. Call again; it keeps booting.` };
     }
     if (!started) {
-      const s = await callApi(ctx, 'POST', `${session}/start`, { body: {} });
+      const s = await callApi(ctx, 'POST', `${sandbox.session}/start`, { body: {} });
       if (s.status >= 400) return s;
-      base ??= daemonPath(JSON.parse(s.body).runtime_url);
+      const booted = JSON.parse(s.body);
+      sandbox.base ??= daemonPath(booted.runtime_url);
+      reason = typeof booted.reason === 'string' ? booted.reason : '';
       started = true;
-    } else if (Date.now() > deadline) {
-      return { status: 504, body: 'The sandbox is still starting. Call again; it keeps booting.' };
     }
     await sleep(2_000);
   }
+}
+
+/** The daemon's env-rpc failure text: `CODE: message`, once (the message often starts with the code). */
+function rpcError(reply: any, body: string): string {
+  const code = String(reply.error?.code ?? 'error');
+  const message = String(reply.error?.message ?? body);
+  return message.startsWith(code) ? message : `${code}: ${message}`;
 }
 
 /** The daemon's env-rpc answers `{ ok, value }` or `{ ok: false, error }`. */
 function envRpcResult(r: { status: number; body: string }, render: (value: any) => string): ToolResult {
   if (r.status >= 400) return apiResult(r);
   const reply = JSON.parse(r.body);
-  if (!reply.ok) return text(`${reply.error?.code ?? 'error'}: ${reply.error?.message ?? r.body}`, true);
+  if (!reply.ok) return text(rpcError(reply, r.body), true);
   return text(render(reply.value));
 }
 
 // ─── Commands as jobs (./jobs.ts) ───────────────────────────────────────────
 
 /** Run a short shell script in the session's sandbox (env-rpc exec). */
-function sandboxScript(ctx: ToolContext, sessionId: string, script: string, env: Record<string, string>, cwd?: string) {
-  return callSandbox(ctx, sessionId, 'POST', '/kortix/env-rpc', {
+function sandboxScript(ctx: ToolContext, target: string | Sandbox, script: string, env: Record<string, string>, cwd?: string) {
+  return callSandbox(ctx, target, 'POST', '/kortix/env-rpc', {
     body: { op: 'exec', args: { command: script, env, timeout: 15_000, ...(cwd ? { cwd } : {}) } },
   });
+}
+
+/** `sandboxScript`, parsed: the script's stdout, stderr and exit code, or the error result to return. */
+async function sandboxExec(
+  ctx: ToolContext,
+  target: string | Sandbox,
+  script: string,
+  env: Record<string, string> = {},
+  cwd?: string,
+): Promise<{ error: ToolResult } | { stdout: string; stderr: string; exitCode: number }> {
+  const r = await sandboxScript(ctx, target, script, env, cwd);
+  if (r.status >= 400) return { error: apiResult(r) };
+  const reply = JSON.parse(r.body);
+  if (!reply.ok) return { error: text(rpcError(reply, r.body), true) };
+  return { stdout: String(reply.value.stdout ?? ''), stderr: String(reply.value.stderr ?? ''), exitCode: Number(reply.value.exitCode ?? 0) };
+}
+
+/** `~` and `~/…` mean the sandbox user's $HOME; the API does not know it, so ask the sandbox. */
+async function expandHome(ctx: ToolContext, sandbox: Sandbox, path: string): Promise<{ error: ToolResult } | { path: string }> {
+  if (path !== '~' && !path.startsWith('~/')) return { path };
+  const r = await sandboxExec(ctx, sandbox, 'printf %s "$HOME"');
+  if ('error' in r) return r;
+  return { path: `${r.stdout || '/root'}${path.slice(1)}` };
+}
+
+/** Both sandbox-or-repository tools need one of the two ids. */
+function needTarget(input: Record<string, unknown>) {
+  if (!optionalArg(input, 'session_id') && !optionalArg(input, 'project_id')) {
+    throw new ToolInputError('pass session_id (live sandbox) or project_id (repository)');
+  }
+}
+
+/** Paging caps. A page stays under the result cap so `text()` never cuts it. */
+const PAGE_CHARS = 50_000;
+const BINARY_INLINE_CHARS = 40_000;
+const IMAGE_MAX_BYTES = 1_000_000;
+
+/** An optional non-negative integer argument (`min` 1 for a count). */
+function intArg(input: Record<string, unknown>, key: string, min = 0): number | undefined {
+  const value = input[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min) throw new ToolInputError(`${key} must be an integer >= ${min}`);
+  return value;
+}
+
+/** A page of `items` (lines or entries) from `offset`: at most `limit` items and PAGE_CHARS, with the offset that continues it. */
+export function page(items: string[], offset: number, limit: number | undefined, unit: string): string {
+  if (offset > 0 && offset >= items.length) return `Nothing at offset ${offset}: ${items.length} ${unit} in all.`;
+  const out: string[] = [];
+  let chars = 0;
+  let end = offset;
+  while (end < items.length && (limit === undefined || out.length < limit)) {
+    const item = items[end]!;
+    if (out.length > 0 && chars + item.length + 1 > PAGE_CHARS) break;
+    out.push(item.length > PAGE_CHARS ? item.slice(0, PAGE_CHARS) : item);
+    chars += item.length + 1;
+    end += 1;
+  }
+  const more = items.length - end;
+  return more > 0 ? `${out.join('\n')}\n… ${more} more ${unit}; call again with offset=${end}` : out.join('\n');
+}
+
+/** A text file as `offset`/`limit` lines. */
+function pageLines(content: string, input: Record<string, unknown>): ToolResult {
+  const lines = content.split('\n');
+  if (lines.length > 1 && lines.at(-1) === '') lines.pop();
+  return text(page(lines, intArg(input, 'offset') ?? 0, intArg(input, 'limit', 1), 'lines'));
 }
 
 // ─── Sessions ───────────────────────────────────────────────────────────────
@@ -362,8 +450,9 @@ const TOOLS = [
   },
   {
     name: 'run_command',
+    title: 'Run a command in a session sandbox',
     description:
-      "Run a bash command in a session's sandbox (its git checkout is /workspace) and return stdout, stderr and the exit code. A stopped sandbox is started first. A command may run for minutes: when it outlasts one call (~50 s), the result says `status: running` with a job_id and the output so far; call again with that job_id to keep waiting, or with cancel: true to stop it. The kortix CLI is preinstalled and signed in as the session.",
+      "Run a bash command in a session's sandbox (its git checkout is /workspace) and return stdout, stderr (separate streams) and the exit code. A stopped sandbox is started first. A command may run for minutes: when it outlasts one call (~50 s), the result says `status: running` with a job_id and the output so far; call again with that job_id to keep waiting, or with cancel: true to stop it. The kortix CLI is preinstalled and signed in as the session.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -381,8 +470,9 @@ const TOOLS = [
   },
   {
     name: 'read_file',
+    title: 'Read a file',
     description:
-      "Read one file. With session_id: the session's live sandbox (uncommitted edits included; relative paths resolve under /workspace; images come back as images). With project_id instead: the project's git repository at `ref` (default branch when omitted), no sandbox needed.",
+      "Read one file. With session_id: the session's live sandbox (uncommitted edits included; relative paths resolve under /workspace, `~` is the sandbox home; images come back as images; reads are limited to /workspace, the home directory and /tmp: use run_command for anything else). With project_id instead (session_id wins when both are given): the project's git repository at `ref` (default branch when omitted), no sandbox needed. A long text file comes back in pages of lines: `offset` (lines to skip) and `limit` (lines) read the next page. A binary file is not returned as text: use run_command (e.g. base64 -w0 file | cut -c 1-40000).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -390,16 +480,19 @@ const TOOLS = [
         session_id: SESSION_ID,
         project_id: PROJECT_ID,
         ref: { type: 'string', description: 'Repository only: a branch, tag or commit.' },
+        offset: { type: 'number', description: 'Text files: lines to skip (default 0). A cut result ends with the offset that continues it.' },
+        limit: { type: 'number', description: 'Text files: max lines to return (default: as many as fit in ~50 000 characters).' },
       },
       required: ['path'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'write_file',
+    title: 'Write a file in a session sandbox',
     description:
-      "Write a file in a session's sandbox, creating parent directories. Overwrites an existing file. The agent and the session branch see it at once; commit it with run_command (git) or ask the agent.",
+      "Write a file in a session's sandbox, creating parent directories. Overwrites an existing file. `~` is the sandbox home. The agent and the session branch see it at once; commit it with run_command (git) or ask the agent.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -411,23 +504,25 @@ const TOOLS = [
       required: ['session_id', 'path', 'content'],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'list_files',
+    title: 'List files',
     description:
-      "List files. With session_id: one directory of the session's live sandbox (default /workspace). With project_id instead: every file of the project's git repository under `path` (recursive), at `ref`.",
+      "List files. With session_id: one directory of the session's live sandbox (default /workspace; absolute paths, `~` is the sandbox home). With project_id instead (session_id wins when both are given): every file of the project's git repository under `path` (recursive), at `ref`. A long list is cut; the result ends with the `offset` that continues it.",
     inputSchema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Directory (sandbox) or path prefix (repository).' },
+        path: { type: 'string', description: 'Directory (sandbox) or directory/file path in the repository (a leading / is the repository root).' },
         session_id: SESSION_ID,
         project_id: PROJECT_ID,
         ref: { type: 'string', description: 'Repository only: a branch, tag or commit.' },
+        offset: { type: 'number', description: 'Entries to skip (default 0).' },
       },
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
     name: 'read_skill',
@@ -620,22 +715,27 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       const sessionId = arg(input, 'session_id');
       const existing = optionalArg(input, 'job_id');
       if (existing && !/^[0-9a-f]{16}$/.test(existing)) throw new ToolInputError('job_id is the 16-character id a running result returned');
+      if (existing && optionalArg(input, 'command')) throw new ToolInputError('pass command (start a command) or job_id (follow one), not both');
+      if (input.cancel === true && !existing) throw new ToolInputError('cancel needs the job_id of a running command');
+      const rawTimeout = input.timeout_seconds;
+      if (rawTimeout !== undefined && rawTimeout !== null && !(Number(rawTimeout) > 0)) throw new ToolInputError('timeout_seconds must be a positive number');
+      const command = existing ? undefined : arg(input, 'command');
       const jobId = existing ?? crypto.randomUUID().replaceAll('-', '').slice(0, 16);
-      const dir = { KMCP_JOB: jobId };
-      const exec = async (script: string, env: Record<string, string>, cwd?: string): Promise<{ error: ToolResult } | { stdout: string }> => {
-        const r = await sandboxScript(ctx, sessionId, script, { ...dir, ...env }, cwd);
-        if (r.status >= 400) return { error: apiResult(r) };
-        const reply = JSON.parse(r.body);
-        if (!reply.ok) return { error: text(`${reply.error?.code ?? 'error'}: ${reply.error?.message ?? r.body}`, true) };
-        return { stdout: String(reply.value.stdout ?? '') };
-      };
+      // One session lookup for the launch and every poll of this call.
+      const sandbox = await resolveSandbox(ctx, sessionId);
+      if (!('session' in sandbox)) return apiResult(sandbox);
+      const exec = (script: string, env: Record<string, string>, cwd?: string) => sandboxExec(ctx, sandbox, script, { KMCP_JOB: jobId, ...env }, cwd);
+      let finishedBefore = false;
       if (existing && input.cancel === true) {
         const r = await exec(JOB_CANCEL, {});
         if ('error' in r) return r.error;
+        finishedBefore = r.stdout.trim() === 'finished';
       } else if (!existing) {
-        const timeout = bounded(input.timeout_seconds, JOB_DEFAULT_TIMEOUT_SECONDS, JOB_MAX_TIMEOUT_SECONDS);
-        const r = await exec(JOB_LAUNCH, { KMCP_CMD: arg(input, 'command'), KMCP_TIMEOUT: String(timeout) }, optionalArg(input, 'cwd'));
+        const timeout = bounded(rawTimeout, JOB_DEFAULT_TIMEOUT_SECONDS, JOB_MAX_TIMEOUT_SECONDS);
+        const r = await exec(JOB_LAUNCH, { KMCP_CMD: command!, KMCP_TIMEOUT: String(timeout) }, optionalArg(input, 'cwd'));
         if ('error' in r) return r.error;
+        // A launch that fails (a cwd that does not exist, no space left) says why, before any poll.
+        if (r.exitCode !== 0) return text(`Could not start the command (exit ${r.exitCode}): ${r.stderr.trim() || 'no error output'}`, true);
       }
       // Wait for the exit file, fast at first (most commands finish in well
       // under a second), then every second, leaving ~6 s for the final read.
@@ -649,46 +749,80 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
         const r = await poll();
         if ('error' in r) return r.error;
         if (r.job.state === 'missing') return text(`No job ${jobId} in this session's sandbox (a restarted sandbox loses its jobs).`, true);
-        if (r.job.state === 'done' || Date.now() + delay > ctx.deadline - 6_000) return text(renderJob(jobId, r.job, Date.now() - started));
+        if (r.job.state === 'done' || Date.now() + delay > ctx.deadline - 6_000) {
+          const rendered = renderJob(jobId, r.job, Date.now() - started);
+          return text(finishedBefore && r.job.state === 'done' ? `job already finished (${r.job.exit === 'cancelled' ? 'cancelled' : `exit ${r.job.exit}`})\n${rendered}` : rendered);
+        }
         await sleep(delay);
         delay = Math.min(delay * 2, 1_000);
       }
     }
     case 'read_file': {
       const path = arg(input, 'path');
+      needTarget(input);
       const sessionId = optionalArg(input, 'session_id');
       if (!sessionId) {
         const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files/content`, { query: { path, ref: optionalArg(input, 'ref') } });
-        return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
+        if (r.status >= 400) return apiResult(r);
+        const file = JSON.parse(r.body);
+        if (file.binary) return text(`${path} is a binary file. Read it through a session (read_file with session_id) or clone the repository.`);
+        return pageLines(file.content, input);
       }
-      const r = await callSandbox(ctx, sessionId, 'GET', '/file/content', { query: { path } });
+      const sandbox = await resolveSandbox(ctx, sessionId);
+      if (!('session' in sandbox)) return apiResult(sandbox);
+      const home = await expandHome(ctx, sandbox, path);
+      if ('error' in home) return home.error;
+      const r = await callSandbox(ctx, sandbox, 'GET', '/file/content', { query: { path: home.path } });
       if (r.status >= 400) return apiResult(r);
       const file = JSON.parse(r.body);
-      if (file.type === 'text') return text(file.content);
-      if (String(file.mimeType).startsWith('image/')) return { content: [{ type: 'image', data: file.content, mimeType: file.mimeType }] };
+      if (file.type === 'text') return pageLines(file.content, input);
+      if (String(file.mimeType).startsWith('image/')) {
+        if (file.size > IMAGE_MAX_BYTES) return text(`Image (${file.mimeType}, ${file.size} bytes) is over the ${IMAGE_MAX_BYTES} byte limit for inline images. Resize it with run_command first.`);
+        return { content: [{ type: 'image', data: file.content, mimeType: file.mimeType }] };
+      }
+      if (String(file.content).length > BINARY_INLINE_CHARS) {
+        return text(`${home.path} is binary, ${file.size} bytes (${file.mimeType}) — use run_command (e.g. base64 -w0 ${home.path} | cut -c 1-40000) to fetch it.`);
+      }
       return text(`Binary file (${file.mimeType}, ${file.size} bytes). Base64:\n${file.content}`);
     }
     case 'write_file': {
       const content = input.content;
       if (typeof content !== 'string') throw new ToolInputError('content is required');
-      const r = await callSandbox(ctx, arg(input, 'session_id'), 'POST', '/kortix/env-rpc', {
-        body: { op: 'writeFile', args: { path: arg(input, 'path'), content, encoding: input.encoding === 'base64' ? 'base64' : 'utf8' } },
+      const base64 = input.encoding === 'base64';
+      // Buffer.from(…, 'base64') is lenient: bad input would write junk bytes.
+      if (base64 && (!/^[A-Za-z0-9+/=\s]*$/.test(content) || content.replace(/[=\s]/g, '').length % 4 === 1)) {
+        throw new ToolInputError('content is not valid base64; nothing was written');
+      }
+      const sandbox = await resolveSandbox(ctx, arg(input, 'session_id'));
+      if (!('session' in sandbox)) return apiResult(sandbox);
+      const home = await expandHome(ctx, sandbox, arg(input, 'path'));
+      if ('error' in home) return home.error;
+      const r = await callSandbox(ctx, sandbox, 'POST', '/kortix/env-rpc', {
+        body: { op: 'writeFile', args: { path: home.path, content, encoding: base64 ? 'base64' : 'utf8' } },
       });
-      return envRpcResult(r, () => `wrote ${arg(input, 'path')}`);
+      return envRpcResult(r, () => `wrote ${home.path}`);
     }
     case 'list_files': {
+      needTarget(input);
       const path = optionalArg(input, 'path');
       const sessionId = optionalArg(input, 'session_id');
+      const offset = intArg(input, 'offset') ?? 0;
       if (!sessionId) {
-        const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files`, { query: { path, ref: optionalArg(input, 'ref') } });
+        const repoPath = path?.replace(/^\/+/, '');
+        const ref = optionalArg(input, 'ref');
+        const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/files`, { query: { path: repoPath, ref } });
         if (r.status >= 400) return apiResult(r);
         const files = JSON.parse(r.body) as { path: string }[];
-        return text(files.length ? files.map((f) => f.path).join('\n') : 'No files.');
+        return text(files.length ? page(files.map((f) => f.path), offset, undefined, 'entries') : `No files${repoPath ? ` under ${repoPath}` : ''} at ${ref ?? 'the default branch'}.`);
       }
-      const r = await callSandbox(ctx, sessionId, 'GET', '/file', { query: { path: path ?? '/workspace' } });
+      const sandbox = await resolveSandbox(ctx, sessionId);
+      if (!('session' in sandbox)) return apiResult(sandbox);
+      const home = await expandHome(ctx, sandbox, path ?? '/workspace');
+      if ('error' in home) return home.error;
+      const r = await callSandbox(ctx, sandbox, 'GET', '/file', { query: { path: home.path } });
       if (r.status >= 400) return apiResult(r);
       const nodes = JSON.parse(r.body) as { absolute: string; type: string }[];
-      return text(nodes.length ? nodes.map((n) => (n.type === 'directory' ? `${n.absolute}/` : n.absolute)).join('\n') : 'Empty directory.');
+      return text(nodes.length ? page(nodes.map((n) => (n.type === 'directory' ? `${n.absolute}/` : n.absolute)), offset, undefined, 'entries') : 'Empty directory.');
     }
     case 'read_skill': {
       const name = optionalArg(input, 'name');
