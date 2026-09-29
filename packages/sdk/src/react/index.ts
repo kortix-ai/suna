@@ -119,6 +119,7 @@ export {
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export * from './use-project-gateway';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
