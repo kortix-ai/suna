@@ -6,57 +6,42 @@ OpenCode config, from a read-only release directory — never the session's own
 `apps/kortix-sandbox-agent-server/src/config-release/`,
 `apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`.
 
-## The two levers
+## The lever
 
-Two independent gates. Both must be on for a session to run a release.
+One gate: the per-project `config_releases` flag.
 
 | Lever | Scope | Set by | Changed by |
 |---|---|---|---|
-| `CONFIG_RELEASES_ENABLED` | Whole platform | Operator, at deploy time | `KORTIX_ECS_ENV_OVERRIDES` in `.github/workflows/deploy-prod.yml` → redeploy |
-| `config_releases` project flag | One project | Project owner/admin, at any time | `PATCH /v1/projects/:projectId/features {feature:"config_releases",enabled:true|false|null}` |
+| `config_releases` project flag | One project | Project owner/admin, at any time | Settings → Feature flags, or `PATCH /v1/projects/:projectId/features {feature:"config_releases",enabled:true|false|null}` |
 
-`available` (the switch) AND-gates `enabled` (the flag). Both default to
-**off**. Turning the switch on by itself changes no session's behavior — every
-project's flag still defaults to `enabled: false`
-(`apps/api/src/feature-flags/registry.ts`, `platformDefault: () => false`).
-A project must separately opt in.
-
-With the switch off: the Settings row is hidden, the descriptor and archive
-routes answer `403 feature_disabled` for every project, no convergence is
-scheduled, and every session reads its workspace config directory directly —
-today's behavior, unchanged.
+The flag is available on every deployment, so the Settings row always
+renders. It defaults to **off** (`apps/api/src/feature-flags/registry.ts`,
+`platformDefault: () => false`). A project that made no choice reads its
+workspace config directory directly — the pre-release behavior. There is no
+operator env switch: `CONFIG_RELEASES_ENABLED` was removed.
 
 ## Rollout order
 
-**Precondition, before step 1: CFG-11 and CFG-12 must pass against deployed
-staging in a release gate run.** Every other config-releases flow (CFG-1
-through CFG-10) is API-only and can pass with no sandbox ever booting.
-CFG-11 and CFG-12 are the only two flows that `requires: funded, daytona` —
-the only ones that boot a real sandbox and prove the daemon side of this
-feature (descriptor fetch, archive download, apply, and the proven check)
-actually works end to end. The local test profile skips both, so this is
-also the only place they run. As of the v0.13.33 release gate, CFG-1..CFG-10
-pass and CFG-11/CFG-12 both fail at their first assertion with
-`"source":"image-default"` and a `fallback_reason` naming a failed release —
-i.e. the box never applies the release it was assigned and falls all the way
-back to the image default. Do not flip the prod switch (step 1) until both
-flows are green on a deployed staging release gate run. Root cause is being
-worked on a separate branch.
+**Sandbox flows on deployed staging.** CFG-11 and CFG-12 are the only
+config-releases flows that `requires: funded, daytona` — the only ones that
+boot a real sandbox and prove the daemon side (descriptor fetch, archive
+download, apply, proven check). The local test profile skips both. Latest
+state: release gate run `36497729410` (2026-09-28) passed CFG-11 and failed
+CFG-12 with `the send answered 503 while a convergence was parked`. Run
+`36522694163` (2026-09-29) failed both on staging timeouts (`524`, network
+timeout). Keep the flag on internal projects only until CFG-12 is green.
 
-1. **Merge the switch, prerequisites already proven.** Adding
-   `"CONFIG_RELEASES_ENABLED":"true"` to `deploy-prod.yml`'s
-   `KORTIX_ECS_ENV_OVERRIDES` makes the flag *available*. Confirm before
-   merging (see the PR that added this runbook for a worked example):
+1. **Prerequisites (already met on prod).**
    - the config archive bucket exists in the target region and the ECS task
      role holds `s3:GetObject` / `s3:PutObject` / `s3:ListBucket` on it (no
      `s3:DeleteObject` — retention is the bucket's lifecycle rule, see
      "Retention" below);
    - every `config_releases` DB migration
      (`packages/db/migrations/20260925105614842_config_release_quarantine.sql`,
-     `..._config_releases_bucket.sql`) is already applied on prod;
+     `..._config_releases_bucket.sql`) is applied;
    - `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT` is `0` (see "Retention").
-   Deploy. The Settings row now appears for every project; nothing else
-   changes.
+   A missing bucket is a boot warning, not an error: every archive request
+   then rebuilds from the Git mirror.
 2. **Enable one internal project.**
    `PATCH /v1/projects/:projectId/features {feature:"config_releases",enabled:true}`
    on a Kortix-internal project (not a customer's). Commit an
@@ -82,9 +67,9 @@ worked on a separate branch.
      project: a release proven (`proven_at` set) vs. failed
      (`failed_release_id` reported by ≥ `PROJECT_QUARANTINE_SESSIONS` = 2
      distinct sessions — see "Fallback chain").
-4. **Widen slowly.** One more internal project, then ask for volunteers, then
-   a customer project. There is no fleet-wide "enable all" switch by design —
-   each project opts in individually.
+4. **Widen slowly.** One more internal project, then volunteers, then a
+   customer project. Flip `platformDefault` to `true` in the registry when
+   the rollout is done.
 
 ## Fallback chain
 
@@ -99,8 +84,7 @@ unbootable.
    session has **proven** (`kortix.config_releases.proven_at`).
    Quarantine is per release ID: a new base commit produces a new release ID
    and is assignable again immediately.
-3. If the flag is off for the project (or the switch is off platform-wide):
-   no release is assigned at all; the session reads its workspace config
+3. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
    directory — pre-release behavior.
 
 **Daemon side — where a box reads config from, per boot/converge:**
@@ -142,17 +126,12 @@ PATCH /v1/projects/:projectId/features {"feature":"config_releases","enabled":fa
 Takes effect on the project's next session boot or reload. Stops the one
 project; every other enabled project is unaffected.
 
-**Whole platform — the kill switch (requires a deploy):**
-Set `CONFIG_RELEASES_ENABLED` back to unset/`false` in `deploy-prod.yml`'s
-`KORTIX_ECS_ENV_OVERRIDES` and redeploy. This is the same lever as the
-rollout's step 1, in reverse: the flag becomes unavailable for every project
-at once, the Settings row disappears, and every session falls back to
-reading its workspace config directory. There is no in-place runtime toggle
-for the platform switch — `available` reads a compiled-in env var
-(`apps/api/src/feature-flags/registry.ts`), not a database row, so clearing it
-always means an ECS task-definition update. Prefer the per-project flag
-during an active rollout; reserve the platform switch for a defect in the
-feature itself, not for one bad project.
+**Whole platform (requires a deploy):**
+Set `available: () => false` on the `config_releases` entry in
+`apps/api/src/feature-flags/registry.ts` and ship it. The flag becomes
+unavailable for every project at once, the Settings row disappears, and every
+session reads its workspace config directory at its next boot or start.
+Prefer the per-project flag; reserve this for a defect in the feature itself.
 
 ## What NOT to do
 
