@@ -256,8 +256,8 @@ async function archiveTree(
  * What a config release tree is made of at one commit.
  *
  * The OpenCode config dir, plus the skills of the root `skills/` dir (the
- * harness-neutral project layout, docs/specs/config-releases.md "Project
- * layout"). A root skill replaces a config-dir skill of the same name. Only a
+ * harness-neutral project layout, `@kortix/manifest-schema/layout`). A root
+ * skill replaces a config-dir skill of the same name. Only a
  * root entry that holds a `SKILL.md` counts, so an unrelated `skills/` folder
  * in a code repository adds nothing.
  */
