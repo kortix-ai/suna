@@ -5,19 +5,17 @@
  * Only a `transcript` share (minted with `{ transcript: true }`) reaches the
  * transcript read: `resolvePublicShare(..., { requireTranscript: true })`
  * refuses `preview` and `file` shares with 404 before this module runs. The
- * session title is DB-only; the transcript is read server-to-sandbox when the
- * box is running and from the saved transcript mirror otherwise, so no client
- * ever gets sandbox access.
+ * session title is DB-only; the transcript is read server-to-sandbox from the
+ * daemon's runtime namespace when the box is running (every harness serves
+ * it) and from the saved transcript mirror otherwise, so no client ever gets
+ * sandbox access.
  *
- * Sanitization mirrors `projects/lib/session-transcript.ts` (the
- * authenticated per-session transcript digest used by
- * `GET /projects/:id/sessions/:sid/transcript`): only message role, text,
- * tool NAME + status (no args/output), file NAME + mime (no content), and a
- * `reasoning_omitted` flag are ever returned — raw tool call arguments,
- * command output, and file contents never leave the sandbox. Kept as an
- * independent (small) implementation rather than importing that module's
- * private helpers, since this lives in a different ownership boundary
- * (anonymous/public surface vs. the authenticated project routes).
+ * Both sources go through the one projection the authenticated transcript
+ * uses (`projects/lib/session-transcript-compact.ts`), then through
+ * `toPublicMessage`: only message role, text, tool NAME + status (no
+ * args/output), file NAME + mime (no content), and a `reasoning_omitted` flag
+ * are ever returned — raw tool call arguments, command output, file contents,
+ * message ids and error text never leave the sandbox.
  */
 
 import { eq } from 'drizzle-orm';
@@ -28,17 +26,18 @@ import {
   runtimeRootTitleFromSnapshot,
 } from '../projects/lib/opencode-title';
 import {
-  sandboxOpencodeEndpoint,
-  listSandboxOpencodeSessions,
-  resolveRootSessionId,
-} from '../projects/opencode-mapping';
+  type CompactMessage,
+  compactMessage,
+  normalizeMessageList,
+} from '../projects/lib/session-transcript-compact';
+import { projectionIdentity } from '../projects/lib/session-runtime-projection';
+import { fetchRuntimeMessages, fetchRuntimeState } from '../projects/lib/session-runtime-transport';
 import {
   type MirrorSnapshot,
   readSessionTranscriptMirror,
 } from '../projects/lib/session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
-const WORKSPACE_DIRECTORY = '/workspace';
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_MESSAGES = 200;
 
@@ -147,64 +146,18 @@ export type PublicSessionMessagesResult =
   | { ok: true; transcript: PublicSessionTranscript }
   | { ok: false; status: number; error: string };
 
-type RawMessage = {
-  info?: { role?: string; time?: { created?: number; completed?: number } };
-  role?: string;
-  time?: { created?: number; completed?: number };
-  parts?: RawPart[];
-};
-
-type RawPart = {
-  type?: string;
-  text?: string;
-  synthetic?: boolean;
-  tool?: string;
-  state?: { status?: string };
-  filename?: string;
-  mime?: string;
-};
-
-function normalizeMessageList(payload: unknown): RawMessage[] {
-  const list = Array.isArray(payload)
-    ? payload
-    : typeof payload === 'object' &&
-        payload &&
-        Array.isArray((payload as { messages?: unknown }).messages)
-      ? (payload as { messages: unknown[] }).messages
-      : [];
-  return list.filter((m): m is RawMessage => typeof m === 'object' && m !== null);
-}
-
-function normalizeWhitespace(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
-}
-
-function compactMessage(msg: RawMessage): CompactPublicMessage {
-  const info = msg.info ?? msg;
-  const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  const text = parts
-    .filter((p) => p.type === 'text' && !p.synthetic && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .filter(Boolean)
-    .join('\n');
-  const tools = parts
-    .filter((p) => p.type === 'tool')
-    .map((p) => ({ tool: p.tool ?? 'tool', status: p.state?.status ?? null }));
-  const files = parts
-    .filter((p) => p.type === 'file')
-    .map((p) => ({ filename: p.filename ?? null, mime: p.mime ?? null }));
+/** The public subset of the shared projection. Picked field by field, so a
+ *  field added to `CompactMessage` never reaches an anonymous viewer by
+ *  default. */
+function toPublicMessage(message: CompactMessage): CompactPublicMessage {
   return {
-    role: info.role ?? 'unknown',
-    created: info.time?.created ? new Date(info.time.created).toISOString() : null,
-    completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(normalizeWhitespace(text), MAX_MESSAGE_CHARS),
-    tools,
-    files,
-    reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
+    role: message.role,
+    created: message.created,
+    completed: message.completed,
+    text: message.text,
+    tools: message.tools.map(({ tool, status }) => ({ tool, status })),
+    files: message.files,
+    reasoning_omitted: message.reasoning_omitted,
   };
 }
 
@@ -232,7 +185,9 @@ function fromMirror(
   reason: string,
   opencodeSessionId: string | null,
 ): PublicSessionTranscript {
-  const messages = mirror.messages.map((m) => compactMessage({ info: m.info, parts: m.parts } as RawMessage));
+  const messages = mirror.messages.map((m) =>
+    toPublicMessage(compactMessage({ info: m.info as never, parts: m.parts as never }, MAX_MESSAGE_CHARS)),
+  );
   return {
     available: true,
     reason,
@@ -249,13 +204,19 @@ function fromMirror(
  * `row` must already have passed `resolvePublicShare` (404/410 handled by the
  * caller) — this only covers what happens once a token is known-good.
  *
- * A running sandbox answers live, server-to-sandbox. When it cannot — no
- * sandbox, a stopped one, or a daemon that is not ready — the saved
- * transcript mirror answers instead (`source: 'mirror'`), the same fallback
- * `buildSessionTranscriptDigest` uses for the authenticated equivalent. A
- * stopped or missing sandbox with nothing saved is a 503; a running one with
- * nothing saved degrades to `{available: false, source: 'none'}` (still 200)
- * so a polling frontend can retry.
+ * A running sandbox answers live, server-to-sandbox, through the daemon: its
+ * `/state` document names the root conversation, and `/messages` returns it.
+ * When it cannot — no sandbox, a stopped one, or a daemon that does not
+ * answer — the saved transcript mirror answers instead (`source: 'mirror'`),
+ * the same fallback `buildSessionTranscriptDigest` uses for the
+ * authenticated equivalent. A stopped or missing sandbox with nothing saved
+ * is a 503; a running one with nothing saved degrades to
+ * `{available: false, source: 'none'}` (still 200) so a polling frontend can
+ * retry.
+ *
+ * Every reason is generic: the audience is anonymous, so daemon and provider
+ * error text (host shapes, internal paths, rate-limit bodies) is logged
+ * server-side and never returned.
  */
 export async function getPublicSessionMessages(
   row: Pick<PublicShareRow, 'sessionId'> & { externalId: string | null; sandboxStatus: string | null },
@@ -278,82 +239,54 @@ export async function getPublicSessionMessages(
     if (!mirror) return { ok: false, status: 503, error: 'Sandbox is not running' };
     return { ok: true, transcript: fromMirror(mirror, 'Sandbox is not running', null) };
   }
-  const externalId = row.externalId;
+  // Anonymous: no user context is signed; the sandbox service key authorizes
+  // the read.
+  const target = { externalId: row.externalId };
 
-  const [sessionRow] = await db
-    .select({ opencodeSessionId: projectSessions.opencodeSessionId })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, row.sessionId))
-    .limit(1);
-  const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
-
-  const listed = await listSandboxOpencodeSessions(externalId, undefined);
-  if (!listed.ok) {
+  const state = await fetchRuntimeState(target);
+  if (!state.ok || state.status !== 200) {
+    if (!state.ok) console.warn('[public-session-share-view] runtime state read failed:', state.reason);
     return degrade(
-      listed.reason === 'not_ready'
-        ? 'OpenCode is not ready in the sandbox yet'
-        : listed.reason === 'no_key'
-          ? 'Sandbox credentials unavailable'
-          : 'OpenCode session list unreachable in the sandbox',
+      !state.ok && state.reason === 'no_service_key'
+        ? 'Sandbox credentials unavailable'
+        : 'The session runtime is not ready yet',
     );
   }
 
-  const opencodeSessionId = resolveRootSessionId({ pinnedRootId, sessions: listed.sessions });
-  if (!opencodeSessionId) {
-    return degrade('No OpenCode session found in the sandbox yet');
+  // The box owns its root conversation id; the row's pin is the fallback for
+  // a daemon that has not adopted one yet.
+  let rootId = projectionIdentity(state.doc).opencode_session_id;
+  if (!rootId) {
+    const [sessionRow] = await db
+      .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, row.sessionId))
+      .limit(1);
+    rootId = sessionRow?.opencodeSessionId ?? null;
+  }
+  if (!rootId) {
+    return degrade('No conversation found in the sandbox yet');
   }
 
-  // Endpoint resolution touches the sandbox provider (Daytona preview-link /
-  // service-key lookup) and can throw on a 429 `ThrottlerException` rate limit,
-  // an archived/deleted box, or a transient provider outage. This anonymous
-  // transcript read is best-effort enrichment (the share row is already
-  // resolved); a provider throw must NEVER bubble up and 500 the public share
-  // route (sibling of the #3567 title-sync fix — same class of bug on a
-  // different post-#3567 call site). Degrade to an unavailable digest.
-  let endpoint: { url: string; headers: Record<string, string> } | null;
-  try {
-    endpoint = await sandboxOpencodeEndpoint(externalId, undefined);
-  } catch (err) {
-    console.warn('[public-session-share-view] sandbox endpoint resolution failed:', err);
-    return degrade('Could not read the shared session right now.', opencodeSessionId);
+  const page = await fetchRuntimeMessages(target, rootId, { limit: MAX_MESSAGES });
+  if (!page.ok) {
+    console.warn('[public-session-share-view] transcript read failed:', page.reason);
+    return degrade(
+      page.status === 503 ? 'The session runtime is not ready yet' : 'Could not read the shared session right now.',
+      rootId,
+    );
   }
-  if (!endpoint) {
-    return degrade('Sandbox credentials unavailable', opencodeSessionId);
-  }
-
-  try {
-    const url = new URL(`${endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}/message`);
-    url.searchParams.set('directory', WORKSPACE_DIRECTORY);
-    url.searchParams.set('limit', String(MAX_MESSAGES));
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: endpoint.headers,
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (res.status === 503) {
-      return degrade('OpenCode is not ready in the sandbox yet', opencodeSessionId);
-    }
-    if (!res.ok) {
-      return degrade(`OpenCode messages unavailable: HTTP ${res.status}`, opencodeSessionId);
-    }
-    const payload = (await res.json().catch(() => null)) as unknown;
-    const rawMessages = normalizeMessageList(payload).slice(-MAX_MESSAGES);
-    return {
-      ok: true,
-      transcript: {
-        available: true,
-        reason: null,
-        source: 'live',
-        captured_at: null,
-        opencode_session_id: opencodeSessionId,
-        message_count: rawMessages.length,
-        messages: rawMessages.map(compactMessage),
-      },
-    };
-  } catch (err) {
-    // Anonymous audience — surface a generic reason, never the raw fetch/daemon
-    // error text (host shapes, internal paths). Log the detail server-side.
-    console.warn('[public-session-share-view] transcript read failed:', err);
-    return degrade('Could not read the shared session right now.', opencodeSessionId);
-  }
+  const rawMessages = normalizeMessageList(page.messages).slice(-MAX_MESSAGES);
+  return {
+    ok: true,
+    transcript: {
+      available: true,
+      reason: null,
+      source: 'live',
+      captured_at: null,
+      opencode_session_id: rootId,
+      message_count: rawMessages.length,
+      messages: rawMessages.map((m) => toPublicMessage(compactMessage(m, MAX_MESSAGE_CHARS))),
+    },
+  };
 }

@@ -67,6 +67,7 @@ export interface AddMcpServerParams {
   headers?: Record<string, string>;
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useAddMcpServer() {
   const queryClient = useQueryClient();
 
@@ -110,6 +111,7 @@ export function useAddMcpServer() {
 // Connect MCP Server
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useConnectMcpServer() {
   const queryClient = useQueryClient();
 
@@ -148,6 +150,7 @@ export function useConnectMcpServer() {
 // Disconnect MCP Server
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useDisconnectMcpServer() {
   const queryClient = useQueryClient();
 
@@ -185,6 +188,7 @@ export function useDisconnectMcpServer() {
 // MCP OAuth: Start
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useMcpAuthStart() {
   return useMutation({
     mutationFn: async (name: string) => {
@@ -199,6 +203,7 @@ export function useMcpAuthStart() {
 // MCP OAuth: Callback
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useMcpAuthCallback() {
   const queryClient = useQueryClient();
 
@@ -219,6 +224,7 @@ export function useMcpAuthCallback() {
 // MCP OAuth: Remove
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useMcpAuthRemove() {
   const queryClient = useQueryClient();
 
