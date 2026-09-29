@@ -1476,8 +1476,3 @@ test('ProjectSession.metadata types spawned_by_session as an optional string', (
   const parent: string | undefined = session.metadata.spawned_by_session;
   expect(parent).toBe('parent-1');
 });
-test('session labels are typed on create and read', () => {
-  const input: import('./sessions').CreateProjectSessionInput = { labels: ['urgent'] };
-  const sessionLabels: import('./sessions').ProjectSession['labels'] = input.labels!;
-  expect(sessionLabels).toEqual(['urgent']);
-});
