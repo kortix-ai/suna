@@ -574,7 +574,7 @@ projectsApp.openapi(
             projectId,
             sessionId,
             remaining_ms: remainingIngestBudgetMs(c),
-            chunk_budget_ms: AUDIT_INGEST_CHUNK_BUDGET_MS,
+            chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
             accepted: parsed.accepted,
             attempted,
             inserted: insertedCount,
