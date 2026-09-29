@@ -129,8 +129,8 @@ describe('modalDismissesOnOutsideInteraction', () => {
 });
 
 // Characterization: the surviving public surface of `@/components/ui/modal`.
-// These names must stay exported across the LazyModal dead-code deletion; this
-// file passes before and after it.
+// These names must stay exported across the dead-code deletion; this file
+// passes before and after it.
 const SURVIVING_EXPORTS = [
   'Modal',
   'ModalBody',
