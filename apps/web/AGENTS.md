@@ -14,24 +14,6 @@ Never write customer names, people's names, emails, or real prod IDs into code,
 commits, PRs, docs, or comments. The full rule and the commit guard are in the
 root `AGENTS.md` → "NEVER write customer data or PII".
 
-## UI and UX standard
-
-### States
-
-Every clickable element shows `cursor: pointer`. Disabled elements show
-`cursor: default`. Do not add `cursor-default` to an interactive element. A
-clickable element is a `<button>`, `<Link>`, or has a `role`. Never put
-`onClick` on a bare `div`.
-
-The global rule lives in `apps/web/src/app/globals.css` (`@layer base`): it
-gives `button`, `summary`, `label[for]`, file/choice inputs, and ARIA roles
-(`button`, `tab`, `menuitem`, `menuitemcheckbox`, `menuitemradio`, `option`,
-`link`, `switch`, `checkbox`, `radio`, `treeitem`) the pointer unless disabled.
-A utility class beats `@layer base`, so a `cursor-default` on a clickable
-element breaks the rule. The guard
-`tests/unit/web-cursor-default-guard.test.ts` fails on any `cursor-default` in
-`apps/web/src/components/ui` whose line has no reason comment.
-
 ## Translation catalogs
 
 `translations/<locale>.json` keep their keys in the order they were added, in
