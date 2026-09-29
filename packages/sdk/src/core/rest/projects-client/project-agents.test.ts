@@ -40,6 +40,15 @@ describe('isSelectableAgent', () => {
     expect(isSelectableAgent({ name: 'c', enabled: false })).toBe(false);
   });
 
+  test('rejects the OpenCode built-ins, which the runtime marks native', () => {
+    // The runtime's own agent list carries `native: true` for build/plan/general/
+    // explore; they are not project agents and must never reach a picker.
+    expect(isSelectableAgent({ name: 'build', mode: 'primary', native: true })).toBe(false);
+    expect(isSelectableAgent({ name: 'plan', mode: 'primary', native: true })).toBe(false);
+    expect(isSelectableAgent({ name: 'general', mode: 'subagent', native: true })).toBe(false);
+    expect(isSelectableAgent({ name: 'explore', mode: 'subagent', native: true })).toBe(false);
+  });
+
   test('gates project-manager behind the projects flag', () => {
     configureKortix({ ...base, featureFlags: { enableProjects: false } });
     expect(isSelectableAgent({ name: 'project-manager' })).toBe(false);
@@ -47,8 +56,9 @@ describe('isSelectableAgent', () => {
     expect(isSelectableAgent({ name: 'project-manager' })).toBe(true);
   });
 
-  test('does not filter by name: a project agent called build stays selectable', () => {
+  test('does not filter by name: a project agent called build (native: false) stays selectable', () => {
     expect(isSelectableAgent({ name: 'build', mode: 'primary' })).toBe(true);
+    expect(isSelectableAgent({ name: 'build', mode: 'primary', native: false })).toBe(true);
   });
 });
 
