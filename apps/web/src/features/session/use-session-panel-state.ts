@@ -13,7 +13,7 @@ import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
 import { useEffect } from 'react';
 
-function useSessionPanelView({
+export function useSessionPanelView({
   sessionId,
   projectId,
   projectSessionId,
@@ -83,7 +83,7 @@ function useSessionPanelView({
   return { messages, isSessionBusy, isEasy, effectiveView, auditPendingCount, togglePanelMode };
 }
 
-function useSessionPanelSessionSync({
+export function useSessionPanelSessionSync({
   sessionId,
   projectSessionId,
   transient,

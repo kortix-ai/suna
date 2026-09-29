@@ -89,6 +89,8 @@ export const SessionLayout = memo(function SessionLayout({
   });
   const surfaces = useSessionPanelSurfaces({
     sessionId,
+    projectId,
+    projectSessionId,
     bootStage,
     isEasy,
     effectiveView,
@@ -102,6 +104,11 @@ export const SessionLayout = memo(function SessionLayout({
     projectId,
     projectSessionId,
     ...panels,
+    messages,
+    isSessionBusy,
+    effectiveView,
+    auditPendingCount,
+    togglePanelMode,
     isExpanded,
     isEasy,
     shouldShowPanel,
@@ -111,13 +118,13 @@ export const SessionLayout = memo(function SessionLayout({
   if (isMobile) {
     return withPanelProvider(
       panel,
-      <MobileSessionLayout {...panel}>{children}</MobileSessionLayout>,
+      <MobileSessionLayout panel={panel}>{children}</MobileSessionLayout>,
     );
   }
 
   return withPanelProvider(
     panel,
-    <DesktopSessionLayout {...panel}>{children}</DesktopSessionLayout>,
+    <DesktopSessionLayout panel={panel}>{children}</DesktopSessionLayout>,
   );
 });
 
@@ -149,6 +156,8 @@ function useSessionPanelSplitState() {
 
 function useSessionPanelSurfaces({
   sessionId,
+  projectId,
+  projectSessionId,
   bootStage,
   isEasy,
   effectiveView,
@@ -157,6 +166,8 @@ function useSessionPanelSurfaces({
   panelBody,
 }: {
   sessionId: string;
+  projectId?: string;
+  projectSessionId?: string;
   bootStage: SessionStartStage | null;
   isEasy: boolean;
   effectiveView: SessionPanelView;
