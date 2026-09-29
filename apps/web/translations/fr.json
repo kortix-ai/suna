@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Connectez un modèle pour commencer à discuter",
-      "description": "Cette session nécessite la connexion d’un LLM avant de pouvoir répondre. Utilisez votre propre clé API, quel que soit le fournisseur.",
-      "upgradeDescription": "Cette session nécessite la connexion d’un LLM avant de pouvoir répondre. Passez à une offre supérieure pour accéder instantanément aux modèles gérés de Kortix, ou utilisez votre propre clé API, quel que soit le fournisseur.",
       "upgrade": "Passer à une offre supérieure",
-      "bringKey": "Utiliser votre propre clé",
       "barTitle": "Aucun modèle connecté",
       "barDescription": "connectez-en un pour commencer à discuter",
       "connectModel": "Connecter un modèle",
@@ -15625,7 +15621,6 @@
       "textb139c4cffca9": "Bannière d’information",
       "textb13bbdebd165": "Aucun token SCIM pour le moment",
       "textb13c564cdf28": "{value0} est arrêté",
-      "textb14f19afe19f": "· Ignoré",
       "textb16288742d59": "- Rédiger le résumé du renouvellement avec le ton du compte",
       "textb169cfa6f00f": "Supprimer \"{value0}\" ? Cela ne peut pas être annulé. Les membres conservent l'accès à leur compte.",
       "textb16ecefb1aec": "Une nouvelle machine est en préparation. Les sessions démarrées maintenant attendent qu’elle soit prête — elles n’échouent pas.",

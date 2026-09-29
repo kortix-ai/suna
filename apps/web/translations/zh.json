@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "连接模型以开始聊天",
-      "description": "此会话需要先连接 LLM 才能响应。你可以使用任意提供商的 API 密钥。",
-      "upgradeDescription": "此会话需要先连接 LLM 才能响应。升级即可立即使用 Kortix 托管模型，也可以使用任意提供商的 API 密钥。",
       "upgrade": "升级",
-      "bringKey": "使用自己的密钥",
       "barTitle": "未连接模型",
       "barDescription": "连接一个模型以开始聊天",
       "connectModel": "连接模型",
@@ -15625,7 +15621,6 @@
       "textb139c4cffca9": "信息横幅",
       "textb13bbdebd165": "暂无 SCIM tokens",
       "textb13c564cdf28": "{value0} 已停止",
-      "textb14f19afe19f": "· 已跳过",
       "textb16288742d59": "- 用客户的语气起草续约摘要",
       "textb169cfa6f00f": "删除“{value0}”？此操作无法撤消。会员保留其帐户访问权限。",
       "textb16ecefb1aec": "正在准备新机器。现在启动的会话会等待准备完成——不会失败。",

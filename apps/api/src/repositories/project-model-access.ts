@@ -1,5 +1,6 @@
 import { projects, projectLlmRoutingPolicies } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
 import { modelAccessAllows, readModelAccess, updateModelAccess, type ModelAccessChange } from '../llm-gateway/model-access';
 
@@ -8,6 +9,17 @@ export async function getProjectModelAccess(projectId: string) {
     .where(eq(projects.projectId, projectId)).limit(1);
   if (!row) throw new Error('Project not found');
   return readModelAccess(row.metadata);
+}
+
+/** Read model access and the pooled flag from one projects row (KRTX-586). */
+export async function getProjectGatewayResolution(projectId: string) {
+  const [row] = await db.select({ metadata: projects.metadata }).from(projects)
+    .where(eq(projects.projectId, projectId)).limit(1);
+  if (!row) throw new Error('Project not found');
+  return {
+    access: readModelAccess(row.metadata),
+    pooledEnabled: resolveFeatureFlag(row.metadata, 'pooled_provider_secrets'),
+  };
 }
 
 /** Row locking prevents two switches from replacing each other's changes. */

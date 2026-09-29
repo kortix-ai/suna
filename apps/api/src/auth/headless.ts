@@ -156,6 +156,7 @@ headlessAuthRouter.openapi(
     summary: 'Create an account with email + password (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({
@@ -204,7 +205,7 @@ headlessAuthRouter.openapi(
     path: '/sign-in/password',
     tags: ['auth'],
     summary: 'Sign in with email + password (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
     responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -236,6 +237,7 @@ headlessAuthRouter.openapi(
     summary: 'Email a magic link / one-time code (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({
@@ -276,6 +278,7 @@ headlessAuthRouter.openapi(
     summary: 'Exchange an emailed code for a session (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ email: Email, token: z.string().min(4).max(64), type: z.enum(OTP_TYPES) }),
@@ -320,6 +323,7 @@ headlessAuthRouter.openapi(
     summary: 'Start a social sign-in (PKCE): returns the provider URL and the code verifier to keep',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ provider: z.enum(PROVIDERS), redirect_to: z.string(), scopes: z.string().optional() }),
@@ -362,7 +366,7 @@ headlessAuthRouter.openapi(
     path: '/oauth/exchange',
     tags: ['auth'],
     summary: 'Exchange the social sign-in code (+ PKCE verifier) for a session',
-    request: { body: { content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
     responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -390,7 +394,7 @@ headlessAuthRouter.openapi(
     path: '/refresh',
     tags: ['auth'],
     summary: 'Rotate a session with its refresh token (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
     responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -419,6 +423,7 @@ headlessAuthRouter.openapi(
       "Asks whether an email domain has an enterprise IdP and returns the redirect URL to send the browser to. Unauthenticated by design: the caller is signing IN, so there is no bearer yet, and the answer is not a secret — it is what the IdP's own discovery endpoint publishes.",
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ domain: z.string().min(1).max(253), redirect_to: z.string().optional() }),
@@ -454,7 +459,7 @@ headlessAuthRouter.openapi(
     path: '/password/reset',
     tags: ['auth'],
     summary: 'Email a password-recovery link / code (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
     responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent (also when the address is unknown)'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {

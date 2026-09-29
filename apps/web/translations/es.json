@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Conecta un modelo para empezar a chatear",
-      "description": "Esta sesión necesita un LLM conectado para poder responder. Usa tu propia clave de API de cualquier proveedor.",
-      "upgradeDescription": "Esta sesión necesita un LLM conectado para poder responder. Obtén acceso instantáneo a los modelos administrados de Kortix con una mejora, o usa tu propia clave de API de cualquier proveedor.",
       "upgrade": "Mejorar plan",
-      "bringKey": "Usar tu propia clave",
       "barTitle": "No hay ningún modelo conectado",
       "barDescription": "conecta uno para empezar a chatear",
       "connectModel": "Conectar modelo",
@@ -15625,7 +15621,6 @@
       "textb139c4cffca9": "Banner informativo",
       "textb13bbdebd165": "Todavía no hay tokens SCIM",
       "textb13c564cdf28": "{value0} está detenido",
-      "textb14f19afe19f": "· Omitido",
       "textb16288742d59": "- Redacta el resumen de renovación con la voz de la cuenta",
       "textb169cfa6f00f": "¿Eliminar \"{value0}\"? Esto no se puede deshacer. Los miembros mantienen el acceso a su cuenta.",
       "textb16ecefb1aec": "Se está preparando una máquina nueva. Las sesiones iniciadas ahora esperan a que termine; no fallan.",

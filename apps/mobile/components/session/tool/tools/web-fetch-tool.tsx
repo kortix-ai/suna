@@ -18,6 +18,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { looksLikeHtml, wsDomain } from '@kortix/sdk';
+import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
@@ -26,8 +27,6 @@ import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   WEB_FETCH_RAW_HTML_CHARS,
   WEB_FETCH_READABLE_CHARS,
-  extractReadableHtml,
-  safeHttpUrl,
   webFetchErrorSummary,
   webFetchTrigger,
 } from '@/lib/session/tools/web-fetch';
