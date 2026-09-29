@@ -4,18 +4,10 @@ import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import {
-  assertProjectCapability,
-  loadProjectForUser,
-  lookupEmailsByUserIds,
-} from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
-import {
-  kortixBilledSpendSql,
-  providerBilledSpendSql,
-  totalSpendSql,
-} from '../../shared/llm-spend';
+import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from '../../shared/llm-spend';
 import { canSetBudget } from './gateway-access';
 
 projectsApp.openapi(
