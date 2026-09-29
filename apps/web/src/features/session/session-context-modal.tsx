@@ -98,7 +98,8 @@ function tokenTotal(msg: AssistantMessage) {
   );
 }
 
-function getSessionContextMetrics(
+/** Pure token math for the modal — exported for characterization tests. */
+export function getSessionContextMetrics(
   messages: MessageWithParts[],
   providers: ProviderListResponse | undefined,
   pricingLookup: ModelPricingLookup,
@@ -185,7 +186,8 @@ function estimateTokens(chars: number) {
   return Math.ceil(chars / 4);
 }
 
-function estimateBreakdown(
+/** Pure context-breakdown estimation — exported for characterization tests. */
+export function estimateBreakdown(
   messages: MessageWithParts[],
   input: number,
   systemPrompt?: string,
