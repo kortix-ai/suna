@@ -587,32 +587,41 @@ describe('pi harness', () => {
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
   })
 
-  test('the manifest skills grant hides every other skill, from Kortix and pi skill dirs (W1 B3)', async () => {
+  test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
     const skill = (dir: string, name: string) => {
       mkdirSync(join(dir, name), { recursive: true })
       writeFileSync(join(dir, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
     }
-    const r = await boot({
-      script: [{ text: 'ok' }],
-      // What compileAgentConfig emits for `skills: [deploy]`.
-      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } } }) },
-      prepare: (workspace) => {
-        skill(join(workspace, '.kortix', 'skills'), 'deploy')
-        skill(join(workspace, '.kortix', 'opencode', 'skills'), 'review')
-        // pi's own project skill dir, read by its resource loader.
-        skill(join(workspace, '.pi', 'skills'), 'secrets-dump')
-      },
-    })
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
-    expect(skills.map((s) => s.name)).toEqual(['deploy'])
-    const root = r.service.runtime()!.rootId
-    const before = gateway.sent.length
-    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
-    await waitFor(() => !r.service.runtime()!.busy())
-    const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
-    expect(system).toContain('deploy')
-    expect(system).not.toContain('review')
-    expect(system).not.toContain('secrets-dump')
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    skill(managed, 'kortix-memory')
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({
+        script: [{ text: 'ok' }],
+        // What compileAgentConfig emits for `skills: [deploy]`.
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } } }) },
+        prepare: (workspace) => {
+          skill(join(workspace, 'skills'), 'deploy')
+          skill(join(workspace, '.kortix', 'opencode', 'skills'), 'review')
+          // pi's own project skill dir, read by its resource loader.
+          skill(join(workspace, '.pi', 'skills'), 'secrets-dump')
+        },
+      })
+      const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+      expect(skills.map((s) => s.name)).toEqual(['deploy'])
+      const root = r.service.runtime()!.rootId
+      const before = gateway.sent.length
+      expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
+      expect(system).toContain('deploy')
+      for (const hidden of ['kortix-memory', 'review', 'secrets-dump']) expect(system).not.toContain(hidden)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+      rmSync(managed, { recursive: true, force: true })
+    }
   })
 
   test('agent shells source the live agent env file through BASH_ENV (W1 B4)', async () => {
