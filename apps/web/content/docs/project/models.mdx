@@ -249,8 +249,11 @@ admins can delete any account.
 
 When an account's login stops working, the account shows **Needs
 reconnection**. This happens when ChatGPT rejects the renewal of the login, or
-when the stored login cannot be read. A brief outage at ChatGPT does not mark
-an account. The member who connected the account sees **Reconnect** beside it.
+when the stored login cannot be read. ChatGPT can also refuse a login before
+it expires. Kortix then renews the login once and retries the request. If the
+renewal is refused too, the account needs reconnection, and the request moves
+to the next selected account when there is one. A brief outage at ChatGPT does
+not mark an account. The member who connected the account sees **Reconnect** beside it.
 **Session overrides → Provider keys** shows the same mark. A turn that fails
 names the accounts that need reconnection. The account stays selected, and
 reconnecting it or a successful renewal clears the mark.
@@ -264,7 +267,8 @@ A turn that fails for this reason also shows the fix beside its error:
   is fixed in **Session overrides → Provider keys** instead.
 
 Both open your ChatGPT accounts. After you connect or reconnect, send your
-message again.
+message again. In Slack and Microsoft Teams the same failure reads **ChatGPT
+login needs reconnection**.
 
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is

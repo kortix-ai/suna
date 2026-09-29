@@ -132,6 +132,13 @@ function isProviderConfig(name: string, status: number | undefined): boolean {
   return name === 'ProviderAuthError' || status === 401 || status === 403;
 }
 
+// ChatGPT's refusal of an access token it will not accept (measured on dev
+// 2026-09-28/29): "Could not parse your authentication token. Please try
+// signing in again." with code `unauthorized_unknown`.
+function isChatGptLoginRefusal(lower: string): boolean {
+  return lower.includes('could not parse your authentication token') || lower.includes('unauthorized_unknown');
+}
+
 // The configured agent doesn't exist — deleted/renamed/disabled since the
 // channel (or project default) was pointed at it. On a governed project this is
 // caught at session-create (400 AGENT_NOT_DECLARED → inline picker); on a legacy
@@ -297,7 +304,21 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 8. Provider auth / config — bad or expired key, billing not set up.
+  // 8. A ChatGPT login ChatGPT refuses. The gateway already forced one refresh
+  //    (llm-gateway dispatch `refreshCredential`), so only a reconnect by the
+  //    person who connected it fixes it. There is no API key to check.
+  if (status === 401 && isChatGptLoginRefusal(lower)) {
+    return {
+      title: 'ChatGPT login needs reconnection',
+      text:
+        `:warning: *The ChatGPT login this chat uses stopped working.*` +
+        ` Whoever connected it must reconnect it in Kortix: *ChatGPT accounts* → the account's *⋯* → *Reconnect*.` +
+        ` Or pick another model, then mention me again.`,
+      aborted: false,
+    };
+  }
+
+  // 9. Provider auth / config — bad or expired key, billing not set up.
   if (isProviderConfig(name, status)) {
     const who = providerID ? `the ${providerID} provider` : 'the model provider';
     return {
@@ -309,7 +330,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 9. Transient provider/network trouble — temporary, retry guidance, no raw body.
+  // 10. Transient provider/network trouble — temporary, retry guidance, no raw body.
   //    Checked BEFORE content-filter so a retryable 5xx whose body mentions a
   //    "safety system" isn't mislabeled a permanent policy refusal.
   if (isTransient(status, isRetryable, lower)) {
@@ -322,7 +343,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 10. Content-policy refusal — neutral copy, never echo the raw safety text.
+  // 11. Content-policy refusal — neutral copy, never echo the raw safety text.
   if (isContentFilter(status, isRetryable, lower)) {
     return {
       title: 'Request blocked',
@@ -333,7 +354,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 11. Anything else — never hide it. Show the real error when we have one;
+  // 12. Anything else — never hide it. Show the real error when we have one;
   //     otherwise an honest "unexpected error" (the session footer carries the
   //     link to dig in). Name-tag a detail-less error for debuggability.
   if (message) {
