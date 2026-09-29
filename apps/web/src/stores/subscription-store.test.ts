@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { AccountState } from '@kortix/sdk';
 
 import {
   SubscriptionStoreSync,
@@ -24,7 +25,7 @@ describe('subscription store', () => {
 
   test('setAccountState, setLoading and setError update the store', () => {
     const error = new Error('billing unavailable');
-    const accountState = { subscription: null } as never;
+    const accountState = { subscription: null } as AccountState;
 
     useSubscriptionStore.getState().setAccountState(accountState);
     useSubscriptionStore.getState().setLoading(true);
