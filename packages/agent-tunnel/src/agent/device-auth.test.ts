@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   InvalidDeviceAuthResponseError,
   awaitDeviceAuthorization,
+  machineDisplayName,
   parseDeviceAuthChallenge,
   parseDeviceAuthStatus,
+  requestDeviceAuthorization,
 } from './device-auth';
 
 const VALID_TUNNEL_ID = '00000000-0000-4000-8000-000000000042';
@@ -128,5 +130,60 @@ describe('polling', () => {
       { sleep: async () => {} },
     );
     expect(outcome).toEqual({ status: 'expired' });
+  });
+});
+
+describe('machine display name', () => {
+  const fails = () => {
+    throw new Error('scutil: not found');
+  };
+
+  test('macOS uses the ComputerName the person set', () => {
+    const name = machineDisplayName({
+      os: 'darwin',
+      host: 'MacBook-Pro-9.local',
+      env: {},
+      run: (command, args) => {
+        expect([command, ...args]).toEqual(['scutil', '--get', 'ComputerName']);
+        return 'Ada’s MacBook Pro\n';
+      },
+    });
+    expect(name).toBe('Ada’s MacBook Pro');
+  });
+
+  test('macOS falls back to the hostname without .local when scutil fails or is empty', () => {
+    expect(machineDisplayName({ os: 'darwin', host: 'MacBook-Pro-9.local', env: {}, run: fails })).toBe(
+      'MacBook-Pro-9',
+    );
+    expect(machineDisplayName({ os: 'darwin', host: 'MacBook-Pro-9.local', env: {}, run: () => '  ' })).toBe(
+      'MacBook-Pro-9',
+    );
+  });
+
+  test('Windows uses COMPUTERNAME', () => {
+    expect(
+      machineDisplayName({ os: 'win32', host: 'desktop-1', env: { COMPUTERNAME: 'STUDIO-PC' }, run: fails }),
+    ).toBe('STUDIO-PC');
+    expect(machineDisplayName({ os: 'win32', host: 'desktop-1', env: {}, run: fails })).toBe('desktop-1');
+  });
+
+  test('Linux uses the hostname and never runs a command', () => {
+    expect(machineDisplayName({ os: 'linux', host: 'build-box.local', env: {}, run: fails })).toBe('build-box');
+    expect(machineDisplayName({ os: 'linux', host: 'build-box', env: {}, run: fails })).toBe('build-box');
+  });
+
+  test('pairing proposes the display name as the machine name', async () => {
+    const original = globalThis.fetch;
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return new Response(JSON.stringify(challenge()), { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      await requestDeviceAuthorization('https://api.kortix.com/v1/tunnel');
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(body.machineHostname).toBe(machineDisplayName());
   });
 });

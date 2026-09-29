@@ -104,7 +104,6 @@ const FORBIDDEN_RUNTIME_PATHS = [
 ];
 
 const FORBIDDEN_KORTIX_NETWORK_PATHS = [
-  /\/tunnel\/permission-requests\/stream/,
   /\/p\/public-share\//,
   /\/admin\/stress-test\/run/,
   /\/setup-links\//,

@@ -31,6 +31,25 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
+import { computeDesiredRuntime } from '../../runtime-convergence/desired';
+import { diffRuntime } from '../../runtime-convergence/diff';
+import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
+import type { SandboxConfigState } from '../lib/session-reload';
+
+/**
+ * The `runtime` block (spec §3, the runtime-convergence contract (PR #7785)): desired vs
+ * actual for every Rule-1 component, independent of whether this project runs
+ * config releases at all — a project with the flag off still runs a daemon
+ * build, a CLI, a managed-skill overlay and a model catalog, and a box stuck on
+ * a stale one is exactly the failure this closes. `releaseId` is null when
+ * config releases are off for this project (the existing chokepoint above
+ * never builds one in that case) or when resolution failed; every OTHER
+ * component is still compared.
+ */
+async function runtimeBlockFor(releaseId: string | null, running: SandboxConfigState): Promise<RuntimeBlockWire> {
+  const desired = await computeDesiredRuntime({ releaseId });
+  return toRuntimeBlockWire(diffRuntime(desired, running.runtimeTruth));
+}
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -117,6 +136,9 @@ projectsApp.openapi(
         sessionAgent: visible.row.agentName ?? null,
         repositoryAccess: repositoryAccessFromSessionMetadata(visible.row.metadata),
         ownerMayUseAgent: (agent) => ownerMayUseAgent(repointSubject, agent),
+        // The etag compile above already fetched this mirror in THIS request;
+        // a second invalidate paid a second `git fetch` per read (KRTX-629).
+        refreshProjectMirror: false,
       }).catch(() => null);
       const release = toSessionConfigRelease(
         running.release,
@@ -137,6 +159,7 @@ projectsApp.openapi(
         // say why a session lost its agent, instead of showing a healthy box
         // that answers nothing.
         ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
+        runtime: await runtimeBlockFor(desired?.descriptor.release_id ?? null, running),
       });
     }
 
@@ -166,6 +189,7 @@ projectsApp.openapi(
       // the truth is "did not ask".
       stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
+      runtime: await runtimeBlockFor(null, running),
       managed_catalog: managedCatalog,
     });
   },

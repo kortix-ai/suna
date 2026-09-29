@@ -9,8 +9,9 @@
  *   extension. Web returns a sized node; mobile returns the `AppIcon` so the
  *   caller sizes and tints it (`<ToolIconSlot icon={…} size color />`);
  * - `useShowOpenInTab` — an HTML file → its static-server preview, a localhost
- *   URL → the sandbox preview, a safe http(s) URL → external, a path → the file
- *   viewer (`showOpenTarget`; see `navigation.tsx` for each mobile target);
+ *   URL → the sandbox preview, both in-session (`SandboxPreviewSheet`, KRTX-602);
+ *   a safe http(s) URL → external; a path → the file viewer (`showOpenTarget`;
+ *   see `navigation.tsx` for each mobile target);
  * - `ShowFileActions` — web: Refresh · Full screen · "Preview". Mobile: Refresh
  *   · "Preview" inline, Refresh · Full screen in the panel (`showFileActions`):
  *   both open the same full-screen viewer, so only one is shown.
@@ -158,20 +159,23 @@ export function showFileTypeIcon(type: string, path?: string): AppIcon {
 
 export function useShowOpenInTab(props: { type: string; url: string; path: string; title: string }) {
   const { type, url, path, title } = props;
-  const { enabled, openTab, openExternal, openFile } = useToolNavigation();
+  const { enabled, openExternal, openFile, openPreview } = useToolNavigation();
   const target = useMemo(() => showOpenTarget({ type, url, path }), [type, url, path]);
   const proxy = useProxyUrl(target?.kind === 'localhost' ? url : '');
   const htmlStaticProxy = useProxyUrl(target?.kind === 'html-file' ? target.staticUrl : '');
 
   return useCallback(() => {
     if (!target) return;
+    // A localhost app or an HTML file opens in the in-session sheet (KRTX-602):
+    // the session stays mounted, and the sheet's one-tap X returns to the same
+    // position. Only an external URL and a sandbox file go elsewhere.
     if (target.kind === 'html-file' && htmlStaticProxy) {
       const fileName = path.split('/').pop() || path;
-      openTab({ id: `preview:${htmlStaticProxy.port}`, title: title || fileName, type: 'preview', metadata: { url: htmlStaticProxy.proxyUrl } });
+      openPreview(htmlStaticProxy.proxyUrl, title || fileName);
       return;
     }
     if (target.kind === 'localhost' && proxy) {
-      openTab({ id: `preview:${proxy.port}`, title: title || `localhost:${proxy.port}`, type: 'preview', metadata: { url: proxy.proxyUrl } });
+      openPreview(proxy.proxyUrl, title || `localhost:${proxy.port}`);
       return;
     }
     if (target.kind === 'external') {
@@ -180,7 +184,7 @@ export function useShowOpenInTab(props: { type: string; url: string; path: strin
     }
     // A file target, or a preview whose proxy is not resolved yet: the file viewer.
     if (path && enabled) openFile(path);
-  }, [enabled, htmlStaticProxy, openExternal, openFile, openTab, path, proxy, target, title]);
+  }, [enabled, htmlStaticProxy, openExternal, openFile, openPreview, path, proxy, target, title]);
 }
 
 /**

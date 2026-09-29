@@ -214,7 +214,7 @@ test.describe("23 — Composio managed connector", () => {
       await expect(page.locator('[data-testid="catalog-add"]')).toHaveCount(0);
       await search.fill("");
       await expect(
-        page.getByRole("button", { name: /^Computer Tunnels\b/ }).first(),
+        page.getByRole("button", { name: /^Computer\b/ }).first(),
       ).toBeVisible();
     }
     expect(pageErrors).toEqual([]);
@@ -935,6 +935,53 @@ test.describe("23 — Composio managed connector", () => {
       expect.objectContaining({ principal_type: "group", principal_id: group.group_id }),
     ]);
     expect(finalizeBodies).toContainEqual({ connection_id: created?.connection_id });
+  });
+
+  test("retrying chat link finalization keeps the authorized account and its audience", async ({ page }) => {
+    await fundAccount(databaseUrl!, accountId);
+    await setDatabaseEnterpriseDemo(loadEnv(), accountId, true);
+    const slug = `e2e-retry-${Date.now().toString(36)}`;
+    await api(session.access_token, "POST", `/connectors/projects/${project.id}/connectors`, {
+      slug, provider: "http", baseUrl: "https://mail.example.com", auth: { type: "none" },
+    }, 200);
+    let finalizeCount = 0;
+    const finalizedIds: string[] = [];
+    await page.route("**/v1/setup-links/connectors/**", async (route) => {
+      const request = route.request();
+      if (request.method() === "GET") return route.fulfill({ json: {
+        kind: "connector", project_id: project.id, project_name: "E2E project",
+        slug, app: "Mail", name: "Mail", owner: "me",
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      } });
+      if (request.url().endsWith("/finalize")) {
+        finalizedIds.push(request.postDataJSON().connection_id);
+        finalizeCount++;
+        if (finalizeCount === 1) return route.fulfill({ status: 503, json: { error: "retry" } });
+        return route.fulfill({ json: { connected: true, connection_id: finalizedIds[1], label: "Work mail" } });
+      }
+      return route.fulfill({ status: 404 });
+    });
+    await page.route(`**/v1/projects/${project.id}/connections/*/connect`, (route) =>
+      route.fulfill({ json: { connected: true } }),
+    );
+    const url = "/debug/stream?scenario=setup-link&at=end";
+    await installBrowserSessionDirect(page, session, url, authOptions);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    const card = page.getByTestId("stream-replay").getByTestId("outcome-card-external");
+    await card.getByRole("button", { name: "Connect", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add a Mail account" });
+    await dialog.getByLabel("Name").fill("Work mail");
+    await dialog.getByRole("button", { name: "Connect Mail", exact: true }).click();
+    await expect(dialog).toContainText("retry");
+    await expect(dialog.getByLabel("Name")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Connect Mail", exact: true }).click();
+    await expect(page.getByTestId("connector-connect-landed")).toContainText("Work mail");
+    expect(finalizedIds).toHaveLength(2);
+    expect(finalizedIds[0]).toBe(finalizedIds[1]);
+    const rows = await api<{ connections: Array<{ label: string }> }>(
+      session.access_token, "GET", `/projects/${project.id}/connections`,
+    );
+    expect(rows.connections.filter((row) => row.label === "Work mail")).toHaveLength(1);
   });
 
   test("a connect link for an already-connected account reads as success and names the identity", async ({

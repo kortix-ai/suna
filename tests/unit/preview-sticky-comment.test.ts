@@ -106,11 +106,12 @@ describe('preview-sticky-comment.sh', () => {
     expect(r.body).toContain('- **Preview:** https://preview.example.test');
   });
 
-  it('says NOT tested for a redeploy that skips the suite', () => {
+  it('says NOT tested for a deploy that skips the suite, and how to run it', () => {
     const r = run({ SUITE: '0' });
 
     expect(r.body).toContain('## Preview environment - live; NOT tested');
     expect(r.body).toContain('- **Test report:** not run for this commit');
+    expect(r.body).toContain('gh workflow run deploy-preview.yml -f pr_number=');
     expect(r.body).not.toContain('passed.');
   });
 
@@ -128,6 +129,14 @@ describe('preview-sticky-comment.sh', () => {
     const r = run({ SUITE_OUTCOME: 'cancelled' });
 
     expect(r.body).toContain('## Preview environment - live; tests did not finish');
+  });
+
+  it('says a superseded suite stopped for the newer commit, never that it failed or passed', () => {
+    const r = run({ SUITE_OUTCOME: 'superseded' });
+
+    expect(r.body).toContain('## Preview environment - live; suite superseded');
+    expect(r.body).toContain('stopped before it finished');
+    expect(r.body).not.toMatch(/tested|tests failed/);
   });
 
   it('never fails the job when GitHub rejects the comment', () => {

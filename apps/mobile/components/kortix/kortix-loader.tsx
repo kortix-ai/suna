@@ -6,10 +6,13 @@ import { cn } from '@/lib/utils';
 
 interface KortixLoaderProps {
   /**
-   * Size preset for the loader
-   * @default 'medium'
+   * Size preset. `small` is the loader everywhere: lists, pages, sheets,
+   * previews, buttons. `large` is the boot screens only (it matches the 80 pt
+   * native splash mark); `medium` is the session-wake screen only
+   * (`SessionConnecting`). `kortix-loader-size.test.ts` enforces this (KRTX-559).
+   * @default 'small'
    */
-  size?: 'small' | 'medium' | 'large' | 'xlarge';
+  size?: 'small' | 'medium' | 'large';
   /**
    * Animation speed multiplier
    * @default 1.2
@@ -52,7 +55,6 @@ const SIZE_MAP = {
   small: 20,
   medium: 40,
   large: 80,
-  xlarge: 120,
 } as const;
 
 // The shipped animation is white. Light mode needs a black loader, and
@@ -97,10 +99,7 @@ const BLACK_SOURCE = recolorLottie(WHITE_SOURCE, [0, 0, 0]);
  * ```tsx
  * // Simple usage (auto-themed)
  * <KortixLoader />
- * 
- * // Custom size
- * <KortixLoader size="large" />
- * 
+ *
  * // Force dark theme (white loader)
  * <KortixLoader forceTheme="dark" />
  * 
@@ -110,7 +109,7 @@ const BLACK_SOURCE = recolorLottie(WHITE_SOURCE, [0, 0, 0]);
  * ```
  */
 export function KortixLoader({
-  size = 'medium',
+  size = 'small',
   speed = 1.2,
   customSize,
   className,

@@ -1,82 +1,63 @@
 'use client';
 
-import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { useCopy } from '@/hooks/use-copy';
 import { getEnv } from '@/lib/env-config';
 import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
-function ConnectSteps() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  return (
-    <InlineMeta className="justify-center text-pretty">
-      {tHardcodedUi.raw('componentsTunnelTunnelOverview.line203JsxTextText1RunTheCommand')}
-      {tHardcodedUi.raw('componentsTunnelTunnelOverview.line205JsxTextText2ApproveInBrowser')}
-      {tHardcodedUi.raw('componentsTunnelTunnelOverview.line207JsxTextText3Connected')}
-    </InlineMeta>
-  );
-}
-
-export function ConnectCommandPanel() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+/** The npx pairing command, for a machine without the desktop app. */
+export function ConnectCommandPanel({ projectId }: { projectId?: string }) {
+  const t = useTranslations('computers');
+  const reduceMotion = useReducedMotion();
   const command = buildTunnelConnectCommand({
     backendUrl: getEnv().BACKEND_URL || '',
     origin: typeof window !== 'undefined' ? window.location.origin : '',
+    projectId,
   });
   const { copied, copy } = useCopy({
-    successMessage: tI18nComplete.raw('texte5c02424e511'),
-    errorMessage: tI18nComplete.raw('text5b50e7a693fe'),
+    successMessage: t('commandCopied'),
+    errorMessage: t('copyFailed'),
     duration: 2000,
   });
+  const hidden = reduceMotion ? { opacity: 0 } : { scale: 0.25, opacity: 0, filter: 'blur(4px)' };
+  const shown = reduceMotion ? { opacity: 1 } : { scale: 1, opacity: 1, filter: 'blur(0px)' };
 
   return (
-    <div className="w-full space-y-4">
-      <div className="bg-popover overflow-hidden rounded-md border">
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('text1ae97542051d')}
-          </span>
-        </div>
-        <div className="bg-secondary relative rounded-t-md">
-          <Button
-            type="button"
-            variant="accent"
-            size="xs"
-            onClick={() => copy(command)}
-            aria-label={copied ? 'Copied' : tI18nComplete.raw('text9a01feecae67')}
-            className="absolute top-2 right-2 shrink-0 transition-transform active:scale-[0.96]"
-          >
-            <span className="relative inline-flex size-3.5 items-center justify-center">
-              <AnimatePresence initial={false} mode="popLayout">
-                <m.span
-                  key={copied ? 'check' : 'copy'}
-                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                  className="absolute inset-0 inline-flex items-center justify-center"
-                >
-                  {copied ? (
-                    <CheckIcon className="text-kortix-green size-3.5" />
-                  ) : (
-                    <CopyIcon className="text-muted-foreground size-3.5" />
-                  )}
-                </m.span>
-              </AnimatePresence>
-            </span>
-          </Button>
-
-          <pre className="text-foreground/90 overflow-x-auto px-4 py-3 text-left font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
-            {command}
-          </pre>
-        </div>
-      </div>
-      <ConnectSteps />
+    <div className="bg-secondary relative w-full rounded-md">
+      <Button
+        type="button"
+        variant="accent"
+        size="xs"
+        onClick={() => copy(command)}
+        aria-label={copied ? t('commandCopied') : t('copyCommand')}
+        className="absolute top-2 right-2 shrink-0 transition-transform active:scale-[0.96]"
+      >
+        <span className="relative inline-flex size-3.5 items-center justify-center">
+          <AnimatePresence initial={false} mode="popLayout">
+            <m.span
+              key={copied ? 'check' : 'copy'}
+              initial={hidden}
+              animate={shown}
+              exit={hidden}
+              transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+              className="absolute inset-0 inline-flex items-center justify-center"
+            >
+              {copied ? (
+                <CheckIcon className="text-kortix-green size-3.5" />
+              ) : (
+                <CopyIcon className="text-muted-foreground size-3.5" />
+              )}
+            </m.span>
+          </AnimatePresence>
+        </span>
+      </Button>
+      <pre className="text-foreground overflow-x-auto py-3 pr-12 pl-4 text-left font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+        {command}
+      </pre>
     </div>
   );
 }

@@ -30,7 +30,6 @@ export const MIN_REMAINING_MS = 45 * 60_000;
 const SWEEP_THRESHOLD = 1_000;
 
 interface Entry<T extends CachedInstallationToken> {
-  installationId: string;
   expiresAtMs: number;
   value: T;
 }
@@ -70,24 +69,13 @@ export function createInstallationTokenCache(opts: { now?: () => number } = {}) 
           const expiresAtMs = Date.parse(value.expires_at);
           if (Number.isFinite(expiresAtMs)) {
             sweep();
-            entries.set(key, { installationId, expiresAtMs, value });
+            entries.set(key, { expiresAtMs, value });
           }
           return value;
         })
         .finally(() => inflight.delete(key));
       inflight.set(key, request);
       return request;
-    },
-
-    /** Drop every cached token of one installation, whatever its repo scope. */
-    invalidate(installationId: string) {
-      for (const [key, entry] of entries) {
-        if (entry.installationId === installationId) entries.delete(key);
-      }
-    },
-
-    clear() {
-      entries.clear();
     },
   };
 }

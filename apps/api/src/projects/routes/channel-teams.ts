@@ -13,7 +13,7 @@ import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
 import { completeTeamsOauthInstall, teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
-import { listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
+import { deleteTeamsMessage, editTeamsMessage, listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { featureDisabledBody } from '../../feature-flags/gate';
@@ -386,12 +386,59 @@ projectsApp.openapi(
   },
 );
 
+// Edit and delete a message the bot posted: the agent's `teams edit` and
+// `teams delete`, as `slack edit` / `slack delete`. Same floor and the same
+// conversation authorization as the post above.
+for (const op of ['edit', 'delete'] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: `/{projectId}/channels/teams/message/${op}`,
+      tags: ['channels'],
+      summary: `POST /:projectId/channels/teams/message/${op} (${op} a bot message)`,
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(z.object({ ok: z.boolean(), conversationId: z.string(), messageId: z.string() }).passthrough(), `Message ${op === 'edit' ? 'edited' : 'deleted'}`),
+        ...errors(400, 403, 404, 502),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+      if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
+      const body = await readJsonObject(c);
+      const target = {
+        conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+        messageId: String(body.message_id ?? body.messageId ?? ''),
+      };
+      const result = op === 'edit'
+        ? await editTeamsMessage(projectId, {
+            ...target,
+            text: typeof body.text === 'string' ? body.text : undefined,
+            card: body.card && typeof body.card === 'object' && !Array.isArray(body.card) ? (body.card as Record<string, unknown>) : undefined,
+          })
+        : await deleteTeamsMessage(projectId, target);
+      if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 404 | 502);
+      return c.json(result);
+    },
+  );
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'post',
     path: '/{projectId}/channels/teams/file/upload',
     tags: ['channels'],
     summary: 'POST /:projectId/channels/teams/file/upload (consent-card upload)',
+    description:
+      'Delivers a file into a Teams conversation bound to the project. The service URL and tenant come from the ' +
+      "binding and the project's stored install, never from the request: `service_url` is accepted and ignored.",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -404,7 +451,7 @@ projectsApp.openapi(
           .passthrough(),
         'File delivered (consent card, inline image, or team-drive link)',
       ),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -426,8 +473,9 @@ projectsApp.openapi(
       return c.json(featureDisabledBody('teams'), 403);
     }
     const body = await readJsonObject(c);
+    // `service_url` in the body is ignored: the server addresses the
+    // conversation (teams/post.ts resolveTeamsProjectConversation).
     const result = await initiateTeamsUpload(projectId, {
-      serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
       conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
       botId: typeof body.bot_id === 'string' ? body.bot_id : undefined,
       filename: String(body.filename ?? ''),
@@ -439,7 +487,7 @@ projectsApp.openapi(
           : undefined,
       teamGroupId: typeof body.team_group_id === 'string' && body.team_group_id ? body.team_group_id : undefined,
     });
-    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404 | 409);
     return c.json(result);
   },
 );

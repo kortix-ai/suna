@@ -59,8 +59,14 @@ export interface AuditQueueOptions {
   /** Called for a genuinely poison batch (a data error) that is dead-lettered. */
   onError?: (error: unknown, rowCount: number) => void;
   onDrop?: (droppedTotal: number, sinceLastLog: number) => void;
-  /** Called when a batch is requeued after lock/connection contention. */
+  /**
+   * Called when a contended batch is reported. Rate-limited to at most one
+   * call per `retryLogIntervalMs`; every requeued row is still counted in
+   * `stats().contended`.
+   */
   onRetry?: (error: unknown, rowCount: number, attempt: number, delayMs: number) => void;
+  /** Minimum gap between "Write contended" warnings. */
+  retryLogIntervalMs?: number;
   /** Base of the exponential backoff applied between contended retries. */
   retryBaseMs?: number;
   /** Ceiling the backoff never exceeds, however many consecutive contentions. */
@@ -83,6 +89,13 @@ export const AUDIT_FLUSH_MS_DEFAULT = 250;
 export const AUDIT_FLUSH_MAX_DEFAULT = 100;
 export const AUDIT_QUEUE_MAX_DEFAULT = 5_000;
 const DROP_LOG_INTERVAL_MS = 60_000;
+// A contended batch is retried, never dropped, so a stuck session used to emit
+// one warn PER RETRY ATTEMPT. Prod, 2026-09-28: 8,528 of these lines in one
+// day, 100% expected backpressure, 0% data loss (the queue's `dropped` stayed
+// 0). It read as a new warn-pattern spike and paged. Rate-limit it like the
+// overflow warning: the FIRST contention is always reported, then at most one
+// line per interval. `stats().contended` still counts every requeued row.
+const RETRY_LOG_INTERVAL_MS = 60_000;
 
 // A contended batch is requeued, never dropped, so it must be retried without
 // hammering the same session lock every `flushMs`. Exponential backoff with
@@ -199,6 +212,7 @@ export class AuditQueue {
   private readonly flushMax: number;
   private readonly queueMax: number;
   private readonly dropLogIntervalMs: number;
+  private readonly retryLogIntervalMs: number;
   private readonly now: () => number;
   private readonly onError: (error: unknown, rowCount: number) => void;
   private readonly onDrop: (droppedTotal: number, sinceLastLog: number) => void;
@@ -220,6 +234,8 @@ export class AuditQueue {
   /** `null` = never warned yet. The FIRST overflow must always warn. */
   private lastDropLogAt: number | null = null;
   private droppedSinceLastLog = 0;
+  /** `null` = never warned yet. The FIRST contention must always warn. */
+  private lastRetryLogAt: number | null = null;
   /**
    * Consecutive contention events across flushes, reset by any flush that
    * completes with zero contention. Backs off `scheduleFlush`'s delay so a
@@ -244,6 +260,7 @@ export class AuditQueue {
     this.flushMax = options.flushMax ?? AUDIT_FLUSH_MAX_DEFAULT;
     this.queueMax = options.queueMax ?? AUDIT_QUEUE_MAX_DEFAULT;
     this.dropLogIntervalMs = options.dropLogIntervalMs ?? DROP_LOG_INTERVAL_MS;
+    this.retryLogIntervalMs = options.retryLogIntervalMs ?? RETRY_LOG_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.retryBaseMs = options.retryBaseMs ?? AUDIT_RETRY_BASE_MS_DEFAULT;
     this.retryMaxMs = options.retryMaxMs ?? AUDIT_RETRY_MAX_MS_DEFAULT;
@@ -364,8 +381,7 @@ export class AuditQueue {
     if (snapshot.length === 0) return this.inFlight ?? Promise.resolve();
 
     const previous = this.inFlight;
-    let run: Promise<void>;
-    run = (previous ?? Promise.resolve())
+    const run: Promise<void> = (previous ?? Promise.resolve())
       .then(() => this.write(snapshot))
       .finally(() => {
         if (this.inFlight === run) {
@@ -391,7 +407,9 @@ export class AuditQueue {
    */
   private async write(snapshot: AuditRow[]): Promise<void> {
     const requeue: AuditRow[] = [];
-    const contentions: Array<{ error: unknown; rowCount: number }> = [];
+    // Only the first contention of the flush is ever logged (see below), so
+    // keep that one, not the whole list.
+    let firstContention: { error: unknown; rowCount: number } | null = null;
     for (const batch of statementBatches(snapshot, this.flushMax)) {
       this.flushes += 1;
       // `statementBatches` guarantees one session per statement, so the first
@@ -411,7 +429,7 @@ export class AuditQueue {
           // relative order, restored below — for the next flush attempt.
           this.contended += batch.length;
           requeue.push(...batch);
-          contentions.push({ error, rowCount: batch.length });
+          firstContention ??= { error, rowCount: batch.length };
         } else {
           // A poison batch can never succeed on retry: dead-letter it once,
           // loudly, with the count, and move on.
@@ -429,9 +447,23 @@ export class AuditQueue {
       this.rows.unshift(...requeue);
       this.consecutiveContentions += 1;
       const delayMs = this.retryDelayMs();
-      this.nextEligibleFlushAt = this.now() + delayMs;
-      for (const { error, rowCount } of contentions) {
-        this.onRetry(error, rowCount, this.consecutiveContentions, delayMs);
+      const now = this.now();
+      this.nextEligibleFlushAt = now + delayMs;
+      // Report the FIRST contention immediately, then at most one line per
+      // interval — expected backpressure must not flood the log. Every
+      // requeued row is still counted in `stats().contended`, and the rows
+      // themselves are never dropped.
+      if (
+        firstContention &&
+        (this.lastRetryLogAt === null || now - this.lastRetryLogAt >= this.retryLogIntervalMs)
+      ) {
+        this.lastRetryLogAt = now;
+        this.onRetry(
+          firstContention.error,
+          firstContention.rowCount,
+          this.consecutiveContentions,
+          delayMs,
+        );
       }
     } else {
       this.consecutiveContentions = 0;

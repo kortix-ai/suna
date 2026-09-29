@@ -51,6 +51,8 @@ import {
   connectorCalls,
   connectorConnections,
   connectors,
+  providerEvents,
+  sessionLifecycleCommands,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -291,6 +293,8 @@ describe('connectors', () => {
       'idx_connector_connections_project_label',
       'idx_connector_connections_project',
       'idx_connector_connections_connector',
+      'idx_connector_connections_tunnel',
+      'idx_connector_connections_owner_tunnel',
     ]);
     expect(indexNames(connectorCalls)).toEqual([
       'idx_connector_calls_project',
@@ -298,7 +302,25 @@ describe('connectors', () => {
       'idx_connector_calls_connector',
       'idx_connector_calls_connection',
       'idx_connector_calls_status',
+      'idx_connector_calls_account',
     ]);
+  });
+
+  test('indexes every audit-reconciliation source-ledger account_id predicate', () => {
+    // `reconcileAuditEvents` (apps/api/src/shared/audit-reconciliation.ts) runs
+    // its 8-way `candidates` query per account with a bare
+    // `WHERE account_id = $1` on each source ledger. Without an index on that
+    // column, one branch seq-scans and the whole query times out at the audit
+    // pool's 10 s statement_timeout. #7970 added the connector_calls and
+    // session_lifecycle_commands indexes; provider_events was the last gap.
+    // Regression guard: this list must stay in step with the query's branches.
+    for (const [table, index] of [
+      [connectorCalls, 'idx_connector_calls_account'],
+      [sessionLifecycleCommands, 'idx_session_lifecycle_commands_account'],
+      [providerEvents, 'idx_provider_events_account'],
+    ] as const) {
+      expect(indexNames(table)).toContain(index);
+    }
   });
 
   test('uses connection_id for every active connection reference', () => {

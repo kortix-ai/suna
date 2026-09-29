@@ -1,6 +1,6 @@
 /** E2B Cloud implementation of Kortix's unified sandbox runtime contract. */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { type Sandbox as E2BSandbox, Sandbox, SandboxNotFoundError } from 'e2b';
 import { SANDBOX_VERSION, config } from '../../config';
@@ -20,8 +20,8 @@ import type {
   SandboxIngressRequest,
   SandboxProvider,
   SandboxStatus,
-} from './index';
-import { assertWorkloadCredential, sandboxWorkloadType } from './index';
+} from './contract';
+import { assertWorkloadCredential, sandboxWorkloadType } from './contract';
 
 // One hour is the maximum accepted by every E2B plan (Pro permits 24 hours).
 // Kortix's own idle reaper normally pauses much sooner; this is the provider
@@ -59,6 +59,8 @@ const KORTIX_APPD_HEALTH_WAIT =
   '-H "Authorization: Bearer $KORTIX_APPD_TOKEN" ' +
   'http://127.0.0.1:7331/v1/health >/dev/null; then exit 0; fi; ' +
   'sleep 1; done; exit 1';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
+
 const MANAGED_METADATA = 'kortix_managed';
 const ENV_METADATA = 'kortix_env';
 // The E2B SDK accepts requestTimeoutMs, but a live kill call remained pending
@@ -183,7 +185,7 @@ function validateRuntimeEnv(value: unknown, externalId: string): Record<string, 
  * GUEST's own disk. Daytona and Platinum hand it back from their control plane
  * on resume, so on those two the session credential and the project's runtime
  * secrets exist only in a live process — the same reason the daemon keeps the
- * agent's env on tmpfs (kortix-sandbox-agent-server/src/agent-env-file.ts).
+ * agent's env on tmpfs (kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts).
  * Here the file has to survive the pause, and `chmod 600 root` is thin cover:
  * the sandbox user has NOPASSWD sudo (packages/shared/src/sandbox/dockerfile-layer.ts).
  * What differs from a live process env is DURABILITY — the plaintext outlived
@@ -464,7 +466,7 @@ export class E2BProvider implements SandboxProvider {
       ...apiOpts(),
       envs: envVars,
       metadata: {
-        [MANAGED_METADATA]: 'true',
+        [MANAGED_METADATA]: await sandboxOwnershipMarker(),
         [ENV_METADATA]: config.INTERNAL_KORTIX_ENV,
         kortix_account_id: opts.accountId,
         kortix_created_by: opts.userId,
@@ -788,7 +790,7 @@ export class E2BProvider implements SandboxProvider {
       ...apiOpts(),
       limit: 100,
       query: {
-        metadata: { [MANAGED_METADATA]: 'true', [ENV_METADATA]: config.INTERNAL_KORTIX_ENV },
+        metadata: { [MANAGED_METADATA]: await sandboxOwnershipMarker(), [ENV_METADATA]: config.INTERNAL_KORTIX_ENV },
         state: ['running'],
       },
     });

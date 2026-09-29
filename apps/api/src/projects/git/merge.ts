@@ -7,6 +7,7 @@ import {
   runGit,
   runGitCapture,
 } from './mirror';
+import { authGitPush } from './commit-writer';
 import { decodeStatusChar, resolveBranchTip } from './commits';
 import type {
   BranchDiffSummary,
@@ -337,16 +338,7 @@ export async function mergeBranches(
       repoPath,
       false,
     );
-    await runGit(
-      ['push', 'origin', `${headSha}:refs/heads/${baseRef}`],
-      repoPath,
-      true,
-      project.gitAuthToken,
-      undefined,
-      hostFromRepoUrl(project.repoUrl),
-      undefined,
-      project.gitAuthHeaders,
-    );
+    await authGitPush(project, repoPath, ['push', 'origin', `${headSha}:refs/heads/${baseRef}`]);
     return {
       merge_commit_sha: headSha,
       fast_forward: true,
@@ -398,16 +390,11 @@ export async function mergeBranches(
     repoPath,
     false,
   );
-  await runGit(
-    ['push', 'origin', `${mergeCommitSha}:refs/heads/${baseRef}`],
-    repoPath,
-    true,
-    project.gitAuthToken,
-    undefined,
-    hostFromRepoUrl(project.repoUrl),
-    undefined,
-    project.gitAuthHeaders,
-  );
+  await authGitPush(project, repoPath, [
+    'push',
+    'origin',
+    `${mergeCommitSha}:refs/heads/${baseRef}`,
+  ]);
 
   return {
     merge_commit_sha: mergeCommitSha,

@@ -232,7 +232,13 @@ async function generateViaGateway(
     signal: AbortSignal.timeout(DEFAULT_GENERATION_TIMEOUT_MS),
   });
   if (!res.ok) {
-    appLogger.warn('[title-generate] gateway returned non-200', { status: res.status, model });
+    // `upstream_status`, never `status`: the request-completion middleware owns
+    // the top-level `status` field (this API's response status), and the log
+    // sweep counts `status >= 500` as a 5xx response on this route.
+    appLogger.warn('[title-generate] gateway returned non-200', {
+      upstream_status: res.status,
+      model,
+    });
     return null;
   }
   const data = (await res.json().catch(() => null)) as {

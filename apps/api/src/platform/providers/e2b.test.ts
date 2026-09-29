@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 process.env.ALLOWED_SANDBOX_PROVIDERS = 'e2b';
 process.env.E2B_API_KEY = 'e2b_test_key';
@@ -288,7 +289,7 @@ describe('E2B provider lifecycle', () => {
         autoResume: false,
       },
       metadata: {
-        kortix_managed: 'true',
+        kortix_managed: 'v2-owner-a',
         kortix_env: 'dev',
         kortix_account_id: 'acc-1',
         kortix_created_by: 'usr-1',
@@ -989,7 +990,7 @@ describe('E2B provider lifecycle', () => {
     ]);
     expect(listOpts).toMatchObject({
       query: {
-        metadata: { kortix_managed: 'true', kortix_env: 'dev' },
+        metadata: { kortix_managed: 'v2-owner-a', kortix_env: 'dev' },
         state: ['running'],
       },
     });

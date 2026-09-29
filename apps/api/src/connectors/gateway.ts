@@ -72,10 +72,9 @@ export interface GatewayConnector {
     | 'channel'
     | 'computer';
   platform?: string | null;
-  /** Server-side machine allowlist for a Computers connector profile. */
-  tunnelIds?: string[] | null;
-  /** Verified machine-owner accounts paired with the Computers allowlist. */
-  tunnelAccountIds?: string[] | null;
+  /** Computer connectors: the paired machine of the resolved account. Null
+   *  when the machine was unpaired. */
+  connectionTunnelId?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ConnectorAuth;
@@ -158,8 +157,24 @@ export interface GatewayDeps {
     projectId: string,
     slug: string,
   ): Promise<
-    'connector_not_found' | 'connector_not_connected' | 'connector_disabled' | 'account_required'
+    | 'connector_not_found'
+    | 'connector_not_connected'
+    | 'connector_disabled'
+    | 'account_required'
+    | 'computer_unpaired'
   >;
+  /**
+   * v2 X7: the retired `computer` call argument named a machine. Resolves it
+   * (an account label or the machine's tunnel id) to one of the caller's
+   * reachable computer accounts on `slug`. `not_computer` when `slug` is not a
+   * computer connector (the argument then belongs to that connector); null
+   * when nothing the caller may use matches.
+   */
+  selectComputerAccount?(
+    projectId: string,
+    slug: string,
+    selector: unknown,
+  ): Promise<GatewayConnector | null | 'not_computer'>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
@@ -173,6 +188,17 @@ export interface GatewayDeps {
     projectId: string,
     sessionId: string,
   ): Promise<EmailSessionContext | null>;
+  /**
+   * A session's Slack post binds its thread to that session, so a human reply
+   * in the thread comes back to the session instead of spawning a new one.
+   * Returns the binding state echoed to the agent as `thread_binding`.
+   */
+  bindSlackThread?(input: {
+    projectId: string;
+    sessionId: string;
+    channel: string;
+    threadTs: string;
+  }): Promise<Record<string, unknown>>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -221,6 +247,20 @@ export interface GatewayDeps {
     executionId: string;
     sessionId: string | null;
   }): string | null;
+  /**
+   * Post an approval card into the chat thread of the session that made a
+   * gated call (Slack). Resolves `posted: false` for sessions with no thread.
+   * Injected so the gateway stays free of channel code.
+   */
+  postApprovalCard?(input: {
+    projectId: string;
+    sessionId: string;
+    executionId: string;
+    actionPath: string;
+    risk: Risk;
+    resultSummary: Record<string, unknown>;
+    approvalUrl: string | null;
+  }): Promise<{ posted: boolean }>;
   fetchImpl: FetchImpl;
   /** Pipedream execution (Connect actions/run) — required for pipedream connectors. */
   executePipedream?(input: {
@@ -256,17 +296,15 @@ export interface GatewayDeps {
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
-   * connectors. Verifies the selected machine belongs to the connector's
-   * stored id + owner-account grant, then relays through the tunnel core.
+   * connectors. Relays one call to the machine of the account the generic
+   * resolver chose, through the tunnel core.
    */
   executeComputerCall?(input: {
+    tunnelId: string;
     accountId: string;
     projectId: string;
     sessionId: string | null;
     actorUserId: string;
-    allowedTunnelIds: string[] | null;
-    allowedTunnelAccountIds: string[] | null;
-    selector: string | null;
     method: string;
     args: Record<string, unknown>;
   }): Promise<ComputerCallOutcome>;
@@ -279,12 +317,20 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      kind: 'permission_required';
-      requestId: string;
+      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+       *  an access refusal on the machine (`computer_access_pending` |
+       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  failure on the machine or in the relay. */
+      kind:
+        | 'computer_unpaired'
+        | 'computer_offline'
+        | 'computer_capability_not_approved'
+        | 'computer_access_pending'
+        | 'computer_access_denied'
+        | 'computer_access_off'
+        | 'error';
       message: string;
-    }
-  | { ok: false; kind: 'no_machine'; message: string }
-  | { ok: false; kind: 'error'; message: string };
+    };
 
 export interface CallInput {
   projectId: string;
@@ -302,6 +348,10 @@ export interface CallInput {
   /** @deprecated Older clients can identify an existing pending row. The
    *  gateway never blocks or polls it. */
   approvalExecutionId?: string | null;
+  /** The agent's own words on what a gated call does ("sends draft X to Y").
+   *  Shown to the approver next to the arguments, labelled unverified. Never
+   *  sent to the provider and outside the request digest. */
+  approvalContext?: string | null;
 }
 
 /** Which account a successful call ran as — echoed on the wire (router.ts). */
@@ -334,6 +384,31 @@ export type CallResult =
       approvalInstructions?: string | null;
     }
   | { status: 'error'; reason: string };
+
+const MAX_APPROVAL_CONTEXT = 4_000;
+const CARD_POST_BUDGET_MS = 5_000;
+const CARD_POSTED_INSTRUCTIONS =
+  'An approval card with Approve / Deny / Reply buttons was posted in the chat thread; the human decides there. Do not repost approval_url. Stop this turn — Kortix resumes the session after approve or deny.';
+
+/** A card that is slow or fails must never fail or stall the gated call. */
+async function postCardWithin(ms: number, post: () => Promise<{ posted: boolean }>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      post().then((r) => r.posted === true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), ms);
+      }),
+    ]);
+  } catch (error) {
+    logger.warn(`[connector] approval card post failed: ${(error as Error).message}`);
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+const CONTEXT_HINT =
+  ' Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.';
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
 const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
@@ -381,8 +456,7 @@ async function resolveConnectorForCall(
 
 /**
  * The account echo for a successful call — `undefined` when the connector
- * resolved no connection (a no-credential/public connector, or a Computers
- * profile keyed on tunnelIds rather than a `connector_connections` row).
+ * resolved no connection (a no-credential/public connector).
  */
 function gatewayConnectorAccount(connector: GatewayConnector): CallResultAccount | undefined {
   if (!connector.connectionId) return undefined;
@@ -537,7 +611,23 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
 
-  const connector = resolved.connector;
+  let connector = resolved.connector;
+  // v2 X7: older agents select a machine with a `computer` argument. Map it to
+  // that account and strip it; relaying it would run the call on the default
+  // machine instead. An unknown name is refused, never ignored.
+  if (input.args && Object.hasOwn(input.args, 'computer') && deps.selectComputerAccount) {
+    const { computer: selector, ...args } = input.args;
+    const selected = await deps.selectComputerAccount(input.projectId, resolved.slug, selector);
+    if (selected !== 'not_computer') {
+      input = { ...input, args };
+      if (!selected) {
+        const reason = `account_not_found: no computer account you can use matches "${String(selector).slice(0, 120)}". Select the computer with --account "<name>".`;
+        await audit(deps, input, null, 'denied', null, { reason: 'account_not_found' });
+        return { status: 'denied', reason };
+      }
+      connector = selected;
+    }
+  }
   if (!connector || !connector.enabled) {
     const reason = !connector
       ? deps.explainMissingConnector
@@ -602,6 +692,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // this: <url>") is still specific about what is being approved.
     const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
     const argsPreview = argsPreviewDetails.preview;
+    const approvalContext =
+      input.approvalContext?.trim().slice(0, MAX_APPROVAL_CONTEXT) || null;
     // Keys are OMITTED when empty rather than set to null: the pending_approval
     // result is a wire shape other code compares against, and a key that carries
     // no information shouldn't change it.
@@ -621,8 +713,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         ...(url
           ? {
               approvalInstructions: input.sessionId
-                ? 'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.'
-                : 'Share approval_url with a human. Retry this exact call once they approve it.',
+                ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
+                : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
             }
           : {}),
       };
@@ -727,15 +819,42 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
               // with no way to see who it emails. Redacted (see args-preview.ts):
               // credential-shaped fields never reach the audit trail.
               args_preview: argsPreview,
+              // Reference args (`{draft_id}`) name a target without showing it,
+              // so the agent may describe the effect. Unverified by design.
+              ...(approvalContext ? { approval_context: approvalContext } : {}),
             },
             requestDigest,
           ));
+        const extras = approvalExtras(executionId);
+        const cardPosted =
+          !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
+            ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
+                deps.postApprovalCard!({
+                  projectId: input.projectId,
+                  sessionId: input.sessionId!,
+                  executionId,
+                  actionPath: `${input.connectorSlug}.${input.actionPath}`,
+                  risk: action.risk,
+                  resultSummary: {
+                    args_preview: argsPreview,
+                    args_preview_complete: argsPreviewDetails.complete,
+                    ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  },
+                  approvalUrl: extras.approvalUrl ?? null,
+                }),
+              )
+            : false;
         return {
           status: 'pending_approval',
           reason: 'policy_require_approval',
           executionId,
           retryable: false,
-          ...approvalExtras(executionId),
+          ...extras,
+          // The human decides on the card in their thread; a pasted link next
+          // to it would only duplicate the request.
+          ...(cardPosted
+            ? { approvalInstructions: `${CARD_POSTED_INSTRUCTIONS}${approvalContext ? '' : CONTEXT_HINT}` }
+            : {}),
         };
       }
     }
@@ -759,54 +878,41 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       );
     }
 
-    // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
-    // core. The connector profile owns the machine allowlist.
+    // Computers (Agent Computer Tunnel): the generic resolver chose the
+    // account; its machine receives the call through the shared tunnel core.
     if (connector.provider === 'computer') {
       if (action.binding.kind !== 'tunnel') {
         throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      if (connector.tunnelIds && connector.tunnelIds.length === 0) {
-        return {
-          status: 'error',
-          reason: 'computer connector has no assigned machines',
-        };
-      }
-      const selector =
-        typeof executionArgs.computer === 'string' ? executionArgs.computer.trim() || null : null;
-      const callArgs = Object.fromEntries(
-        Object.entries(executionArgs).filter(([key]) => key !== 'computer'),
-      );
-      const outcome = await deps.executeComputerCall({
-        accountId: input.accountId,
-        projectId: input.projectId,
-        sessionId: input.sessionId ?? null,
-        actorUserId: input.subject.userId,
-        allowedTunnelIds: connector.tunnelIds ?? null,
-        allowedTunnelAccountIds: connector.tunnelAccountIds ?? null,
-        selector,
-        method: action.binding.method,
-        args: callArgs,
-      });
+      const outcome = connector.connectionTunnelId
+        ? await deps.executeComputerCall({
+            tunnelId: connector.connectionTunnelId,
+            accountId: input.accountId,
+            projectId: input.projectId,
+            sessionId: input.sessionId ?? null,
+            actorUserId: input.subject.userId,
+            method: action.binding.method,
+            args: executionArgs,
+          })
+        : ({
+            ok: false,
+            kind: 'computer_unpaired',
+            message: 'This computer was unpaired. Pair it again to use it.',
+          } as const);
       if (outcome.ok) {
         await audit(deps, input, connector, 'ok', action.risk, {
           method: action.binding.method,
         });
         return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
       }
-      if (outcome.kind === 'permission_required') {
-        await audit(deps, input, connector, 'pending_approval', action.risk, {
-          reason: 'tunnel_permission_required',
-          request_id: outcome.requestId,
-        });
-        return {
-          status: 'pending_approval',
-          reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
-        };
-      }
       await audit(deps, input, connector, 'error', action.risk, {
-        reason: outcome.message.slice(0, 500),
+        reason: outcome.kind,
+        message: outcome.message.slice(0, 500),
       });
+      if (outcome.kind !== 'error') {
+        return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
+      }
       logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }
@@ -948,7 +1054,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           ? { attachment_count: attachmentClaim.attachmentIds.length }
           : {}),
       });
-      return { status: 'ok', data: result.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+      const data = await withSlackThreadBinding(deps, input, connector, executionArgs, result.data);
+      return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
@@ -992,6 +1099,46 @@ function hasAttachmentHandles(args: Record<string, unknown>): boolean {
       !Array.isArray(value) &&
       typeof (value as Record<string, unknown>).attachment_id === 'string',
   );
+}
+
+/**
+ * After a session posts to Slack, bind the thread to that session: the new
+ * message's own `ts` for a top-level post, `thread_ts` for a reply. The
+ * session comes from the caller's token (never the request body), so a post
+ * can only route replies to the session that made it. A bind failure never
+ * fails the delivered message; the agent sees it in `thread_binding`.
+ */
+async function withSlackThreadBinding(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  args: Record<string, unknown>,
+  data: unknown,
+): Promise<unknown> {
+  if (
+    !deps.bindSlackThread ||
+    !input.sessionId ||
+    connector.provider !== 'channel' ||
+    connector.platform !== 'slack' ||
+    input.actionPath !== 'send_message' ||
+    !data ||
+    typeof data !== 'object'
+  ) {
+    return data;
+  }
+  const posted = data as { ts?: unknown; channel?: unknown };
+  const threadTs = typeof args.thread_ts === 'string' && args.thread_ts ? args.thread_ts : posted.ts;
+  const channel = typeof posted.channel === 'string' && posted.channel ? posted.channel : args.channel;
+  if (typeof threadTs !== 'string' || typeof channel !== 'string') return data;
+  const threadBinding = await deps
+    .bindSlackThread({ projectId: input.projectId, sessionId: input.sessionId, channel, threadTs })
+    .catch((error) => {
+      logger.warn('[connector] slack thread bind failed after a delivered post', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { bound: false, thread_ts: threadTs, reason: 'bind_failed' };
+    });
+  return { ...data, thread_binding: threadBinding };
 }
 
 /**

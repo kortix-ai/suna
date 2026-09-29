@@ -528,6 +528,51 @@ describe('the check and restore-order commands', () => {
     }
   });
 
+  // `.githooks/pre-commit` runs `check` with GIT_DIR set. Git then treats the
+  // working directory as the top level, and a root found through git made the
+  // check read no base catalog at all and pass a scrambled one.
+  test('check finds a reorder when it runs inside a git hook', () => {
+    const repo = repository();
+    try {
+      for (const locale of locales) repo.write(catalog, locale);
+      repo.commit('catalogs');
+      repo.write({ common: catalog.common, nav: { agents: 'Agents', home: 'Home' } }, 'de');
+
+      const gitDir = repo.git('rev-parse', '--absolute-git-dir').stdout.trim();
+      const check = repo.cliWithEnv({ GIT_DIR: gitDir }, 'check', '--base=HEAD');
+      expect(check.stdout).toContain('de.json:\n  reorders 1 object(s) it shares with HEAD:');
+      expect(check.status).toBe(1);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  // A merge commit may keep either parent's order, file by file.
+  test('with two bases, each catalog passes when it keeps the order of either one', () => {
+    const repo = repository();
+    try {
+      const swapped = { common: catalog.common, nav: { agents: 'Agents', home: 'Home' } };
+      for (const locale of locales) repo.write(catalog, locale);
+      repo.commit('catalogs');
+      repo.git('branch', 'first');
+      repo.write(swapped, 'de');
+      repo.commit('de reordered');
+
+      // en keeps `first`'s order, de keeps HEAD's: each matches one base.
+      expect(repo.cli('check', '--base=HEAD', '--base=first').status).toBe(0);
+      expect(repo.cli('check', '--base=HEAD').status).toBe(0);
+      expect(repo.cli('check', '--base=first').status).toBe(1);
+
+      // A third order matches neither base.
+      repo.write({ nav: catalog.nav, common: catalog.common }, 'de');
+      const check = repo.cli('check', '--base=HEAD', '--base=first');
+      expect(check.status).toBe(1);
+      expect(check.stdout).toContain('de.json:\n  reorders 2 object(s) it shares with HEAD:');
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   test('check fails on a catalog that is not canonical, and format fixes it', () => {
     const repo = repository();
     try {

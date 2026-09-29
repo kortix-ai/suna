@@ -4,8 +4,9 @@
 # complementing GitHub's secret-scanning push protection.)
 set -e
 
-if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
-elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+# Repo-pinned dotenvx first — see the same resolution in pre-commit.
+if [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+elif command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
 # git passes "<local ref> <local sha> <remote ref> <remote sha>" lines on stdin.

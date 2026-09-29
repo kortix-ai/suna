@@ -5,7 +5,7 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import type { SandboxExecOptions, SandboxExecResult } from './index';
+import type { SandboxExecOptions, SandboxExecResult } from './contract';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
@@ -22,8 +22,9 @@ import {
   assertWorkloadCredential,
   providerAutoStopBackstopMinutes,
   sandboxWorkloadType,
-} from './index';
+} from './contract';
 import { classifyDaytonaState } from './daytona-state';
+import { sandboxOwnershipMarker } from '../sandbox-ownership';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
 // @daytonaio/sdk's Daytona.createAxiosInstance) — effectively unbounded for
@@ -87,9 +88,9 @@ function reportIfDiskQuotaError(err: unknown, reason: string): never {
 // otherwise one env would stop another env's sandboxes. `kortix.managed` marks
 // "we created it"; `kortix.env` pins the owning environment. The reaper lists
 // by exactly these labels (see listManagedRunningSandboxes).
-export function managedSandboxLabels(workloadType?: SandboxWorkloadType): Record<string, string> {
+export async function managedSandboxLabels(workloadType?: SandboxWorkloadType): Promise<Record<string, string>> {
   return {
-    'kortix.managed': 'true',
+    'kortix.managed': await sandboxOwnershipMarker(),
     'kortix.env': config.INTERNAL_KORTIX_ENV,
     ...(workloadType === 'app' ? { 'kortix.workload': workloadType } : {}),
   };
@@ -106,7 +107,7 @@ import type {
   ResolvedSandboxIngress,
   SandboxIngressRequest,
   SandboxWorkloadType,
-} from './index';
+} from './contract';
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
 // is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
@@ -245,7 +246,7 @@ export class DaytonaProvider implements SandboxProvider {
           // API/tunnel that created it dies. Intervals are env-tunable
           // (KORTIX_SANDBOX_AUTO*).
           ...daytonaLifecycle(opts.autoStopInterval),
-          labels: managedSandboxLabels(workloadType),
+          labels: await managedSandboxLabels(workloadType),
           public: false,
         },
         { timeout: createTimeoutSeconds },
@@ -427,7 +428,7 @@ export class DaytonaProvider implements SandboxProvider {
         const out: Array<{ externalId: string; createdAt: Date | null }> = [];
         for await (const box of getDaytona().list({
           states: [SandboxState.STARTED],
-          labels: managedSandboxLabels(),
+          labels: await managedSandboxLabels(),
           limit: 100,
         } as any)) {
           const externalId = (box as { id?: string }).id;

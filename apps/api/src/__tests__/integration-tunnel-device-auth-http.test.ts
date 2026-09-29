@@ -1,35 +1,47 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { tunnelConnections, tunnelDeviceAuthRequests } from '@kortix/db';
-import { eq, inArray } from 'drizzle-orm';
+import {
+  accountMembers,
+  accounts,
+  projectMembers,
+  projects,
+  tunnelConnections,
+  tunnelDeviceAuthRequests,
+} from '@kortix/db';
+import { eq, inArray, sql } from 'drizzle-orm';
 
+import { app } from '../index';
+import { createAccountToken } from '../repositories/account-tokens';
 import { hashSecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
-import {
-  createDeviceAuthPublicRouter,
-  createDeviceAuthRouter,
-} from '../tunnel/routes/device-auth';
+import { createDeviceAuthPublicRouter } from '../tunnel/routes/device-auth';
+import { deleteFromView, insertIntoView } from './helpers/compat-views';
 
+const ACCOUNT = crypto.randomUUID();
+const PROJECT = crypto.randomUUID();
 const USER = crypto.randomUUID();
 const createdDeviceCodes: string[] = [];
 const createdTunnelIds: string[] = [];
+let token = '';
+let tokenId = '';
 
 function publicApp() {
-  const app = new Hono();
-  app.route('/device-auth', createDeviceAuthPublicRouter());
-  return app;
+  const publicRoutes = new Hono();
+  publicRoutes.route('/device-auth', createDeviceAuthPublicRouter());
+  return publicRoutes;
 }
 
-function authenticatedApp() {
-  const app = new Hono();
-  app.use('*', async (c, next) => {
-    c.set('authType' as never, 'supabase' as never);
-    c.set('accountId' as never, USER as never);
-    c.set('userId' as never, USER as never);
-    await next();
+/** The real authenticated approve route, called with the member's PAT. */
+function approve(code: string, body: Record<string, unknown>) {
+  return app.request(`/v1/tunnel/device-auth/${code}/approve`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      'x-forwarded-for': `203.0.113.${Math.floor(Math.random() * 250)}`,
+    },
+    body: JSON.stringify({ project_id: PROJECT, ...body }),
   });
-  app.route('/device-auth', createDeviceAuthRouter());
-  return app;
 }
 
 async function createRequest() {
@@ -47,6 +59,38 @@ async function createRequest() {
   return body;
 }
 
+beforeAll(async () => {
+  await db.execute(sql`alter type kortix.connector_provider add value if not exists 'computer'`);
+  await db.insert(accounts).values({ accountId: ACCOUNT, name: 'device-auth-http' });
+  await db.insert(projects).values({
+    projectId: PROJECT,
+    accountId: ACCOUNT,
+    name: 'device-auth-http',
+    repoUrl: 'https://example.invalid/device-auth.git',
+    metadata: {},
+  });
+  await insertIntoView(db, accountMembers, {
+    accountId: ACCOUNT,
+    userId: USER,
+    accountRole: 'member',
+  });
+  await insertIntoView(db, projectMembers, {
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    userId: USER,
+    projectRole: 'member',
+  });
+  // A user-scoped PAT: project-scoped tokens cannot call /v1/tunnel/*.
+  const minted = await createAccountToken({
+    accountId: ACCOUNT,
+    userId: USER,
+    name: 'device-auth-http',
+    agentGrant: null,
+  });
+  token = minted.secretKey;
+  tokenId = minted.tokenId;
+});
+
 afterAll(async () => {
   if (createdDeviceCodes.length > 0) {
     await db
@@ -58,20 +102,20 @@ afterAll(async () => {
       .delete(tunnelConnections)
       .where(inArray(tunnelConnections.tunnelId, createdTunnelIds));
   }
+  if (tokenId) await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
+  await db.delete(projects).where(eq(projects.projectId, PROJECT));
+  await deleteFromView(db, accountMembers, eq(accountMembers.accountId, ACCOUNT));
+  await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
 describe('tunnel device authorization handoff', () => {
   test('polling returns the exact approved capabilities without storing a plaintext token', async () => {
     const request = await createRequest();
     const approvedCapabilities = ['desktop', 'filesystem'];
-    const approval = await authenticatedApp().request(
-      `/device-auth/${request.deviceCode}/approve`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-real-ip': crypto.randomUUID() },
-        body: JSON.stringify({ name: 'Security Test Mac', capabilities: approvedCapabilities }),
-      },
-    );
+    const approval = await approve(request.deviceCode, {
+      name: 'Security Test Mac',
+      capabilities: approvedCapabilities,
+    });
     expect(approval.status).toBe(200);
     const approvalBody = (await approval.json()) as { tunnelId: string };
     createdTunnelIds.push(approvalBody.tunnelId);
@@ -107,7 +151,8 @@ describe('tunnel device authorization handoff', () => {
     createdTunnelIds.push(tunnelId);
     await db.insert(tunnelConnections).values({
       tunnelId,
-      accountId: USER,
+      accountId: ACCOUNT,
+      ownerUserId: USER,
       name: 'Expired handoff',
       capabilities: ['filesystem'],
     });
@@ -118,7 +163,7 @@ describe('tunnel device authorization handoff', () => {
       deviceCode,
       deviceSecretHash: hashSecretKey(deviceSecret),
       status: 'approved',
-      accountId: USER,
+      accountId: ACCOUNT,
       tunnelId,
       setupToken: null,
       expiresAt: new Date(Date.now() - 1_000),
@@ -133,14 +178,9 @@ describe('tunnel device authorization handoff', () => {
 
   test('concurrent approval creates exactly one tunnel connection', async () => {
     const request = await createRequest();
-    const approve = () =>
-      authenticatedApp().request(`/device-auth/${request.deviceCode}/approve`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-real-ip': crypto.randomUUID() },
-        body: JSON.stringify({ name: 'Concurrent approval', capabilities: [] }),
-      });
+    const approveOnce = () => approve(request.deviceCode, { name: 'Concurrent approval', capabilities: [] });
 
-    const responses = await Promise.all([approve(), approve()]);
+    const responses = await Promise.all([approveOnce(), approveOnce()]);
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
 
     const [handoff] = await db

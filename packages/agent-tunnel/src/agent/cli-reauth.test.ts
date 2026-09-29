@@ -173,7 +173,23 @@ describe('agent tunnel connect re-authorization', () => {
     }
   }, 30_000);
 
-  test('logout clears the credential but keeps unrelated settings', async () => {
+  test('logout unpairs on the server first, then clears the credential but keeps unrelated settings (X4)', async () => {
+    const requests: Array<{ method: string; path: string; auth: string | null; tunnelId: string | null }> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        requests.push({
+          method: request.method,
+          path: url.pathname,
+          auth: request.headers.get('authorization'),
+          tunnelId: request.headers.get('x-tunnel-id'),
+        });
+        return url.pathname === '/v1/tunnel/self' && request.method === 'DELETE'
+          ? Response.json({ ok: true })
+          : new Response('not found', { status: 404 });
+      },
+    });
     const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-logout-home-'));
     temporaryHomes.add(home);
     const configDir = join(home, '.agent-tunnel');
@@ -184,22 +200,106 @@ describe('agent tunnel connect re-authorization', () => {
       JSON.stringify({
         tunnelId: STALE_TUNNEL_ID,
         token: STALE_TOKEN,
-        apiUrl: 'https://api.kortix.com/v1/tunnel',
+        apiUrl: `http://127.0.0.1:${server.port}/v1/tunnel`,
         shellTimeout: 12_345,
       }),
       { mode: 0o600 },
     );
+    await writeFile(join(configDir, 'access.json'), JSON.stringify({ mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: false }), { mode: 0o600 });
 
-    const child = spawn(process.execPath, ['run', CLI_PATH, 'logout'], {
+    try {
+      const child = spawn(process.execPath, ['run', CLI_PATH, 'logout', '--json', '--keep-service'], {
+        env: { ...process.env, HOME: home },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      children.add(child);
+      let stdout = '';
+      child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+      expect(await new Promise<number | null>((r) => child.once('exit', r))).toBe(0);
+
+      expect(requests).toEqual([
+        { method: 'DELETE', path: '/v1/tunnel/self', auth: `Bearer ${STALE_TOKEN}`, tunnelId: STALE_TUNNEL_ID },
+      ]);
+      expect(JSON.parse(stdout)).toEqual({ ok: true, serverUnpaired: true, credentialsCleared: true, serviceRemoved: false });
+      const config = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+      expect(config.token).toBeUndefined();
+      expect(config.tunnelId).toBeUndefined();
+      expect(config.shellTimeout).toBe(12_345);
+      // The access answer goes with the pairing.
+      await expect(readFile(join(configDir, 'access.json'), 'utf8')).rejects.toThrow();
+    } finally {
+      server.stop(true);
+    }
+  }, 30_000);
+
+  test('logout still completes locally when the server cannot be reached', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-logout-offline-'));
+    temporaryHomes.add(home);
+    const configDir = join(home, '.agent-tunnel');
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    const configPath = join(configDir, 'config.json');
+    await writeFile(
+      configPath,
+      JSON.stringify({ tunnelId: STALE_TUNNEL_ID, token: STALE_TOKEN, apiUrl: 'http://127.0.0.1:9/v1/tunnel' }),
+      { mode: 0o600 },
+    );
+
+    const child = spawn(process.execPath, ['run', CLI_PATH, 'logout', '--json', '--keep-service'], {
       env: { ...process.env, HOME: home },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.add(child);
-    await new Promise<number | null>((r) => child.once('exit', r));
+    let stdout = '';
+    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+    expect(await new Promise<number | null>((r) => child.once('exit', r))).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ ok: true, serverUnpaired: false, credentialsCleared: true });
+    expect(JSON.parse(await readFile(configPath, 'utf8')).token).toBeUndefined();
+  }, 30_000);
 
-    const config = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
-    expect(config.token).toBeUndefined();
-    expect(config.tunnelId).toBeUndefined();
-    expect(config.shellTimeout).toBe(12_345);
+  test('a new pairing from the desktop app asks before every use and never inherits the previous grant (A1)', async () => {
+    const relay = startRejectingRelay({ serveDeviceAuth: true });
+    const apiUrl = `http://127.0.0.1:${relay.server.port}/v1/tunnel`;
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-access-default-'));
+    temporaryHomes.add(home);
+    const configDir = join(home, '.agent-tunnel');
+    const accessPath = join(configDir, 'access.json');
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    // The desktop app records itself before it pairs: it is the one that answers prompts.
+    await writeFile(join(configDir, 'desktop-app.json'), JSON.stringify({ command: '/Applications/Kortix.app/Contents/MacOS/Kortix', args: [], pid: process.pid }));
+    try {
+      const first = runConnect(home, apiUrl);
+      const access = await waitFor(async () => JSON.parse(await readFile(accessPath, 'utf8')));
+      expect(access).toEqual({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false });
+      first.child.kill('SIGTERM');
+
+      const grant = new Date(Date.now() + 3_600_000).toISOString();
+      await writeFile(accessPath, JSON.stringify({ mode: 'always', grantedUntil: grant, deniedUntil: null, keepAwake: true }), { mode: 0o600 });
+      const second = runConnect(home, apiUrl, ['--reauth']);
+      await waitFor(async () => {
+        if (!second.out().includes('Authorized')) throw new Error('not yet');
+      });
+      second.child.kill('SIGTERM');
+      // Keep awake is a machine setting and stays; the answer resets with the pairing.
+      expect(JSON.parse(await readFile(accessPath, 'utf8'))).toEqual({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: true });
+    } finally {
+      relay.server.stop(true);
+    }
+  }, 30_000);
+
+  test('a CLI-only pairing (no desktop app to answer a prompt) stays always allowed', async () => {
+    const relay = startRejectingRelay({ serveDeviceAuth: true });
+    const apiUrl = `http://127.0.0.1:${relay.server.port}/v1/tunnel`;
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-access-cli-'));
+    temporaryHomes.add(home);
+    try {
+      const run = runConnect(home, apiUrl);
+      await waitFor(async () => {
+        if (!run.out().includes('Authorized')) throw new Error('not yet');
+      });
+      run.child.kill('SIGTERM');
+      expect(JSON.parse(await readFile(join(home, '.agent-tunnel', 'access.json'), 'utf8'))).toMatchObject({ mode: 'always', grantedUntil: null });
+    } finally {
+      relay.server.stop(true);
+    }
   }, 30_000);
 });

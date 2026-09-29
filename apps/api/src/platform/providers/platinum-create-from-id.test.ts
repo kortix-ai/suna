@@ -3,6 +3,7 @@
 // SandboxTemplateNotFoundError (so the boot path can name-fallback), and leaves a
 // transient 5xx as a normal error (surface/retry, never a silent name-boot).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {

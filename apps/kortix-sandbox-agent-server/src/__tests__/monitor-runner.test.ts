@@ -18,7 +18,7 @@ import {
   type MonitorWireEvent,
   normalizeLine,
   parseMonitorSpecs,
-} from '../monitor-runner'
+} from '@/services/monitor/monitor-runner'
 
 const API_URL = 'http://api.test/v1'
 const PROJECT_ID = 'proj-1'
@@ -29,7 +29,7 @@ let runners: MonitorRunner[] = []
 
 /** Collects every batch a runner POSTs, and lets a test script the responses. */
 function fakeIngest(
-  respond: (batch: MonitorWireEvent[], call: number) => Response = () =>
+  respond: (batch: MonitorWireEvent[], call: number) => Response | Promise<Response> = () =>
     Response.json({ accepted: 0, deduped: 0, suppressed: 0 }, { status: 202 }),
 ) {
   const batches: MonitorWireEvent[][] = []
@@ -213,33 +213,69 @@ describe('batching', () => {
 
   test('the queue is bounded: overflow drops the OLDEST and announces it', async () => {
     script('flood.sh', '#!/bin/bash\nfor i in $(seq 1 400); do echo "line-$i"; done\nsleep 30\n')
-    // A fake ingest that never answers ok holds the queue open while the flood
-    // arrives, so the bound is what decides the outcome.
+    // A fake ingest that never answers ok, and a batch window longer than the
+    // test, hold the queue open while the flood arrives: the bound decides.
     const ingest = fakeIngest(() => new Response('nope', { status: 500 }))
     const runner = makeRunner(
       [{ slug: 'flood', run: './flood.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: null }],
       ingest,
-      { queueMax: 25, batchWindowMs: 5_000 },
+      { queueMax: 25, batchWindowMs: 60_000 },
     )
     runner.start()
 
-    // 400 lines into a 25-slot queue: 375 must go.
+    // 400 lines into a 25-slot queue: 375 go. `dropped` counts lines only, so
+    // 375 also proves line-400 was read, however the pipe chunked the flood.
     await waitFor(() => runner.stats().dropped >= 375)
-    expect(runner.stats().queued).toBeLessThanOrEqual(26)
+    expect(runner.stats().dropped).toBe(375)
+    expect(runner.stats().queued).toBe(25)
     await runner.stop()
-    // The survivors are the NEWEST lines: the stop flush carries line-400,
-    // never line-1.
-    const shipped = ingest
-      .events()
-      .filter((event) => event.kind === 'event')
-      .map((event) => String(event.line.raw))
-    expect(shipped).toContain('line-400')
-    expect(shipped).not.toContain('line-1')
-    const suppressed = ingest
-      .events()
-      .filter((event) => event.kind === 'lifecycle' && event.line.event === 'suppressed')
-    expect(suppressed.length).toBeGreaterThanOrEqual(1)
-    expect(Number(suppressed[0]!.line.dropped)).toBeGreaterThan(0)
+    // The stop flush carries the NEWEST 25 lines, then ONE note for the drop.
+    const [batch] = ingest.batches
+    expect(batch!.filter((event) => event.kind === 'event').map((event) => event.line.raw)).toEqual(
+      Array.from({ length: 25 }, (_, index) => `line-${376 + index}`),
+    )
+    const notes = batch!.filter((event) => event.kind === 'lifecycle')
+    expect(notes.map((event) => [event.line.event, event.line.dropped])).toEqual([['suppressed', 375]])
+  })
+
+  test('an overflow during a POST drops behind the lines on the wire, never them', async () => {
+    script(
+      'wave.sh',
+      '#!/bin/bash\nfor i in $(seq 1 5); do echo "line-$i"; done\n' +
+        'while [ ! -e go ]; do sleep 0.01; done\n' +
+        'for i in $(seq 6 40); do echo "line-$i"; done\nsleep 30\n',
+    )
+    // The first POST stays open until the test releases it.
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const ok = () => Response.json({ accepted: 0, deduped: 0, suppressed: 0 }, { status: 202 })
+    const ingest = fakeIngest(async (_batch, call) => {
+      if (call === 1) await held
+      return ok()
+    })
+    const runner = makeRunner(
+      [{ slug: 'wave', run: './wave.sh', mode: 'stream', intervalSeconds: null, expectEventWithinSeconds: null }],
+      ingest,
+      { queueMax: 10 },
+    )
+    runner.start()
+
+    // line-1..5 are on the wire. 35 more lines meet 5 free slots: 30 go.
+    await waitFor(() => ingest.batches.length === 1)
+    expect(ingest.batches[0]!.map((event) => event.line.raw)).toEqual(['line-1', 'line-2', 'line-3', 'line-4', 'line-5'])
+    writeFileSync(join(workspace, 'go'), '')
+    await waitFor(() => runner.stats().dropped >= 30)
+    release()
+    await waitFor(() => runner.stats().queued === 0 && runner.stats().posted >= 11)
+
+    const shipped = ingest.eventsFor('wave')
+    expect(shipped.filter((event) => event.kind === 'event').map((event) => event.line.raw)).toEqual([
+      ...['line-1', 'line-2', 'line-3', 'line-4', 'line-5'],
+      ...['line-36', 'line-37', 'line-38', 'line-39', 'line-40'],
+    ])
+    expect(runner.stats().dropped).toBe(30)
+    const notes = shipped.filter((event) => event.kind === 'lifecycle')
+    expect(notes.map((event) => [event.line.event, event.line.dropped])).toEqual([['suppressed', 30]])
   })
 })
 

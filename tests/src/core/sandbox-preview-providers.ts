@@ -32,6 +32,8 @@ import {
   waitForWarmSandbox,
 } from './platinum-ci';
 import {
+  PREVIEW_SUITE_PID_PATH,
+  PREVIEW_SUITE_SUPERSEDED,
   PreviewInfrastructureError,
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
@@ -47,12 +49,14 @@ import {
 import type { PreviewRuntimeSecrets } from './preview-stack';
 import {
   PLATINUM_POOL_MB_DEFAULT,
+  PREVIEW_HOST_MAX_IDLE_MS,
   PREVIEW_HOST_RAM_MB,
   PREVIEW_SESSION_MAX_IDLE_MS,
   type PlatinumListedSandbox,
   formatPoolUsage,
   poolCannotFit,
   previewHostNames,
+  selectIdlePreviewHosts,
   selectPreviewSessionsForTeardown,
   selectStalePreviewSessions,
   summarizePoolUsage,
@@ -219,8 +223,9 @@ async function stopPreviewSessionsOf(
   api: PlatinumApi,
   sandboxes: readonly ListedPlatinumSandbox[],
   hostNames: readonly string[],
+  createdSinceMs?: number,
 ): Promise<number> {
-  const ids = selectPreviewSessionsForTeardown(sandboxes, hostNames);
+  const ids = selectPreviewSessionsForTeardown(sandboxes, hostNames, createdSinceMs);
   const stopped = await stopAll(api, ids, `sessions of ${hostNames.join(',')}`);
   if (ids.length > 0) {
     console.log(
@@ -272,9 +277,13 @@ async function sweepStalePreviewSessions(
   return stopped;
 }
 
-async function stopOwnSessionsAfterSuite(api: PlatinumApi, hostName: string): Promise<void> {
+async function stopOwnSessionsAfterSuite(
+  api: PlatinumApi,
+  hostName: string,
+  createdSinceMs?: number,
+): Promise<void> {
   try {
-    await stopPreviewSessionsOf(api, await allPlatinumPreviewSandboxes(api), [hostName]);
+    await stopPreviewSessionsOf(api, await allPlatinumPreviewSandboxes(api), [hostName], createdSinceMs);
   } catch (error) {
     console.warn(`[sandbox-preview] post-suite session stop failed: ${String(error)}`);
   }
@@ -393,7 +402,7 @@ export async function deployPlatinumPreview(
             auto_archive_days: identity.autoArchiveDays,
             auto_delete_days: identity.autoDeleteDays,
             cpu: 8,
-            ram_mb: 16_384,
+            ram_mb: PREVIEW_HOST_RAM_MB,
             disk_gb: 50,
             expose: [{ port: 8080, public: true }],
             metadata: {
@@ -454,6 +463,11 @@ export async function deployPlatinumPreview(
       buildPreviewBootstrapScript({ ...input, origin, statusPath, hostName: identity.name }),
       '0755',
     );
+    // A reused host's log still holds earlier runs, including the previous
+    // suite's `ke2e run <id>` and its results. Stream only what this deploy
+    // appends: replaying them read as this commit's result (2026-09-28).
+    const logPath = '/workspace/kortix-preview/kortix-preview.log';
+    const logStart = Number((await statPlatinum(api, sandboxId, logPath, 1))?.size ?? 0);
     const launch = await execPlatinum(api, sandboxId, [
       'bash',
       '-lc',
@@ -480,15 +494,12 @@ export async function deployPlatinumPreview(
         if (!Number.isInteger(value)) throw new Error('Platinum preview wrote an invalid exit code');
         return value;
       },
-      statLog: () => statPlatinum(api, sandboxId, '/workspace/kortix-preview/kortix-preview.log', 1),
+      statLog: async () => {
+        const stat = await statPlatinum(api, sandboxId, logPath, 1);
+        return stat ? { ...stat, size: Math.max(0, Number(stat.size ?? 0) - logStart) } : stat;
+      },
       readLog: (offset, limit) =>
-        api.read(
-          sandboxId,
-          '/workspace/kortix-preview/kortix-preview.log',
-          offset,
-          Math.min(limit, LOG_CHUNK_BYTES),
-          1,
-        ),
+        api.read(sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
     });
     const result: SandboxPreviewResult = {
       provider: 'platinum',
@@ -530,6 +541,97 @@ export interface SandboxPreviewSuiteInput {
   sandboxId: string;
   platinum: { apiUrl: string; apiKey: string };
   branchEnv?: string;
+  /**
+   * Asked about once a minute while the suite runs. True stops the suite and
+   * returns PREVIEW_SUITE_SUPERSEDED, releasing the deploy lock for the newer
+   * commit's redeploy instead of holding it for the rest of a ~40 min run.
+   */
+  superseded?: () => Promise<boolean>;
+}
+
+const SUPERSEDE_CHECK_MS = 60_000;
+
+function envNumber(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return process.env[name]?.trim() && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+/**
+ * Managed repositories created in the managed org during the last hour, or
+ * null when GitHub cannot answer. Every preview suite shares one credential,
+ * and GitHub blocked it for 20 to 40 min after ~150 repository creations in
+ * an hour (2026-09-27/28). One suite creates ~145.
+ */
+export async function managedReposCreatedLastHour(
+  owner: string,
+  token: string,
+  nowMs = Date.now(),
+): Promise<number | null> {
+  let count = 0;
+  for (let page = 1; page <= 3; page++) {
+    const response = await fetch(
+      `https://api.github.com/orgs/${encodeURIComponent(owner)}/repos?sort=created&direction=desc&per_page=100&page=${page}`,
+      { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15_000) },
+    ).catch(() => null);
+    if (!response?.ok) return null;
+    const repos = (await response.json()) as Array<{ created_at?: string }>;
+    for (const repo of repos) {
+      if (nowMs - Date.parse(repo.created_at ?? '') > 3_600_000) return count;
+      count += 1;
+    }
+    if (repos.length < 100) return count;
+  }
+  return count;
+}
+
+/**
+ * Wait until the shared capacity a suite consumes is free: org pool RAM for
+ * its session boxes, and the managed-git credential's repository creations.
+ *
+ * A suite starts 8 to 33 session boxes of 4 GB each and creates ~145 managed
+ * GitHub repositories (measured 2026-09-28). Five suites started together
+ * filled the pool (`429 pool_exceeded`) and tripped GitHub's secondary rate
+ * limit, and dozens of flows timed out in setup. Waiting turns that into a
+ * queue. After PREVIEW_SUITE_WAIT_MINUTES (default 45) the suite starts anyway,
+ * so a wrong threshold can delay a suite but never block it.
+ *
+ * Returns false when the run was superseded while it waited.
+ */
+async function waitForSuiteCapacity(
+  api: PlatinumApi,
+  superseded?: () => Promise<boolean>,
+): Promise<boolean> {
+  const neededMb = envNumber('PREVIEW_SUITE_POOL_HEADROOM_GB', 64) * 1024;
+  const repoBudget = envNumber('PREVIEW_SUITE_GITHUB_REPOS_PER_HOUR', 100);
+  const owner = process.env.MANAGED_GIT_GITHUB_OWNER?.trim();
+  const token = process.env.MANAGED_GIT_GITHUB_TOKEN?.trim();
+  const deadline = Date.now() + envNumber('PREVIEW_SUITE_WAIT_MINUTES', 45) * 60_000;
+  for (;;) {
+    const listing = await allPlatinumPreviewSandboxes(api);
+    const swept = await sweepStalePreviewSessions(api, listing, previewHostNames(listing)).catch(
+      () => new Set<string>(),
+    );
+    const usage = summarizePoolUsage(
+      listing.filter((sandbox) => !swept.has(sandbox.id)),
+      poolMb(),
+    );
+    const recentRepos = owner && token ? await managedReposCreatedLastHour(owner, token) : null;
+    const poolShort = poolCannotFit(usage, neededMb);
+    const githubBusy = recentRepos !== null && recentRepos > repoBudget;
+    if (!poolShort && !githubBusy) return true;
+    const why =
+      `${poolShort ? `pool has < ${neededMb / 1024} GB free` : ''}` +
+      `${poolShort && githubBusy ? '; ' : ''}` +
+      `${githubBusy ? `${recentRepos} managed repos created in the last hour (budget ${repoBudget})` : ''}`;
+    if (Date.now() >= deadline) {
+      console.warn(`[sandbox-preview] still waiting (${why}); starting the suite anyway\n${formatPoolUsage(usage)}`);
+      return true;
+    }
+    console.log(`[sandbox-preview] waiting before the suite: ${why}\n${formatPoolUsage(usage)}`);
+    if (superseded && (await superseded().catch(() => false))) return false;
+    // Jitter so suites queued together do not all start on the same free slot.
+    await new Promise((done) => setTimeout(done, 60_000 + Math.round(Math.random() * 30_000)));
+  }
 }
 
 /**
@@ -547,7 +649,14 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
   const statusPath = previewSuiteStatusPath(input.runId, input.runAttempt);
   const logPath = '/workspace/kortix-preview/kortix-preview.log';
   let launched = false;
+  const suiteStartedAt = Date.now();
   try {
+    if (!(await waitForSuiteCapacity(api, input.superseded).catch((error) => {
+      console.warn(`[sandbox-preview] capacity check failed; starting the suite: ${String(error)}`);
+      return true;
+    }))) {
+      return PREVIEW_SUITE_SUPERSEDED;
+    }
     // Stream only what the suite appends, not the deploy's lines above it.
     // Measured before the launch, so no suite line can precede the offset.
     const logStart = Number((await statPlatinum(api, input.sandboxId, logPath, 1))?.size ?? 0);
@@ -565,10 +674,24 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
       throw new Error(`Platinum preview suite launch failed: ${launch.stderr ?? ''}`);
     }
     launched = true;
+    let lastSupersedeCheck = Date.now();
     const exitCode = await observePlatinumWorker({
       startedAt: Date.now(),
       timeoutMs: PREVIEW_TIMEOUT_MS,
       checkExitCode: async () => {
+        if (input.superseded && Date.now() - lastSupersedeCheck >= SUPERSEDE_CHECK_MS) {
+          lastSupersedeCheck = Date.now();
+          // A failed lookup keeps the suite running: only a positive answer stops it.
+          if (await input.superseded().catch(() => false)) {
+            // The PID file exists only while the suite runs (its EXIT trap removes it).
+            await execPlatinum(api, input.sandboxId, [
+              'bash',
+              '-lc',
+              `pid="$(cat ${PREVIEW_SUITE_PID_PATH} 2>/dev/null)" && [ -n "$pid" ] && kill -TERM -- "-$pid" 2>/dev/null; true`,
+            ]);
+            return PREVIEW_SUITE_SUPERSEDED;
+          }
+        }
         const status = await statPlatinum(api, input.sandboxId, statusPath, 1);
         if (!status) return null;
         const bytes = await api.read(input.sandboxId, statusPath, undefined, undefined, 1);
@@ -583,6 +706,7 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
       readLog: (offset, limit) =>
         api.read(input.sandboxId, logPath, logStart + offset, Math.min(limit, LOG_CHUNK_BYTES), 1),
     });
+    if (exitCode === PREVIEW_SUITE_SUPERSEDED) return exitCode;
     await downloadPlatinumArtifacts(api, input.sandboxId, input.root).catch((error) => {
       console.warn(`[sandbox-preview] Platinum result download failed: ${String(error)}`);
     });
@@ -591,12 +715,19 @@ export async function runPlatinumPreviewSuite(input: SandboxPreviewSuiteInput): 
     if (launched) throw error;
     throw new PreviewInfrastructureError('Platinum preview suite infrastructure failed', error);
   } finally {
-    // An ephemeral PR preview's suite creates real session boxes, and a gate
-    // run has nobody left to use them. Stop them now rather than after an idle
-    // timeout: their disks stay for inspection and a session resumes on open.
-    // A persistent branch environment is a place people work, so its sessions
-    // are left to its deadline reaper.
-    if (launched && !identity.reuseExisting) await stopOwnSessionsAfterSuite(api, identity.name);
+    // The suite's session boxes have nobody left to use them. Stop them now
+    // rather than after an idle timeout: their disks stay for inspection and a
+    // session resumes on open. On a branch environment, which is a place people
+    // work, only the boxes created since this suite began are stopped. Before
+    // 2026-09-28 they were all left to the deadline reaper, and one finished
+    // suite still held 33 boxes (132 GB) of the shared pool.
+    if (launched) {
+      await stopOwnSessionsAfterSuite(
+        api,
+        identity.name,
+        identity.reuseExisting ? suiteStartedAt : undefined,
+      );
+    }
   }
 }
 
@@ -659,10 +790,39 @@ export async function reconcilePlatinumPreviews(input: {
   const staleIds = new Set(stale);
   const surviving = previewHostNames(sandboxes.filter((sandbox) => !staleIds.has(sandbox.id)));
   const stoppedSessions = await sweepStalePreviewSessions(api, sandboxes, surviving);
+  // Stop hosts of closed pull requests and hosts idle past the limit, with
+  // their session boxes: a stopped host's API cannot reap them.
+  const hostRule = {
+    openPullRequests: new Set(input.activePullRequests.keys()),
+    nowMs: Date.now(),
+    maxIdleMs: envNumber('PREVIEW_HOST_MAX_IDLE_HOURS', PREVIEW_HOST_MAX_IDLE_MS / 3_600_000) * 3_600_000,
+  };
+  const idleHosts: string[] = [];
+  // Re-read each candidate just before the stop. A deploy that started it
+  // since the listing has fresh activity; stopping it made that deploy fail
+  // with `entered state=stopped` (2026-09-28).
+  for (const id of selectIdlePreviewHosts(sandboxes.filter((sandbox) => !staleIds.has(sandbox.id)), hostRule)) {
+    const current = await api.json<ListedPlatinumSandbox>(`/v1/sandboxes/${id}`).catch(() => null);
+    if (current && selectIdlePreviewHosts([current], { ...hostRule, nowMs: Date.now() }).length === 1) {
+      idleHosts.push(id);
+    }
+  }
+  const idleHostNames = sandboxes
+    .filter((sandbox) => idleHosts.includes(sandbox.id) && sandbox.name)
+    .map((sandbox) => sandbox.name as string);
+  if (idleHostNames.length > 0) {
+    await stopPreviewSessionsOf(api, sandboxes, idleHostNames);
+    const stoppedHosts = await stopAll(api, idleHosts, 'idle preview hosts');
+    console.log(`[sandbox-preview] stopped ${stoppedHosts}/${idleHosts.length} idle preview host(s): ${idleHostNames.join(', ')}`);
+  }
+  const idleHostIds = new Set(idleHosts);
   console.log(
     `[sandbox-preview] ${formatPoolUsage(
       summarizePoolUsage(
-        sandboxes.filter((sandbox) => !staleIds.has(sandbox.id) && !stoppedSessions.has(sandbox.id)),
+        sandboxes.filter(
+          (sandbox) =>
+            !staleIds.has(sandbox.id) && !stoppedSessions.has(sandbox.id) && !idleHostIds.has(sandbox.id),
+        ),
         poolMb(),
       ),
     )}`,

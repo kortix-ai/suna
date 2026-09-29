@@ -28,6 +28,29 @@ export function decryptAccountSecret(accountId: string, envelope: string): strin
   return Buffer.concat([decipher.update(Buffer.from(encryptedText, 'base64url')), decipher.final()]).toString('utf8');
 }
 
+/**
+ * A stored value this API can no longer decrypt (a rotated API_KEY_SECRET, a
+ * damaged row) is unusable, not a server error: `null` lets the caller treat
+ * that one secret as needing a new value.
+ */
+export function readAccountSecret(accountId: string, secretId: string, envelope: string): string | null {
+  try {
+    return decryptAccountSecret(accountId, envelope);
+  } catch (err) {
+    console.warn(`[account-secret] cannot decrypt secret ${secretId}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/** A stored credential as the gateway reads it. `value` is null when it cannot
+ *  be decrypted; `updatedAt` is the version a later write-back is guarded by. */
+export interface ResolvedAccountSecret {
+  secretId: string;
+  label: string;
+  value: string | null;
+  updatedAt: Date;
+}
+
 /** Record a provider limit across gateway replicas. A concurrent limit never shortens the cooldown. */
 export async function coolDownAccountSecret(secretId: string, accountId: string, seconds: number): Promise<void> {
   const until = new Date(Date.now() + Math.max(1, Math.min(60, Math.floor(seconds))) * 1000);
@@ -168,15 +191,42 @@ export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, '
     .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
 }
 
-/** An unconfigured session uses the caller's newest personal ChatGPT connection. */
-export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<{
-  secretId: string; label: string; value: string;
-} | null> {
+/** A stored ChatGPT login, read again when the provider refused its token. */
+export interface CodexAccountLogin {
+  value: string | null;
+  updatedAt: Date;
+  needsReauthAt: Date | null;
+}
+
+export async function loadCodexAccountLogin(accountId: string, secretId: string): Promise<CodexAccountLogin | null> {
+  const [row] = await db.select({
+    valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
+    needsReauthAt: accountSecretResources.needsReauthAt,
+  }).from(accountSecretResources).where(and(
+    eq(accountSecretResources.accountId, accountId),
+    eq(accountSecretResources.secretId, secretId),
+    eq(accountSecretResources.providerId, 'codex'),
+    eq(accountSecretResources.name, 'CODEX_AUTH_JSON'),
+    eq(accountSecretResources.active, true),
+  )).limit(1);
+  return row
+    ? { value: readAccountSecret(accountId, secretId, row.valueEnc), updatedAt: row.updatedAt, needsReauthAt: row.needsReauthAt }
+    : null;
+}
+
+/**
+ * An unconfigured session uses the caller's newest personal ChatGPT
+ * connection, preferring one whose login still works: a connection marked for
+ * reconnection is the default only when every other one is marked too.
+ */
+export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<ResolvedAccountSecret | null> {
   if (!(await memberMayReadProject(accountId, projectId, userId))) return null;
   const [row] = await db.select({
     secretId: accountSecretResources.secretId,
     label: accountSecretResources.label,
     valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
   }).from(accountSecretResources)
     .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountId)))
     .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
@@ -190,9 +240,15 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
       eq(accountSecretGrants.userId, userId),
       or(eq(accountSecretResources.projectId, projectId), isNull(accountSecretResources.projectId)),
     ))
-    .orderBy(desc(accountSecretResources.createdAt), desc(accountSecretResources.secretId))
+    .orderBy(
+      sql`${accountSecretResources.needsReauthAt} is not null`,
+      desc(accountSecretResources.createdAt),
+      desc(accountSecretResources.secretId),
+    )
     .limit(1);
-  return row ? { secretId: row.secretId, label: row.label, value: decryptAccountSecret(accountId, row.valueEnc) } : null;
+  return row
+    ? { secretId: row.secretId, label: row.label, value: readAccountSecret(accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt }
+    : null;
 }
 
 /**
@@ -209,12 +265,13 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
 export async function resolveProjectSharedProviderSecrets(input: Omit<GatewaySecretQuery, 'providerId'> & {
   userId: string;
   providerId: string;
-}): Promise<{ coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+}): Promise<{ coolingDown: boolean; retryAfterSeconds?: number; secrets: ResolvedAccountSecret[] }> {
   const usable = await listUsableGatewaySecrets(input);
   if (!usable.length) return { coolingDown: false, secrets: [] };
   const rows = await db.select({
     secretId: accountSecretResources.secretId,
     valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
   }).from(accountSecretResources).where(and(
     eq(accountSecretResources.accountId, input.accountId),
@@ -234,7 +291,7 @@ export async function resolveProjectSharedProviderSecrets(input: Omit<GatewaySec
     return { coolingDown: true, retryAfterSeconds: Math.max(1, Math.ceil((earliest - now) / 1000)), secrets: [] };
   }
   return { coolingDown: false, secrets: ready.map((row) => ({
-    secretId: row.secretId, label: row.label, value: decryptAccountSecret(input.accountId, row.valueEnc),
+    secretId: row.secretId, label: row.label, value: readAccountSecret(input.accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt,
   })) };
 }
 
@@ -251,7 +308,7 @@ export async function resolveSessionProviderSecrets(input: {
   providerId: string;
   name: string;
   advanceIndex?: boolean;
-} & ({ sessionId: string; secretIds?: never } | { secretIds: string[]; sessionId?: never })): Promise<{ configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+} & ({ sessionId: string; secretIds?: never } | { secretIds: string[]; sessionId?: never })): Promise<{ configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: ResolvedAccountSecret[] }> {
   const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
   let pool: { secretIds: string[]; nextIndex: number } | undefined;
   if (input.secretIds !== undefined) {
@@ -273,6 +330,7 @@ export async function resolveSessionProviderSecrets(input: {
     secretId: accountSecretResources.secretId,
     label: accountSecretResources.label,
     valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
     projectId: accountSecretResources.projectId,
     accessMode: accountSecretResources.accessMode,
@@ -310,6 +368,6 @@ export async function resolveSessionProviderSecrets(input: {
   const first = (pool.nextIndex - 1) % ready.length;
   const rotated = [...ready.slice(first), ...ready.slice(0, first)];
   return { configured: true, coolingDown: false, secrets: rotated.map((row) => ({
-    secretId: row.secretId, label: row.label, value: decryptAccountSecret(input.accountId, row.valueEnc),
+    secretId: row.secretId, label: row.label, value: readAccountSecret(input.accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt,
   })) };
 }

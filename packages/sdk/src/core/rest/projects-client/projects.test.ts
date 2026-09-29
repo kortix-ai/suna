@@ -961,7 +961,6 @@ describe('provisionProjectStream', () => {
 
 test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
-    'agent_tunnel',
     'agentmail_email',
     'apps',
     'config_releases',
@@ -970,9 +969,9 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'marketplace',
     'meta_agent',
     'monitors',
+    'reminders',
     'secrets_egress',
     'pi_worker',
-      'session_transcript_history',
     'pooled_provider_secrets',
     'pi_harness',
     'agent_principal',
@@ -998,6 +997,20 @@ test('a graduated flag key still typechecks but is no longer a served flag', () 
   // the older union keeps compiling; the runtime list mirrors what the API
   // actually serves, so it drops the key.
   const graduated: FeatureFlagKey = 'review_center';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('agent_tunnel graduated: computers need no flag, the key still typechecks', () => {
+  // A paired computer is an account of the `computer` connector, gated only by
+  // the platform's TUNNEL_ENABLED. The API no longer serves `agent_tunnel`.
+  const graduated: FeatureFlagKey = 'agent_tunnel';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('session_transcript_history graduated: saved history is always on, the key still typechecks', () => {
+  // Every session saves its transcript and shows it while its computer is off.
+  // The API no longer serves `session_transcript_history`.
+  const graduated: FeatureFlagKey = 'session_transcript_history';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
@@ -1066,4 +1079,31 @@ test('updateExperimentalFeature keeps its legacy /experimental wire path', async
 
   expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
   expect(sent.parsed).toEqual({ feature: 'apps', enabled: false });
+});
+
+/**
+ * `/new` renders a create failure inline, with its own wording and its own
+ * retry. The global handler ALSO toasted it, so one failure produced two
+ * different explanations — prod showed "GitHub /user/repos failed (403)… Our
+ * team has been notified" on top of an inline message that said something else
+ * entirely. The caller owns this error.
+ */
+test('a failed repository create does not raise the global error toast', async () => {
+  const toasted: unknown[] = [];
+  globalThis.fetch = mock(async () =>
+    Response.json({ error: 'GitHub /user/repos failed (403)' }, { status: 502 }),
+  ) as unknown as typeof fetch;
+  configureKortix({
+    backendUrl: 'https://api.example.test/v1',
+    getToken: async () => 'token',
+    onError: (error) => {
+      toasted.push(error);
+    },
+  });
+
+  await expect(
+    createProjectRepo({ account_id: 'acc-1', name: 'company' } as CreateProjectRepoInput),
+  ).rejects.toThrow();
+
+  expect(toasted).toEqual([]);
 });

@@ -19,15 +19,18 @@ import {
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
+import { createRepoWithGitHubAuthorization } from '@/features/workspace/new/github-user-authorization';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
 } from '@/lib/onboarding/provision-errors';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
+  storeGitHubUserToken,
   linkRepository,
   PROVISION_IN_FLIGHT_CODE,
   provisionProject,
@@ -225,13 +228,15 @@ export function buildManagedImportRequest(
  * `provisionProjectStream`) throw an `ApiError` carrying the same fields, so
  * every branch below reads identically regardless of which one ran.
  *
- * 502 and 503 are NOT the same failure and must not share a message. This
- * route's only 503 is `isManagedGitUnavailableError`
- * (`lib/onboarding/provision-errors.ts`) — managed git is not configured on this
- * server, a server-config state no client-side retry can fix. Telling the
+ * Managed git being unconfigured is NOT an upstream failure and must not share
+ * its message. `isManagedGitUnavailableError`
+ * (`lib/onboarding/provision-errors.ts`) names it by its message: on the wire
+ * it is a 503, but so is every 502, which the API's edge middleware rewrites to
+ * 503 (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
+ * unconfigured is a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
- * until an operator configures it. 502 (an upstream/gateway fault) keeps the
- * retryable generic message, matching every OTHER call site that reuses
+ * until an operator configures it. Any other 502 or 503 (an upstream/gateway
+ * fault) keeps the retryable generic message, matching every OTHER call site that reuses
  * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
  * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
  * between the toast those use and the inline message here.
@@ -288,9 +293,21 @@ export function messageFor(error: unknown): string {
     }
     return message || 'Could not create the workspace. Try again.';
   }
-  if (status === 502) return 'Could not create the workspace. Try again.';
+  // A 503 that is not managed git is an edge-rewritten 502 (`apps/api/src/index.ts`,
+  // EDGE_REWRITTEN_STATUSES): an upstream failure, with the upstream's raw text.
+  if (status === 502 || status === 503) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
 }
+
+/**
+ * `POST /projects/create-repo`'s 409 for a personal GitHub account: GitHub does
+ * not accept the App installation token on `POST /user/repos`, so `createRepo`
+ * refuses before the request (`apps/api/src/projects/github.ts`'s
+ * `GitHubPersonalAccountCreateUnsupportedError`). The owner does not change
+ * between attempts, so a retry fails the same way. `POST /projects/provision`
+ * answers the same code when the INSTANCE backend sits on a personal account.
+ */
+const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_create_unsupported';
 
 /**
  * Whether a failed create should offer a retry.
@@ -316,9 +333,10 @@ export function messageFor(error: unknown): string {
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
- * - `503` (this route's only 503 is `isManagedGitUnavailableError`,
- *   `lib/onboarding/provision-errors.ts`) — NOT retryable. A server configuration
- *   state; see `messageFor` above. Reuses that detector rather than
+ * - `503` that `isManagedGitUnavailableError`
+ *   (`lib/onboarding/provision-errors.ts`) matches — NOT retryable. A server
+ *   configuration state; see `messageFor` above. Any other `503` is an
+ *   edge-rewritten `502` and falls through to the retryable default. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
  *   about which failure is which.
  * - `409` (`provision_in_flight`, final-review FIX 1) — retryable. Named
@@ -328,6 +346,9 @@ export function messageFor(error: unknown): string {
  *   in-band backoff before ever reaching here (see that function's doc
  *   comment) — this branch only fires once that backoff is exhausted, and
  *   the underlying condition can still clear before the user's next click.
+ * - `409` (`github_personal_account_create_unsupported`) — NOT retryable.
+ *   The chosen owner is a personal GitHub account; the same owner fails the
+ *   same way on every attempt.
  * - Anything else (a plain network `Error`, an unrecognized status) —
  *   retryable. There is no signal here that rules out transience, so the
  *   safer default is to offer the retry rather than silently block a case
@@ -340,6 +361,7 @@ export function messageFor(error: unknown): string {
  */
 export function isRetryableError(error: unknown): boolean {
   const status = (error as { status?: number } | null | undefined)?.status;
+  const code = (error as { code?: string } | null | undefined)?.code;
 
   if (status === 400) return false;
   // The plan cap is a 403 too, but nothing about a retry changes it — only a
@@ -348,6 +370,7 @@ export function isRetryableError(error: unknown): boolean {
   // role granted meanwhile).
   if (isProjectLimitError(error)) return false;
   if (isManagedGitUnavailableError(error)) return false;
+  if (code === GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED) return false;
   if (status === 409) return true;
 
   return true;
@@ -749,7 +772,15 @@ export function useCreateWorkspace(): {
         // so there is nothing for `runProvisionAttempt`'s machinery to do. A
         // failed attempt surfaces through `messageFor` and the user presses
         // Try again, which is the whole retry story for these two.
-        createGitHubRepoProject: createProjectRepo,
+        // A personal GitHub owner needs the user's own authorization before
+        // GitHub will create the repository (`github-user-authorization.ts`).
+        // One popup, one retry; an organization never reaches it.
+        createGitHubRepoProject: (payload) =>
+          createRepoWithGitHubAuthorization(payload, {
+            create: createProjectRepo,
+            requestProof: requestGitHubUserProof,
+            storeToken: storeGitHubUserToken,
+          }),
         // `linkRepository` answers `{ project, git_connection }`; the
         // orchestration only ever needs the project, and unwrapping HERE (not
         // inside `runCreate`) keeps every source's success path identical.

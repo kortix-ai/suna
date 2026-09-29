@@ -103,7 +103,7 @@ export default function WelcomeScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View className="flex-1 items-center justify-center bg-background">
-          {splashHidden ? <KortixLoader size="xlarge" /> : null}
+          {splashHidden ? <KortixLoader size="large" /> : null}
         </View>
       </>
     );

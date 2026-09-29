@@ -21,7 +21,7 @@ export default function NotFoundScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 items-center justify-center bg-background">
-        <KortixLoader size="xlarge" />
+        <KortixLoader size="large" />
       </View>
     </>
   );

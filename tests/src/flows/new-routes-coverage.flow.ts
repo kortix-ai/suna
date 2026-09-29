@@ -261,11 +261,18 @@ flow(
         transcript: { known: boolean };
         config: { known: boolean; llm_gateway_enabled: boolean };
         models: { known: boolean };
+        audit: { known: boolean; actions?: unknown[] };
       }>();
-      for (const leg of ['turn', 'queue', 'transcript', 'config', 'models'] as const) {
+      for (const leg of ['turn', 'queue', 'transcript', 'config', 'models', 'audit'] as const) {
         if (typeof body[leg]?.known !== 'boolean') {
           throw new Error(`${leg} must carry a boolean 'known', got ${JSON.stringify(body[leg])}`);
         }
+      }
+      // A fresh session took no connector-gated action yet: the pending-
+      // approvals projection is KNOWN and empty, never an unknown leg standing
+      // in for "nothing happened".
+      if (body.audit.known !== true || (body.audit.actions ?? null)?.length !== 0) {
+        throw new Error(`a fresh session must read as a KNOWN empty audit leg: ${JSON.stringify(body.audit)}`);
       }
       if (body.session.session_id !== session.id) {
         throw new Error(`bundle answered for the wrong session: ${body.session.session_id}`);
@@ -479,6 +486,7 @@ flow(
       'POST /internal/gateway/budget-check',
       'POST /internal/gateway/models',
       'POST /internal/gateway/pool-rate-limit',
+      'POST /internal/gateway/refresh-credential',
       'POST /internal/gateway/resolve-upstream',
       'POST /internal/gateway/trace',
       'POST /internal/gateway/usage',
@@ -491,6 +499,7 @@ flow(
       '/internal/gateway/budget-check',
       '/internal/gateway/models',
       '/internal/gateway/pool-rate-limit',
+      '/internal/gateway/refresh-credential',
       '/internal/gateway/resolve-upstream',
       '/internal/gateway/trace',
       '/internal/gateway/usage',

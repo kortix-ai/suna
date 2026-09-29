@@ -4,6 +4,7 @@ import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { recordTurnStageMarks } from '../../lib/server-timing';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
@@ -84,6 +85,7 @@ import {
 import {
   PROXY_RETRY_BUDGET_MS,
   PROXY_RETRY_DELAYS_MS,
+  isEnvRpcRequest,
   isFileImportRequest,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -217,7 +219,7 @@ export function bindSandboxRequestContext(
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
 // Returns null if nothing meaningful remains (so the header can be dropped).
-function stripFrameAncestors(csp: string): string | null {
+export function stripFrameAncestors(csp: string): string | null {
   const kept = csp
     .split(';')
     .map((d) => d.trim())
@@ -1011,6 +1013,19 @@ export async function forwardToSandbox(
   }
   const serviceKey = record.serviceKey;
 
+  // The one SSE endpoint proxied per sandbox. Computed here (not only where it
+  // used to live, right before the retry loop) because the pre-flight
+  // parallelization below (R2) needs it to decide whether the first-attempt
+  // ingress resolve may be started early. See the comment on that stream's
+  // stall recovery at the retry loop for why it is excluded.
+  const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
+  // R2 (the turn-latency spec (PR #7840) §3): the first attempt's provider-ingress
+  // resolve — this box's network address — has no data dependency on the
+  // config/catalog convergence gates below, so it starts alongside them
+  // instead of queuing behind both. Populated just below, inside the
+  // turn-start branch; consumed by the retry loop's attempt 0.
+  let prefetchedIngress: ReturnType<typeof resolveSandboxIngress> | null = null;
+
   // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
   // THE one funnel: the HTTP proxy and the server-side prompt queue both
   // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
@@ -1026,7 +1041,35 @@ export async function forwardToSandbox(
   // `convergeBeforeTurnStart`, which answers from two memos with no network
   // call at all in that case.
   if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const converged = await convergeBeforeTurnStart(record.sessionId);
+    // R2 — config-converge, model-catalog-converge and the ingress resolve
+    // read/act on three independent surfaces (the session's config release,
+    // the box's managed-model map, this box's provider network address) and
+    // none consumes another's result before the upstream fetch is built. They
+    // used to run back to back — measured ~40 ms each on a warm box, ~120 ms
+    // stacked for nothing. They now start together and are joined where each
+    // result is first actually needed, exactly like `Promise.all` on the
+    // pre-flight reads the spec calls out (§3, R2).
+    //
+    // EXCLUDED: the SSE stall-recovery path just below
+    // (`isSseEventStreamRequest`) decides whether to INVALIDATE the cached
+    // ingress link before ever resolving it; starting the resolve here would
+    // race that decision and could hand the stream the exact stale link the
+    // invalidation exists to discard. That path is a `GET /global/event`,
+    // never a prompt — this exclusion never touches the send-a-prompt path
+    // the latency budget is about.
+    if (!isSseEventStreamRequest) {
+      prefetchedIngress = resolveSandboxIngress(record, ingressRequest);
+      // Never let an error here become an unhandled rejection if the request
+      // returns before the retry loop consumes it (e.g. an agent-switch or
+      // model-catalog refusal below) — the loop's own resolve, or nothing,
+      // takes over in that case.
+      prefetchedIngress.catch(() => undefined);
+    }
+    const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
+    const convergedPromise = convergeBeforeTurnStart(record.sessionId);
+    const modelCatalogPromise = convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
+
+    const converged = await convergedPromise;
     ptl.mark('config-converge');
     // …and the BINARIES, which must not block. `convergeBeforeTurnStart` above
     // awaits because config changes what the agent IS; the daemon, the CLI, the
@@ -1050,8 +1093,7 @@ export async function forwardToSandbox(
     // kortix/<id>` while the control plane serves that model the whole time
     // (2026-09-26). Skips instantly (no memo read, no network call) for
     // every non-managed-model request — see `requestedPromptManagedModelId`.
-    const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
-    const modelCatalog = await convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
+    const modelCatalog = await modelCatalogPromise;
     ptl.mark('model-catalog-converge');
     if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {
       console.log('[PREVIEW] turn-start model-catalog convergence', {
@@ -1214,7 +1256,8 @@ export async function forwardToSandbox(
   // on the daemon port — `/file/import` elsewhere is the user's own route.
   const uploadDelivery =
     isUploadRequest({ method, path: remainingPath }) ||
-    isFileImportRequest({ method, path: remainingPath, port: upstreamPort });
+    isFileImportRequest({ method, path: remainingPath, port: upstreamPort }) ||
+    isEnvRpcRequest({ method, path: remainingPath, port: upstreamPort });
   // Requests whose body must never be sent twice.
   const nonReplayableWrite = promptDelivery || uploadDelivery;
   // False until this request reaches the non-idempotent upstream fetch.
@@ -1245,13 +1288,13 @@ export async function forwardToSandbox(
   let lastAttemptHop: ProxyHop = 'provider_ingress';
   let providerCredentialsRefreshed = false;
 
-  // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
+  // `isSseEventStreamRequest` is computed earlier now (see the R2 comment
+  // above `prefetchedIngress`) — its streams still get a byte-counting
   // passthrough (below), and a previous stream that answered 200 without EVER
   // writing a byte — the stale-cached-ingress signature, which produces no
-  // error status and therefore never invalidated anything — costs the next
-  // connect its cache entry, so it re-resolves instead of re-dialling the
+  // error status and therefore never invalidated anything — still costs the
+  // next connect its cache entry, so it re-resolves instead of re-dialling the
   // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
-  const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
   /** Set per attempt: did we hand the daemon the CLIENT's Accept-Encoding? */
   let upstreamEncodingForwarded = false;
   const sseStallKey = `${sandboxId}:${port}`;
@@ -1267,7 +1310,14 @@ export async function forwardToSandbox(
         );
         invalidatePreviewLink(sandboxId, port);
       }
-      const ingress = await resolveSandboxIngress(record, ingressRequest);
+      // `prefetchedIngress` is null on this exact path — it is never started
+      // for `isSseEventStreamRequest` (see the R2 comment above it), which is
+      // what lets the invalidation just above always win against a stale
+      // resolve instead of racing it.
+      const ingress =
+        attempt === 0 && prefetchedIngress
+          ? await prefetchedIngress
+          : await resolveSandboxIngress(record, ingressRequest);
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
@@ -1691,7 +1741,11 @@ export async function forwardToSandbox(
       }
       if (promptDelivery) {
         ptl.mark('turn-accept');
-        ptl.log({ path: remainingPath, status: upstream.status });
+        const summary = ptl.log({ path: remainingPath, status: upstream.status });
+        // The turn-latency spec (PR #7840) §5: put the same breakdown on the wire via
+        // the existing Server-Timing mechanism (lib/server-timing.ts), not a
+        // second header — see that module's doc for why.
+        recordTurnStageMarks(summary.marks);
       }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
@@ -1729,9 +1783,61 @@ export async function forwardToSandbox(
           exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
         );
       }
+
+      // ── Rule 5 — kill the opaque 500 (the runtime-convergence contract (PR #7785) §3) ──
+      // A turn that cannot run because the box's model map lacks the requested
+      // model answers `500 {"name":"UnknownError","ref":"err_…"}` today — a bug,
+      // not a state. Named here rather than fixed on the daemon (a parallel
+      // branch owns the turn-start model-catalog refresh): if this session's
+      // box is exactly the one Rule 1's diff already flags as behind on its
+      // catalog, replace the opaque body with one that names the cause and
+      // carries both fingerprints. Conservative by construction — only fires
+      // with POSITIVE evidence (the box reported a DIFFERENT fingerprint than
+      // the platform's current one); anything else passes through unchanged.
+      if (promptDelivery && !sandboxAuthored && upstream.status === 500) {
+        const bodyText = await upstream.text();
+        const named = await (async () => {
+          try {
+            const { nameStaleModelCatalogError } = await import(
+              '../../runtime-convergence/name-stale-catalog-error'
+            );
+            return await nameStaleModelCatalogError(bodyText, {
+              desiredRuntime: async () =>
+                (await import('../../runtime-convergence/desired')).computeDesiredRuntime({ releaseId: null }),
+              actualRuntime: async () => {
+                const { readSandboxConfigState } = await import('../../projects/lib/session-reload');
+                const { UNREPORTED_ACTUAL_RUNTIME } = await import('../../runtime-convergence/actual');
+                const state = await readSandboxConfigState({ sessionId: record.sessionId }).catch(() => null);
+                return state?.runtimeTruth ?? UNREPORTED_ACTUAL_RUNTIME;
+              },
+            });
+          } catch {
+            return null;
+          }
+        })();
+        if (named) {
+          respHeaders.set('content-type', 'application/json; charset=utf-8');
+          respHeaders.delete('content-length');
+          respHeaders.delete('content-encoding');
+          return new Response(JSON.stringify(named), {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: respHeaders,
+          });
+        }
+        // Not our cause to name — pass the bytes we already read through
+        // unchanged (the stream itself is consumed, so this can't fall
+        // through to the generic `upstream.body` passthrough below).
+        return new Response(bodyText, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
+      }
+
       // The transcript list leaves the API WITHOUT its attachment bytes.
       //
-      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // The daemon strips these too (kortix-sandbox-agent-server/src/app/server.ts)
       // and that is the right home. This second pass exists for every sandbox
       // still running an older daemon image — a self-host does not rebuild
       // its templates on our schedule, and the read that motivated this

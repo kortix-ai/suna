@@ -255,9 +255,11 @@ async function archiveThroughGzip(
   } catch (error) {
     throw new Error(`gzip -n failed: ${(error as Error).message}`);
   }
-  const gzPath = `${tarPath}.gz`;
-  if ((await stat(gzPath)).size > limit) throw new ConfigArchiveTooLargeError(limit);
-  return readFile(gzPath);
+  // Read once and measure the bytes read: a stat followed by a read can see
+  // two different files (CodeQL js/file-system-race).
+  const gz = await readFile(`${tarPath}.gz`);
+  if (gz.length > limit) throw new ConfigArchiveTooLargeError(limit);
+  return gz;
 }
 
 interface CachedRelease {

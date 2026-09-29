@@ -30,7 +30,7 @@ const GMAIL_ACCOUNTS = [
   },
   {
     connection_id: '11111111-1111-4111-8111-111111111111',
-    label: 'markokraemer.mail@gmail.com',
+    label: 'user@example.com',
     owner_type: 'member',
     is_default: false,
   },
@@ -76,12 +76,16 @@ const CATALOG = {
 
 let server: ReturnType<typeof Bun.serve>;
 
+/** Query strings of every `/catalog` request, so a test can pin the opt-out. */
+const catalogSearches: string[] = [];
+
 beforeAll(() => {
   server = Bun.serve({
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
       if (url.pathname === `/v1/connectors/projects/${PROJECT_ID}/catalog`) {
+        catalogSearches.push(url.search);
         return Response.json(CATALOG);
       }
       if (
@@ -157,7 +161,7 @@ describe('MCP meta-tools surface that a connector can hold several accounts', ()
         connection_id: '22222222-2222-4222-8222-222222222222',
       },
       {
-        label: 'markokraemer.mail@gmail.com',
+        label: 'user@example.com',
         owner: 'private',
         default: false,
         connection_id: '11111111-1111-4111-8111-111111111111',
@@ -175,6 +179,19 @@ describe('MCP meta-tools surface that a connector can hold several accounts', ()
       { label: 'Sales', owner: 'shared', default: true, connection_id: '33333333-3333-4333-8333-333333333333' },
     ]);
     expect(stripe.how_to_choose).toBeUndefined();
+  });
+
+  test('connectors: the catalog request opts out of schemas — the summary reads none', async () => {
+    catalogSearches.length = 0;
+    const { isError } = await callMcpTool('connectors', {});
+    expect(isError).toBe(false);
+    // The full per-action JSON Schema is the bulk of this route's payload
+    // (439KB on prod) and no summary field reads it. The request MUST carry
+    // `include_schemas=false`, or the API's include-by-default sends it anyway.
+    expect(catalogSearches.length).toBeGreaterThan(0);
+    for (const search of catalogSearches) {
+      expect(new URLSearchParams(search).get('include_schemas')).toBe('false');
+    }
   });
 
   test('describe: carries the same accounts summary for the tool\'s connector', async () => {

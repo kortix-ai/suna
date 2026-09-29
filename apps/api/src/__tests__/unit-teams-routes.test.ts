@@ -39,6 +39,13 @@ mock.module('../channels/teams/interactivity', () => ({
     return { statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value: {} };
   },
 }));
+const messageActionInbounds: unknown[] = [];
+mock.module('../channels/teams/message-action', () => ({
+  handleOpenInKortixAction: async (_activity: unknown, inbound: unknown) => {
+    messageActionInbounds.push(inbound);
+    return { task: { type: 'message', value: 'MESSAGE-ACTION' } };
+  },
+}));
 mock.module('../channels/teams/dispatch', () => ({
   handleTeamsActivity: (activity: { id: string }, inbound: unknown) =>
     new Promise<void>((resolve) => {
@@ -107,6 +114,20 @@ describe('POST /messages acks before the dispatch finishes', () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json()).type).toBe('application/vnd.microsoft.card.adaptive');
+    expect(dispatched).toEqual([]);
+  });
+});
+
+describe('the "Open in Kortix" message action', () => {
+  test('its fetchTask invoke answers synchronously with the task the handler returns, in the endpoint\'s scope', async () => {
+    const res = await teamsWebhookApp.request('/proj-1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ type: 'invoke', name: 'composeExtension/fetchTask', id: 'inv-9', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-1' } }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ task: { type: 'message', value: 'MESSAGE-ACTION' } });
+    expect(messageActionInbounds).toEqual([{ kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' }]);
     expect(dispatched).toEqual([]);
   });
 });

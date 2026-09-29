@@ -133,7 +133,7 @@ const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
         disabled={disabled}
         tabIndex={0}
         className={cn(
-          'group/switch relative h-[20px] w-[34px] shrink-0 cursor-pointer touch-none rounded-full outline-none',
+          'group/switch relative h-[20px] w-[34px] shrink-0 touch-none rounded-full outline-none', // pointer comes from the global rule; disabled keeps the default cursor
           'transition-colors duration-80',
           'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-1 focus-visible:ring-offset-2',
           // Colours come from Radix's `data-state`, never from JS state.

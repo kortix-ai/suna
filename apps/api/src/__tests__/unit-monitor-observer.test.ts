@@ -6,7 +6,7 @@
 // monitor, filtered line) and what it must never let a template author
 // suppress (lifecycle events).
 //
-// Mocks `../projects/lib/triggers` (the fire seam), `../shared/db`, and
+// Mocks the split fire/state seams, `../shared/db`, and
 // `../feature-flags/registry` via `mock.module` — process-global in bun:test,
 // so this file runs under the suite's `--isolate`.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -68,8 +68,11 @@ mock.module('../feature-flags/registry', () => ({
     key === 'monitors' ? flagEnabled : false,
 }));
 
-mock.module('../projects/lib/triggers', () => ({
+mock.module('../projects/lib/trigger-scheduler-state', () => ({
   triggersPausedForProject: () => paused,
+}));
+
+mock.module('../projects/lib/trigger-fire', () => ({
   fireGitTrigger: async (input: Record<string, unknown>) => {
     fireCalls.push(input);
     if (fireError) throw fireError;

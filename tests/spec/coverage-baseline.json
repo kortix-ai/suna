@@ -1,7 +1,4 @@
 {
   "uncovered": [],
-  "external": [
-    "POST /v1/projects/:*/sessions/:*/ensure-opencode",
-    "POST /v1/projects/:*/sessions/:*/wake"
-  ]
+  "external": []
 }

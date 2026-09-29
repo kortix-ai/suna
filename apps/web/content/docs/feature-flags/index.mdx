@@ -61,11 +61,10 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Four flags read it from configuration; every other flag is always available:
+Three flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
-| `agent_tunnel` | `TUNNEL_ENABLED` is on |
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
 | `monitors` | `PLATINUM_API_KEY` is set |
 | `config_releases` | `CONFIG_RELEASES_ENABLED` is on (default: off) |
@@ -126,7 +125,6 @@ Registry order — the same order **Settings → Feature flags** shows.
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|
 | `marketplace` | Marketplace | Beta | On | `routes` |
-| `agent_tunnel` | Agent Computer Tunnel | Experimental | Off | `ui-only` |
 | `connectors_api_discover` | Connectors API Discover | Experimental | Off | `routes` |
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
 | `teams` | Microsoft Teams | Experimental | Off | `routes` |
@@ -134,6 +132,7 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
+| `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
@@ -149,8 +148,6 @@ refs). An explicit project choice always wins.
 
 - **`marketplace`** — browse and install skills from community and vendor
   registries.
-- **`agent_tunnel`** — let agents reach a local machine over a permissioned
-  reverse tunnel. See [Computer Tunnel](/docs/connect/computers).
 - **`connectors_api_discover`** — browse direct API, MCP, GraphQL, CLI, and
   Postman surfaces beside Pipedream OAuth apps. See
   [Connectors](/docs/connect/connectors).
@@ -166,6 +163,9 @@ refs). An explicit project choice always wins.
   stable serverless URLs. See [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
+- **`reminders`** — scheduled check-ins that re-prompt one session, once or
+  on repeat. Off, the reminder routes answer `feature_disabled` and existing
+  reminders do not fire. See [Reminders](/docs/connect/reminders).
 - **`warm_sessions`** — keep one sandbox booted while a project is open, so a
   new session starts without a cold boot.
 - **`secrets_egress`** — offer network enforcement for a secret: the sandbox
@@ -204,6 +204,11 @@ A graduated feature is on for every project and has no switch.
   answers `400` `Unknown feature flag`, and `kortix projects features enable
   review_center` prints that error and exits `1`. A stored override from before
   graduation has no effect.
+- **Computers** graduated out of the flag system. Every member can connect
+  their own computer from the project sidebar; the platform's
+  `TUNNEL_ENABLED` setting is the only gate. `agent_tunnel` is no longer a flag
+  key: `PATCH /v1/projects/:id/features` answers `400` `Unknown feature flag`.
+  See [Computers](/docs/connect/computers).
 
 ## Side effects of a toggle
 
@@ -212,7 +217,6 @@ Some flags converge platform state after the write commits.
 | Flag | Effect after the toggle |
 |---|---|
 | `teams`, `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
-| `agent_tunnel` | Kortix re-syncs the account's computer connectors. |
 | `llm_gateway` | Kortix propagates the new provider mode to active sandboxes. |
 
 Effects are convergence work, not part of the toggle's success. The API

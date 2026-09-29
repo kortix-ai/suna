@@ -954,6 +954,37 @@ describe('SessionSyncController', () => {
     expect(reasons).toEqual(['turn-end']);
   });
 
+  test('turn-end re-reads after an in-flight partial poll instead of sharing its stale result', async () => {
+    const clock = createScheduler();
+    let finishPoll!: (page: SessionSyncPage) => void;
+    const poll = new Promise<SessionSyncPage>((resolve) => { finishPoll = resolve; });
+    const hydrated: string[][] = [];
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      loadPage: () => {
+        calls++;
+        return calls === 2 ? poll : Promise.resolve(page([calls === 1 ? 'initial' : 'finished']));
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+    try {
+      await controller.start();
+      controller.setBusy(true);
+      const pending = controller.reconcile('poll');
+      controller.setBusy(false);
+      finishPoll(page(['partial']));
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hydrated).toEqual([['initial'], ['partial'], ['finished']]);
+      expect(calls).toBe(3);
+    } finally {
+      controller.destroy();
+    }
+  });
+
   test('a session that was never busy does not read a tail when it stays idle', async () => {
     const clock = createScheduler();
     const reasons: SessionSyncReason[] = [];

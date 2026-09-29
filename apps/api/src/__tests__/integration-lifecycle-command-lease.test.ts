@@ -48,6 +48,10 @@ const sessionId = crypto.randomUUID();
 const rearmSessionId = crypto.randomUUID();
 /** The session a create command made before its post-create step failed. */
 const createdSessionId = crypto.randomUUID();
+/** Owns its own `session_sandboxes` row, so the deadline-extend cases never
+ *  race the deadline of a box another test in this file also touches. */
+const deadlineSessionId = crypto.randomUUID();
+const deadlineSandboxId = crypto.randomUUID();
 
 async function enqueue(label: string, forSession = sessionId): Promise<SessionLifecycleCommandRow> {
   const clientMessageId = `${label}-${crypto.randomUUID()}`;
@@ -153,12 +157,30 @@ beforeAll(async () => {
       (${rearmSessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
        ${rearmSessionId}, 'default', 'running', '{}'::jsonb),
       (${createdSessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-       ${createdSessionId}, 'default', 'running', '{}'::jsonb)`);
+       ${createdSessionId}, 'default', 'running', '{}'::jsonb),
+      (${deadlineSessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
+       ${deadlineSessionId}, 'default', 'running', '{}'::jsonb)`);
+  await db.execute(sql`
+    insert into kortix.session_sandboxes
+      (sandbox_id, session_id, account_id, project_id, provider, external_id, status, deadline_at)
+    values
+      (${deadlineSandboxId}::uuid, ${deadlineSessionId}, ${project.account_id}::uuid,
+       ${project.project_id}::uuid, 'daytona', ${`ext-${deadlineSandboxId}`}, 'active',
+       now() + interval '1 minute')`);
 });
 
 afterAll(async () => {
   await db.execute(
     sql`delete from kortix.session_lifecycle_commands where project_id = ${project.project_id}::uuid`,
+  );
+  // The identity guard refuses to delete an established sandbox unless its
+  // session is tombstoned first.
+  await db.execute(sql`
+    update kortix.project_sessions
+       set metadata = coalesce(metadata, '{}'::jsonb) || '{"deletedAt":"now"}'::jsonb
+     where session_id = ${deadlineSessionId}`);
+  await db.execute(
+    sql`delete from kortix.session_sandboxes where sandbox_id = ${deadlineSandboxId}::uuid`,
   );
   await db.execute(
     sql`delete from kortix.project_sessions where project_id = ${project.project_id}::uuid`,
@@ -166,7 +188,35 @@ afterAll(async () => {
   await removeSeeded([project]);
 });
 
+async function sandboxDeadline(id: string): Promise<Date> {
+  const [row] = rows(
+    await db.execute(
+      sql`select deadline_at, status from kortix.session_sandboxes where sandbox_id = ${id}::uuid`,
+    ),
+  );
+  return new Date(row!.deadline_at as string);
+}
+
 describe('writes that end a claim are fenced by the lease', () => {
+  test('two workers racing to reclaim one expired row get one lease and one attempt', async () => {
+    const row = await enqueue('two-worker-race');
+    const [initial] = await claim(row, 'worker-initial');
+    expect(initial?.attempts).toBe(1);
+    await expireLock(row);
+
+    const [a, b] = await Promise.all([
+      claim(row, 'worker-race-a'),
+      claim(row, 'worker-race-b'),
+    ]);
+    expect(a.length + b.length).toBe(1);
+    const winner = a[0] ?? b[0];
+    expect(winner?.lockedBy).toBe(a.length ? 'worker-race-a' : 'worker-race-b');
+    const persisted = await read(row.commandId);
+    expect(persisted.status).toBe('running');
+    expect(persisted.locked_by).toBe(winner.lockedBy);
+    expect(persisted.attempts).toBe(2);
+  });
+
   test("a reclaimed row ignores the first worker's late failure", async () => {
     const { byA, byB } = await reclaimed('late-fail');
     await markCommandFailed(byA, 'drain failed: stale worker', { retryable: true, attempts: 1 });
@@ -561,5 +611,78 @@ describe('a prompt whose runtime is unreachable', () => {
     expect(ms((await read(parked[1]!.commandId)).available_at)).toBe(back.getTime());
     expect(ms((await read(parked[2]!.commandId)).available_at)).toBe(heldDue);
     expect(await reArmRuntimeBlockedPrompts(crypto.randomUUID(), back)).toBe(0);
+  });
+
+  // The deadlock this suite exists to close: a queued prompt holds no turn
+  // record, so nothing else keeps its box alive while it waits out the
+  // backoff. Without a grant here the reaper can stop the box mid-ladder, and
+  // the very next retry finds a box the platform itself just switched off.
+  //
+  // `extendSandboxDeadline` computes its grant from Postgres's own `now()`,
+  // not the fixed `T` this suite uses for the command-queue math above, so
+  // this case asserts against real wall-clock time with a generous tolerance
+  // for how long the test itself takes to run.
+  test('parking a prompt extends its still-active box past the retry ladder', async () => {
+    const before = await sandboxDeadline(deadlineSandboxId);
+    // Seeded 1 minute out in `beforeAll` — nowhere near the 15-minute grant.
+    expect(before.getTime()).toBeLessThan(Date.now() + 5 * 60_000);
+
+    const row = await enqueue('park-deadline', deadlineSessionId);
+    const [held] = await claim(row, 'worker-park-deadline', LATER);
+
+    await parkPromptForUnreachableRuntime(held!, 'x', { sessionId: deadlineSessionId, now: T });
+
+    const after = await sandboxDeadline(deadlineSandboxId);
+    expect(after.getTime()).toBeGreaterThan(before.getTime());
+    expect(after.getTime()).toBeGreaterThanOrEqual(Date.now() + 14 * 60_000);
+    expect(after.getTime()).toBeLessThanOrEqual(Date.now() + 16 * 60_000);
+  });
+
+  // The grant is capped to boxes the reaper has not already reaped — it must
+  // never look like this call can revive a stopped box.
+  test('parking a prompt for a stopped box does not touch its deadline', async () => {
+    const stoppedSandboxId = crypto.randomUUID();
+    const stoppedSessionId = crypto.randomUUID();
+    const stoppedDeadline = new Date(Date.now() - 60_000);
+    await db.execute(sql`
+      insert into kortix.project_sessions
+        (session_id, account_id, project_id, branch_name, agent_name, status, metadata)
+      values (${stoppedSessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
+              ${stoppedSessionId}, 'default', 'running', '{}'::jsonb)`);
+    // Insert active first — the anchor-guard trigger forces a fresh INSERT's
+    // deadline to the 15-minute boot floor whenever it is not already in the
+    // future, which a stopped row with a past deadline always is. The
+    // active→stopped UPDATE below is the transition a real idle stop makes,
+    // and the trigger leaves an explicit `deadline_at` alone on it.
+    await db.execute(sql`
+      insert into kortix.session_sandboxes
+        (sandbox_id, session_id, account_id, project_id, provider, external_id, status)
+      values (${stoppedSandboxId}::uuid, ${stoppedSessionId}, ${project.account_id}::uuid,
+              ${project.project_id}::uuid, 'daytona', ${`ext-${stoppedSandboxId}`}, 'active')`);
+    await db.execute(sql`
+      update kortix.session_sandboxes
+         set status = 'stopped', deadline_at = ${stoppedDeadline.toISOString()}::timestamptz
+       where sandbox_id = ${stoppedSandboxId}::uuid`);
+    try {
+      const row = await enqueue('park-stopped', stoppedSessionId);
+      const [held] = await claim(row, 'worker-park-stopped', LATER);
+
+      await parkPromptForUnreachableRuntime(held!, 'x', { sessionId: stoppedSessionId, now: T });
+
+      expect((await sandboxDeadline(stoppedSandboxId)).toISOString()).toBe(
+        stoppedDeadline.toISOString(),
+      );
+    } finally {
+      await db.execute(sql`
+        update kortix.project_sessions
+           set metadata = coalesce(metadata, '{}'::jsonb) || '{"deletedAt":"now"}'::jsonb
+         where session_id = ${stoppedSessionId}`);
+      await db.execute(
+        sql`delete from kortix.session_sandboxes where sandbox_id = ${stoppedSandboxId}::uuid`,
+      );
+      await db.execute(
+        sql`delete from kortix.project_sessions where session_id = ${stoppedSessionId}`,
+      );
+    }
   });
 });

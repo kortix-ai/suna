@@ -79,8 +79,14 @@ jobs:
       - name: Install pnpm
         run: corepack enable pnpm
 
+      # The app bundles the computer agent (packages/agent-tunnel), built with
+      # bun by scripts/ensure-runtime.js before electron-builder runs.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 
@@ -88,6 +94,13 @@ jobs:
         id: ver
         shell: bash
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
+      # The bundled agent reads its version from the package.json shipped next
+      # to it. The checked-in value is inert, so stamp the release: the app
+      # restarts a service that runs another version (v2 R5).
+      - name: Stamp the bundled agent version
+        shell: bash
+        run: node -e "const f='packages/agent-tunnel/package.json';const p=JSON.parse(require('fs').readFileSync(f,'utf8'));p.version=process.argv[1];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')" "${{ steps.ver.outputs.version }}"
 
       # Signing material lives in kortix-ci-env. Every key is optional: a build
       # never hard-fails on missing certs. The read is skipped on Windows,

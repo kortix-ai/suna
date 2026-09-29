@@ -63,6 +63,7 @@ export class SessionGrantRemintError extends Error {
       `could not re-mint the agent grant for session '${sessionId}': ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
+      { cause },
     );
     this.name = 'SessionGrantRemintError';
   }

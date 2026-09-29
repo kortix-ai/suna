@@ -216,6 +216,7 @@ sandbox:
 | `cpu`        | int    | provider default    | vCPU cores. Bound: 1–32.                                                          |
 | `memory`     | int    | provider default    | RAM in GiB. Bound: 1–128.                                                         |
 | `disk`       | int    | provider default    | Disk in GiB. Bound: 1–500.                                                        |
+| `container_runtime` | bool | `false`       | Run Docker in the sandbox with bridge + overlay networking. See [Runtime](/docs/work/runtime#docker-in-the-sandbox). |
 
 Each value must be a positive integer. A value below the minimum fails validation with an error. A value above the maximum passes with a warning, then clamps at runtime. GPUs are not supported — declaring `gpu` produces a warning, not an error. See [Runtime](/docs/work/runtime) for what the runtime layer injects on top of your image.
 
@@ -250,7 +251,7 @@ Session template resolution uses this order:
 
 Cron triggers, webhook triggers, schedules, and channels use the selected agent's template.
 
-A spec change (`cpu`, `memory`, `disk`, or the image itself) rebuilds the project's snapshot. The new size applies on the next session, not a running one.
+A spec change (`cpu`, `memory`, `disk`, `container_runtime`, or the image itself) rebuilds the project's snapshot. The new size applies on the next session, not a running one.
 
 ## `opencode:`
 
@@ -390,9 +391,9 @@ Provider-specific fields:
 | `graphql`   | `endpoint`     | `spec` optional (SDL).                                                                                                                     |
 | `http`      | `base_url`     | `spec` optional.                                                                                                                           |
 | `channel`   | `platform`     | `slack`, `teams`, `email`, or `voice`.                                                                                                     |
-| `computer`  | —              | API-managed. You cannot declare it by hand. A profile selects one or more paired machines. See [Computer Tunnel](/docs/connect/computers). |
+| `computer`  | —              | API-managed. You cannot declare it by hand. Each connected computer is one of its accounts. See [Computers](/docs/connect/computers). |
 
-`channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, and `computer` are platform-owned; using one with a different provider is a validation error. Computer Tunnel profiles are created through the connector API because tunnel ids are account control-plane identities and must not enter the manifest.
+`channel` connectors rarely need a hand-written entry — connecting a channel from the dashboard creates one for you. See [Slack & channels](/docs/connect/slack). The slugs `kortix_slack`, `kortix_teams`, `kortix_email`, and `computer` are platform-owned; using one with a different provider is a validation error. The `computer` connector is created when the first member connects a computer, because machine ids are account control-plane identities and must not enter the manifest.
 
 `connectors.auth`: optional, for providers other than `pipedream`. `type` is `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls`, or `none` (default). `oauth1` is restricted to `openapi`, `postman`, and `http` providers. `in` is `header` (default), `query`, or `cookie`. `name` is required when `type` is `custom` or `api_key`.
 

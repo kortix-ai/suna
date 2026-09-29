@@ -39,24 +39,40 @@ flow(
     };
     const owner = ctx.client.as(ctx.P.OWNER);
     await ctx.step(
-      "the default flag rejects early history with 403",
+      "a stopped session's saved messages read from PostgreSQL without waking it",
       async () => {
         (await owner.get(route, options))
-          .status(403)
+          .status(200)
           .body()
-          .has("$.code", "feature_disabled");
+          .has("$.source", "mirror")
+          .has("$.available", true)
+          .has("$.message_count", 2);
       },
     );
     await ctx.step(
-      "enable history through the project flag API and read completed stored messages while stopped",
+      "saved history has no off switch: the retired flag answers 400 and a stored off override changes nothing",
       async () => {
         (
           await owner.patch(
             "/v1/projects/:projectId/features",
-            { feature: "session_transcript_history", enabled: true },
+            { feature: "session_transcript_history", enabled: false },
             { params: { projectId: project.id } },
           )
-        ).status(200);
+        )
+          .status(400)
+          .body()
+          .has("$.error", "Unknown feature flag 'session_transcript_history'");
+        // What an older server wrote when a project turned the flag off.
+        const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        await db.connect();
+        try {
+          await db.query(
+            `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
+            [project.id],
+          );
+        } finally {
+          await db.end();
+        }
         (await owner.get(route, options))
           .status(200)
           .body()
@@ -72,6 +88,57 @@ flow(
             "$.messages[1].parts[0].text",
             "This reply is stored in the database.",
           );
+      },
+    );
+    await ctx.step(
+      "a sub-agent's saved transcript is its own window, and the conversation never includes it",
+      async () => {
+        const child = "ses_subagentwindow";
+        const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        await db.connect();
+        try {
+          const info = {
+            id: "msg_subagent_000000000000001",
+            sessionID: child,
+            role: "user",
+            time: { created: Date.now() - 30_000 },
+          };
+          await db.query(
+            "INSERT INTO kortix.session_transcript_messages (session_id, message_id, opencode_session_id, role, message_created_at, info, parts) VALUES ($1,$2,$3,'user',$4,$5,$6)",
+            [
+              sessionId,
+              info.id,
+              child,
+              new Date(info.time.created),
+              JSON.stringify(info),
+              JSON.stringify([{ id: "prt_subagent", type: "text", text: "List the files." }]),
+            ],
+          );
+        } finally {
+          await db.end();
+        }
+        (await owner.get(route, options))
+          .status(200)
+          .body()
+          .has("$.message_count", 2)
+          .has("$.total", 2);
+        (await owner.get(route, { ...options, query: { ...options.query, child } }))
+          .status(200)
+          .body()
+          .has("$.available", true)
+          .has("$.opencode_session_id", child)
+          .has("$.message_count", 1)
+          .has("$.messages[0].parts[0].text", "List the files.");
+        (
+          await owner.get(route, { ...options, query: { ...options.query, child: "not-a-session" } })
+        ).status(400);
+        (
+          await owner.get(route, { ...options, query: { ...options.query, child: "ses_nothingsaved" } })
+        )
+          .status(200)
+          .body()
+          .has("$.available", false)
+          .has("$.message_count", 0);
       },
     );
     await ctx.step(
@@ -105,24 +172,10 @@ flow(
       },
     );
     await ctx.step(
-      "disabling the flag denies the opt-in read again",
+      "the real CLI digests the stopped session's saved transcript",
       async () => {
-        (
-          await owner.patch(
-            "/v1/projects/:projectId/features",
-            { feature: "session_transcript_history", enabled: false },
-            { params: { projectId: project.id } },
-          )
-        ).status(200);
-        (await owner.get(route, options)).status(403);
-      },
-    );
-    await ctx.step(
-      "the real CLI digests the stopped session's saved transcript, flag or no flag",
-      async () => {
-        // The compact digest shape is NOT gated by `session_transcript_history`
-        // — the flag above is still OFF here. `kortix sessions digest` used to
-        // refuse any session that was not `running` and never make the request.
+        // `kortix sessions digest` used to refuse any session that was not
+        // `running` and never make the request.
         //
         // Put the root back first. The step above replaced it to prove the SYNC
         // shape refuses a mirror it cannot attribute; the compact shape the CLI
@@ -289,7 +342,6 @@ flow(
       "GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId",
       "POST /v1/projects/:projectId/sessions/:sessionId/prompts",
       "DELETE /v1/projects/:projectId/sessions/:sessionId",
-      "PATCH /v1/projects/:projectId/features",
       // `kortix sessions attachments` logs in, locates the session, reads its
       // saved transcript as the index, then fetches the bytes.
       "GET /v1/accounts/me",
@@ -328,27 +380,14 @@ flow(
       );
       return body;
     };
-    const setFlag = async (enabled: boolean) =>
-      (
-        await owner.patch(
-          "/v1/projects/:projectId/features",
-          { feature: "session_transcript_history", enabled },
-          { params },
-        )
-      ).status(200);
     await ctx.step(
-      "attachments require authentication and the explicit project flag",
+      "attachments require authentication and project membership",
       async () => {
         (
           await ctx.client
             .as(ctx.P.ANON)
             .request("POST", upload, { params, body: form() })
         ).status(401);
-        (await owner.request("POST", upload, { params, body: form() }))
-          .status(403)
-          .body()
-          .has("$.code", "feature_disabled");
-        await setFlag(true);
         (
           await ctx.client
             .as(ctx.P.NONMEMBER)
@@ -357,8 +396,20 @@ flow(
       },
     );
     await ctx.step(
-      "save and read exact bytes without a sandbox and retry the immutable upload",
+      "save and read exact bytes without a sandbox, retry the immutable upload, and ignore a stored off override",
       async () => {
+        // What an older server wrote when a project turned saved history off.
+        // Saved history has no off switch now, so the upload still succeeds.
+        const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        await db.connect();
+        try {
+          await db.query(
+            `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id = $1`,
+            [project.id],
+          );
+        } finally {
+          await db.end();
+        }
         for (let attempt = 0; attempt < 2; attempt++) {
           (await owner.request("POST", upload, { params, body: form() }))
             .status(201)
@@ -424,24 +475,11 @@ flow(
       },
     );
     await ctx.step(
-      "disabling new uploads keeps existing attachments readable",
-      async () => {
-        await setFlag(false);
-        (await owner.request("POST", upload, { params, body: form() })).status(
-          403,
-        );
-        const response = (await owner.get(download, { params })).status(200);
-        if (response.text() !== contents)
-          throw new Error("Disabling the flag removed saved bytes");
-      },
-    );
-    await ctx.step(
       "the real CLI lists and downloads a stopped session's stored file without its sandbox",
       async () => {
         // The saved transcript is the index of what a session stored. Seed one
         // whose user message references the uploaded file, stop the session,
-        // and read it back through `kortix sessions attachments` — the flag is
-        // OFF here, so this also proves files stored earlier stay reachable.
+        // and read it back through `kortix sessions attachments`.
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
         await db.connect();
         try {

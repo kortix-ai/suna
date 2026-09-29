@@ -6,8 +6,13 @@ import {
   __setRuntimeProjectionStateReaderForTests,
   scheduleRuntimeProjectionPush,
   shedProjectionToFit,
-} from '../harness/open-code/runtime-projection-relay'
-import { resetRuntimeStateForTests } from '../harness/open-code/runtime-state-projection'
+} from '@/harness/open-code/runtime-projection-relay'
+import { resetRuntimeStateForTests } from '@/harness/open-code/runtime-state-projection'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+} from '@/lib/kortix-api/session-token-health'
 
 const BASE_ENV = {
   KORTIX_PROJECT_ID: 'proj-1',
@@ -75,6 +80,7 @@ function decompress(body: unknown): Record<string, unknown> {
 
 beforeEach(() => {
   __resetRuntimeProjectionRelayForTests()
+  resetSessionTokenHealthForTests()
   setEnv(BASE_ENV)
 })
 
@@ -82,6 +88,7 @@ afterEach(() => {
   globalThis.fetch = realFetch
   process.env = { ...realEnv }
   __resetRuntimeProjectionRelayForTests()
+  resetSessionTokenHealthForTests()
 })
 
 describe('scheduleRuntimeProjectionPush', () => {
@@ -161,6 +168,27 @@ describe('scheduleRuntimeProjectionPush', () => {
     scheduleRuntimeProjectionPush('kortix-env-applied')
     await settle()
     expect(posts).toBe(2)
+  })
+
+  // KRTX-446: the projection push re-fires on every boot/change trigger, and a
+  // box that outlives its session kept re-issuing `POST .../runtime-projection
+  // -> 401`. Once the shared breaker reports the credential dead (here the
+  // revoked-token refusal), the relay must issue nothing.
+  test('does not push while the control plane has affirmed the session credential is dead', async () => {
+    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      noteControlPlaneResponse(401, 'PAT not found or revoked')
+    }
+    const urls: string[] = []
+    globalThis.fetch = (async (url: string) => {
+      urls.push(String(url))
+      return new Response('{}', { status: 200 })
+    }) as unknown as typeof fetch
+
+    scheduleRuntimeProjectionPush('boot')
+    await settle()
+
+    expect(urls).toEqual([])
   })
 
   test('never throws and never blocks the caller, even when fetch rejects', async () => {

@@ -23,7 +23,7 @@ import {
 } from './agent-availability';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { WORKSPACE, sessionRuntimeFetch, type ResolvedSessionRuntime } from './runtime-fetch';
 import { sendQuickQueueControl } from './quick-queue-control';
 import { clearTurnStopRequest, markTurnStopRequested } from '../sandbox-turn-lifecycle';
 import { db } from '../../shared/db';
@@ -32,7 +32,6 @@ import { type PlacementTipMessage, parsePlacementTip } from './forwarded-placeme
 import { newestWireIdTime } from '../wire-message-id';
 import type { LegacyRuntimeMessage } from './legacy-inline-attachment-repair';
 
-const WORKSPACE = '/workspace';
 export const DAEMON_PORT = 8000;
 
 /**
@@ -123,32 +122,41 @@ export async function disarmAllQuickQueueInterrupt(
   await clearTurnStopRequest(sessionId, 'QueueInterrupt');
 }
 
+/**
+ * Arm the daemon's abort-after-tool for this prompt's turn. `false` ONLY when
+ * the runtime was asked and did not serve the interrupt (status, shape,
+ * timeout, transport) — the caller then requeues the row on the
+ * runtime-unreachable ladder instead of the 2 s order backoff. A skipped arm
+ * (no endpoint, session mismatch) arms nothing and is not a failure: `true`.
+ */
 export async function armQuickQueueInterrupt(
   row: SessionLifecycleCommandRow,
   identity: { opencodeSessionId: string; messageId: string },
-): Promise<void> {
+): Promise<boolean> {
   const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
-  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return;
-  const armed = await sendQuickQueueControl(resolved.endpoint, {
+  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return true;
+  const outcome = await sendQuickQueueControl(resolved.endpoint, {
     kind: 'arm',
     promptId: row.commandId,
     opencodeSessionId: identity.opencodeSessionId,
     messageId: identity.messageId,
   });
-  if (!armed) {
+  if (!outcome.ok) {
     logger.warn('[session-lifecycle] Quick Queue boundary interrupt unavailable', {
       sessionId: row.sessionId,
       commandId: row.commandId,
+      reason: outcome.reason,
     });
-    return;
+    return false;
   }
   // The daemon now aborts this turn at its next tool boundary because the user
   // sent a prompt into it. That abort is asked for, not a failure.
-  if (!row.sessionId) return;
+  if (!row.sessionId) return true;
   await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
     opencodeSessionId: identity.opencodeSessionId,
     messageId: identity.messageId,
   });
+  return true;
 }
 
 /** What one read of the root transcript tells the drain about this prompt. */
@@ -173,6 +181,44 @@ const INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS = 15_000;
 const INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS = 5_000;
 
 /**
+ * Newest-`limit` read of a session's root transcript, parsed into the tip the
+ * placement logic consumes. `null` on a refused read; a transport failure
+ * throws, so a caller that wants a distinct warning keeps its own try/catch.
+ */
+export async function readSessionMessageTip(
+  session: ResolvedSessionRuntime,
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<PlacementTipMessage[] | null> {
+  const limit = opts.limit === undefined ? '' : `&limit=${opts.limit}`;
+  const res = await sessionRuntimeFetch(
+    session.endpoint,
+    'GET',
+    `/session/${encodeURIComponent(session.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}${limit}`,
+    {},
+    opts.timeoutMs,
+  );
+  if (!res.ok) return null;
+  return parsePlacementTip(await res.json().catch(() => null));
+}
+
+/**
+ * Delete one message from a session's root transcript. `true` on a confirmed
+ * 2xx or a 404 (already gone). A transport failure throws; the caller's catch
+ * keeps its own log.
+ */
+export async function removeRuntimeMessage(
+  session: ResolvedSessionRuntime,
+  messageId: string,
+): Promise<boolean> {
+  const res = await sessionRuntimeFetch(
+    session.endpoint,
+    'DELETE',
+    `/session/${encodeURIComponent(session.opencodeSessionId)}/message/${encodeURIComponent(messageId)}?directory=${encodeURIComponent(WORKSPACE)}`,
+  );
+  return res.ok || res.status === 404;
+}
+
+/**
  * Read the root once, for the two things a delivery needs to know.
  *
  * Uses the SAME signed-proxy resolution `queuedContinueHasStagedRevert` uses —
@@ -193,17 +239,10 @@ export async function readInboxTranscriptState(
     // may sit anywhere in the transcript. The ordinary case — a first delivery
     // placing its id above a live turn — needs the tip only, and the full read
     // of a long session was ~1s of dead air on every queued message.
-    const limit = opts.full ? '' : `&limit=${INBOX_TRANSCRIPT_TIP_LIMIT}`;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}${limit}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(
-        opts.full ? INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS : INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS,
-      ),
+    const tip = await readSessionMessageTip(resolved, {
+      limit: opts.full ? undefined : INBOX_TRANSCRIPT_TIP_LIMIT,
+      timeoutMs: opts.full ? INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS : INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS,
     });
-    if (!res.ok) return empty;
-    const tip = parsePlacementTip(await res.json().catch(() => null));
     if (!tip) return empty;
 
     const newest = newestWireIdTime(
@@ -241,12 +280,11 @@ export async function removeStrandedOpencodeMessage(
   try {
     const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(wireMessageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
+    const res = await sessionRuntimeFetch(
+      resolved.endpoint,
+      'DELETE',
+      `/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(wireMessageId)}?directory=${encodeURIComponent(WORKSPACE)}`,
+    );
     if (res.ok || res.status === 404) return true;
     // 409 = the loop is running (`assertNotBusy`); expected mid-turn.
     if (res.status !== 409) {
@@ -294,14 +332,12 @@ export async function queuedContinueHasStagedRevert(row: SessionLifecycleCommand
   try {
     const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return false;
-    const { endpoint, opencodeSessionId } = resolved;
 
-    const url = `${endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
+    const res = await sessionRuntimeFetch(
+      resolved.endpoint,
+      'GET',
+      `/session/${encodeURIComponent(resolved.opencodeSessionId)}?directory=${encodeURIComponent(WORKSPACE)}`,
+    );
     if (!res.ok) return false;
     const info = (await res.json().catch(() => null)) as { revert?: unknown } | null;
     return Boolean(info?.revert);
@@ -346,13 +382,10 @@ async function sessionRuntimeAgentRoster(
   return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
     const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
     if (!resolved) return null;
-    const res = await fetch(
-      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(directory)}`,
-      {
-        method: 'GET',
-        headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-        signal: AbortSignal.timeout(5_000),
-      },
+    const res = await sessionRuntimeFetch(
+      resolved.endpoint,
+      'GET',
+      `/agent?directory=${encodeURIComponent(directory)}`,
     );
     if (!res.ok) return null;
     return parseRuntimeAgentNames(await res.json().catch(() => null));
@@ -485,7 +518,6 @@ export async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
-    attachmentProjectId?: string;
     accountId?: string;
     projectId?: string;
   },
@@ -503,10 +535,10 @@ export async function postPrompt(
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
         readAttachment: (scope) => sessionAttachmentStore().read(scope),
-        saveAttachment: prompt.attachmentProjectId ? async (file) => {
+        saveAttachment: prompt.projectId ? async (file) => {
           const saved = await sessionAttachmentStore().put({
             ...file,
-            projectId: prompt.attachmentProjectId!,
+            projectId: prompt.projectId!,
             sessionId: callerSessionId,
             attachmentId: stableSessionAttachmentId(`${callerSessionId}:${prompt.materializationKey}:${file.index}`),
           });

@@ -41,6 +41,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `phase` | `'starting' \| 'ready' \| 'error'` | Overall state. Render a boot screen until `ready`. |
 | `messages` | `{ info, parts }[]` | The message list. Parts stream in live. |
 | `savedTranscript` | `'loading' \| 'shown' \| 'none'` | Whether the saved conversation can show before the computer wakes. `loading`: a saved copy is on its way. `shown`: messages are in the list. `none`: nothing can show until the runtime answers. |
+| `conversationEmpty` | `boolean` | The saved copy proves the conversation empty, no turn ended since, and nothing is open or queued. Render the composer, not a boot screen. |
 | `status` | `SessionStatus` | The session status. |
 | `isBusy` | `boolean` | The agent is generating a reply. |
 | `questions`, `permissions` | array | Pending agent questions and tool-approval requests. A `permission` here is one runtime tool approval, not an IAM permission. |
@@ -142,7 +143,9 @@ host clears both on sign-out.
   sent. Register it with `setSavedCopyStore`, and `useSession` paints the kept copy
   before the first frame. The server's copy then reconciles into it by message ID, and
   the SDK re-reads it 3 seconds after each turn ends. The default bounds are 12
-  sessions, 1,500,000 characters, and 14 days.
+  sessions, 1,500,000 characters, and 14 days. A copy over 300,000 characters keeps
+  its newest messages that fit; older messages load from the server when the user
+  scrolls up.
 
 ```tsx
 import {
@@ -203,25 +206,41 @@ restores data for a different user, but a signed-out device should not keep it.
 
 ## Saved history during startup
 
-Enable **Session Transcript History** in a project's **Settings → Feature flags** to let
-`useSession(projectId, sessionId)` show saved chat history while its computer starts.
+`useSession(projectId, sessionId)` shows saved chat history while its computer starts.
 The SDK reads the database independently of runtime readiness. Live messages then reconcile
 by their original IDs. Hosts do not need a separate history request or message store.
 
-This flag is off by default. Sessions without saved history use the existing runtime read.
-The initial history window contains the last 40 messages. Older-message loading and attachments
-that require the computer become available when the runtime is ready.
+Saved history renders exactly like the live transcript: text, reasoning, and every tool call
+with its input, output and error. A sub-agent's full view reads the sub-agent's own saved
+transcript: pass the parent's scope and `savedChild: true` to
+`useSessionSync(subAgentSessionId, { kortixSessionScope, savedChild: true })`. The initial window contains the newest 40 messages, at
+most 1,000,000 characters. Scrolling up loads older windows from saved history, also while
+the computer is off. Attachments that require the computer become available when the
+runtime is ready.
 
 `savedTranscript` tells a host what to render while the computer starts. It is `loading` while
 a saved copy may still arrive, `shown` once messages are in `messages`, and `none` when nothing
 can show before the runtime answers. An unknown is `loading`, never `none`.
 
+`conversationEmpty` is true when there is nothing to wait for. The saved copy proves the
+conversation empty: a complete read of the session's runtime found no messages. No turn ended
+since, and nothing is open or queued. Missing records never make it true, so an older session
+with history is never shown as empty. A session gets that proof at its first start with saved
+history on.
+
 ```tsx
 if (s.messages.length === 0) {
+  // Nothing saved and nothing to wait for: the user can type now.
+  if (s.conversationEmpty) return <Composer />;
   // One round trip for a saved copy; the computer can take minutes.
   return s.savedTranscript === 'none' ? <Booting stage={s.stage} /> : <MessageSkeleton />;
 }
 ```
+
+Tool calls saved before 2026-09-28 lost their input and output. The server serves each one with
+the input its kept title or metadata proves: a command's command and output, a file call's path,
+a search's pattern, a sub-agent's description, a fetch's URL, a todo list, a skill's name. The
+session's next start saves the whole history again, 1:1.
 ### Pending prompts
 
 `useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.

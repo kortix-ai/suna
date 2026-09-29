@@ -2,6 +2,7 @@ import type {
   Project,
   ProjectSession,
   Secret,
+  SecretConsumer,
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
@@ -36,7 +37,6 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { proxyGitUrl } from './sessions';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -434,6 +434,46 @@ export function secretDeliveryBlockedReason(
   return granted ? null : 'no_agent_grant';
 }
 
+function secretConsumerFor(
+  row: SecretRow | undefined,
+  strategy: SecretDeliveryStrategy,
+): SecretConsumer | null {
+  if (strategy === 'denied') return null;
+  if (row?.scope === 'connector') return 'connector';
+  if (row?.consumer != null) return row.consumer;
+  if (strategy === 'runtime') return 'sandbox';
+  if (strategy === 'egress') return 'network';
+  switch (row?.egressPolicy?.backend) {
+    case 'llm_gateway':
+    case 'connector':
+    case 'git_proxy':
+      return row.egressPolicy.backend;
+    case 'kortix_fetch':
+      return 'http_broker';
+    default:
+      return null;
+  }
+}
+
+function secretDeliveryAvailable(
+  strategy: SecretDeliveryStrategy,
+  consumer: SecretConsumer | null,
+  backend: NonNullable<SecretRow['egressPolicy']>['backend'] | undefined,
+): boolean {
+  if (consumer === 'connector') return true;
+  switch (strategy) {
+    case 'runtime':
+      return consumer === 'sandbox';
+    case 'egress':
+      return consumer === 'network';
+    case 'broker':
+      return consumer === 'llm_gateway' || consumer === 'git_proxy' ||
+        (consumer === 'http_broker' && backend === 'kortix_fetch');
+    default:
+      return false;
+  }
+}
+
 /**
  * The view of one project secret (one IDENTIFIER): the shared/project row
  * merged with the requesting member's own private override (used today only by
@@ -465,30 +505,7 @@ export function buildSecretView(input: {
   const requiresRotation =
     strategy !== 'runtime' &&
     (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
-  const backend = deliveryRow?.egressPolicy?.backend;
-  const legacyConsumer =
-    strategy === 'runtime'
-      ? 'sandbox'
-      : strategy === 'denied'
-        ? null
-        : strategy === 'egress'
-          ? 'network'
-          : backend === 'llm_gateway'
-            ? 'llm_gateway'
-            : backend === 'connector'
-              ? 'connector'
-              : backend === 'git_proxy'
-                ? 'git_proxy'
-                : backend === 'kortix_fetch'
-                  ? 'http_broker'
-                  : null;
-  const storedConsumer =
-    strategy === 'denied'
-      ? null
-      : deliveryRow?.scope === 'connector'
-        ? 'connector'
-        : (deliveryRow?.consumer ?? legacyConsumer);
-  const consumer = storedConsumer;
+  const consumer = secretConsumerFor(deliveryRow, strategy);
   return {
     identifier,
     name,
@@ -514,17 +531,11 @@ export function buildSecretView(input: {
     can_manage_shared: canManageShared && !system,
     strategy,
     consumer,
-    delivery_status:
-      (strategy === 'runtime' && consumer === 'sandbox') ||
-      (strategy === 'broker' && consumer === 'llm_gateway') ||
-      (strategy === 'broker' && consumer === 'git_proxy') ||
-      (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' && consumer === 'network') ||
-      consumer === 'connector'
-        ? 'available'
-        : strategy === 'denied'
-          ? 'disabled'
-          : 'unavailable',
+    delivery_status: secretDeliveryAvailable(strategy, consumer, deliveryRow?.egressPolicy?.backend)
+      ? 'available'
+      : strategy === 'denied'
+        ? 'disabled'
+        : 'unavailable',
     // Two axes, deliberately not folded together. `delivery_status` answers
     // "does this deployment support the mode" and stays 'available' on a missing
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
@@ -690,6 +701,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
     .replace(/\/+$/, '')
     .replace(/\/v1\/router$/, '')
     .replace(/\/v1$/, '');
+}
+
+/**
+ * The Kortix git-proxy origin for a project — the UNIVERSAL client-facing git
+ * URL. Clients clone/push this with a Kortix token; the API resolves the real
+ * upstream + mints the host credential server-side.
+ */
+export function proxyGitUrl(projectId: string): string {
+  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
 }
 
 // Display cap for user-supplied project names. Well under the projects.name

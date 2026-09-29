@@ -9,7 +9,7 @@
  * This file used to be `slack-thread-preview.tsx`: ~130 lines hand-drawing a
  * fake Slack thread (channel bar, two avatars, a mention pill, a "Task
  * complete" card) in tokens. It was written to avoid shipping
- * `public/usecases/slack/operation_1.JPEG` — 520 KB and a capture of Slack's
+ * a 520 KB screenshot and a capture of Slack's
  * DARK theme, so a black rectangle on a light panel. Avoiding the JPEG was
  * right; hand-drawing the replacement was not, because `BlogCover`
  * (`@/components/blog/blog-cover`) already renders exactly this treatment:
@@ -17,8 +17,7 @@
  * theme-aware, already used by `post-card.tsx` and the blog post page.
  *
  * So the cover is now the shipped component, and this module is the thin
- * wrapper holding the Slack-specific configuration — the same shape
- * `computers-view.tsx` uses to delegate to `TunnelOverview`.
+ * wrapper holding the Slack-specific configuration.
  *
  * ## Two things this required upstream
  *

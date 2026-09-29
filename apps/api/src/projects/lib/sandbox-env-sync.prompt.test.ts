@@ -154,8 +154,8 @@ describe('syncSandboxEnvForPrompt — egress-enforced secrets', () => {
     await prompt();
     await prompt();
 
-    // Identical env, same box, inside the push TTL: only the first prompt
-    // reaches the daemon at all (see `PROMPT_ENV_PUSH_TTL_MS`).
+    // Identical env, same box: only the first prompt reaches the daemon at
+    // all (see `decideEnvSyncAction` in `env-sync-skip-decision.ts`).
     expect(envPushes).toHaveLength(1);
     // There is no provider step left on this path — no arm, no wait, no 502.
     expect(events).toEqual(['env-push']);
