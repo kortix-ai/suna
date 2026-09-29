@@ -1175,6 +1175,10 @@
         "mcp": {
           "name": "Servidor MCP",
           "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
+        },
+        "reminders": {
+          "name": "Recordatorios",
+          "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."
         }
       }
     },
@@ -1549,7 +1553,8 @@
       "ownerAccess": "{owner} · {access}"
     },
     "loadingMore": "Cargando…",
-    "loadMoreSessions": "Cargar más sesiones"
+    "loadMoreSessions": "Cargar más sesiones",
+    "reminders": "Recordatorios"
   },
   "dashboard": {
     "title": "Panel",
@@ -20322,5 +20327,46 @@
     "unverifiedTitle": "App no verificada",
     "unverifiedBody": "{client} se registró sola en Kortix. Kortix no ha verificado quién la gestiona. Permítela solo si la estás conectando tú mismo ahora.",
     "redirectsTo": "Te devuelve a"
+  },
+  "reminders": {
+    "title": "Recordatorios",
+    "description": "Revisiones programadas que vuelven a avisar a una sesión. Los agentes las crean mientras trabajan; cada una se activa hasta que se elimina.",
+    "docs": "Cómo funcionan los recordatorios",
+    "tabActive": "Activos",
+    "tabPaused": "En pausa",
+    "tabDone": "Completados",
+    "emptyTitle": "No hay recordatorios",
+    "emptyDescription": "Cuando un agente o una persona crea un recordatorio en una sesión, aparece aquí.",
+    "emptyTabDescription": "Esta lista está vacía.",
+    "loadFailed": "No se pudieron cargar los recordatorios",
+    "retry": "Reintentar",
+    "sessionFilter": "Sesión: {name}",
+    "clearFilter": "Mostrar todas las sesiones",
+    "untitledSession": "Sesión sin título",
+    "once": "Una vez",
+    "every": "Cada {period}",
+    "cron": "Cron {expression}",
+    "nextFire": "Próximo {time}",
+    "firedAt": "Activado {time}",
+    "pausedLabel": "En pausa",
+    "doneLabel": "Completado",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "remove": "Eliminar",
+    "openSession": "Abrir sesión",
+    "removeTitle": "¿Eliminar este recordatorio?",
+    "removeDescription": "Deja de activarse y se elimina. La sesión conserva su historial.",
+    "paused": "Recordatorio en pausa",
+    "resumed": "Recordatorio reanudado",
+    "removed": "Recordatorio eliminado",
+    "updateFailed": "No se pudo actualizar el recordatorio",
+    "chipLabel": "{count, plural, one {# recordatorio activo} other {# recordatorios activos}}",
+    "chipTitle": "Recordatorios de esta sesión",
+    "manage": "Gestionar recordatorios",
+    "cardLabel": "Recordatorio",
+    "cardOneTime": "Una vez",
+    "cardRecurring": "Recurrente",
+    "cardManage": "Gestionar",
+    "gateDescription": "Activa Recordatorios para que agentes y personas programen revisiones que vuelvan a avisar a una sesión."
   }
 }

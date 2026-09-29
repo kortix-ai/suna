@@ -32,6 +32,7 @@ async function openWorld(ctx: FlowContext) {
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
   await world.setFeature('agent_principal', true);
+  await world.setFeature('reminders', true);
   await world.writeManifest(MANIFEST, 'ke2e: reminders agent');
   return { team, project, world };
 }
@@ -271,6 +272,57 @@ flow(
         const ids = (await owner.get(PROJECT_REMINDERS, { params: { projectId: project.id } }))
           .json<{ reminders: Array<{ id: string }> }>().reminders.map((x) => x.id);
         if (ids.includes(onShared)) throw new Error('deleted session still listed');
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+flow(
+  'REM-4',
+  {
+    domain: 'reminders',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [
+      ROUTES.list,
+      ROUTES.create,
+      ROUTES.update,
+      ROUTES.remove,
+      'GET /v1/projects/:projectId/reminders',
+      'PATCH /v1/projects/:projectId/features',
+    ],
+  },
+  async (ctx) => {
+    const { project, world } = await openWorld(ctx);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    try {
+      const session = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
+      const params = { projectId: project.id, sessionId: session.sessionId };
+      let id = '';
+      await ctx.step('with the flag on, a reminder is created', async () => {
+        const r = await owner.post(REMINDERS, { prompt: 'Check later', in: '1h' }, { params });
+        r.status(201);
+        id = r.json<Reminder>().id;
+      });
+
+      await ctx.step('flag off: every reminder route answers 403 feature_disabled for the owner and the agent', async () => {
+        await world.setFeature('reminders', false);
+        const denied = [
+          await owner.get(REMINDERS, { params }),
+          await owner.post(REMINDERS, { prompt: 'x', in: '1h' }, { params }),
+          await owner.patch(REMINDER, { enabled: false }, { params: { ...params, reminderId: id } }),
+          await owner.del(REMINDER, { params: { ...params, reminderId: id } }),
+          await owner.get('/v1/projects/:projectId/reminders', { params: { projectId: project.id } }),
+          await session.client.post(REMINDERS, { prompt: 'x', in: '1h' }, { params }),
+        ];
+        for (const r of denied) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'reminders');
+      });
+
+      await ctx.step('flag back on: the reminder created before is still there and active', async () => {
+        await world.setFeature('reminders', true);
+        (await owner.get(REMINDERS, { params })).status(200).body().has('$.reminders[0].id', id).has('$.reminders[0].state', 'active');
       });
     } finally {
       await world.close();

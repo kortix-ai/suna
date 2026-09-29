@@ -7,6 +7,7 @@
  * may manage reminders on its OWN session only.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
@@ -45,6 +46,8 @@ async function authorizeReminderSession(c: any) {
   if (!isUuid(sessionId)) return { response: c.json({ error: 'Invalid session id' }, 400) };
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
+  const disabled = requireFeatureFlag(c, loaded.row.metadata, 'reminders');
+  if (disabled) return { response: disabled };
   const agentCaller = isProjectSessionPrincipal(c);
   if (agentCaller && callerKortixSessionId(c) !== sessionId) {
     return {
@@ -86,13 +89,15 @@ projectsApp.openapi(
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
       200: json(z.object({ reminders: z.array(ReminderSchema) }), 'Reminders on sessions the caller can open'),
-      ...errors(404),
+      ...errors(403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const disabled = requireFeatureFlag(c, loaded.row.metadata, 'reminders');
+    if (disabled) return disabled;
     await assertProjectCapability(
       c,
       loaded.userId,
