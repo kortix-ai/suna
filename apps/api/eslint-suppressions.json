@@ -2931,7 +2931,7 @@
   },
   "src/shared/public-session-share-view.ts": {
     "kortix-api/layers": {
-      "count": 3
+      "count": 5
     },
     "no-console": {
       "count": 3
@@ -2944,7 +2944,7 @@
   },
   "src/shared/resolve-account.ts": {
     "kortix-api/layers": {
-      "count": 2
+      "count": 3
     },
     "no-console": {
       "count": 2
