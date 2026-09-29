@@ -95,10 +95,6 @@ test('31 — a previous-repository session opens and sends the update prompt', a
       sessionId,
       ensureSandbox: false,
     });
-    await api(auth.access_token, 'PATCH', `/projects/${project.id}/features`, {
-      feature: 'session_transcript_history',
-      enabled: true,
-    });
 
     const route = `/projects/${project.id}/sessions/${sessionId}`;
     await installBrowserSessionDirect(page, auth, route, authOptions);

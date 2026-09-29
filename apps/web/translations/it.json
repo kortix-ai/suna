@@ -1144,10 +1144,6 @@
           "name": "Segreti protetti dalla rete",
           "description": "Controlla quali strumenti e destinazioni possono ricevere i segreti del progetto."
         },
-        "session_transcript_history": {
-          "name": "Cronologia della sessione",
-          "description": "Salva la cronologia della chat dopo ogni turno e mostrala durante l’avvio del computer della sessione."
-        },
         "pooled_provider_secrets": {
           "name": "Segreti del provider condivisi",
           "description": "I membri collegano i propri abbonamenti ChatGPT e chiavi dei provider, li condividono quando serve e scelgono quali usa ogni sessione."

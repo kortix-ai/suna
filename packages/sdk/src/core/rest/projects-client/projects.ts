@@ -24,9 +24,11 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
- * `review_center` and `agent_tunnel` are deprecated. `agent_tunnel` graduated
- * like `review_center` below: a paired computer is a connector account and
- * needs no flag.
+ * `review_center`, `agent_tunnel` and `session_transcript_history` are
+ * deprecated. `agent_tunnel` graduated like `review_center` below: a paired
+ * computer is a connector account and needs no flag. So did
+ * `session_transcript_history`: every session saves its transcript and shows
+ * it while its computer is off.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -52,6 +54,7 @@ export type FeatureFlagKey =
   | 'warm_sessions'
   | 'secrets_egress'
   | 'pi_worker'
+  /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
@@ -76,7 +79,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
-  'session_transcript_history',
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',

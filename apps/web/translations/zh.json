@@ -1144,10 +1144,6 @@
           "name": "网络强制保护的机密",
           "description": "控制哪些工具和目标可以接收项目机密。"
         },
-        "session_transcript_history": {
-          "name": "会话聊天记录",
-          "description": "每轮对话后保存聊天记录，并在会话计算机启动时显示。"
-        },
         "pooled_provider_secrets": {
           "name": "共享提供商密钥",
           "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
