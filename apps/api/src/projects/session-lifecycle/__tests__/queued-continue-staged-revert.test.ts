@@ -57,14 +57,18 @@ mock.module('../../../shared/db', () => ({
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
+        where: () => {
+          const limit = async () => {
             if (projection && 'result' in projection && 'payload' in projection) return [{ result: {}, payload: {} }];
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
+            // continuationOverrides' "did an earlier turn on this session name
+            // a model" lookup: no row in this file, so every continuation
+            // delivers on its own overrides, unchanged.
             return [];
-          },
-        }),
+          };
+          return { limit, orderBy: () => ({ limit }) };
+        },
       }),
     }),
     update: () => ({ set: () => ({ where: async () => {} }) }),

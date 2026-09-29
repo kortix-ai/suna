@@ -92,17 +92,28 @@ export async function continuationOverrides(
   own: PromptOverridesWire | undefined,
 ): Promise<PromptOverridesWire | undefined> {
   if (own?.model) return own;
-  const [last] = await db
-    .select({ payload: sessionLifecycleCommands.payload })
-    .from(sessionLifecycleCommands)
-    .where(and(
-      eq(sessionLifecycleCommands.sessionId, sessionId),
-      eq(sessionLifecycleCommands.commandType, 'continue_session'),
-      sql`${sessionLifecycleCommands.payload}->'overrides'->'model' is not null`,
-      sql`jsonb_typeof(${sessionLifecycleCommands.payload}->'overrides'->'model') = 'object'`,
-    ))
-    .orderBy(desc(sessionLifecycleCommands.createdAt))
-    .limit(1);
+  // This lookup only chooses a nicer model for a continuation that named
+  // none — it must never be the reason a prompt fails to deliver. A lookup
+  // error (or an unreachable DB) fails open, same as the staged-revert guard.
+  let last: { payload: unknown } | undefined;
+  try {
+    [last] = await db
+      .select({ payload: sessionLifecycleCommands.payload })
+      .from(sessionLifecycleCommands)
+      .where(and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        sql`${sessionLifecycleCommands.payload}->'overrides'->'model' is not null`,
+        sql`jsonb_typeof(${sessionLifecycleCommands.payload}->'overrides'->'model') = 'object'`,
+      ))
+      .orderBy(desc(sessionLifecycleCommands.createdAt))
+      .limit(1);
+  } catch (e) {
+    logger.warn('[session-lifecycle] continuation model-inheritance lookup failed — delivering without it', {
+      session_id: sessionId, error: (e as Error).message,
+    });
+    return own;
+  }
   const picked = (last?.payload as { overrides?: PromptOverridesWire } | undefined)?.overrides;
   if (!picked?.model) return own;
   return {

@@ -778,12 +778,18 @@ describe('connector-scoped policy enforcement', () => {
     const res = await callCharges();
     expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({
+      ok: false,
       status: 'pending_approval',
+      reason: 'policy_require_approval',
       execution_id: 'exec-1',
       retryable: false,
       approval_url: 'https://app.kortix.test/approve/token-exec-1',
+      // `charges.create` args `{}` carry no subject-shaped keys, so
+      // `summarizeArgsPreview` has nothing to summarize.
+      approval_summary: null,
       approval_instructions:
-        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.',
+        'Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.' +
+        ' Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
     });
   });
 
