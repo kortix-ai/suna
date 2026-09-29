@@ -29,6 +29,7 @@ locals {
       topic_arn    = aws_sns_topic.use2_alerts.arn
       functions = [
         aws_lambda_function.use2_alb_alarm_reconciler.function_name,
+        aws_lambda_function.use2_compliance_alerts_logger.function_name,
       ]
     }
   }

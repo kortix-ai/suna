@@ -177,7 +177,6 @@ jobs:
           - infra/terraform/environments/prod
           - infra/terraform/environments/staging
           - infra/terraform/environments/dev
-          - infra/terraform/environments/preview
           # The *-web roots own the frontend ALBs, their WAF associations, and
           # the web task roles. They were missing here, so #6344's WAF change
           # could drift unseen.
