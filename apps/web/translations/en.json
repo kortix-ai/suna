@@ -970,10 +970,6 @@
           "name": "Network-Enforced Secrets",
           "description": "Control which tools and destinations can receive project secrets."
         },
-        "session_transcript_history": {
-          "name": "Session Transcript History",
-          "description": "Save chat history after each turn and show it while the session computer starts."
-        },
         "pooled_provider_secrets": {
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."

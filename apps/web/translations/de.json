@@ -1144,10 +1144,6 @@
           "name": "Netzwerkerzwungene Geheimnisse",
           "description": "Steuern Sie, welche Werkzeuge und Ziele Projektgeheimnisse empfangen dürfen."
         },
-        "session_transcript_history": {
-          "name": "Chatverlauf der Sitzung",
-          "description": "Speichere den Chatverlauf nach jedem Durchlauf und zeige ihn an, während der Sitzungscomputer startet."
-        },
         "pooled_provider_secrets": {
           "name": "Gemeinsam genutzte Anbieter-Schlüssel",
           "description": "Mitglieder verbinden ihre eigenen ChatGPT-Abos und Anbieter-Schlüssel, teilen sie bei Bedarf und wählen pro Sitzung, welche genutzt werden."

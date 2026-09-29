@@ -1144,10 +1144,6 @@
           "name": "Segredos protegidos pela rede",
           "description": "Controle quais ferramentas e destinos podem receber os segredos do projeto."
         },
-        "session_transcript_history": {
-          "name": "Histórico da sessão",
-          "description": "Salva o histórico do chat após cada turno e o mostra enquanto o computador da sessão inicia."
-        },
         "pooled_provider_secrets": {
           "name": "Segredos de provedor compartilhados",
           "description": "Os membros conectam as próprias assinaturas do ChatGPT e chaves de provedor, compartilham quando necessário e escolhem quais cada sessão usa."
