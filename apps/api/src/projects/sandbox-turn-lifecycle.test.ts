@@ -77,6 +77,22 @@ describe('extractTurnIdentity', () => {
     ).toEqual({ opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' });
   });
 
+  test('a noReply prompt has no turn to track', () => {
+    const noReply = new TextEncoder().encode(
+      JSON.stringify({ messageID: 'msg_turn_1', parts: [], noReply: true }),
+    );
+    expect(extractTurnIdentity('/session/ses_root/prompt_async', noReply.buffer)).toBeNull();
+    for (const flag of [{ noReply: false }, {}]) {
+      const body = new TextEncoder().encode(
+        JSON.stringify({ messageID: 'msg_turn_1', parts: [], ...flag }),
+      );
+      expect(extractTurnIdentity('/session/ses_root/prompt_async', body.buffer)).toEqual({
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+      });
+    }
+  });
+
   test('returns a null message ID for command turns that OpenCode identifies later', () => {
     expect(extractTurnIdentity('/session/ses_root/command', undefined)).toEqual({
       opencodeSessionId: 'ses_root',

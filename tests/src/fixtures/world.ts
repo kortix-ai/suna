@@ -435,6 +435,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         {
           initial_prompt: opts?.prompt ?? 'noop',
           ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
+          ...(opts?.agentName ? { agent_name: opts.agentName } : {}),
         },
         {
           params: { projectId: project.id },

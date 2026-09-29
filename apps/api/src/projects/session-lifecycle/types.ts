@@ -141,6 +141,8 @@ export interface ContinueSessionCommand {
   wireMessageId?: string;
   /** Stable lifecycle row identity used only for deterministic workspace paths. */
   materializationKey?: string;
+  /** Persist the message without starting an agent loop (OpenCode `noReply`). */
+  noReply?: boolean;
   /** Skip legacy first-message repair only for the pending-first row itself. */
   isPendingFirstPrompt?: boolean;
 }
