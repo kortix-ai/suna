@@ -110,3 +110,38 @@ test('getStatus() does not report a VM stuck in stopping as stopped', async () =
   expect(await provider.getStatus('sbx_1')).toBe('unknown');
   expect(await provider.getStatus('sbx_1')).toBe('stopped');
 });
+
+// Boxes created before `auto_resume: false` shipped keep Platinum's default:
+// a stray request wakes them behind our back. The stop that parks one turns
+// it off — and only on a Platinum that reports the field, because an older
+// build reads a PATCH naming no field it knows as "clear the name".
+function stopWithSandbox(sandbox: Record<string, unknown>) {
+  const patches: Array<Record<string, unknown>> = [];
+  globalThis.fetch = (async (input, init) => {
+    const method = String(init?.method ?? 'GET');
+    if (method === 'PATCH') patches.push(JSON.parse(String(init?.body)));
+    const body = String(input).endsWith('/stop') || method === 'PATCH' ? { ok: true } : { id: 'sbx_1', state: 'stopped', ...sandbox };
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  return patches;
+}
+
+test('stop() turns auto-resume off on a session box that still has it', async () => {
+  const patches = stopWithSandbox({ autoResume: true, metadata: { 'kortix.workload': 'session' } });
+  const { PlatinumProvider } = await import('./platinum');
+  await new PlatinumProvider().stop('sbx_1');
+  expect(patches).toEqual([{ auto_resume: false }]);
+});
+
+test('stop() leaves auto-resume alone on an app, an already-off box, and a Platinum without the field', async () => {
+  const { PlatinumProvider } = await import('./platinum');
+  for (const sandbox of [
+    { autoResume: true, metadata: { 'kortix.workload': 'app' } },
+    { autoResume: false, metadata: { 'kortix.workload': 'session' } },
+    { metadata: { 'kortix.workload': 'session' } },
+  ]) {
+    const patches = stopWithSandbox(sandbox);
+    await new PlatinumProvider().stop('sbx_1');
+    expect(patches).toEqual([]);
+  }
+});

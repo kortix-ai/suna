@@ -11,6 +11,9 @@ import {
   bootstrapExecCommand,
   bootstrapLegacyRuntime,
   classifyDaemonHealth,
+  DEAD_DAEMON_REPAIR_BUDGET_MS,
+  DEAD_DAEMON_REPAIR_REQUESTED_KEY,
+  decideDeadDaemonOnOpen,
   describeLegacyBootstrapRetry,
   legacyBootstrapCooldownMs,
   parseScriptReport,
@@ -204,6 +207,42 @@ describe('relaunchStrategyFor', () => {
     expect(relaunchStrategyFor('daytona')).toBe('next-start');
     expect(relaunchStrategyFor('e2b')).toBe('next-start');
     expect(relaunchStrategyFor('local')).toBeNull();
+  });
+});
+
+describe('decideDeadDaemonOnOpen', () => {
+  const since = Date.parse('2026-09-29T14:08:18Z');
+  const now = since + 40_000;
+  const at = (ms: number) => new Date(ms).toISOString();
+
+  test('a dead daemon on Platinum asks for a relaunch instead of parking', () => {
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('request');
+  });
+
+  test('a request from an earlier unreachable spell does not count', () => {
+    const metadata = { [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(since - 1) };
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('request');
+  });
+
+  test('an asked-for relaunch holds the open until its budget runs out, then parks', () => {
+    const metadata = { [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(since + 30_000) };
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('wait');
+    expect(
+      decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: since + 30_000 + DEAD_DAEMON_REPAIR_BUDGET_MS }),
+    ).toBe('park');
+  });
+
+  test('a relaunch that failed after it was asked for parks at once', () => {
+    const metadata = {
+      [DEAD_DAEMON_REPAIR_REQUESTED_KEY]: at(since + 30_000),
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: { state: 'failed', attempts: 1, manifestBuild: 1, lastAttemptAt: at(since + 31_000), finishedAt: at(since + 35_000) },
+    };
+    expect(decideDeadDaemonOnOpen({ provider: 'platinum', metadata, unreachableSinceMs: since, nowMs: now })).toBe('park');
+  });
+
+  test('providers that relaunch on their own start keep parking', () => {
+    expect(decideDeadDaemonOnOpen({ provider: 'daytona', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
+    expect(decideDeadDaemonOnOpen({ provider: 'e2b', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
   });
 });
 
