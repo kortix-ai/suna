@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   emitJson,
+  expandSessionIdPrefix,
   locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
@@ -52,6 +53,7 @@ import {
 } from './sessions-lifecycle.ts';
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
 import { runSessionsAttachments } from './sessions-attachments.ts';
+import { sessionListQuery, startedByLabel, takeSessionListFlags, type SessionListFlags } from './sessions-list.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
@@ -64,7 +66,15 @@ Manage Kortix project sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.
 
 Subcommands:
-  ls                                List sessions on the project. --json.
+  ls [--mine|--shared|--automated]  List sessions with who started each
+     [--search <q>]                 (STARTED BY). --mine = you started it,
+     [--children <session-id>]      --shared = another member did,
+                                    --automated = a trigger, channel or API
+                                    key did; each lists top-level sessions
+                                    with their child count. --search <q>
+                                    matches every session you can see.
+                                    --children <id> lists one session's
+                                    children. --json.
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
@@ -353,11 +363,20 @@ export async function runSessions(argv: string[]): Promise<number> {
     return 2;
   }
   const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
+  let listFlags: SessionListFlags | undefined;
+  if (sub === 'ls' || sub === 'list') {
+    try {
+      listFlags = takeSessionListFlags(rest);
+    } catch (err) {
+      process.stderr.write(`${status.err((err as Error).message)}\n`);
+      return 2;
+    }
+  }
 
   switch (sub) {
     case 'ls':
     case 'list':
-      return sessionsLs(ctxOpts, json);
+      return sessionsLs(ctxOpts, listFlags!, json);
     case 'new':
     case 'create':
       return sessionsNew(promptFlag, ctxOpts, json, wait, agentFlag, overrides, withFiles, connectAfter);
@@ -437,13 +456,27 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   return out;
 }
 
-async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
+const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
+  let parentId = flags.children;
+  if (parentId && !SESSION_UUID_RE.test(parentId)) {
+    const expanded = await expandSessionIdPrefix(ctx.client, ctx.projectId, parentId);
+    if (expanded === 'ambiguous') {
+      process.stderr.write(`${status.err(`Several sessions match "${parentId}" — use more of the id.`)}\n`);
+      return 2;
+    }
+    if (expanded) parentId = expanded.session_id;
+  }
+
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<ProjectSession[]>(
+      `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
+    );
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -454,23 +487,28 @@ async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (sessions.length === 0) {
+    const filtered = flags.startedBy || flags.search || flags.children;
     process.stdout.write(
-      `  ${C.dim}No sessions yet — start one with \`kortix sessions new\`.${C.reset}\n`,
+      `  ${C.dim}${filtered ? 'No matching sessions.' : 'No sessions yet — start one with `kortix sessions new`.'}${C.reset}\n`,
     );
     return 0;
   }
 
-  const labels = sessions.map((s) => s.name ?? shortId(s.session_id));
-  const labelW = Math.max(...labels.map((l) => l.length), 6);
+  const viewer = ctx.auth.user_id;
+  const showChildren = sessions.some((s) => typeof s.child_count === 'number');
+  const label = (s: ProjectSession) =>
+    `${s.name ?? shortId(s.session_id)}${s.search_match === 'child' ? ' (match in child)' : ''}`;
+  const labelW = Math.min(Math.max(...sessions.map((s) => label(s).length), 6), 48);
+  const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   STATUS         BRANCH                                    UPDATED${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${C.reset}\n`,
   );
   for (const s of sessions) {
-    const label = s.name ?? shortId(s.session_id);
-    const branch = trimMid(s.branch_name, 40);
     process.stdout.write(
-      `  ${pad(label, labelW)}   ${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(branch, 40)}  ${C.faded}${formatRelative(s.updated_at)}${C.reset}\n`,
+      `  ${pad(trimMid(label(s), labelW), labelW)}   ${pad(trimMid(startedByLabel(s, viewer), byW), byW)}   ` +
+        `${showChildren ? `${pad(String(s.child_count ?? 0), 8)}  ` : ''}` +
+        `${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(trimMid(s.branch_name, 40), 40)}  ${C.faded}${formatRelative(s.updated_at)}${C.reset}\n`,
     );
   }
   process.stdout.write(

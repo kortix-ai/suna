@@ -351,10 +351,17 @@ const TOOLS = [
   },
   {
     name: 'list_sessions',
-    description: 'List the sessions you can see in a project, newest first: id, title, status, agent, owner.',
+    description:
+      'List the top-level sessions you can see in a project, newest first: id, title, status, agent, owner, started_by (who started the run), child_count. Filter with started_by and query (searches every session, not only recent ones). A row with child_count > 0 has sub-sessions: pass its session_id as parent_session_id to list them.',
     inputSchema: {
       type: 'object',
-      properties: { project_id: PROJECT_ID, limit: { type: 'number', description: 'Max sessions (default 20, max 200).' } },
+      properties: {
+        project_id: PROJECT_ID,
+        limit: { type: 'number', description: 'Max sessions (default 20, max 200).' },
+        started_by: { type: 'string', enum: ['me', 'others', 'automated'], description: 'me = you started it; others = another member; automated = a trigger, channel or API key.' },
+        query: { type: 'string', description: 'Case-insensitive text matched against title, starter and session id prefix (1-200 chars).' },
+        parent_session_id: { type: 'string', description: 'List only the children of this session instead of top-level sessions.' },
+      },
       required: ['project_id'],
       additionalProperties: false,
     },
@@ -507,6 +514,44 @@ const bounded = (value: unknown, fallback: number, max: number) => Math.min(Math
 
 class ToolInputError extends Error {}
 
+const STARTED_BY = ['me', 'others', 'automated'];
+
+/** Query for the list route: top-level sessions (or one parent's children), optionally filtered. */
+export function listSessionsQuery(input: Record<string, unknown>): Record<string, string | number> {
+  const query: Record<string, string | number> = {
+    limit: bounded(input.limit, 20, 200),
+    parent: optionalArg(input, 'parent_session_id') ?? 'root',
+  };
+  const startedBy = optionalArg(input, 'started_by');
+  if (startedBy !== undefined) {
+    if (!STARTED_BY.includes(startedBy)) throw new ToolInputError('started_by must be me, others or automated');
+    query.started_by = startedBy;
+  }
+  const q = optionalArg(input, 'query');
+  if (q !== undefined) {
+    if (q.length > 200) throw new ToolInputError('query is at most 200 characters');
+    query.q = q;
+  }
+  return query;
+}
+
+/** One bounded row of `list_sessions` output. */
+export function listSessionRow(s: any) {
+  return {
+    session_id: s.session_id,
+    name: s.name ?? null,
+    status: s.status,
+    agent: s.agent_name,
+    owner: s.owner_name ?? s.owner_email ?? null,
+    started_by: s.initiator?.label ?? null,
+    parent_session_id: s.parent_session_id ?? null,
+    child_count: s.child_count ?? 0,
+    ...(s.search_match ? { search_match: s.search_match } : {}),
+    origin: s.origin,
+    updated_at: s.updated_at,
+  };
+}
+
 async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
   switch (name) {
     case 'list_projects': {
@@ -602,18 +647,9 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       );
     }
     case 'list_sessions': {
-      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, { query: { limit: bounded(input.limit, 20, 200) } });
+      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, { query: listSessionsQuery(input) });
       if (r.status >= 400) return apiResult(r);
-      const rows = (JSON.parse(r.body) as any[]).map((s) => ({
-        session_id: s.session_id,
-        name: s.name ?? null,
-        status: s.status,
-        agent: s.agent_name,
-        owner: s.owner_name ?? s.owner_email ?? null,
-        origin: s.origin,
-        updated_at: s.updated_at,
-      }));
-      return text(JSON.stringify(rows, null, 2));
+      return text(JSON.stringify((JSON.parse(r.body) as any[]).map(listSessionRow), null, 2));
     }
     case 'run_command': {
       const started = Date.now();

@@ -41,7 +41,9 @@ import { db } from '../../shared/db';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import type { SessionStartedByFilter } from './session-initiator';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
 import type { ProjectRole } from '../access';
 import {
@@ -68,6 +70,89 @@ function spawnedByOf(row: ProjectSessionRow): string | null {
   return typeof parent === 'string' && parent && parent !== row.sessionId ? parent : null;
 }
 
+/** `parent`, `started_by`, `q` of `GET /:projectId/sessions`. All optional;
+ *  none set = the legacy flat list. */
+export interface SessionListFilter {
+  /** 'root' = top-level sessions only; a session id = that session's children. */
+  parent?: string | null;
+  startedBy?: SessionStartedByFilter | null;
+  /** Trimmed, 1..200 chars. Case-insensitive substring. */
+  q?: string | null;
+}
+
+type SessionTable = typeof projectSessions;
+
+function likePattern(q: string): string {
+  return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/** Title, trigger slug / channel (initiator_id), or session-id prefix. The
+ *  title is what `serializeSession` resolves: custom_name, the auto name, or a
+ *  runtime conversation title in the opencode_sessions snapshot. */
+function searchMatchSql(t: SessionTable, q: string): SQL {
+  const pattern = likePattern(q);
+  return sql`(
+    ${t.metadata}->>'custom_name' ilike ${pattern}
+    or ${t.metadata}->>'name' ilike ${pattern}
+    or ${t.initiatorId} ilike ${pattern}
+    or ${t.sessionId} ilike ${`${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`}
+    or exists (
+      select 1 from jsonb_array_elements(
+        case when jsonb_typeof(${t.metadata}->'opencode_sessions') = 'array'
+             then ${t.metadata}->'opencode_sessions' else '[]'::jsonb end
+      ) as oc(entry)
+      where oc.entry->>'title' ilike ${pattern}
+    )
+  )`;
+}
+
+/** A row the backfill did not classify (initiator_type null) counts as its
+ *  owner's member session. */
+function startedBySql(filter: SessionStartedByFilter, viewerId: string): SQL {
+  const t = projectSessions;
+  if (filter === 'automated') return sql`(${t.initiatorType} is not null and ${t.initiatorType} <> 'member')`;
+  if (filter === 'me') {
+    return sql`((${t.initiatorType} = 'member' and ${t.initiatorId} = ${viewerId})
+      or (${t.initiatorType} is null and ${t.createdBy}::text = ${viewerId}))`;
+  }
+  return sql`((${t.initiatorType} = 'member' and ${t.initiatorId} is distinct from ${viewerId})
+    or (${t.initiatorType} is null and ${t.createdBy}::text is distinct from ${viewerId}))`;
+}
+
+const childSessions = alias(projectSessions, 'child_sessions');
+
+function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL | undefined {
+  const t = projectSessions;
+  const conditions: (SQL | undefined)[] = [];
+  if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
+  else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
+  if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
+  if (filter.q) {
+    conditions.push(
+      filter.parent === 'root'
+        ? sql`(${searchMatchSql(t, filter.q)} or exists (
+            select 1 from ${projectSessions} as child_sessions
+             where ${childSessions.parentSessionId} = ${t.sessionId}
+               and ${childSessions.projectId} = ${t.projectId}
+               and ${searchMatchSql(childSessions as unknown as SessionTable, filter.q)}
+          ))`
+        : searchMatchSql(t, filter.q),
+    );
+  }
+  return conditions.length ? and(...conditions) : undefined;
+}
+
+/** JS twin of `searchMatchSql`'s title arm, for `search_match: self | child`. */
+export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string): boolean {
+  const needle = q.toLowerCase();
+  const hit = (value: unknown) => typeof value === 'string' && value.toLowerCase().includes(needle);
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId)) return true;
+  if (row.sessionId.toLowerCase().startsWith(needle)) return true;
+  const snapshot = Array.isArray(meta.opencode_sessions) ? meta.opencode_sessions : [];
+  return snapshot.some((entry) => hit((entry as Record<string, unknown> | null)?.title));
+}
+
 export interface ProjectSessionInventory {
   /** False when `scope: 'project'` was asked for without manager standing. */
   authorized: boolean;
@@ -87,6 +172,10 @@ export interface ProjectSessionInventory {
   ownerIdentities: Map<string, SessionOwnerIdentity>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
   subject: ShareSubject;
+  /** `parent=root` only: non-deleted children per served session. */
+  childCounts: Map<string, number>;
+  /** Display names of member/service-account initiators on this page. */
+  initiatorNames: Map<string, string>;
 }
 
 /**
@@ -113,13 +202,21 @@ export async function loadProjectSessionInventory(input: {
   cursor?: string | null;
   /** Use conversation activity for projects whose imported sessions retain historical dates. */
   orderByActivity?: boolean;
+  filter?: SessionListFilter;
 }): Promise<ProjectSessionInventory> {
+  const filter = input.filter ?? {};
+  const filterSql = sessionListFilterSql(filter, input.userId);
   // A cursor is sealed to (project, viewer): it carries the scan position, which
   // can name a row this viewer may not see. See `encodeSessionCursor`.
   const cursorScope: SessionCursorScope = {
     projectId: input.projectId,
     viewerId: input.userId,
     ordering: input.orderByActivity ? 'activity' : undefined,
+    // A cursor is a scan position inside ONE filtered list.
+    filter:
+      filter.parent || filter.startedBy || filter.q
+        ? JSON.stringify([filter.parent ?? null, filter.startedBy ?? null, filter.q ?? null])
+        : undefined,
   };
   const sortAt = input.orderByActivity
     ? sql<Date>`date_trunc('milliseconds', coalesce((${projectSessions.metadata}->>'last_activity_at')::timestamptz, ${projectSessions.updatedAt}))`
@@ -173,6 +270,8 @@ export async function loadProjectSessionInventory(input: {
       ownerIdentities: new Map(),
       runtimeStatusBySession: new Map(),
       subject,
+      childCounts: new Map(),
+      initiatorNames: new Map(),
     };
   }
 
@@ -218,9 +317,16 @@ export async function loadProjectSessionInventory(input: {
         rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
       ),
       resolveSessionOwnerIdentities(
-        rows
-          .map((row) => row.createdBy)
-          .filter((ownerId): ownerId is string => Boolean(ownerId)),
+        [
+          ...new Set(
+            rows
+              .flatMap((row) => [
+                row.createdBy,
+                row.initiatorType === 'member' || row.initiatorType === 'api' ? row.initiatorId : null,
+              ])
+              .filter((ownerId): ownerId is string => Boolean(ownerId)),
+          ),
+        ],
         input.accountId,
       ),
     ]);
@@ -252,6 +358,7 @@ export async function loadProjectSessionInventory(input: {
         and(
           eq(projectSessions.projectId, input.projectId),
           eq(projectSessions.accountId, input.accountId),
+          filterSql,
           // Keyset: strictly after the cursor row in `(sort_at DESC,
           // session_id DESC)`. Ordinary projects use the updated_at index;
           // opted-in imports use their historical conversation activity.
@@ -277,6 +384,9 @@ export async function loadProjectSessionInventory(input: {
     const selected = await foldRows(chunk);
 
     for (const item of selected.items) {
+      // A manager's inventory lists sessions it may not open, with the title
+      // redacted. Search must not match on that hidden title.
+      if (filter.q && !item.canAccess) continue;
       // Stop exactly at the page boundary, and remember the row we stopped on
       // so the next page resumes from it rather than re-serving it.
       if (items.length >= limit) break;
@@ -309,7 +419,9 @@ export async function loadProjectSessionInventory(input: {
   // page. They ride outside the keyset (the cursor does not move), so a later
   // page can serve one again; clients de-duplicate by `session_id`.
   const served = new Set(items.map((item) => item.row.sessionId));
-  for (let depth = 0; depth < MAX_ANCESTOR_DEPTH; depth += 1) {
+  // A `parent`-filtered read is already a tree level: roots have no parent to
+  // append, and children are read under the parent the client expanded.
+  for (let depth = 0; !filter.parent && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
         items
@@ -337,8 +449,33 @@ export async function loadProjectSessionInventory(input: {
     }
   }
 
+  const childCounts = new Map<string, number>();
+  if (filter.parent === 'root' && items.length > 0) {
+    const counts = await db
+      .select({ parentSessionId: projectSessions.parentSessionId, count: sql<number>`count(*)::int` })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.projectId, input.projectId),
+          eq(projectSessions.accountId, input.accountId),
+          inArray(projectSessions.parentSessionId, items.map((item) => item.row.sessionId)),
+          // The soft-delete marker the visibility fold drops (session-inventory.ts).
+          sql`not (${projectSessions.metadata} ? 'deletedAt')`,
+        ),
+      )
+      .groupBy(projectSessions.parentSessionId);
+    for (const row of counts) if (row.parentSessionId) childCounts.set(row.parentSessionId, row.count);
+  }
+  const initiatorNames = new Map<string, string>();
+  for (const [id, identity] of ownerIdentities) {
+    const name = identity.name ?? identity.email ?? null;
+    if (name) initiatorNames.set(id, name);
+  }
+
   return {
     authorized: true,
+    childCounts,
+    initiatorNames,
     items,
     rows: scannedRows,
     // A page that reached the end of the list has no next cursor; one that

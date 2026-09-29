@@ -150,6 +150,20 @@ export interface ProjectSession {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** The session that spawned this one; null for a top-level session. */
+  parent_session_id?: string | null;
+  /** Who started the run. null on rows the server could not classify. */
+  initiator?: ProjectSessionInitiator | null;
+  /** Visible children. Present only with `parent=root`. */
+  child_count?: number;
+  /** Present only with `q` + `parent=root`. */
+  search_match?: 'self' | 'child';
+}
+
+export interface ProjectSessionInitiator {
+  type: 'member' | 'trigger' | 'channel' | 'api' | 'system';
+  id: string | null;
+  label: string | null;
 }
 
 // ── Triggers ──────────────────────────────────────────────────────────────
