@@ -7,6 +7,10 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import {
+  MENU_INDICATOR,
+  MENU_INDICATOR_ICON,
+  MENU_INSET,
+  MENU_INSET_END,
   MENU_LABEL,
   MENU_PANEL,
   MENU_SEPARATOR,
@@ -79,7 +83,7 @@ const ContextMenuSubTrigger = React.forwardRef<
   <ContextMenuPrimitive.SubTrigger
     ref={ref}
     data-slot="context-menu-sub-trigger"
-    className={cn(menuRow(size, 'default'), inset && 'pl-8', className)}
+    className={cn(menuRow(size, 'default'), inset && MENU_INSET, className)}
     {...props}
   >
     {children}
@@ -147,7 +151,7 @@ const ContextMenuItem = React.forwardRef<
   <ContextMenuPrimitive.Item
     ref={ref}
     data-slot="context-menu-item"
-    className={cn(menuRow(size, variant), inset && 'pl-8', className)}
+    className={cn(menuRow(size, variant), inset && MENU_INSET, className)}
     {...props}
   />
 ));
@@ -163,21 +167,14 @@ const ContextMenuCheckboxItem = React.forwardRef<
   <ContextMenuPrimitive.CheckboxItem
     ref={ref}
     data-slot="context-menu-checkbox-item"
-    // The check sits in the row's own padding rather than pushing the label
-    // across, so a checkbox row's text starts on the same line as a plain
-    // item's — `pl-8` on top of `px-2.5` would indent it past every neighbour.
-    className={cn(menuRow(size, 'default'), reverse ? 'pr-7' : 'pl-7', className)}
+    // Same geometry as `DropdownMenuCheckboxItem` — see there.
+    className={cn(menuRow(size, 'default'), reverse ? MENU_INSET_END : MENU_INSET, className)}
     checked={checked}
     {...props}
   >
-    <span
-      className={cn(
-        'absolute flex size-3.5 items-center justify-center',
-        reverse ? 'right-2.5' : 'left-2.5',
-      )}
-    >
+    <span className={cn(MENU_INDICATOR, 'absolute', reverse ? 'right-2' : 'left-2')}>
       <ContextMenuPrimitive.ItemIndicator>
-        <Check className="text-muted-foreground size-3.5" />
+        <Check className={MENU_INDICATOR_ICON} />
       </ContextMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -202,9 +199,9 @@ const ContextMenuRadioItem = React.forwardRef<
    * hollow ring. No consumer renders a RadioItem, so nobody saw it.
    */
   const indicator = (
-    <span className="flex size-3.5 shrink-0 items-center justify-center">
+    <span className={MENU_INDICATOR}>
       <ContextMenuPrimitive.ItemIndicator>
-        <Check className="text-muted-foreground size-3.5" />
+        <Check className={MENU_INDICATOR_ICON} />
       </ContextMenuPrimitive.ItemIndicator>
     </span>
   );
@@ -219,11 +216,11 @@ const ContextMenuRadioItem = React.forwardRef<
       {side === 'left' ? (
         <>
           {indicator}
-          <span className="min-w-0 flex-1">{children}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
         </>
       ) : (
         <>
-          <span className="min-w-0 flex-1">{children}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
           {indicator}
         </>
       )}
@@ -241,7 +238,7 @@ const ContextMenuLabel = React.forwardRef<
   <ContextMenuPrimitive.Label
     ref={ref}
     data-slot="context-menu-label"
-    className={cn(MENU_LABEL, inset && 'pl-8', className)}
+    className={cn(MENU_LABEL, inset && MENU_INSET, className)}
     {...props}
   />
 ));
