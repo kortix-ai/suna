@@ -20,7 +20,10 @@
 import {
   currentSavedCopyStore,
   getSessionTranscriptSync,
+  getSessionTurn,
+  isEmptyConversation,
   isPaintableSavedCopy,
+  savedCopyEmptyRoot,
   type SessionTranscriptSyncEnvelope,
 } from '@kortix/sdk';
 
@@ -61,18 +64,48 @@ function capturedAt(envelope: SessionTranscriptSyncEnvelope | null): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export interface SavedCopyOutcome {
+  /**
+   * The conversation is proven empty, with nothing to wait for: the server's
+   * saved copy proves this root empty, and the turn record shows no turn that
+   * ended since and none open (`isEmptyConversation`). The view opens on its
+   * composer instead of a loader.
+   */
+  empty: boolean;
+}
+
+const NOTHING_PROVEN: SavedCopyOutcome = { empty: false };
+
 /**
  * Paint the copy this device kept, then the server's, and keep the server's for
  * the next open. Never throws: a failed read leaves the kept copy on screen and
  * on the device.
+ *
+ * `child`: `rootId` is a sub-agent of the session, in its own OpenCode session.
+ * Its own saved window is painted, and nothing is kept: the device slot is the
+ * conversation's copy.
  */
 export async function loadSavedCopy(input: {
   projectId: string;
   sessionId: string;
   rootId: string;
-}): Promise<void> {
+  child?: boolean;
+}): Promise<SavedCopyOutcome> {
   const { projectId, sessionId, rootId } = input;
-  if (!projectId || !sessionId || !rootId) return;
+  if (!projectId || !sessionId || !rootId) return NOTHING_PROVEN;
+
+  if (input.child) {
+    try {
+      paintSavedCopy(
+        rootId,
+        await getSessionTranscriptSync(projectId, sessionId, { limit: SAVED_COPY_LIMIT, child: rootId }),
+      );
+    } catch {
+      // The sub-agent waits for the computer, as it did before.
+    }
+    return NOTHING_PROVEN;
+  }
+
   const store = currentSavedCopyStore();
 
   let kept: SessionTranscriptSyncEnvelope | null = null;
@@ -89,12 +122,30 @@ export async function loadSavedCopy(input: {
   try {
     fresh = await getSessionTranscriptSync(projectId, sessionId, { limit: SAVED_COPY_LIMIT });
   } catch {
-    return;
+    return NOTHING_PROVEN;
   }
-  if (!fresh) return;
+  if (!fresh) return NOTHING_PROVEN;
   // An answer older than the kept copy (a stale in-flight read) never paints over it.
   const olderThanKept = !!kept && capturedAt(fresh) > 0 && capturedAt(fresh) < capturedAt(kept);
   if (!olderThanKept) paintSavedCopy(rootId, fresh);
   // Kept for the next open after it painted: the write never delays the paint.
   if (store) await store.write(projectId, sessionId, fresh).catch(() => undefined);
+
+  if (savedCopyEmptyRoot(fresh) !== rootId) return NOTHING_PROVEN;
+  // A turn that ended after the capture, or one open now, says the copy is
+  // older than the conversation.
+  try {
+    const turn = await getSessionTurn(projectId, sessionId);
+    return {
+      empty: isEmptyConversation({
+        savedEmptyRoot: rootId,
+        rootSessionId: rootId,
+        turnRead: true,
+        hasEndedTurn: turn.last_ended != null,
+        hasOpenOrQueuedTurn: turn.turns.length > 0,
+      }),
+    };
+  } catch {
+    return NOTHING_PROVEN;
+  }
 }
