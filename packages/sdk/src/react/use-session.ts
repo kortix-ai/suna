@@ -215,13 +215,45 @@ export function resolveSendOptions(
 export function shouldPollSessionStart(
   error: unknown,
   data: SessionStartResult | null | undefined,
+  now: number = Date.now(),
 ): number | false {
   if (isSessionStartError(error)) return false;
   if (data?.retriable === false) return false;
   const stage = data?.stage;
-  return stage === 'ready' || stage === 'failed' || stage === 'stopped'
-    ? false
-    : SESSION_START_POLL_MS;
+  if (stage === 'ready' || stage === 'failed' || stage === 'stopped') return false;
+  const retryPause = sessionStartRetryPauseMs(data, now);
+  return retryPause ?? SESSION_START_POLL_MS;
+}
+
+/**
+ * How long to wait before the NEXT `/start` poll when the server names a time
+ * it will itself re-attempt (`failure.evidence.next_retry_at`).
+ *
+ * The wake cooldown payloads answer instantly (`stage: 'starting'`,
+ * `retriable: true`, the server already re-attempting on its own schedule) and
+ * a poll faster than that `next_retry_at` cannot change the answer — it only
+ * repeats the same round trip, every 1.5s, from every open session view.
+ * Prod (KRTX-385): that cadence sustained ~8k `POST /start`/hour from one
+ * workspace's wedged boxes for days and convoyed the audit-ingest pool behind
+ * them, which is what pushed the whole fleet's DB routes (including the polled
+ * `GET /sessions/:id/turn`) into a multi-second p95.
+ *
+ * The pause is `next_retry_at - now`, clamped: never below the normal cadence
+ * (a lapsed cooldown polls immediately — the server is re-attempting now) and
+ * never above 60s (an hours-away cooldown still rechecks once a minute, so an
+ * open tab notices the lapse). Null when the payload names no retry time —
+ * a cold boot's `provisioning`/`starting` keeps the fast cadence exactly as
+ * it was.
+ */
+function sessionStartRetryPauseMs(
+  data: SessionStartResult | null | undefined,
+  now: number,
+): number | null {
+  const nextRetryAt = data?.failure?.evidence?.next_retry_at;
+  if (!nextRetryAt) return null;
+  const atMs = Date.parse(nextRetryAt);
+  if (!Number.isFinite(atMs)) return null;
+  return Math.max(SESSION_START_POLL_MS, Math.min(atMs - now + 1_000, 60_000));
 }
 
 /**
@@ -406,21 +438,97 @@ export function cachedStartResultIsReady(
 }
 
 /**
+ * What one `/start` answer said, in the few fields a re-poll can change.
+ * Two consecutive answers with the same signature told the client nothing
+ * new; the poll interval may stretch.
+ */
+function startPollSignature(data: SessionStartResult | null | undefined): string {
+  return [
+    data?.stage ?? '',
+    data?.reason ?? '',
+    data?.failure?.evidence?.next_retry_at ?? '',
+  ].join('|');
+}
+
+interface StartPollPace {
+  signature: string;
+  /** When the CURRENT signature was first observed. */
+  unchangedSince: number;
+  /** Last time this pace was touched; prunes pace left behind by an unmount. */
+  touchedAt: number;
+}
+
+const SESSION_START_POLL_BACKOFF_STEPS = [
+  { afterMs: 30_000, pollMs: 5_000 },
+  { afterMs: 90_000, pollMs: 15_000 },
+  { afterMs: 240_000, pollMs: 30_000 },
+] as const;
+
+/** How long a pace entry survives without a poll before it is stale. */
+const START_POLL_PACE_TTL_MS = 300_000;
+
+const startPollPaceByQuery = new WeakMap<object, StartPollPace>();
+
+/** The query surface `refetchInterval` receives from React Query. */
+interface StartPollQuery {
+  state: {
+    error: unknown;
+    data: SessionStartResult | null | undefined;
+  };
+}
+
+/**
+ * The `refetchInterval` for one `/start` query, with the clock injected so
+ * tests are deterministic. Pure in everything but the per-query pace map.
+ *
+ * A wedged box answers the same non-terminal payload indefinitely
+ * (`stage: 'starting'`, `retriable: true`, no failure evidence — the server
+ * long-polls each call ~8s and the query re-fires 1.5s after every hold).
+ * Prod, 2026-09-26 through 09-29: that cycle ran for days from one
+ * workspace's wedged boxes at ~8k POST /start/hour, convoyed the audit-ingest
+ * pool behind it, and pushed every polled DB route — including
+ * `GET /sessions/:id/turn` — into a multi-second p95 (KRTX-385). While the
+ * answer sits unchanged the interval stretches through
+ * {@link SESSION_START_POLL_BACKOFF_STEPS}; any change resets it at once, and
+ * a terminal answer stops polling and forgets the pace.
+ */
+export function sessionStartRefetchIntervalMs(
+  query: StartPollQuery,
+  now: number,
+): number | false {
+  if (query.state.data?.stage === 'ready') return 60_000;
+  const base = shouldPollSessionStart(query.state.error, query.state.data, now);
+  if (base === false) {
+    startPollPaceByQuery.delete(query);
+    return false;
+  }
+  const signature = startPollSignature(query.state.data);
+  const previous = startPollPaceByQuery.get(query);
+  const pace =
+    previous &&
+    previous.signature === signature &&
+    now - previous.touchedAt <= START_POLL_PACE_TTL_MS
+      ? previous
+      : { signature, unchangedSince: now, touchedAt: now };
+  pace.touchedAt = now;
+  startPollPaceByQuery.set(query, pace);
+  const unchangedMs = now - pace.unchangedSince;
+  const stretched = [...SESSION_START_POLL_BACKOFF_STEPS]
+    .reverse()
+    .find((step) => unchangedMs >= step.afterMs)?.pollMs;
+  return stretched ? Math.max(base, stretched) : base;
+}
+
+/**
  * Recheck a ready session once a minute: a provider can park its sandbox
  * while the tab remains open, and only /start can wake it. Pending stages
- * retain the faster boot cadence; terminal failures still stop polling.
- * Keep polling in background to complete an in-flight wake.
+ * retain the boot cadence while the answer is moving, stretch while the same
+ * answer repeats (a wedged box), and stop on terminal failures. Keep polling
+ * in background to complete an in-flight wake.
  */
 export const SESSION_START_POLL_OPTIONS = {
-  refetchInterval: (query: {
-    state: {
-      error: unknown;
-      data: SessionStartResult | null | undefined;
-    };
-  }) =>
-    query.state.data?.stage === 'ready'
-      ? 60_000
-      : shouldPollSessionStart(query.state.error, query.state.data),
+  refetchInterval: (query: StartPollQuery): number | false =>
+    sessionStartRefetchIntervalMs(query, Date.now()),
   refetchIntervalInBackground: true,
 } as const;
 
