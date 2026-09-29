@@ -186,8 +186,13 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     sendResize,
     handleData,
   } = usePtyConnection(pty, serverUrl, xtermRef, { onStatusChange, onUnavailable });
-  const xtermRefs = usePtyTerminalXterm(pty, serverUrl, xtermRef, handleData, sendResize);
-  const { terminalRef, fitAddonRef } = xtermRefs;
+  const { terminalRef, fitAddonRef } = usePtyTerminalXterm(
+    pty,
+    serverUrl,
+    xtermRef,
+    handleData,
+    sendResize,
+  );
 
   useImperativeHandle(ref, () => ({
     focus: () => {
