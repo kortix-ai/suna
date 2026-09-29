@@ -6,6 +6,11 @@ import { createInstallationToken, getFileSha, getGitHubAppInstallation, parseGit
 import { invalidateProjectMirror } from '../git';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
 import { resolveGitHubImportWithPat } from './git';
+import {
+  buildProjectGitConnectionValues,
+  buildProjectGitMetadata,
+  type ProjectGitWriteAuth,
+} from './project-git-write';
 
 export class RepositoryChangedError extends Error {}
 export class RepositoryManifestMissingError extends Error {}
@@ -88,7 +93,6 @@ export async function persistProjectRepositoryReplacement(input: {
   defaultBranch: string;
   copySharedSecrets?: SharedSecretCopy;
 }) {
-  const owner = input.repo.full_name.split('/')[0]!;
   const now = new Date();
   const result = await db.transaction(async (tx) => {
     const [oldProject] = await tx.select().from(projects)
@@ -175,20 +179,20 @@ export async function persistProjectRepositoryReplacement(input: {
       credentialId = credential.credentialId;
     }
 
-    const connectionValues = {
-      provider: 'github', repoUrl: input.repo.clone_url,
-      upstreamUrl: input.repo.clone_url, managed: false,
-      repoOwner: owner, repoName: input.repo.name,
-      externalRepoId: String(input.repo.id), defaultBranch: input.defaultBranch,
-      authMethod: input.installationId ? 'github_app' : 'project_credential', installationId: input.installationId ?? null,
-      credentialRef: credentialId, permissions: {},
-      visibility: input.repo.private ? 'private' : 'public',
-      webhookId: null, status: 'connected', lastValidatedAt: now,
-      lastErrorCode: null, lastErrorMessage: null,
-      metadata: { full_name: input.repo.full_name, html_url: input.repo.html_url, ssh_url: input.repo.ssh_url,
-        ...(input.installationId ? { project_grant: true } : {}) },
-      updatedAt: now,
-    };
+    const auth: ProjectGitWriteAuth = input.installationId
+      ? { method: 'github_app', installationId: input.installationId, permissions: {} }
+      : { method: 'project_credential' };
+    const connectionValues = buildProjectGitConnectionValues({
+      repo: input.repo,
+      defaultBranch: input.defaultBranch,
+      auth,
+      credentialRef: credentialId,
+      managed: false,
+      upstreamUrl: input.repo.clone_url,
+      webhookId: null,
+      projectGrant: Boolean(input.installationId),
+      now,
+    });
     const [connection] = await tx.insert(projectGitConnections).values({
       accountId: input.accountId, projectId: input.projectId, ...connectionValues,
     }).onConflictDoUpdate({
@@ -212,19 +216,13 @@ export async function persistProjectRepositoryReplacement(input: {
       // left is physical — that clone and the new origin hold unrelated
       // histories, so Git itself refuses a push without a rebase.
       repository_generation: randomUUID(),
-      git: {
-        url: input.repo.clone_url, default_branch: input.defaultBranch,
-        provider: 'github', owner, name: input.repo.name,
-        external_repo_id: String(input.repo.id), managed: false,
-        auth: input.installationId
-          ? { method: 'github_app', installation_id: input.installationId, project_grant: true }
-          : { method: 'project_credential' },
-      },
-      github: {
-        repo_id: String(input.repo.id), full_name: input.repo.full_name,
-        html_url: input.repo.html_url, private: input.repo.private,
-        auth_source: input.installationId ? 'app_installation' : 'pat',
-      },
+      ...buildProjectGitMetadata({
+        repo: input.repo,
+        defaultBranch: input.defaultBranch,
+        auth,
+        managed: false,
+        projectGrant: Boolean(input.installationId),
+      }),
     };
     const [project] = await tx.update(projects).set({
       repoUrl: input.repo.clone_url,
