@@ -52,7 +52,7 @@ function Checkbox({ className, label, id, ...props }: CheckboxProps) {
         'hover:bg-foreground/3',
         'has-data-[state=checked]:bg-foreground/6 has-data-[state=checked]:hover:bg-foreground/6',
         'has-focus-visible:ring-ring has-focus-visible:ring-offset-background has-focus-visible:ring-2 has-focus-visible:ring-offset-2',
-        props.disabled && 'cursor-default opacity-50', // disabled keeps the default cursor (AGENTS.md → States)
+        props.disabled && 'cursor-default opacity-50', // cursor-default: disabled keeps the default cursor (AGENTS.md → States)
         className,
       )}
     >
