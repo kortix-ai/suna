@@ -293,6 +293,25 @@ export const SEARCH_ONLY_ITEM_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The no-query Suggestions order: the everyday moves first — where am I
+ * working, which session, then the session's own surfaces, then review — and
+ * the registry's order only after them. Registry order put "Compact Session"
+ * second and the session's Files/Browser last, behind rarer actions. An id
+ * missing from the palette (no session, a flag off) is skipped, not a hole.
+ */
+export const SUGGESTION_PRIORITY: readonly string[] = [
+  WORKSPACE_SWITCHER_ITEM_ID,
+  'proj-sessions',
+  'open-session-files',
+  'open-session-browser',
+  'open-session-terminal',
+  'view-changes',
+  'review-changes',
+  'proj-home',
+  'nav-accounts',
+];
+
+/**
  * How many rows of one page the palette warms (see the prefetch effects in
  * `CommandPalette`). The sessions page renders up to 50 rows; firing 50 RSC
  * requests because a project has 50 sessions costs more than the cold fetch it
@@ -303,8 +322,8 @@ const PALETTE_PREFETCH_LIMIT = 8;
 /**
  * The rows the palette offers before anything is typed.
  *
- * "Switch workspace" is PINNED to the front, then the registry's own order,
- * then the cap. Unpinned it sits at index 11 of the actions+navigation list
+ * `SUGGESTION_PRIORITY` first — "Switch workspace" leads it — then the
+ * registry's own order, then the cap. Unpinned it sits at index 11 of the actions+navigation list
  * and the cap is {@link ROOT_SUGGESTION_LIMIT} — so opening ⌘K and typing
  * nothing showed eight session and terminal actions and no way to change
  * workspace at all. Every other top-level move in this product has a control
@@ -328,9 +347,12 @@ export function buildRootSuggestions(
       (item.group === 'actions' || item.group === 'navigation') &&
       !SEARCH_ONLY_ITEM_IDS.has(item.id),
   );
-  const switcher = candidates.find((item) => item.id === WORKSPACE_SWITCHER_ITEM_ID);
-  const rest = candidates.filter((item) => item.id !== WORKSPACE_SWITCHER_ITEM_ID);
-  return (switcher ? [switcher, ...rest] : rest).slice(0, limit);
+  const rank = (item: MenuItemDef) => {
+    const index = SUGGESTION_PRIORITY.indexOf(item.id);
+    return index === -1 ? SUGGESTION_PRIORITY.length : index;
+  };
+  // A stable sort: unranked rows keep the registry's relative order.
+  return [...candidates].sort((a, b) => rank(a) - rank(b)).slice(0, limit);
 }
 
 export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
