@@ -17,6 +17,7 @@ import type { AttachmentSubmission } from '@/features/session/composer/attachmen
 import type { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { buildOptimisticPromptTextWithUploads } from '@/features/session/uploaded-file-refs';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { resolveFirstPromptSubmission } from './use-instant-session-send';
 
 type TurnProps = ComponentProps<typeof OptimisticTurn>;
 const turns: TurnProps[] = [];
@@ -258,4 +259,130 @@ test('a row with no text is still the first prompt: an attachment-only send', ()
   expect(turns[0]?.text).toBe('');
   expect(turns[0]?.attachments).toEqual([{ filename: 'only.pdf', mime: 'application/pdf' }]);
   expect(turns[0]?.uploadStatus).toBeUndefined();
+});
+
+/**
+ * The extracted pure precedence itself: the same four sources, resolved
+ * without mounting the shell.
+ */
+const rowSubmission = (extra: Record<string, unknown>) => ({
+  text: 'row text',
+  files: [],
+  ...extra,
+});
+
+test('resolve: submission beats preview beats row beats stash for text', () => {
+  const four = {
+    submission: { text: 'submission text', files: [] },
+    previewSubmission: { text: 'preview text', files: [] },
+    pendingRowSubmission: rowSubmission({}),
+    stashedSubmission: { text: 'stash text', files: [] },
+    rememberedAttachments: undefined,
+  };
+  expect(resolveFirstPromptSubmission(four)?.text).toBe('submission text');
+  expect(resolveFirstPromptSubmission({ ...four, submission: null })?.text).toBe('preview text');
+  expect(
+    resolveFirstPromptSubmission({ ...four, submission: null, previewSubmission: null })?.text,
+  ).toBe('row text');
+  expect(
+    resolveFirstPromptSubmission({
+      ...four,
+      submission: null,
+      previewSubmission: null,
+      pendingRowSubmission: null,
+    })?.text,
+  ).toBe('stash text');
+  expect(
+    resolveFirstPromptSubmission({
+      ...four,
+      submission: null,
+      previewSubmission: null,
+      pendingRowSubmission: null,
+      stashedSubmission: null,
+    }),
+  ).toBeNull();
+});
+
+test('resolve: files come from the first source that holds them', () => {
+  const four = {
+    submission: null,
+    previewSubmission: null,
+    pendingRowSubmission: rowSubmission({}),
+    stashedSubmission: { text: 'stash text', files: [fileA, fileB] },
+    rememberedAttachments: undefined,
+  };
+  expect(resolveFirstPromptSubmission(four)?.files).toEqual([fileA, fileB]);
+  // Empty local files fall through to the next holder.
+  expect(
+    resolveFirstPromptSubmission({ ...four, submission: { text: 'empty', files: [] } })?.files,
+  ).toEqual([fileA, fileB]);
+  expect(
+    resolveFirstPromptSubmission({ ...four, previewSubmission: { text: 'p', files: [fileB] } })
+      ?.files,
+  ).toEqual([fileB]);
+  expect(
+    resolveFirstPromptSubmission({
+      ...four,
+      submission: { text: 's', files: [fileA] },
+      previewSubmission: { text: 'p', files: [fileB] },
+    })?.files,
+  ).toEqual([fileA]);
+});
+
+test('resolve: row attachment names are the fallback when this tab holds no bytes', () => {
+  const attachments = [{ filename: 'row.png', mime: 'image/png' }];
+  const resolved = resolveFirstPromptSubmission({
+    submission: null,
+    previewSubmission: null,
+    pendingRowSubmission: rowSubmission({ attachments }),
+    stashedSubmission: null,
+    rememberedAttachments: undefined,
+  });
+  expect(resolved?.attachments).toEqual(attachments);
+  // Local bytes clear the names instead of doubling them.
+  expect(
+    resolveFirstPromptSubmission({
+      submission: { text: 's', files: [fileA] },
+      previewSubmission: null,
+      pendingRowSubmission: rowSubmission({ attachments }),
+      stashedSubmission: null,
+      rememberedAttachments: undefined,
+    })?.attachments,
+  ).toEqual([]);
+});
+
+test('resolve: remembered sent identities beat the row names', () => {
+  const remembered = [{ id: 'upload-a', filename: 'a.png', mime: 'image/png' }];
+  expect(
+    resolveFirstPromptSubmission({
+      submission: null,
+      previewSubmission: null,
+      pendingRowSubmission: rowSubmission({
+        attachments: [{ filename: 'row.png', mime: 'image/png' }],
+      }),
+      stashedSubmission: null,
+      rememberedAttachments: remembered,
+    })?.attachments,
+  ).toEqual(remembered);
+});
+
+test('resolve: upload status is the preview\'s, then the row\'s', () => {
+  const four = {
+    submission: null,
+    previewSubmission: { text: 'p', files: [], uploadStatus: { state: 'failed' as const } },
+    pendingRowSubmission: rowSubmission({ uploadStatus: { state: 'failed' as const } }),
+    stashedSubmission: null,
+    rememberedAttachments: undefined,
+  };
+  expect(resolveFirstPromptSubmission(four)?.uploadStatus).toEqual({ state: 'failed' });
+  expect(
+    resolveFirstPromptSubmission({ ...four, previewSubmission: null })?.uploadStatus,
+  ).toEqual({ state: 'failed' });
+  expect(
+    resolveFirstPromptSubmission({
+      ...four,
+      previewSubmission: null,
+      pendingRowSubmission: rowSubmission({}),
+    })?.uploadStatus,
+  ).toBeUndefined();
 });
