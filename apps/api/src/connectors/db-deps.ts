@@ -765,6 +765,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadDefaultMode: loadDefaultModeFor,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
+    // Lazy: channels import connectors, so a static import here would cycle.
+    postApprovalCard: async (input) =>
+      (await import('../channels/approval-card-relay')).postApprovalCard(input),
     recordExecution: async (rec) => {
       const [row] = await db
         .insert(connectorCalls)

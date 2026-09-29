@@ -83,6 +83,13 @@ export const launchFilm: FilmDef = {
   frames: bars(32),
   Film: LaunchFilm,
   cues,
+  score: {
+    bars: 32,
+    sections: [[0, 'intro'], [3, 'reveal'], [5, 'groove'], [25, 'break'], [27, 'lift'], [29, 'end']],
+    cycle_from: 4,
+    risers: [[3, 3], [27, 2], [29, 1.5]],
+    impacts: [[3, 0.9], [29, 0.7]],
+  },
   audio: '/film/launch.m4a',
   chapters: [
     { frame: at('cold'), label: 'A toy or a cage' },

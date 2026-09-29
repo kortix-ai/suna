@@ -152,6 +152,66 @@ describe('a gated call records what it was going to do', () => {
     expect((res as { approvalInstructions?: string }).approvalInstructions).toContain('--reason');
   });
 
+  test("a gated call from a chat session posts an approval card and tells the agent not to repost the link", async () => {
+    const { deps } = makeDeps();
+    const posted: unknown[] = [];
+    deps.postApprovalCard = async (card) => {
+      posted.push(card);
+      return { posted: true };
+    };
+
+    const res = await handleCall(deps, {
+      ...input({ draft_id: 'r-1' }),
+      sessionId: 'sess-1',
+      approvalContext: 'Sends draft r-1',
+    });
+
+    expect(posted).toEqual([
+      {
+        projectId: 'proj-1',
+        sessionId: 'sess-1',
+        executionId: 'exec-1',
+        actionPath: 'gmail.send_email',
+        risk: 'write',
+        resultSummary: {
+          args_preview: { draft_id: 'r-1' },
+          args_preview_complete: true,
+          approval_context: 'Sends draft r-1',
+        },
+        approvalUrl: 'https://app.example.com/approve/ksl_proj-1_exec-1',
+      },
+    ]);
+    expect(res).toMatchObject({ status: 'pending_approval', executionId: 'exec-1' });
+    const instructions = (res as { approvalInstructions?: string }).approvalInstructions ?? '';
+    expect(instructions).toContain('approval card');
+    expect(instructions).toContain('Do not repost approval_url');
+  });
+
+  test('a card that fails to post never fails the gated call', async () => {
+    const { deps } = makeDeps();
+    deps.postApprovalCard = async () => {
+      throw new Error('slack down');
+    };
+
+    const res = await handleCall(deps, { ...input({ draft_id: 'r-1' }), sessionId: 'sess-1' });
+
+    expect(res).toMatchObject({ status: 'pending_approval', executionId: 'exec-1' });
+    expect((res as { approvalInstructions?: string }).approvalInstructions).toContain('Share approval_url');
+  });
+
+  test('a gated call with no session posts no card', async () => {
+    const { deps } = makeDeps();
+    let calls = 0;
+    deps.postApprovalCard = async () => {
+      calls += 1;
+      return { posted: true };
+    };
+
+    await handleCall(deps, input({ draft_id: 'r-1' }));
+
+    expect(calls).toBe(0);
+  });
+
   test('a policy BLOCK is also recorded with what it blocked', async () => {
     const { deps, records } = makeDeps({
       projectPolicies: [{ match: 'gmail.send_email', action: 'block', position: 0 }],

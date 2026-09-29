@@ -1372,7 +1372,12 @@ test('listConnectorTools never asks for schemas — no caller of it reads inputS
     },
   };
   await listConnectorTools('P1');
-  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+  // The title is the contract: this helper must OPT OUT of the schemas, or the
+  // server's include-by-default sends them and the summary path pays 439KB it
+  // never reads. Asserting the bare URL only proved the bug.
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/catalog?include_schemas=false',
+  );
 });
 
 test('describeConnectorTool fetches ONE connector, with its schema, instead of the whole catalog', async () => {
