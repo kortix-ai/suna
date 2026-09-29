@@ -393,7 +393,7 @@ export async function buildOpencodeConfigContent(
   // native provider and is ignored.
   const nativeSessionModel = (() => {
     if (hasLlmGateway) return undefined
-    const raw = env.KORTIX_OPENCODE_MODEL?.trim()
+    const raw = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
     if (!raw) return undefined
     const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
     const slash = ref.indexOf('/')
@@ -547,7 +547,7 @@ export async function buildOpencodeConfigContent(
       kortix: kortixProvider,
     }
     normalizeGatewayModelRefs(out)
-    const resolvedSessionModel = env.KORTIX_OPENCODE_MODEL?.trim()
+    const resolvedSessionModel = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
     const availableGatewayModel = Object.keys(
       (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
     )[0]

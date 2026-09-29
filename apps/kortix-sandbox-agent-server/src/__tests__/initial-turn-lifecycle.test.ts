@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
-  claimInitialTurnFromApi,
   publishInitialOpenCodeSessionAfterPrompt,
   reconcileInitialTurnAcceptanceToApi,
-  relayInitialTurnAcceptedToApi,
   relayTurnBeginAfterInitialAcceptance,
-  resetClaimedInitialTurnForTests,
 } from '@/harness/open-code/boot';
+import { claimInitialTurn, relayTurnAccepted, resetInitialTurnClaimForTests } from '@/harness/shared/turn-relay';
 import type { OpenCodeBootState as SandboxBootState } from '@/harness/open-code/boot-state';
 
 const KEYS = [
@@ -20,7 +18,7 @@ const KEYS = [
 let saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
-  resetClaimedInitialTurnForTests();
+  resetInitialTurnClaimForTests();
   saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
   for (const key of KEYS) delete process.env[key];
 });
@@ -28,7 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  resetClaimedInitialTurnForTests()
+  resetInitialTurnClaimForTests()
   for (const key of KEYS) {
     const value = saved[key];
     if (value === undefined) delete process.env[key];
@@ -66,7 +64,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
       process.env.KORTIX_TOKEN = 'session-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
 
-      expect(await claimInitialTurnFromApi()).toEqual({
+      expect(await claimInitialTurn()).toEqual({
         prompt: 'private prompt',
         turnToken: 'turn-token',
         messageId: 'msg_initial',
@@ -104,7 +102,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
       process.env.KORTIX_TOKEN = 'session-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
 
-      expect(await claimInitialTurnFromApi()).toEqual({
+      expect(await claimInitialTurn()).toEqual({
         prompt: 'retry prompt',
         turnToken: 'retry-token',
         messageId: 'msg_retry',
@@ -160,7 +158,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
       process.env.KORTIX_TOKEN = 'session-token';
       process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
 
-      expect(await relayInitialTurnAcceptedToApi('ses_root', 'msg_initial', 'turn-token')).toBe(
+      expect(await relayTurnAccepted('ses_root', 'msg_initial', 'turn-token')).toBe(
         true,
       );
       expect(observed as unknown).toEqual({
@@ -168,7 +166,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
         body: {
           session_id: 'session-1',
           kind: 'turn_accepted',
-          opencode_session_id: 'ses_root',
+          runtime_session_id: 'ses_root',
           turn_message_id: 'msg_initial',
           turn_token: 'turn-token',
         },
@@ -339,7 +337,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
           {
             session_id: 'session-1',
             kind: 'turn_accepted',
-            opencode_session_id: 'ses_root',
+            runtime_session_id: 'ses_root',
             turn_message_id: 'msg_initial',
             turn_token: 'turn-token',
           },
@@ -430,7 +428,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
     process.env.KORTIX_API_URL = 'http://127.0.0.1:1/v1';
 
     await expect(
-      relayInitialTurnAcceptedToApi('ses_root', 'msg_initial', 'turn-token'),
+      relayTurnAccepted('ses_root', 'msg_initial', 'turn-token'),
     ).rejects.toThrow('initial turn acceptance relay context is unavailable');
   });
 });

@@ -15,7 +15,7 @@ const TURN_RETRY_DEFAULT_BASE_MS = 2_000
  * state lives.
  *
  * Model, agent, prompts and the gateway are read from the SAME variables the
- * OpenCode path receives (`KORTIX_OPENCODE_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
+ * OpenCode path receives (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
  * `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`, `KORTIX_TOKEN`): the control plane
  * does not know which harness reads them, and it must not have to.
  */

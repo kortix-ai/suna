@@ -97,7 +97,7 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
       expect(m.calls()).toBe(1)
       expect(m.bodies()[0]).toMatchObject({
         kind: 'turn_begin',
-        opencode_session_id: ROOT,
+        runtime_session_id: ROOT,
         turn_message_id: 'msg_pty_2',
       })
       // The single session credential.
