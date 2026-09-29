@@ -168,6 +168,9 @@ function resetState() {
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
@@ -851,6 +854,9 @@ mock.module('../shared/db', () => ({
             visibility: values.visibility ?? 'private',
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
+            parentSessionId: values.parentSessionId ?? null,
+            initiatorType: values.initiatorType ?? null,
+            initiatorId: values.initiatorId ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
@@ -1272,6 +1278,77 @@ describe('project session API contract', () => {
     const created = await response.json();
     expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
     expect(created.visibility).toBe('project');
+  });
+
+  test('a spawn under a trigger run belongs to that run: initiator, origin and source (KRTX-639)', async () => {
+    // The coordinator a trigger started. Its worker's in-session token resolves
+    // origin `user`, yet nobody attended the run: the worker must carry the
+    // trigger as its starter, the unattended origin, and `agent` as its source.
+    sessionRow = {
+      ...sessionRow!,
+      origin: 'schedule',
+      initiatorType: 'trigger',
+      initiatorId: 'software-factory',
+    };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.parent_session_id).toBe(SESSION_ID);
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.initiator).toEqual({ type: 'trigger', id: 'software-factory', label: 'software-factory' });
+    expect(created.origin).toBe('schedule');
+    expect(created.metadata?.source).toBe('agent');
+    // Ownership does not move: the coordinator's token still owns its worker.
+    expect(lastSessionInsertValues?.createdBy).toBe(sessionRow!.createdBy);
+  });
+
+  test('a spawn under a backend session never inherits `backend` (KRTX-639)', async () => {
+    sessionRow = { ...sessionRow!, origin: 'backend', initiatorType: 'api', initiatorId: 'sa-1' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.origin).toBe('user');
+    expect(created.initiator?.type).toBe('api');
+  });
+
+  test('a browser create is its member’s, from the web; the CLI names itself (KRTX-639)', async () => {
+    const app = createApp();
+    const web = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(web.status).toBe(201);
+    const webSession = await web.json();
+    expect(webSession.parent_session_id).toBeNull();
+    expect(webSession.initiator).toMatchObject({ type: 'member', id: webSession.created_by });
+    expect(webSession.metadata?.source).toBe('ui');
+
+    const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(cli.status).toBe(201);
+    expect((await cli.json()).metadata?.source).toBe('cli');
   });
 
   test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {

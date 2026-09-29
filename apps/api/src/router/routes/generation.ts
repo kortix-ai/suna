@@ -57,7 +57,7 @@ generationApp.openapi(
     path: '/',
     tags: ['router'],
     summary:
-      'GET /v1/generation?id=<requestId> — OpenRouter-parity forensics for a single gateway call',
+      'Get one LLM gateway call by request id (OpenRouter-compatible)',
     description:
       'Looks up one gateway_request_logs row by requestId, scoped to the authenticated account. ' +
       'Mirrors OpenRouter’s GET /generation `{ data: {...} }` envelope, adapted to our own columns.',

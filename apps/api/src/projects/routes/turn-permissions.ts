@@ -26,7 +26,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/turn-permission',
     tags: ['projects'],
-    summary: 'POST /:projectId/turn-permission',
+    summary: 'Answer an agent permission request for a turn',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),

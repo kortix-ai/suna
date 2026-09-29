@@ -237,6 +237,8 @@ export interface GatewayCatalogModel {
    * split-on-slash heuristic cannot recover it.
    */
   provider?: string;
+  /** The real provider's display name ("OpenCode Go"). Absent on managed models. */
+  provider_name?: string;
   release_date?: string;
   released?: string;
   family?: string;

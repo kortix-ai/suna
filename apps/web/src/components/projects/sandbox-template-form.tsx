@@ -275,7 +275,7 @@ export function SandboxTemplateForm({
                   <Label htmlFor="tpl-df">{t('dockerfilePath')}</Label>
                   <Input
                     id="tpl-df"
-                    placeholder={tI18nComplete.raw('textf9edcea2223e')}
+                    placeholder={tI18nComplete.raw('text1bc7a47dada1')}
                     value={dockerfilePath}
                     onChange={(e) => setDockerfilePath(e.target.value)}
                   />

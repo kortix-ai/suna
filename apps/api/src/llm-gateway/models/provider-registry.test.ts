@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { Catalog } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 
 describe('runtime catalog provider resolution', () => {
@@ -116,5 +117,40 @@ describe('runtime catalog provider resolution', () => {
     // doc comment above).
     if (upstream?.kind === 'bedrock') throw new Error('expected openai-compat, got bedrock');
     expect(upstream?.baseUrl).toBe('https://openrouter.ai/api/v1');
+  });
+});
+
+// models.dev overrides the provider's wire format per model with
+// `model.provider.npm`. OpenCode Go serves MiniMax/Qwen on Anthropic `/messages`
+// and Grok/GPT/Muse on OpenAI `/responses` under one `api` base. Resolving only
+// the provider sent every model to `/chat/completions`.
+describe('per-model wire format override', () => {
+  const catalog: Catalog = {
+    source: 'test', fetched_at: '2026-09-29T00:00:00.000Z', provider_count: 1, model_count: 4,
+    providers: [{
+      id: 'opencode-go', name: 'OpenCode Go', env: ['OPENCODE_API_KEY'],
+      api: 'https://opencode.ai/zen/go/v1', npm: '@ai-sdk/openai-compatible',
+      models: [
+        { id: 'glm-5.3', name: 'GLM-5.3' },
+        { id: 'minimax-m3', name: 'MiniMax-M3', provider: { npm: '@ai-sdk/anthropic' } },
+        { id: 'grok-4.7', name: 'Grok 4.7', provider: { npm: '@ai-sdk/openai' } },
+        { id: 'moved', name: 'Moved', provider: { api: 'https://other.test/v1' } },
+      ],
+    }],
+  };
+  const base = { envVar: 'OPENCODE_API_KEY', baseUrl: 'https://opencode.ai/zen/go/v1' };
+
+  test.each([
+    ['glm-5.3', { ...base, kind: 'openai-compat', npm: '@ai-sdk/openai-compatible' }],
+    ['minimax-m3', { ...base, kind: 'anthropic', npm: '@ai-sdk/anthropic' }],
+    ['grok-4.7', { ...base, kind: 'openai-responses', npm: '@ai-sdk/openai' }],
+    ['moved', { ...base, kind: 'openai-compat', baseUrl: 'https://other.test/v1' }],
+    ['not-in-catalog', { ...base, kind: 'openai-compat' }],
+  ])('%s resolves its own transport', (modelId, expected) => {
+    expect(resolveCatalogUpstream('opencode-go', modelId, catalog)).toEqual(expect.objectContaining(expected));
+  });
+
+  test('without a model id the provider default applies', () => {
+    expect(resolveCatalogUpstream('opencode-go', undefined, catalog)).toMatchObject({ kind: 'openai-compat' });
   });
 });

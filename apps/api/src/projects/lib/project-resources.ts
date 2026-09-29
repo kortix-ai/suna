@@ -98,7 +98,8 @@ export interface ProjectResources {
   skills: ProjectResourceItem[];
 }
 
-const SKILL_SLUG_RE = /\/skills\/(.+?)\/SKILL\.md$/;
+// `skills/<slug>/SKILL.md` at the root, or under the legacy `.kortix/opencode/`.
+const SKILL_SLUG_RE = /(?:^|\/)skills\/(.+?)\/SKILL\.md$/;
 
 /** Stable slug for a skill from its SKILL.md path; falls back to null. */
 export function skillSlugFromPath(path: string): string | null {

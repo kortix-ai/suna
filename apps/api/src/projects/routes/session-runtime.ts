@@ -35,7 +35,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/start',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/start',
+    summary: 'Start a session sandbox and its runtime',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -169,7 +169,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/restart',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/restart',
+    summary: 'Restart a session sandbox',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -223,7 +223,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/stop',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/stop',
+    summary: 'Stop a session (interrupt the running turn)',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -341,7 +341,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/turn',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/turn',
+    summary: 'Get the current turn state of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),

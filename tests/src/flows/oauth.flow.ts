@@ -202,6 +202,7 @@ flow(
     routes: [
       "GET /.well-known/oauth-authorization-server",
       "GET /v1/oauth/.well-known/oauth-authorization-server",
+      "GET /.well-known/openid-configuration",
     ],
   },
   async (ctx) => {
@@ -212,10 +213,18 @@ flow(
       if (!body.authorization_endpoint.endsWith("/v1/oauth/authorize")) throw new Error(`authorization_endpoint: ${body.authorization_endpoint}`);
       if (!body.code_challenge_methods_supported.includes("S256")) throw new Error("S256 missing");
       if (!body.scopes_supported.includes("kortix")) throw new Error("kortix scope missing");
+      // The docs live on the web host (FRONTEND_URL), never a string edit of the API issuer.
+      if (!new URL(body.service_documentation).pathname.endsWith("/docs/sdk/sign-in")) throw new Error(`service_documentation: ${body.service_documentation}`);
     });
     await ctx.step("the /v1/oauth mirror serves the same document", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/.well-known/oauth-authorization-server");
       r.status(200).body().exists("$.issuer");
+    });
+    await ctx.step("/.well-known/openid-configuration serves the same document", async () => {
+      const a = await ctx.client.as(ctx.P.ANON).get("/.well-known/oauth-authorization-server");
+      const r = await ctx.client.as(ctx.P.ANON).get("/.well-known/openid-configuration");
+      r.status(200);
+      if (JSON.stringify(r.json()) !== JSON.stringify(a.json())) throw new Error("openid-configuration differs from the AS document");
     });
   },
 );
@@ -226,6 +235,7 @@ flow(
   {
     domain: "oauth",
     routes: [
+      "GET /v1/accounts/:accountId/iam/scim/tokens",
       "GET /v1/accounts/:accountId/iam/oauth-clients",
       "POST /v1/accounts/:accountId/iam/oauth-clients",
       "GET /v1/accounts/:accountId/iam/oauth-clients/:clientId",
@@ -286,6 +296,10 @@ flow(
       );
       rot.status(200).body().exists("$.client_secret");
       if (rot.json<any>().client_secret === secret) throw new Error("rotate returned the same secret");
+    });
+    await ctx.step("a malformed account id on the SCIM tokens list → 404, not a 500", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/iam/scim/tokens", { params: { accountId: "not-a-uuid" } });
+      r.status(404);
     });
     await ctx.step("NONMEMBER → 403 on list and delete", async () => {
       const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/accounts/:accountId/iam/oauth-clients", { params: { accountId: team.id } });
@@ -379,6 +393,18 @@ flow(
         form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: "wrong" }),
       );
       bad.status(400).body().has("$.error", "invalid_grant");
+      // A wrong verifier spends the code: the right verifier no longer redeems it.
+      const spent = await ctx.client.as(ctx.P.ANON).post(
+        "/v1/oauth/token",
+        form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
+      );
+      spent.status(400).body().has("$.error", "invalid_grant");
+      const again = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      const rid = new URL(again.header("location")!).searchParams.get("request_id")!;
+      const approved = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
+      code = new URL(approved.json<any>().redirect_uri).searchParams.get("code")!;
       const r = await ctx.client.as(ctx.P.ANON).post(
         "/v1/oauth/token",
         form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
@@ -528,6 +554,9 @@ flow(
   {
     domain: "oauth",
     routes: [
+      "POST /v1/accounts/:accountId/iam/scim/tokens",
+      "POST /v1/accounts/:accountId/iam/oauth-clients",
+      "POST /v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret",
       "POST /v1/oauth/register",
       "GET /v1/oauth/authorize",
       "POST /v1/oauth/authorize/consent",
@@ -535,6 +564,9 @@ flow(
       "GET /v1/oauth/grants",
       "DELETE /v1/oauth/grants/:clientId",
       "POST /v1/accounts/tokens",
+      "POST /v1/projects/:projectId/cli-token",
+      "POST /v1/accounts/:accountId/iam/service-accounts",
+      "POST /v1/projects/:projectId/gateway/keys",
       "GET /v1/accounts/me",
       "GET /v1/oauth/authorize/consent/:requestId",
     ],
@@ -572,6 +604,22 @@ flow(
       const headers = { Authorization: `Bearer ${access}` };
       (await ctx.client.as(ctx.P.ANON).get("/v1/oauth/grants", { headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).del("/v1/oauth/grants/:clientId", { params: { clientId }, headers })).status(403);
+    });
+
+    await ctx.step("the app's kortix_oat_ cannot mint a durable credential either: PAT, CLI token, SCIM token, OAuth client, service account, gateway key → 403, so a revoke ends its access", async () => {
+      const headers = { Authorization: `Bearer ${access}` };
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/tokens", { name: "OAU-9-oat" }, { headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/cli-token", {}, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
+      const params = { accountId: ctx.P.accountId };
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/scim/tokens", { name: "OAU-9-oat" }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients", { name: "OAU-9-oat", redirect_uris: ["https://app.example.test/cb"] }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret", {}, { params: { ...params, clientId }, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/accounts/:accountId/iam/service-accounts", { name: "OAU-9-oat" }, { params, headers })).status(403);
+      (await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/gateway/keys", { name: "OAU-9-oat" }, { params: { projectId: "00000000-0000-4000-a000-000000000000" }, headers })).status(403);
+    });
+
+    await ctx.step("DELETE /oauth/grants/<not-a-uuid> → 404, not a 500", async () => {
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId: "not-a-uuid" } })).status(404);
     });
 
     await ctx.step("an unscoped personal access token lists them, like the browser", async () => {

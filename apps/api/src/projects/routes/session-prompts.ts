@@ -1,7 +1,7 @@
 /** Session prompt queue: enqueue, list, remove, retry, and hold. */
 import { parseSessionAttachmentRef } from '@kortix/shared';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
@@ -10,7 +10,7 @@ import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -125,11 +125,21 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts',
+    summary: 'Send a prompt (message) to a session',
+    description:
+      'Send a message to a session. The prompt queues and delivers in order.',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: lenientBody({
+          client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
+          message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
+          parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
+          placement: z.enum(['transcript,composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
+          overrides: z.object({ agent: z.string().optional(), model: z.object({ providerID: z.string(), modelID: z.string() }).optional(), variant: z.string().optional(), directory: z.string().optional() }).passthrough().optional().optional().openapi({ description: 'Per-prompt agent or model override.' }),
+          remint_on_delivery: z.boolean().optional().openapi({ description: 'Assign a fresh wire id when the prompt is delivered.' }),
+          client_sent_at_ms: z.number().optional().openapi({ description: 'Client send time, epoch milliseconds.' }),
+        }) } }, required: true },
     },
     responses: {
       200: json(z.any(), 'Already queued (same client_message_id)'),
@@ -348,7 +358,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/prompts',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/prompts',
+    summary: 'List queued prompts of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -395,7 +405,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId/prompts/:promptId',
+    summary: 'Cancel a queued prompt',
     ...auth,
     request: {
       params: z.object({
@@ -496,7 +506,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}/retry',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts/:promptId/retry',
+    summary: 'Retry a failed prompt',
     ...auth,
     request: {
       params: z.object({
@@ -553,11 +563,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/prompts/hold',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/prompts/hold',
+    summary: 'Hold or release the prompt queue of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } }, required: true },
+      body: { content: { 'application/json': { schema: lenientBody({
+          held: z.boolean().openapi({ description: 'true holds the prompt queue; false releases it.' }),
+        }) } }, required: true },
     },
     responses: {
       200: json(

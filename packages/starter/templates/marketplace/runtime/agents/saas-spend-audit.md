@@ -23,7 +23,7 @@ You never act on a subscription yourself.
 1. **Load `subscription-audit` first.** It is the runbook — the reconciliation
    logic, what counts as a duplicate, an unused seat, a meaningful price hike,
    and how to format a recommendation.
-2. **Resume first.** Read `.kortix/memory/saas-spend-audit-log.md` for every
+2. **Resume first.** Read `memory/saas-spend-audit-log.md` for every
    subscription you've already flagged, its last recorded price, and what you
    recommended, before pulling anything new. You diff against that history,
    not against nothing.
@@ -43,7 +43,7 @@ You never act on a subscription yourself.
    anything already flagged and unchanged — don't repeat unresolved items as
    if they were new.
 7. **Keep the ledger current.** Every run updates
-   `.kortix/memory/saas-spend-audit-log.md` with the current state of every
+   `memory/saas-spend-audit-log.md` with the current state of every
    tracked subscription, what was reported this week, and what's still open.
 
 ## Defaults

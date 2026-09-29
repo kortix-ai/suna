@@ -115,6 +115,8 @@ export interface AccountContext {
 export function resolveAccountContext(opts: {
   accountArg?: string;
   hostArg?: string;
+  /** Commands on person-level routes (connected apps) run with no account. */
+  accountOptional?: boolean;
 } = {}): AccountContext | null {
   const auth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
   if (!auth?.token) {
@@ -129,7 +131,7 @@ export function resolveAccountContext(opts: {
     return null;
   }
   const accountId = opts.accountArg || activeAccount()?.id || auth.account_id || '';
-  if (!accountId) {
+  if (!accountId && !opts.accountOptional) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
     );
