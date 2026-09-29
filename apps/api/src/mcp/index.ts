@@ -33,6 +33,7 @@ import {
   renderJob,
   type JobState,
 } from './jobs';
+import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from './shape';
 
 type Dispatch = (request: Request) => Promise<Response>;
 
@@ -61,20 +62,35 @@ const text = (value: string, isError = false): ToolResult => ({
 
 // ─── The Kortix API, in-process, as the caller ──────────────────────────────
 
-/** Paths a tool may not reach: the OAuth server and the MCP endpoint itself. */
-function blockedPath(path: string): boolean {
-  return path.startsWith('/v1/oauth') || /\/mcp(\/|$)/.test(path.split('?')[0]!);
-}
+type ApiReply = {
+  status: number;
+  body: string;
+  /** The reply's `Retry-After`, when it sent one. */
+  retryAfter?: string;
+  /** Set when `summarizeBinary` was asked and the reply is not text: the body is not read. */
+  binary?: { type: string; bytes: number };
+  /** `X-Next-Cursor` of a keyset page. */
+  nextCursor?: string;
+};
+
+const TEXT_TYPE = /^(text\/|application\/(json|xml|javascript|x-www-form-urlencoded)|[^;]*\+(json|xml))/i;
 
 async function callApi(
   ctx: ToolContext,
   method: string,
   path: string,
-  opts: { query?: Record<string, unknown>; body?: unknown } = {},
-): Promise<{ status: number; body: string }> {
+  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean } = {},
+): Promise<ApiReply> {
   const url = new URL(path, ctx.origin);
+  // Guard the path the router will see (dot segments, %-escapes), not the caller's spelling.
+  const resolved = canonicalPath(url.pathname);
+  if (url.origin !== new URL(ctx.origin).origin || !resolved?.startsWith('/v1/') || blockedPath(resolved)) {
+    throw new ToolInputError('path must start with /v1/ and not target /v1/oauth or an MCP endpoint');
+  }
   for (const [key, value] of Object.entries(opts.query ?? {})) {
-    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    if (value === undefined || value === null) continue;
+    url.searchParams.delete(key);
+    for (const v of Array.isArray(value) ? value : [value]) url.searchParams.append(key, String(v));
   }
   const headers = new Headers(ctx.headers);
   // Body headers belong to the caller's request, not this one. accept-encoding
@@ -91,16 +107,31 @@ async function callApi(
   const response = await ctx.dispatch(
     new Request(url, { method, headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
   );
-  return { status: response.status, body: await response.text() };
+  const reply: ApiReply = {
+    status: response.status,
+    body: '',
+    retryAfter: response.headers.get('retry-after') ?? undefined,
+    nextCursor: response.headers.get('x-next-cursor') ?? undefined,
+  };
+  const type = response.headers.get('content-type') ?? '';
+  if (opts.summarizeBinary && type && !TEXT_TYPE.test(type)) {
+    reply.binary = { type: type.split(';')[0]!, bytes: (await response.arrayBuffer()).byteLength };
+    return reply;
+  }
+  reply.body = await response.text();
+  return reply;
 }
 
-function apiResult(r: { status: number; body: string }): ToolResult {
-  return text(`HTTP ${r.status}\n${r.body}`, r.status >= 400);
+/** `label` (`METHOD path`) leads the first line when given; a 429/503 `Retry-After` closes the text. */
+function apiResult(r: ApiReply, label?: string): ToolResult {
+  const head = `${label ? `${label} → ` : ''}HTTP ${r.status}`;
+  const retry = (r.status === 503 || r.status === 429) && r.retryAfter ? `\nRetry after ${r.retryAfter} s.` : '';
+  if (r.binary) return text(`${head} ${r.binary.type}, ${r.binary.bytes} bytes (binary, not shown)${retry}`, r.status >= 400);
+  return text(`${head}\n${r.body}${retry}`, r.status >= 400);
 }
 
 // ─── The OpenAPI catalog (search_api / describe_api) ────────────────────────
 
-type Operation = { method: string; path: string; summary: string; description: string; tags: string[]; spec: any };
 let catalog: Promise<{ ops: Operation[]; doc: any }> | null = null;
 
 function loadCatalog(ctx: ToolContext) {
@@ -110,7 +141,7 @@ function loadCatalog(ctx: ToolContext) {
     .then((doc: any) => {
       const ops: Operation[] = [];
       for (const [path, methods] of Object.entries<any>(doc.paths ?? {})) {
-        if (blockedPath(path)) continue;
+        if (!path.startsWith('/v1/') || blockedPath(path)) continue;
         for (const [method, spec] of Object.entries<any>(methods)) {
           if (!['get', 'post', 'put', 'patch', 'delete'].includes(method)) continue;
           ops.push({
@@ -130,28 +161,6 @@ function loadCatalog(ctx: ToolContext) {
       throw err;
     });
   return catalog;
-}
-
-export function searchOperations(ops: Operation[], query: string, limit: number): Operation[] {
-  const terms = query.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean);
-  if (terms.length === 0) return ops.slice(0, limit);
-  return ops
-    .map((op) => {
-      const path = op.path.toLowerCase();
-      const summary = op.summary.toLowerCase();
-      const rest = `${op.tags.join(' ')} ${op.description}`.toLowerCase();
-      let score = 0;
-      for (const term of terms) {
-        if (path.includes(term)) score += 3;
-        if (summary.includes(term)) score += 2;
-        if (rest.includes(term)) score += 1;
-      }
-      return { op, score };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || a.op.path.length - b.op.path.length)
-    .slice(0, limit)
-    .map((x) => x.op);
 }
 
 /** Inline `$ref`s so one operation reads on its own. Depth-capped: schemas recurse. */
